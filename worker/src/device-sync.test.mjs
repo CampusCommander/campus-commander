@@ -35,6 +35,7 @@ const device = (deviceId) => ({
   orgUnitPath: '/',
   lastContact: null,
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status: null,
 });
@@ -87,6 +88,7 @@ const record = (deviceId) => ({
     orgUnitPath: '/',
     lastContact: null,
     annotatedLocation: null,
+    annotatedUser: null,
     notes: null,
     status: 'ACTIVE',
     battery: { status: 'no-report' },

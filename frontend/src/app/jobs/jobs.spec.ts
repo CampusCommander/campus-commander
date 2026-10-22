@@ -199,6 +199,43 @@ it('shows the eight fields in the six-column frame composition', () => {
   expect(details?.getAttribute('href')).toBe('/jobs/UPD-014');
 });
 
+it('names the command and status job kinds', () => {
+  const { element } = setup({
+    page: page([
+      job({
+        displayId: 'CMD-001',
+        action: 'reboot-devices',
+        status: 'awaiting-devices',
+        scope: { kind: 'devices', deviceCount: 6 },
+        progress: {
+          total: 6,
+          succeeded: 1,
+          failed: 1,
+          unknown: 1,
+          skipped: 0,
+          expired: 1,
+          pending: 2,
+        },
+      }),
+      job({
+        jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+        displayId: 'STS-002',
+        action: 'disable-devices',
+        status: 'completed',
+        scope: { kind: 'devices', deviceCount: 6 },
+      }),
+    ]),
+  });
+  const rows = [...element.querySelectorAll('tbody tr')];
+  expect(rows).toHaveLength(2);
+  expect(rows[0].textContent).toContain('CMD-001');
+  expect(rows[0].textContent).toContain('Reboot devices');
+  expect(rows[0].textContent).toContain('Awaiting devices');
+  expect(rows[0].textContent).toContain('1 expired');
+  expect(rows[1].textContent).toContain('STS-002');
+  expect(rows[1].textContent).toContain('Disable devices');
+});
+
 it('shows the count, read time, and row range in the footer', () => {
   const { element } = setup({
     page: page([job(), job({ displayId: 'REF-004' })]),

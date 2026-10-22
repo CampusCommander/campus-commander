@@ -10,6 +10,8 @@ import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/googl
 import { qualifyDeviceWritesOnMock } from './device-write-mock.mjs';
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
+  deviceOrgUnitTreeMessage,
   deviceWriteAccessMessage,
 } from '../libs/application-contracts/src/lib/device-write-access-message.ts';
 
@@ -107,6 +109,35 @@ async function readMockTelemetry(mock, deviceId, scope) {
     `The mock telemetry read answered ${response.status}: ${response.text}`,
   );
   return JSON.parse(response.text);
+}
+
+/** Every device the mock holds, read back over its Google surface. */
+async function readMockDevices(mock) {
+  const token = await mockToken(
+    mock,
+    'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
+  );
+  const devices = [];
+  let pageToken = '';
+  for (;;) {
+    const response = await mockGoogle({
+      mock,
+      host: 'admin.googleapis.com',
+      path: `/admin/directory/v1/customer/${mock.customerId}/devices/chromeos?maxResults=300&projection=FULL${
+        pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''
+      }`,
+      token,
+    });
+    assert.equal(
+      response.status,
+      200,
+      `The mock device list answered ${response.status}: ${response.text}`,
+    );
+    const body = JSON.parse(response.text);
+    devices.push(...(body.chromeosdevices ?? []));
+    if (!body.nextPageToken) return devices;
+    pageToken = body.nextPageToken;
+  }
 }
 
 /**
@@ -340,6 +371,92 @@ async function runAdminSdkMockIntegration({
   ).page;
   assert.equal(page.total, counts.devices);
   assert.equal(page.matching, counts.devices);
+
+  // U1: the sync stores the annotated user that the mock seeds.
+  const seeded = await readMockDevices(mock);
+  const withUser = seeded.find((device) => device.annotatedUser);
+  const withoutUser = seeded.find((device) => !device.annotatedUser);
+  assert.ok(withUser, 'The mock seed annotates one device with a user.');
+  assert.ok(
+    withoutUser,
+    'The mock seed leaves one device without an annotated user.',
+  );
+  const withUserRecord = JSON.parse(
+    (await call(`/api/devices/${withUser.deviceId}`)).text,
+  ).device;
+  assert.equal(withUserRecord.annotatedUser, withUser.annotatedUser);
+  const withoutUserRecord = JSON.parse(
+    (await call(`/api/devices/${withoutUser.deviceId}`)).text,
+  ).device;
+  assert.equal(withoutUserRecord.annotatedUser, null);
+  const userPage = JSON.parse(
+    (
+      await call('/api/devices/query', {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          predicates: [
+            {
+              field: 'annotatedUser',
+              operator: 'equals',
+              value: withUser.annotatedUser,
+            },
+          ],
+          limit: queryLimit,
+        },
+      })
+    ).text,
+  ).page;
+  const expectedUsers = (
+    await migrator.query(
+      'SELECT device_id FROM cc.devices WHERE customer_id=$1 AND removed_at IS NULL AND lower(annotated_user)=lower($2)',
+      [mock.customerId, withUser.annotatedUser],
+    )
+  ).rows.map((row) => row.device_id);
+  assert.ok(
+    expectedUsers.includes(withUser.deviceId),
+    'The stored row holds the seeded annotated user.',
+  );
+  assert.deepEqual(
+    userPage.rows.map((row) => row.deviceId).sort(),
+    [...expectedUsers].sort(),
+    'The annotated-user text filter returns the seeded device.',
+  );
+  assert.equal(userPage.matching, expectedUsers.length);
+  assert.equal(userPage.rows[0].annotatedUser, withUser.annotatedUser);
+  const sortedPage = JSON.parse(
+    (
+      await call('/api/devices/query', {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          sort: { field: 'annotatedUser', direction: 'asc' },
+          limit: 1000,
+        },
+      })
+    ).text,
+  ).page;
+  const expectedOrder = (
+    await migrator.query(
+      'SELECT device_id FROM cc.devices WHERE customer_id=$1 AND removed_at IS NULL ORDER BY annotated_user ASC NULLS LAST,device_id ASC',
+      [mock.customerId],
+    )
+  ).rows.map((row) => row.device_id);
+  assert.equal(sortedPage.rows.length, counts.devices);
+  assert.deepEqual(
+    sortedPage.rows.map((row) => row.deviceId),
+    expectedOrder,
+    'The annotated-user sort returns every device in the column order.',
+  );
+  assert.ok(
+    sortedPage.rows.some((row) => row.deviceId === withUser.deviceId),
+    'The annotated-user sort returns the seeded device.',
+  );
+  assert.equal(
+    sortedPage.rows.at(-1).annotatedUser,
+    null,
+    'The annotated-user sort places a device without the value last.',
+  );
 
   let compared = null;
   for (const row of page.rows.filter(
@@ -604,6 +721,79 @@ async function runAdminSdkMockIntegration({
     'the provider probe grants the write scope',
   );
 
+  // U2: the organization unit tree of the connected customer (design section 6).
+  {
+    const orgUnitScope =
+      'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+    const tree = async () => {
+      const response = await call('/api/devices/updates/org-units');
+      assert.equal(response.status, 200, response.text);
+      return JSON.parse(response.text);
+    };
+    const grantedTree = await tree();
+    assert.equal(grantedTree.state, 'granted', JSON.stringify(grantedTree));
+    assert.equal(grantedTree.scope, orgUnitScope);
+    assert.equal(grantedTree.failure, null);
+    assert.match(grantedTree.observedAt, /^\d{4}-\d{2}-\d{2}T/);
+    const seeded = (await control('/domains')).find(
+      (record) => record.customerId === mock.customerId,
+    );
+    assert.ok(seeded, 'The mock lists the connected domain.');
+    assert.equal(
+      grantedTree.orgUnits.length,
+      seeded.counts.orgUnits,
+      'The route answers the whole seeded tree.',
+    );
+    const root = grantedTree.orgUnits.find((unit) => unit.orgUnitPath === '/');
+    assert.ok(root, 'The tree holds the root unit.');
+    assert.equal(root.parentOrgUnitId, null, 'The root names no parent.');
+    const ids = new Set(grantedTree.orgUnits.map((unit) => unit.orgUnitId));
+    assert.equal(
+      ids.size,
+      grantedTree.orgUnits.length,
+      'Every unit of the tree holds its own id.',
+    );
+    for (const unit of grantedTree.orgUnits) {
+      assert.match(unit.orgUnitPath, /^\//, unit.orgUnitPath);
+      assert.ok(unit.name.length > 0, 'A unit names its name.');
+      if (unit !== root)
+        assert.ok(
+          ids.has(unit.parentOrgUnitId),
+          `${unit.orgUnitPath} names a unit of the tree as its parent.`,
+        );
+    }
+    assert.equal(
+      JSON.stringify(grantedTree).includes('envelope'),
+      false,
+      'The answer carries no credential envelope.',
+    );
+
+    // Removing the OU scope denies the tree with its scope-named message.
+    await addFault({
+      kind: 'remove-scope',
+      clientId: mock.key.client_id,
+      scope: orgUnitScope,
+    });
+    const deniedTree = await tree();
+    assert.equal(deniedTree.state, 'denied', JSON.stringify(deniedTree));
+    assert.equal(deniedTree.failure, 'delegation-not-authorized');
+    assert.equal(deniedTree.scope, orgUnitScope);
+    assert.equal(deniedTree.orgUnits, null);
+    assert.equal(
+      deviceOrgUnitTreeMessage(deniedTree),
+      DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
+      'The denied answer carries the exact scope-named message.',
+    );
+    await clearFaults();
+    const restoredTree = await tree();
+    assert.equal(
+      restoredTree.state,
+      'granted',
+      'Clearing the scope fault grants the tree again.',
+    );
+    assert.equal(restoredTree.orgUnits.length, grantedTree.orgUnits.length);
+  }
+
   // Refresh Selected re-reads the selected devices through the get-by-IDs pipeline.
   const refreshResults = [];
   {
@@ -766,6 +956,7 @@ async function runAdminSdkMockIntegration({
     headers,
     redis,
     writeScope,
+    session,
   });
   // Q1b: the adversarial attacks run after the P2 checks in the same fresh installation.
   if (process.env.CC_Q1_ATTACKS === '1') {

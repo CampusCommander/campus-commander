@@ -88,11 +88,12 @@ const GOOGLE_SETUP_CAPABILITY_IDS = [
   'device-inventory',
   'device-telemetry',
   'device-changes',
+  'school-ou-references',
 ] as const;
 
 /**
  * The scopes a fresh installation grants, in the order the connection page lists them.
- * The School OU scope stays out, because the Schools feature remains disputed.
+ * The School OU scope is listed last, because the device OU picker reads that tree (design section 6).
  */
 export const GOOGLE_SETUP_SCOPES = Object.freeze([
   ...new Set(

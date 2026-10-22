@@ -157,7 +157,9 @@ export type DeviceWriteAccess = z.infer<typeof deviceWriteAccessSchema>;
 
 export {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
   deviceWriteAccessMessage,
+  deviceOrgUnitTreeMessage,
 } from './device-write-access-message';
 
 /**

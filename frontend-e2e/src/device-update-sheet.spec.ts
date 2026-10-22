@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { devicePageSchema } from '@campus/application-contracts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -23,7 +24,9 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
   orgUnitPath: '/School A',
   lastContact: '2026-10-19T11:58:00Z',
   annotatedLocation: 'Science wing',
+  annotatedUser: null,
   notes: null,
+  status: 'ACTIVE',
   battery: {
     status: 'reported',
     health: 'normal',
@@ -229,13 +232,13 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
     if (routePath === '/api/devices/query')
       return route.fulfill({
         json: {
-          page: {
+          page: devicePageSchema.parse({
             rows,
             matching: rows.length,
             total: rows.length,
             observedAt,
             refreshJobId: null,
-          },
+          }),
         },
       });
     if (routePath === '/api/devices/freshness')
@@ -279,6 +282,9 @@ async function openDevices(page: Page) {
   ).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Bulk Actions', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
   ).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
 }

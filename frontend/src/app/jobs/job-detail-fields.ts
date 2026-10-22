@@ -1,4 +1,5 @@
 import type {
+  JobCommandState,
   JobDetail,
   JobFailedActivityOperation,
   JobOperation,
@@ -7,6 +8,7 @@ import type {
   JobUnknownActivityOperation,
 } from '@campus/application-contracts';
 import type { AuthStore } from '../auth.store';
+import { statusText } from '../devices/device-fields';
 import { deviceCountText } from '../devices/device-update-messages';
 import { formatDuration, formatTimestamp } from './job-fields';
 
@@ -29,10 +31,37 @@ export function outcomeTone(outcome: JobOutcome): OutcomeTone {
     case 'failed':
       return 'error';
     case 'unknown':
+    case 'expired':
       return 'warning';
     default:
       return 'neutral';
   }
+}
+
+/**
+ * The chip of one issued command state (step 5 mockup, note 12).
+ * Pending delivery is neutral. Acknowledged is info. Google reports `sent`
+ * between them, so the plain state name carries the same neutral tone.
+ */
+const COMMAND_STATE_CHIPS: Readonly<
+  Record<JobCommandState, { label: string; tone: OutcomeTone }>
+> = {
+  'pending-delivery': { label: 'Pending delivery', tone: 'neutral' },
+  sent: { label: 'Sent', tone: 'neutral' },
+  acknowledged: { label: 'Acknowledged', tone: 'info' },
+};
+
+/** The chip of one operation. A command in flight shows its stored command state. */
+export function operationChip(operation: JobOperation): {
+  label: string;
+  tone: OutcomeTone;
+} {
+  if (operation.outcome === 'pending' && operation.commandState)
+    return COMMAND_STATE_CHIPS[operation.commandState];
+  return {
+    label: OUTCOME_LABELS[operation.outcome],
+    tone: outcomeTone(operation.outcome),
+  };
 }
 
 /** One counter of the outcome row. Order follows the frame. */
@@ -44,8 +73,9 @@ export interface JobCounter {
 }
 
 /**
- * The six counters of frame 104:209. Cancellation is outside this slice
- * (design 1.2), so the frame's Cancelled counter stays at zero.
+ * The seven counters of the command job detail (step 5 mockup, note 11).
+ * Expired follows Unknown. Pending counts Pending delivery and Acknowledged.
+ * Cancellation is outside this slice (design 1.2), so Cancelled stays at zero.
  */
 export function jobCounters(progress: JobProgress): readonly JobCounter[] {
   return [
@@ -63,6 +93,12 @@ export function jobCounters(progress: JobProgress): readonly JobCounter[] {
       tone: 'warning',
     },
     {
+      key: 'expired',
+      label: 'Expired',
+      value: progress.expired,
+      tone: 'warning',
+    },
+    {
       key: 'pending',
       label: 'Pending',
       value: progress.pending,
@@ -74,19 +110,13 @@ export function jobCounters(progress: JobProgress): readonly JobCounter[] {
       value: progress.skipped,
       tone: 'neutral',
     },
-    {
-      key: 'expired',
-      label: 'Expired',
-      value: progress.expired,
-      tone: 'neutral',
-    },
     { key: 'cancelled', label: 'Cancelled', value: 0, tone: 'neutral' },
   ];
 }
 
-/** The failed and unknown operations that the attention filter reads. */
+/** The failed, unknown, and expired operations that the attention filter reads. */
 export function attentionCount(job: JobDetail): number {
-  return job.progress.failed + job.progress.unknown;
+  return job.progress.failed + job.progress.unknown + job.progress.expired;
 }
 
 /** The operations that the job records. A running full sync holds null. */
@@ -118,14 +148,59 @@ export function fieldLabel(field: JobDetail['field']): string {
   return field === 'annotatedLocation' ? 'Annotated location' : '—';
 }
 
-/** A before value. A null baseline reads as "Not set". */
-export function beforeText(operation: JobOperation): string {
-  return operation.baselineValue ?? 'Not set';
+/** The Operation cell of one row. A command or status row names its action. */
+export function operationLabel(
+  job: JobDetail,
+  operation: JobOperation,
+): string {
+  switch (operation.operation) {
+    case 'reboot':
+      return 'Reboot';
+    case 'disable':
+      return 'Disable';
+    case 'reenable':
+      return 'Re-enable';
+    default:
+      return fieldLabel(job.field);
+  }
 }
 
-/** A requested value. A clear reads as "Clear value", as on the draft page. */
+/** A command row has no Reconcile action (record default 4). */
+export function isCommandOperation(operation: JobOperation): boolean {
+  return operation.operation === 'reboot';
+}
+
+/** A before value. A command reads "—", as in Figma 99:73. */
+export function beforeText(operation: JobOperation): string {
+  switch (operation.operation) {
+    case 'reboot':
+      return '—';
+    case 'disable':
+    case 'reenable':
+      return operation.baselineValue
+        ? statusText(operation.baselineValue)
+        : '—';
+    default:
+      return operation.baselineValue ?? 'Not set';
+  }
+}
+
+/** A requested value. A command repeats its action; a status change names the status. */
 export function requestedText(operation: JobOperation): string {
-  return operation.requestedValue ?? 'Clear value';
+  switch (operation.operation) {
+    case 'reboot':
+      return 'Reboot';
+    case 'disable':
+      return operation.requestedValue
+        ? statusText(operation.requestedValue)
+        : 'Disabled';
+    case 'reenable':
+      return operation.requestedValue
+        ? statusText(operation.requestedValue)
+        : 'Active';
+    default:
+      return operation.requestedValue ?? 'Clear value';
+  }
 }
 
 /** The time of one operation, as in the frame. The full time stays on the element. */
@@ -136,9 +211,10 @@ export function formatTime(iso: string): string {
   });
 }
 
-/** The operation number of `operationId` (`UPD-006-12` gives `12`). */
+/** The operation number of an update or status ID (`STS-002-12` gives `12`). */
 export function operationNumber(operationId: string): string | null {
-  return /^UPD-\d{3,}-(\d+)$/.exec(operationId)?.[1] ?? null;
+  // Commands offer no reconciliation (record default 4), so a CMD- ID stays invalid.
+  return /^(?:UPD|STS)-\d{3,}-(\d+)$/.exec(operationId)?.[1] ?? null;
 }
 
 /** Reconcile needs jobs:read and devices:write (design 2.1, OQ6). */
@@ -182,11 +258,31 @@ function spellCount(value: number): string {
     : value.toLocaleString('en-US');
 }
 
+/** The subject of a failure sentence. A command names its own reason. */
+export type FailureSubject = 'update' | 'status change' | 'command';
+
+/** The noun that a value-differs sentence reads after "requested". */
+function requestedNoun(subject: FailureSubject): string {
+  switch (subject) {
+    case 'update':
+      return 'value';
+    case 'status change':
+      return 'status';
+    case 'command':
+      return 'state';
+  }
+}
+
 /**
  * One failure sentence of the Latest activity line (design 2.5, OQ9).
  * A 401 or 403 that is not a quota refusal reads as a permission failure.
+ * A status job names its status change; the default subject keeps the update copy.
+ * A command names its issue refusal. Only commandFailureSentence claims execution.
  */
-export function failureSentence(operation: JobFailedActivityOperation): string {
+export function failureSentence(
+  operation: JobFailedActivityOperation,
+  subject: FailureSubject = 'update',
+): string {
   const serial = operation.serialNumber || operation.deviceId;
   if (
     (operation.googleStatus === 401 || operation.googleStatus === 403) &&
@@ -197,18 +293,40 @@ export function failureSentence(operation: JobFailedActivityOperation): string {
     case 'not-found':
       return `${serial} was not found in Google Workspace.`;
     case 'quota':
-      return `Google quota stopped the update for ${serial}.`;
+      return `Google quota stopped the ${subject} for ${serial}.`;
     case 'value-differs':
-      return `${serial} does not hold the requested value.`;
+      return `${serial} does not hold the requested ${requestedNoun(subject)}.`;
     case 'invalid-response':
       return `Google returned an invalid response for ${serial}.`;
     case 'ambiguous':
       return `The outcome for ${serial} is uncertain.`;
     default:
       return operation.outcomeReason
-        ? `Google rejected the update for ${serial} (${operation.outcomeReason}).`
-        : `The update failed for ${serial}.`;
+        ? `Google rejected the ${subject} for ${serial} (${operation.outcomeReason}).`
+        : `The ${subject} failed for ${serial}.`;
   }
+}
+
+/**
+ * One failure sentence of a command job. It names no retry and no reconciliation.
+ * A `command-failed` settlement is the only evidence that a device executed the
+ * command and failed. An issue refusal keeps its own reason.
+ */
+export function commandFailureSentence(
+  operation: JobFailedActivityOperation,
+): string {
+  if (operation.outcomeReason === 'command-failed')
+    return `${operation.serialNumber || operation.deviceId} reported an execution failure.`;
+  return failureSentence(operation, 'command');
+}
+
+/** One uncertain command sentence. A command has no reconciliation (record default 4). */
+export function commandUncertainSentence(
+  operation: JobUnknownActivityOperation,
+): string {
+  return `The outcome for ${
+    operation.serialNumber || operation.deviceId
+  } is uncertain.`;
 }
 
 /** One reconciliation sentence of the Latest activity line. */
@@ -231,18 +349,73 @@ function sampleTime(
   ).updatedAt;
 }
 
+/** The noun of the confirmed operations in a write job. */
+function writeSubject(job: JobDetail): { one: string; many: string } {
+  return job.action === 'disable-devices' || job.action === 'reenable-devices'
+    ? { one: 'status change', many: 'status changes' }
+    : { one: 'update', many: 'updates' };
+}
+
 /** The counter line of a write job of frame 228:4524. */
 function updateCounterLine(job: JobDetail): string {
   const { succeeded, pending } = job.progress;
+  const subject = writeSubject(job);
   const time = formatTime(job.latestActivity.at);
   const confirmed = `${succeeded.toLocaleString('en-US')} ${
-    succeeded === 1 ? 'update' : 'updates'
+    succeeded === 1 ? subject.one : subject.many
   } confirmed.`;
   if (pending !== null && pending > 0)
     return `${time} · ${confirmed} ${spellCount(pending)} ${
       pending === 1 ? 'operation remains' : 'operations remain'
     } pending.`;
   return `${time} · ${confirmed} No operations remain pending.`;
+}
+
+/**
+ * The Latest activity line of a command job (step 5 mockup, note 12).
+ * The line names expired commands, the failed and uncertain samples, and the
+ * commands that wait for their device. It never offers reconciliation.
+ */
+function commandCounterLine(job: JobDetail): string {
+  const { expired, pending, succeeded } = job.progress;
+  const { failed, unknown } = job.latestActivity;
+  const time = formatTime(job.latestActivity.at);
+  const parts: string[] = [];
+  if (expired > 0)
+    parts.push(
+      `${expired.toLocaleString('en-US')} ${
+        expired === 1 ? 'Reboot command expired' : 'Reboot commands expired'
+      } before execution.`,
+    );
+  parts.push(...failed.operations.map(commandFailureSentence));
+  const unshownFailed = failed.count - failed.operations.length;
+  if (unshownFailed > 0)
+    parts.push(
+      `${unshownFailed.toLocaleString('en-US')} ${
+        unshownFailed === 1 ? 'command failed.' : 'commands failed.'
+      }`,
+    );
+  parts.push(...unknown.operations.map(commandUncertainSentence));
+  const unshownUnknown = unknown.count - unknown.operations.length;
+  if (unshownUnknown > 0)
+    parts.push(
+      `${unshownUnknown.toLocaleString('en-US')} ${
+        unshownUnknown === 1 ? 'command outcome is' : 'command outcomes are'
+      } uncertain.`,
+    );
+  if (pending !== null && pending > 0)
+    parts.push(
+      `${pending.toLocaleString('en-US')} ${
+        pending === 1 ? 'command waits' : 'commands wait'
+      } for device execution.`,
+    );
+  if (!parts.length)
+    parts.push(
+      `${succeeded.toLocaleString('en-US')} ${
+        succeeded === 1 ? 'command confirmed.' : 'commands confirmed.'
+      }`,
+    );
+  return `${time} · ${parts.join(' ')}`;
 }
 
 /** The drafted counter line of a refresh job. Its latest activity has no samples. */
@@ -293,10 +466,17 @@ function refreshCounterLine(job: JobDetail): string {
  */
 export function latestActivityLine(job: JobDetail): string {
   if (job.action === 'refresh-inventory') return refreshCounterLine(job);
+  if (job.action === 'reboot-devices') return commandCounterLine(job);
+  const subject =
+    job.action === 'disable-devices' || job.action === 'reenable-devices'
+      ? 'status change'
+      : 'update';
   const { failed, unknown } = job.latestActivity;
   if (failed.operations.length || unknown.operations.length) {
     const sentences = [
-      ...failed.operations.map(failureSentence),
+      ...failed.operations.map((operation: JobFailedActivityOperation) =>
+        failureSentence(operation, subject),
+      ),
       ...unknown.operations.map(reconciliationSentence),
     ];
     return `${formatTime(sampleTime(failed.operations, unknown.operations))} · ${sentences.join(' ')}`;

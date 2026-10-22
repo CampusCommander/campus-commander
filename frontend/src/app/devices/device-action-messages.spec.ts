@@ -282,7 +282,15 @@ it('names the family action in the menu note of each entry', () => {
       canAction: true,
       selectionCount: 0,
     })?.text,
-  ).toBe('Select one or more devices to change the status.');
+  ).toBe('Select one or more devices to update.');
+  expect(
+    deviceActionNote({
+      ...shared,
+      family: 'command',
+      canAction: true,
+      selectionCount: 0,
+    })?.text,
+  ).toBe('Select one or more devices to update.');
   expect(
     deviceActionNote({
       ...shared,
