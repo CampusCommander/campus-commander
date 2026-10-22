@@ -59,6 +59,103 @@ const sixOperations = (): JobOperation[] => [
   }),
 ];
 
+/** Two devices with two changed fields each: one succeeded device and one lost answer. */
+const multiFieldOperations = (): JobOperation[] => [
+  operation({
+    operationId: 'UPD-007-1-annotatedLocation',
+    deviceId: 'synthetic-device-1',
+    serialNumber: '01P0T1V',
+    field: 'annotatedLocation',
+    operation: 'replace',
+    baselineValue: 'Pine Valley cart 6',
+    requestedValue: 'Pine Valley cart 7',
+    outcome: 'succeeded',
+    observedValue: 'Pine Valley cart 7',
+  }),
+  operation({
+    operationId: 'UPD-007-1-notes',
+    deviceId: 'synthetic-device-1',
+    serialNumber: '01P0T1V',
+    field: 'notes',
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: 'Cart 7 loaner pool',
+    outcome: 'succeeded',
+    observedValue: 'Cart 7 loaner pool',
+  }),
+  operation({
+    operationId: 'UPD-007-2-annotatedLocation',
+    deviceId: 'synthetic-device-2',
+    serialNumber: '02QJANY',
+    field: 'annotatedLocation',
+    operation: 'replace',
+    baselineValue: 'Pine Valley cart 6',
+    requestedValue: 'Pine Valley cart 7',
+    outcome: 'unknown',
+    googleStatus: null,
+    observedValue: null,
+    verifiedBy: null,
+  }),
+  operation({
+    operationId: 'UPD-007-2-notes',
+    deviceId: 'synthetic-device-2',
+    serialNumber: '02QJANY',
+    field: 'notes',
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: 'Cart 7 loaner pool',
+    outcome: 'unknown',
+    googleStatus: null,
+    observedValue: null,
+    verifiedBy: null,
+  }),
+];
+
+const multiFieldJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'UPD-007',
+    scope: { kind: 'devices', deviceCount: 2 },
+    changes: [
+      {
+        field: 'annotatedLocation',
+        mode: 'replace',
+        value: 'Pine Valley cart 7',
+      },
+      { field: 'notes', mode: 'replace', value: 'Cart 7 loaner pool' },
+    ],
+    progress: {
+      total: 2,
+      succeeded: 1,
+      failed: 0,
+      unknown: 1,
+      skipped: 0,
+      expired: 0,
+      pending: 0,
+    },
+    latestActivity: {
+      at: '2026-10-21T19:06:00.000Z',
+      failed: { count: 0, operations: [] },
+      unknown: {
+        count: 1,
+        operations: [
+          {
+            operationId: 'UPD-007-2-annotatedLocation',
+            deviceId: 'synthetic-device-2',
+            serialNumber: '02QJANY',
+            updatedAt: '2026-10-21T19:06:00.000Z',
+          },
+          {
+            operationId: 'UPD-007-2-notes',
+            deviceId: 'synthetic-device-2',
+            serialNumber: '02QJANY',
+            updatedAt: '2026-10-21T19:06:00.000Z',
+          },
+        ],
+      },
+    },
+    ...overrides,
+  });
+
 const commandOperation = (
   overrides: Partial<JobOperation> = {},
 ): JobOperation =>
@@ -420,6 +517,60 @@ it('shows the identity, counters, and operations of frame 104:209', () => {
       .find((candidate) => candidate.textContent?.trim() === 'Back to jobs')
       ?.getAttribute('href'),
   ).toBe('/jobs');
+});
+
+it('renders one row per device and field with the before and requested values', () => {
+  const { element } = setup({
+    job: multiFieldJob(),
+    operations: multiFieldOperations(),
+  });
+  const rows = [...element.querySelectorAll('tbody tr')];
+  expect(rows).toHaveLength(4);
+  const cells = (index: number) =>
+    [...rows[index].querySelectorAll('td')].map(
+      (cell) => cell.textContent?.trim() ?? '',
+    );
+  expect(cells(0)[1]).toBe('Annotated location');
+  expect(cells(0)[2]).toBe('Pine Valley cart 6');
+  expect(cells(0)[3]).toBe('Pine Valley cart 7');
+  expect(cells(1)[1]).toBe('Notes');
+  expect(cells(1)[2]).toBe('Not set');
+  expect(cells(1)[3]).toBe('Cart 7 loaner pool');
+  // Each field row names its device, so the two rows of one device hold the same serial.
+  expect(rows[0].textContent).toContain('01P0T1V');
+  expect(rows[1].textContent).toContain('01P0T1V');
+  // A lost answer marks every field row of the device Unknown and offers Reconcile on each.
+  expect(cells(2)[4]).toContain('Unknown');
+  expect(cells(3)[4]).toContain('Unknown');
+  expect(
+    [...element.querySelectorAll('button')].filter(
+      (candidate) => candidate.textContent?.trim() === 'Reconcile',
+    ),
+  ).toHaveLength(2);
+  // Latest activity names the device once, though both field rows carry its sample.
+  const activity = element.querySelector('.activity p')?.textContent ?? '';
+  expect(activity.match(/02QJANY/g)).toHaveLength(1);
+});
+
+it('offers no Reconcile for any field row without devices:write', () => {
+  const { element } = setup({
+    job: multiFieldJob(),
+    operations: multiFieldOperations(),
+    grants: ['jobs:read', 'devices:read'],
+  });
+  expect(text(element)).toContain('02QJANY');
+  expect(button(element, 'Reconcile')).toBeUndefined();
+});
+
+it('marks every field row of a reconciling operation as pending', () => {
+  const { element } = setup({
+    job: multiFieldJob(),
+    operations: multiFieldOperations(),
+    // A click names one field row. One PATCH settles the whole operation.
+    reconciling: ['UPD-007-2-notes'],
+  });
+  expect(text(element).match(/Reconciling/g)).toHaveLength(2);
+  expect(button(element, 'Reconcile')).toBeUndefined();
 });
 
 it('shows Inspect failure and the evidence panel', async () => {

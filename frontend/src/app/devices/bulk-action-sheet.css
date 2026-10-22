@@ -186,6 +186,12 @@
   overflow-wrap: anywhere;
 }
 
+/* A scrollable region needs its own focus stop, or keyboard users cannot scroll it. */
+.sheet-body:focus-visible {
+  outline: 2px solid var(--cc-text-link);
+  outline-offset: -2px;
+}
+
 .sheet-body h2 {
   margin-block-start: 0;
 }
@@ -294,6 +300,39 @@ mat-form-field {
   margin-block-start: var(--cc-space-xl);
 }
 
+/* One block per draft field: the mode select, then the value field of a Replace. */
+.field-block {
+  margin-block-start: var(--cc-space-xl);
+}
+
+.field-block > mat-form-field:first-child {
+  margin-block-start: 0;
+}
+
+.field-block > mat-form-field + mat-form-field {
+  margin-block-start: var(--cc-space-sm);
+}
+
+.field-block > p.error {
+  margin: var(--cc-space-sm) 0 0;
+}
+
+/* The notes value grows with its text and never scrolls inside the field. */
+.field-block textarea.mdc-text-field__input {
+  resize: none;
+  overflow: hidden;
+}
+
+/* The Confirm step lists one change per field with its device count. */
+.change-list {
+  margin: var(--cc-space-md) 0 0;
+  padding-inline-start: 20px;
+}
+
+.change-list li + li {
+  margin-block-start: var(--cc-space-xs);
+}
+
 .acknowledgement {
   display: block;
   margin-block-start: var(--cc-space-lg);
@@ -320,8 +359,8 @@ mat-form-field {
   table-layout: fixed;
 }
 
-.targets col.col-device {
-  width: 112px;
+.targets col.col-field {
+  width: 104px;
 }
 
 .targets col.col-arrow {
@@ -346,11 +385,18 @@ mat-form-field {
   line-height: 16px;
 }
 
-.targets tbody tr:nth-child(odd) {
-  background: var(--cc-surface-hover);
+.targets tbody th {
+  font-weight: 400;
 }
 
-.targets tbody th {
+/* One row group per device. The group row carries the serial and any exclusion reason. */
+.targets tbody tr.device-row th {
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+.targets tbody tr.device-row .line {
   font-weight: 400;
 }
 

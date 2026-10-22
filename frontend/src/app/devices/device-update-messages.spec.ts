@@ -4,11 +4,12 @@ import {
 } from '@campus/application-contracts';
 import {
   DEVICE_UPDATE_PERMISSION_MESSAGE,
-  DEVICE_UPDATE_VALUE_MESSAGES,
   DEVICE_WRITE_ACCESS_BUSY_MESSAGE,
   changedFieldsText,
   deviceCountText,
+  deviceUpdateValueCounter,
   deviceUpdateValueError,
+  deviceUpdateValueHint,
   updateDeviceNote,
   type UpdateDeviceAvailability,
 } from './device-update-messages';
@@ -144,21 +145,45 @@ describe('draft copy', () => {
     expect(changedFieldsText(0)).toBe('0 changed fields');
   });
 
-  it('accepts a value of 1 to 200 code points', () => {
-    expect(deviceUpdateValueError('North lab')).toBeNull();
-    expect(deviceUpdateValueError('😀'.repeat(200))).toBeNull();
-    expect(deviceUpdateValueError('a'.repeat(200))).toBeNull();
+  it('accepts a value of 1 to the limit of each field, in code points', () => {
+    expect(deviceUpdateValueError('annotatedLocation', 'North lab')).toBeNull();
+    expect(
+      deviceUpdateValueError('annotatedLocation', '😀'.repeat(200)),
+    ).toBeNull();
+    expect(deviceUpdateValueError('annotatedUser', 'a'.repeat(100))).toBeNull();
+    expect(deviceUpdateValueError('notes', 'a'.repeat(500))).toBeNull();
   });
 
-  it('rejects an empty, whitespace-only, or over-long value', () => {
-    expect(deviceUpdateValueError('')).toBe(
-      DEVICE_UPDATE_VALUE_MESSAGES.length,
+  it('rejects an empty, whitespace-only, or over-long value and names the field', () => {
+    expect(deviceUpdateValueError('annotatedLocation', '')).toBe(
+      'Annotated location holds 1 to 200 characters.',
     );
-    expect(deviceUpdateValueError('   ')).toBe(
-      DEVICE_UPDATE_VALUE_MESSAGES.visible,
+    expect(deviceUpdateValueError('annotatedUser', '   ')).toBe(
+      'Annotated user needs a visible character.',
     );
-    expect(deviceUpdateValueError('😀'.repeat(201))).toBe(
-      DEVICE_UPDATE_VALUE_MESSAGES.length,
+    expect(deviceUpdateValueError('notes', 'a'.repeat(501))).toBe(
+      'Notes holds 1 to 500 characters.',
+    );
+    expect(deviceUpdateValueError('annotatedUser', 'a'.repeat(101))).toBe(
+      'Annotated user holds 1 to 100 characters.',
+    );
+  });
+
+  it('names the limit of each field in its hint and counter', () => {
+    expect(deviceUpdateValueHint('annotatedLocation')).toBe(
+      'Use 200 characters or fewer. Spaces alone do not count.',
+    );
+    expect(deviceUpdateValueHint('annotatedUser')).toBe(
+      'Use 100 characters or fewer. Spaces alone do not count.',
+    );
+    expect(deviceUpdateValueHint('notes')).toBe(
+      'Use 500 characters or fewer. Spaces alone do not count.',
+    );
+    expect(deviceUpdateValueCounter('notes', 'Cart 7 loaner pool')).toBe(
+      '18 of 500 characters',
+    );
+    expect(deviceUpdateValueCounter('annotatedUser', '😀')).toBe(
+      '1 of 100 characters',
     );
   });
 

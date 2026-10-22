@@ -17,17 +17,21 @@ import {
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { CdkTextareaAutosize } from '@angular/cdk/text-field';
+import { ErrorStateMatcher } from '@angular/material/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import {
+  DEVICE_UPDATE_FIELD_LABELS,
   jobDetailSchema,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
   type DeviceUpdatePreview,
   type DeviceUpdateTarget,
+  type DeviceUpdateTextField,
   type JobDetail,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
@@ -40,7 +44,11 @@ import {
 } from '../jobs/job-receipt-messages';
 import { DevicesStore } from './devices.store';
 import { DEVICE_GRID_ID } from './device-selection';
-import { DeviceUpdateDraftStore } from './device-update-draft.store';
+import {
+  DEVICE_UPDATE_DRAFT_FIELDS,
+  DeviceUpdateDraftStore,
+  type DeviceUpdateDraftMode,
+} from './device-update-draft.store';
 import {
   DeviceUpdateConfirmationStore,
   type SubmittedConfirmation,
@@ -49,10 +57,10 @@ import {
   FROZEN_TARGETS_SENTENCE,
   acknowledgementLabel,
   approvedValueText,
+  changeSentences,
   confirmationHeading,
   confirmationMayExist,
   confirmationMetaLine,
-  confirmationSentence,
   confirmTitle,
   expiryLine,
   flowExpiry,
@@ -62,17 +70,21 @@ import {
   previewTitle,
   problemSummary,
   staleWarning,
-  targetDeviceText,
   targetNote,
+  targetGroups,
+  unchangedSentence,
   type FlowActionId,
   type FlowProblem,
   type FlowProblemKind,
+  type TargetGroup,
 } from './device-update-flow';
 import { DeviceUpdateFlow } from './device-update-flow';
 import {
   changedFieldsText,
   deviceCountText,
+  deviceUpdateValueCounter,
   deviceUpdateValueError,
+  deviceUpdateValueHint,
 } from './device-update-messages';
 import { DeviceUpdateProblem } from './device-update-problem';
 
@@ -95,6 +107,14 @@ interface DisplayStep {
   state: 'done' | 'active' | 'later';
 }
 
+/** Material asks this matcher for the error state of a value field. */
+class ValueErrorMatcher implements ErrorStateMatcher {
+  constructor(private readonly invalid: () => boolean) {}
+  isErrorState(): boolean {
+    return this.invalid();
+  }
+}
+
 /**
  * The bulk action sheet of Update device (owner mockup of 2026-10-20). It holds the
  * draft, the frozen preview, the confirmation, and the receipt in one panel over the
@@ -105,6 +125,7 @@ interface DisplayStep {
   imports: [
     FormsModule,
     CdkTrapFocus,
+    CdkTextareaAutosize,
     MatButtonModule,
     MatCheckboxModule,
     MatFormFieldModule,
@@ -168,11 +189,26 @@ export class DeviceUpdateSheet {
   protected readonly nextStep = RECEIPT_NEXT_STEP;
   protected readonly observed = observedValueText;
   protected readonly approved = approvedValueText;
-  protected readonly device = targetDeviceText;
   protected readonly note = targetNote;
+  /** The three text fields of the draft, in the record order. */
+  protected readonly fields = DEVICE_UPDATE_DRAFT_FIELDS;
+  /** The frozen targets as one row group per device and one row per changed field. */
+  protected readonly groups = computed<TargetGroup[]>(() =>
+    targetGroups(this.targets()),
+  );
+  /** The Confirm step lists one change per field, then the fields that keep their value. */
+  protected readonly sentences = computed(() => {
+    const preview = this.preview();
+    // The counts come from the frozen rows: one device can keep one field's value.
+    return preview ? changeSentences(preview, this.targets()) : [];
+  });
+  protected readonly unchanged = computed(() => {
+    const preview = this.preview();
+    return preview ? unchangedSentence(preview) : '';
+  });
   /**
-   * The mode of one target's field change. The step 4 sheet holds one change; F2 reads each
-   * change of the draft.
+   * The mode of one target's field change. Each row reads the change of its own field, so a
+   * Clear row shows the removed value.
    */
   protected modeOf(field: DeviceUpdateTarget['field']): DeviceUpdateMode {
     const change = this.preview()?.changes.find(
@@ -188,21 +224,60 @@ export class DeviceUpdateSheet {
   protected readonly expired = computed(
     () => this.selectionExpired() || !!this.store.selection.spec()?.expiredAt,
   );
-  protected readonly valueError = computed(() =>
-    this.draft.mode() === 'replace'
-      ? deviceUpdateValueError(this.draft.value())
-      : null,
+  protected hintOf(field: DeviceUpdateTextField): string {
+    return deviceUpdateValueHint(field);
+  }
+  protected fieldLabel(field: DeviceUpdateTarget['field']): string {
+    return DEVICE_UPDATE_FIELD_LABELS[field];
+  }
+  /** The help and error ids of one value field, for `aria-describedby`. */
+  protected describedBy(field: DeviceUpdateTextField): string {
+    return this.showValueError(field)
+      ? `${field}-help ${field}-error`
+      : `${field}-help`;
+  }
+  protected counterOf(field: DeviceUpdateTextField): string {
+    return deviceUpdateValueCounter(field, this.draft.valueOf(field));
+  }
+  /** The validation message of one field, or null when the field passes. */
+  protected valueError(field: DeviceUpdateTextField): string | null {
+    return this.draft.modeOf(field) === 'replace'
+      ? deviceUpdateValueError(field, this.draft.valueOf(field))
+      : null;
+  }
+  /** An empty value shows its error once the operator leaves the field or tries to save. */
+  protected showValueError(field: DeviceUpdateTextField): boolean {
+    const error = this.valueError(field);
+    return (
+      !!error &&
+      (this.draft.valueOf(field).length > 0 ||
+        this.attempted() ||
+        this.blurred().has(field))
+    );
+  }
+  /** The fields that lost focus, so an empty value explains why Save stays disabled. */
+  private readonly blurred = signal<ReadonlySet<string>>(new Set());
+  protected markBlurred(field: DeviceUpdateTextField): void {
+    if (this.blurred().has(field)) return;
+    this.blurred.update((fields) => new Set(fields).add(field));
+  }
+  /** One matcher per field, so Material reuses it and the error outline follows the rule. */
+  private readonly valueMatchers = new Map<string, ValueErrorMatcher>();
+  protected valueErrorMatcher(field: DeviceUpdateTextField): ValueErrorMatcher {
+    const existing = this.valueMatchers.get(field);
+    if (existing) return existing;
+    const matcher = new ValueErrorMatcher(() => this.showValueError(field));
+    this.valueMatchers.set(field, matcher);
+    return matcher;
+  }
+  /** At least one changed field holds a value that the contract refuses. */
+  protected readonly invalid = computed(() =>
+    this.fields.some((field) => this.valueError(field.id) !== null),
   );
-  protected readonly showValueError = computed(
-    () =>
-      !!this.valueError() &&
-      (this.draft.value().length > 0 || this.attempted()),
-  );
-  protected readonly length = computed(() => [...this.draft.value()].length);
   protected readonly summary = computed(
     () =>
       `${deviceCountText(this.count() ?? 0)} · ${changedFieldsText(
-        this.draft.changed() ? 1 : 0,
+        this.draft.changedCount(),
       )} · Not submitted`,
   );
   protected readonly editReady = computed(
@@ -212,12 +287,14 @@ export class DeviceUpdateSheet {
       !this.selectionError() &&
       (this.count() ?? 0) > 0,
   );
+  /** Save and preview needs a change and no invalid value (design note 7). */
   protected readonly canSave = computed(
     () =>
       this.editReady() &&
       !this.editOffline() &&
       !this.saving() &&
-      this.valueError() === null,
+      this.draft.changed() &&
+      !this.invalid(),
   );
   protected readonly countLine = computed(() => {
     const preview = this.preview();
@@ -233,10 +310,6 @@ export class DeviceUpdateSheet {
   protected readonly heading = computed(() => {
     const preview = this.preview();
     return preview ? confirmationHeading(preview) : '';
-  });
-  protected readonly sentence = computed(() => {
-    const preview = this.preview();
-    return preview ? confirmationSentence(preview, this.targets()) : '';
   });
   protected readonly confirmMeta = computed(() => {
     const preview = this.preview();
@@ -283,7 +356,10 @@ export class DeviceUpdateSheet {
   );
   protected readonly receiptLine = computed(() => {
     const job = this.job();
-    return job ? receiptCountLine(job) : '';
+    // The receipt names the frozen preview's field changes; a replayed receipt has none.
+    return job
+      ? receiptCountLine(job, this.preview()?.fieldChanges ?? null)
+      : '';
   });
   protected readonly jobDisplayId = computed(
     () => this.job()?.displayId ?? this.receipt()?.displayId ?? null,
@@ -433,8 +509,15 @@ export class DeviceUpdateSheet {
     this.close();
   }
 
-  protected setMode(mode: DeviceUpdateMode): void {
-    this.draft.setMode(mode);
+  protected setMode(
+    field: DeviceUpdateTextField,
+    mode: DeviceUpdateDraftMode,
+  ): void {
+    this.draft.setMode(field, mode);
+  }
+
+  protected setValue(field: DeviceUpdateTextField, value: string): void {
+    this.draft.setValue(field, value);
   }
 
   protected reset(): void {
@@ -519,6 +602,14 @@ export class DeviceUpdateSheet {
       this.submitted.set(preparation.submitted);
       this.step.set('confirm');
       this.showProblem('confirm-uncertain');
+      return;
+    }
+    if (preparation.kind === 'unresolved') {
+      // The early answer cannot prove that the first request created no job. Keep
+      // the retained identity and show the receipt recovery, not a new preview.
+      this.submitted.set(preparation.submitted);
+      this.step.set('confirm');
+      this.showProblem('confirm-receipt-unavailable');
       return;
     }
     this.showPrepareProblem(preparation.answer);
@@ -827,6 +918,13 @@ export class DeviceUpdateSheet {
         this.submitted.set(preparation.submitted);
         this.step.set('confirm');
         this.showProblem('confirm-uncertain');
+        return;
+      case 'unresolved':
+        // The early answer cannot prove that the first request created no job. Keep
+        // the retained identity and show the receipt recovery, not a new preview.
+        this.submitted.set(preparation.submitted);
+        this.step.set('confirm');
+        this.showProblem('confirm-receipt-unavailable');
         return;
       case 'problem':
         this.showProblem(

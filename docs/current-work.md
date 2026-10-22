@@ -5,6 +5,7 @@ Updated: 2026-10-21.
 ## Authorized now
 
 On 2026-10-20 the owner signed off development order step 4 after a walkthrough of the review build.
+On 2026-10-22 the owner signed off the step 5 first build: Reboot, Disable, and Re-enable. The owner chose the answer "Signed off as built" to "Step 5 (Reboot, Disable, Re-enable from Bulk Actions): do you sign it off?".
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -16,7 +17,7 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
 
-### Step 5 device commands (screens approved 2026-10-21)
+### Step 5 device commands (first build signed off 2026-10-22)
 
 On 2026-10-21 the owner approved the step 5 screens: "That looks good".
 The [device commands record](workflows/device-commands.md) holds the approved composition and the wording defaults.
@@ -34,6 +35,25 @@ Asset tag leaves the bulk Update device. The approved mockup is [2026-10-21-upda
 The owner places Asset tag in in-grid editing and the individual device update.
 The owner names three later workflows: in-grid editing, the individual device update, and import and export for bulk edit (gap G16).
 These workflows are direction, not authorization to build.
+
+On 2026-10-22 the owner signed off the step 5 first build.
+Question: "Step 5 (Reboot, Disable, Re-enable from Bulk Actions): do you sign it off?"
+Answer: "Signed off as built".
+The sign-off accepts the drafted wording and the defaults of the review package as built: "already active" for Re-enable, Google's raw reason code on a refused command row, the `0s` duration, the two-line Disable review title, the "Status change" column, the error color of the failure reason, "Awaiting devices" for a waiting Reboot job, and "All updates confirmed" on the Jobs page.
+
+The step 5 first build leaves these follow-ups. None is scheduled:
+
+- The expired Latest activity line names no device.
+- The offline note names Update device.
+- The note band style differs from PNG 10.
+- Status sorts by the raw Google value.
+- The selection checkboxes stay enabled without a bulk action.
+- No database check limits `google_status`.
+- A B5 test fixture still stores status 0.
+
+Live device writes stay unverified. The test domain has no ChromeOS device (read-only check on 2026-10-22). A live check needs an enrolled test device and the owner's authorization (risk DEVICE-01 of the design).
+
+Wipe, Powerwash, and Deprovision stay next in step 5, as the owner chose on 2026-10-21.
 
 ### Device update record (signed off 2026-10-20)
 
@@ -107,7 +127,7 @@ Read-only device work does not depend on school creation, invitations, or comple
 Device-specific Google scopes and method support still require verification before real provider access.
 The existing test authorization does not include device writes.
 
-Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. Later steps require their own authorization.
+Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. The owner signed off the step 5 first build on 2026-10-22. Later steps require their own authorization.
 Keep one workflow active. Finish its usable result before expanding the feature surface.
 
 ## How to choose and finish a task
