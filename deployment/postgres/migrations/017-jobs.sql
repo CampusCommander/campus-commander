@@ -1923,9 +1923,13 @@ BEGIN
   -- S1: the header row locks before the detail row, as every other write-job writer takes them.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
   IF job.job_id IS NULL OR job.kind NOT IN ('device-update','device-command','device-status') THEN RETURN false; END IF;
-  -- The caller's own filter names these four terminal statuses. The fence repeats it here, so a direct
-  -- call never marks the registry entry of a live job (round 2, eng-lead ruling 3).
-  IF job.status NOT IN ('completed','completed-with-errors','failed','needs-review') THEN RETURN false; END IF;
+  -- The fence repeats the caller's own filter, which names every status that released the write slot: the
+  -- four terminal ones and `awaiting-devices`, where a command job waits for Google without the slot
+  -- (command-jobs design section 1 and section 4 step 4). A direct call therefore never marks the registry
+  -- entry of a live (running) job (round 2, eng-lead ruling 3).
+  IF job.status NOT IN ('completed','completed-with-errors','failed','needs-review','awaiting-devices') THEN
+    RETURN false;
+  END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
   -- S3: only a job with a written hold and no cleanup mark takes the mark.
