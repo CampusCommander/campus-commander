@@ -7,6 +7,7 @@ import {
   chipLabel,
   dateInputToIso,
   dateInputValue,
+  DEVICE_FIELDS,
   groupLabel,
   orgUnitOptions,
   relativeTime,
@@ -80,8 +81,36 @@ describe('device fields', () => {
       'Serial contains "asset"',
     ]);
     const empty = suggestions('');
-    expect(empty.fields).toHaveLength(9);
+    expect(empty.fields).toHaveLength(10);
     expect(empty.shortcuts).toEqual([]);
+  });
+
+  it('places the optional Annotated user field directly after Asset tag', () => {
+    const ids = DEVICE_FIELDS.map((field) => field.id);
+    expect(
+      DEVICE_FIELDS.find((field) => field.id === 'annotatedUser'),
+    ).toMatchObject({
+      label: 'Annotated user',
+      kind: 'text',
+      optional: true,
+    });
+    expect(ids.indexOf('annotatedUser')).toBe(ids.indexOf('assetTag') + 1);
+  });
+
+  it('offers Annotated user as a text filter with chip labels', () => {
+    expect(suggestions('user').fields.map((field) => field.label)).toEqual([
+      'Annotated user',
+    ]);
+    expect(
+      chipLabel({
+        field: 'annotatedUser',
+        operator: 'contains',
+        value: 'maya.chen@example.org',
+      }),
+    ).toBe('Annotated user contains: maya.chen@example.org');
+    expect(chipLabel({ field: 'annotatedUser', operator: 'isEmpty' })).toBe(
+      'Annotated user is empty',
+    );
   });
 
   it('builds the organization unit tree with ancestors and search', () => {
