@@ -19,6 +19,7 @@ const operation = (overrides: Partial<JobOperation> = {}): JobOperation => ({
   deviceId: 'synthetic-device-1',
   serialNumber: 'C0A1-7F2D',
   orgUnitPath: '/School A',
+  field: 'annotatedLocation',
   operation: 'replace',
   baselineValue: 'Science wing',
   requestedValue: 'North lab',
@@ -62,6 +63,7 @@ const commandOperation = (
   overrides: Partial<JobOperation> = {},
 ): JobOperation =>
   operation({
+    field: null,
     operation: 'reboot',
     baselineValue: null,
     requestedValue: null,
@@ -185,6 +187,7 @@ const statusOperations = (): JobOperation[] => [
   operation({
     operationId: 'STS-002-1',
     serialNumber: '01P0T1V',
+    field: null,
     operation: 'disable',
     baselineValue: 'ACTIVE',
     requestedValue: 'DISABLED',
@@ -194,6 +197,7 @@ const statusOperations = (): JobOperation[] => [
   operation({
     operationId: 'STS-002-2',
     serialNumber: '02A1MB6',
+    field: null,
     operation: 'disable',
     baselineValue: 'ACTIVE',
     requestedValue: 'DISABLED',

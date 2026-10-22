@@ -76,6 +76,7 @@ const operation = (overrides: Partial<JobOperation> = {}): JobOperation => ({
   deviceId: 'synthetic-device-6',
   serialNumber: 'C0A1-7F84',
   orgUnitPath: '/School A',
+  field: 'annotatedLocation',
   operation: 'replace',
   baselineValue: 'Science wing',
   requestedValue: 'North lab',
@@ -574,12 +575,18 @@ describe('job detail fields', () => {
   });
 
   it('labels a command row and hides its baseline', () => {
-    const reboot = operation({ operation: 'reboot', requestedValue: null });
+    const reboot = operation({
+      field: null,
+      operation: 'reboot',
+      requestedValue: null,
+    });
     expect(operationLabel(job(), reboot)).toBe('Reboot');
     expect(beforeText(reboot)).toBe('—');
     expect(requestedText(reboot)).toBe('Reboot');
     expect(isCommandOperation(reboot)).toBe(true);
-    expect(isCommandOperation(operation({ operation: 'disable' }))).toBe(false);
+    expect(
+      isCommandOperation(operation({ field: null, operation: 'disable' })),
+    ).toBe(false);
   });
 
   it('labels a status row with its baseline and requested status', () => {
@@ -592,6 +599,7 @@ describe('job detail fields', () => {
     });
     const disable = operation({
       operationId: 'STS-002-1',
+      field: null,
       operation: 'disable',
       baselineValue: 'ACTIVE',
       requestedValue: 'DISABLED',
@@ -601,6 +609,7 @@ describe('job detail fields', () => {
     expect(requestedText(disable)).toBe('Disabled');
 
     const reenable = operation({
+      field: null,
       operation: 'reenable',
       baselineValue: 'DISABLED',
       requestedValue: 'ACTIVE',
