@@ -7,6 +7,7 @@ const person = {
   displayName: 'District Admin',
 };
 const alexId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const readerId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 /**
  * The operation rows of frame 104:209. Six rows fill one page.
@@ -278,10 +279,168 @@ const runningOperations = operations.map((operation, index) => ({
   updatedAt: '2026-10-19T10:42:08.000Z',
 }));
 
+/** The row of one device and field of the PNG 09 job (mockup note 21). */
+const fieldRow = (
+  device: number,
+  serialNumber: string,
+  source: string,
+  field: 'annotatedLocation' | 'notes' | 'orgUnitPath',
+  values: {
+    baselineValue: string | null;
+    requestedValue: string;
+    outcome: 'failed' | 'unknown' | 'succeeded';
+    observedValue: string | null;
+    updatedAt: string;
+  },
+) => ({
+  operationId: `UPD-007-${device}-${field}`,
+  field,
+  deviceId: `synthetic-device-${device}`,
+  serialNumber,
+  orgUnitPath: source,
+  operation: field === 'orgUnitPath' ? 'move' : 'replace',
+  baselineValue: values.baselineValue,
+  requestedValue: values.requestedValue,
+  outcome: values.outcome,
+  outcomeReason: values.outcome === 'failed' ? 'value-differs' : null,
+  googleStatus: values.outcome === 'failed' ? 200 : null,
+  googleReason: null,
+  observedValue: values.observedValue,
+  verifiedBy:
+    values.outcome === 'succeeded' || values.outcome === 'failed'
+      ? 'read-back'
+      : null,
+  commandId: null,
+  commandState: null,
+  commandExpiresAt: null,
+  commandExecutedAt: null,
+  updatedAt: values.updatedAt,
+});
+
+const lowell = '/Chrome Devices/Lowell Academy/One to One';
+const hughes = '/Chrome Devices/Hughes Academy/One to One';
+const cart = '/Chrome Devices/Pine Valley Elementary School/Cart Devices';
+
+/**
+ * The job of PNG 09: five devices, three changed fields, one failed device, one lost answer.
+ * Asset tag leaves the bulk update, so Annotated location takes its place.
+ */
+const png09Job = {
+  jobId: '3f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  displayId: 'UPD-007',
+  revision: 2,
+  action: 'update-device-annotations',
+  status: 'needs-review',
+  scope: { kind: 'devices', deviceCount: 5 },
+  requestedBy: person,
+  createdAt: '2026-10-21T23:03:00.000Z',
+  startedAt: '2026-10-21T23:03:00.000Z',
+  finishedAt: '2026-10-21T23:06:12.000Z',
+  progress: {
+    total: 5,
+    succeeded: 3,
+    failed: 1,
+    unknown: 1,
+    skipped: 0,
+    expired: 0,
+    pending: 0,
+  },
+  failure: null,
+  confirmedBy: person,
+  previewDisplayId: 'PV-009',
+  changes: [
+    {
+      field: 'annotatedLocation',
+      mode: 'replace',
+      value: 'Pine Valley cart 7',
+    },
+    { field: 'notes', mode: 'replace', value: 'Cart 7 loaner pool' },
+    { field: 'orgUnitPath', mode: 'move', value: cart },
+  ],
+  commandType: null,
+  statusAction: null,
+  targetOrgUnitPaths: [lowell, hughes],
+  correlationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  latestActivity: {
+    at: '2026-10-21T23:06:00.000Z',
+    failed: {
+      count: 1,
+      operations: [
+        {
+          operationId: 'UPD-007-1',
+          deviceId: 'synthetic-device-1',
+          serialNumber: '01P0T1V',
+          outcomeReason: 'value-differs',
+          googleStatus: 200,
+          googleReason: null,
+          updatedAt: '2026-10-21T23:05:00.000Z',
+        },
+      ],
+    },
+    unknown: {
+      count: 1,
+      operations: [
+        {
+          operationId: 'UPD-007-2',
+          deviceId: 'synthetic-device-2',
+          serialNumber: '02QJANY',
+          updatedAt: '2026-10-21T23:06:00.000Z',
+        },
+      ],
+    },
+  },
+};
+
+/** The first operations page: 01P0T1V failed, 02QJANY lost, six rows of fifteen. */
+const png09Operations = [
+  fieldRow(1, '01P0T1V', lowell, 'annotatedLocation', {
+    baselineValue: 'Pine Valley cart 6',
+    requestedValue: 'Pine Valley cart 7',
+    outcome: 'failed',
+    observedValue: 'Pine Valley cart 7',
+    updatedAt: '2026-10-21T23:05:00.000Z',
+  }),
+  fieldRow(1, '01P0T1V', lowell, 'notes', {
+    baselineValue: null,
+    requestedValue: 'Cart 7 loaner pool',
+    outcome: 'failed',
+    observedValue: 'Cart 7 loaner pool',
+    updatedAt: '2026-10-21T23:05:00.000Z',
+  }),
+  fieldRow(1, '01P0T1V', lowell, 'orgUnitPath', {
+    baselineValue: lowell,
+    requestedValue: cart,
+    outcome: 'failed',
+    observedValue: lowell,
+    updatedAt: '2026-10-21T23:05:00.000Z',
+  }),
+  fieldRow(2, '02QJANY', lowell, 'annotatedLocation', {
+    baselineValue: 'Pine Valley cart 6',
+    requestedValue: 'Pine Valley cart 7',
+    outcome: 'unknown',
+    observedValue: null,
+    updatedAt: '2026-10-21T23:06:00.000Z',
+  }),
+  fieldRow(2, '02QJANY', lowell, 'notes', {
+    baselineValue: null,
+    requestedValue: 'Cart 7 loaner pool',
+    outcome: 'unknown',
+    observedValue: null,
+    updatedAt: '2026-10-21T23:06:00.000Z',
+  }),
+  fieldRow(2, '02QJANY', lowell, 'orgUnitPath', {
+    baselineValue: lowell,
+    requestedValue: cart,
+    outcome: 'unknown',
+    observedValue: null,
+    updatedAt: '2026-10-21T23:06:00.000Z',
+  }),
+];
+
 async function signIn(page: Page) {
   const state = {
     reconcileStatus: 202,
-    identity: 'district' as 'district' | 'alex',
+    identity: 'district' as 'district' | 'alex' | 'readonly',
     fail: false,
   };
   await page.route('**/api/**', async (route) => {
@@ -290,7 +449,9 @@ async function signIn(page: Page) {
     const grants =
       state.identity === 'alex'
         ? ['devices:read']
-        : ['jobs:read', 'devices:read', 'devices:write'];
+        : state.identity === 'readonly'
+          ? ['jobs:read', 'devices:read']
+          : ['jobs:read', 'devices:read', 'devices:write'];
     if (path === '/api/application')
       return route.fulfill({
         json: {
@@ -304,9 +465,18 @@ async function signIn(page: Page) {
       return route.fulfill({
         json: {
           identity: {
-            id: state.identity === 'alex' ? alexId : person.id,
+            id:
+              state.identity === 'alex'
+                ? alexId
+                : state.identity === 'readonly'
+                  ? readerId
+                  : person.id,
             displayName:
-              state.identity === 'alex' ? 'Alex Rivera' : person.displayName,
+              state.identity === 'alex'
+                ? 'Alex Rivera'
+                : state.identity === 'readonly'
+                  ? 'Review reader'
+                  : person.displayName,
             permissionVersion: 1,
             permissions: [],
             grants: grants.map((action) => ({
@@ -485,8 +655,12 @@ test('filters to the operations needing attention of frame 231:4707', async ({
   ).toBeVisible();
   await expect(page.locator('.operations-table tbody tr')).toHaveCount(2);
   await expect(page.getByText('2 matching operations · 6 total')).toBeVisible();
-  await expect(page.getByRole('cell', { name: /C0A1-7F77/ })).toBeVisible();
-  await expect(page.getByRole('cell', { name: /C0A1-7F84/ })).toBeVisible();
+  await expect(
+    page.locator('.device-cell', { hasText: 'C0A1-7F77' }),
+  ).toBeVisible();
+  await expect(
+    page.locator('.device-cell', { hasText: 'C0A1-7F84' }),
+  ).toBeVisible();
   await expect(
     page.locator('.counter').filter({ hasText: 'Succeeded' }),
   ).toContainText('4');
@@ -731,6 +905,138 @@ test('keeps long operation values inside the table', async ({
     path: testInfo.outputPath('job-detail-long-content-320.png'),
     fullPage: true,
   });
+});
+
+/** The time text that the page renders for a timestamp, in the browser's timezone. */
+const clock = (iso: string) =>
+  new Date(iso).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+test('renders one row per device and field for the job of PNG 09', async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  await page.route('**/api/jobs/UPD-007', (route) =>
+    route.fulfill({ json: png09Job }),
+  );
+  await page.route('**/api/jobs/UPD-007/operations*', (route) =>
+    route.fulfill({
+      json: { operations: png09Operations, nextCursor: '2:4' },
+    }),
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/jobs/UPD-007');
+
+  await expect(
+    page.getByRole('heading', {
+      name: 'Update device annotations',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('Job UPD-007 · Needs review')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'UPD-007 · 5 devices', exact: true }),
+  ).toBeVisible();
+  const counter = (label: string) =>
+    page.locator('.counter').filter({ hasText: label });
+  await expect(counter('Succeeded')).toContainText('3');
+  await expect(counter('Failed')).toContainText('1');
+  await expect(counter('Unknown')).toContainText('1');
+
+  const rows = page.locator('.operations-table tbody tr');
+  await expect(rows).toHaveCount(6);
+  const cell = (row: number, column: number) =>
+    rows.nth(row).locator('td').nth(column);
+  // One row per device and field, with the before and requested value of that field.
+  await expect(cell(0, 0)).toContainText('01P0T1V');
+  await expect(cell(0, 1)).toHaveText('Annotated location');
+  await expect(cell(0, 2)).toHaveText('Pine Valley cart 6');
+  await expect(cell(0, 3)).toHaveText('Pine Valley cart 7');
+  await expect(cell(1, 0)).toContainText('01P0T1V');
+  await expect(cell(1, 1)).toHaveText('Notes');
+  await expect(cell(1, 2)).toHaveText('Not set');
+  await expect(cell(1, 3)).toHaveText('Cart 7 loaner pool');
+  await expect(cell(2, 1)).toHaveText('Organization unit');
+  await expect(cell(2, 2)).toHaveText(lowell);
+  await expect(cell(2, 3)).toHaveText(cart);
+
+  // Every field row of 01P0T1V carries the outcome of the device's one PATCH.
+  for (const index of [0, 1, 2]) {
+    await expect(cell(index, 4)).toContainText('Failed');
+    await expect(cell(index, 4)).toContainText(
+      '01P0T1V does not hold the requested value.',
+    );
+    await expect(
+      rows.nth(index).getByRole('button', { name: 'Inspect failure' }),
+    ).toBeVisible();
+  }
+  // A lost answer marks each field of 02QJANY Unknown and offers Reconcile on each row.
+  for (const index of [3, 4, 5]) {
+    await expect(cell(index, 4)).toContainText('Unknown');
+    await expect(
+      rows.nth(index).getByRole('button', { name: 'Reconcile' }),
+    ).toBeVisible();
+  }
+  await expect(page.getByText('Rows 1–6', { exact: true })).toBeVisible();
+  // Latest activity names each device once.
+  await expect(page.locator('.activity p')).toHaveText(
+    `${clock('2026-10-21T23:06:00.000Z')} · 01P0T1V does not hold the requested value. 02QJANY requires reconciliation before any retry.`,
+  );
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-png09-1440x900.png'),
+  });
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-png09-full.png'),
+    fullPage: true,
+  });
+  // The page puts the operations region below a 1440x900 fold, so capture it on its own.
+  await page
+    .getByRole('heading', { name: 'Operation results' })
+    .evaluate((element) => element.scrollIntoView({ block: 'start' }));
+  // The bounded table scrolls 25 px at 1440, so show its last row in full.
+  await page.locator('.table-scroll').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-png09-table-1440x900.png'),
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('shows Reconcile on no field row without devices:write', async ({
+  page,
+}, testInfo) => {
+  const state = await signIn(page);
+  state.identity = 'readonly';
+  await page.route('**/api/jobs/UPD-007', (route) =>
+    route.fulfill({ json: png09Job }),
+  );
+  await page.route('**/api/jobs/UPD-007/operations*', (route) =>
+    route.fulfill({
+      json: { operations: png09Operations, nextCursor: null },
+    }),
+  );
+  await page.goto('/jobs/UPD-007');
+
+  await expect(page.getByText('Rows 1–6', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reconcile' })).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Inspect failure' }),
+  ).toHaveCount(3);
+  await expect(page.locator('.activity p')).toContainText(
+    '02QJANY requires reconciliation before any retry.',
+  );
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-read-only-unknown.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
 test('inspects a failure and reconciles an unknown operation', async ({
