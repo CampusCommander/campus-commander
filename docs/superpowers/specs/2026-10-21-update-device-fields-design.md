@@ -185,7 +185,7 @@ Replace, Clear, and Move each send an absolute final value, so step4:1360-1366 h
 - Picker: the sheet reads the route when the OU field opens. The dialog shows the tree, searches it in the browser, and returns one unit (TREE-01, `docs/ui/patterns.md:142-145`, `:327-331`).
 - The draft keeps the unit ID and the path. The preview request sends the path.
 - Disabled field: a state other than `granted` disables the OU field (`record:53`). `denied` shows a note in the D2 pattern (`ac/device-write-access-message.ts:4-5`). Engineering copy:
-  "Google denied the organization unit tree. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console."
+  "Google denied organization unit reads. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console."
 - `unavailable` shows the failure label and a Retry action. The mockup decides the final copy of both states.
 - The grid's OU filter keeps its source, the OUs that hold devices (`api/devices/devices.controller.ts:256-260`).
 
