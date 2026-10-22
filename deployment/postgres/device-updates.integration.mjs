@@ -382,7 +382,9 @@ export async function qualifyDeviceUpdates({
       async () => {
         preview = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         assert.equal(preview.selected, 4);
         assert.equal(preview.eligible, 2);
@@ -418,7 +420,9 @@ export async function qualifyDeviceUpdates({
         );
         const frozen = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         assert.equal(frozen.selected, 3);
         assert.equal(frozen.eligible, 2);
@@ -563,7 +567,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const first = await updates.confirm(session, current, other.previewId, {
           manifestDigest: other.manifestDigest,
@@ -612,7 +618,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const first = await updates.confirm(session, current, other.previewId, {
           manifestDigest: other.manifestDigest,
@@ -652,7 +660,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const first = await updates.confirm(session, current, other.previewId, {
           manifestDigest: other.manifestDigest,
@@ -708,7 +718,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const confirmed = await new DeviceUpdates(
           database,
@@ -760,7 +772,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const artifactId = await storeJsonDocument(artifactStore, {
           preview: {
@@ -828,7 +842,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const artifactId = await storeJsonDocument(artifactStore, {
           preview: {
@@ -901,7 +917,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       await rejects(
         updates.confirm(session, current, other.previewId, {
@@ -917,7 +935,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       await migrator.query(
         "UPDATE cc.device_update_previews SET expires_at=clock_timestamp()-interval '1 minute' WHERE preview_id=$1",
@@ -944,7 +964,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-c']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         assert.equal(other.eligible, 0);
         await rejects(
@@ -963,7 +985,10 @@ export async function qualifyDeviceUpdates({
       async () => {
         selections.set(selectionKey, raw({ additions: ['b3-missing'] }));
         await rejects(
-          updates.preview(session, current, { ...key, changes: [{ field: 'annotatedLocation', mode: 'clear' }] }),
+          updates.preview(session, current, {
+            ...key,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          }),
           'nothing-selected',
           422,
         );
@@ -993,7 +1018,10 @@ export async function qualifyDeviceUpdates({
           }),
         );
         await rejects(
-          updates.preview(session, current, { ...key, changes: [{ field: 'annotatedLocation', mode: 'clear' }] }),
+          updates.preview(session, current, {
+            ...key,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          }),
           'nothing-selected',
           422,
         );
@@ -1004,7 +1032,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       await migrator.query(
         "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
@@ -1034,7 +1064,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         await migrator.query('UPDATE cc.google_connection SET active=false');
         try {
@@ -1058,7 +1090,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const recorder = recordingStorage();
         await migrator.query(
@@ -1111,7 +1145,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const recorder = recordingStorage();
         await migrator.query(
@@ -1166,7 +1202,10 @@ export async function qualifyDeviceUpdates({
         ).toISOString();
         selections.set(selectionKey, raw({ additions: ['b3-a'], changedAt }));
         const error = await rejects(
-          updates.preview(session, current, { ...key, changes: [{ field: 'annotatedLocation', mode: 'clear' }] }),
+          updates.preview(session, current, {
+            ...key,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          }),
           'selection-expired',
           409,
         );
@@ -1209,7 +1248,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const changedAt = new Date(
           Date.now() - 13 * 60 * 60 * 1000,
@@ -1233,7 +1274,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       const before = (
         await migrator.query(
@@ -1497,7 +1540,10 @@ export async function qualifyDeviceUpdates({
         };
         try {
           await assert.rejects(
-            controller.preview(request, { ...controllerKey, changes: [{ field: 'annotatedLocation', mode: 'clear' }] }),
+            controller.preview(request, {
+              ...controllerKey,
+              changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+            }),
             (error) => {
               assert.equal(
                 typeof error?.getStatus,
@@ -1555,7 +1601,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         await migrator.query(
           "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
@@ -1597,7 +1645,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const revoked = new DeviceUpdates(database, cache, {
           async storeJson() {
@@ -1647,7 +1697,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const left = await connect('cc-app', 'cc-app');
         const right = await connect('cc-app', 'cc-app');
@@ -1690,7 +1742,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const artifactId = await storage.storeJson({
           preview: { previewId: other.previewId },
@@ -1799,7 +1853,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'Room 12' }],
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const holder = await connect('cc-migrator', 'cc-app');
         const caller = await connect('cc-app', 'cc-app');
@@ -1890,7 +1946,10 @@ export async function qualifyDeviceUpdates({
             await caller.query('SELECT pg_backend_pid() AS pid')
           ).rows[0].pid;
           pending = new DeviceUpdates(databaseFor(caller), cache, storage)
-            .preview(session, current, { ...key, changes: [{ field: 'annotatedLocation', mode: 'clear' }] })
+            .preview(session, current, {
+              ...key,
+              changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+            })
             .then(
               (value) => ({ value }),
               (error) => ({ error }),
@@ -2083,7 +2142,8 @@ export async function qualifyDeviceUpdates({
     await check(
       'U6 a two-field preview answers six eligible devices and eleven field changes',
       async () => {
-        for (const id of u6Devices) await insertFieldDevice(id, { user: 'Old user' });
+        for (const id of u6Devices)
+          await insertFieldDevice(id, { user: 'Old user' });
         // The sixth device already holds the Notes value, so one of its two rows is unchanged.
         await insertFieldDevice('u6-f', { user: 'Old user', notes: 'Room 12' });
         fresh(u6Devices);
@@ -2169,7 +2229,11 @@ export async function qualifyDeviceUpdates({
           }
           cursor = page.nextCursor ?? undefined;
         } while (cursor);
-        assert.equal(seen.size, 12, 'Twelve field rows in twelve cursor steps.');
+        assert.equal(
+          seen.size,
+          12,
+          'Twelve field rows in twelve cursor steps.',
+        );
       },
     );
 
@@ -2184,8 +2248,16 @@ export async function qualifyDeviceUpdates({
         const contractKey = { gridId: 'devices', tabId: randomUUID() };
         const request = { session, correlationId: randomUUID() };
         const overLimit = [
-          ['annotatedLocation', 'x'.repeat(201), 'Annotated location holds 1 to 200 characters.'],
-          ['annotatedUser', 'x'.repeat(101), 'Annotated user holds 1 to 100 characters.'],
+          [
+            'annotatedLocation',
+            'x'.repeat(201),
+            'Annotated location holds 1 to 200 characters.',
+          ],
+          [
+            'annotatedUser',
+            'x'.repeat(101),
+            'Annotated user holds 1 to 100 characters.',
+          ],
           ['notes', 'x'.repeat(501), 'Notes holds 1 to 500 characters.'],
         ];
         for (const [field, value, message] of overLimit)
@@ -2213,7 +2285,9 @@ export async function qualifyDeviceUpdates({
         const supplementary = '\u{1D306}'.repeat(100);
         const accepted = await updates.preview(session, current, {
           ...key,
-          changes: [{ field: 'annotatedUser', mode: 'replace', value: supplementary }],
+          changes: [
+            { field: 'annotatedUser', mode: 'replace', value: supplementary },
+          ],
         });
         assert.equal(accepted.fieldChanges, 6);
         await assert.rejects(

@@ -14,7 +14,11 @@ import {
   manifestDigest,
   previewTargets,
 } from './device-updates.ts';
-import { parseIntCursor, previewTargetRow, targetCursor } from './device-update-rows.ts';
+import {
+  parseIntCursor,
+  previewTargetRow,
+  targetCursor,
+} from './device-update-rows.ts';
 
 const customer = 'C0123456';
 const actor = '11111111-1111-4111-8111-111111111111';

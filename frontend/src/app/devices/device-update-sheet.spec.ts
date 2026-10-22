@@ -34,7 +34,9 @@ const selection = (
 const preview: DeviceUpdatePreview = {
   previewId,
   displayId: 'PV-006',
-  changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'North lab' }],
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   fieldChanges: 6,
   selected: 6,
   eligible: 6,
@@ -110,7 +112,9 @@ const job: JobDetail = {
   failure: null,
   confirmedBy: { id: principal, displayName: 'District operator' },
   previewDisplayId: 'PV-006',
-  changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'North lab' }],
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
   targetOrgUnitPaths: ['/School A'],

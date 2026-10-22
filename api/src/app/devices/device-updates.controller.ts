@@ -32,7 +32,10 @@ const previewIdSchema = z.uuid();
 const targetsQuerySchema = z.strictObject({
   disposition: z.enum(['eligible', 'unchanged', 'excluded']).optional(),
   // The cursor names the previous target: its device ordinal and its field position.
-  cursor: z.string().regex(/^\d{1,9}:\d{1,9}$/).optional(),
+  cursor: z
+    .string()
+    .regex(/^\d{1,9}:\d{1,9}$/)
+    .optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
@@ -112,8 +115,7 @@ export class DeviceUpdatesController {
     if (parsed.success) return parsed.data;
     throw new BadRequestException({
       reason: 'invalid-change',
-      message:
-        parsed.error.issues[0]?.message ?? 'The request is invalid.',
+      message: parsed.error.issues[0]?.message ?? 'The request is invalid.',
     });
   }
 

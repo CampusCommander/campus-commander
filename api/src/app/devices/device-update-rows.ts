@@ -28,10 +28,7 @@ export function parseIntCursor(cursor: string | undefined): {
 }
 
 /** The cursor of one frozen target row: its device ordinal and its field position. */
-export function targetCursor(
-  ordinal: unknown,
-  field: unknown,
-): string | null {
+export function targetCursor(ordinal: unknown, field: unknown): string | null {
   const index = DEVICE_UPDATE_FIELD_ORDER.indexOf(
     field as (typeof DEVICE_UPDATE_FIELD_ORDER)[number],
   );

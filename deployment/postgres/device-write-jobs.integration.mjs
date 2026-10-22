@@ -304,7 +304,13 @@ export async function qualifyDeviceWriteJobs({
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
             baseline_value,requested_value,batch,status)
           VALUES($1,$2,$3,$4,'/School A',NULL,NULL,$5,'pending')`,
-          [jobId, index + 1, deviceId, `SN-${deviceId}`, Math.floor(index / batchSize)],
+          [
+            jobId,
+            index + 1,
+            deviceId,
+            `SN-${deviceId}`,
+            Math.floor(index / batchSize),
+          ],
         );
         // One row per field holds the requested and observed values (addendum section 2).
         for (const row of fieldRows)

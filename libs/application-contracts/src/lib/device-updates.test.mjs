@@ -84,7 +84,10 @@ test('an over-limit value answers the preview request with the field label', () 
     changes: [change('notes', 'replace', 'x'.repeat(501))],
   });
   assert.equal(over.success, false);
-  assert.match(over.error.issues[0].message, /Notes holds 1 to 500 characters\./);
+  assert.match(
+    over.error.issues[0].message,
+    /Notes holds 1 to 500 characters\./,
+  );
   const empty = deviceUpdatePreviewRequestSchema.safeParse({
     ...key,
     changes: [change('annotatedUser', 'replace', '   ')],
@@ -96,7 +99,10 @@ test('an over-limit value answers the preview request with the field label', () 
 test('a clear change takes no value and a move takes a path', () => {
   const ok = (body) => deviceUpdatePreviewRequestSchema.safeParse(body).success;
   assert.equal(
-    ok({ ...key, changes: [change('annotatedLocation', 'replace', 'Room 12')] }),
+    ok({
+      ...key,
+      changes: [change('annotatedLocation', 'replace', 'Room 12')],
+    }),
     true,
   );
   assert.equal(

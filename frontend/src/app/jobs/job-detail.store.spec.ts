@@ -39,7 +39,9 @@ const detail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-006',
-  changes: [{ field: 'annotatedLocation', mode: 'replace', value: 'North lab' }],
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
   targetOrgUnitPaths: ['/School A'],

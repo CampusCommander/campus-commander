@@ -375,7 +375,13 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
         VALUES($1,$2,$3,$4,'/School A',NULL,NULL,$5,'pending')`,
-        [jobId, index + 1, deviceId, `SN-${deviceId}`, Math.floor(index / batchSize)],
+        [
+          jobId,
+          index + 1,
+          deviceId,
+          `SN-${deviceId}`,
+          Math.floor(index / batchSize),
+        ],
       );
       await admin(
         `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,

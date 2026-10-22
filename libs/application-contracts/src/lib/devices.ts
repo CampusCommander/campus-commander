@@ -457,7 +457,8 @@ export const deviceUpdateChangeSchema = z
         );
       return;
     }
-    if (change.mode === 'move') return refuse(`${label} offers Replace or Clear.`);
+    if (change.mode === 'move')
+      return refuse(`${label} offers Replace or Clear.`);
     if (change.mode === 'clear') {
       if (change.value !== undefined)
         return refuse(`A Clear change of ${label} carries no value.`);

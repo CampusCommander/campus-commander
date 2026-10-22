@@ -311,8 +311,7 @@ export class DeviceActions {
     const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
     // A command or status preview pages by the device ordinal alone, because each device is one row.
     const parsed = Number(cursor ?? -1);
-    const after =
-      Number.isInteger(parsed) && parsed >= -1 ? parsed : -1;
+    const after = Number.isInteger(parsed) && parsed >= -1 ? parsed : -1;
     const sql: SqlStatement = {
       text: `SELECT ordinal,device_id,serial_number,org_unit_path,observed_value,
         observed_at,disposition,exclusion_reason FROM cc.device_update_preview_targets
