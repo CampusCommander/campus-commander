@@ -117,6 +117,45 @@ export async function qualifyDevicesApi({
       ).matching,
       150,
     );
+    // Annotated user: a stored value reaches the row, the text filter, and the sort (U1).
+    const annotatedUser = 'member-0@example.org';
+    const named = await query({
+      predicates: [
+        { field: 'annotatedUser', operator: 'equals', value: annotatedUser },
+      ],
+    });
+    assert.equal(named.matching, 1);
+    assert.equal(named.rows.length, 1);
+    assert.equal(named.rows[0].deviceId, 'synthetic-device-0');
+    assert.equal(named.rows[0].annotatedUser, annotatedUser);
+    const byUser = await query({
+      sort: { field: 'annotatedUser', direction: 'asc' },
+      limit: 1000,
+    });
+    assert.equal(byUser.rows.length, 450);
+    const users = byUser.rows.map((row) => row.annotatedUser);
+    assert.deepEqual(
+      users.filter((value) => value !== null),
+      users.filter((value) => value !== null).sort(),
+    );
+    assert.equal(users.filter((value) => value !== null).length, 50);
+    assert.equal(users.at(-1), null);
+    assert.equal(byUser.rows[0].annotatedUser, annotatedUser);
+    // A device without the value answers null through both the text filter and its row.
+    assert.equal(
+      (await query({})).rows.find((row) => row.deviceId === 'synthetic-device-1')
+        .annotatedUser,
+      null,
+    );
+    const emptyUsers = await query({
+      predicates: [{ field: 'annotatedUser', operator: 'isEmpty' }],
+      limit: 1000,
+    });
+    assert.equal(emptyUsers.matching, 400);
+    assert.equal(
+      emptyUsers.rows.every((row) => row.annotatedUser === null),
+      true,
+    );
     const disabled = await query({
       predicates: [{ field: 'status', operator: 'is', values: ['DISABLED'] }],
       limit: 1000,

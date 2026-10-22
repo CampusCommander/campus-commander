@@ -346,6 +346,7 @@ const rowFor = (deviceId: string, stale: boolean): DeviceRow => ({
   orgUnitPath: '/',
   lastContact: null,
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status: 'ACTIVE',
   battery: { status: 'no-report' },

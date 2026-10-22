@@ -28,6 +28,7 @@ const fleet = Array.from({ length: 450 }, (_, index) => ({
   orgUnitPath: ['/School A', '/School B', '/'][index % 3],
   lastSync: new Date(Date.UTC(2026, 9, 5, 16) - index * 60_000).toISOString(),
   ...(index % 4 === 0 ? { annotatedLocation: 'Science wing' } : {}),
+  ...(index % 9 === 0 ? { annotatedUser: `member-${index}@example.org` } : {}),
   ...(index === 0 ? { notes: 'Review battery during support visit' } : {}),
   status:
     index % 10 === 0

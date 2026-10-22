@@ -23,6 +23,7 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
   orgUnitPath: '/School A',
   lastContact: '2026-10-19T11:58:00Z',
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   battery: {
     status: 'reported',
