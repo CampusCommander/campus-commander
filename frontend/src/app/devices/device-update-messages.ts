@@ -66,8 +66,6 @@ export interface UpdateDeviceAvailability {
   accessLoading: boolean;
   /** The permission note of the family. Send command and Change status set their own. */
   permissionMessage?: string;
-  /** The note of a person with no selected device. */
-  selectionMessage?: string;
 }
 
 function accessFailureText(failure: GoogleFailure | null): string {
@@ -98,9 +96,7 @@ export function updateDeviceNote(
     };
   if (availability.selectionCount === 0)
     return {
-      text:
-        availability.selectionMessage ??
-        'Select one or more devices to update.',
+      text: 'Select one or more devices to update.',
       actions: [],
       error: false,
     };
