@@ -5,6 +5,7 @@ import path from 'node:path';
 import { mockApi } from './device-update-mock';
 import {
   deniedOrgUnitTree,
+  orgUnitTree,
   type SimulatedDevice,
 } from './device-update-u6-simulator';
 
@@ -299,6 +300,131 @@ test('completion step 6: without the read scope the field is disabled and names 
   await expectNoAxeViolations(page);
 });
 
+test('regression: a retained Move waits for the organization unit read', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  let granted = true;
+  const mock = await mockApi(page, seedDevices(), {
+    orgUnitsAnswer: () => (granted ? orgUnitTree : deniedOrgUnitTree),
+  });
+  await openDevices(page);
+  let sheet = await openSheet(page);
+
+  // Choose a destination while the tree read is granted.
+  await chooseMode(page, sheet, 'orgUnitPath', 'Move to an organization unit');
+  await picker(page)
+    .getByRole('button', { name: 'Expand Chrome Devices', exact: true })
+    .click();
+  await picker(page)
+    .getByRole('treeitem', { name: 'Cart Devices', exact: true })
+    .click();
+  await picker(page)
+    .getByRole('button', { name: 'Choose', exact: true })
+    .click();
+  await expect(picker(page)).toBeHidden();
+  await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(sheet).not.toHaveClass(/is-open/);
+
+  // The next read is refused; the field keeps the destination and disables.
+  granted = false;
+  sheet = await openSheet(page);
+  const orgUnit = field(sheet, 'orgUnitPath');
+  const save = sheet.getByRole('button', { name: 'Save and preview' });
+  await expect(orgUnit.locator('.mat-form-field-disabled')).toBeVisible();
+  await expect(orgUnit.locator('textarea')).toHaveValue(DESTINATION);
+  await expect(orgUnit).toContainText(
+    'Campus Commander cannot prepare this move until the organization unit read is granted.',
+  );
+  await expect(
+    orgUnit.getByRole('button', { name: 'Discard move', exact: true }),
+  ).toBeVisible();
+  await expect(
+    orgUnit.getByRole('button', { name: 'Choose organization unit' }),
+  ).toBeDisabled();
+  await expect(save).toBeDisabled();
+  await expect(picker(page)).toHaveCount(0);
+  // No preview left the page with the disabled Move.
+  expect(mock.posted.changes).toBeUndefined();
+  await expectNoAxeViolations(page);
+  await screenshot(page, 'f3-r1-blocked-move.png');
+
+  // A granted Recheck lets the retained destination travel unchanged.
+  granted = true;
+  await orgUnit.getByRole('button', { name: 'Recheck', exact: true }).click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Review 5 device updates' }),
+  ).toBeVisible();
+  expect(mock.posted.changes).toEqual([
+    { field: 'orgUnitPath', mode: 'move', value: DESTINATION },
+  ]);
+});
+
+test('regression: closing a reopened picker returns focus to the Destination button', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockApi(page, seedDevices());
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await openDevices(page);
+  const sheet = await openSheet(page);
+
+  // The first pick returns focus to the mode select.
+  await chooseMode(page, sheet, 'orgUnitPath', 'Move to an organization unit');
+  await picker(page)
+    .getByRole('button', { name: 'Expand Chrome Devices', exact: true })
+    .click();
+  await picker(page)
+    .getByRole('treeitem', { name: 'Cart Devices', exact: true })
+    .click();
+  await picker(page)
+    .getByRole('button', { name: 'Choose', exact: true })
+    .click();
+  await expect(picker(page)).toBeHidden();
+  await expect(field(sheet, 'orgUnitPath').getByRole('combobox')).toBeFocused();
+
+  const destinationButton = field(sheet, 'orgUnitPath').getByRole('button', {
+    name: 'Choose organization unit',
+  });
+  const reopen = async () => {
+    await destinationButton.click();
+    await expect(picker(page)).toBeVisible();
+  };
+
+  // Cancel returns focus to the Destination button.
+  await reopen();
+  await picker(page)
+    .getByRole('button', { name: 'Cancel', exact: true })
+    .click();
+  await expect(picker(page)).toBeHidden();
+  await expect(destinationButton).toBeFocused();
+
+  // Choose returns it the same way.
+  await reopen();
+  await picker(page)
+    .getByRole('button', { name: 'Choose', exact: true })
+    .click();
+  await expect(picker(page)).toBeHidden();
+  await expect(destinationButton).toBeFocused();
+
+  // Escape closes the picker only.
+  await reopen();
+  await page.keyboard.press('Escape');
+  await expect(picker(page)).toBeHidden();
+  await expect(destinationButton).toBeFocused();
+  await expect(sheet).toHaveClass(/is-open/);
+
+  // A click on the scrim reaches the same Cancel path.
+  await reopen();
+  await page.mouse.click(24, 200);
+  await expect(picker(page)).toBeHidden();
+  await expect(destinationButton).toBeFocused();
+  expect(pageErrors).toEqual([]);
+});
+
 test('captures the approved states of PNG 03 and PNG 05 at 1440 x 900 in the light theme', async ({
   page,
 }) => {
@@ -310,17 +436,21 @@ test('captures the approved states of PNG 03 and PNG 05 at 1440 x 900 in the lig
   });
   const sheet = await openSheet(page);
 
-  // 03: the picker over the sheet, before a unit is chosen.
+  // 03: the picker over the sheet, searched by path as the approved screen shows it.
   await chooseMode(page, sheet, 'orgUnitPath', 'Move to an organization unit');
   await expect(picker(page)).toBeVisible();
-  await picker(page)
-    .getByRole('button', { name: 'Expand Chrome Devices', exact: true })
-    .click();
+  await picker(page).locator('input[type="search"]').fill('cart');
+  await expect(
+    picker(page).getByRole('treeitem', { name: 'Cart Devices', exact: true }),
+  ).toBeVisible();
   // A path break paints after each slash; the screenshot shows the wrapped path.
   await screenshot(page, 'f3-03-ou-picker-dialog.png');
   await picker(page)
     .getByRole('treeitem', { name: 'Cart Devices', exact: true })
     .click();
+  await expect(
+    picker(page).getByText(`Selected: ${DESTINATION}`),
+  ).toBeVisible();
   await screenshot(page, 'f3-03b-ou-picker-selected.png');
   await picker(page)
     .getByRole('button', { name: 'Choose', exact: true })

@@ -28,6 +28,8 @@ export const grants = [
 export interface MockOptions {
   /** The answer of `GET /api/devices/updates/org-units`. Defaults to the granted tree. */
   orgUnits?: unknown;
+  /** Answers each read, so a test can change the grant between two openings. */
+  orgUnitsAnswer?: () => unknown;
 }
 
 export interface Mock {
@@ -62,7 +64,11 @@ export async function mockApi(
     }
     // F3 reads the tree of the picker, not the unit list of the grid filter.
     if (method === 'GET' && routePath === '/api/devices/updates/org-units')
-      return route.fulfill({ json: options.orgUnits ?? orgUnitTree });
+      return route.fulfill({
+        json: options.orgUnitsAnswer
+          ? options.orgUnitsAnswer()
+          : (options.orgUnits ?? orgUnitTree),
+      });
     if (
       method === 'GET' &&
       routePath === `/api/devices/updates/previews/${previewId}`
