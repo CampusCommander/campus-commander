@@ -18,6 +18,7 @@ const columns = {
   status: 'd.status',
   lastContact: 'd.last_contact',
   annotatedLocation: 'd.annotated_location',
+  annotatedUser: 'd.annotated_user',
   notes: 'd.notes',
 } as const;
 /** A failed telemetry read in the published sync makes every battery unavailable. */
@@ -42,7 +43,7 @@ const groupOrder: Record<DeviceGroupField, string> = {
 const from =
   'FROM cc.device_sync_state s JOIN cc.devices d ON d.customer_id=s.customer_id';
 
-export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.notes,d.status,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at,d.last_entity_sync`;
+export const deviceColumns = `d.device_id,d.serial_number,d.model,d.asset_tag,d.org_unit_path,d.last_contact,d.annotated_location,d.annotated_user,d.notes,d.status,${batteryStatus} AS battery_status,d.battery_health,d.battery_capacity_percent,d.battery_reported_at,d.last_entity_sync`;
 
 export interface SqlStatement {
   text: string;
@@ -244,6 +245,7 @@ export function deviceRowsByIdSql(
     ['d.org_unit_path', 'org_unit_path'],
     ['d.last_contact', 'last_contact'],
     ['d.annotated_location', 'annotated_location'],
+    ['d.annotated_user', 'annotated_user'],
     ['d.notes', 'notes'],
     ['d.status', 'status'],
     [batteryStatus, 'battery_status'],
@@ -315,6 +317,7 @@ export function deviceRow(
     orgUnitPath: row['org_unit_path'],
     lastContact: iso(row['last_contact']),
     annotatedLocation: row['annotated_location'],
+    annotatedUser: row['annotated_user'],
     notes: row['notes'],
     status: row['status'],
     battery:

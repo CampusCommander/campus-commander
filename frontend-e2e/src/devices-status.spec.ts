@@ -29,6 +29,7 @@ const rows = fixtures.map(({ serialNumber, status }, index) => ({
   orgUnitPath: '/School A',
   lastContact: '2026-10-19T11:58:00Z',
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status,
   battery: {

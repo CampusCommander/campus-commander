@@ -176,6 +176,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/jobs/requesters', 'api'],
       ['GET', '/api/jobs/events', 'api'],
       ['GET', '/api/devices/updates/access', 'api'],
+      ['GET', '/api/devices/updates/org-units', 'api'],
       ['POST', '/api/devices/updates/access/check', 'api'],
       ['POST', '/api/devices/updates/previews', 'api'],
       ['GET', `/api/devices/updates/previews/${id}`, 'api'],

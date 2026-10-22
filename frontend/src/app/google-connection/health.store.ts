@@ -20,7 +20,7 @@ import {
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
 
-/** The five capabilities that a fresh installation grants (GOOGLE_SETUP_SCOPES). */
+/** The six capabilities that a fresh installation grants (GOOGLE_SETUP_SCOPES). */
 const SETUP_CAPABILITY_IDS = new Set(
   GOOGLE_CAPABILITIES.filter((capability) =>
     GOOGLE_SETUP_SCOPES.includes(capability.scope),
@@ -135,8 +135,7 @@ export class GoogleHealthStore implements OnDestroy {
     if (health.backgroundFailure)
       return 'Google background access needs attention';
     if (this.expired()) return 'Google check expired';
-    // The School OU scope is disputed and a fresh installation does not grant
-    // it, so its row never counts as needing attention (owner decision 2026-10-19).
+    // Every setup capability counts, including the School OU scope that the device OU picker reads.
     const setup = health.capabilities.filter((item) =>
       SETUP_CAPABILITY_IDS.has(item.capability),
     );

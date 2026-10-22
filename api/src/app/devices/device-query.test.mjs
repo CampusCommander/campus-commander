@@ -135,6 +135,46 @@ test('empty, date, and battery sorts use fixed expressions', () => {
   );
 });
 
+test('the annotated user filters, sorts, and reads from its own column', () => {
+  const { rows } = query({
+    predicates: [
+      { field: 'annotatedUser', operator: 'contains', value: 'avery' },
+    ],
+    sort: { field: 'annotatedUser', direction: 'desc' },
+  });
+  assert.match(rows.text, /d\.annotated_user ILIKE \$2/);
+  assert.match(
+    rows.text,
+    /ORDER BY d\.annotated_user DESC NULLS LAST,d\.device_id DESC/,
+  );
+  assert.ok(deviceColumns.includes('d.annotated_user'));
+  assert.match(
+    deviceRowsByIdSql('C0123456', [{ deviceId: 'd1', version: null }]).text,
+    /d\.annotated_user/,
+  );
+  const row = deviceRow(
+    {
+      device_id: 'd1',
+      serial_number: 'S',
+      model: null,
+      asset_tag: null,
+      org_unit_path: '/',
+      last_contact: null,
+      annotated_location: null,
+      annotated_user: 'avery.chen@example.org',
+      notes: null,
+      status: null,
+      battery_status: 'no-report',
+      battery_health: null,
+      battery_capacity_percent: null,
+      battery_reported_at: null,
+      last_entity_sync: new Date('2026-10-05T12:00:00Z'),
+    },
+    Date.parse('2026-10-05T00:00:00Z'),
+  );
+  assert.equal(row.annotatedUser, 'avery.chen@example.org');
+});
+
 test('a status filter binds the chosen Google values as text', () => {
   const { rows, count } = query({
     predicates: [{ field: 'status', operator: 'is', values: ['DISABLED'] }],
@@ -172,6 +212,7 @@ test('the row mapping passes the Google status through', () => {
     org_unit_path: '/',
     last_contact: null,
     annotated_location: null,
+    annotated_user: null,
     notes: null,
     status: 'RETIRED',
     battery_status: 'no-report',
@@ -194,6 +235,7 @@ test('rows map database values to the device contract', () => {
     org_unit_path: '/School A',
     last_contact: new Date('2026-10-05T12:00:00Z'),
     annotated_location: null,
+    annotated_user: null,
     notes: null,
     status: null,
     battery_status: 'reported',
@@ -481,6 +523,7 @@ test('rows report freshness against the cutoff and details report removal', () =
     org_unit_path: '/',
     last_contact: null,
     annotated_location: null,
+    annotated_user: null,
     notes: null,
     status: null,
     battery_status: 'no-report',
@@ -609,6 +652,7 @@ test('removed devices never read as stale', () => {
     org_unit_path: '/',
     last_contact: null,
     annotated_location: null,
+    annotated_user: null,
     notes: null,
     status: null,
     battery_status: 'no-report',

@@ -194,18 +194,18 @@ it('shows six capability checks and one pre-filled delegation link', () => {
   expect(pre?.textContent?.trim()).toBe(scopes.join(',\n'));
 });
 
-it('keeps an unverified school OU scope out of the list and the link', () => {
+it('lists the school OU scope before Google verifies it', () => {
   const verified = GOOGLE_CAPABILITIES.filter(
     (capability) => capability.id !== 'school-ou-references',
   ).map((capability) => capability.id);
   const { element, href, scopes } = diagnosticsPage(verified);
-  expect(scopes).not.toContain(
+  expect(scopes).toContain(
     'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
   );
-  expect(href).not.toContain('orgunit');
-  expect(element.textContent).toContain('Add these 5 scopes');
+  expect(href).toContain('orgunit');
+  expect(element.textContent).toContain('Add these 6 scopes');
   expect(
     element.querySelector('pre[aria-label="Required Google capability scopes"]')
       ?.textContent,
-  ).not.toContain('orgunit');
+  ).toContain('orgunit');
 });

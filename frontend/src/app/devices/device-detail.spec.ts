@@ -14,6 +14,7 @@ const device = (extra: Partial<DeviceDetail> = {}): DeviceDetail => ({
   orgUnitPath: '/School A',
   lastContact: '2026-10-05T11:58:00.000Z',
   annotatedLocation: 'Science wing',
+  annotatedUser: null,
   notes: null,
   status: 'ACTIVE',
   battery: {
@@ -115,6 +116,31 @@ it('shows the Google battery class, capacity, and recent reports', async () => {
   ).toHaveLength(2);
   expect(element.textContent).toContain('No capacity');
   expect(element.textContent).toContain('Read from Google');
+});
+
+it('shows Annotated user between Annotated location and Notes', async () => {
+  const { element } = await setup({
+    detail: device({ annotatedUser: 'liam.foster@example.org' }),
+  });
+  expect(
+    [...element.querySelectorAll('.annotation')].map((item) => [
+      item.querySelector('dt')?.textContent?.trim(),
+      item.querySelector('dd')?.textContent?.trim(),
+    ]),
+  ).toEqual([
+    ['Annotated location', 'Science wing'],
+    ['Annotated user', 'liam.foster@example.org'],
+    ['Notes', 'Not set'],
+  ]);
+});
+
+it('shows Not set for a device without an Annotated user', async () => {
+  const { element } = await setup({ detail: device() });
+  const row = [...element.querySelectorAll('.annotation')].find(
+    (item) =>
+      item.querySelector('dt')?.textContent?.trim() === 'Annotated user',
+  );
+  expect(row?.querySelector('dd')?.textContent?.trim()).toBe('Not set');
 });
 
 it('names a removed device', async () => {

@@ -67,20 +67,39 @@ export async function requireDeviceUpdateActions(
   );
 }
 
-/** Reconcile reads one job and starts one write flow, so it requires both actions (design 469). */
-export const RECONCILE_ACTIONS = ['jobs:read', 'devices:write'] as const;
+/**
+ * Reconcile of an update operation requires `jobs:read` and `devices:write` (design 469).
+ * Reconcile of a status operation requires `jobs:read` and `devices:status` (design section 6).
+ * The read check runs before the job lookup. The write check runs after the operation lookup.
+ * A command operation has no Reconcile, so it has no list.
+ */
+export const RECONCILE_READ_ACTIONS = ['jobs:read'] as const;
+export const RECONCILE_UPDATE_ACTIONS = ['devices:write'] as const;
+export const RECONCILE_STATUS_ACTIONS = ['devices:status'] as const;
+
+/** One Reconcile check: the read of the job, or the write check of the operation kind. */
+export type ReconcileCheck = 'read' | 'update' | 'status';
+
+/** The action list of one Reconcile check. */
+export function reconcileActions(check: ReconcileCheck): readonly Action[] {
+  if (check === 'read') return RECONCILE_READ_ACTIONS;
+  return check === 'status'
+    ? RECONCILE_STATUS_ACTIONS
+    : RECONCILE_UPDATE_ACTIONS;
+}
 
 export async function requireReconcileActions(
   auth: DeviceUpdateAuthorizer,
   session: SessionResponse,
   customerId: string,
   correlationId: string,
+  check: ReconcileCheck,
 ): Promise<void> {
-  for (const action of RECONCILE_ACTIONS)
-    await auth.authorize(
-      session,
-      action,
-      { kind: 'district', customerId },
-      correlationId,
-    );
+  await requireDeviceActions(
+    auth,
+    session,
+    customerId,
+    correlationId,
+    reconcileActions(check),
+  );
 }

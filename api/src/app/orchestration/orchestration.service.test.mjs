@@ -275,6 +275,49 @@ test('startDeviceUpdateReconcile deploys and starts the packaged reconcile flow'
   }
 });
 
+test('startDeviceCommandPoll deploys and starts the packaged poll flow', async () => {
+  const layout = await packagedLayout();
+  const stub = await kestraStub();
+  try {
+    const orchestration = await starter(stub);
+    process.chdir(layout);
+    let executionId;
+    try {
+      executionId = await orchestration.startDeviceCommandPoll({
+        customerId: identity.customerId,
+        jobId: identity.jobId,
+        leaseId: identity.dispatchToken,
+        correlationId: identity.correlationId,
+      });
+    } catch (error) {
+      assert.fail(`startDeviceCommandPoll failed: ${error.message}`);
+    }
+    const flow = stub.requests.find(
+      (request) =>
+        request.method === 'POST' && request.url === '/api/v1/main/flows',
+    );
+    assert.ok(flow, 'The starter deployed the flow.');
+    assert.match(flow.body, /^id: device_command_poll$/m);
+    const [execution] = executionRequests(stub.requests);
+    assert.ok(execution, 'The starter started an execution.');
+    assert.equal(
+      execution.url,
+      '/api/v1/main/executions/campus.application/device_command_poll',
+    );
+    assert.equal(field(execution.body, 'customerId'), identity.customerId);
+    assert.equal(field(execution.body, 'jobId'), identity.jobId);
+    assert.equal(field(execution.body, 'leaseId'), identity.dispatchToken);
+    assert.equal(
+      field(execution.body, 'correlationId'),
+      identity.correlationId,
+    );
+    assert.equal(executionId, execution.executionId);
+  } finally {
+    process.chdir(repo);
+    await stub.close();
+  }
+});
+
 test('startDeviceUpdate accepts a valid job above 1,000 batches', async () => {
   const layout = await packagedLayout();
   const stub = await kestraStub();

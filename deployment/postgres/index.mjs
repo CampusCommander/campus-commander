@@ -299,6 +299,11 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,text,jsonb,integer),
         cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
         cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
+        cc.due_device_command_polls(text),
+        cc.record_device_command_poll_start(text,uuid,uuid,text),
+        cc.release_device_command_poll(text,uuid,uuid),
+        cc.claim_device_command_polls(text,uuid,uuid,uuid),
+        cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
         cc.job_reader(uuid,integer),
         cc.record_job_activity_seen(uuid,integer) TO ${role}`);
     }

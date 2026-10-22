@@ -2500,6 +2500,21 @@ async function runCatalog(context) {
         ).rowCount === 1,
       rec.observations['actions.review-observer'],
     );
+    // U2: the organization unit tree asks for every update action, so a person
+    // who holds devices:read alone is refused, and the refusal comes from the
+    // permission guard rather than from Google.
+    const treeAsReader = await api.call(
+      readerA,
+      '/api/devices/updates/org-units',
+    );
+    rec.check(
+      'A holds devices:read alone, and the organization unit tree answers 403',
+      treeAsReader.status === 403,
+      {
+        status: treeAsReader.status,
+        body: treeAsReader.text.slice(0, 200),
+      },
+    );
     // The Devices stream visibility check is a Q1a item. Here the streams supply
     // the frames that item 14 names: three open streams and A's full-sync
     // projection of each step.

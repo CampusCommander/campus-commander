@@ -193,7 +193,7 @@ it('requests all six capabilities from Check Google access', async () => {
   });
 });
 
-it('does not count a failed school OU check as needing attention', async () => {
+it('counts a failed school OU check, because setup grants its scope', async () => {
   const health = initial();
   const school = health.capabilities.find(
     (item) => item.capability === 'school-ou-references',
@@ -204,10 +204,10 @@ it('does not count a failed school OU check as needing attention', async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ health }));
   const { store } = fixture(request);
   await vi.waitFor(() => expect(store.loaded()).toBe(true));
-  expect(store.summary()).toBe('Google: 5 last checks passed');
+  expect(store.summary()).toBe('Google: 1 of 6 capabilities need attention');
 });
 
-it('counts a failed setup capability out of the five', async () => {
+it('counts a failed setup capability out of the six', async () => {
   const health = initial();
   health.capabilities.find(
     (item) => item.capability === 'device-changes',
@@ -215,7 +215,7 @@ it('counts a failed setup capability out of the five', async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ health }));
   const { store } = fixture(request);
   await vi.waitFor(() => expect(store.loaded()).toBe(true));
-  expect(store.summary()).toBe('Google: 1 of 5 capabilities need attention');
+  expect(store.summary()).toBe('Google: 1 of 6 capabilities need attention');
 });
 
 it('lists the setup scopes plus every verified scope once in the delegation link', async () => {
@@ -239,7 +239,7 @@ it('lists the setup scopes plus every verified scope once in the delegation link
   expect(url.searchParams.get('dn')).toBe('example.org');
 });
 
-it('keeps an unverified school OU scope out of the delegation link', async () => {
+it('keeps an unverified school OU scope in the delegation link', async () => {
   const health = initial();
   const school = health.capabilities.find(
     (item) => item.capability === 'school-ou-references',
@@ -253,7 +253,7 @@ it('keeps an unverified school OU scope out of the delegation link', async () =>
     .get('clientScopeToAdd')!
     .split(',');
   expect(scopes).toEqual(delegationLinkScopes(GOOGLE_SETUP_SCOPES, []));
-  expect(scopes).not.toContain(SCHOOL_OU);
+  expect(scopes).toContain(SCHOOL_OU);
 });
 
 it('shows no delegation link without a client ID', async () => {
