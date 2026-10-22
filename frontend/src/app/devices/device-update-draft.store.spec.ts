@@ -122,6 +122,78 @@ it('reset removes every field and the stored draft', () => {
   ).toBeNull();
 });
 
+it('keeps a move with its path and the unit identity', () => {
+  const draft = configure();
+  draft.setMode('orgUnitPath', 'move');
+  // A Move without a destination is not yet a change (design choice 10).
+  expect(draft.changed()).toBe(false);
+  expect(draft.changes()).toEqual([]);
+  draft.setOrgUnit({
+    orgUnitId: 'ou-cart',
+    path: '/Chrome Devices/Cart Devices',
+  });
+  expect(draft.modeOf('orgUnitPath')).toBe('move');
+  expect(draft.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
+  // The stable identity of the destination survives the path (TREE-01).
+  expect(draft.orgUnitId()).toBe('ou-cart');
+  expect(draft.changes()).toEqual([
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+  ]);
+});
+
+it('restores a move with its path and identity after a refresh', () => {
+  const first = configure();
+  first.setOrgUnit({
+    orgUnitId: 'ou-cart',
+    path: '/Chrome Devices/Cart Devices',
+  });
+  TestBed.resetTestingModule();
+  const second = configure();
+  expect(second.modeOf('orgUnitPath')).toBe('move');
+  expect(second.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
+  expect(second.orgUnitId()).toBe('ou-cart');
+  expect(second.changes()).toEqual([
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+  ]);
+});
+
+it('drops the destination when the organization unit leaves Move', () => {
+  const draft = configure();
+  draft.setOrgUnit({
+    orgUnitId: 'ou-cart',
+    path: '/Chrome Devices/Cart Devices',
+  });
+  draft.setMode('orgUnitPath', 'unchanged');
+  expect(draft.valueOf('orgUnitPath')).toBe('');
+  expect(draft.orgUnitId()).toBeNull();
+  expect(draft.changed()).toBe(false);
+  expect(
+    sessionStorage.getItem(`cc.device-update-draft.${principal}`),
+  ).toBeNull();
+});
+
+it('refuses a stored move without a path', () => {
+  sessionStorage.setItem(
+    `cc.device-update-draft.${principal}`,
+    JSON.stringify({
+      fields: [{ field: 'orgUnitPath', mode: 'move', value: 'Cart Devices' }],
+    }),
+  );
+  const draft = configure();
+  expect(draft.changed()).toBe(false);
+  expect(draft.storageError()).toBe(
+    'This tab cannot restore the device update draft. Check each field before saving.',
+  );
+});
+
 it('does not restore the draft of another person', () => {
   const first = configure('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
   first.setMode('notes', 'replace');

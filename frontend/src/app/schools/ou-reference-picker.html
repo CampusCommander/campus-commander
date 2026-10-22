@@ -11,6 +11,7 @@
   <div
     role="treeitem"
     [attr.data-ou-id]="row.unit.id"
+    [attr.aria-label]="label(row.unit)"
     [attr.tabindex]="tabId() === row.unit.id ? 0 : -1"
     [attr.aria-level]="row.level"
     [attr.aria-posinset]="row.position"
@@ -23,7 +24,7 @@
     (click)="choose(row.unit.id)"
     (keydown)="key($event, row)"
   >
-    @if (children().has(row.unit.id)) {
+    @if (!searching() && children().has(row.unit.id)) {
     <button
       mat-icon-button
       type="button"
@@ -39,15 +40,13 @@
     } @else {
     <span class="expand" aria-hidden="true"></span>
     }
-    <span class="label"
-      >{{ row.unit.parentId === null ? 'Root organizational unit' :
-      row.unit.name }}</span
-    >
+    <span class="label">{{ label(row.unit) }}</span>
   </div>
   } @empty {
   <p>
-    No organizational unit references are available. Refresh Google units before
-    selecting a scope.
+    @if (searching()) { No organization units match. } @else { No organizational
+    unit references are available. Refresh Google units before selecting a
+    scope. }
   </p>
   }
 </div>

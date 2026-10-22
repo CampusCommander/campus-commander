@@ -94,6 +94,40 @@ it('permits reference inspection but prevents selection when disabled', async ()
   expect(selected).toEqual([]);
 });
 
+it('shows a search match with its ancestors and no expansion control', async () => {
+  const { fixture, host, item } = await setup();
+  // The query is a path fragment; the match and its ancestors show, fully expanded.
+  fixture.componentRef.setInput('query', '/school a/students');
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(item('child')).toBeTruthy();
+  expect(item('a')).toBeTruthy();
+  expect(host.querySelector('[data-ou-id="b"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Expand School A"]')).toBeNull();
+  expect(item('a').getAttribute('aria-expanded')).toBe('true');
+});
+
+it('shows no row when the search matches no unit', async () => {
+  const { fixture, host } = await setup();
+  fixture.componentRef.setInput('query', 'no such unit');
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(0);
+  expect(host.textContent).toContain('No organization units match.');
+});
+
+it('reveals the selected unit inside a collapsed branch', async () => {
+  const { fixture, item } = await setup();
+  fixture.componentRef.setInput('selectedId', 'child');
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(item('child').getAttribute('aria-selected')).toBe('true');
+  expect(item('a').getAttribute('aria-expanded')).toBe('true');
+});
+
 it('reveals the focused identity after reparenting beneath a collapsed ancestor', async () => {
   const { fixture, host, item } = await setup();
   const selected: string[] = [];

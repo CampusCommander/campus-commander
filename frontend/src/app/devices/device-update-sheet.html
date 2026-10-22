@@ -192,6 +192,84 @@
         </div>
         }
 
+        <!-- Organization unit: Move into a chosen unit (record line 25, design choice 10). -->
+        <div class="field-block" data-field="orgUnitPath">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Organization unit</mat-label>
+            <mat-select
+              #orgUnitSelect
+              [value]="draft.modeOf('orgUnitPath')"
+              [disabled]="orgUnitDisabled()"
+              [attr.aria-describedby]="orgUnitNote() ? 'orgUnitPath-note' : null"
+              (selectionChange)="chooseOrgUnitMode($event.value)"
+            >
+              <mat-option value="unchanged">Leave unchanged</mat-option>
+              <mat-option value="move">Move to an organization unit</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          @if (draft.modeOf('orgUnitPath') === 'move' &&
+          draft.valueOf('orgUnitPath')) {
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Destination</mat-label>
+            <textarea
+              matInput
+              rows="1"
+              cdkTextareaAutosize
+              [cdkAutosizeMinRows]="1"
+              readonly
+              [value]="draft.valueOf('orgUnitPath')"
+            ></textarea>
+            <button
+              #destinationPicker
+              mat-icon-button
+              matSuffix
+              type="button"
+              aria-label="Choose organization unit"
+              [disabled]="orgUnitDisabled()"
+              (click)="openPicker('destination')"
+            >
+              <mat-icon fontSet="material-symbols-outlined" aria-hidden="true"
+                >account_tree</mat-icon
+              >
+            </button>
+          </mat-form-field>
+          } @if (orgUnitNote(); as note) {
+          <div
+            class="action-note"
+            [class.error]="note.error"
+            id="orgUnitPath-note"
+          >
+            <p>{{ note.text }}</p>
+            @for (action of note.actions; track action) { @if (action ===
+            'copy-scope') {
+            <button mat-button type="button" (click)="copyOrgUnitScope()">
+              Copy scope
+            </button>
+            } @else if (action === 'recheck') {
+            <button
+              mat-button
+              type="button"
+              [disabled]="orgUnitLoading()"
+              (click)="recheckOrgUnit()"
+            >
+              {{ orgUnitLoading() ? 'Checking…' : 'Recheck' }}
+            </button>
+            } }
+          </div>
+          } @if (scopeCopied()) {
+          <p role="status">{{ scopeCopied() }}</p>
+          } @if (orgUnitMoveBlocked()) {
+          <!-- The disabled field cannot remove its retained Move, so this action does (UI-07). -->
+          <div class="action-note error" id="orgUnitPath-move-note">
+            <p>{{ ORG_UNIT_MOVE_BLOCKED_NOTE }}</p>
+            <button mat-button type="button" (click)="discardOrgUnitMove()">
+              Discard move
+            </button>
+          </div>
+          }
+        </div>
+
         <p class="mt-lg">
           To remove an annotation, choose Clear value explicitly.
         </p>
@@ -263,7 +341,9 @@
           @for (target of group.rows; track target.field) {
           <tr>
             <th scope="row">{{ fieldLabel(target.field) }}</th>
-            <td>{{ observed(target) }}</td>
+            <td>
+              <app-device-path-text [text]="observed(target)" />
+            </td>
             <td class="arrow-cell" aria-hidden="true">
               <span class="material-symbols-outlined">arrow_forward</span>
             </td>
@@ -271,7 +351,10 @@
               [class.approved]="target.disposition === 'eligible'"
               [class.not-updated]="target.disposition === 'excluded'"
             >
-              {{ approved(target, modeOf(target.field)) }} @if (note(target)) {
+              <app-device-path-text
+                [text]="approved(target, modeOf(target.field))"
+              />
+              @if (note(target)) {
               <span class="line">{{ note(target) }}</span>
               }
             </td>
@@ -311,8 +394,12 @@
     <section aria-labelledby="confirm-scope-title">
       <h2 id="confirm-scope-title">{{ heading() }}</h2>
       <ul class="change-list">
-        @for (item of sentences(); track item) {
-        <li>{{ item }}</li>
+        @for (item of sentences(); track $index) {
+        <li>
+          {{ item.before }}@if (item.path) {<app-device-path-text
+            [text]="item.path"
+          />}{{ item.after }}
+        </li>
         }
       </ul>
       @if (unchanged()) {
@@ -426,3 +513,13 @@
   </div>
   }
 </section>
+
+<!-- The picker sits outside the sheet: the sheet's transform would bound a fixed dialog. -->
+<app-device-org-unit-picker
+  [open]="pickerOpen()"
+  [units]="orgUnitUnits()"
+  [deviceCount]="count() ?? 0"
+  [selectedId]="draft.orgUnitId()"
+  (chosen)="chooseOrgUnit($event)"
+  (cancelled)="cancelPicker()"
+/>

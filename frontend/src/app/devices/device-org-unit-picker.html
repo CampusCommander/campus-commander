@@ -1,0 +1,49 @@
+@if (open()) {
+<div class="picker-scrim" aria-hidden="true" (click)="cancel()"></div>
+<div class="picker-wrap">
+  <section
+    class="picker"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="ou-picker-title"
+    [cdkTrapFocus]="true"
+    (keydown)="keydown($event)"
+  >
+    <h2 id="ou-picker-title">Choose organization unit</h2>
+    <div class="picker-content">
+      <p class="current">{{ countLine() }}</p>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Find an organization unit</mat-label>
+        <input
+          #search
+          matInput
+          type="search"
+          autocomplete="off"
+          [value]="query()"
+          (input)="query.set($any($event.target).value)"
+        />
+      </mat-form-field>
+      <app-ou-reference-picker
+        [units]="units()"
+        [selectedId]="highlighted()?.id ?? null"
+        [query]="query()"
+        (selected)="select($event)"
+      />
+      @if (highlighted(); as unit) {
+      <p class="selected-path">Selected: {{ unit.path }}</p>
+      }
+    </div>
+    <div class="picker-actions">
+      <button mat-button type="button" (click)="cancel()">Cancel</button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!highlighted()"
+        (click)="choose()"
+      >
+        Choose
+      </button>
+    </div>
+  </section>
+</div>
+}

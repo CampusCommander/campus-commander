@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
-  DEVICE_UPDATE_TEXT_FIELDS,
+  DEVICE_UPDATE_FIELD_ORDER,
   ENTITY_FRESHNESS_HOURS,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewSchema,
@@ -441,22 +441,50 @@ export function confirmationHeading(preview: DeviceUpdatePreview): string {
 }
 
 /**
- * One confirmation sentence per changed field (Figma 172:2420). A Move sentence needs the
- * destination and its policy note; F3 adds it.
+ * One confirmation sentence, split so that its path can break after each slash (design
+ * note 17). `sentenceText` joins the parts for a plain sentence.
+ */
+export interface ChangeSentence {
+  before: string;
+  /** The organization unit path of a Move, wrapped for a break after each slash. */
+  path: string | null;
+  after: string;
+}
+
+/** The plain text of one confirmation sentence. */
+export function sentenceText(sentence: ChangeSentence): string {
+  return `${sentence.before}${sentence.path ?? ''}${sentence.after}`;
+}
+
+/**
+ * One confirmation sentence per changed field (Figma 172:2420). A Move sentence names the
+ * destination and its policy note.
  */
 export function changeSentence(
   change: DeviceUpdateChange,
   devices: number,
-): string {
+): ChangeSentence {
   const label = DEVICE_UPDATE_FIELD_LABELS[change.field].toLowerCase();
   const count = deviceCountText(devices);
   switch (change.mode) {
     case 'clear':
-      return `Clear the ${label} on ${count}.`;
+      return {
+        before: `Clear the ${label} on ${count}.`,
+        path: null,
+        after: '',
+      };
     case 'move':
-      return '';
+      return {
+        before: `Move ${count} into `,
+        path: change.value ?? '',
+        after: '. Destination policies apply.',
+      };
     case 'replace':
-      return `Set the ${label} to ${change.value ?? ''} on ${count}.`;
+      return {
+        before: `Set the ${label} to ${change.value ?? ''} on ${count}.`,
+        path: null,
+        after: '',
+      };
   }
 }
 
@@ -478,22 +506,19 @@ export function fieldChangeCount(
 export function changeSentences(
   preview: DeviceUpdatePreview,
   targets: readonly DeviceUpdateTarget[],
-): string[] {
-  return preview.changes
-    .map((change) =>
-      changeSentence(change, fieldChangeCount(targets, change.field)),
-    )
-    .filter((sentence) => sentence !== '');
+): ChangeSentence[] {
+  return preview.changes.map((change) =>
+    changeSentence(change, fieldChangeCount(targets, change.field)),
+  );
 }
 
 /**
- * The fields that keep their value, as the step 4 sentence names them. Only the three text
- * fields of the draft appear, because the sheet offers no other change. F3 adds
- * Organization unit to this sentence.
+ * The fields that keep their value, as the step 4 sentence names them. The four writable
+ * fields of the draft appear, because the sheet offers no other change.
  */
 export function unchangedSentence(preview: DeviceUpdatePreview): string {
   const changed = new Set(preview.changes.map((change) => change.field));
-  const labels = DEVICE_UPDATE_TEXT_FIELDS.filter(
+  const labels = DEVICE_UPDATE_FIELD_ORDER.filter(
     (field) => !changed.has(field),
   ).map((field) => DEVICE_UPDATE_FIELD_LABELS[field].toLowerCase());
   if (labels.length === 0) return '';

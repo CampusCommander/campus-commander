@@ -22,8 +22,9 @@ import { ErrorStateMatcher } from '@angular/material/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
+import { MatSelect, MatSelectModule } from '@angular/material/select';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
   jobDetailSchema,
@@ -85,14 +86,25 @@ import {
   deviceUpdateValueCounter,
   deviceUpdateValueError,
   deviceUpdateValueHint,
+  updateDeviceOrgUnitNote,
 } from './device-update-messages';
 import { DeviceUpdateProblem } from './device-update-problem';
+import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
+import { DeviceOrgUnitPicker } from './device-org-unit-picker';
+import { DevicePathText } from './device-path-text';
 
 export type SheetStep = 'edit' | 'review' | 'confirm' | 'done';
 
 /** The note of behavior item 12. The owner reviews this drafted string. */
 export const SELECTION_CHANGED_NOTE =
   'The selection changed after this preview. Edit draft to preview the new selection.';
+
+/**
+ * Why a retained Move cannot be prepared while the tree read is not granted (UI-07).
+ * The owner reviews this drafted string.
+ */
+export const ORG_UNIT_MOVE_BLOCKED_NOTE =
+  'The draft keeps this destination. Campus Commander cannot prepare this move until the organization unit read is granted.';
 
 const STEP_LABELS: readonly { id: SheetStep; label: string }[] = [
   { id: 'edit', label: 'Edit' },
@@ -129,8 +141,11 @@ class ValueErrorMatcher implements ErrorStateMatcher {
     MatButtonModule,
     MatCheckboxModule,
     MatFormFieldModule,
+    MatIconModule,
     MatInputModule,
     MatSelectModule,
+    DeviceOrgUnitPicker,
+    DevicePathText,
     DeviceUpdateProblem,
   ],
   templateUrl: './device-update-sheet.html',
@@ -175,6 +190,22 @@ export class DeviceUpdateSheet {
   protected readonly saving = signal(false);
   protected readonly saveError = signal('');
   protected readonly attempted = signal(false);
+  /** The organization unit tree, its read state, and the picker (F3). */
+  protected readonly orgUnitTree = inject(DeviceOrgUnitTreeStore);
+  protected readonly pickerOpen = signal(false);
+  protected readonly scopeCopied = signal('');
+  private readonly orgUnitSelect = viewChild<MatSelect>('orgUnitSelect');
+  /**
+   * The Destination button. The template reference names a native button, so the query
+   * reads its ElementRef explicitly; the default read returns the element without a
+   * `nativeElement`, and the focus call then fails (UI-09).
+   */
+  private readonly destinationPicker = viewChild<
+    ElementRef<HTMLButtonElement>,
+    ElementRef<HTMLButtonElement>
+  >('destinationPicker', { read: ElementRef });
+  /** The control that opened the picker, so focus returns there (UI-09). */
+  private pickerOrigin: 'select' | 'destination' = 'select';
   private readonly loadedCount = signal<number | null>(null);
   /** The selection that the frozen preview was prepared from. */
   private readonly frozenSelection = signal<string | null>(null);
@@ -183,6 +214,7 @@ export class DeviceUpdateSheet {
 
   protected readonly modal = computed(() => this.width() < 600);
   protected readonly SELECTION_CHANGED_NOTE = SELECTION_CHANGED_NOTE;
+  protected readonly ORG_UNIT_MOVE_BLOCKED_NOTE = ORG_UNIT_MOVE_BLOCKED_NOTE;
   protected readonly frozen = FROZEN_TARGETS_SENTENCE;
   protected readonly staleNote = staleWarning;
   protected readonly receiptHeading = RECEIPT_HEADING;
@@ -215,6 +247,102 @@ export class DeviceUpdateSheet {
       (entry) => entry.field === field,
     );
     return change?.mode ?? 'replace';
+  }
+
+  /** The tree as the picker reads it. It is empty until a granted read. */
+  protected readonly orgUnitUnits = computed(
+    () => this.orgUnitTree.units() ?? [],
+  );
+  /** Without a granted read the Organization unit field stays disabled (record line 51). */
+  protected readonly orgUnitDisabled = computed(
+    () => this.orgUnitTree.state() !== 'granted',
+  );
+  protected readonly orgUnitLoading = computed(() =>
+    this.orgUnitTree.loading(),
+  );
+  /** The note under the field, in the Devices write-access shape (design choice 14). */
+  protected readonly orgUnitNote = computed(() =>
+    updateDeviceOrgUnitNote(
+      this.orgUnitTree.tree(),
+      this.orgUnitTree.message(),
+    ),
+  );
+  /**
+   * A Move that the draft retained while the tree read is not granted. The disabled field
+   * cannot submit that destination, and no new preview may carry it (UI-07). The draft
+   * keeps the path, so a Recheck that grants the read uses it again.
+   */
+  protected readonly orgUnitMoveBlocked = computed(
+    () =>
+      this.draft.modeOf('orgUnitPath') === 'move' &&
+      this.draft.valueOf('orgUnitPath').length > 0 &&
+      this.orgUnitDisabled(),
+  );
+
+  /**
+   * Choosing Move opens the picker at once (design choice 10). Another mode keeps the
+   * control in its field, so the value never changes without a choice.
+   */
+  protected chooseOrgUnitMode(mode: DeviceUpdateDraftMode): void {
+    this.draft.setMode('orgUnitPath', mode);
+    if (mode === 'move') this.openPicker('select');
+  }
+
+  protected openPicker(origin: 'select' | 'destination'): void {
+    if (this.orgUnitDisabled()) return;
+    this.pickerOrigin = origin;
+    this.scopeCopied.set('');
+    this.pickerOpen.set(true);
+  }
+
+  /** Choose sets the destination and closes the dialog. */
+  protected chooseOrgUnit(unit: { id: string; path: string }): void {
+    this.draft.setOrgUnit({ orgUnitId: unit.id, path: unit.path });
+    this.closePicker();
+  }
+
+  /** Cancel on the first pick returns the field to Leave unchanged (design choice 10). */
+  protected cancelPicker(): void {
+    if (!this.draft.valueOf('orgUnitPath'))
+      this.draft.setMode('orgUnitPath', 'unchanged');
+    this.closePicker();
+  }
+
+  private closePicker(): void {
+    this.pickerOpen.set(false);
+    const origin = this.pickerOrigin;
+    afterNextRender(
+      () => {
+        if (origin === 'destination')
+          this.destinationPicker()?.nativeElement.focus();
+        else this.orgUnitSelect()?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  /** Remove a retained Move that the disabled field cannot remove itself (UI-07, UI-09). */
+  protected discardOrgUnitMove(): void {
+    this.draft.setMode('orgUnitPath', 'unchanged');
+  }
+
+  /** Copy the read scope that the denied note names (design choice 14). */
+  protected async copyOrgUnitScope(): Promise<void> {
+    const scope = this.orgUnitTree.scope();
+    if (!scope) return;
+    try {
+      await navigator.clipboard.writeText(scope);
+      this.scopeCopied.set('Copied the Google organization unit scope.');
+    } catch {
+      this.scopeCopied.set(
+        'Clipboard access is unavailable. Select and copy the scope text.',
+      );
+    }
+  }
+
+  protected recheckOrgUnit(): void {
+    this.scopeCopied.set('');
+    void this.orgUnitTree.load();
   }
 
   protected readonly count = computed<number | null>(
@@ -287,12 +415,13 @@ export class DeviceUpdateSheet {
       !this.selectionError() &&
       (this.count() ?? 0) > 0,
   );
-  /** Save and preview needs a change and no invalid value (design note 7). */
+  /** Save and preview needs a change, no invalid value, and no blocked Move (design note 7). */
   protected readonly canSave = computed(
     () =>
       this.editReady() &&
       !this.editOffline() &&
       !this.saving() &&
+      !this.orgUnitMoveBlocked() &&
       this.draft.changed() &&
       !this.invalid(),
   );
@@ -457,6 +586,10 @@ export class DeviceUpdateSheet {
     this.saveError.set('');
     this.attempted.set(false);
     this.loadedCount.set(null);
+    this.pickerOpen.set(false);
+    this.scopeCopied.set('');
+    // The field reads its own scope, so a missing grant disables it before a choice.
+    void this.orgUnitTree.load();
     afterNextRender(() => this.sheetTitle()?.nativeElement.focus(), {
       injector: this.injector,
     });
@@ -492,6 +625,7 @@ export class DeviceUpdateSheet {
     if (!this.open()) return;
     // A closed sheet abandons every answer of this opening.
     this.generation++;
+    this.pickerOpen.set(false);
     this.closed.emit();
   }
 
@@ -504,6 +638,8 @@ export class DeviceUpdateSheet {
   @HostListener('document:keydown', ['$event'])
   protected onDocumentKeydown(event: KeyboardEvent): void {
     if (!this.open() || event.defaultPrevented) return;
+    // The picker dialog owns Escape while it is open (design section 6).
+    if (this.pickerOpen()) return;
     if (event.key !== 'Escape') return;
     event.preventDefault();
     this.close();
@@ -523,6 +659,7 @@ export class DeviceUpdateSheet {
   protected reset(): void {
     this.attempted.set(false);
     this.saveError.set('');
+    this.scopeCopied.set('');
     this.draft.reset();
   }
 
@@ -581,6 +718,7 @@ export class DeviceUpdateSheet {
   /** Save and preview prepares a frozen preview on the server. */
   protected async prepare(): Promise<void> {
     this.attempted.set(true);
+    // A disabled Organization unit field must not submit its retained Move (UI-07).
     if (!this.canSave()) return;
     this.saving.set(true);
     this.saveError.set('');
@@ -899,6 +1037,12 @@ export class DeviceUpdateSheet {
   /** Prepare a new preview from the durable draft and open Review. */
   private async prepareNewPreview(): Promise<void> {
     if (this.preparing()) return;
+    // A disabled Organization unit field must not submit its retained Move (UI-07). The
+    // draft returns to Edit, where the field note and the discard action offer recovery.
+    if (this.orgUnitMoveBlocked()) {
+      this.goEdit();
+      return;
+    }
     this.preparing.set(true);
     this.problemDetail.set('');
     const generation = ++this.generation;

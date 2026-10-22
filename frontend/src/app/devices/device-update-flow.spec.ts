@@ -3,10 +3,12 @@ import type {
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
 import {
+  changeSentence,
   changeSentences,
   confirmationHeading,
   confirmationMetaLine,
   previewCountLine,
+  sentenceText,
   targetGroups,
   unchangedSentence,
 } from './device-update-flow';
@@ -141,7 +143,7 @@ it('writes one confirmation sentence per changed field', () => {
         eligible: 5,
       }),
       allEligible,
-    ),
+    ).map(sentenceText),
   ).toEqual([
     'Set the annotated location to North lab on 5 devices.',
     'Set the annotated user to maya.chen@example.org on 5 devices.',
@@ -182,7 +184,7 @@ it('counts each field from its own eligible frozen rows', () => {
         fieldChanges: 9,
       }),
       mixed,
-    ),
+    ).map(sentenceText),
   ).toEqual([
     'Set the annotated location to North lab on 5 devices.',
     'Set the notes to Cart 7 loaner pool on 4 devices.',
@@ -209,7 +211,7 @@ it('counts a clear from its own eligible frozen rows and keeps singular counts',
         fieldChanges: 3,
       }),
       targets,
-    ),
+    ).map(sentenceText),
   ).toEqual([
     'Clear the annotated location on 1 device.',
     'Clear the notes on 2 devices.',
@@ -221,7 +223,9 @@ it('names the fields that keep their value', () => {
     unchangedSentence(
       preview({ changes: [{ field: 'notes', mode: 'clear' }] }),
     ),
-  ).toBe('Annotated location and annotated user remain unchanged.');
+  ).toBe(
+    'Annotated location, annotated user, and organization unit remain unchanged.',
+  );
   expect(
     unchangedSentence(
       preview({
@@ -231,7 +235,7 @@ it('names the fields that keep their value', () => {
         ],
       }),
     ),
-  ).toBe('Annotated location remains unchanged.');
+  ).toBe('Annotated location and organization unit remain unchanged.');
   expect(
     unchangedSentence(
       preview({
@@ -242,7 +246,51 @@ it('names the fields that keep their value', () => {
         ],
       }),
     ),
+  ).toBe('Organization unit remains unchanged.');
+  expect(
+    unchangedSentence(
+      preview({
+        changes: [
+          { field: 'annotatedLocation', mode: 'clear' },
+          { field: 'annotatedUser', mode: 'clear' },
+          { field: 'notes', mode: 'clear' },
+          {
+            field: 'orgUnitPath',
+            mode: 'move',
+            value: '/Chrome Devices/Cart Devices',
+          },
+        ],
+      }),
+    ),
   ).toBe('');
+});
+
+it('names the move destination and its policy note', () => {
+  const sentence = changeSentence(
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+    5,
+  );
+  // The path is its own part, so the cell can break after each slash (design note 17).
+  expect(sentence).toEqual({
+    before: 'Move 5 devices into ',
+    path: '/Chrome Devices/Cart Devices',
+    after: '. Destination policies apply.',
+  });
+  expect(sentenceText(sentence)).toBe(
+    'Move 5 devices into /Chrome Devices/Cart Devices. Destination policies apply.',
+  );
+  expect(
+    sentenceText(
+      changeSentence(
+        { field: 'orgUnitPath', mode: 'move', value: '/School A' },
+        1,
+      ),
+    ),
+  ).toBe('Move 1 device into /School A. Destination policies apply.');
 });
 
 it('counts the field changes of the frozen preview in the confirmation meta line', () => {

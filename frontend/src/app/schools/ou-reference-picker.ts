@@ -28,14 +28,44 @@ export class OuReferencePicker {
   readonly units = input.required<Unit[]>();
   readonly selectedId = input<string | null>(null);
   readonly disabled = input(false);
+  /**
+   * A search query. A non-empty query shows the units whose path or name matches, with their
+   * ancestors, fully expanded. The organization unit field and filter reuse this (TREE-01).
+   */
+  readonly query = input('');
   readonly selected = output<string>();
   protected readonly collapsed = signal(new Map<string, boolean>());
   private readonly activeId = signal<string | null>(null);
   private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
+  protected readonly searching = computed(() => this.query().trim().length > 0);
+  /** The units on screen: all of them, or the matches and their ancestors. */
+  protected readonly shown = computed<Unit[]>(() => {
+    const units = this.units();
+    const query = this.query().trim().toLowerCase();
+    if (!query) return units;
+    const byId = new Map(units.map((unit) => [unit.id, unit]));
+    const keep = new Set<string>();
+    for (const unit of units) {
+      if (
+        !unit.path.toLowerCase().includes(query) &&
+        !unit.name.toLowerCase().includes(query)
+      )
+        continue;
+      keep.add(unit.id);
+      const seen = new Set<string>([unit.id]);
+      let parent = unit.parentId;
+      while (parent && !seen.has(parent)) {
+        seen.add(parent);
+        keep.add(parent);
+        parent = byId.get(parent)?.parentId ?? null;
+      }
+    }
+    return units.filter((unit) => keep.has(unit.id));
+  });
   protected readonly children = computed(() => {
     const children = new Map<string | null, Unit[]>();
-    for (const unit of this.units()) {
+    for (const unit of this.shown()) {
       const siblings = children.get(unit.parentId) ?? [];
       siblings.push(unit);
       children.set(unit.parentId, siblings);
@@ -70,6 +100,26 @@ export class OuReferencePicker {
   });
 
   constructor() {
+    // A chosen destination stays visible when the picker opens again.
+    effect(() => {
+      const id = this.selectedId();
+      const units = this.units();
+      untracked(() => {
+        if (!id) return;
+        const byId = new Map(units.map((unit) => [unit.id, unit]));
+        const expanded = new Map(this.collapsed());
+        const seen = new Set<string>([id]);
+        let parent = byId.get(id)?.parentId ?? null;
+        let changed = false;
+        while (parent && !seen.has(parent) && seen.size < 37) {
+          seen.add(parent);
+          if (expanded.get(parent) !== false) changed = true;
+          expanded.set(parent, false);
+          parent = byId.get(parent)?.parentId ?? null;
+        }
+        if (changed) this.collapsed.set(expanded);
+      });
+    });
     effect(() => {
       const units = this.units();
       untracked(() => {
@@ -106,7 +156,14 @@ export class OuReferencePicker {
   }
 
   protected expanded(unit: Unit) {
+    // A search shows every match and its ancestors, so the tree is open while it runs.
+    if (this.searching()) return true;
     return !(this.collapsed().get(unit.id) ?? unit.parentId !== null);
+  }
+
+  /** The one name of a row. The toggle button does not repeat it in the accessible name. */
+  protected label(unit: Unit) {
+    return unit.parentId === null ? 'Root organizational unit' : unit.name;
   }
 
   protected focus(id: string) {

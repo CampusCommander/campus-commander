@@ -317,6 +317,42 @@ mat-form-field {
   margin: var(--cc-space-sm) 0 0;
 }
 
+/* The note under a field, in the Devices write-access shape (design choice 14). */
+.action-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-md);
+  margin-block-start: var(--cc-space-sm);
+  padding: var(--cc-space-md) var(--cc-card-padding);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+}
+
+.action-note.error {
+  border-inline-start: 4px solid var(--cc-status-error);
+}
+
+.action-note p {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.action-note.error p {
+  color: var(--cc-status-error-text);
+}
+
+.action-note button {
+  flex: none;
+}
+
+/* The Destination field of a Move shows the chosen path in a read-only box. */
+.field-block textarea.mdc-text-field__input[readonly] {
+  color: var(--cc-text-primary);
+  cursor: default;
+}
+
 /* The notes value grows with its text and never scrolls inside the field. */
 .field-block textarea.mdc-text-field__input {
   resize: none;
