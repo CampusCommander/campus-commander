@@ -115,6 +115,13 @@
 .tone-neutral .dot {
   background: var(--cc-text-disabled);
 }
+.outcome-reason {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+}
 .counters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

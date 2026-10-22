@@ -26,6 +26,8 @@ import { DevicesStore } from './devices.store';
 import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
 import { DeviceUpdateSheet } from './device-update-sheet';
+import { DeviceActionSheet } from './device-action-sheet';
+import { deviceActionNote } from './device-action-messages';
 import { freshnessBanner } from './device-freshness';
 import type { DeviceView } from './device-datasource';
 import type { GridState } from 'ag-grid-community';
@@ -34,13 +36,35 @@ import {
   syncFailureText,
   telemetryFailureText,
 } from './device-fields';
-import { DEVICE_WRITE_SCOPE, updateDeviceNote } from './device-update-messages';
+import {
+  DEVICE_WRITE_SCOPE,
+  updateDeviceNote,
+  type UpdateDeviceNote,
+  type UpdateDeviceNoteAction,
+} from './device-update-messages';
 import {
   REFRESH_DOMAIN_SUPPORT,
   REFRESH_SELECTED_SUPPORT,
 } from './device-refresh-messages';
 import { DeviceWriteAccessStore } from './device-write-access.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
+
+/** The three Bulk Actions entries of the owner mockup of 2026-10-21. */
+export type BulkActionKey = 'update' | 'command' | 'status';
+
+const BULK_ACTION_KEYS: readonly BulkActionKey[] = [
+  'update',
+  'command',
+  'status',
+];
+
+interface BulkActionNoteGroup {
+  id: string;
+  text: string;
+  error: boolean;
+  actions: readonly UpdateDeviceNoteAction[];
+  keys: BulkActionKey[];
+}
 
 @Component({
   selector: 'app-devices',
@@ -51,6 +75,7 @@ import { GoogleHealthStore } from '../google-connection/health.store';
     DeviceGrid,
     DeviceFilter,
     DeviceUpdateSheet,
+    DeviceActionSheet,
   ],
   templateUrl: './devices.html',
   styleUrl: './devices.css',
@@ -73,6 +98,8 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly refreshMenuOpen = signal(false);
   protected readonly bulkMenuOpen = signal(false);
   protected readonly updateOpen = signal(false);
+  protected readonly commandOpen = signal(false);
+  protected readonly statusOpen = signal(false);
   protected readonly copied = signal('');
   protected readonly editing = computed(() => {
     const index = this.editingIndex();
@@ -139,6 +166,12 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly canWrite = computed(() =>
     this.authorized('devices:write'),
   );
+  protected readonly canCommand = computed(() =>
+    this.authorized('devices:commands'),
+  );
+  protected readonly canStatus = computed(() =>
+    this.authorized('devices:status'),
+  );
   protected readonly canBulk = computed(() =>
     this.authorized('devices:bulk-actions'),
   );
@@ -151,20 +184,73 @@ export class DevicesPage implements OnInit, OnDestroy {
   );
   protected readonly refreshSelectedSupport = REFRESH_SELECTED_SUPPORT;
   protected readonly refreshDomainSupport = REFRESH_DOMAIN_SUPPORT;
-  protected readonly note = computed(() =>
-    updateDeviceNote({
-      offline: this.store.offline(),
-      canRead: this.canRead(),
-      canWrite: this.canWrite(),
-      canBulk: this.canBulk(),
-      selectionCount: this.store.selection.spec()?.selectedCount ?? 0,
-      access: this.writeAccess.access(),
-      // Before the first read starts, the note reports the pending check.
-      accessLoading:
-        this.writeAccess.loading() ||
-        (!this.writeAccess.access() && !this.writeAccess.message()),
-    }),
-  );
+  /** The Google write-access state that every device write action reads. */
+  private readonly accessState = computed(() => ({
+    offline: this.store.offline(),
+    canRead: this.canRead(),
+    canBulk: this.canBulk(),
+    selectionCount: this.store.selection.spec()?.selectedCount ?? 0,
+    access: this.writeAccess.access(),
+    // Before the first read starts, the note reports the pending check.
+    accessLoading:
+      this.writeAccess.loading() ||
+      (!this.writeAccess.access() && !this.writeAccess.message()),
+  }));
+  /** One note per Bulk Actions entry. Each names its own missing permission. */
+  protected readonly actionNotes = computed<
+    Record<BulkActionKey, UpdateDeviceNote | null>
+  >(() => {
+    const shared = this.accessState();
+    return {
+      update: updateDeviceNote({ ...shared, canWrite: this.canWrite() }),
+      command: deviceActionNote({
+        ...shared,
+        family: 'command',
+        canAction: this.canCommand(),
+      }),
+      status: deviceActionNote({
+        ...shared,
+        family: 'status',
+        canAction: this.canStatus(),
+      }),
+    };
+  });
+  /**
+   * The notes of the disabled entries. Entries that share one reason share one
+   * note, so a reader meets each reason once.
+   */
+  protected readonly notes = computed<BulkActionNoteGroup[]>(() => {
+    const groups: BulkActionNoteGroup[] = [];
+    const entries = this.actionNotes();
+    for (const key of BULK_ACTION_KEYS) {
+      const note = entries[key];
+      if (!note) continue;
+      const found = groups.find((group) => group.text === note.text);
+      if (found) {
+        found.keys.push(key);
+        continue;
+      }
+      groups.push({
+        id: key === 'update' ? 'bulk-note' : `bulk-note-${key}`,
+        text: note.text,
+        error: note.error,
+        actions: note.actions,
+        keys: [key],
+      });
+    }
+    return groups;
+  });
+  /** The note id of each entry, or no entry when the action is enabled. */
+  protected readonly describedBy = computed<
+    Partial<Record<BulkActionKey, string>>
+  >(() => {
+    const map: Partial<Record<BulkActionKey, string>> = {};
+    for (const group of this.notes())
+      for (const key of group.keys) map[key] = group.id;
+    return map;
+  });
+  /** The Bulk Actions trigger references the note of Update device. */
+  protected readonly note = computed(() => this.actionNotes().update);
 
   /** The actions authorize at the connected customer's district scope (design 2.1). */
   private authorized(action: Action): boolean {
@@ -180,7 +266,8 @@ export class DevicesPage implements OnInit, OnDestroy {
       untracked(() => void this.store.loadOrgUnits());
     });
     effect(() => {
-      if (this.canWrite()) untracked(() => void this.writeAccess.load());
+      if (this.canWrite() || this.canCommand() || this.canStatus())
+        untracked(() => void this.writeAccess.load());
     });
   }
 
@@ -213,9 +300,33 @@ export class DevicesPage implements OnInit, OnDestroy {
     this.updateOpen.set(true);
   }
 
-  /** Closing the sheet returns focus to the Bulk Actions button. */
+  /** Send command opens the command sheet over the grid. */
+  protected startCommand(): void {
+    this.commandOpen.set(true);
+  }
+
+  /** Change status opens the status sheet over the grid. */
+  protected startStatus(): void {
+    this.statusOpen.set(true);
+  }
+
+  /** Closing a sheet returns focus to the Bulk Actions button. */
   protected updateClosed(): void {
     this.updateOpen.set(false);
+    this.focusBulkActions();
+  }
+
+  protected commandClosed(): void {
+    this.commandOpen.set(false);
+    this.focusBulkActions();
+  }
+
+  protected statusClosed(): void {
+    this.statusOpen.set(false);
+    this.focusBulkActions();
+  }
+
+  private focusBulkActions(): void {
     afterNextRender(() => this.bulkButton()?.nativeElement.focus(), {
       injector: this.injector,
     });

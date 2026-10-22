@@ -212,21 +212,22 @@
                   >
                 </div>
               </td>
-              <td>{{ fieldLabel(job.field) }}</td>
+              <td>{{ operationLabel(job, operation) }}</td>
               <td>{{ beforeText(operation) }}</td>
               <td>{{ requestedText(operation) }}</td>
-              <td>
+              <td class="outcome-cell">
                 @if (store.reconciling().has(operation.operationId)) {
                 <span class="status-chip small tone-info"
                   ><span class="dot" aria-hidden="true"></span>Reconciling</span
                 >
-                } @else {
-                <span
-                  [class]="'status-chip small tone-' + outcomeTone(operation.outcome)"
-                  ><span class="dot" aria-hidden="true"></span>{{
-                  outcomeLabels[operation.outcome] }}</span
+                } @else if (operationChip(operation); as chip) {
+                <span [class]="'status-chip small tone-' + chip.tone"
+                  ><span class="dot" aria-hidden="true"></span>{{ chip.label
+                  }}</span
                 >
-                }
+                @if (operation.outcome === 'failed' && operation.googleReason) {
+                <span class="outcome-reason">{{ operation.googleReason }}</span>
+                } }
               </td>
               <td>
                 <time
@@ -247,7 +248,8 @@
                 >
                   Inspect failure
                 </button>
-                } @else if (operation.outcome === 'unknown' && canReconcile() &&
+                } @else if (operation.outcome === 'unknown' &&
+                !isCommandOperation(operation) && canReconcile() &&
                 !store.reconciling().has(operation.operationId)) {
                 <button mat-button type="button" (click)="reconcile(operation)">
                   Reconcile

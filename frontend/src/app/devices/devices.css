@@ -59,6 +59,16 @@
 .action-note p {
   margin: 0;
 }
+.action-note-group {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-md);
+}
+.action-note-group.error p {
+  color: var(--cc-status-error-text);
+}
 .action-note button {
   flex: none;
 }

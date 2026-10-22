@@ -113,7 +113,7 @@ interface DisplayStep {
     DeviceUpdateProblem,
   ],
   templateUrl: './device-update-sheet.html',
-  styleUrl: './device-update-sheet.css',
+  styleUrl: './bulk-action-sheet.css',
 })
 export class DeviceUpdateSheet {
   /** The Devices page opens and closes the sheet. */
