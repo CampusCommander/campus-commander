@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { ErrorHandler, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
@@ -13,8 +13,10 @@ import type {
 import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
 import { DeviceUpdateDraftStore } from './device-update-draft.store';
+import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import {
   DeviceUpdateSheet,
+  ORG_UNIT_MOVE_BLOCKED_NOTE,
   SELECTION_CHANGED_NOTE,
 } from './device-update-sheet';
 
@@ -248,6 +250,8 @@ interface SetupOptions {
 
 async function setup(options: SetupOptions = {}) {
   sessionStorage.clear();
+  /** Every exception that Angular's error handler reports during the test. */
+  const angularErrors: unknown[] = [];
   const spec = signal<DeviceSelectionSpec | null>(
     options.spec === undefined ? selection(options.count ?? 6) : options.spec,
   );
@@ -289,6 +293,12 @@ async function setup(options: SetupOptions = {}) {
     providers: [
       provideRouter([]),
       { provide: DevicesStore, useValue: devices },
+      {
+        provide: ErrorHandler,
+        useValue: {
+          handleError: (error: unknown) => angularErrors.push(error),
+        },
+      },
       {
         provide: AuthStore,
         useValue: {
@@ -435,6 +445,8 @@ async function setup(options: SetupOptions = {}) {
     pickerButton,
     search,
     typeSearch,
+    angularErrors,
+    tree: TestBed.inject(DeviceOrgUnitTreeStore),
     draft: TestBed.inject(DeviceUpdateDraftStore),
   };
 }
@@ -2153,4 +2165,278 @@ it('keeps the Destination usable after the picker closes', async () => {
   expect(destination?.getAttribute('readonly')).not.toBeNull();
   // The focus returns to the control that opened the picker.
   expect(document.activeElement?.tagName.toLowerCase()).toBe('mat-select');
+});
+
+/** Choose the destination through the first opening of the picker. */
+async function pickDestination(ui: Awaited<ReturnType<typeof setup>>) {
+  const { picker, pickerButton, chooseOrgMode, settle } = ui;
+  await chooseOrgMode('Move to an organization unit');
+  picker()
+    ?.querySelector<HTMLElement>('[aria-label="Expand Chrome Devices"]')
+    ?.click();
+  await settle();
+  treeRow(picker(), 'Cart Devices')?.click();
+  await settle();
+  pickerButton('Choose')?.click();
+  await settle();
+}
+
+it('returns focus to the Destination button after every exit from a reopened picker', async () => {
+  const ui = await setup();
+  const { block, picker, pickerButton, settle, angularErrors } = ui;
+  await pickDestination(ui);
+  const destinationButton = () =>
+    block('orgUnitPath')?.querySelector<HTMLButtonElement>(
+      '[aria-label="Choose organization unit"]',
+    ) ?? null;
+  const reopen = async () => {
+    destinationButton()?.click();
+    await settle();
+    expect(picker()?.querySelector('[role="dialog"]')).not.toBeNull();
+  };
+  const expectClosedAtDestination = async () => {
+    await settle();
+    // A failed focus query throws inside afterNextRender, so this proves the close path.
+    expect(angularErrors).toEqual([]);
+    expect(document.activeElement).toBe(destinationButton());
+  };
+
+  // Cancel keeps the earlier destination and returns focus to its button.
+  await reopen();
+  pickerButton('Cancel')?.click();
+  await expectClosedAtDestination();
+
+  // Choose sets the same destination and returns focus the same way.
+  await reopen();
+  pickerButton('Choose')?.click();
+  await expectClosedAtDestination();
+
+  // Escape closes the picker only.
+  await reopen();
+  picker()
+    ?.querySelector('[role="dialog"]')
+    ?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+  await expectClosedAtDestination();
+
+  // The scrim is the fourth exit that reaches the same close path.
+  await reopen();
+  picker()
+    ?.querySelector('.picker-scrim')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await expectClosedAtDestination();
+});
+
+for (const state of ['denied', 'unavailable'] as const) {
+  it(`keeps a retained Move out of a new preview when the next read answers ${state}`, async () => {
+    let treeAnswer: unknown = orgUnitTree;
+    const ui = await setup({
+      request: (path) => {
+        if (path === '/api/devices/updates/org-units')
+          return Response.json(treeAnswer);
+        return otherAnswers(path, preview);
+      },
+    });
+    const { block, button, request, close, open, draft, angularErrors } = ui;
+    await pickDestination(ui);
+    expect(draft.modeOf('orgUnitPath')).toBe('move');
+
+    await close();
+    // A reload restores the Move from tab storage before the sheet opens again.
+    draft.restore();
+    expect(draft.modeOf('orgUnitPath')).toBe('move');
+    expect(draft.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
+    treeAnswer =
+      state === 'denied'
+        ? deniedOrgUnitTree
+        : {
+            ...orgUnitTree,
+            state: 'unavailable',
+            failure: 'network-failure',
+            orgUnits: null,
+          };
+    await open();
+
+    const orgBlock = block('orgUnitPath');
+    // The field keeps the destination, and the draft keeps it for recovery.
+    expect(orgBlock?.querySelector('textarea')?.value).toBe(
+      '/Chrome Devices/Cart Devices',
+    );
+    expect(draft.modeOf('orgUnitPath')).toBe('move');
+    expect(draft.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
+    expect(orgBlock?.querySelector('.mat-form-field-disabled')).not.toBeNull();
+    expect(orgBlock?.textContent).toContain(ORG_UNIT_MOVE_BLOCKED_NOTE);
+    expect(orgBlock?.textContent).toContain('Discard move');
+    // The disabled field cannot reopen the picker from its Destination button.
+    expect(
+      orgBlock?.querySelector<HTMLButtonElement>(
+        '[aria-label="Choose organization unit"]',
+      )?.disabled,
+    ).toBe(true);
+    // No preview leaves the page with the disabled Move.
+    expect(button('Save and preview')?.disabled).toBe(true);
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/devices/updates/previews',
+      ),
+    ).toHaveLength(0);
+    expect(angularErrors).toEqual([]);
+  });
+}
+
+it('prepares the retained Move again after Recheck grants the read', async () => {
+  let treeAnswer: unknown = orgUnitTree;
+  let posted: { changes?: unknown } = {};
+  const ui = await setup({
+    request: (path, body) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(treeAnswer);
+      if (path === '/api/devices/updates/previews') {
+        posted = body as { changes?: unknown };
+        return Response.json(movePreview, { status: 201 });
+      }
+      return otherAnswers(path, movePreview);
+    },
+  });
+  const { block, button, close, open, save, settle, draft } = ui;
+  await pickDestination(ui);
+  await close();
+  treeAnswer = deniedOrgUnitTree;
+  await open();
+  expect(button('Save and preview')?.disabled).toBe(true);
+
+  treeAnswer = orgUnitTree;
+  clickButton(block('orgUnitPath')!, 'Recheck');
+  await settle();
+  expect(
+    block('orgUnitPath')?.querySelector('.mat-form-field-disabled'),
+  ).toBeNull();
+  expect(button('Save and preview')?.disabled).toBe(false);
+  expect(draft.modeOf('orgUnitPath')).toBe('move');
+  await save();
+  // The retained destination travels again, unchanged.
+  expect(posted.changes).toEqual([
+    {
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/Chrome Devices/Cart Devices',
+    },
+  ]);
+});
+
+it('keeps a text edit usable after Discard move removes the blocked Move', async () => {
+  let treeAnswer: unknown = orgUnitTree;
+  let posted: { changes?: unknown } = {};
+  const ui = await setup({
+    request: (path, body) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(treeAnswer);
+      if (path === '/api/devices/updates/previews') {
+        posted = body as { changes?: unknown };
+        return Response.json({ ...preview, fieldChanges: 1 }, { status: 201 });
+      }
+      return otherAnswers(path, movePreview);
+    },
+  });
+  const { block, button, close, open, save, settle, type, draft } = ui;
+  await pickDestination(ui);
+  await close();
+  treeAnswer = deniedOrgUnitTree;
+  await open();
+  await type('North lab');
+  expect(button('Save and preview')?.disabled).toBe(true);
+
+  clickButton(block('orgUnitPath')!, 'Discard move');
+  await settle();
+  expect(draft.modeOf('orgUnitPath')).toBe('unchanged');
+  expect(draft.valueOf('orgUnitPath')).toBe('');
+  expect(block('orgUnitPath')?.textContent).not.toContain('Destination');
+  expect(button('Save and preview')?.disabled).toBe(false);
+  await save();
+  // The text edit survives; the discarded Move travels nowhere.
+  expect(posted.changes).toEqual([
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ]);
+});
+
+it('prepares a text edit when the organization unit stays unchanged without the read', async () => {
+  let posted: { changes?: unknown } = {};
+  const { button, request, save, type } = await setup({
+    request: (path, body) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(deniedOrgUnitTree);
+      if (path === '/api/devices/updates/previews') {
+        posted = body as { changes?: unknown };
+        return Response.json({ ...preview, fieldChanges: 1 }, { status: 201 });
+      }
+      return otherAnswers(path, preview);
+    },
+  });
+  await type('North lab');
+  expect(button('Save and preview')?.disabled).toBe(false);
+  await save();
+  expect(posted.changes).toEqual([
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ]);
+  expect(
+    request.mock.calls.filter(
+      ([path]) => path === '/api/devices/updates/previews',
+    ),
+  ).toHaveLength(1);
+});
+
+it('does not prepare a new preview from a retained Move while the read is denied', async () => {
+  let treeAnswer: unknown = orgUnitTree;
+  let previewRead: 'ok' | 'expired' = 'ok';
+  const ui = await setup({
+    request: (path, body) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(treeAnswer);
+      if (path === '/api/devices/updates/previews') {
+        return Response.json(movePreview, { status: 201 });
+      }
+      if (path === previewReadPath && previewRead === 'expired')
+        return Response.json(
+          { reason: 'preview-expired', expiresAt: preview.expiresAt },
+          { status: 410 },
+        );
+      return otherAnswers(path, movePreview);
+    },
+  });
+  const { element, save, settle, tree, draft } = ui;
+  await pickDestination(ui);
+  await save();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 5 device updates',
+  );
+  const previewPosts = () =>
+    ui.request.mock.calls.filter(
+      ([path]) => path === '/api/devices/updates/previews',
+    ).length;
+  expect(previewPosts()).toBe(1);
+
+  // The grant is lost while the sheet stays open, and the frozen preview expires.
+  treeAnswer = deniedOrgUnitTree;
+  await tree.load();
+  previewRead = 'expired';
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Preview expired',
+  );
+
+  // The recovery action prepares no preview with the blocked Move.
+  clickButton(element, 'Prepare new preview');
+  await settle();
+  expect(previewPosts()).toBe(1);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update 6 devices',
+  );
+  expect(
+    element.querySelector('.field-block[data-field="orgUnitPath"]')
+      ?.textContent,
+  ).toContain(ORG_UNIT_MOVE_BLOCKED_NOTE);
+  expect(draft.modeOf('orgUnitPath')).toBe('move');
+  expect(draft.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
 });

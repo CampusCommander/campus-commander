@@ -226,6 +226,7 @@
               matSuffix
               type="button"
               aria-label="Choose organization unit"
+              [disabled]="orgUnitDisabled()"
               (click)="openPicker('destination')"
             >
               <mat-icon fontSet="material-symbols-outlined" aria-hidden="true"
@@ -258,6 +259,14 @@
           </div>
           } @if (scopeCopied()) {
           <p role="status">{{ scopeCopied() }}</p>
+          } @if (orgUnitMoveBlocked()) {
+          <!-- The disabled field cannot remove its retained Move, so this action does (UI-07). -->
+          <div class="action-note error" id="orgUnitPath-move-note">
+            <p>{{ ORG_UNIT_MOVE_BLOCKED_NOTE }}</p>
+            <button mat-button type="button" (click)="discardOrgUnitMove()">
+              Discard move
+            </button>
+          </div>
           }
         </div>
 
