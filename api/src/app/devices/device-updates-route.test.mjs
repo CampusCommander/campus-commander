@@ -1,0 +1,273 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire, registerHooks } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { after, before, test } from 'node:test';
+import esbuild from 'esbuild';
+
+/**
+ * Node's type stripping does not transform the Nest decorators of the API sources. Compile the
+ * `api/src` TypeScript for this test only, as `deployment/postgres/api-types.mjs` does, so the
+ * real controller and the real exception filter answer these requests.
+ */
+registerHooks({
+  load(url, context, nextLoad) {
+    if (url.endsWith('.ts') && url.includes('/api/src/')) {
+      const file = fileURLToPath(url);
+      const { code } = esbuild.transformSync(readFileSync(file, 'utf8'), {
+        loader: 'ts',
+        format: 'esm',
+        target: 'node22',
+        tsconfigRaw: {
+          compilerOptions: {
+            experimentalDecorators: true,
+            useDefineForClassFields: false,
+          },
+        },
+        sourcefile: file,
+      });
+      return { format: 'module', shortCircuit: true, source: code };
+    }
+    return nextLoad(url, context);
+  },
+});
+
+const require = createRequire(import.meta.url);
+const { Module } = require('@nestjs/common');
+const { Test } = require('@nestjs/testing');
+
+const selection = {
+  gridId: 'devices',
+  tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+};
+const body = (field, mode, value) => ({
+  ...selection,
+  changes: [{ field, mode, value }],
+});
+const session = {
+  identity: {
+    id: '11111111-1111-4111-8111-111111111111',
+    displayName: 'Test person',
+    permissions: [],
+    permissionVersion: 1,
+    grants: [],
+    preferences: {},
+  },
+  expiresAt: '2026-10-19T12:00:00.000Z',
+  csrfToken: 'a'.repeat(64),
+};
+const connected = { customerId: 'C0123456', generation: 1 };
+
+let app;
+let origin;
+/** The preview inputs that reached the service double. A refusal must leave this empty. */
+let previews;
+
+before(async () => {
+  const [
+    controllerModule,
+    securityModule,
+    guardModule,
+    devicesModule,
+    updatesModule,
+    authModule,
+    accessModule,
+    jobsModule,
+  ] = await Promise.all([
+    import('./device-updates.controller.ts'),
+    import('../security.ts'),
+    import('../auth/auth.guard.ts'),
+    import('./devices.service.ts'),
+    import('./device-updates.service.ts'),
+    import('../auth/auth.service.ts'),
+    import('./device-write-access.service.ts'),
+    import('../jobs/job-service.ts'),
+  ]);
+  const { DeviceUpdatesController } = controllerModule;
+  const { ApplicationExceptionFilter, securityHeaders } = securityModule;
+  const { AuthGuard } = guardModule;
+  const { DevicesService } = devicesModule;
+  const { DeviceUpdatesService } = updatesModule;
+  const { AuthService } = authModule;
+  const { DeviceWriteAccessService } = accessModule;
+  const { JobService } = jobsModule;
+
+  // esbuild does not emit decorator metadata, so the harness names the constructor tokens.
+  Reflect.defineMetadata(
+    'design:paramtypes',
+    [
+      DevicesService,
+      DeviceUpdatesService,
+      AuthService,
+      DeviceWriteAccessService,
+      JobService,
+    ],
+    DeviceUpdatesController,
+  );
+
+  previews = [];
+  class PreviewRouteModule {}
+  Module({
+    controllers: [DeviceUpdatesController],
+    providers: [
+      { provide: DevicesService, useValue: { sync: async () => connected } },
+      {
+        provide: DeviceUpdatesService,
+        useValue: {
+          preview: async (_session, _connected, input) => {
+            previews.push(input);
+            return { changes: input.changes };
+          },
+        },
+      },
+      { provide: AuthService, useValue: { authorize: async () => undefined } },
+      { provide: DeviceWriteAccessService, useValue: {} },
+      { provide: JobService, useValue: {} },
+    ],
+  })(PreviewRouteModule);
+
+  const moduleRef = await Test.createTestingModule({
+    imports: [PreviewRouteModule],
+  })
+    // The signed-in session and the person checks are named test doubles; the route is real.
+    .overrideGuard(AuthGuard)
+    .useValue({
+      canActivate: (context) => {
+        context.switchToHttp().getRequest().session = session;
+        return true;
+      },
+    })
+    .compile();
+  app = moduleRef.createNestApplication({ logger: false });
+  app.use(securityHeaders);
+  app.useGlobalFilters(new ApplicationExceptionFilter());
+  await app.listen(0, '127.0.0.1');
+  const address = app.getHttpServer().address();
+  origin = `http://127.0.0.1:${address.port}`;
+});
+
+after(async () => {
+  await app?.close();
+});
+
+async function preview(payload) {
+  const response = await fetch(`${origin}/api/devices/updates/previews`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+test('the preview route refuses each 65,537-unit value with its field label and limit', async (t) => {
+  const huge = 'x'.repeat(65_537);
+  const cases = [
+    [
+      'annotatedLocation',
+      'replace',
+      huge,
+      'Annotated location holds 1 to 200 characters.',
+    ],
+    [
+      'annotatedUser',
+      'replace',
+      huge,
+      'Annotated user holds 1 to 100 characters.',
+    ],
+    ['notes', 'replace', huge, 'Notes holds 1 to 500 characters.'],
+    [
+      'orgUnitPath',
+      'move',
+      `/${'a'.repeat(65_536)}`,
+      'Organization unit needs a path that starts with / and holds at most 4096 characters.',
+    ],
+  ];
+  for (const [field, mode, value, message] of cases) {
+    await t.test(field, async () => {
+      const before = previews.length;
+      const answer = await preview(body(field, mode, value));
+      // The wire body names the field and its limit; the generic filter body names neither.
+      assert.deepEqual(answer, {
+        status: 400,
+        body: { reason: 'invalid-change', message },
+      });
+      assert.equal(
+        previews.length,
+        before,
+        'A refused change reaches no preview.',
+      );
+    });
+  }
+});
+
+test('the preview route refuses each ordinary over-limit value with its field label', async (t) => {
+  const cases = [
+    [
+      'annotatedLocation',
+      'replace',
+      'x'.repeat(201),
+      'Annotated location holds 1 to 200 characters.',
+    ],
+    [
+      'annotatedUser',
+      'replace',
+      'x'.repeat(101),
+      'Annotated user holds 1 to 100 characters.',
+    ],
+    ['notes', 'replace', 'x'.repeat(501), 'Notes holds 1 to 500 characters.'],
+    [
+      'orgUnitPath',
+      'move',
+      `/${'a'.repeat(4096)}`,
+      'Organization unit needs a path that starts with / and holds at most 4096 characters.',
+    ],
+  ];
+  for (const [field, mode, value, message] of cases) {
+    await t.test(field, async () => {
+      const before = previews.length;
+      const answer = await preview(body(field, mode, value));
+      assert.deepEqual(answer, {
+        status: 400,
+        body: { reason: 'invalid-change', message },
+      });
+      assert.equal(
+        previews.length,
+        before,
+        'A refused change reaches no preview.',
+      );
+    });
+  }
+});
+
+test('the preview route counts supplementary characters as code points', async () => {
+  const accepted = '\u{1D306}'.repeat(100);
+  const before = previews.length;
+  const previewed = await preview(body('annotatedUser', 'replace', accepted));
+  assert.equal(previewed.status, 201);
+  assert.deepEqual(previewed.body.changes, [
+    { field: 'annotatedUser', mode: 'replace', value: accepted },
+  ]);
+  assert.deepEqual(
+    previews.at(-1)?.changes,
+    [{ field: 'annotatedUser', mode: 'replace', value: accepted }],
+    'The route passes the 100-character value to the service unchanged.',
+  );
+  assert.equal(previews.length, before + 1);
+
+  const refused = await preview(
+    body('annotatedUser', 'replace', '\u{1D306}'.repeat(101)),
+  );
+  assert.deepEqual(refused, {
+    status: 400,
+    body: {
+      reason: 'invalid-change',
+      message: 'Annotated user holds 1 to 100 characters.',
+    },
+  });
+  assert.equal(
+    previews.length,
+    before + 1,
+    'The 101-character value reaches no preview.',
+  );
+});
