@@ -164,20 +164,19 @@ export async function qualifyDeviceCommandAnswers({
       async () => {
         const job = await makeJob();
         /** Google receives the POST and never answers it before the call ends. */
+        const stop = new AbortController();
         const reader = {
           aborted: false,
           async issueDeviceCommands(
             _credential,
             _customer,
             commands,
-            signal,
+            _signal,
             options,
           ) {
             await options.onSend(commands.map((command) => command.deviceId));
-            if (!signal.aborted)
-              await new Promise((done) =>
-                signal.addEventListener('abort', done, { once: true }),
-              );
+            // The POST left the worker, and the call ends before its answer arrives.
+            stop.abort();
             this.aborted = true;
             return { succeeded: new Map(), failed: new Map() };
           },
@@ -198,7 +197,7 @@ export async function qualifyDeviceCommandAnswers({
             correlationId: randomUUID(),
           },
           // The call ends while the POST waits, as the watchdog or a worker stop ends it.
-          AbortSignal.timeout(250),
+          stop.signal,
         );
         assert.equal(batch.outcome, 'settled');
         assert.equal(reader.aborted, true, 'The POST left the worker.');
