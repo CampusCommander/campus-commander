@@ -280,7 +280,7 @@ test('completion step 6: without the read scope the field is disabled and names 
 
   // The note names the one scope that the read needs (PNG 05).
   await expect(orgUnit).toContainText(
-    'Google denied the organization unit tree. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.',
+    'Google denied organization unit reads. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.',
   );
   await expect(
     orgUnit.getByRole('button', { name: 'Copy scope' }),
