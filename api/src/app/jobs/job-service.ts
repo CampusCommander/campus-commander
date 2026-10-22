@@ -60,6 +60,8 @@ export interface JobServiceOrchestration {
   startDeviceCommandPoll(input: {
     customerId: string;
     jobId: string;
+    /** The identity of the lease the due call granted. The flow must present it again. */
+    leaseId: string;
     correlationId: string;
   }): Promise<string>;
 }
@@ -191,23 +193,26 @@ export class JobService {
    */
   private async pollLocked(customerId: string): Promise<void> {
     const due =
-      (await this.result<{ jobId?: unknown }[] | null>(
+      (await this.result<{ jobId?: unknown; leaseId?: unknown }[] | null>(
         'SELECT cc.due_device_command_polls($1) AS result',
         [customerId],
       )) ?? [];
     for (const one of Array.isArray(due) ? due : []) {
       const jobId = String(one.jobId ?? '');
-      if (jobId === '') continue;
+      const leaseId = String(one.leaseId ?? '');
+      if (jobId === '' || leaseId === '') continue;
       try {
         const executionId = await this.orchestration.startDeviceCommandPoll({
           customerId,
           jobId,
+          leaseId,
           correlationId: randomUUID(),
         });
-        // A late record changes nothing: the lease already names another flow.
+        // Only the flow that holds this lease identity records its execution. A delayed record for
+        // a replaced lease changes nothing.
         await this.result(
-          'SELECT cc.record_device_command_poll_start($1,$2,$3) AS result',
-          [customerId, jobId, executionId],
+          'SELECT cc.record_device_command_poll_start($1,$2,$3,$4) AS result',
+          [customerId, jobId, leaseId, executionId],
         ).catch(() => undefined);
       } catch {
         // The ten-minute lease lapses, and the next tick retries.

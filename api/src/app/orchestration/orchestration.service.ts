@@ -211,12 +211,14 @@ export class OrchestrationService {
   async startDeviceCommandPoll(input: {
     customerId: string;
     jobId: string;
+    leaseId: string;
     correlationId: string;
   }): Promise<string> {
     const values = z
       .strictObject({
         customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
         jobId: z.uuid(),
+        leaseId: z.uuid(),
         correlationId: z.uuid(),
       })
       .parse(input);
@@ -224,6 +226,7 @@ export class OrchestrationService {
     return this.execute('device_command_poll', {
       customerId: values.customerId,
       jobId: values.jobId,
+      leaseId: values.leaseId,
       correlationId: values.correlationId,
     });
   }

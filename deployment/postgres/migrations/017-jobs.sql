@@ -126,7 +126,9 @@ CREATE TABLE cc.device_update_jobs (
   dispatch_count integer NOT NULL DEFAULT 0 CHECK(dispatch_count>=0),
   start_deadline_at timestamptz,
   kestra_execution_id text,
-  -- The lease of the one poll flow of a command job (section 4 step 5).
+  -- The lease of the one poll flow of a command job (section 4 step 5). The identity fences a
+  -- delayed flow of a previous lease from recording, using, or releasing its replacement's lease.
+  poll_lease_id uuid,
   poll_execution_id text,
   poll_lease_expires_at timestamptz,
   first_claimed_at timestamptz,
@@ -1540,8 +1542,9 @@ END;
 $$;
 
 -- The poll start of one job service tick (section 4 step 5). It returns at most ten awaiting-devices
--- jobs with a due issued operation and no live poll lease, and sets the ten-minute lease of each. A
--- job whose flow never starts waits for that lease to lapse, and the next tick retries.
+-- jobs with a due issued operation and no live poll lease, and sets the ten-minute lease of each
+-- under a fresh identity. A job whose flow never starts waits for that lease to lapse, and the next
+-- tick retries under a new identity.
 CREATE FUNCTION cc.due_device_command_polls(p_customer text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE now_at timestamptz; leased jsonb:='[]'::jsonb;
@@ -1560,28 +1563,31 @@ BEGIN
     ORDER BY j.created_at,j.display_id LIMIT 10
     FOR UPDATE OF j SKIP LOCKED
   ), updated AS (
-    UPDATE cc.device_update_jobs u SET poll_lease_expires_at=now_at+interval '10 minutes',poll_execution_id=NULL
+    UPDATE cc.device_update_jobs u SET poll_lease_expires_at=now_at+interval '10 minutes',
+      poll_lease_id=gen_random_uuid(),poll_execution_id=NULL
     FROM picked p WHERE u.job_id=p.job_id
-    RETURNING u.job_id
+    RETURNING u.job_id,u.poll_lease_id
   )
-  SELECT COALESCE(jsonb_agg(jsonb_build_object('jobId',u.job_id,
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('jobId',u.job_id,'leaseId',u.poll_lease_id,
     'leaseExpiresAt',now_at+interval '10 minutes') ORDER BY u.job_id),'[]'::jsonb)
   INTO leased FROM updated u;
   RETURN leased;
 END;
 $$;
 
--- The lease of one poll flow is recorded after its start (section 4 step 5). A lapsed lease records
--- nothing, so a late start never holds a lease that the tick already gave to another flow.
-CREATE FUNCTION cc.record_device_command_poll_start(p_customer text,p_job uuid,p_execution text) RETURNS boolean
+-- The lease of one poll flow is recorded after its start (section 4 step 5). Only the flow that holds
+-- the lease identity records it. A lapsed or replaced lease records nothing.
+CREATE FUNCTION cc.record_device_command_poll_start(p_customer text,p_job uuid,p_lease_id uuid,
+  p_execution text) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE changed integer;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_execution IS NULL OR length(p_execution) NOT BETWEEN 1 AND 256 THEN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease_id IS NULL OR p_execution IS NULL OR
+    length(p_execution) NOT BETWEEN 1 AND 256 THEN
     RAISE EXCEPTION 'The device command poll start is invalid.' USING ERRCODE='22023';
   END IF;
   UPDATE cc.device_update_jobs u SET poll_execution_id=p_execution
-  WHERE u.job_id=p_job AND u.poll_lease_expires_at>clock_timestamp() AND
+  WHERE u.job_id=p_job AND u.poll_lease_id=p_lease_id AND u.poll_lease_expires_at>clock_timestamp() AND
     EXISTS(SELECT 1 FROM cc.jobs j WHERE j.job_id=u.job_id AND j.customer_id=p_customer AND
       j.status='awaiting-devices' AND j.finished_at IS NULL);
   GET DIAGNOSTICS changed=ROW_COUNT;
@@ -1589,17 +1595,20 @@ BEGIN
 END;
 $$;
 
--- Release the poll lease at the end of one poll run (section 4 step 6). The operation leases stay:
--- an operation whose GET got no final answer keeps its 120 s lease, so the next poll repeats it then.
-CREATE FUNCTION cc.release_device_command_poll(p_customer text,p_job uuid) RETURNS boolean
+-- Release the poll lease at the end of one poll run (section 4 step 6). Only the flow that holds the
+-- lease identity releases it, so a delayed run leaves its replacement's lease alone. The operation
+-- leases stay: an operation whose GET got no final answer keeps its 120 s lease, so the next poll
+-- repeats it then.
+CREATE FUNCTION cc.release_device_command_poll(p_customer text,p_job uuid,p_lease_id uuid) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE changed integer;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL THEN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease_id IS NULL THEN
     RAISE EXCEPTION 'The device command poll release is invalid.' USING ERRCODE='22023';
   END IF;
-  UPDATE cc.device_update_jobs u SET poll_lease_expires_at=NULL,poll_execution_id=NULL
-  WHERE u.job_id=p_job AND EXISTS(SELECT 1 FROM cc.jobs j WHERE j.job_id=u.job_id AND j.customer_id=p_customer);
+  UPDATE cc.device_update_jobs u SET poll_lease_expires_at=NULL,poll_execution_id=NULL,poll_lease_id=NULL
+  WHERE u.job_id=p_job AND u.poll_lease_id=p_lease_id AND
+    EXISTS(SELECT 1 FROM cc.jobs j WHERE j.job_id=u.job_id AND j.customer_id=p_customer);
   GET DIAGNOSTICS changed=ROW_COUNT;
   RETURN changed>0;
 END;
@@ -1609,12 +1618,13 @@ $$;
 -- claim settles an operation that passed its deadline as unknown with not-observed, and it completes
 -- the job when that leaves no issued operation. Those two steps need no credential, so a job with no
 -- usable connection still settles at its deadline.
-CREATE FUNCTION cc.claim_device_command_polls(p_customer text,p_job uuid,p_attempt uuid) RETURNS jsonb
+CREATE FUNCTION cc.claim_device_command_polls(p_customer text,p_job uuid,p_attempt uuid,p_lease_id uuid)
+  RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; connection cc.google_connection; now_at timestamptz;
   numbers integer[]; overdue integer:=0; claimed jsonb:='[]'::jsonb; completed jsonb;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL THEN
+  IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL OR p_lease_id IS NULL THEN
     RAISE EXCEPTION 'The device command poll claim is invalid.' USING ERRCODE='22023';
   END IF;
   -- Rule G: the credential read below reaches the global access lock, so this claim takes that lock
@@ -1626,9 +1636,11 @@ BEGIN
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
-  -- A finished job and a job without a live poll lease answer not-held and change nothing.
+  -- A finished job, a job without a live poll lease, and a lease held under another identity answer
+  -- not-held and change nothing.
   IF detail.job_id IS NULL OR job.status<>'awaiting-devices' OR job.finished_at IS NOT NULL OR
-    detail.poll_lease_expires_at IS NULL OR detail.poll_lease_expires_at<=now_at THEN
+    detail.poll_lease_expires_at IS NULL OR detail.poll_lease_expires_at<=now_at OR
+    detail.poll_lease_id IS DISTINCT FROM p_lease_id THEN
     RETURN jsonb_build_object('outcome','not-held','status',job.status);
   END IF;
   UPDATE cc.device_update_operations o SET status='unknown',outcome_reason='not-observed',
@@ -1682,14 +1694,14 @@ $$;
 -- The settlement of one poll chunk (section 4 steps 8, 9, and 10). A non-terminal answer keeps the
 -- operation issued with the next scheduled poll. A terminal answer settles it. The settlement that
 -- leaves no issued operation derives the terminal status and finishes the job in this transaction.
-CREATE FUNCTION cc.settle_device_command_polls(p_customer text,p_job uuid,p_attempt uuid,p_results jsonb,
-  p_observed_at timestamptz) RETURNS jsonb
+CREATE FUNCTION cc.settle_device_command_polls(p_customer text,p_job uuid,p_attempt uuid,p_lease_id uuid,
+  p_results jsonb,p_observed_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; bad integer; numbers integer[];
   settled jsonb:='[]'::jsonb; element jsonb; completed jsonb;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL OR p_observed_at IS NULL OR
-    jsonb_typeof(p_results) IS DISTINCT FROM 'array' THEN
+  IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL OR p_lease_id IS NULL OR
+    p_observed_at IS NULL OR jsonb_typeof(p_results) IS DISTINCT FROM 'array' THEN
     RAISE EXCEPTION 'The command poll settlement is invalid.' USING ERRCODE='22023';
   END IF;
   -- Every result field holds a value of its domain, or the call rejects before any lock.
@@ -1723,9 +1735,11 @@ BEGIN
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job;
   now_at:=clock_timestamp();
-  -- A finished job, a job that left awaiting-devices, and a lapsed poll lease fence the settlement.
+  -- A finished job, a job that left awaiting-devices, a lapsed poll lease, and a lease held under
+  -- another identity fence the settlement.
   IF detail.job_id IS NULL OR job.status<>'awaiting-devices' OR job.finished_at IS NOT NULL OR
-    detail.poll_lease_expires_at IS NULL OR detail.poll_lease_expires_at<=now_at THEN
+    detail.poll_lease_expires_at IS NULL OR detail.poll_lease_expires_at<=now_at OR
+    detail.poll_lease_id IS DISTINCT FROM p_lease_id THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   -- The prefix names the settled operations under the header. Only they lock below.
@@ -1747,10 +1761,15 @@ BEGIN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
   END IF;
   -- The first successful poll stores Google's expiry, and the deadline becomes that expiry plus 24
-  -- hours (section 4 step 8). A terminal answer settles with its evidence; a non-terminal answer keeps
-  -- the operation issued with the observed command state.
+  -- hours (section 4 step 8). A JSON null or a missing expiry names no provider expiry, so the
+  -- stored deadline keeps its value. A terminal answer settles with its evidence; a non-terminal
+  -- answer keeps the operation issued with the observed command state.
   WITH results AS (
-    SELECT (r->>'operationNumber')::integer AS operation_number,r FROM jsonb_array_elements(p_results) r
+    SELECT (r->>'operationNumber')::integer AS operation_number,
+      CASE WHEN jsonb_typeof(r->'commandExpiresAt')='string'
+        THEN (r->>'commandExpiresAt')::timestamptz END AS expires_at,
+      r
+    FROM jsonb_array_elements(p_results) r
   ), applied AS (
     UPDATE cc.device_update_operations o SET
       status=CASE WHEN res.r->>'outcome'='pending' THEN 'issued' ELSE res.r->>'outcome' END,
@@ -1759,11 +1778,11 @@ BEGIN
         ELSE res.r->>'outcomeReason' END,
       google_status=(res.r->>'googleStatus')::integer,
       google_reason=res.r->>'googleReason',
-      command_expires_at=COALESCE(o.command_expires_at,(res.r->>'commandExpiresAt')::timestamptz),
+      command_expires_at=COALESCE(o.command_expires_at,res.expires_at),
       command_executed_at=CASE WHEN res.r->>'outcome'='succeeded'
         THEN COALESCE((res.r->>'commandExecutedAt')::timestamptz,p_observed_at) ELSE o.command_executed_at END,
-      poll_deadline_at=CASE WHEN o.command_expires_at IS NULL AND res.r->'commandExpiresAt' IS NOT NULL
-        THEN (res.r->>'commandExpiresAt')::timestamptz+interval '24 hours' ELSE o.poll_deadline_at END,
+      poll_deadline_at=CASE WHEN o.command_expires_at IS NULL AND res.expires_at IS NOT NULL
+        THEN res.expires_at+interval '24 hours' ELSE o.poll_deadline_at END,
       poll_attempt=NULL,poll_lease_expires_at=NULL,updated_at=now_at
     FROM results res
     WHERE o.job_id=p_job AND o.operation_number=res.operation_number AND o.operation_number=ANY(numbers)
@@ -2337,4 +2356,9 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,text,jsonb,integer),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
   cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
+  cc.device_command_poll_delay(integer),cc.complete_device_command_job(uuid,timestamptz),
+  cc.due_device_command_polls(text),cc.record_device_command_poll_start(text,uuid,uuid,text),
+  cc.release_device_command_poll(text,uuid,uuid),
+  cc.claim_device_command_polls(text,uuid,uuid,uuid),
+  cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
   cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer) FROM PUBLIC;

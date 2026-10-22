@@ -602,6 +602,9 @@ try {
     ...(await qualifyDeviceCommandPolls({
       runtime,
       migrator: migrators[0],
+      connect,
+      close,
+      password,
     })),
   );
   results.push(

@@ -13,6 +13,7 @@ const JOB = '11111111-1111-4111-8111-111111111111';
 const OTHER_JOB = '22222222-2222-4222-8222-222222222222';
 const TOKEN = '33333333-3333-4333-8333-333333333333';
 const CORRELATION = '44444444-4444-4444-8444-444444444444';
+const LEASE = '66666666-6666-4666-8666-666666666666';
 const REQUESTER = '55555555-5555-4555-8555-555555555555';
 const DISPLAY = 'UPD-006';
 
@@ -783,7 +784,7 @@ test('a slow tick never delays the relay', async () => {
 });
 
 /** The statements of one tick with no work, plus a due poll job. */
-const pollTickDatabase = (due = [{ jobId: OTHER_JOB }]) =>
+const pollTickDatabase = (due = [{ jobId: OTHER_JOB, leaseId: LEASE }]) =>
   databaseOf([
     [
       'SELECT DISTINCT j.customer_id FROM cc.jobs j',
@@ -817,6 +818,7 @@ test('the tick starts one poll flow for each due command job and records it', as
   assert.equal(started.length, 1);
   assert.equal(started[0].input.customerId, CUSTOMER);
   assert.equal(started[0].input.jobId, OTHER_JOB);
+  assert.equal(started[0].input.leaseId, LEASE);
   assert.match(
     started[0].input.correlationId,
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -824,11 +826,19 @@ test('the tick starts one poll flow for each due command job and records it', as
   const recorded = database.calls.find((call) =>
     call.text.includes('cc.record_device_command_poll_start'),
   );
-  assert.deepEqual(recorded.values, [CUSTOMER, OTHER_JOB, 'poll-execution-1']);
+  assert.deepEqual(recorded.values, [
+    CUSTOMER,
+    OTHER_JOB,
+    LEASE,
+    'poll-execution-1',
+  ]);
 });
 
 test('a poll start that fails leaves the lease to lapse and runs the rest of the tick', async () => {
-  const database = pollTickDatabase([{ jobId: JOB }, { jobId: OTHER_JOB }]);
+  const database = pollTickDatabase([
+    { jobId: JOB, leaseId: LEASE },
+    { jobId: OTHER_JOB, leaseId: LEASE },
+  ]);
   const orchestration = orchestrationOf({
     startDeviceCommandPoll: async (input) => {
       if (input.jobId === JOB) throw new Error('kestra unavailable');
@@ -848,6 +858,7 @@ test('a poll start that fails leaves the lease to lapse and runs the rest of the
   assert.deepEqual(recorded[0].values, [
     CUSTOMER,
     OTHER_JOB,
+    LEASE,
     'poll-execution-2',
   ]);
 });

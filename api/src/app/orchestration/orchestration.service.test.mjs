@@ -286,6 +286,7 @@ test('startDeviceCommandPoll deploys and starts the packaged poll flow', async (
       executionId = await orchestration.startDeviceCommandPoll({
         customerId: identity.customerId,
         jobId: identity.jobId,
+        leaseId: identity.dispatchToken,
         correlationId: identity.correlationId,
       });
     } catch (error) {
@@ -305,6 +306,7 @@ test('startDeviceCommandPoll deploys and starts the packaged poll flow', async (
     );
     assert.equal(field(execution.body, 'customerId'), identity.customerId);
     assert.equal(field(execution.body, 'jobId'), identity.jobId);
+    assert.equal(field(execution.body, 'leaseId'), identity.dispatchToken);
     assert.equal(
       field(execution.body, 'correlationId'),
       identity.correlationId,

@@ -105,13 +105,13 @@ test('device_update finishes once after the batches and on flow failure', async 
   );
 });
 
-test('device_command_poll posts one worker request with the three inputs', async () => {
+test('device_command_poll posts one worker request with the four inputs', async () => {
   const flowDefinition = await flow('device-command-poll.yaml');
   assert.equal(flowDefinition.id, 'device_command_poll');
   assert.equal(flowDefinition.namespace, 'campus.application');
   assert.deepEqual(
     flowDefinition.inputs.map((input) => input.id),
-    ['customerId', 'jobId', 'correlationId'],
+    ['customerId', 'jobId', 'leaseId', 'correlationId'],
   );
   assert.equal(flowDefinition.concurrency, undefined);
   assert.equal(flowDefinition.tasks.length, 1);
@@ -121,7 +121,13 @@ test('device_command_poll posts one worker request with the three inputs', async
   assert.equal(poll.method, 'POST');
   assert.match(poll.uri, /\/dispatch\/device-command-poll$/);
   assert.deepEqual(poll.retry, dispatchRetry);
-  for (const field of ['executionId', 'customerId', 'jobId', 'correlationId'])
+  for (const field of [
+    'executionId',
+    'customerId',
+    'jobId',
+    'leaseId',
+    'correlationId',
+  ])
     assert.match(poll.body, new RegExp(`"${field}"`), field);
   assert.equal(flowDefinition.errors, undefined);
 });

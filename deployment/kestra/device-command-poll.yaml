@@ -8,6 +8,8 @@ inputs:
     type: STRING
   - id: jobId
     type: STRING
+  - id: leaseId
+    type: STRING
   - id: correlationId
     type: STRING
 tasks:
@@ -23,6 +25,7 @@ tasks:
         "executionId": execution.id,
         "customerId": inputs.customerId,
         "jobId": inputs.jobId,
+        "leaseId": inputs.leaseId,
         "correlationId": inputs.correlationId
       } | json }}
     timeout: PT1H

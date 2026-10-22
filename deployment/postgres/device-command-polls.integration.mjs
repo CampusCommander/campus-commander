@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 
 // The command poll checks of card B6 (addendum section 4 steps 5 to 10 and section 8). Every check
 // reports its own name, like the other integration files.
-export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
+export async function qualifyDeviceCommandPolls({
+  runtime,
+  migrator,
+  connect,
+  close,
+  password,
+}) {
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
   ).rows[0];
@@ -132,52 +138,78 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     const dueFor = async (jobId) => {
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const leased = await due();
-        if (leased.some((one) => one.jobId === jobId)) return leased;
+        const one = leased.find((entry) => entry.jobId === jobId);
+        if (one !== undefined) return one;
       }
       throw new Error(`The due call never returned job ${jobId}.`);
     };
-    const claim = (jobId, attempt = randomUUID()) =>
-      result('SELECT cc.claim_device_command_polls($1,$2,$3) AS result', [
+    const claim = (jobId, attempt = randomUUID(), leaseId) =>
+      result('SELECT cc.claim_device_command_polls($1,$2,$3,$4) AS result', [
         customer,
         jobId,
         attempt,
+        leaseId,
       ]).then((answer) => ({ ...answer, attempt }));
-    const settle = (jobId, attempt, observed, observedAt = null) =>
+    const settle = (jobId, attempt, leaseId, observed, observedAt = null) =>
       result(
-        'SELECT cc.settle_device_command_polls($1,$2,$3,$4,$5) AS result',
+        'SELECT cc.settle_device_command_polls($1,$2,$3,$4,$5,$6) AS result',
         [
           customer,
           jobId,
           attempt,
+          leaseId,
           JSON.stringify(observed),
           observedAt ?? new Date().toISOString(),
         ],
       );
-    const release = (jobId) =>
-      result('SELECT cc.release_device_command_poll($1,$2) AS result', [
+    const release = (jobId, leaseId) =>
+      result('SELECT cc.release_device_command_poll($1,$2,$3) AS result', [
         customer,
         jobId,
+        leaseId,
       ]);
-    const recordStart = (jobId, execution) =>
-      result('SELECT cc.record_device_command_poll_start($1,$2,$3) AS result', [
-        customer,
-        jobId,
-        execution,
-      ]);
-    /** A due job with one claimed operation. */
+    const recordStart = (jobId, leaseId, execution) =>
+      result(
+        'SELECT cc.record_device_command_poll_start($1,$2,$3,$4) AS result',
+        [customer, jobId, leaseId, execution],
+      );
+    /** A due job with one claimed operation under the lease the due call granted. */
     const claimed = async (options = {}) => {
       const jobId = await makeJob(options);
-      await dueFor(jobId);
+      const leaseId = (await dueFor(jobId)).leaseId;
       const attempt = randomUUID();
-      const answer = await claim(jobId, attempt);
+      const answer = await claim(jobId, attempt, leaseId);
       assert.equal(answer.outcome, 'claimed');
-      return { jobId, attempt, answer };
+      return { jobId, attempt, leaseId, answer };
     };
-    const settledIn = async (jobId, attempt, observed, observedAt = null) => {
-      const answer = await settle(jobId, attempt, observed, observedAt);
+    const settledIn = async (
+      jobId,
+      attempt,
+      leaseId,
+      observed,
+      observedAt = null,
+    ) => {
+      const answer = await settle(
+        jobId,
+        attempt,
+        leaseId,
+        observed,
+        observedAt,
+      );
       assert.equal(answer.outcome, 'settled');
       return answer;
     };
+    const leaseRow = (jobId) =>
+      adminRow(
+        'SELECT poll_lease_id,poll_lease_expires_at,poll_execution_id FROM cc.device_update_jobs WHERE job_id=$1',
+        [jobId],
+      );
+    /** Make the next poll due now. */
+    const dueNow = (jobId) =>
+      admin(
+        "UPDATE cc.device_update_operations SET poll_after=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+        [jobId],
+      );
     const expiry = new Date(Date.now() + 5 * 86_400_000).toISOString();
 
     await check('poll delay follows the section 4 step 7 ladder', async () => {
@@ -206,30 +238,29 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
       'a due command job leases once and records the poll start',
       async () => {
         const jobId = await makeJob();
-        await dueFor(jobId);
+        const first = await dueFor(jobId);
+        assert.equal(typeof first.leaseId, 'string');
         assert.equal(
           (await due()).some((one) => one.jobId === jobId),
           false,
           'A live lease keeps the next tick off the job.',
         );
-        assert.equal(await recordStart(jobId, 'kestra-execution-1'), true);
         assert.equal(
-          (
-            await adminRow(
-              'SELECT poll_execution_id FROM cc.device_update_jobs WHERE job_id=$1',
-              [jobId],
-            )
-          ).poll_execution_id,
+          await recordStart(jobId, first.leaseId, 'kestra-execution-1'),
+          true,
+        );
+        assert.equal(
+          (await leaseRow(jobId)).poll_execution_id,
           'kestra-execution-1',
         );
-        assert.equal(await release(jobId), true);
-        await dueFor(jobId);
+        assert.equal(await release(jobId, first.leaseId), true);
+        const second = await dueFor(jobId);
         assert.equal(
-          await recordStart(jobId, 'kestra-execution-2'),
+          await recordStart(jobId, second.leaseId, 'kestra-execution-2'),
           true,
           'A fresh lease records its flow.',
         );
-        await release(jobId);
+        await release(jobId, second.leaseId);
       },
     );
 
@@ -237,7 +268,7 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
       'a claim without the job lease answers not-held and changes nothing',
       async () => {
         const jobId = await makeJob({ lease: null });
-        const answer = await claim(jobId);
+        const answer = await claim(jobId, randomUUID(), randomUUID());
         assert.equal(answer.outcome, 'not-held');
         assert.equal(answer.status, 'awaiting-devices');
         const row = await opRow(jobId, 1);
@@ -250,9 +281,9 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
       'a poll claim returns the credential and leases the operation',
       async () => {
         const jobId = await makeJob();
-        await dueFor(jobId);
+        const leaseId = (await dueFor(jobId)).leaseId;
         const attempt = randomUUID();
-        const answer = await claim(jobId, attempt);
+        const answer = await claim(jobId, attempt, leaseId);
         assert.equal(answer.outcome, 'claimed');
         assert.equal(answer.generation, generation);
         assert.equal(answer.credentialId, connection.credential_id);
@@ -268,34 +299,34 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
         assert.equal(row.poll_count, 1);
         assert.equal(row.poll_attempt, attempt);
         assert.ok(row.poll_lease_expires_at > new Date(Date.now() + 110_000));
-        await release(jobId);
+        await release(jobId, leaseId);
       },
     );
 
     await check(
       'a second claim answers idle while the operation is leased',
       async () => {
-        const { jobId } = await claimed();
-        const second = await claim(jobId);
+        const { jobId, leaseId } = await claimed();
+        const second = await claim(jobId, randomUUID(), leaseId);
         assert.equal(second.outcome, 'idle');
         assert.equal((await opRow(jobId, 1)).poll_count, 1);
-        await release(jobId);
+        await release(jobId, leaseId);
       },
     );
 
     await check(
       'a release keeps the operation lease so the next poll waits it out',
       async () => {
-        const { jobId } = await claimed();
-        assert.equal(await release(jobId), true);
+        const { jobId, leaseId } = await claimed();
+        assert.equal(await release(jobId, leaseId), true);
         const row = await opRow(jobId, 1);
         assert.ok(
           row.poll_lease_expires_at > new Date(Date.now() + 110_000),
           'An unanswered GET keeps its 120 s lease.',
         );
-        await dueFor(jobId);
+        const next = await dueFor(jobId);
         assert.equal(
-          (await claim(jobId)).outcome,
+          (await claim(jobId, randomUUID(), next.leaseId)).outcome,
           'idle',
           'The next run sends no second GET inside the lease.',
         );
@@ -305,8 +336,8 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     await check(
       'a pending observation keeps the operation issued and waits 15 s',
       async () => {
-        const { jobId, attempt } = await claimed();
-        const answer = await settledIn(jobId, attempt, [
+        const { jobId, attempt, leaseId } = await claimed();
+        const answer = await settledIn(jobId, attempt, leaseId, [
           {
             operationNumber: 1,
             outcome: 'pending',
@@ -336,22 +367,19 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
           `The next poll waits 15 s, not ${row.poll_after.toISOString()}.`,
         );
         assert.equal((await jobRow(jobId)).status, 'awaiting-devices');
-        await release(jobId);
+        await release(jobId, leaseId);
       },
     );
 
     await check('the second non-terminal observation waits 30 s', async () => {
-      const { jobId, attempt } = await claimed();
-      await settledIn(jobId, attempt, [
+      const { jobId, attempt, leaseId } = await claimed();
+      await settledIn(jobId, attempt, leaseId, [
         { operationNumber: 1, outcome: 'pending', commandState: 'sent' },
       ]);
-      await admin(
-        'UPDATE cc.device_update_operations SET poll_after=clock_timestamp() WHERE job_id=$1',
-        [jobId],
-      );
-      const second = await claim(jobId);
+      await dueNow(jobId);
+      const second = await claim(jobId, randomUUID(), leaseId);
       assert.equal(second.outcome, 'claimed');
-      await settledIn(jobId, second.attempt, [
+      await settledIn(jobId, second.attempt, leaseId, [
         {
           operationNumber: 1,
           outcome: 'pending',
@@ -365,15 +393,15 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
           row.poll_after.getTime() < Date.now() + 35_000,
         `The second wait is 30 s, not ${row.poll_after.toISOString()}.`,
       );
-      await release(jobId);
+      await release(jobId, leaseId);
     });
 
     await check(
       'a succeeded observation settles the operation and completes the job',
       async () => {
         const executedAt = new Date().toISOString();
-        const { jobId, attempt } = await claimed();
-        const answer = await settledIn(jobId, attempt, [
+        const { jobId, attempt, leaseId } = await claimed();
+        const answer = await settledIn(jobId, attempt, leaseId, [
           {
             operationNumber: 1,
             outcome: 'succeeded',
@@ -399,8 +427,8 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     );
 
     await check('an expired observation fails the job', async () => {
-      const { jobId, attempt } = await claimed();
-      const answer = await settledIn(jobId, attempt, [
+      const { jobId, attempt, leaseId } = await claimed();
+      const answer = await settledIn(jobId, attempt, leaseId, [
         { operationNumber: 1, outcome: 'expired', googleStatus: 200 },
       ]);
       assert.equal(answer.status, 'failed');
@@ -410,11 +438,11 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     });
 
     await check('one success and one expiry complete with errors', async () => {
-      const { jobId, attempt, answer } = await claimed({
+      const { jobId, attempt, leaseId, answer } = await claimed({
         devices: ['cmd-poll-a', 'cmd-poll-b'],
       });
       assert.equal(answer.operations.length, 2);
-      const settled = await settledIn(jobId, attempt, [
+      const settled = await settledIn(jobId, attempt, leaseId, [
         { operationNumber: 1, outcome: 'succeeded', googleStatus: 200 },
         { operationNumber: 2, outcome: 'expired', googleStatus: 200 },
       ]);
@@ -428,8 +456,8 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
       'an operation past its deadline settles unknown and needs review',
       async () => {
         const jobId = await makeJob({ deadline: '-1 second' });
-        await dueFor(jobId);
-        const answer = await claim(jobId);
+        const leaseId = (await dueFor(jobId)).leaseId;
+        const answer = await claim(jobId, randomUUID(), leaseId);
         assert.equal(answer.outcome, 'completed');
         assert.equal(answer.status, 'needs-review');
         const row = await opRow(jobId, 1);
@@ -442,12 +470,12 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     await check(
       'a settlement with a lapsed job lease changes nothing',
       async () => {
-        const { jobId, attempt } = await claimed();
+        const { jobId, attempt, leaseId } = await claimed();
         await admin(
           "UPDATE cc.device_update_jobs SET poll_lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
           [jobId],
         );
-        const answer = await settle(jobId, attempt, [
+        const answer = await settle(jobId, attempt, leaseId, [
           { operationNumber: 1, outcome: 'succeeded', googleStatus: 200 },
         ]);
         assert.equal(answer.outcome, 'fenced');
@@ -459,32 +487,36 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     await check(
       'a settlement for another attempt settles nothing',
       async () => {
-        const { jobId } = await claimed();
-        const answer = await settle(jobId, randomUUID(), [
+        const { jobId, leaseId } = await claimed();
+        const answer = await settle(jobId, randomUUID(), leaseId, [
           { operationNumber: 1, outcome: 'succeeded', googleStatus: 200 },
         ]);
         assert.equal(answer.outcome, 'settled');
         assert.deepEqual(answer.settled, []);
         assert.equal((await opRow(jobId, 1)).status, 'issued');
-        await release(jobId);
+        await release(jobId, leaseId);
       },
     );
 
     await check(
       'a poll result outside the domain is rejected before any change',
       async () => {
-        const { jobId, attempt } = await claimed();
+        const { jobId, attempt, leaseId } = await claimed();
         await assert.rejects(
-          settle(jobId, attempt, [{ operationNumber: 1, outcome: 'pending' }]),
+          settle(jobId, attempt, leaseId, [
+            { operationNumber: 1, outcome: 'pending' },
+          ]),
           (error) => error.code === '22023',
           'pending without a command state is invalid',
         );
         await assert.rejects(
-          settle(jobId, attempt, [{ operationNumber: 1, outcome: 'finished' }]),
+          settle(jobId, attempt, leaseId, [
+            { operationNumber: 1, outcome: 'finished' },
+          ]),
           (error) => error.code === '22023',
         );
         assert.equal((await opRow(jobId, 1)).status, 'issued');
-        await release(jobId);
+        await release(jobId, leaseId);
       },
     );
 
@@ -492,13 +524,13 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
       'a poll without a usable connection answers unavailable and keeps the operation',
       async () => {
         const jobId = await makeJob();
-        await dueFor(jobId);
+        const leaseId = (await dueFor(jobId)).leaseId;
         await migrator.query(
           'UPDATE cc.google_connection SET active=false WHERE customer_id=$1',
           [customer],
         );
         try {
-          const answer = await claim(jobId);
+          const answer = await claim(jobId, randomUUID(), leaseId);
           assert.equal(answer.outcome, 'unavailable');
           assert.equal(answer.status, 'awaiting-devices');
           assert.equal(
@@ -513,7 +545,7 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
             [customer],
           );
         }
-        await release(jobId);
+        await release(jobId, leaseId);
       },
     );
 
@@ -521,13 +553,13 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
       'the deadline settles an operation while the connection is unusable',
       async () => {
         const jobId = await makeJob({ deadline: '-1 second' });
-        await dueFor(jobId);
+        const leaseId = (await dueFor(jobId)).leaseId;
         await migrator.query(
           'UPDATE cc.google_connection SET active=false WHERE customer_id=$1',
           [customer],
         );
         try {
-          const answer = await claim(jobId);
+          const answer = await claim(jobId, randomUUID(), leaseId);
           assert.equal(answer.outcome, 'completed');
           assert.equal(answer.status, 'needs-review');
         } finally {
@@ -541,15 +573,264 @@ export async function qualifyDeviceCommandPolls({ runtime, migrator }) {
     );
 
     await check('a finished job answers not-held', async () => {
-      const { jobId } = await claimed();
+      const { jobId, leaseId } = await claimed();
       await admin(
         "UPDATE cc.jobs SET status='completed',finished_at=clock_timestamp() WHERE job_id=$1",
         [jobId],
       );
-      const answer = await claim(jobId);
+      const answer = await claim(jobId, randomUUID(), leaseId);
       assert.equal(answer.outcome, 'not-held');
       assert.equal(answer.status, 'completed');
     });
+
+    // R4: the lease identity fences a delayed flow of a previous lease.
+    await check(
+      'a replaced lease cannot record, claim, settle, or release its replacement (R4)',
+      async () => {
+        const jobId = await makeJob();
+        const first = await dueFor(jobId);
+        assert.equal(
+          await recordStart(jobId, first.leaseId, 'kestra-execution-old'),
+          true,
+        );
+        await admin(
+          "UPDATE cc.device_update_jobs SET poll_lease_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [jobId],
+        );
+        const second = await dueFor(jobId);
+        assert.notEqual(second.leaseId, first.leaseId);
+        assert.equal(
+          await recordStart(jobId, second.leaseId, 'kestra-execution-new'),
+          true,
+        );
+        // The delayed record of the previous owner changes nothing.
+        assert.equal(
+          await recordStart(jobId, first.leaseId, 'kestra-execution-stale'),
+          false,
+        );
+        assert.equal(
+          (await leaseRow(jobId)).poll_execution_id,
+          'kestra-execution-new',
+        );
+        // The previous owner holds no claim and settles nothing.
+        assert.equal(
+          (await claim(jobId, randomUUID(), first.leaseId)).outcome,
+          'not-held',
+        );
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(jobId, attempt, second.leaseId)).outcome,
+          'claimed',
+        );
+        const stale = await settle(jobId, attempt, first.leaseId, [
+          { operationNumber: 1, outcome: 'succeeded', googleStatus: 200 },
+        ]);
+        assert.equal(stale.outcome, 'fenced');
+        assert.equal((await opRow(jobId, 1)).status, 'issued');
+        // The delayed release leaves the replacement lease live.
+        assert.equal(await release(jobId, first.leaseId), false);
+        const row = await leaseRow(jobId);
+        assert.equal(row.poll_lease_id, second.leaseId);
+        assert.ok(row.poll_lease_expires_at > new Date(Date.now() + 500_000));
+        // The valid owner control settles the operation and completes the job.
+        const done = await settledIn(jobId, attempt, second.leaseId, [
+          { operationNumber: 1, outcome: 'succeeded', googleStatus: 200 },
+        ]);
+        assert.equal(done.jobStatusChanged, true);
+      },
+    );
+
+    // R1: a JSON null or missing provider expiry keeps the finite deadline.
+    await check(
+      'a null or missing provider expiry keeps the command deadline (R1)',
+      async () => {
+        const { jobId, attempt, leaseId } = await claimed();
+        const before = await opRow(jobId, 1);
+        assert.ok(
+          before.poll_deadline_at,
+          'The issue sets the seven-day deadline.',
+        );
+        const explicitNull = await settledIn(jobId, attempt, leaseId, [
+          {
+            operationNumber: 1,
+            outcome: 'pending',
+            commandState: 'sent',
+            commandExpiresAt: null,
+          },
+        ]);
+        assert.equal(explicitNull.jobStatusChanged, false);
+        let row = await opRow(jobId, 1);
+        assert.equal(row.command_expires_at, null);
+        assert.equal(
+          row.poll_deadline_at.toISOString(),
+          before.poll_deadline_at.toISOString(),
+          'An explicit null expiry keeps the deadline.',
+        );
+        // A missing key takes the same path.
+        await dueNow(jobId);
+        const second = await claim(jobId, randomUUID(), leaseId);
+        assert.equal(second.outcome, 'claimed');
+        await settledIn(jobId, second.attempt, leaseId, [
+          {
+            operationNumber: 1,
+            outcome: 'pending',
+            commandState: 'acknowledged',
+          },
+        ]);
+        row = await opRow(jobId, 1);
+        assert.equal(
+          row.poll_deadline_at.toISOString(),
+          before.poll_deadline_at.toISOString(),
+          'A missing expiry keeps the deadline.',
+        );
+        // A later valid expiry stores the provider time and moves the deadline once.
+        await dueNow(jobId);
+        const third = await claim(jobId, randomUUID(), leaseId);
+        assert.equal(third.outcome, 'claimed');
+        await settledIn(jobId, third.attempt, leaseId, [
+          {
+            operationNumber: 1,
+            outcome: 'pending',
+            commandState: 'sent',
+            commandExpiresAt: expiry,
+          },
+        ]);
+        row = await opRow(jobId, 1);
+        assert.equal(
+          row.command_expires_at.toISOString(),
+          new Date(expiry).toISOString(),
+        );
+        assert.equal(
+          row.poll_deadline_at.toISOString(),
+          new Date(new Date(expiry).getTime() + 86_400_000).toISOString(),
+        );
+        // The kept deadline still settles the operation when it passes.
+        await admin(
+          "UPDATE cc.device_update_operations SET poll_deadline_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [jobId],
+        );
+        const answer = await claim(jobId, randomUUID(), leaseId);
+        assert.equal(answer.outcome, 'completed');
+        assert.equal(answer.status, 'needs-review');
+        row = await opRow(jobId, 1);
+        assert.equal(row.status, 'unknown');
+        assert.equal(row.outcome_reason, 'not-observed');
+      },
+    );
+
+    // R2: the privileged functions are private and the runtime holds only the entry points.
+    await check(
+      'the six privileged command functions keep PUBLIC out and grant the runtime entry points (R2)',
+      async () => {
+        const functions = [
+          ['complete_device_command_job(uuid,timestamptz)', false],
+          ['due_device_command_polls(text)', true],
+          ['record_device_command_poll_start(text,uuid,uuid,text)', true],
+          ['release_device_command_poll(text,uuid,uuid)', true],
+          ['claim_device_command_polls(text,uuid,uuid,uuid)', true],
+          [
+            'settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz)',
+            true,
+          ],
+        ];
+        for (const [signature, granted] of functions) {
+          const row = await adminRow(
+            `SELECT bool_and(p.prosecdef) AS prosecdef,
+              COALESCE(bool_or(a.grantee=0),false) AS public_grant,
+              COALESCE(bool_or(a.grantee=(SELECT oid FROM pg_roles WHERE rolname='cc-app')),false) AS app_grant
+             FROM pg_proc p LEFT JOIN aclexplode(p.proacl) a ON true
+             WHERE p.oid=to_regprocedure('cc.${signature}')`,
+          );
+          assert.ok(row, `${signature} exists.`);
+          assert.equal(
+            row.prosecdef,
+            true,
+            `${signature} is SECURITY DEFINER.`,
+          );
+          assert.equal(
+            row.public_grant,
+            false,
+            `${signature} grants PUBLIC EXECUTE.`,
+          );
+          assert.equal(row.app_grant, granted, `${signature} runtime grant`);
+        }
+        const delay = await adminRow(
+          `SELECT COALESCE(bool_or(a.grantee=0),false) AS public_grant
+           FROM pg_proc p LEFT JOIN aclexplode(p.proacl) a ON true
+           WHERE p.oid=to_regprocedure('cc.device_command_poll_delay(integer)')`,
+        );
+        assert.equal(
+          delay.public_grant,
+          false,
+          'The delay function grants PUBLIC EXECUTE.',
+        );
+        const helper = await adminRow(
+          `SELECT has_function_privilege('cc-app','cc.complete_device_command_job(uuid,timestamptz)','EXECUTE') AS granted`,
+        );
+        assert.equal(
+          helper.granted,
+          false,
+          'The completion helper stays private to its definer.',
+        );
+      },
+    );
+
+    // R2: a schema user with no function grant is denied by the database, not by the caller.
+    await check(
+      'a schema user without a function grant cannot call the privileged command functions (R2)',
+      async () => {
+        const name = `cc-schema-${randomUUID().slice(0, 8)}`;
+        const adminSession = await connect('postgres', 'cc-app');
+        let outsider;
+        try {
+          await adminSession.query(
+            `CREATE ROLE "${name}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`,
+          );
+          await adminSession.query(
+            `GRANT CONNECT ON DATABASE "cc-app" TO "${name}"`,
+          );
+          await adminSession.query(`GRANT USAGE ON SCHEMA cc TO "${name}"`);
+          outsider = await connect(name, 'cc-app');
+          await assert.rejects(
+            outsider.query('SELECT cc.due_device_command_polls($1)', [
+              customer,
+            ]),
+            (error) => error.code === '42501',
+            'The due call needs EXECUTE.',
+          );
+          await assert.rejects(
+            outsider.query(
+              'SELECT cc.claim_device_command_polls($1,$2,$3,$4)',
+              [customer, randomUUID(), randomUUID(), randomUUID()],
+            ),
+            (error) => error.code === '42501',
+            'The claim would return the credential envelope.',
+          );
+          for (const signature of [
+            'record_device_command_poll_start(text,uuid,uuid,text)',
+            'release_device_command_poll(text,uuid,uuid)',
+            'settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz)',
+            'complete_device_command_job(uuid,timestamptz)',
+            'device_command_poll_delay(integer)',
+          ]) {
+            const { rows } = await outsider.query(
+              `SELECT has_function_privilege(current_user,'cc.${signature}','EXECUTE') AS granted`,
+            );
+            assert.equal(
+              rows[0].granted,
+              false,
+              `${signature} must not be executable.`,
+            );
+          }
+        } finally {
+          if (outsider !== undefined) await close(outsider);
+          await adminSession
+            .query(`DROP ROLE IF EXISTS "${name}"`)
+            .catch(() => undefined);
+          await close(adminSession);
+        }
+      },
+    );
   } finally {
     for (const jobId of jobs)
       await migrator

@@ -118,6 +118,8 @@ export type DeviceUpdateReconcileRequest = z.infer<
 export const deviceCommandPollRequestSchema = z.strictObject({
   customerId: googleCustomerId,
   jobId: z.uuid(),
+  /** The identity of the job lease that the due call granted. */
+  leaseId: z.uuid(),
   correlationId: z.uuid(),
 });
 export type DeviceCommandPollRequest = z.infer<
@@ -2276,8 +2278,17 @@ export class DeviceUpdateJobs {
     const input = deviceCommandPollRequestSchema.parse(request);
     const attempt = randomUUID();
     // One request stops before the ten-minute job lease lapses, so its flow releases the lease and
-    // the next tick starts the run that reads the rest.
+    // the next tick starts the run that reads the rest. The reader call takes the same deadline, so
+    // no GET retry outlives the run.
     const deadline = this.now() + 8 * 60_000;
+    const stop = new AbortController();
+    const abort = () => stop.abort();
+    if (signal.aborted) stop.abort();
+    else signal.addEventListener('abort', abort, { once: true });
+    const deadlineTimer = this.timers.setTimeout(
+      abort,
+      Math.max(0, deadline - this.now()),
+    );
     const summary: DeviceCommandPollAnswer = {
       outcome: 'settled',
       claimed: 0,
@@ -2291,11 +2302,11 @@ export class DeviceUpdateJobs {
     let finished = false;
     try {
       for (;;) {
-        if (signal.aborted || this.now() >= deadline) break;
+        if (stop.signal.aborted || this.now() >= deadline) break;
         const claim = commandPollClaimSchema.parse(
           await this.call(
-            'SELECT cc.claim_device_command_polls($1,$2,$3) AS result',
-            [input.customerId, input.jobId, attempt],
+            'SELECT cc.claim_device_command_polls($1,$2,$3,$4) AS result',
+            [input.customerId, input.jobId, attempt, input.leaseId],
           ),
         );
         if (claim.outcome === 'completed') {
@@ -2312,7 +2323,7 @@ export class DeviceUpdateJobs {
           // A key that cannot open stops the run. The deadlines settle the operations.
           break;
         }
-        /** One answer per claimed operation. An unanswered operation keeps its lease and state. */
+        /** The answer of one claimed operation. Settled as soon as it arrives (R3). */
         const tracked = new Map<
           string,
           {
@@ -2329,69 +2340,93 @@ export class DeviceUpdateJobs {
             failure: null,
             answered: false,
           });
-        await this.reader.deviceCommands(
-          credential,
-          input.customerId,
-          claim.operations.map((operation) => ({
-            deviceId: operation.deviceId,
-            commandId: operation.commandId,
-          })),
-          signal,
-          {
-            batchSize: this.batchSize,
-            onResponse: (event) => {
-              const entry = tracked.get(event.id);
-              if (entry === undefined) return;
-              if (event.outcome.kind === 'success') {
-                entry.observation = event.outcome.page;
-                entry.answered = true;
-              } else if (event.outcome.kind === 'failed') {
-                entry.failure = event.outcome.failure;
-                entry.answered = true;
-              }
-            },
-          },
-        );
-        const results: CommandPollResult[] = [];
-        for (const entry of tracked.values()) {
-          if (!entry.answered) continue;
-          const result = classifyCommandPoll(
-            { operationNumber: entry.operationNumber },
-            entry.observation,
-            entry.failure,
+        /** Settle one answered operation and record what the settlement changed. */
+        const settleOne = async (result: CommandPollResult): Promise<void> => {
+          const settled = await this.settlePollCall(
+            input.customerId,
+            input.jobId,
+            input.leaseId,
+            attempt,
+            [result],
           );
-          if (result !== null) results.push(result);
+          // A fenced lease or a settlement that holds no operation ends the run. The operations
+          // that stay unanswered keep their leases for the next poll.
+          if (
+            settled.outcome === 'fenced' ||
+            (settled.settled ?? []).length === 0
+          ) {
+            stop.abort();
+            return;
+          }
+          for (const one of settled.settled ?? []) {
+            summary.settled += 1;
+            if (one.status === 'succeeded') summary.succeeded += 1;
+            else if (one.status === 'failed') summary.failed += 1;
+            else if (one.status === 'expired') summary.expired += 1;
+            else if (one.status === 'unknown') summary.unknown += 1;
+            else if (one.status === 'issued') summary.pending += 1;
+          }
+          await this.publish(input.customerId, settled.publication ?? null);
+          if (settled.jobStatusChanged === true) {
+            summary.outcome = 'completed';
+            stop.abort();
+          }
+        };
+        /** The number of final answers of this call. A retry event is not an answer. */
+        let answered = 0;
+        // The operation lease is 120 s. The GET call takes the same bound, so a retry chain
+        // cannot outlive the leases of the operations it would settle.
+        const chunk = new AbortController();
+        const chunkTimer = this.timers.setTimeout(() => chunk.abort(), 120_000);
+        try {
+          await this.reader.deviceCommands(
+            credential,
+            input.customerId,
+            claim.operations.map((operation) => ({
+              deviceId: operation.deviceId,
+              commandId: operation.commandId,
+            })),
+            AbortSignal.any([stop.signal, chunk.signal]),
+            {
+              batchSize: this.batchSize,
+              // A success or a final failure settles at once, so a retrying or throwing sibling
+              // cannot cost the answer while its operation lease is live.
+              onResponse: async (event) => {
+                const entry = tracked.get(event.id);
+                if (entry === undefined || entry.answered) return;
+                if (event.outcome.kind === 'success') {
+                  entry.observation = event.outcome.page;
+                  entry.answered = true;
+                } else if (event.outcome.kind === 'failed') {
+                  entry.failure = event.outcome.failure;
+                  entry.answered = true;
+                } else return;
+                answered += 1;
+                const result = classifyCommandPoll(
+                  { operationNumber: entry.operationNumber },
+                  entry.observation,
+                  entry.failure,
+                );
+                if (result !== null) await settleOne(result);
+              },
+            },
+          );
+        } finally {
+          this.timers.clearTimeout(chunkTimer);
         }
+        if (summary.outcome === 'completed' || stop.signal.aborted) break;
         // No final answer leaves every operation to its 120 s lease and a later poll.
-        if (results.length === 0) break;
-        const settled = await this.settlePollCall(
-          input.customerId,
-          input.jobId,
-          attempt,
-          results,
-        );
-        if (settled.outcome === 'fenced') break;
-        for (const one of settled.settled ?? []) {
-          summary.settled += 1;
-          if (one.status === 'succeeded') summary.succeeded += 1;
-          else if (one.status === 'failed') summary.failed += 1;
-          else if (one.status === 'expired') summary.expired += 1;
-          else if (one.status === 'unknown') summary.unknown += 1;
-          else if (one.status === 'issued') summary.pending += 1;
-        }
-        await this.publish(input.customerId, settled.publication ?? null);
-        if (settled.jobStatusChanged === true) {
-          summary.outcome = 'completed';
-          break;
-        }
+        if (answered === 0) break;
       }
       finished = true;
     } finally {
+      this.timers.clearTimeout(deadlineTimer);
+      signal.removeEventListener('abort', abort);
       // A run that threw keeps the lease: its flow retries, and the lease lapses if it does not.
       if (finished)
         await this.call(
-          'SELECT cc.release_device_command_poll($1,$2) AS result',
-          [input.customerId, input.jobId],
+          'SELECT cc.release_device_command_poll($1,$2,$3) AS result',
+          [input.customerId, input.jobId, input.leaseId],
         ).catch(() => undefined);
     }
     return summary;
@@ -2401,6 +2436,7 @@ export class DeviceUpdateJobs {
   private async settlePollCall(
     customer: string,
     jobId: string,
+    leaseId: string,
     attempt: string,
     results: readonly CommandPollResult[],
   ): Promise<z.infer<typeof commandPollSettlementSchema>> {
@@ -2408,11 +2444,12 @@ export class DeviceUpdateJobs {
       try {
         const stamp = await this.clock();
         const answer = await this.database.query(
-          'SELECT cc.settle_device_command_polls($1,$2,$3,$4,$5) AS result',
+          'SELECT cc.settle_device_command_polls($1,$2,$3,$4,$5,$6) AS result',
           [
             customer,
             jobId,
             attempt,
+            leaseId,
             JSON.stringify(results),
             stamp.toISOString(),
           ],
