@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -30,7 +31,8 @@ import { DevicesService } from './devices.service';
 const previewIdSchema = z.uuid();
 const targetsQuerySchema = z.strictObject({
   disposition: z.enum(['eligible', 'unchanged', 'excluded']).optional(),
-  cursor: z.string().regex(/^\d+$/).optional(),
+  // The cursor names the previous target: its device ordinal and its field position.
+  cursor: z.string().regex(/^\d{1,9}:\d{1,9}$/).optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
@@ -101,9 +103,23 @@ export class DeviceUpdatesController {
     return this.orgUnits.read(request.session, request.correlationId);
   }
 
+  /**
+   * A refused change names the field label and its limit (design section 1). The generic 400 body
+   * of the error filter would hide that message, so this route answers the first issue.
+   */
+  private previewInput(body: unknown) {
+    const parsed = deviceUpdatePreviewRequestSchema.safeParse(body);
+    if (parsed.success) return parsed.data;
+    throw new BadRequestException({
+      reason: 'invalid-change',
+      message:
+        parsed.error.issues[0]?.message ?? 'The request is invalid.',
+    });
+  }
+
   @Post('previews')
   async preview(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    const input = deviceUpdatePreviewRequestSchema.parse(body);
+    const input = this.previewInput(body);
     const current = await this.current(request);
     if (!current)
       throw new ConflictException({ reason: 'connection-required' });

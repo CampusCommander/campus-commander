@@ -8,13 +8,17 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  DEVICE_UPDATE_FIELD_ORDER,
+  deviceUpdateChangesInOrder,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewSchema,
   deviceUpdateTargetSchema,
   type DeviceSelectionKey,
   type SessionResponse,
   type DeviceSyncState,
+  type DeviceUpdateChange,
   type DeviceUpdateConfirmRequest,
+  type DeviceUpdateField,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
   type DeviceUpdatePreview,
@@ -24,6 +28,7 @@ import {
 import {
   parseIntCursor,
   previewTargetRow,
+  targetCursor,
   type PreviewRow,
 } from './device-update-rows';
 import {
@@ -63,73 +68,156 @@ export interface UpdatesStorage {
   storeJson(document: unknown): Promise<string>;
 }
 
+export interface PreviewField {
+  field: DeviceUpdateField;
+  observedValue: string | null;
+  disposition: 'eligible' | 'unchanged' | 'excluded';
+}
+
 export interface PreviewTarget {
   ordinal: number;
   deviceId: string;
   serialNumber: string;
   orgUnitPath: string;
-  observedValue: string | null;
   observedAt: string | null;
   disposition: 'eligible' | 'unchanged' | 'excluded';
   exclusionReason: string | null;
+  /** One row per change, in contract order. */
+  fields: PreviewField[];
 }
 
-/** Freeze one selected device. Removed devices and non-plain IDs stay as exclusions. */
+/** The cached value of one field on one device row. */
+function observedValue(
+  row: Record<string, unknown>,
+  field: DeviceUpdateField,
+): string | null {
+  const column = {
+    annotatedLocation: 'annotated_location',
+    annotatedUser: 'annotated_user',
+    notes: 'notes',
+    orgUnitPath: 'org_unit_path',
+  }[field];
+  const value = row[column];
+  return typeof value === 'string' ? value : null;
+}
+
+/** The value that a change would write. Clear writes null. */
+function changeValue(change: DeviceUpdateChange): string | null {
+  return change.mode === 'clear' ? null : (change.value ?? null);
+}
+
+/**
+ * A path compares without case, because Google OU paths are case-insensitive (section 2). A text
+ * field compares exactly.
+ */
+function sameValue(
+  change: DeviceUpdateChange,
+  observed: string | null,
+): boolean {
+  const approved = changeValue(change);
+  if (change.field === 'orgUnitPath')
+    return (observed ?? '').toLowerCase() === (approved ?? '').toLowerCase();
+  return observed === approved;
+}
+
+/**
+ * Freeze one selected device for every change. Removed devices and non-plain IDs stay as
+ * exclusions, and every field row of an excluded device is excluded.
+ */
 export function previewTargets(
   rows: readonly Record<string, unknown>[],
-  mode: DeviceUpdateMode,
-  value: string | null,
+  changes: readonly DeviceUpdateChange[],
 ): PreviewTarget[] {
-  const approved = mode === 'clear' ? null : value;
   return rows.map((row, index) => {
     const deviceId = String(row['device_id']);
-    const observedValue =
-      typeof row['annotated_location'] === 'string'
-        ? row['annotated_location']
-        : null;
-    const target: PreviewTarget = {
+    const exclusionReason = row['removed_at']
+      ? 'removed'
+      : plainDeviceId.test(deviceId)
+        ? null
+        : 'invalid-device-id';
+    const fields = changes.map((change) => {
+      const observed = observedValue(row, change.field);
+      return {
+        field: change.field,
+        observedValue: observed,
+        disposition: exclusionReason
+          ? ('excluded' as const)
+          : sameValue(change, observed)
+            ? ('unchanged' as const)
+            : ('eligible' as const),
+      };
+    });
+    const disposition = exclusionReason
+      ? ('excluded' as const)
+      : fields.some((field) => field.disposition === 'eligible')
+        ? ('eligible' as const)
+        : ('unchanged' as const);
+    return {
       ordinal: index,
       deviceId,
       serialNumber: String(row['serial_number'] ?? ''),
       orgUnitPath: String(row['org_unit_path'] ?? ''),
-      observedValue,
       observedAt: measuredAt(row['last_entity_sync']),
-      disposition: 'eligible',
-      exclusionReason: null,
+      disposition,
+      exclusionReason,
+      fields,
     };
-    if (row['removed_at']) {
-      target.disposition = 'excluded';
-      target.exclusionReason = 'removed';
-    } else if (!plainDeviceId.test(deviceId)) {
-      target.disposition = 'excluded';
-      target.exclusionReason = 'invalid-device-id';
-    } else if (observedValue === approved) {
-      target.disposition = 'unchanged';
-    }
-    return target;
   });
 }
 
 /**
- * SHA-256 over the action version, the field, the mode, the value, and the ordered eligible
- * device IDs with their baselines.
+ * SHA-256 over the action version, the ordered changes, and the ordered eligible device IDs with
+ * the baselines of their eligible fields (section 3).
  */
 export function manifestDigest(
-  mode: DeviceUpdateMode,
-  value: string | null,
+  changes: readonly DeviceUpdateChange[],
   targets: readonly PreviewTarget[],
 ): string {
   const eligible = targets
     .filter((target) => target.disposition === 'eligible')
     .sort((left, right) => left.deviceId.localeCompare(right.deviceId));
   const canonical = JSON.stringify({
-    actionVersion: 1,
-    field: 'annotatedLocation',
-    mode,
-    value: mode === 'clear' ? null : value,
-    targets: eligible.map((target) => [target.deviceId, target.observedValue]),
+    actionVersion: 2,
+    changes: deviceUpdateChangesInOrder(changes).map((change) => [
+      change.field,
+      change.mode,
+      changeValue(change),
+    ]),
+    targets: eligible.map((target) => [
+      target.deviceId,
+      target.fields
+        .filter((field) => field.disposition === 'eligible')
+        .map((field) => [field.field, field.observedValue]),
+    ]),
   });
   return createHash('sha256').update(canonical).digest('hex');
+}
+
+/** The frozen targets, as the preview function freezes them. */
+function targetDocument(targets: readonly PreviewTarget[]) {
+  return targets.map((target) => ({
+    ordinal: target.ordinal,
+    device_id: target.deviceId,
+    serial_number: target.serialNumber,
+    org_unit_path: target.orgUnitPath,
+    observed_at: target.observedAt,
+    disposition: target.disposition,
+    exclusion_reason: target.exclusionReason,
+    fields: target.fields.map((field) => ({
+      field: field.field,
+      observed_value: field.observedValue,
+      disposition: field.disposition,
+    })),
+  }));
+}
+
+/** One stored change row, with no `value` key for Clear. */
+export function storedChange(row: Record<string, unknown>): DeviceUpdateChange {
+  const field = row['field'] as DeviceUpdateField;
+  const mode = row['mode'] as DeviceUpdateMode;
+  return mode === 'clear'
+    ? { field, mode }
+    : { field, mode, value: String(row['value'] ?? '') };
 }
 
 /** A display number with at least three digits. `lpad` would truncate 1000 to 100. */
@@ -137,13 +225,17 @@ export function displayNumber(prefix: 'PV' | 'UPD', number: number): string {
   return `${prefix}-${number < 1000 ? String(number).padStart(3, '0') : number}`;
 }
 
-function summary(row: PreviewRow, now = Date.now()): DeviceUpdatePreview {
+function summary(
+  row: PreviewRow,
+  changes: readonly DeviceUpdateChange[],
+  now = Date.now(),
+): DeviceUpdatePreview {
   const oldestObservedAt = measuredAt(row['oldest_observed_at']);
   return deviceUpdatePreviewSchema.parse({
     previewId: row['preview_id'],
     displayId: row['display_id'],
-    mode: row['mode'],
-    value: row['value'],
+    changes: deviceUpdateChangesInOrder(changes),
+    fieldChanges: row['field_changes'],
     selected: row['selected'],
     eligible: row['eligible'],
     unchanged: row['unchanged'],
@@ -235,39 +327,27 @@ export class DeviceUpdates {
       throw new UnprocessableEntityException({
         reason: 'selection-too-large',
       });
-    const value = input.mode === 'clear' ? null : input.value;
-    const targets = previewTargets(rows, input.mode, value);
-    const digest = manifestDigest(input.mode, value, targets);
+    const changes = deviceUpdateChangesInOrder(input.changes);
+    const targets = previewTargets(rows, changes);
+    const digest = manifestDigest(changes, targets);
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-        $5::text,$6::text,$7::text,$8::text,$9::jsonb,$10::integer) AS result`,
+        $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
       [
         session.identity.id,
         session.identity.permissionVersion,
         current.customerId,
         current.generation,
         'annotated-location',
-        input.mode,
-        value,
+        JSON.stringify(changes),
         digest,
-        JSON.stringify(
-          targets.map((target) => ({
-            ordinal: target.ordinal,
-            device_id: target.deviceId,
-            serial_number: target.serialNumber,
-            org_unit_path: target.orgUnitPath,
-            observed_value: target.observedValue,
-            observed_at: target.observedAt,
-            disposition: target.disposition,
-            exclusion_reason: target.exclusionReason,
-          })),
-        ),
+        JSON.stringify(targetDocument(targets)),
         PREVIEW_MINUTES,
       ],
     );
     if (result['outcome'] !== 'created') this.functionError(result);
-    return summary(result['preview'] as PreviewRow);
+    return summary(result['preview'] as PreviewRow, changes);
   }
 
   private async load(
@@ -285,6 +365,18 @@ export class DeviceUpdates {
     return row;
   }
 
+  /** The frozen changes of one preview, in contract order. */
+  private async changes(previewId: string): Promise<DeviceUpdateChange[]> {
+    const rows = (
+      await this.database.connection.query(
+        `SELECT field,mode,value FROM cc.device_update_changes WHERE preview_id=$1
+        ORDER BY array_position($2::text[],field)`,
+        [previewId, DEVICE_UPDATE_FIELD_ORDER],
+      )
+    ).rows;
+    return rows.map(storedChange);
+  }
+
   private expired(row: PreviewRow): never {
     throw new GoneException({
       reason: 'preview-expired',
@@ -298,7 +390,7 @@ export class DeviceUpdates {
   ): Promise<DeviceUpdatePreview> {
     const row = await this.load(session, previewId);
     if (Date.parse(String(row['expires_at'])) <= Date.now()) this.expired(row);
-    return summary(row);
+    return summary(row, await this.changes(previewId));
   }
 
   async targets(
@@ -310,13 +402,27 @@ export class DeviceUpdates {
   ): Promise<{ targets: DeviceUpdateTarget[]; nextCursor: string | null }> {
     const row = await this.load(session, previewId);
     if (Date.parse(String(row['expires_at'])) <= Date.now()) this.expired(row);
+    const changes = await this.changes(previewId);
+    const byField = new Map(changes.map((change) => [change.field, change]));
     const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
     const after = parseIntCursor(cursor);
     const sql: SqlStatement = {
-      text: `SELECT ordinal,device_id,serial_number,org_unit_path,observed_value,disposition,
-        exclusion_reason FROM cc.device_update_preview_targets WHERE preview_id=$1
-        AND ($2::text IS NULL OR disposition=$2) AND ordinal>$3 ORDER BY ordinal LIMIT $4`,
-      values: [previewId, disposition ?? null, after, pageSize + 1],
+      text: `SELECT t.ordinal,t.device_id,t.serial_number,t.org_unit_path,f.field,
+        f.observed_value,f.disposition,t.exclusion_reason
+        FROM cc.device_update_preview_targets t
+        JOIN cc.device_update_target_fields f
+          ON f.preview_id=t.preview_id AND f.ordinal=t.ordinal
+        WHERE t.preview_id=$1 AND ($2::text IS NULL OR f.disposition=$2)
+          AND (t.ordinal,array_position($5::text[],f.field))>($3::integer,$4::integer)
+        ORDER BY t.ordinal,array_position($5::text[],f.field) LIMIT $6`,
+      values: [
+        previewId,
+        disposition ?? null,
+        after.ordinal,
+        after.position,
+        DEVICE_UPDATE_FIELD_ORDER,
+        pageSize + 1,
+      ],
     };
     const rows = (await this.database.connection.query(sql.text, sql.values))
       .rows;
@@ -324,12 +430,21 @@ export class DeviceUpdates {
     return {
       targets: page.map((target) =>
         deviceUpdateTargetSchema.parse(
-          previewTargetRow(target, row['mode'], row['value']),
+          previewTargetRow(
+            target,
+            byField.get(target['field'] as DeviceUpdateField) ?? {
+              field: target['field'] as DeviceUpdateField,
+              mode: 'clear',
+            },
+          ),
         ),
       ),
       nextCursor:
         rows.length > pageSize
-          ? String(page[page.length - 1]?.['ordinal'])
+          ? targetCursor(
+              page[page.length - 1]?.['ordinal'],
+              page[page.length - 1]?.['field'],
+            )
           : null,
     };
   }

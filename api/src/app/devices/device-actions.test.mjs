@@ -276,10 +276,9 @@ test('a Re-enable preview of ACTIVE devices freezes zero eligible and confirm an
     call.text.includes('cc.create_device_update_preview'),
   );
   assert.equal(create.values[4], 'reenable', 'The preview stores the action.');
-  assert.equal(create.values[5], null, 'A status preview carries no mode.');
-  assert.equal(create.values[6], null, 'A status preview carries no value.');
-  assert.match(create.values[7], /^[a-f0-9]{64}$/);
-  const targets = JSON.parse(create.values[8]);
+  assert.equal(create.values[5], null, 'A status preview carries no changes.');
+  assert.match(create.values[6], /^[a-f0-9]{64}$/);
+  const targets = JSON.parse(create.values[7]);
   assert.deepEqual(
     targets.map((target) => [
       target.device_id,
@@ -289,6 +288,7 @@ test('a Re-enable preview of ACTIVE devices freezes zero eligible and confirm an
     ]),
     [['d1', 'ACTIVE', 'excluded', 'device-active']],
   );
+  assert.equal(create.values[8], 15, 'The preview expires in 15 minutes.');
 });
 
 test('a confirmation with no eligible target answers 422 nothing-to-update', async () => {
