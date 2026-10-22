@@ -665,7 +665,7 @@ it('counts each confirmation sentence from its field rows when eligibility diffe
   };
   const mixedTargets: DeviceUpdateTarget[] = twoFieldTargets.map((target) =>
     target.field === 'notes' && target.deviceId === 'synthetic-device-1'
-      ? { ...target, disposition: 'unchanged' as const, approvedValue: null }
+      ? { ...target, disposition: 'unchanged' as const }
       : target,
   );
   const { element, type, save, settle } = await setup({
