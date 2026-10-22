@@ -6,6 +6,7 @@ Updated: 2026-10-21.
 
 On 2026-10-20 the owner signed off development order step 4 after a walkthrough of the review build.
 On 2026-10-22 the owner signed off the step 5 first build: Reboot, Disable, and Re-enable. The owner chose the answer "Signed off as built" to "Step 5 (Reboot, Disable, Re-enable from Bulk Actions): do you sign it off?".
+On 2026-10-22 the owner signed off the Update device fields workflow after he tried the review build at `c92e0ba`. Owner: "Signed off".
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -17,12 +18,8 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
 
-### Step 5 device commands (first build signed off 2026-10-22)
+### Update device fields (signed off 2026-10-22)
 
-On 2026-10-21 the owner approved the step 5 screens: "That looks good".
-The [device commands record](workflows/device-commands.md) holds the approved composition and the wording defaults.
-The owner also gave this direction. Owner: "I also want to give the hint now that update device needs to be expanded to include the other editable fields."
-The step 4 record excludes four fields: org unit, asset ID, user, and notes (`docs/workflows/update-device-annotated-location.md:196`).
 The Update device expansion is the next workflow after the step 5 first build.
 The [Update device fields record](workflows/update-device-fields.md) defines it. The owner confirmed that record on 2026-10-21.
 
@@ -35,6 +32,36 @@ Asset tag leaves the bulk Update device. The approved mockup is [2026-10-21-upda
 The owner places Asset tag in in-grid editing and the individual device update.
 The owner names three later workflows: in-grid editing, the individual device update, and import and export for bulk edit (gap G16).
 These workflows are direction, not authorization to build.
+
+On 2026-10-22 the owner tried the review build at `c92e0ba`.
+The owner then signed off the Update device fields workflow. Owner: "Signed off".
+
+The sign-off accepts the drafted wording and these defaults as built:
+
+- The organization unit picker shows the device count without "Current: N organization units".
+- Review and the job page order rows by the internal device ID.
+- The picker and the job page keep their small layout differences from approved screens 03 and 09.
+- Asset tag stays off the bulk sheet.
+
+PR #106 aligned three items with approved screens before the sign-off: the step 5 review tables, the organization unit scope sentence, and the Schools tree behavior.
+
+The update leaves these follow-ups. None is scheduled:
+
+- The "Current: N organization units" count needs a new read of the selected devices' units.
+- An unparseable confirmation entry stays in tab storage.
+- A Confirm sentence can read "on 0 devices".
+- Long email addresses break inside a word in the Review table.
+- The capability label "School OU references" also serves the device picker.
+- An organization unit tree above 10,000 units answers unavailable.
+
+Live device writes stay unverified. The test domain has no ChromeOS device (read-only check on 2026-10-22).
+
+### Step 5 device commands (first build signed off 2026-10-22)
+
+On 2026-10-21 the owner approved the step 5 screens: "That looks good".
+The [device commands record](workflows/device-commands.md) holds the approved composition and the wording defaults.
+The owner also gave this direction. Owner: "I also want to give the hint now that update device needs to be expanded to include the other editable fields."
+The step 4 record excludes four fields: org unit, asset ID, user, and notes (`docs/workflows/update-device-annotated-location.md:196`).
 
 On 2026-10-22 the owner signed off the step 5 first build.
 Question: "Step 5 (Reboot, Disable, Re-enable from Bulk Actions): do you sign it off?"
@@ -127,7 +154,7 @@ Read-only device work does not depend on school creation, invitations, or comple
 Device-specific Google scopes and method support still require verification before real provider access.
 The existing test authorization does not include device writes.
 
-Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. The owner signed off the step 5 first build on 2026-10-22. Later steps require their own authorization.
+Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. The owner signed off the step 5 first build on 2026-10-22. The owner signed off the Update device fields workflow on 2026-10-22. Later steps require their own authorization.
 Keep one workflow active. Finish its usable result before expanding the feature surface.
 
 ## How to choose and finish a task

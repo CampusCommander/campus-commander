@@ -1,6 +1,6 @@
 # Update annotated user, notes, and organization unit on selected devices
 
-Status: owner-confirmed on 2026-10-21. Owner, in the main chat: "compete 81", which completes PR #81 with this record.
+Status: owner-confirmed on 2026-10-21. Owner, in the main chat: "compete 81", which completes PR #81 with this record. Signed off on 2026-10-22: owner, in the main chat: "Signed off".
 Source: owner direction of 2026-10-21, quoted under [Owner direction](#owner-direction--2026-10-21). Earlier decisions govern the rest of this record.
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the node links under [Design](#design). Design gaps remain.
 Replaces: none. This record extends [Update the annotated location of selected devices](update-device-annotated-location.md).
