@@ -33,6 +33,7 @@ const row: DeviceRow = {
   orgUnitPath: '/School A',
   lastContact: '2026-10-05T11:58:00Z',
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status: 'ACTIVE',
   battery: {

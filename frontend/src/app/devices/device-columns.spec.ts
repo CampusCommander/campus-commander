@@ -10,6 +10,7 @@ const row = (stale: boolean): DeviceRow => ({
   orgUnitPath: '/',
   lastContact: '2026-10-05T12:00:00.000Z',
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status: 'ACTIVE',
   battery: { status: 'no-report' },
