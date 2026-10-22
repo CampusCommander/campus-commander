@@ -1227,11 +1227,165 @@ test('a click that starts another navigation fails the step at once', async (t) 
   assert.deepEqual(page.visited, [], 'the step loaded the origin page again');
 });
 
+test('retries the sign-in link after a network change aborts its navigation', async (t) => {
+  // The F4 full run of 2026-10-22 failed this way: the commit watch of the
+  // sign-in navigation rejected with
+  // page.waitForNavigation: net::ERR_NETWORK_CHANGED. The page reported no
+  // failed request for the document, so the request evidence of the step
+  // stayed empty.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async (page) =>
+      page.clicks === 1
+        ? Promise.reject(
+            new Error(
+              'page.waitForNavigation: net::ERR_NETWORK_CHANGED at https://127.0.0.1:44995/api/auth/login',
+            ),
+          )
+        : { status: () => 200, url: () => `${publicOrigin}/` },
+    heading: async () => true,
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-network-change',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 2, 'the flow did not run the sign-in again');
+  assert.deepEqual(
+    page.visited,
+    [publicOrigin],
+    'the retry did not load the origin page',
+  );
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: [] }],
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test('persistent sign-in navigation network changes stop after three attempts', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async () =>
+      Promise.reject(
+        new Error(
+          'page.waitForNavigation: net::ERR_NETWORK_CHANGED at https://127.0.0.1:44995/api/auth/login',
+        ),
+      ),
+    heading: async () => true,
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-network-change-limit',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the step resolved');
+  assert.match(outcome.error.message, /ERR_NETWORK_CHANGED/);
+  assert.equal(page.clicks, 3, `the step ran the flow ${page.clicks} times`);
+  const failure = JSON.parse(
+    await readFile(
+      join(directory, 'link-network-change-limit-sign-in-failure.json'),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(
+    failure.events
+      .filter((event) => event.kind === 'network-change-retry')
+      .map((event) => event.attempt),
+    [1, 2],
+    'the record holds the attempts that a network change ended',
+  );
+});
+
+test('a sign-in navigation error that is not a network change fails at once', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeLinkPage({
+    navigate: async () =>
+      Promise.reject(
+        new Error(
+          'page.waitForNavigation: net::ERR_CERT_AUTHORITY_INVALID at https://127.0.0.1:44995/api/auth/login',
+        ),
+      ),
+    heading: async () => true,
+  });
+  const outcome = await qualificationLinkSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'link-navigation-failure',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(outcome.status, 'rejected', 'the step resolved');
+  assert.match(outcome.error.message, /ERR_CERT_AUTHORITY_INVALID/);
+  assert.equal(page.clicks, 1, 'the step ran the flow again');
+  assert.deepEqual(page.visited, [], 'the step loaded the origin page again');
+});
+
+test('retries a direct sign-in navigation that a network change aborts', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  let navigations = 0;
+  page.goto = async (url) => {
+    page.visited.push(url);
+    navigations++;
+    if (navigations === 1)
+      throw new Error(`page.goto: net::ERR_NETWORK_CHANGED at ${url}`);
+    return { status: () => 200, url: () => url };
+  };
+  // The account readiness assertion runs against a locator. The stub holds
+  // the Playwright matcher protocol, so the assertion passes on the
+  // committed document.
+  page.getByRole = () => ({
+    _apiName: 'Locator',
+    _expect: async () => ({ matches: true }),
+    toString: () => 'getByRole("heading", { name: "Your account" })',
+  });
+  const outcome = await qualificationSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'direct-network-change',
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the step rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(navigations, 2, 'the step did not run the sign-in again');
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: [] }],
+  });
+  assert.deepEqual(page.visited, [
+    `${publicOrigin}/api/auth/login`,
+    `${publicOrigin}/api/auth/login`,
+  ]);
+});
+
 /**
  * A fake page that drives the held-response sign-in flow. `commit` answers
- * the navigation outcome of a click: `ok` commits, and `stall` reports a
- * commit that does not arrive. `heading` answers the account view after the
- * commit. `responseStatus` adds a response after the release, for the
+ * the navigation outcome of a click: `ok` commits, `network-change` reports a
+ * navigation that a network change aborts, and `stall` reports a commit that
+ * does not arrive. `heading` answers the account view after the commit.
+ * `responseStatus` adds a response after the release, for the
  * genuine-failure control.
  */
 const fakeHeldPage = ({
@@ -1300,12 +1454,17 @@ const fakeHeldPage = ({
         status: () => responseStatus,
         request: () => ({ isNavigationRequest: () => true }),
       });
-    if (commit(page.clicks) === 'ok')
+    const outcome = commit(page.clicks);
+    if (outcome === 'ok')
       for (const waiter of navigationWaiters.splice(0)) waiter.resolve();
     else
       for (const waiter of navigationWaiters.splice(0))
         waiter.reject(
-          new Error('page.waitForNavigation: Timeout 10000ms exceeded.'),
+          new Error(
+            outcome === 'network-change'
+              ? 'page.waitForNavigation: net::ERR_NETWORK_CHANGED at https://127.0.0.1:44995/api/auth/login'
+              : 'page.waitForNavigation: Timeout 10000ms exceeded.',
+          ),
         );
   };
   const click = async () => {
@@ -1477,4 +1636,45 @@ test('a held sign-in that answers an HTTP error fails at once', async (t) => {
   assert.match(outcome.error.message, /HTTP 500/);
   assert.equal(page.clicks, 1, 'the flow retried a genuine failure');
   assert.equal(page.observations, 1, 'the flow ran the progress check again');
+});
+
+test('recovers a held sign-in whose navigation a network change aborts', async (t) => {
+  // The held flow reports the commit watch error through the same step. A
+  // network change after the release must run the flow again.
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeHeldPage({
+    commit: (click) => (click === 1 ? 'network-change' : 'ok'),
+  });
+  const outcome = await qualificationHeldSignIn(
+    page,
+    publicOrigin,
+    directory,
+    'held-network-change',
+    {
+      prepare: async () => undefined,
+      observe: async () => {
+        page.observations++;
+      },
+    },
+  ).then(
+    (value) => ({ status: 'resolved', value }),
+    (error) => ({ status: 'rejected', error }),
+  );
+  assert.equal(
+    outcome.status,
+    'resolved',
+    `the flow rejected with ${outcome.error?.message}`,
+  );
+  assert.equal(page.clicks, 2, 'the flow did not retry the sign-in');
+  assert.equal(page.observations, 2, 'the flow skipped a progress check');
+  assert.deepEqual(
+    page.visited,
+    [publicOrigin],
+    'the retry did not load the origin page',
+  );
+  assert.deepEqual(outcome.value, {
+    attempts: 2,
+    recoveries: [{ attempt: 1, routes: [] }],
+  });
+  assert.deepEqual(await readdir(directory), []);
 });
