@@ -143,8 +143,9 @@ export async function qualifyDevicesApi({
     assert.equal(byUser.rows[0].annotatedUser, annotatedUser);
     // A device without the value answers null through both the text filter and its row.
     assert.equal(
-      (await query({})).rows.find((row) => row.deviceId === 'synthetic-device-1')
-        .annotatedUser,
+      (await query({})).rows.find(
+        (row) => row.deviceId === 'synthetic-device-1',
+      ).annotatedUser,
       null,
     );
     const emptyUsers = await query({
