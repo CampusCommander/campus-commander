@@ -2440,3 +2440,76 @@ it('does not prepare a new preview from a retained Move while the read is denied
   expect(draft.modeOf('orgUnitPath')).toBe('move');
   expect(draft.valueOf('orgUnitPath')).toBe('/Chrome Devices/Cart Devices');
 });
+
+it('replays a retained confirmation after the blocked move returns to the draft', async () => {
+  // A lost confirmation for an earlier preview keeps its record (F5).
+  const earlierPreviewId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const earlierKey = `cc.device-update-confirmation.${principal}.${earlierPreviewId}`;
+  let treeAnswer: unknown = orgUnitTree;
+  let previewRead: 'ok' | 'expired' = 'ok';
+  let confirmations = 0;
+  let replayed: { path?: string; manifestDigest?: string } = {};
+  const ui = await setup({
+    request: (path, body) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(treeAnswer);
+      if (path === '/api/devices/updates/previews')
+        return Response.json(movePreview, { status: 201 });
+      if (path === previewReadPath && previewRead === 'expired')
+        return Response.json(
+          { reason: 'preview-expired', expiresAt: preview.expiresAt },
+          { status: 410 },
+        );
+      if (path.endsWith('/confirm')) {
+        confirmations++;
+        replayed = {
+          path,
+          manifestDigest: (body as { manifestDigest?: string }).manifestDigest,
+        };
+        return Response.json({ reason: 'permission-changed' }, { status: 409 });
+      }
+      return otherAnswers(path, movePreview);
+    },
+  });
+  const { block, button, element, save, settle, tree } = ui;
+  await pickDestination(ui);
+  await save();
+  sessionStorage.setItem(
+    earlierKey,
+    JSON.stringify({
+      previewId: earlierPreviewId,
+      manifestDigest: 'b'.repeat(64),
+    }),
+  );
+
+  // The grant is lost, and the frozen preview expires under the problem card.
+  treeAnswer = deniedOrgUnitTree;
+  await tree.load();
+  previewRead = 'expired';
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe('Preview expired');
+
+  // The blocked move returns to the draft and leaves the record for the replay.
+  clickButton(element, 'Prepare new preview');
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe('Update 6 devices');
+  expect(confirmations).toBe(0);
+  expect(sessionStorage.getItem(earlierKey)).not.toBeNull();
+
+  // A granted read lets Save replay the retained confirmation before any preview.
+  treeAnswer = orgUnitTree;
+  clickButton(block('orgUnitPath')!, 'Recheck');
+  await settle();
+  expect(button('Save and preview')?.disabled).toBe(false);
+  await save();
+  expect(confirmations).toBe(1);
+  expect(replayed.path).toBe(
+    `/api/devices/updates/previews/${earlierPreviewId}/confirm`,
+  );
+  expect(replayed.manifestDigest).toBe('b'.repeat(64));
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The update job may exist',
+  );
+  expect(sessionStorage.getItem(earlierKey)).not.toBeNull();
+});
