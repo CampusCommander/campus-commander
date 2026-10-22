@@ -8,6 +8,7 @@ import {
   type BatteryHealth,
   type BatteryObservation,
   type DeviceObservation,
+  type DeviceOrgUnitTreeEntry,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
 import {
@@ -96,6 +97,9 @@ const deviceFields =
 const batchLimit = 1000;
 /** 250 devices with full notes and locations stay under this. */
 const batchResponseLimit = 4 * 1024 * 1024;
+/** The default 256 KiB response limit holds about 1,500 organization units. */
+const orgUnitTreeLimit = 4 * 1024 * 1024;
+const orgUnitTreeMaxUnits = 10_000;
 const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 const telemetryConcurrency = 4;
 const telemetryDevice = telemetryPage.shape.devices.unwrap().element;
@@ -640,6 +644,73 @@ export class GoogleDeviceReader {
         };
       },
     );
+  }
+
+  /**
+   * Read the whole organization unit tree with the one read-only OU scope (design section 6).
+   * A tree above 10,000 units answers invalid-response. Returned paths keep Google's casing.
+   */
+  async readOrgUnitTree(
+    credential: DelegatedCredential,
+    customerId: string,
+    signal: AbortSignal,
+  ): Promise<DeviceOrgUnitTreeEntry[]> {
+    googleCustomerIdSchema.parse(customerId);
+    signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+    const client = await scopedClient(
+      credential,
+      GOOGLE_CAPABILITIES.find(
+        (capability) => capability.id === 'school-ou-references',
+      )!.scope,
+      signal,
+      orgUnitTreeLimit,
+    );
+    let page: {
+      organizationUnits: {
+        orgUnitId: string;
+        name: string;
+        orgUnitPath: string;
+        parentOrgUnitId?: string;
+      }[];
+    };
+    try {
+      page = z
+        .object({
+          organizationUnits: z
+            .array(
+              z.object({
+                orgUnitId: z.string().min(1).max(128),
+                name: z.string().min(1).max(256),
+                orgUnitPath: z.string().min(1).max(4096).startsWith('/'),
+                /** The root carries no parent fields. */
+                parentOrgUnitId: z.string().min(1).max(128).optional(),
+              }),
+            )
+            .min(1)
+            .max(orgUnitTreeMaxUnits),
+        })
+        .parse(
+          (
+            await client.request({
+              url: `${directory}/customer/${customerId}/orgunits`,
+              method: 'GET',
+              params: {
+                type: 'all_including_parent',
+                fields:
+                  'organizationUnits(orgUnitId,name,orgUnitPath,parentOrgUnitId)',
+              },
+            })
+          ).data,
+        );
+    } catch (error) {
+      throw failure(error, 'read');
+    }
+    return page.organizationUnits.map((unit) => ({
+      orgUnitId: unit.orgUnitId,
+      name: unit.name,
+      orgUnitPath: unit.orgUnitPath,
+      parentOrgUnitId: unit.parentOrgUnitId ?? null,
+    }));
   }
 
   /**
