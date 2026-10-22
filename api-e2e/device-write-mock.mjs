@@ -238,7 +238,7 @@ export async function qualifyDeviceWritesOnMock({
           devices.length,
         ],
       );
-      for (const [index, deviceId] of devices.entries())
+      for (const [index, deviceId] of devices.entries()) {
         await migrator.query(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
@@ -251,6 +251,15 @@ export async function qualifyDeviceWritesOnMock({
             command ? null : mode === 'clear' ? null : value,
           ],
         );
+        // An update operation carries its values in one row per field (addendum section 2).
+        if (!command)
+          await migrator.query(
+            `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+            baseline_value,requested_value)
+          VALUES($1,$2,'annotatedLocation',NULL,$3)`,
+            [jobId, index + 1, mode === 'clear' ? null : value],
+          );
+      }
       // The fault exists before the job becomes visible, so the started worker always meets it.
       if (beforeStart) await beforeStart();
       await migrator.query('COMMIT');
@@ -321,9 +330,12 @@ export async function qualifyDeviceWritesOnMock({
   const operations = async (jobId) =>
     (
       await migrator.query(
-        `SELECT operation_number,device_id,status,outcome_reason,verified_by,observed_value,
-          google_status,command_id,command_state
-          FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number`,
+        `SELECT o.operation_number,o.device_id,o.status,o.outcome_reason,o.verified_by,o.observed_value,
+          o.google_status,o.command_id,o.command_state,f.observed_value AS field_observed_value
+          FROM cc.device_update_operations o
+          LEFT JOIN cc.device_update_operation_fields f
+            ON f.job_id=o.job_id AND f.operation_number=o.operation_number AND f.field='annotatedLocation'
+          WHERE o.job_id=$1 ORDER BY o.operation_number`,
         [jobId],
       )
     ).rows;
@@ -677,7 +689,11 @@ export async function qualifyDeviceWritesOnMock({
     assert.equal(state.status, 'completed', JSON.stringify(state));
     const rows = await operations(jobId);
     assert.deepEqual(
-      rows.map((row) => [row.status, row.verified_by, row.observed_value]),
+      rows.map((row) => [
+        row.status,
+        row.verified_by,
+        row.field_observed_value,
+      ]),
       [['succeeded', 'write-response', 'Room 24']],
     );
     const device = (await byIds([deviceIds[0]]))[0];
@@ -745,7 +761,11 @@ export async function qualifyDeviceWritesOnMock({
       assert.equal(state.status, 'completed', JSON.stringify(state));
       const rows = await operations(jobId);
       assert.deepEqual(
-        rows.map((row) => [row.status, row.verified_by, row.observed_value]),
+        rows.map((row) => [
+          row.status,
+          row.verified_by,
+          row.field_observed_value,
+        ]),
         [['succeeded', 'read-back', 'Room 5']],
       );
       const published = events.find(

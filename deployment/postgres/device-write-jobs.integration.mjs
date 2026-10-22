@@ -275,7 +275,7 @@ export async function qualifyDeviceWriteJobs({
           Math.ceil(devices.length / batchSize),
         ],
       );
-      for (const [index, deviceId] of devices.entries())
+      for (const [index, deviceId] of devices.entries()) {
         await admin(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
             baseline_value,requested_value,batch,status)
@@ -289,6 +289,14 @@ export async function qualifyDeviceWriteJobs({
             Math.floor(index / batchSize),
           ],
         );
+        // One row per field holds the requested and observed values (addendum section 2).
+        await admin(
+          `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+            baseline_value,requested_value)
+          VALUES($1,$2,'annotatedLocation',NULL,$3)`,
+          [jobId, index + 1, mode === 'clear' ? null : value],
+        );
+      }
       return { jobId, previewId };
     };
     const admit = (held = false) =>
@@ -407,8 +415,12 @@ export async function qualifyDeviceWriteJobs({
     };
     const operations = (jobId) =>
       admin(
-        `SELECT operation_number,device_id,status,attempt_id,observed_value,observed_at,verified_by,outcome_reason,
-          verify_attempt FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number`,
+        `SELECT o.operation_number,o.device_id,o.status,o.attempt_id,o.observed_value,o.observed_at,
+          o.verified_by,o.outcome_reason,o.verify_attempt,f.observed_value AS field_observed_value
+          FROM cc.device_update_operations o
+          LEFT JOIN cc.device_update_operation_fields f
+            ON f.job_id=o.job_id AND f.operation_number=o.operation_number AND f.field='annotatedLocation'
+          WHERE o.job_id=$1 ORDER BY o.operation_number`,
         [jobId],
       );
     const jobRow = (jobId) =>
@@ -833,7 +845,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -938,7 +950,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Stale',
+              values: { annotatedLocation: 'Stale' },
               verifiedBy: 'write-response',
             },
             {
@@ -1118,7 +1130,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1151,7 +1163,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'read-back',
             },
           ],
@@ -1330,13 +1342,13 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1370,13 +1382,13 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: null,
+              values: { annotatedLocation: null },
               verifiedBy: 'write-response',
             },
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: null,
+              values: { annotatedLocation: null },
               verifiedBy: 'write-response',
             },
           ],
@@ -1421,7 +1433,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1837,7 +1849,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1882,7 +1894,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 9',
+              values: { annotatedLocation: 'Room 9' },
               verifiedBy: 'read-back',
             },
           ],
@@ -1944,7 +1956,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'quiet-room',
+              values: { annotatedLocation: 'quiet-room' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1966,7 +1978,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'stale-room',
+              values: { annotatedLocation: 'stale-room' },
               verifiedBy: 'read-back',
             },
           ],
@@ -1975,7 +1987,7 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(settled.settled.length, 1);
         const recorded = (await operations(older.jobId))[0];
         assert.equal(recorded.status, 'succeeded');
-        assert.equal(recorded.observed_value, 'stale-room');
+        assert.equal(recorded.field_observed_value, 'stale-room');
         const row = await deviceRow('s1');
         assert.equal(row.annotated_location, 'quiet-room');
         assert.equal(
@@ -2014,7 +2026,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'late-room',
+              values: { annotatedLocation: 'late-room' },
               verifiedBy: 'read-back',
             },
           ],
@@ -2073,7 +2085,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'stale-room',
+              values: { annotatedLocation: 'stale-room' },
               verifiedBy: 'read-back',
             },
           ],
@@ -2714,7 +2726,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -2853,7 +2865,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -2925,7 +2937,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -2999,7 +3011,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -3053,7 +3065,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -3119,7 +3131,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -3223,7 +3235,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -3340,7 +3352,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -4362,7 +4374,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -4469,7 +4481,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -7120,7 +7132,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -7256,7 +7268,7 @@ export async function qualifyDeviceWriteJobs({
               {
                 operationNumber: 1,
                 outcome: 'succeeded',
-                value: 'Room 12',
+                values: { annotatedLocation: 'Room 12' },
                 verifiedBy: 'write-response',
               },
             ]),
@@ -7468,7 +7480,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'read-back',
             },
           ],
@@ -7574,7 +7586,7 @@ export async function qualifyDeviceWriteJobs({
           ? {
               operationNumber: 1,
               outcome,
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             }
           : {
@@ -7860,7 +7872,7 @@ export async function qualifyDeviceWriteJobs({
         [1, 2].map((operationNumber) => ({
           operationNumber,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'read-back',
         })),
       ),
@@ -8759,7 +8771,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   ...provenance,
                 },
               ]),
@@ -8781,7 +8793,7 @@ export async function qualifyDeviceWriteJobs({
               {
                 operationNumber: 1,
                 outcome: 'succeeded',
-                value: 'Room 12',
+                values: { annotatedLocation: 'Room 12' },
                 verifiedBy: source,
               },
             ]),
@@ -8805,7 +8817,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'read-back',
         },
       ],
@@ -8815,7 +8827,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'write-response',
         },
       ],
@@ -8890,7 +8902,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'x'.repeat(4097),
+          values: { annotatedLocation: 'x'.repeat(4097) },
           verifiedBy: 'write-response',
         },
       ],
@@ -8899,7 +8911,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 12,
+          values: { annotatedLocation: 12 },
           verifiedBy: 'write-response',
         },
       ],
@@ -9072,7 +9084,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'write-response',
         },
       ]);
@@ -10041,7 +10053,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10177,7 +10189,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'read-back',
             },
           ],
@@ -10707,7 +10719,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10763,7 +10775,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10890,7 +10902,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10935,7 +10947,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -11112,7 +11124,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -11225,7 +11237,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],

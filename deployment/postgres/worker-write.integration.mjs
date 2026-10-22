@@ -94,6 +94,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     batchSize = 250,
     mode = 'replace',
     value = 'Room 12',
+    /** The field rows of every operation, in contract order. The default is one annotatedLocation. */
+    fields = null,
   }) => {
     const jobId = randomUUID();
     const previewId = randomUUID();
@@ -135,7 +137,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         Math.ceil(devices.length / batchSize),
       ],
     );
-    for (const [index, deviceId] of devices.entries())
+    for (const [index, deviceId] of devices.entries()) {
       await admin(
         `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
@@ -149,6 +151,26 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           Math.floor(index / batchSize),
         ],
       );
+      await admin(
+        `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+          baseline_value,requested_value)
+        VALUES($1,$2,'annotatedLocation',NULL,$3)`,
+        [jobId, index + 1, mode === 'clear' ? null : value],
+      );
+      for (const field of fields ?? [])
+        await admin(
+          `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+            baseline_value,requested_value)
+          VALUES($1,$2,$3,$4,$5)`,
+          [
+            jobId,
+            index + 1,
+            field.field,
+            field.baselineValue ?? null,
+            field.requestedValue,
+          ],
+        );
+    }
     const admitted = await result(
       'SELECT cc.admit_device_update_job($1,$2) AS result',
       [customer, false],
@@ -166,13 +188,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     const calls = [];
     return {
       calls,
-      async patchAnnotatedLocations(
-        _credential,
-        _customer,
-        writes,
-        signal,
-        options,
-      ) {
+      async patchDevices(_credential, _customer, writes, signal, options) {
         calls.push({
           name: 'patch',
           writes: writes.map((write) => ({ ...write })),
@@ -196,9 +212,14 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
                 answer.kind === 'success'
                   ? {
                       kind: 'success',
-                      page:
-                        answer.value === undefined
-                          ? { deviceId: id }
+                      page: answer.absent
+                        ? { deviceId: id }
+                        : answer.value === undefined
+                          ? {
+                              deviceId: id,
+                              ...(writes.find((write) => write.deviceId === id)
+                                ?.fields ?? {}),
+                            }
                           : { deviceId: id, annotatedLocation: answer.value },
                       pageIndex: 0,
                       hasNextPage: false,
@@ -343,6 +364,15 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       'SELECT status,outcome_reason,verified_by,observed_value,verify_attempt FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=$2',
       [jobId, number],
     );
+  /** The observed value of the one annotatedLocation field row of an update operation. */
+  const fieldObserved = async (jobId, number) =>
+    (
+      await adminRow(
+        `SELECT observed_value FROM cc.device_update_operation_fields
+          WHERE job_id=$1 AND operation_number=$2 AND field='annotatedLocation'`,
+        [jobId, number],
+      )
+    )?.observed_value;
   const header = (jobId) =>
     adminRow(
       `SELECT j.status,j.failure,d.scope_observations,d.scope_failure
@@ -453,7 +483,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         const row = await operation(jobId, 1);
         assert.equal(row.status, 'succeeded');
         assert.equal(row.verified_by, 'read-back');
-        assert.equal(row.observed_value, 'Room 12');
+        assert.equal(row.observed_value, null);
+        assert.equal(await fieldObserved(jobId, 1), 'Room 12');
         assert.equal(
           reader.calls.filter((one) => one.name === 'deviceStates').length,
           1,
@@ -476,9 +507,9 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           ],
           state: () => 'Room 12',
         });
-        const patch = reader.patchAnnotatedLocations;
+        const patch = reader.patchDevices;
         let sent = 0;
-        reader.patchAnnotatedLocations = async (
+        reader.patchDevices = async (
           credential,
           customerId,
           writes,
@@ -520,8 +551,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           rounds: [{ ids: ['d-stop'], parts: {} }],
           state: () => 'Room 12',
         });
-        const patch = reader.patchAnnotatedLocations;
-        reader.patchAnnotatedLocations = async (
+        const patch = reader.patchDevices;
+        reader.patchDevices = async (
           credential,
           customerId,
           writes,
@@ -572,7 +603,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           rounds: [],
           state: () => 'Room 12',
         });
-        reader.patchAnnotatedLocations = async () => {
+        reader.patchDevices = async () => {
           throw new GoogleConnectionError('network-failure');
         };
         const response = await run(jobId, 0, { reader, token });
@@ -877,6 +908,12 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         FROM generate_series(1,1001) n`,
           [jobId],
         );
+        await admin(
+          `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+          baseline_value,requested_value)
+        SELECT $1,n,'annotatedLocation',NULL,'Room 12' FROM generate_series(1,1001) n`,
+          [jobId],
+        );
         const reader = readerOf({ rounds: [], state: () => 'Room 12' });
         const cache = cacheOf();
         const summary = await new DeviceUpdateJobs(
@@ -982,7 +1019,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'a success after a retry records the returned value and the retry history',
+      'a 2xx answer that names another value settles value-differs and writes nothing',
       async () => {
         const { jobId } = await makeJob({
           devices: ['d-evidence'],
@@ -1023,33 +1060,225 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         });
         assert.equal(response.outcome, 'settled');
         const row = await adminRow(
-          `SELECT status, verified_by, observed_value, google_status,
-            quota_retries, transient_retries
+          `SELECT status,outcome_reason,verified_by,observed_value,google_status,
+            quota_retries,transient_retries
+            FROM cc.device_update_operations
+            WHERE job_id=$1 AND operation_number=1`,
+          [jobId],
+        );
+        assert.equal(row.status, 'failed');
+        assert.equal(row.outcome_reason, 'value-differs');
+        assert.equal(row.verified_by, 'write-response');
+        assert.equal(
+          row.observed_value,
+          null,
+          'The value columns of an update operation stay null.',
+        );
+        assert.equal(row.google_status, 200);
+        assert.equal(row.quota_retries, 0);
+        assert.equal(row.transient_retries, 1);
+        const fieldRow = await adminRow(
+          `SELECT observed_value FROM cc.device_update_operation_fields
+            WHERE job_id=$1 AND operation_number=1 AND field='annotatedLocation'`,
+          [jobId],
+        );
+        assert.equal(
+          fieldRow.observed_value,
+          'Normalized Room 12',
+          "The field row keeps Google's observation, not the request.",
+        );
+        const deviceRow = await adminRow(
+          'SELECT annotated_location FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+          [customer, 'd-evidence'],
+        );
+        assert.equal(deviceRow.annotated_location, 'Room 1');
+        const overlay = await adminRow(
+          "SELECT value FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 AND field='annotatedLocation'",
+          [customer, 'd-evidence'],
+        );
+        assert.equal(overlay, undefined);
+        await releaseAll();
+      },
+    );
+
+    await check(
+      'a success after a retry records the returned values, the device, and the retry history',
+      async () => {
+        const { jobId } = await makeJob({
+          devices: ['d-retried'],
+          value: 'Room 12',
+        });
+        await seedDevice('d-retried');
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: ['d-retried'],
+              parts: {
+                'd-retried': {
+                  kind: 'retry',
+                  status: 503,
+                  reason: 'backendError',
+                  attempts: { quota: 0, transient: 1 },
+                },
+              },
+            },
+            {
+              ids: ['d-retried'],
+              parts: {
+                'd-retried': {
+                  kind: 'success',
+                  value: 'Room 12',
+                  attempts: { quota: 0, transient: 1 },
+                },
+              },
+            },
+          ],
+          state: () => 'Room 12',
+        });
+        const response = await run(jobId, 0, {
+          reader,
+          token,
+          batchSize: 1,
+        });
+        assert.equal(response.outcome, 'settled');
+        const row = await adminRow(
+          `SELECT status,verified_by,observed_value,google_status,
+            quota_retries,transient_retries
             FROM cc.device_update_operations
             WHERE job_id=$1 AND operation_number=1`,
           [jobId],
         );
         assert.equal(row.status, 'succeeded');
         assert.equal(row.verified_by, 'write-response');
-        assert.equal(
-          row.observed_value,
-          'Normalized Room 12',
-          "The row keeps Google's observation, not the request.",
-        );
+        assert.equal(row.observed_value, null);
         assert.equal(row.google_status, 200);
         assert.equal(row.quota_retries, 0);
         assert.equal(row.transient_retries, 1);
+        const fieldRow = await adminRow(
+          `SELECT observed_value FROM cc.device_update_operation_fields
+            WHERE job_id=$1 AND operation_number=1 AND field='annotatedLocation'`,
+          [jobId],
+        );
+        assert.equal(fieldRow.observed_value, 'Room 12');
         const deviceRow = await adminRow(
           'SELECT annotated_location FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
-          [customer, 'd-evidence'],
+          [customer, 'd-retried'],
         );
-        assert.equal(deviceRow.annotated_location, 'Normalized Room 12');
+        assert.equal(deviceRow.annotated_location, 'Room 12');
         const overlay = await adminRow(
           "SELECT value FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=$2 AND field='annotatedLocation'",
-          [customer, 'd-evidence'],
+          [customer, 'd-retried'],
         );
-        assert.equal(overlay.value, 'Normalized Room 12');
+        assert.equal(overlay.value, 'Room 12');
         await releaseAll();
+      },
+    );
+
+    await check(
+      'a job of annotated user and notes writes both values in one PATCH per device and completes',
+      async () => {
+        const idList = ['d-two-1', 'd-two-2', 'd-two-3'];
+        const cache = cacheOf();
+        const { jobId } = await makeJob({
+          devices: idList,
+          fields: [
+            { field: 'annotatedUser', requestedValue: 'Ada Lovelace' },
+            { field: 'notes', requestedValue: 'Front desk' },
+          ],
+        });
+        for (const id of idList) await seedDevice(id);
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: idList,
+              parts: {
+                'd-two-1': { kind: 'success' },
+                'd-two-2': { kind: 'success' },
+                'd-two-3': { kind: 'success' },
+              },
+            },
+          ],
+          state: () => null,
+        });
+        const response = await run(jobId, 0, { reader, token, cache });
+        assert.equal(response.outcome, 'settled');
+        const patches = reader.calls.filter((one) => one.name === 'patch');
+        assert.equal(patches.length, 1, 'One batch carries every device.');
+        assert.deepEqual(patches[0].writes, [
+          {
+            deviceId: 'd-two-1',
+            fields: {
+              annotatedLocation: 'Room 12',
+              annotatedUser: 'Ada Lovelace',
+              notes: 'Front desk',
+            },
+          },
+          {
+            deviceId: 'd-two-2',
+            fields: {
+              annotatedLocation: 'Room 12',
+              annotatedUser: 'Ada Lovelace',
+              notes: 'Front desk',
+            },
+          },
+          {
+            deviceId: 'd-two-3',
+            fields: {
+              annotatedLocation: 'Room 12',
+              annotatedUser: 'Ada Lovelace',
+              notes: 'Front desk',
+            },
+          },
+        ]);
+        for (const id of idList) {
+          const row = await adminRow(
+            'SELECT annotated_location,annotated_user,notes FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+            [customer, id],
+          );
+          assert.equal(row.annotated_location, 'Room 12');
+          assert.equal(row.annotated_user, 'Ada Lovelace');
+          assert.equal(row.notes, 'Front desk');
+        }
+        const fields = await admin(
+          `SELECT operation_number,field,requested_value,observed_value
+            FROM cc.device_update_operation_fields WHERE job_id=$1
+            ORDER BY operation_number,field`,
+          [jobId],
+        );
+        assert.equal(
+          fields.length,
+          9,
+          'Three operations carry three field rows each.',
+        );
+        assert.ok(
+          fields.every((row) => row.observed_value === row.requested_value),
+          'Every field row keeps the value that its answer named.',
+        );
+        const rows = await admin(
+          `SELECT p.publication_id,p.device_ids FROM cc.job_publications p
+            WHERE p.job_id=$1 ORDER BY p.publication_id`,
+          [jobId],
+        );
+        const events = cache.calls
+          .filter((call) => call.name === 'publish')
+          .map((call) => JSON.parse(call.message))
+          .filter((message) => message.type === 'entity-batch');
+        assert.equal(
+          events.length,
+          1,
+          `One entity-batch event carries the batch: ${JSON.stringify(cache.calls)}`,
+        );
+        assert.deepEqual(events[0].deviceIds, idList);
+        assert.deepEqual(events[0].removedIds, []);
+        assert.ok(
+          rows.every((row) => row.device_ids.length === 0),
+          `The published row is deleted after the event: ${JSON.stringify(rows)}`,
+        );
+        await releaseAll();
+        const state = await header(jobId);
+        assert.equal(state.status, 'completed');
       },
     );
 

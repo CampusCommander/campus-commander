@@ -1235,7 +1235,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           customer,
           job.display_id,
           true,
-          '100',
+          '100:0',
           100,
         );
         assert.ok(
