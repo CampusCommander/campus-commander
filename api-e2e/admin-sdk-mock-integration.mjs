@@ -766,6 +766,7 @@ async function runAdminSdkMockIntegration({
     headers,
     redis,
     writeScope,
+    session,
   });
   // Q1b: the adversarial attacks run after the P2 checks in the same fresh installation.
   if (process.env.CC_Q1_ATTACKS === '1') {

@@ -13,6 +13,7 @@ import {
   handleDeviceUpdateBatchDispatch,
   handleDeviceUpdateFinishDispatch,
   handleDeviceUpdateReconcileDispatch,
+  handleDeviceCommandPollDispatch,
   readDispatchSecret,
 } from './dispatch';
 import { GoogleWorker } from './google-connection';
@@ -109,6 +110,15 @@ const handleRequest: RequestListener = async (request, response) => {
     return;
   if (
     await handleDeviceUpdateReconcileDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleDeviceCommandPollDispatch(
       request,
       response,
       { secret: dispatchSecret, signal: stopping.signal },

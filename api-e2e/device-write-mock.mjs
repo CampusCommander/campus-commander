@@ -84,6 +84,7 @@ export async function qualifyDeviceWritesOnMock({
   headers,
   redis,
   writeScope,
+  session,
 }) {
   const results = [];
   const totalMs =
@@ -326,6 +327,41 @@ export async function qualifyDeviceWritesOnMock({
         [jobId],
       )
     ).rows;
+  // The review session idles out after 60 s (auth.test.mjs:560). A DB-only wait refreshes it.
+  let sessionAt = 0;
+  const keepSession = async () => {
+    if (Date.now() - sessionAt < 20_000) return;
+    await session();
+    sessionAt = Date.now();
+  };
+  /** Wait for one job status. A failure the check does not expect ends the wait at once. */
+  const waitJob = async (jobId, wanted, label) => {
+    const deadline = Date.now() + totalMs;
+    for (;;) {
+      await keepSession();
+      const state = await job(jobId);
+      if (wanted.includes(state.status)) return state;
+      if (state.status === 'failed' && !wanted.includes('failed'))
+        assert.fail(`${label}: the job failed with ${state.failure}.`);
+      assert.ok(
+        Date.now() < deadline,
+        `${label}: the job stayed ${state.status}.`,
+      );
+      await delay(500);
+    }
+  };
+  /** Wait until every operation of the job holds the command ID of its issue answer. */
+  const waitCommandIssued = async (jobId) => {
+    const deadline = Date.now() + totalMs;
+    for (;;) {
+      await keepSession();
+      const rows = await operations(jobId);
+      if (rows.length > 0 && rows.every((row) => row.command_id !== null))
+        return rows;
+      assert.ok(Date.now() < deadline, 'The command issue settled.');
+      await delay(250);
+    }
+  };
   const byIds = async (deviceIds) => {
     const response = await call('/api/devices/by-ids', {
       method: 'POST',
@@ -507,6 +543,124 @@ export async function qualifyDeviceWritesOnMock({
       );
     } finally {
       await clearFaults();
+    }
+  }
+
+  // B6 acceptance 1 (design section 4 steps 5 to 10): with the clock scaled, the online device
+  // executes the Reboot, the poll settles it succeeded, and the job completes.
+  {
+    const online = (
+      await migrator.query(
+        `SELECT device_id FROM cc.devices
+          WHERE customer_id=$1 AND removed_at IS NULL AND status='ACTIVE' AND last_contact IS NOT NULL
+            AND last_contact > now() - interval '6 hours'
+          ORDER BY device_id LIMIT 1`,
+        [customer],
+      )
+    ).rows[0];
+    assert.ok(online, 'The mock stack holds an online ACTIVE device.');
+    const clock = await control('/clock');
+    try {
+      await control('/clock', { method: 'PUT', body: { scale: 60 } });
+      const { jobId } = await seedJob({
+        devices: [online.device_id],
+        command: true,
+      });
+      const issued = await waitCommandIssued(jobId);
+      assert.equal(issued[0].command_state, 'pending-delivery');
+      const state = await waitJob(
+        jobId,
+        ['completed'],
+        'The online command job',
+      );
+      assert.equal(state.status, 'completed', JSON.stringify(state));
+      const rows = await operations(jobId);
+      assert.deepEqual(
+        rows.map((row) => row.status),
+        ['succeeded'],
+        JSON.stringify(rows),
+      );
+      const evidence = (
+        await migrator.query(
+          `SELECT command_expires_at,command_executed_at,poll_count
+            FROM cc.device_update_operations WHERE job_id=$1`,
+          [jobId],
+        )
+      ).rows[0];
+      assert.ok(
+        evidence.command_expires_at,
+        'The first poll stores the expiry Google returned.',
+      );
+      assert.ok(
+        evidence.command_executed_at,
+        'The success stores the execution time Google returned.',
+      );
+      results.push(
+        'with scale 60 an online Reboot reaches succeeded and its command job completes: pass',
+      );
+    } finally {
+      await control('/clock', {
+        method: 'PUT',
+        body: { scale: clock.scale, delays: clock.delays },
+      });
+    }
+  }
+
+  // B6 acceptance 2: with a short commandExpirySeconds, the offline device reaches expired and the
+  // job ends failed (no success, no unknown).
+  {
+    const offline = (
+      await migrator.query(
+        `SELECT device_id FROM cc.devices
+          WHERE customer_id=$1 AND removed_at IS NULL AND status='ACTIVE'
+            AND (last_contact IS NULL OR last_contact <= now() - interval '30 hours')
+          ORDER BY device_id LIMIT 1`,
+        [customer],
+      )
+    ).rows[0];
+    assert.ok(offline, 'The mock stack holds an offline ACTIVE device.');
+    const clock = await control('/clock');
+    const record = await control(`/domains/${mock.customerId}`);
+    const expiry = record.settings.writes.commandExpirySeconds;
+    try {
+      await control('/clock', { method: 'PUT', body: { scale: 60 } });
+      await control(`/domains/${mock.customerId}/settings`, {
+        method: 'PUT',
+        body: { writes: { commandExpirySeconds: 120 } },
+      });
+      const { jobId } = await seedJob({
+        devices: [offline.device_id],
+        command: true,
+      });
+      await waitCommandIssued(jobId);
+      const state = await waitJob(
+        jobId,
+        ['failed', 'completed-with-errors'],
+        'The offline command job',
+      );
+      const rows = await operations(jobId);
+      assert.deepEqual(
+        rows.map((row) => row.status),
+        ['expired'],
+        JSON.stringify(rows),
+      );
+      assert.equal(
+        state.status,
+        'failed',
+        `A job with one expired command ends failed: ${JSON.stringify(state)}`,
+      );
+      results.push(
+        'with commandExpirySeconds 120 an offline Reboot reaches expired and its command job ends failed: pass',
+      );
+    } finally {
+      await control(`/domains/${mock.customerId}/settings`, {
+        method: 'PUT',
+        body: { writes: { commandExpirySeconds: expiry } },
+      });
+      await control('/clock', {
+        method: 'PUT',
+        body: { scale: clock.scale, delays: clock.delays },
+      });
     }
   }
 
