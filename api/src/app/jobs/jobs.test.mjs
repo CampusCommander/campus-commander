@@ -456,6 +456,7 @@ test('reconcile refuses a command operation with reconcile-unsupported', async (
       return 'execution';
     },
   };
+  const authorize = authorizer(['read', 'update', 'status']);
   await assert.rejects(
     new Jobs(db).reconcile(
       session(),
@@ -464,19 +465,195 @@ test('reconcile refuses a command operation with reconcile-unsupported', async (
       1,
       '55555555-5555-4555-8555-555555555555',
       orchestration,
+      authorize,
     ),
     (error) =>
       error instanceof ConflictException &&
       error.getResponse().reason === 'reconcile-unsupported',
   );
   assert.deepEqual(orchestration.started, []);
+  // No permission allows a command Reconcile, so the kind permission never runs.
+  assert.deepEqual(authorize.checks, ['read']);
   // A command operation claims nothing, so no read-back starts.
-  assert.equal(
-    db.calls.some(([text]) =>
-      text.includes('claim_device_update_verification'),
-    ),
-    false,
+  assert.equal(claimCount(db), 0);
+});
+
+/** A fake Reconcile authorizer. The granted checks stand in for the caller's actions. */
+function authorizer(grants) {
+  const checks = [];
+  const authorize = async (check) => {
+    checks.push(check);
+    if (!grants.includes(check))
+      throw new ForbiddenException(
+        'This action requires additional permission.',
+      );
+  };
+  authorize.checks = checks;
+  return authorize;
+}
+
+const operationRow = (overrides = {}) => ({
+  operation_number: 1,
+  device_id: 'device-1',
+  serial_number: 'C0A1-0001',
+  org_unit_path: '/Schools/A',
+  action: 'annotated-location',
+  mode: 'replace',
+  baseline_value: 'Room 1',
+  requested_value: 'Room 12',
+  status: 'unknown',
+  outcome_reason: 'ambiguous',
+  google_status: null,
+  google_reason: null,
+  observed_value: null,
+  verified_by: null,
+  command_id: null,
+  command_state: null,
+  command_expires_at: null,
+  command_executed_at: null,
+  updated_at: new Date('2026-10-21T12:00:00.000Z'),
+  ...overrides,
+});
+
+/** A database for one Reconcile: the header, the operation row, and the claim. */
+function reconcileDatabase(job = {}, operation = {}) {
+  return database([
+    ['p.display_name AS requested_by_name', [jobRow(job)]],
+    ['o.operation_number=$5', [operationRow(operation)]],
+    [
+      'claim_device_update_verification',
+      [{ result: [{ operationNumber: 1 }] }],
+    ],
+  ]);
+}
+
+const reconcileOrchestration = () => ({
+  started: [],
+  async startDeviceUpdateReconcile(input) {
+    this.started.push(input);
+    return 'execution';
+  },
+});
+
+const claimCount = (db) =>
+  db.calls.filter(([text]) => text.includes('claim_device_update_verification'))
+    .length;
+
+test('reconcile of a status operation takes devices:status and claims the read-back', async () => {
+  const db = reconcileDatabase(
+    { kind: 'device-status', action: 'disable' },
+    { action: 'disable', mode: null, requested_value: 'DISABLED' },
   );
+  const orchestration = reconcileOrchestration();
+  // jobs:read and devices:status, without devices:write.
+  const authorize = authorizer(['read', 'status']);
+  const operation = await new Jobs(db).reconcile(
+    session(),
+    'C0123456',
+    'STS-001',
+    1,
+    '55555555-5555-4555-8555-555555555555',
+    orchestration,
+    authorize,
+  );
+  assert.equal(operation.operation, 'disable');
+  assert.deepEqual(authorize.checks, ['read', 'status']);
+  assert.equal(claimCount(db), 1);
+  assert.equal(orchestration.started.length, 1);
+});
+
+test('reconcile of a status operation refuses devices:write without devices:status', async () => {
+  const db = reconcileDatabase(
+    { kind: 'device-status', action: 'disable' },
+    { action: 'disable', mode: null },
+  );
+  const orchestration = reconcileOrchestration();
+  // jobs:read and devices:write, without devices:status.
+  const authorize = authorizer(['read', 'update']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'STS-001',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) => error instanceof ForbiddenException && error.getStatus() === 403,
+  );
+  assert.deepEqual(authorize.checks, ['read', 'status']);
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
+});
+
+test('reconcile of an update operation refuses devices:status without devices:write', async () => {
+  const db = reconcileDatabase();
+  const orchestration = reconcileOrchestration();
+  // jobs:read and devices:status, without devices:write.
+  const authorize = authorizer(['read', 'status']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'UPD-001',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) => error instanceof ForbiddenException && error.getStatus() === 403,
+  );
+  assert.deepEqual(authorize.checks, ['read', 'update']);
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
+});
+
+test('reconcile refuses a caller without jobs:read before it reads the job', async () => {
+  const db = database([]);
+  const orchestration = reconcileOrchestration();
+  const authorize = authorizer(['update', 'status']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'UPD-001',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) => error instanceof ForbiddenException && error.getStatus() === 403,
+  );
+  assert.deepEqual(authorize.checks, ['read']);
+  assert.deepEqual(db.calls, []);
+  assert.deepEqual(orchestration.started, []);
+});
+
+test('reconcile checks the settled state after the kind permission', async () => {
+  const db = reconcileDatabase(
+    { kind: 'device-status', action: 'reenable' },
+    { action: 'reenable', mode: null, status: 'succeeded' },
+  );
+  const orchestration = reconcileOrchestration();
+  const authorize = authorizer(['read', 'status']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'STS-001',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) =>
+      error instanceof ConflictException &&
+      error.getResponse().reason === 'operation-settled',
+  );
+  assert.deepEqual(authorize.checks, ['read', 'status']);
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
 });
 
 test('reconcile claims an unknown update operation and starts its read-back', async () => {
@@ -515,6 +692,7 @@ test('reconcile claims an unknown update operation and starts its read-back', as
     1,
     '55555555-5555-4555-8555-555555555555',
     orchestration,
+    authorizer(['read', 'update']),
   );
   assert.equal(operation.operationId, 'UPD-001-1');
   assert.equal(orchestration.started.length, 1);
