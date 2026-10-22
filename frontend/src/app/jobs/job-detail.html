@@ -213,10 +213,16 @@
                 </div>
               </td>
               <td>{{ operationLabel(operation) }}</td>
-              <td>{{ beforeText(operation) }}</td>
-              <td>{{ requestedText(operation) }}</td>
+              <td>
+                @for (part of pathParts(beforeText(operation)); track $index)
+                {<span>{{ part }}</span>@if (!$last) {<wbr />}}
+              </td>
+              <td>
+                @for (part of pathParts(requestedText(operation)); track $index)
+                {<span>{{ part }}</span>@if (!$last) {<wbr />}}
+              </td>
               <td class="outcome-cell">
-                @if (store.reconciling().has(operation.operationId)) {
+                @if (isReconciling(operation)) {
                 <span class="status-chip small tone-info"
                   ><span class="dot" aria-hidden="true"></span>Reconciling</span
                 >
@@ -225,8 +231,8 @@
                   ><span class="dot" aria-hidden="true"></span>{{ chip.label
                   }}</span
                 >
-                @if (operation.outcome === 'failed' && operation.googleReason) {
-                <span class="outcome-reason">{{ operation.googleReason }}</span>
+                @if (rowFailureText(job, operation); as failureText) {
+                <span class="outcome-reason">{{ failureText }}</span>
                 } }
               </td>
               <td>
@@ -250,7 +256,7 @@
                 </button>
                 } @else if (operation.outcome === 'unknown' &&
                 !isCommandOperation(operation) && canReconcile() &&
-                !store.reconciling().has(operation.operationId)) {
+                !isReconciling(operation)) {
                 <button mat-button type="button" (click)="reconcile(operation)">
                   Reconcile
                 </button>
