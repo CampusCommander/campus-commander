@@ -62,6 +62,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
           orgUnitPath: '/School A',
           lastSync: '2026-09-05T14:28:12.345Z',
           annotatedLocation: 'Science wing',
+          annotatedUser: 'avery.chen@example.org',
           notes: '  ',
           status: 'ACTIVE',
         },
@@ -84,6 +85,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
   assert.equal(calls[0].params.maxResults, 300);
   assert.equal(calls[0].params.projection, 'FULL');
   assert.equal(calls[0].params.pageToken, undefined);
+  assert.match(calls[0].params.fields, /annotatedUser/);
   assert.equal(calls[1].params.pageToken, 'page-2');
   assert.deepEqual(pages[0][0], {
     deviceId: 'd1',
@@ -93,6 +95,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
     orgUnitPath: '/School A',
     lastContact: '2026-09-05T14:28:12.345Z',
     annotatedLocation: 'Science wing',
+    annotatedUser: 'avery.chen@example.org',
     notes: null,
     status: 'ACTIVE',
   });
@@ -104,6 +107,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
     orgUnitPath: '/',
     lastContact: null,
     annotatedLocation: null,
+    annotatedUser: null,
     notes: null,
     status: null,
   });
@@ -741,6 +745,135 @@ test('patchAnnotatedLocations rejects a batch size above 250', async (t) => {
     ),
     { name: 'BatchServiceError', code: 'invalid-option' },
   );
+});
+
+/** A 2xx PATCH answer that echoes the string fields of the request. Google omits a cleared field. */
+const patchedDevice = (part) => ({
+  status: 200,
+  body: {
+    deviceId: part.key,
+    serialNumber: `S-${part.key}`,
+    orgUnitPath:
+      typeof part.body.orgUnitPath === 'string'
+        ? part.body.orgUnitPath
+        : '/School A',
+    ...(typeof part.body.annotatedLocation === 'string'
+      ? { annotatedLocation: part.body.annotatedLocation }
+      : {}),
+    ...(typeof part.body.annotatedUser === 'string'
+      ? { annotatedUser: part.body.annotatedUser }
+      : {}),
+    ...(typeof part.body.notes === 'string' ? { notes: part.body.notes } : {}),
+  },
+});
+
+test('patchDevices sends one PATCH part with every changed field', async (t) => {
+  const { google, scopes } = stubBatch(t, patchedDevice);
+  const sent = [];
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).patchDevices(
+    credential,
+    'C0123456',
+    [
+      {
+        deviceId: 'd1',
+        fields: {
+          annotatedLocation: 'Room 1',
+          annotatedUser: 'avery.chen@example.org',
+          notes: 'Shared cart',
+          orgUnitPath: '/School A/Devices/Carts',
+        },
+      },
+      { deviceId: 'd2', fields: { notes: null } },
+    ],
+    signal(),
+    { onSend: (ids) => void sent.push(ids) },
+  );
+  assert.deepEqual(
+    scopes,
+    [writeScope],
+    'The write token uses the write scope.',
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [
+      part.method,
+      part.path,
+      part.query.projection,
+      part.body,
+    ]),
+    [
+      [
+        'PATCH',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d1',
+        'FULL',
+        {
+          annotatedLocation: 'Room 1',
+          annotatedUser: 'avery.chen@example.org',
+          notes: 'Shared cart',
+          orgUnitPath: '/School A/Devices/Carts',
+        },
+      ],
+      [
+        'PATCH',
+        '/admin/directory/v1/customer/C0123456/devices/chromeos/d2',
+        'FULL',
+        { notes: null },
+      ],
+    ],
+    'One PATCH carries every changed field, and Clear sends null.',
+  );
+  assert.match(google.sent[0][0].query.fields, /orgUnitPath/);
+  assert.deepEqual(sent, [['d1', 'd2']], 'onSend names the sent requests.');
+  assert.equal(result.succeeded.size, 2);
+  assert.equal(result.failed.size, 0);
+  assert.deepEqual(
+    [
+      result.succeeded.get('d1')[0].annotatedUser,
+      result.succeeded.get('d1')[0].orgUnitPath,
+      result.succeeded.get('d2')[0].notes,
+    ],
+    ['avery.chen@example.org', '/School A/Devices/Carts', null],
+    'Each answer maps through the device observation.',
+  );
+});
+
+test('patchDevices rejects a write without a contract field', async (t) => {
+  stubBatch(t, patchedDevice);
+  const reader = new GoogleDeviceReader({ batch: fastBatch() });
+  await assert.rejects(
+    reader.patchDevices(
+      credential,
+      'C0123456',
+      [{ deviceId: 'd1', fields: {} }],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+  );
+  await assert.rejects(
+    reader.patchDevices(
+      credential,
+      'C0123456',
+      [{ deviceId: 'd1', fields: { annotatedAssetId: 'HS-0417' } }],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+    'Asset tag is not a bulk update field.',
+  );
+});
+
+test('patchDevices fails a body that is not a device', async (t) => {
+  stubBatch(t, () => ({ status: 200, body: { deviceId: 'd1' } }));
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).patchDevices(
+    credential,
+    'C0123456',
+    [{ deviceId: 'd1', fields: { notes: 'A' } }],
+    signal(),
+  );
+  assert.equal(result.succeeded.size, 0);
+  assert.equal(result.failed.get('d1').kind, 'invalid-response');
 });
 
 test('deviceStates reports one state per device and reads the inventory scope', async (t) => {

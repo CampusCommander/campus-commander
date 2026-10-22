@@ -109,6 +109,35 @@ async function readMockTelemetry(mock, deviceId, scope) {
   return JSON.parse(response.text);
 }
 
+/** Every device the mock holds, read back over its Google surface. */
+async function readMockDevices(mock) {
+  const token = await mockToken(
+    mock,
+    'https://www.googleapis.com/auth/admin.directory.device.chromeos.readonly',
+  );
+  const devices = [];
+  let pageToken = '';
+  for (;;) {
+    const response = await mockGoogle({
+      mock,
+      host: 'admin.googleapis.com',
+      path: `/admin/directory/v1/customer/${mock.customerId}/devices/chromeos?maxResults=300&projection=FULL${
+        pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''
+      }`,
+      token,
+    });
+    assert.equal(
+      response.status,
+      200,
+      `The mock device list answered ${response.status}: ${response.text}`,
+    );
+    const body = JSON.parse(response.text);
+    devices.push(...(body.chromeosdevices ?? []));
+    if (!body.nextPageToken) return devices;
+    pageToken = body.nextPageToken;
+  }
+}
+
 /**
  * The battery class and capacity that Campus Commander derives from one telemetry
  * device: the newest report that names a known health value wins.
@@ -340,6 +369,92 @@ async function runAdminSdkMockIntegration({
   ).page;
   assert.equal(page.total, counts.devices);
   assert.equal(page.matching, counts.devices);
+
+  // U1: the sync stores the annotated user that the mock seeds.
+  const seeded = await readMockDevices(mock);
+  const withUser = seeded.find((device) => device.annotatedUser);
+  const withoutUser = seeded.find((device) => !device.annotatedUser);
+  assert.ok(withUser, 'The mock seed annotates one device with a user.');
+  assert.ok(
+    withoutUser,
+    'The mock seed leaves one device without an annotated user.',
+  );
+  const withUserRecord = JSON.parse(
+    (await call(`/api/devices/${withUser.deviceId}`)).text,
+  ).device;
+  assert.equal(withUserRecord.annotatedUser, withUser.annotatedUser);
+  const withoutUserRecord = JSON.parse(
+    (await call(`/api/devices/${withoutUser.deviceId}`)).text,
+  ).device;
+  assert.equal(withoutUserRecord.annotatedUser, null);
+  const userPage = JSON.parse(
+    (
+      await call('/api/devices/query', {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          predicates: [
+            {
+              field: 'annotatedUser',
+              operator: 'equals',
+              value: withUser.annotatedUser,
+            },
+          ],
+          limit: queryLimit,
+        },
+      })
+    ).text,
+  ).page;
+  const expectedUsers = (
+    await migrator.query(
+      'SELECT device_id FROM cc.devices WHERE customer_id=$1 AND removed_at IS NULL AND lower(annotated_user)=lower($2)',
+      [mock.customerId, withUser.annotatedUser],
+    )
+  ).rows.map((row) => row.device_id);
+  assert.ok(
+    expectedUsers.includes(withUser.deviceId),
+    'The stored row holds the seeded annotated user.',
+  );
+  assert.deepEqual(
+    userPage.rows.map((row) => row.deviceId).sort(),
+    [...expectedUsers].sort(),
+    'The annotated-user text filter returns the seeded device.',
+  );
+  assert.equal(userPage.matching, expectedUsers.length);
+  assert.equal(userPage.rows[0].annotatedUser, withUser.annotatedUser);
+  const sortedPage = JSON.parse(
+    (
+      await call('/api/devices/query', {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          sort: { field: 'annotatedUser', direction: 'asc' },
+          limit: 1000,
+        },
+      })
+    ).text,
+  ).page;
+  const expectedOrder = (
+    await migrator.query(
+      'SELECT device_id FROM cc.devices WHERE customer_id=$1 AND removed_at IS NULL ORDER BY annotated_user ASC NULLS LAST,device_id ASC',
+      [mock.customerId],
+    )
+  ).rows.map((row) => row.device_id);
+  assert.equal(sortedPage.rows.length, counts.devices);
+  assert.deepEqual(
+    sortedPage.rows.map((row) => row.deviceId),
+    expectedOrder,
+    'The annotated-user sort returns every device in the column order.',
+  );
+  assert.ok(
+    sortedPage.rows.some((row) => row.deviceId === withUser.deviceId),
+    'The annotated-user sort returns the seeded device.',
+  );
+  assert.equal(
+    sortedPage.rows.at(-1).annotatedUser,
+    null,
+    'The annotated-user sort places a device without the value last.',
+  );
 
   let compared = null;
   for (const row of page.rows.filter(

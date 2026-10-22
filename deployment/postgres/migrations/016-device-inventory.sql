@@ -40,6 +40,7 @@ CREATE TABLE cc.devices (
   org_unit_path text NOT NULL CHECK(left(org_unit_path,1)='/' AND length(org_unit_path)<=4096),
   last_contact timestamptz,
   annotated_location text CHECK(length(annotated_location)<=4096),
+  annotated_user text CHECK(length(annotated_user)<=4096),
   notes text CHECK(length(notes)<=4096),
   status text CHECK(length(status)<=64),
   battery_status text NOT NULL DEFAULT 'no-report' CHECK(battery_status IN ('reported','no-report','unavailable')),
@@ -51,6 +52,10 @@ CREATE TABLE cc.devices (
   last_entity_sync timestamptz NOT NULL,
   removed_at timestamptz,
   annotated_location_observed_at timestamptz,
+  -- The current-value stamp of each field that carries an overlay (section 5.8 rule 2).
+  annotated_user_observed_at timestamptz,
+  notes_observed_at timestamptz,
+  org_unit_path_observed_at timestamptz,
   status_observed_at timestamptz,
   -- Raises by one when any other column changes. See the trigger below.
   record_version bigint NOT NULL DEFAULT 1,
@@ -351,7 +356,8 @@ $$;
 CREATE FUNCTION cc.device_record(d cc.devices,p_telemetry_failure text) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT jsonb_build_object('deviceId',d.device_id,'serialNumber',d.serial_number,'model',d.model,'assetTag',d.asset_tag,
-    'orgUnitPath',d.org_unit_path,'lastContact',d.last_contact,'annotatedLocation',d.annotated_location,'notes',d.notes,
+    'orgUnitPath',d.org_unit_path,'lastContact',d.last_contact,'annotatedLocation',d.annotated_location,
+    'annotatedUser',d.annotated_user,'notes',d.notes,
     'status',d.status,
     'battery',CASE WHEN p_telemetry_failure IS NOT NULL THEN jsonb_build_object('status','unavailable')
       WHEN d.battery_status='reported' THEN jsonb_build_object('status','reported','health',d.battery_health,
@@ -388,10 +394,15 @@ BEGIN
     ORDER BY e.value->>'deviceId',e.position DESC
   ), upserted AS (
     INSERT INTO cc.devices(customer_id,device_id,serial_number,model,asset_tag,org_unit_path,last_contact,
-      annotated_location,notes,status,last_entity_sync,annotated_location_observed_at,status_observed_at)
+      annotated_location,annotated_user,notes,status,last_entity_sync,annotated_location_observed_at,
+      annotated_user_observed_at,notes_observed_at,org_unit_path_observed_at,status_observed_at)
     SELECT p_customer,i.device_id,i.row_value->>'serialNumber',i.row_value->>'model',i.row_value->>'assetTag',
       i.row_value->>'orgUnitPath',(i.row_value->>'lastContact')::timestamptz,i.row_value->>'annotatedLocation',
-      i.row_value->>'notes',i.row_value->>'status',p_synced_at,
+      i.row_value->>'annotatedUser',i.row_value->>'notes',i.row_value->>'status',p_synced_at,
+      -- A read observation stamps every field that it observes (section 5.8 rule 2).
+      CASE WHEN p_observation='read' THEN p_synced_at END,
+      CASE WHEN p_observation='read' THEN p_synced_at END,
+      CASE WHEN p_observation='read' THEN p_synced_at END,
       CASE WHEN p_observation='read' THEN p_synced_at END,
       CASE WHEN p_observation='read' THEN p_synced_at END
     FROM incoming i
@@ -402,12 +413,30 @@ BEGIN
         ELSE cc.devices.model END,
       asset_tag=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.asset_tag
         ELSE cc.devices.asset_tag END,
-      org_unit_path=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.org_unit_path
+      org_unit_path=CASE
+        WHEN p_observation='read' AND (cc.devices.org_unit_path_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.org_unit_path_observed_at) THEN EXCLUDED.org_unit_path
+        WHEN p_observation='list' AND NOT EXISTS(SELECT 1 FROM cc.device_write_overlays o
+          WHERE o.customer_id=cc.devices.customer_id AND o.device_id=cc.devices.device_id AND
+            o.field='orgUnitPath' AND o.expires_at>clock_timestamp()) THEN EXCLUDED.org_unit_path
         ELSE cc.devices.org_unit_path END,
+      org_unit_path_observed_at=CASE
+        WHEN p_observation='read' AND (cc.devices.org_unit_path_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.org_unit_path_observed_at) THEN EXCLUDED.last_entity_sync
+        ELSE cc.devices.org_unit_path_observed_at END,
       last_contact=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.last_contact
         ELSE cc.devices.last_contact END,
-      notes=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.notes
+      notes=CASE
+        WHEN p_observation='read' AND (cc.devices.notes_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.notes_observed_at) THEN EXCLUDED.notes
+        WHEN p_observation='list' AND NOT EXISTS(SELECT 1 FROM cc.device_write_overlays o
+          WHERE o.customer_id=cc.devices.customer_id AND o.device_id=cc.devices.device_id AND
+            o.field='notes' AND o.expires_at>clock_timestamp()) THEN EXCLUDED.notes
         ELSE cc.devices.notes END,
+      notes_observed_at=CASE
+        WHEN p_observation='read' AND (cc.devices.notes_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.notes_observed_at) THEN EXCLUDED.last_entity_sync
+        ELSE cc.devices.notes_observed_at END,
       status=CASE
         WHEN p_observation='read' AND (cc.devices.status_observed_at IS NULL OR
           EXCLUDED.last_entity_sync>cc.devices.status_observed_at) THEN EXCLUDED.status
@@ -433,16 +462,41 @@ BEGIN
       annotated_location_observed_at=CASE
         WHEN p_observation='read' AND (cc.devices.annotated_location_observed_at IS NULL OR
           EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) THEN EXCLUDED.last_entity_sync
-        ELSE cc.devices.annotated_location_observed_at END
+        ELSE cc.devices.annotated_location_observed_at END,
+      annotated_user=CASE
+        WHEN p_observation='read' AND (cc.devices.annotated_user_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.annotated_user_observed_at) THEN EXCLUDED.annotated_user
+        WHEN p_observation='list' AND NOT EXISTS(SELECT 1 FROM cc.device_write_overlays o
+          WHERE o.customer_id=cc.devices.customer_id AND o.device_id=cc.devices.device_id AND
+            o.field='annotatedUser' AND o.expires_at>clock_timestamp()) THEN EXCLUDED.annotated_user
+        ELSE cc.devices.annotated_user END,
+      annotated_user_observed_at=CASE
+        WHEN p_observation='read' AND (cc.devices.annotated_user_observed_at IS NULL OR
+          EXCLUDED.last_entity_sync>cc.devices.annotated_user_observed_at) THEN EXCLUDED.last_entity_sync
+        ELSE cc.devices.annotated_user_observed_at END
     WHERE cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync OR (p_observation='read' AND
       ((cc.devices.annotated_location_observed_at IS NULL OR
         EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) OR
+       (cc.devices.annotated_user_observed_at IS NULL OR
+        EXCLUDED.last_entity_sync>cc.devices.annotated_user_observed_at) OR
+       (cc.devices.notes_observed_at IS NULL OR
+        EXCLUDED.last_entity_sync>cc.devices.notes_observed_at) OR
+       (cc.devices.org_unit_path_observed_at IS NULL OR
+        EXCLUDED.last_entity_sync>cc.devices.org_unit_path_observed_at) OR
        (cc.devices.status_observed_at IS NULL OR
         EXCLUDED.last_entity_sync>cc.devices.status_observed_at)))
     RETURNING cc.devices.device_id AS device_id,
-      cc.devices.annotated_location AS annotated_location_value,cc.devices.status AS status_value,
+      cc.devices.annotated_location AS annotated_location_value,cc.devices.annotated_user AS annotated_user_value,
+      cc.devices.notes AS notes_value,cc.devices.org_unit_path AS org_unit_path_value,
+      cc.devices.status AS status_value,
       (p_observation='read' AND cc.devices.annotated_location_observed_at IS NOT DISTINCT FROM p_synced_at)
         AS annotated_location_moved,
+      (p_observation='read' AND cc.devices.annotated_user_observed_at IS NOT DISTINCT FROM p_synced_at)
+        AS annotated_user_moved,
+      (p_observation='read' AND cc.devices.notes_observed_at IS NOT DISTINCT FROM p_synced_at)
+        AS notes_moved,
+      (p_observation='read' AND cc.devices.org_unit_path_observed_at IS NOT DISTINCT FROM p_synced_at)
+        AS org_unit_path_moved,
       (p_observation='read' AND cc.devices.status_observed_at IS NOT DISTINCT FROM p_synced_at)
         AS status_moved
   ), converged AS (
@@ -450,15 +504,25 @@ BEGIN
     WHERE p_observation='list' AND o.customer_id=p_customer AND o.device_id=u.device_id AND
       o.expires_at>clock_timestamp() AND i.device_id=u.device_id AND
       ((o.field='annotatedLocation' AND o.value IS NOT DISTINCT FROM (i.row_value->>'annotatedLocation')) OR
+       (o.field='annotatedUser' AND o.value IS NOT DISTINCT FROM (i.row_value->>'annotatedUser')) OR
+       (o.field='notes' AND o.value IS NOT DISTINCT FROM (i.row_value->>'notes')) OR
+       -- Google OU paths are case-insensitive, so a path converges without case.
+       (o.field='orgUnitPath' AND lower(o.value)=lower(i.row_value->>'orgUnitPath')) OR
        (o.field='status' AND o.value IS NOT DISTINCT FROM (i.row_value->>'status')))
   ), moved AS (
     UPDATE cc.device_write_overlays o SET
-      value=CASE WHEN o.field='status' THEN u.status_value ELSE u.annotated_location_value END,
+      value=CASE o.field WHEN 'status' THEN u.status_value
+        WHEN 'annotatedLocation' THEN u.annotated_location_value
+        WHEN 'annotatedUser' THEN u.annotated_user_value WHEN 'notes' THEN u.notes_value
+        ELSE u.org_unit_path_value END,
       observed_at=p_synced_at,source='refresh-read',expires_at=p_synced_at+interval '36 hours'
     FROM upserted u
     WHERE p_observation='read' AND o.customer_id=p_customer AND o.device_id=u.device_id AND
       o.expires_at>clock_timestamp() AND
       ((o.field='annotatedLocation' AND u.annotated_location_moved) OR
+       (o.field='annotatedUser' AND u.annotated_user_moved) OR
+       (o.field='notes' AND u.notes_moved) OR
+       (o.field='orgUnitPath' AND u.org_unit_path_moved) OR
        (o.field='status' AND u.status_moved))
   )
   SELECT count(*) INTO written FROM upserted;

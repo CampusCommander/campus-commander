@@ -35,6 +35,10 @@ export type {
   DeviceStatusChange,
   DeviceStatusPart,
   DeviceStatusResult,
+  DeviceWrite,
+  DeviceWriteBatchOptions,
+  DeviceWriteField,
+  DeviceWriteFields,
   IssuedDeviceCommand,
   WrittenDevice,
 } from './lib/devices';

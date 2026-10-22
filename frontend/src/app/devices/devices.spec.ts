@@ -762,6 +762,25 @@ describe('Bulk Actions', () => {
     expect(menuItem('Update device')?.disabled).toBe(true);
   });
 
+  it('shows one selection note above the grid when no device is selected', async () => {
+    const { element, openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      selectionCount: 0,
+    });
+    const notes = [...element.querySelectorAll('.action-note-group p')].map(
+      (note) => note.textContent?.trim(),
+    );
+    expect(notes).toEqual(['Select one or more devices to update.']);
+    await openBulk();
+    for (const label of ['Update device', 'Send command', 'Change status']) {
+      expect(menuItem(label)?.disabled).toBe(true);
+      expect(menuItem(label)?.getAttribute('aria-describedby')).toBe(
+        'bulk-note',
+      );
+    }
+  });
+
   it('opens the command sheet from Send command', async () => {
     const { openBulk, menuItem, fixture, actionSheet } = setup({
       sync: ready(),

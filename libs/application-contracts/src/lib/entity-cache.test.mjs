@@ -101,6 +101,7 @@ test('the Redis record schema accepts cc.device_record output without removedAt 
     orgUnitPath: '/School A',
     lastContact: '2026-10-05T12:00:00+00:00',
     annotatedLocation: null,
+    annotatedUser: null,
     notes: null,
     status: 'ACTIVE',
     battery: {
@@ -133,6 +134,7 @@ test('the Redis entry schema carries the entry version and a record without remo
     orgUnitPath: '/School A',
     lastContact: '2026-10-05T12:00:00+00:00',
     annotatedLocation: null,
+    annotatedUser: null,
     notes: null,
     status: 'ACTIVE',
     battery: {
