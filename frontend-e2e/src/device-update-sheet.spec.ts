@@ -302,8 +302,19 @@ async function openSheet(page: Page) {
 
 async function fillDraft(page: Page, value = 'North lab') {
   const sheet = page.locator('app-device-update-sheet .bulk-sheet');
-  await sheet.getByLabel('Annotated location').fill(value);
-  await expect(sheet.getByLabel('Annotated location')).toHaveValue(value);
+  await sheet
+    .locator('.field-block[data-field="annotatedLocation"]')
+    .getByRole('combobox')
+    .click();
+  await page
+    .getByRole('option', { name: 'Update · Replace the existing value' })
+    .click();
+  const input = sheet
+    .locator('.field-block[data-field="annotatedLocation"]')
+    .getByLabel('New value');
+  await input.fill(value);
+  await expect(input).toHaveValue(value);
+  return input;
 }
 
 async function savePreview(page: Page) {
@@ -415,7 +426,10 @@ for (const theme of ['light', 'dark'] as const) {
     );
     await expectNoAxeViolations(page);
     await fillDraft(page);
-    await sheet.getByLabel('Annotated location').blur();
+    await sheet
+      .locator('.field-block[data-field="annotatedLocation"]')
+      .getByLabel('New value')
+      .blur();
     await expect(
       sheet.getByRole('button', { name: 'Save and preview' }),
     ).toBeEnabled();
@@ -576,7 +590,11 @@ test('shows the offline state inside Edit and keeps the draft', async ({
       'Your draft stays in this tab. Reconnect before you prepare a preview.',
     ),
   ).toBeVisible();
-  await expect(sheet.getByLabel('Annotated location')).toHaveValue('North lab');
+  await expect(
+    sheet
+      .locator('.field-block[data-field="annotatedLocation"]')
+      .getByLabel('New value'),
+  ).toHaveValue('North lab');
   await expectNoAxeViolations(page);
 });
 
