@@ -112,3 +112,99 @@ it.each(['permission', 'session', 'interruption', 'destroy'])(
     expect(editor.canConfirm()).toBe(false);
   },
 );
+
+const units = [
+  { id: 'root', parentId: null, name: 'example.org', path: '/' },
+  { id: 'a', parentId: 'root', name: 'School A', path: '/School A' },
+  {
+    id: 'students',
+    parentId: 'a',
+    name: 'Students',
+    path: '/School A/Students',
+  },
+  { id: 'b', parentId: 'root', name: 'School B', path: '/School B' },
+];
+
+const references = (generation: number, observedAt: string) => ({
+  customerId: 'C0123456',
+  generation,
+  fresh: true,
+  failure: null,
+  checkedAt: null,
+  checking: false,
+  retryAt: null,
+  observation: {
+    customerId: 'C0123456',
+    generation,
+    revision: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    observedAt,
+    verified: true as const,
+    complete: true as const,
+    units: units.map((unit) => ({ ...unit })),
+  },
+});
+
+it('keeps a closed branch closed when the unit list refreshes', async () => {
+  sessionStorage.clear();
+  const session = signal({
+    identity: {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      permissionVersion: 1,
+      grants: [{ action: 'schools:manage', scope: { kind: 'platform' } }],
+    },
+    csrfToken: 'original',
+  });
+  await TestBed.configureTestingModule({
+    imports: [SchoolEditor],
+    providers: [
+      SchoolsStore,
+      {
+        provide: AuthStore,
+        useValue: {
+          session,
+          interrupted: signal(false),
+          request: vi.fn(),
+          can: () => true,
+          metadata: () => ({ phase: 3 }),
+        },
+      },
+    ],
+  }).compileComponents();
+  const fixture = TestBed.createComponent(SchoolEditor);
+  const editor = fixture.componentInstance;
+  const store = TestBed.inject(SchoolsStore);
+  fixture.detectChanges();
+  const observedAt = new Date(store.now()).toISOString();
+  store.references.set(references(1, observedAt));
+  editor.begin();
+  // The chosen rule points inside the branch that the person closes.
+  editor.selectedId.set('students');
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const host: HTMLElement = fixture.nativeElement;
+  const row = (id: string) =>
+    host.querySelector<HTMLElement>(`[data-ou-id="${id}"]`);
+  const toggle = (label: string) =>
+    [...host.querySelectorAll('button')].find(
+      (button) => button.getAttribute('aria-label') === label,
+    );
+  toggle('Expand School A')?.click();
+  fixture.detectChanges();
+  expect(row('students')).toBeTruthy();
+  toggle('Collapse School A')?.click();
+  fixture.detectChanges();
+  expect(row('students')).toBeNull();
+  expect(row('a')?.getAttribute('aria-expanded')).toBe('false');
+
+  // A refresh of the unit list must not reopen the branch that the person closed.
+  store.references.set(
+    references(2, new Date(store.now() + 1000).toISOString()),
+  );
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(row('students')).toBeNull();
+  expect(row('a')?.getAttribute('aria-expanded')).toBe('false');
+  expect(row('a')?.getAttribute('aria-selected')).toBe('false');
+});

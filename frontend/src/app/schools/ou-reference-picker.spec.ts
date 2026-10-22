@@ -118,9 +118,17 @@ it('shows no row when the search matches no unit', async () => {
   expect(host.textContent).toContain('No organization units match.');
 });
 
-it('reveals the selected unit inside a collapsed branch', async () => {
+it('opens the branch of the selected unit only for a host that opts in', async () => {
   const { fixture, item } = await setup();
   fixture.componentRef.setInput('selectedId', 'child');
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  // The Schools editor keeps its own expansion state, so the default stays closed.
+  expect(item('a').getAttribute('aria-expanded')).toBe('false');
+
+  // The organization unit dialog reveals the chosen destination when it opens again.
+  fixture.componentRef.setInput('revealSelected', true);
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();

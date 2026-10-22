@@ -26,6 +26,7 @@
       <app-ou-reference-picker
         [units]="units()"
         [selectedId]="highlighted()?.id ?? null"
+        [revealSelected]="true"
         [query]="query()"
         (selected)="select($event)"
       />
