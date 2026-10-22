@@ -1,4 +1,5 @@
 import type {
+  DevicePredicate,
   DeviceRow,
   DeviceUpdateChange,
   DeviceUpdateJobReceipt,
@@ -35,12 +36,70 @@ export interface SimulatedDevice {
   annotatedLocation: string | null;
   annotatedUser: string | null;
   notes: string | null;
+  /**
+   * The organization unit of the device. A Move changes it, and the grid reads it back.
+   * Defaults to the observed unit of the F2 fixture.
+   */
+  orgUnitPath?: string;
   /** The device left the inventory after the selection; U6 freezes it as an exclusion. */
   removed?: boolean;
 }
 
 const observedAt = '2026-10-21T12:00:00.000Z';
 const orgUnitPath = '/Chrome Devices/Lowell Academy/One to One';
+
+/** The scope that the organization unit read mints (design section 6). */
+export const ORG_UNIT_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+
+/** The tree of `GET /api/devices/updates/org-units` while Google grants the read. */
+export const orgUnitTree = {
+  state: 'granted' as const,
+  scope: ORG_UNIT_SCOPE,
+  failure: null,
+  orgUnits: [
+    {
+      orgUnitId: 'ou-root',
+      name: 'example.org',
+      orgUnitPath: '/',
+      parentOrgUnitId: null,
+    },
+    {
+      orgUnitId: 'ou-chrome',
+      name: 'Chrome Devices',
+      orgUnitPath: '/Chrome Devices',
+      parentOrgUnitId: 'ou-root',
+    },
+    {
+      orgUnitId: 'ou-lowell',
+      name: 'Lowell Academy',
+      orgUnitPath: '/Chrome Devices/Lowell Academy',
+      parentOrgUnitId: 'ou-chrome',
+    },
+    {
+      orgUnitId: 'ou-lowell-one',
+      name: 'One to One',
+      orgUnitPath: '/Chrome Devices/Lowell Academy/One to One',
+      parentOrgUnitId: 'ou-lowell',
+    },
+    {
+      orgUnitId: 'ou-cart',
+      name: 'Cart Devices',
+      orgUnitPath: '/Chrome Devices/Cart Devices',
+      parentOrgUnitId: 'ou-chrome',
+    },
+  ],
+  observedAt,
+};
+
+/** The answer without the read scope (PNG 05): no tree, one failure, one scope to add. */
+export const deniedOrgUnitTree = {
+  state: 'denied' as const,
+  scope: ORG_UNIT_SCOPE,
+  failure: 'scope-mismatch' as const,
+  orgUnits: null,
+  observedAt,
+};
 
 export class U6Simulator {
   readonly previewId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -65,7 +124,7 @@ export class U6Simulator {
       this.devices.map((device, index) => ({
         device_id: this.deviceId(index),
         serial_number: device.serialNumber,
-        org_unit_path: orgUnitPath,
+        org_unit_path: device.orgUnitPath ?? orgUnitPath,
         annotated_location: device.annotatedLocation,
         annotated_user: device.annotatedUser,
         notes: device.notes,
@@ -153,13 +212,17 @@ export class U6Simulator {
       changed.push(target.deviceId);
       for (const field of target.fields) {
         if (field.disposition !== 'eligible') continue;
-        // F2 offers the three text fields only. F3 adds Organization unit.
-        if (field.field === 'orgUnitPath') continue;
         const change = this.changes.find(
           (candidate) => candidate.field === field.field,
         )!;
-        this.devices[this.indexOf(target.deviceId)]![field.field] =
-          this.value(change);
+        const value = this.value(change);
+        const device = this.devices[this.indexOf(target.deviceId)]!;
+        // A Move rewrites the organization unit; the grid reads the new path back.
+        if (field.field === 'orgUnitPath') {
+          if (value !== null) device.orgUnitPath = value;
+          continue;
+        }
+        device[field.field] = value;
       }
     }
     this.jobStatus = 'completed';
@@ -214,12 +277,12 @@ export class U6Simulator {
   }
 
   /** The grid page of the current inventory, after any settlement. */
-  page() {
-    const rows = this.rows();
+  page(predicates: readonly DevicePredicate[] = []) {
+    const rows = this.rows().filter((row) => this.matches(row, predicates));
     return devicePageSchema.parse({
       rows,
       matching: rows.length,
-      total: rows.length,
+      total: this.devices.length,
       observedAt,
       refreshJobId: null,
     });
@@ -231,7 +294,7 @@ export class U6Simulator {
       serialNumber: device.serialNumber,
       model: 'Dell Chromebook 3100',
       assetTag: `CB66246${index}`,
-      orgUnitPath,
+      orgUnitPath: device.orgUnitPath ?? orgUnitPath,
       lastContact: '2026-10-21T11:58:00Z',
       annotatedLocation: device.annotatedLocation,
       annotatedUser: device.annotatedUser,
@@ -246,6 +309,19 @@ export class U6Simulator {
       lastEntitySync: observedAt,
       stale: false,
     }));
+  }
+
+  /** The organization unit filter matches the chosen subtrees (section 2). */
+  private matches(row: DeviceRow, predicates: readonly DevicePredicate[]) {
+    return predicates.every((predicate) => {
+      if (predicate.field !== 'orgUnitPath') return true;
+      const values = 'values' in predicate ? predicate.values : [];
+      const path = row.orgUnitPath.toLowerCase();
+      return values.some((value) => {
+        const unit = value.toLowerCase().replace(/\/+$/, '');
+        return path === unit || path.startsWith(`${unit}/`);
+      });
+    });
   }
 
   byIds(ids: readonly string[]): DeviceRow[] {
