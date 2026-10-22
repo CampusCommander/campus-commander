@@ -1,7 +1,9 @@
 import type { DeviceUpdatePreview } from '@campus/application-contracts';
 import { previewCountLine } from './device-update-flow';
 
-const preview = (fields: Partial<DeviceUpdatePreview>): DeviceUpdatePreview => ({
+const preview = (
+  fields: Partial<DeviceUpdatePreview>,
+): DeviceUpdatePreview => ({
   previewId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   displayId: 'PV-006',
   changes: [
