@@ -445,7 +445,7 @@ function createKestra({ kestra }) {
 }
 
 /** The Kestra and database seed of one write job, shaped like device-write-mock. */
-function createSeeder({ db, mock, customer }) {
+export function createSeeder({ db, mock, customer }) {
   return async function seedJob({
     devices,
     value,
@@ -541,6 +541,7 @@ function createSeeder({ db, mock, customer }) {
           frozen,
           `The device ${deviceId} is missing from the inventory.`,
         );
+        const requestedValue = mode === 'clear' ? null : value;
         await db.query(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,
             serial_number,org_unit_path,baseline_value,requested_value,batch,status)
@@ -551,9 +552,17 @@ function createSeeder({ db, mock, customer }) {
             deviceId,
             frozen.serial_number,
             frozen.org_unit_path,
-            mode === 'clear' ? null : value,
+            requestedValue,
             Math.floor(index / batchSize),
           ],
+        );
+        // U5 moved the write body to the operation field rows. Without this row
+        // the worker sends an empty PATCH body and the batch never reaches Google.
+        await db.query(
+          `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+            baseline_value,requested_value)
+           VALUES($1,$2,'annotatedLocation',NULL,$3)`,
+          [jobId, index + 1, requestedValue],
         );
       }
       if (beforeStart) await beforeStart();
@@ -3281,7 +3290,7 @@ async function runCatalog(context) {
       const rows = await byIds(admin, [deviceId]);
       rec.observe(`value.${entry.name}`, {
         requested: [...entry.value].length,
-        observedValue: operation.observed_value,
+        observedValue: fieldRow?.observed_value,
         requestedValue: fieldRow?.requested_value,
         verifiedBy: operation.verified_by,
         status: operation.status,
@@ -3291,12 +3300,12 @@ async function runCatalog(context) {
         `The write of "${entry.name}" records the requested value with write-response`,
         operation.status === 'succeeded' &&
           operation.verified_by === 'write-response' &&
-          operation.observed_value === entry.value &&
+          fieldRow?.observed_value === entry.value &&
           fieldRow?.requested_value === entry.value,
         {
           status: operation.status,
           verifiedBy: operation.verified_by,
-          observed: operation.observed_value,
+          observed: fieldRow?.observed_value,
         },
       );
       rec.check(
