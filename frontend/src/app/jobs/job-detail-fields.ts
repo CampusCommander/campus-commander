@@ -217,13 +217,23 @@ export function operationNumber(operationId: string): string | null {
   return /^(?:UPD|STS)-\d{3,}-(\d+)$/.exec(operationId)?.[1] ?? null;
 }
 
-/** Reconcile needs jobs:read and devices:write (design 2.1, OQ6). */
-export function canReconcile(auth: InstanceType<typeof AuthStore>): boolean {
+/**
+ * Reconcile of an update operation needs jobs:read and devices:write
+ * (2026-10-16-device-write-jobs-design.md:469, OQ6). Reconcile of a status
+ * operation needs jobs:read and devices:status
+ * (2026-10-21-device-command-jobs-design.md:241). A command row offers none,
+ * because the operations grid excludes it (record default 4).
+ */
+export function canReconcile(
+  auth: InstanceType<typeof AuthStore>,
+  job: Pick<JobDetail, 'statusAction'>,
+): boolean {
   if (auth.metadata()?.phase !== 3) return false;
   const grants = auth.session()?.identity.grants ?? [];
+  const action = job.statusAction ? 'devices:status' : 'devices:write';
   return (
     grants.some((grant) => grant.action === 'jobs:read') &&
-    grants.some((grant) => grant.action === 'devices:write')
+    grants.some((grant) => grant.action === action)
   );
 }
 
