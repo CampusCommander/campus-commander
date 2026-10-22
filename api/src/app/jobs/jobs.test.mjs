@@ -46,9 +46,7 @@ const jobRow = (overrides = {}) => ({
   started_at: new Date('2026-10-06T12:00:00.000Z'),
   finished_at: new Date('2026-10-06T12:02:00.000Z'),
   confirmed_by: null,
-  field: null,
-  mode: null,
-  requested_value: null,
+  changes: null,
   confirmed_by_name: null,
   preview_display_id: null,
   ...overrides,
@@ -259,9 +257,9 @@ test('the detail joins the write fields and derives Latest activity from every o
           unknown: 2,
           confirmed_by: '55555555-5555-4555-8555-555555555555',
           confirmed_by_name: 'Katherine Johnson',
-          field: 'annotatedLocation',
-          mode: 'replace',
-          requested_value: 'Room 10',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 10' },
+          ],
           preview_display_id: 'PV-006',
         }),
       ],
@@ -295,7 +293,9 @@ test('the detail joins the write fields and derives Latest activity from every o
   assert.equal(detail.displayId, 'UPD-006');
   assert.equal(detail.confirmedBy.displayName, 'Katherine Johnson');
   assert.equal(detail.previewDisplayId, 'PV-006');
-  assert.equal(detail.requestedValue, 'Room 10');
+  assert.deepEqual(detail.changes, [
+    { field: 'annotatedLocation', mode: 'replace', value: 'Room 10' },
+  ]);
   assert.equal(detail.latestActivity.at, '2026-10-06T12:05:00.000Z');
   assert.equal(detail.latestActivity.failed.count, 1);
   assert.deepEqual(detail.latestActivity.failed.operations[0], {
@@ -974,9 +974,9 @@ test('a dispatched operation reads pending on the page', () => {
       device_id: 'd3',
       serial_number: 'C0A1-0003',
       org_unit_path: '/Schools/A',
-      mode: 'clear',
-      baseline_value: 'Room 3',
-      requested_value: null,
+      field: 'annotatedLocation',
+      field_baseline_value: 'Room 3',
+      field_requested_value: null,
       status: 'dispatched',
       outcome_reason: null,
       google_status: null,
