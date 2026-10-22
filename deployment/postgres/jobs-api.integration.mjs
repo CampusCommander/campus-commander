@@ -1320,37 +1320,44 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'the operations route accepts a command or status cursor at position zero',
+      'the operations route pages a status and a command job by a position-zero cursor',
       async () => {
-        await reset();
-        const job = await writeJob({
-          requestedBy: auditor,
-          action: 'disable',
-          operations: 2,
-          status: 'running',
-        });
-        const controller = new JobsController(jobsService, streamAuth, {}, {});
-        const request = {
-          session: auditorSession,
-          correlationId: randomUUID(),
-        };
-        const first = await controller.operations(request, job.display_id, {
-          limit: '1',
-        });
-        assert.deepEqual(
-          first.operations.map((operation) => operation.operationId),
-          [`${job.display_id}-1`],
-        );
-        assert.equal(first.nextCursor, '1:0');
-        const second = await controller.operations(request, job.display_id, {
-          cursor: first.nextCursor,
-          limit: '1',
-        });
-        assert.deepEqual(
-          second.operations.map((operation) => operation.operationId),
-          [`${job.display_id}-2`],
-        );
-        assert.equal(second.nextCursor, null);
+        for (const action of ['disable', 'reboot']) {
+          await reset();
+          const job = await writeJob({
+            requestedBy: auditor,
+            action,
+            operations: 2,
+            status: 'running',
+          });
+          const controller = new JobsController(
+            jobsService,
+            streamAuth,
+            {},
+            {},
+          );
+          const request = {
+            session: auditorSession,
+            correlationId: randomUUID(),
+          };
+          const first = await controller.operations(request, job.display_id, {
+            limit: '1',
+          });
+          assert.deepEqual(
+            first.operations.map((operation) => operation.operationId),
+            [`${job.display_id}-1`],
+          );
+          assert.equal(first.nextCursor, '1:0');
+          const second = await controller.operations(request, job.display_id, {
+            cursor: first.nextCursor,
+            limit: '1',
+          });
+          assert.deepEqual(
+            second.operations.map((operation) => operation.operationId),
+            [`${job.display_id}-2`],
+          );
+          assert.equal(second.nextCursor, null);
+        }
       },
     );
 
