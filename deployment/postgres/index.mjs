@@ -272,7 +272,8 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     }
     if (migrations.some(({ id }) => id === '017-jobs')) {
       await client.query(`GRANT SELECT ON cc.jobs, cc.job_targets, cc.device_update_previews,
-        cc.device_update_preview_targets, cc.device_update_jobs, cc.device_update_batches,
+        cc.device_update_preview_targets, cc.device_update_changes, cc.device_update_target_fields,
+        cc.device_update_jobs, cc.device_update_batches,
         cc.device_update_operations, cc.device_update_operation_fields, cc.device_write_overlays,
         cc.job_activity_seen, cc.job_publications TO ${role};
         GRANT EXECUTE ON FUNCTION cc.job_visible(uuid,integer,text,uuid),
@@ -296,7 +297,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.accept_device_update_hold(text),
         cc.clean_device_update_hold(text,uuid),
         cc.purge_jobs(text,integer),
-        cc.create_device_update_preview(uuid,integer,text,integer,text,text,text,text,jsonb,integer),
+        cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer),
         cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
         cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
         cc.due_device_command_polls(text),
