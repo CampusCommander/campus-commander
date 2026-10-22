@@ -22,6 +22,7 @@ import {
   operationsFooter,
   outcomeTone,
   requestedText,
+  rowFailureText,
   scopeHeading,
 } from './job-detail-fields';
 
@@ -396,6 +397,54 @@ describe('latest activity', () => {
     );
   });
 
+  it('names each device once when several field rows carry a sample', () => {
+    // One PATCH covers every field of a device, so a sample repeats per field row. The line names
+    // the device once (mockup note 23).
+    const at = '2026-10-21T19:06:00.000Z';
+    const failedRow = (field: string) => ({
+      operationId: `UPD-006-5-${field}`,
+      deviceId: 'synthetic-device-5',
+      serialNumber: '01P0T1V',
+      outcomeReason: 'value-differs',
+      googleStatus: 200,
+      googleReason: null,
+      updatedAt: '2026-10-21T19:05:00.000Z',
+    });
+    const unknownRow = (field: string) => ({
+      operationId: `UPD-006-6-${field}`,
+      deviceId: 'synthetic-device-6',
+      serialNumber: '02QJANY',
+      updatedAt: at,
+    });
+    const current = job({
+      latestActivity: {
+        at,
+        failed: {
+          count: 1,
+          operations: [
+            failedRow('annotatedLocation'),
+            failedRow('notes'),
+            failedRow('orgUnitPath'),
+          ],
+        },
+        unknown: {
+          count: 1,
+          operations: [
+            unknownRow('annotatedLocation'),
+            unknownRow('notes'),
+            unknownRow('orgUnitPath'),
+          ],
+        },
+      },
+    });
+    const line = latestActivityLine(current);
+    expect(line.match(/01P0T1V/g)).toHaveLength(1);
+    expect(line.match(/02QJANY/g)).toHaveLength(1);
+    expect(line).toBe(
+      `${formatTime(at)} · 01P0T1V does not hold the requested value. 02QJANY requires reconciliation before any retry.`,
+    );
+  });
+
   it('drafts the command line of the step 5 mockup', () => {
     const current = job({
       displayId: 'CMD-001',
@@ -562,6 +611,89 @@ describe('job detail fields', () => {
     expect(outcomeTone('unknown')).toBe('warning');
     expect(outcomeTone('expired')).toBe('warning');
     expect(outcomeTone('pending')).toBe('neutral');
+  });
+
+  it('labels every writable field and a row without one', () => {
+    expect(fieldLabel('annotatedLocation')).toBe('Annotated location');
+    expect(fieldLabel('annotatedUser')).toBe('Annotated user');
+    expect(fieldLabel('notes')).toBe('Notes');
+    expect(fieldLabel('orgUnitPath')).toBe('Organization unit');
+    expect(fieldLabel(null)).toBe('—');
+  });
+
+  it('names Organization unit and shows both paths of a Move row', () => {
+    const move = operation({
+      operationId: 'UPD-006-3-orgUnitPath',
+      field: 'orgUnitPath',
+      operation: 'move',
+      baselineValue: '/Chrome Devices/Lowell Academy/One to One',
+      requestedValue:
+        '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
+      outcome: 'succeeded',
+      observedValue:
+        '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
+    });
+    expect(operationLabel(move)).toBe('Organization unit');
+    expect(beforeText(move)).toBe('/Chrome Devices/Lowell Academy/One to One');
+    expect(requestedText(move)).toBe(
+      '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
+    );
+  });
+
+  it('shows the app failure sentence under a failed update row', () => {
+    const update = job({
+      changes: [
+        { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+      ],
+    });
+    // A read-back failure carries no Google reason, so the update row names the app outcome.
+    expect(
+      rowFailureText(
+        update,
+        operation({
+          outcome: 'failed',
+          outcomeReason: 'value-differs',
+          googleStatus: 200,
+          googleReason: 'Google text',
+        }),
+      ),
+    ).toBe('C0A1-7F84 does not hold the requested value.');
+    expect(rowFailureText(update, operation())).toBeNull();
+    // A command and a status job keep the step 5 line.
+    const command = job({
+      action: 'reboot-devices',
+      changes: null,
+      commandType: 'REBOOT',
+    });
+    expect(
+      rowFailureText(
+        command,
+        operation({
+          field: null,
+          operation: 'reboot',
+          outcome: 'failed',
+          outcomeReason: 'command-failed',
+          googleReason: 'The device failed to execute the command.',
+        }),
+      ),
+    ).toBe('The device failed to execute the command.');
+    const status = job({
+      action: 'disable-devices',
+      statusAction: 'disable',
+      changes: null,
+    });
+    expect(
+      rowFailureText(
+        status,
+        operation({
+          field: null,
+          operation: 'disable',
+          outcome: 'failed',
+          outcomeReason: 'status-conflict',
+          googleReason: 'The device status does not match.',
+        }),
+      ),
+    ).toBe('The device status does not match.');
   });
 
   it('labels a command row and hides its baseline', () => {
@@ -747,5 +879,67 @@ describe('job detail fields', () => {
         hasNext: false,
       }),
     ).toBe('0 of 6 operations');
+  });
+
+  it('omits a total that counts devices when a device has several field rows', () => {
+    // An update job carries one row per device and field. The header counts devices, so it
+    // cannot say how many field rows the job holds. The footer states the shown rows alone.
+    const multi = job({
+      changes: [
+        { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+        { field: 'notes', mode: 'replace', value: 'Front desk' },
+      ],
+    });
+    expect(
+      operationsFooter(multi, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 6,
+        hasNext: true,
+      }),
+    ).toBe('Rows 1–6');
+    expect(
+      operationsFooter(multi, {
+        attention: true,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 6,
+        hasNext: false,
+      }),
+    ).toBe('Rows 1–6 matching operations');
+    expect(
+      operationsFooter(multi, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 0,
+        hasNext: false,
+      }),
+    ).toBe('0 operations');
+    expect(
+      operationsFooter(multi, {
+        attention: true,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 0,
+        hasNext: false,
+      }),
+    ).toBe('0 matching operations');
+    // One change keeps one row per device, so the device total stays exact.
+    const single = job({
+      changes: [
+        { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+      ],
+    });
+    expect(
+      operationsFooter(single, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 6,
+        hasNext: false,
+      }),
+    ).toBe('Rows 1–6 of 6 operations');
   });
 });

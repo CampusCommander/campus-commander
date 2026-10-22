@@ -197,6 +197,9 @@ export function requestedText(operation: JobOperation): string {
       return operation.requestedValue
         ? statusText(operation.requestedValue)
         : 'Active';
+    case 'move':
+      // A Move always carries its destination path (addendum section 1).
+      return operation.requestedValue ?? '—';
     default:
       return operation.requestedValue ?? 'Clear value';
   }
@@ -337,6 +340,20 @@ export function commandFailureSentence(
   return failureSentence(operation, 'command');
 }
 
+/**
+ * The sentence under a failed row (mockup note 22). An update row names the app outcome, because a
+ * read-back failure has no Google reason. A command or status row keeps the step 5 line, which
+ * names the Google reason.
+ */
+export function rowFailureText(
+  job: Pick<JobDetail, 'changes'>,
+  operation: JobOperation,
+): string | null {
+  if (operation.outcome !== 'failed') return null;
+  if (job.changes === null) return operation.googleReason;
+  return failureSentence(operation, 'update');
+}
+
 /** One uncertain command sentence. A command has no reconciliation (record default 4). */
 export function commandUncertainSentence(
   operation: JobUnknownActivityOperation,
@@ -364,6 +381,21 @@ function sampleTime(
       ? sample
       : newest,
   ).updatedAt;
+}
+
+/**
+ * The first sample of each device. An update job answers one row per device and field, so one
+ * device can supply several samples. Latest activity names each device once (mockup note 23).
+ */
+function sampleDevices<T extends { deviceId: string }>(
+  samples: readonly T[],
+): T[] {
+  const devices = new Set<string>();
+  return samples.filter((sample) => {
+    if (devices.has(sample.deviceId)) return false;
+    devices.add(sample.deviceId);
+    return true;
+  });
 }
 
 /** The noun of the confirmed operations in a write job. */
@@ -489,14 +521,17 @@ export function latestActivityLine(job: JobDetail): string {
       ? 'status change'
       : 'update';
   const { failed, unknown } = job.latestActivity;
-  if (failed.operations.length || unknown.operations.length) {
+  // Every row of one device carries the result of its one PATCH, so its samples repeat.
+  const failedSamples = sampleDevices(failed.operations);
+  const unknownSamples = sampleDevices(unknown.operations);
+  if (failedSamples.length || unknownSamples.length) {
     const sentences = [
-      ...failed.operations.map((operation: JobFailedActivityOperation) =>
+      ...failedSamples.map((operation: JobFailedActivityOperation) =>
         failureSentence(operation, subject),
       ),
-      ...unknown.operations.map(reconciliationSentence),
+      ...unknownSamples.map(reconciliationSentence),
     ];
-    return `${formatTime(sampleTime(failed.operations, unknown.operations))} · ${sentences.join(' ')}`;
+    return `${formatTime(sampleTime(failedSamples, unknownSamples))} · ${sentences.join(' ')}`;
   }
   if (failed.count || unknown.count) {
     const sentences = [
@@ -520,6 +555,16 @@ export function latestActivityLine(job: JobDetail): string {
   return updateCounterLine(job);
 }
 
+/**
+ * The row total of a job, or null when the client cannot know it. An update job with more than one
+ * change answers one row per device and field, and its header counts devices. One change keeps one
+ * row per device, so its device total is exact.
+ */
+function rowTotal(job: JobDetail): string | null {
+  if (job.changes !== null && job.changes.length > 1) return null;
+  return operationTotal(job).toLocaleString('en-US');
+}
+
 /** The footer of the operations grid for the current filter and page. */
 export function operationsFooter(
   job: JobDetail,
@@ -531,14 +576,21 @@ export function operationsFooter(
     hasNext: boolean;
   },
 ): string {
-  const total = operationTotal(job).toLocaleString('en-US');
+  const total = rowTotal(job);
   if (!options.shown)
     return options.attention
-      ? `0 matching operations · ${total} total`
-      : `0 of ${total} operations`;
+      ? total === null
+        ? '0 matching operations'
+        : `0 matching operations · ${total} total`
+      : total === null
+        ? '0 operations'
+        : `0 of ${total} operations`;
   const start = options.pageIndex * options.pageSize + 1;
   const end = start + options.shown - 1;
+  const range = `Rows ${start.toLocaleString('en-US')}–${end.toLocaleString('en-US')}`;
   if (options.attention) {
+    // A multi-field job has no row total, so the range names the shown matching rows alone.
+    if (total === null) return `${range} matching operations`;
     // The single-page frame 231:4707 reads "2 matching operations · 6 total".
     // A later page keeps its row range, so the range never collapses to a page length.
     if (options.pageIndex === 0 && !options.hasNext) {
@@ -547,7 +599,7 @@ export function operationsFooter(
         matching === 1 ? 'operation' : 'operations'
       } · ${total} total`;
     }
-    return `Rows ${start.toLocaleString('en-US')}–${end.toLocaleString('en-US')} matching operations · ${total} total`;
+    return `${range} matching operations · ${total} total`;
   }
-  return `Rows ${start.toLocaleString('en-US')}–${end.toLocaleString('en-US')} of ${total} operations`;
+  return total === null ? range : `${range} of ${total} operations`;
 }

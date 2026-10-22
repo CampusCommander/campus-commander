@@ -35,8 +35,10 @@ import {
   latestActivityLine,
   operationChip,
   operationLabel,
+  operationNumber,
   operationsFooter,
   requestedText,
+  rowFailureText,
   scopeHeading,
   type JobCounter,
 } from './job-detail-fields';
@@ -97,6 +99,7 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly isCommandOperation = isCommandOperation;
   protected readonly beforeText = beforeText;
   protected readonly requestedText = requestedText;
+  protected readonly rowFailureText = rowFailureText;
 
   protected readonly heading = computed(() => {
     const job = this.store.job();
@@ -172,6 +175,20 @@ export class JobDetailPage implements OnChanges, OnDestroy {
 
   protected counterText(counter: JobCounter): string {
     return counter.value === null ? '—' : counter.value.toLocaleString('en-US');
+  }
+
+  /**
+   * One PATCH settles every field of an operation, so every row of that operation shares the
+   * pending Reconcile state. A click marks one field row, and its siblings read the same mark.
+   */
+  protected isReconciling(operation: JobOperation): boolean {
+    const marks = this.store.reconciling();
+    if (marks.has(operation.operationId)) return true;
+    const number = operationNumber(operation.operationId);
+    if (number === null) return false;
+    for (const operationId of marks)
+      if (operationNumber(operationId) === number) return true;
+    return false;
   }
 
   /** Inspect failure opens a panel inside the operations region (scope item 5). */
