@@ -1,6 +1,6 @@
 # Technical design addendum: Update device with four fields
 
-Status: proposed on 2026-10-21 for review. Card `t_37e142f9`.
+Status: built and signed off by the owner on 2026-10-22. Card `t_37e142f9`.
 Record: `docs/workflows/update-device-fields.md`, owner-confirmed on 2026-10-21. PR #81 merged it as `1f91da3`.
 Extends: [the step 4 design](2026-10-16-device-write-jobs-design.md) and [its worker contracts](2026-10-19-device-write-worker-contracts.md). It reads [the step 5 design](2026-10-21-device-command-jobs-design.md).
 Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose the curtains."
