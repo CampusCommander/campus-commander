@@ -401,9 +401,9 @@ export function confirmTitle(preview: DeviceUpdatePreview): string {
 
 /** "6 devices · 6 field changes · 0 excluded". */
 export function previewCountLine(preview: DeviceUpdatePreview): string {
-  const changes = preview.eligible.toLocaleString('en-US');
+  const changes = preview.fieldChanges.toLocaleString('en-US');
   return `${deviceCountText(preview.selected)} · ${changes} ${
-    preview.eligible === 1 ? 'field change' : 'field changes'
+    preview.fieldChanges === 1 ? 'field change' : 'field changes'
   } · ${preview.excluded.toLocaleString('en-US')} excluded`;
 }
 
