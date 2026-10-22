@@ -11,11 +11,14 @@ import { BatchServiceError } from '@campus/google-connection';
 import {
   DEVICE_UPDATE_BATCH_SIZE_LIMIT,
   DeviceUpdateJobs,
+  classifyCommandPoll,
   classifyWrite,
+  deviceCommandPollRequestSchema,
   deviceUpdateReconcileRequestSchema,
   resolveDeviceUpdateBatchSize,
 } from './device-update.ts';
 import {
+  handleDeviceCommandPollDispatch,
   handleDeviceUpdateBatchDispatch,
   handleDeviceUpdateReconcileDispatch,
 } from './dispatch.ts';
@@ -114,7 +117,7 @@ const part = (
  * `onSend`, each part answer, then `onBatch`. A fatal error throws after `onSend`
  * and before `onBatch`, as `send` does. An aborted signal sends nothing more.
  */
-function reader(rounds = [], states = [], statusRounds = []) {
+function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
   return {
     calls: [],
     async patchAnnotatedLocations(
@@ -267,6 +270,87 @@ function reader(rounds = [], states = [], statusRounds = []) {
           outerStatus: 200,
           durationMs: 1,
           pending: commands.length - next,
+        });
+      }
+      return result;
+    },
+    /** The poll path: one GET part per issued operation, answered by `pollRounds`. */
+    async deviceCommands(_credential, _customer, polls, signal, options) {
+      const call = {
+        name: 'deviceCommands',
+        polls: polls.map((poll) => ({ ...poll })),
+        batchSize: options.batchSize,
+        aborted: false,
+        rounds: 0,
+      };
+      this.calls.push(call);
+      const result = { succeeded: new Map(), failed: new Map() };
+      // A plan is one round list per call, or one round list for the single call.
+      const calls = this.calls.filter((one) => one.name === 'deviceCommands');
+      const plan = Array.isArray(pollRounds[0])
+        ? (pollRounds[calls.length - 1] ?? [])
+        : pollRounds;
+      let next = 0;
+      let number = 0;
+      let lastIds = [];
+      for (const round of plan) {
+        if (signal.aborted) {
+          call.aborted = true;
+          break;
+        }
+        number += 1;
+        if (round.mint) throw round.mint;
+        const size = round.size ?? options.batchSize ?? 250;
+        const ids = round.reuse
+          ? lastIds
+          : polls.slice(next, next + size).map((poll) => poll.deviceId);
+        if (!round.reuse) next += ids.length;
+        lastIds = ids;
+        await options.onSend?.(ids);
+        call.rounds += 1;
+        if (round.fatal) throw round.fatal;
+        for (const id of ids) {
+          const answer = round.parts?.[id] ?? {
+            kind: 'success',
+            observation: {
+              commandId: '4100000001',
+              state: 'PENDING',
+              issuedAt: null,
+              expiresAt: null,
+              result: null,
+              executedAt: null,
+              errorMessage: null,
+            },
+          };
+          const event =
+            answer.kind === 'success'
+              ? {
+                  id,
+                  status: answer.status ?? 200,
+                  attempts: { quota: 0, transient: 0 },
+                  outcome: {
+                    kind: 'success',
+                    page: answer.observation,
+                    pageIndex: 0,
+                    hasNextPage: false,
+                  },
+                  request: { id, method: 'GET', path: '' },
+                }
+              : {
+                  ...part(id, answer),
+                  request: { id, method: 'GET', path: '' },
+                };
+          if (event.outcome.kind === 'success')
+            result.succeeded.set(id, [event.outcome.page]);
+          else result.failed.set(id, event.outcome.failure);
+          await options.onResponse?.(event);
+        }
+        await options.onBatch?.({
+          round: number,
+          sentCount: ids.length,
+          outerStatus: 200,
+          durationMs: 1,
+          pending: polls.length - next,
         });
       }
       return result;
@@ -478,6 +562,29 @@ function database(overrides = {}) {
             publication: null,
           };
     if (name === 'complete_job_publications') return 1;
+    if (name === 'claim_device_command_polls')
+      return overrides.pollClaim
+        ? overrides.pollClaim(values)
+        : { outcome: 'not-held' };
+    if (name === 'settle_device_command_polls') {
+      if (overrides.pollSettle) {
+        const answer = overrides.pollSettle(values);
+        if (answer !== undefined) return answer;
+      }
+      const results = JSON.parse(values[4]);
+      return {
+        outcome: 'settled',
+        settled: results.map((result) => ({
+          operationNumber: result.operationNumber,
+          deviceId: `d${result.operationNumber}`,
+          status: result.outcome === 'pending' ? 'issued' : result.outcome,
+        })),
+        publication: null,
+        status: 'awaiting-devices',
+        jobStatusChanged: false,
+      };
+    }
+    if (name === 'release_device_command_poll') return true;
     throw new Error(`Unexpected call ${name}`);
   };
   return {
@@ -2965,4 +3072,569 @@ test('a Reconcile request without its attempt answers invalid-payload', async ()
   assert.equal(valid.response.statusCode, 200);
   assert.equal(received.length, 1);
   assert.equal(received[0].verifyAttempt === undefined, false);
+});
+const pollRequest = {
+  customerId,
+  jobId,
+  leaseId: '77777777-7777-4777-8777-777777777777',
+  correlationId,
+};
+const pollOperation = (number, deviceId, commandId) => ({
+  operationNumber: number,
+  deviceId,
+  commandId,
+});
+const pollClaimed = (operations) => ({
+  outcome: 'claimed',
+  generation: 1,
+  credentialId: randomUUID(),
+  envelope: { sealed: true },
+  operations,
+});
+const pollObservation = (state, extra = {}) => ({
+  commandId: '4100000001',
+  state,
+  issuedAt: null,
+  expiresAt: '2026-10-28T12:00:00.000Z',
+  result: null,
+  executedAt: null,
+  errorMessage: null,
+  ...extra,
+});
+/** A poll reader of one call whose parts the test answers by hand. */
+const pollReader = (answer) => ({
+  calls: [],
+  async deviceCommands(_credential, _customer, polls, signal, options) {
+    this.calls.push({
+      name: 'deviceCommands',
+      polls: polls.map((poll) => ({ ...poll })),
+      batchSize: options.batchSize,
+      aborted: false,
+    });
+    await answer(options, signal);
+    return { succeeded: new Map(), failed: new Map() };
+  },
+});
+const pollSuccess = (id, observation) => ({
+  id,
+  status: 200,
+  attempts: { quota: 0, transient: 0 },
+  outcome: {
+    kind: 'success',
+    page: observation,
+    pageIndex: 0,
+    hasNextPage: false,
+  },
+  request: { id, method: 'GET', path: '' },
+});
+const pollRetry = (id, status = 429) => ({
+  id,
+  status,
+  attempts: { quota: 1, transient: 0 },
+  outcome: {
+    kind: 'retry',
+    failure: {
+      kind: 'quota',
+      status,
+      reason: 'rateLimitExceeded',
+      attempts: { quota: 1, transient: 0 },
+      body: null,
+    },
+    retryInMs: 60_000,
+  },
+  request: { id, method: 'GET', path: '' },
+});
+/** Every poll result that the fake store received, in settlement order. */
+const pollSettled = (db) =>
+  db.calls
+    .filter((one) => one.name === 'settle_device_command_polls')
+    .flatMap((one) => JSON.parse(one.values[4]));
+/** A claim answer that returns the given claims in order, then an idle answer. */
+const claimsOf = (...claims) => {
+  let index = 0;
+  return () => claims[Math.min(index++, claims.length - 1)];
+};
+
+test('one poll run claims, reads, settles, and releases the job lease', async () => {
+  const db = database({
+    pollClaim: claimsOf(
+      pollClaimed([
+        pollOperation(1, 'd1', '4100000001'),
+        pollOperation(2, 'd2', '4100000002'),
+      ]),
+      { outcome: 'idle', status: 'awaiting-devices', operations: [] },
+    ),
+  });
+  const source = reader(
+    [],
+    [],
+    [],
+    [
+      [
+        {
+          parts: {
+            d1: { kind: 'success', observation: pollObservation('PENDING') },
+            d2: {
+              kind: 'success',
+              observation: pollObservation('EXECUTED_BY_CLIENT', {
+                result: 'SUCCESS',
+                executedAt: '2026-10-21T12:00:00.000Z',
+              }),
+            },
+          },
+        },
+      ],
+    ],
+  );
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.claimed, 2);
+  assert.equal(answer.settled, 2);
+  assert.equal(answer.pending, 1);
+  assert.equal(answer.succeeded, 1);
+  const call = source.calls.find((one) => one.name === 'deviceCommands');
+  assert.deepEqual(call.polls, [
+    { deviceId: 'd1', commandId: '4100000001' },
+    { deviceId: 'd2', commandId: '4100000002' },
+  ]);
+  assert.equal(call.batchSize, 250);
+  const settle = db.calls.filter(
+    (one) => one.name === 'settle_device_command_polls',
+  );
+  assert.deepEqual(
+    settle
+      .flatMap((one) => JSON.parse(one.values[4]))
+      .sort((a, b) => a.operationNumber - b.operationNumber)
+      .map((one) => [
+        one.operationNumber,
+        one.outcome,
+        one.commandState ?? null,
+        one.commandExpiresAt ?? null,
+      ]),
+    [
+      [1, 'pending', 'pending-delivery', '2026-10-28T12:00:00.000Z'],
+      [2, 'succeeded', null, '2026-10-28T12:00:00.000Z'],
+    ],
+    'Each answer settles on its own (R3).',
+  );
+  assert.equal(
+    names(db.calls).includes('release_device_command_poll'),
+    true,
+    'A finished run releases the job lease.',
+  );
+});
+
+test('a poll run repeats while due operations remain', async () => {
+  const db = database({
+    pollClaim: claimsOf(
+      pollClaimed([pollOperation(1, 'd1', '4100000001')]),
+      pollClaimed([pollOperation(2, 'd2', '4100000002')]),
+      { outcome: 'idle', status: 'awaiting-devices', operations: [] },
+    ),
+  });
+  const source = reader(
+    [],
+    [],
+    [],
+    [
+      [
+        {
+          parts: {
+            d1: { kind: 'success', observation: pollObservation('PENDING') },
+          },
+        },
+      ],
+      [
+        {
+          parts: {
+            d2: { kind: 'success', observation: pollObservation('EXPIRED') },
+          },
+        },
+      ],
+    ],
+  );
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.claimed, 2);
+  assert.equal(answer.settled, 2);
+  assert.equal(answer.pending, 1);
+  assert.equal(answer.expired, 1);
+  const calls = source.calls.filter((one) => one.name === 'deviceCommands');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].polls, [
+    { deviceId: 'd2', commandId: '4100000002' },
+  ]);
+  assert.equal(
+    db.calls.filter((one) => one.name === 'settle_device_command_polls').length,
+    2,
+  );
+});
+
+test('a completing poll settlement publishes job-changed and stops', async () => {
+  const publication = {
+    publicationId: 5,
+    jobId,
+    displayId: 'CMD-001',
+    requestedBy,
+    revision: 3,
+    statusChanged: true,
+    deviceIds: [],
+    removedIds: [],
+    batch: null,
+    batchCount: null,
+  };
+  const db = database({
+    pollClaim: () => ({
+      outcome: 'completed',
+      status: 'completed',
+      publication,
+    }),
+  });
+  const source = reader();
+  const cacheSource = cache();
+  const { create } = jobs({ db, reader: source, cache: cacheSource });
+  const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(source.calls.length, 0, 'A completed job sends no GET.');
+  const publish = cacheSource.calls.find((one) => one.name === 'publish');
+  assert.ok(publish, 'The completion publishes at once.');
+  assert.equal(JSON.parse(publish.args[1]).type, 'job-changed');
+  assert.equal(names(db.calls).includes('release_device_command_poll'), true);
+});
+
+test('a final answer that is not a poll result settles nothing and keeps the lease for the next poll', async () => {
+  const db = database({
+    pollClaim: claimsOf(pollClaimed([pollOperation(1, 'd1', '4100000001')]), {
+      outcome: 'idle',
+      status: 'awaiting-devices',
+      operations: [],
+    }),
+  });
+  const source = reader(
+    [],
+    [],
+    [],
+    [
+      [
+        {
+          parts: {
+            d1: {
+              kind: 'failed',
+              status: 503,
+              reason: 'backendError',
+            },
+          },
+        },
+      ],
+    ],
+  );
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.settled, 0);
+  assert.equal(
+    names(db.calls).includes('settle_device_command_polls'),
+    false,
+    'A transient refusal changes no operation.',
+  );
+  assert.equal(names(db.calls).includes('release_device_command_poll'), true);
+});
+
+test('a claim without a usable connection stops the run and releases the job lease', async () => {
+  const db = database({
+    pollClaim: () => ({
+      outcome: 'unavailable',
+      status: 'awaiting-devices',
+      detail: 'The credential generation changed.',
+    }),
+  });
+  const source = reader();
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.claimed, 0);
+  assert.equal(source.calls.length, 0, 'No GET without a usable connection.');
+  assert.equal(names(db.calls).includes('release_device_command_poll'), true);
+});
+
+test('a 404 answer settles unknown with command-not-found', async () => {
+  const db = database({
+    pollClaim: claimsOf(pollClaimed([pollOperation(1, 'd1', '4100000001')]), {
+      outcome: 'not-held',
+      status: 'awaiting-devices',
+    }),
+  });
+  const source = reader(
+    [],
+    [],
+    [],
+    [
+      [
+        {
+          parts: { d1: { kind: 'not-found', status: 404, reason: 'notFound' } },
+        },
+      ],
+    ],
+  );
+  const { create } = jobs({ db, reader: source });
+  await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  const settle = db.calls.find(
+    (one) => one.name === 'settle_device_command_polls',
+  );
+  assert.deepEqual(JSON.parse(settle.values[4]), [
+    {
+      operationNumber: 1,
+      outcome: 'unknown',
+      outcomeReason: 'command-not-found',
+      googleStatus: 404,
+      googleReason: null,
+    },
+  ]);
+});
+
+test('a retrying sibling does not cost an answered terminal result (R3)', async () => {
+  const db = database({
+    pollClaim: claimsOf(
+      pollClaimed([
+        pollOperation(1, 'd1', '4100000001'),
+        pollOperation(2, 'd2', '4100000002'),
+      ]),
+      { outcome: 'idle', status: 'awaiting-devices', operations: [] },
+    ),
+  });
+  let settledBeforeRetry = false;
+  const source = pollReader(async (options) => {
+    await options.onResponse(
+      pollSuccess(
+        'd1',
+        pollObservation('EXECUTED_BY_CLIENT', {
+          result: 'SUCCESS',
+          executedAt: '2026-10-21T12:00:00.000Z',
+        }),
+      ),
+    );
+    // The call has not returned and the sibling still retries.
+    settledBeforeRetry = db.calls.some(
+      (one) => one.name === 'settle_device_command_polls',
+    );
+    await options.onResponse(pollRetry('d2'));
+    await options.onResponse(pollRetry('d2'));
+  });
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  assert.equal(
+    settledBeforeRetry,
+    true,
+    'The success settles while the sibling retries.',
+  );
+  assert.equal(answer.settled, 1);
+  assert.equal(answer.succeeded, 1);
+  assert.deepEqual(
+    pollSettled(db).map((one) => [one.operationNumber, one.outcome]),
+    [[1, 'succeeded']],
+  );
+});
+
+test('an answered terminal result stays settled when the reader throws (R3)', async () => {
+  const db = database({
+    pollClaim: claimsOf(
+      pollClaimed([
+        pollOperation(1, 'd1', '4100000001'),
+        pollOperation(2, 'd2', '4100000002'),
+      ]),
+      { outcome: 'idle', status: 'awaiting-devices', operations: [] },
+    ),
+  });
+  const source = pollReader(async (options) => {
+    await options.onResponse(pollSuccess('d1', pollObservation('EXPIRED')));
+    throw new Error('The batch client failed after the answer.');
+  });
+  const { create } = jobs({ db, reader: source });
+  await assert.rejects(
+    create.runPoll(pollRequest, AbortSignal.timeout(5000)),
+    /failed after the answer/,
+  );
+  assert.deepEqual(
+    pollSettled(db).map((one) => [one.operationNumber, one.outcome]),
+    [[1, 'expired']],
+  );
+});
+
+test('every poll call carries the acquired lease identity (R4)', async () => {
+  const db = database({
+    pollClaim: claimsOf(pollClaimed([pollOperation(1, 'd1', '4100000001')]), {
+      outcome: 'idle',
+      status: 'awaiting-devices',
+      operations: [],
+    }),
+  });
+  const source = pollReader(async (options) => {
+    await options.onResponse(pollSuccess('d1', pollObservation('PENDING')));
+  });
+  const { create } = jobs({ db, reader: source });
+  await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+  const valuesOf = (name) =>
+    db.calls.filter((one) => one.name === name).map((one) => one.values);
+  assert.deepEqual(valuesOf('claim_device_command_polls')[0], [
+    customerId,
+    jobId,
+    valuesOf('claim_device_command_polls')[0][2],
+    pollRequest.leaseId,
+  ]);
+  assert.equal(
+    valuesOf('settle_device_command_polls')[0][3],
+    pollRequest.leaseId,
+  );
+  assert.deepEqual(valuesOf('release_device_command_poll')[0], [
+    customerId,
+    jobId,
+    pollRequest.leaseId,
+  ]);
+});
+
+test('each row of the poll settlement table classifies as section 4 step 9 says', () => {
+  const operation = { operationNumber: 7 };
+  const run = (state, extra, failure = null) =>
+    classifyCommandPoll(operation, pollObservation(state, extra), failure);
+  const failed = (status, kind = 'transient') => ({
+    kind,
+    status,
+    reason: 'backendError',
+    attempts: { quota: 0, transient: 10 },
+    body: null,
+  });
+  assert.deepEqual(run('PENDING'), {
+    operationNumber: 7,
+    outcome: 'pending',
+    commandState: 'pending-delivery',
+    commandExpiresAt: '2026-10-28T12:00:00.000Z',
+  });
+  assert.equal(run('SENT_TO_CLIENT').commandState, 'sent');
+  assert.equal(run('ACKED_BY_CLIENT').commandState, 'acknowledged');
+  assert.deepEqual(
+    run('EXECUTED_BY_CLIENT', {
+      result: 'SUCCESS',
+      executedAt: '2026-10-21T12:00:00.000Z',
+    }),
+    {
+      operationNumber: 7,
+      outcome: 'succeeded',
+      googleStatus: 200,
+      commandExecutedAt: '2026-10-21T12:00:00.000Z',
+      commandExpiresAt: '2026-10-28T12:00:00.000Z',
+    },
+  );
+  // DEVICE-02: no command result forbids a success. The command stays acknowledged.
+  assert.deepEqual(run('EXECUTED_BY_CLIENT', { result: null }), {
+    operationNumber: 7,
+    outcome: 'pending',
+    commandState: 'acknowledged',
+    commandExpiresAt: '2026-10-28T12:00:00.000Z',
+  });
+  assert.deepEqual(
+    run('EXECUTED_BY_CLIENT', {
+      result: 'FAILURE',
+      errorMessage: 'The device failed to execute the command.',
+    }),
+    {
+      operationNumber: 7,
+      outcome: 'failed',
+      outcomeReason: 'command-failed',
+      googleStatus: 200,
+      googleReason: 'The device failed to execute the command.',
+      commandExpiresAt: '2026-10-28T12:00:00.000Z',
+    },
+  );
+  assert.equal(run('EXPIRED').outcome, 'expired');
+  assert.deepEqual(run('SOMETHING_NEW'), {
+    operationNumber: 7,
+    outcome: 'unknown',
+    outcomeReason: 'unrecognized-state',
+    googleStatus: 200,
+    commandExpiresAt: '2026-10-28T12:00:00.000Z',
+  });
+  assert.deepEqual(
+    classifyCommandPoll(operation, null, failed(404, 'not-found')),
+    {
+      operationNumber: 7,
+      outcome: 'unknown',
+      outcomeReason: 'command-not-found',
+      googleStatus: 404,
+      googleReason: null,
+    },
+  );
+  for (const failure of [
+    failed(429, 'quota'),
+    failed(503, 'transient'),
+    failed(403, 'rejected'),
+    failed(200, 'invalid-response'),
+  ])
+    assert.equal(
+      classifyCommandPoll(operation, null, failure),
+      null,
+      `${failure.kind} changes nothing`,
+    );
+});
+
+test('a poll request requires the customer, the job, the lease, and the correlation', () => {
+  assert.equal(
+    deviceCommandPollRequestSchema.safeParse(pollRequest).success,
+    true,
+  );
+  for (const field of ['customerId', 'jobId', 'leaseId', 'correlationId'])
+    assert.equal(
+      deviceCommandPollRequestSchema.safeParse({
+        ...pollRequest,
+        [field]: undefined,
+      }).success,
+      false,
+      field,
+    );
+});
+
+test('the poll dispatch route answers 200 with the run summary', async () => {
+  const context = { secret: 's'.repeat(32), signal: AbortSignal.timeout(5000) };
+  const received = [];
+  const google = {
+    pollDeviceCommands: async (input) => {
+      received.push(input);
+      return {
+        outcome: 'completed',
+        claimed: 2,
+        settled: 2,
+        succeeded: 2,
+        failed: 0,
+        expired: 0,
+        unknown: 0,
+        pending: 0,
+      };
+    },
+  };
+  const request = Readable.from([
+    Buffer.from(JSON.stringify({ ...pollRequest, executionId: 'exec-1' })),
+  ]);
+  request.method = 'POST';
+  request.url = '/dispatch/device-command-poll';
+  request.headers = {
+    authorization: `Bearer ${context.secret}`,
+    'content-type': 'application/json',
+  };
+  const response = {
+    statusCode: 0,
+    payload: null,
+    writeHead(statusCode) {
+      this.statusCode = statusCode;
+    },
+    end(text) {
+      this.payload = JSON.parse(text);
+    },
+  };
+  assert.equal(
+    await handleDeviceCommandPollDispatch(request, response, context, google),
+    true,
+  );
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.status, 'completed');
+  assert.equal(response.payload.executionId, 'exec-1');
+  assert.deepEqual(received, [pollRequest]);
 });

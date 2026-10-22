@@ -25,6 +25,7 @@ import { EntitySyncBatch } from './entity-sync';
 import {
   DeviceUpdateJobs,
   resolveDeviceUpdateBatchSize,
+  type DeviceCommandPollRequest,
   type DeviceUpdateBatchRequest,
   type DeviceUpdateFinishRequest,
   type DeviceUpdateReconcileRequest,
@@ -200,6 +201,15 @@ export class GoogleWorker {
   ) {
     const { pool, cipher } = this.resources();
     return this.updates(pool, cipher).runReconcile(input, signal);
+  }
+
+  /** One poll run of one awaiting-devices command job (design section 4 steps 5 to 7). */
+  async pollDeviceCommands(
+    input: DeviceCommandPollRequest,
+    signal: AbortSignal,
+  ) {
+    const { pool, cipher } = this.resources();
+    return this.updates(pool, cipher).runPoll(input, signal);
   }
 
   async close() {
