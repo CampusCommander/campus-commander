@@ -213,8 +213,14 @@
                 </div>
               </td>
               <td>{{ operationLabel(operation) }}</td>
-              <td>{{ beforeText(operation) }}</td>
-              <td>{{ requestedText(operation) }}</td>
+              <td>
+                @for (part of pathParts(beforeText(operation)); track $index)
+                {<span>{{ part }}</span>@if (!$last) {<wbr />}}
+              </td>
+              <td>
+                @for (part of pathParts(requestedText(operation)); track $index)
+                {<span>{{ part }}</span>@if (!$last) {<wbr />}}
+              </td>
               <td class="outcome-cell">
                 @if (isReconciling(operation)) {
                 <span class="status-chip small tone-info"

@@ -354,6 +354,24 @@ export function rowFailureText(
   return failureSentence(operation, 'update');
 }
 
+/**
+ * The parts of a value in the Before and Requested cells. An OU path breaks after each slash
+ * (mockup note 17), so the cell renders a word break between the parts. A value without a leading
+ * slash is one part.
+ */
+export function pathParts(value: string): string[] {
+  if (!value.startsWith('/')) return [value];
+  const parts: string[] = [];
+  let start = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== '/' || index === start) continue;
+    parts.push(value.slice(start, index + 1));
+    start = index + 1;
+  }
+  if (start < value.length) parts.push(value.slice(start));
+  return parts;
+}
+
 /** One uncertain command sentence. A command has no reconciliation (record default 4). */
 export function commandUncertainSentence(
   operation: JobUnknownActivityOperation,

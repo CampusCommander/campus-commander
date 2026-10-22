@@ -997,7 +997,7 @@ test('renders one row per device and field for the job of PNG 09', async ({
   await page
     .getByRole('heading', { name: 'Operation results' })
     .evaluate((element) => element.scrollIntoView({ block: 'start' }));
-  // The bounded table scrolls 25 px at 1440, so show its last row in full.
+  // The bounded table (max-height 480, UI-03) holds six rows only partly, so show its last row.
   await page.locator('.table-scroll').evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });

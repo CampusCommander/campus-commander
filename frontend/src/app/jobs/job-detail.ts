@@ -37,6 +37,7 @@ import {
   operationLabel,
   operationNumber,
   operationsFooter,
+  pathParts,
   requestedText,
   rowFailureText,
   scopeHeading,
@@ -99,6 +100,7 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly isCommandOperation = isCommandOperation;
   protected readonly beforeText = beforeText;
   protected readonly requestedText = requestedText;
+  protected readonly pathParts = pathParts;
   protected readonly rowFailureText = rowFailureText;
 
   protected readonly heading = computed(() => {

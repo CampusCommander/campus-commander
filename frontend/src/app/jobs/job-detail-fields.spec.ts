@@ -21,6 +21,7 @@ import {
   operationTotal,
   operationsFooter,
   outcomeTone,
+  pathParts,
   requestedText,
   rowFailureText,
   scopeHeading,
@@ -638,6 +639,16 @@ describe('job detail fields', () => {
     expect(requestedText(move)).toBe(
       '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
     );
+  });
+
+  it('breaks an OU path after each slash', () => {
+    expect(pathParts('/Chrome Devices/Lowell Academy/One to One')).toEqual([
+      '/Chrome Devices/',
+      'Lowell Academy/',
+      'One to One',
+    ]);
+    expect(pathParts('/Chrome Devices/')).toEqual(['/Chrome Devices/']);
+    expect(pathParts('Pine Valley cart 6')).toEqual(['Pine Valley cart 6']);
   });
 
   it('shows the app failure sentence under a failed update row', () => {
