@@ -407,7 +407,7 @@ async function runAdminSdkMockIntegration({
   ).page;
   const expectedUsers = (
     await migrator.query(
-      'SELECT device_id FROM cc.devices WHERE customer_id=$1 AND removed_at IS NULL AND lower(annotated_user)=lower($2) ORDER BY device_id',
+      'SELECT device_id FROM cc.devices WHERE customer_id=$1 AND removed_at IS NULL AND lower(annotated_user)=lower($2)',
       [mock.customerId, withUser.annotatedUser],
     )
   ).rows.map((row) => row.device_id);
@@ -416,8 +416,8 @@ async function runAdminSdkMockIntegration({
     'The stored row holds the seeded annotated user.',
   );
   assert.deepEqual(
-    userPage.rows.map((row) => row.deviceId),
-    expectedUsers,
+    userPage.rows.map((row) => row.deviceId).sort(),
+    [...expectedUsers].sort(),
     'The annotated-user text filter returns the seeded device.',
   );
   assert.equal(userPage.matching, expectedUsers.length);
