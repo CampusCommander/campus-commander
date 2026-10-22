@@ -199,7 +199,8 @@ export class DeviceUpdateSheet {
   /** The Confirm step lists one change per field, then the fields that keep their value. */
   protected readonly sentences = computed(() => {
     const preview = this.preview();
-    return preview ? changeSentences(preview) : [];
+    // The counts come from the frozen rows: one device can keep one field's value.
+    return preview ? changeSentences(preview, this.targets()) : [];
   });
   protected readonly unchanged = computed(() => {
     const preview = this.preview();

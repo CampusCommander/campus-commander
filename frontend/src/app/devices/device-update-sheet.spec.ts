@@ -116,7 +116,10 @@ function targetRows(
 const multiTargets: DeviceUpdateTarget[] = [
   ...targetRows('synthetic-device-1', 'C0A1-0001', 'eligible'),
   ...targetRows('synthetic-device-2', 'C0A1-0002', 'eligible'),
-  ...targetRows('synthetic-device-3', 'C0A1-0003', 'excluded'),
+  ...targetRows('synthetic-device-3', 'C0A1-0003', 'eligible'),
+  ...targetRows('synthetic-device-4', 'C0A1-0004', 'eligible'),
+  ...targetRows('synthetic-device-5', 'C0A1-0005', 'eligible'),
+  ...targetRows('synthetic-device-6', 'C0A1-0006', 'excluded'),
 ];
 
 const multiPreview: DeviceUpdatePreview = {
@@ -602,7 +605,7 @@ it('shows one row group per device and one row per changed field', async () => {
   ).toEqual(['Field', 'Observed value', 'Change', 'Approved value']);
 
   const groups = [...element.querySelectorAll('.targets tbody')];
-  expect(groups).toHaveLength(3);
+  expect(groups).toHaveLength(6);
   expect(groups[0].querySelector('.device-row')?.textContent).toContain(
     'C0A1-0001',
   );
@@ -612,10 +615,10 @@ it('shows one row group per device and one row per changed field', async () => {
       cell.textContent?.trim(),
     ),
   ).toEqual(['Annotated location', 'Annotated user', 'Notes']);
-  expect(groups[2].querySelector('.device-row')?.textContent).toContain(
+  expect(groups[5].querySelector('.device-row')?.textContent).toContain(
     'Excluded · Removed from inventory',
   );
-  expect(groups[2].querySelectorAll('td.not-updated')).toHaveLength(3);
+  expect(groups[5].querySelectorAll('td.not-updated')).toHaveLength(3);
 });
 
 it('lists one confirmation sentence per changed field and names the unchanged field', async () => {
@@ -651,6 +654,42 @@ it('lists one confirmation sentence per changed field and names the unchanged fi
   expect(element.textContent).toContain(
     'Preview PV-006 · 6 devices · 12 field changes',
   );
+});
+
+it('counts each confirmation sentence from its field rows when eligibility differs', async () => {
+  // One eligible device already holds the requested Notes, so that sentence names four
+  // devices while the location sentence names five.
+  const mixedPreview: DeviceUpdatePreview = {
+    ...twoFieldPreview,
+    fieldChanges: 9,
+  };
+  const mixedTargets: DeviceUpdateTarget[] = twoFieldTargets.map((target) =>
+    target.field === 'notes' && target.deviceId === 'synthetic-device-1'
+      ? { ...target, disposition: 'unchanged' as const, approvedValue: null }
+      : target,
+  );
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(mixedPreview, { status: 201 });
+      if (path === previewReadPath) return Response.json(mixedPreview);
+      if (path.includes('/targets'))
+        return Response.json({ targets: mixedTargets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(
+    [...element.querySelectorAll('.change-list li')].map((item) =>
+      item.textContent?.trim(),
+    ),
+  ).toEqual([
+    'Set the annotated location to North lab on 5 devices.',
+    'Set the notes to Cart 7 loaner pool on 4 devices.',
+  ]);
 });
 
 it('omits the unchanged sentence when every field changes', async () => {

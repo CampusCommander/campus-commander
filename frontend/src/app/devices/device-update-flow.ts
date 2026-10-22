@@ -460,10 +460,29 @@ export function changeSentence(
   }
 }
 
-/** The sentences of the Confirm step, one per changed field, in contract order. */
-export function changeSentences(preview: DeviceUpdatePreview): string[] {
+/** The eligible frozen targets of one field. A device that keeps its value is not a change. */
+export function fieldChangeCount(
+  targets: readonly DeviceUpdateTarget[],
+  field: DeviceUpdateChange['field'],
+): number {
+  return targets.filter(
+    (target) => target.field === field && target.disposition === 'eligible',
+  ).length;
+}
+
+/**
+ * The sentences of the Confirm step, one per changed field, in contract order. Each sentence
+ * counts that field's eligible frozen rows. `preview.eligible` counts devices that change at
+ * least one field, so it overstates a field whose devices partly keep their value (UI-06).
+ */
+export function changeSentences(
+  preview: DeviceUpdatePreview,
+  targets: readonly DeviceUpdateTarget[],
+): string[] {
   return preview.changes
-    .map((change) => changeSentence(change, preview.eligible))
+    .map((change) =>
+      changeSentence(change, fieldChangeCount(targets, change.field)),
+    )
     .filter((sentence) => sentence !== '');
 }
 
