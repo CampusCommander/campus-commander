@@ -1,6 +1,6 @@
 # Reboot, disable, or re-enable selected devices
 
-Status: owner-confirmed on 2026-10-21. The owner chose the answer "Confirmed: build it as written".
+Status: owner-confirmed on 2026-10-21. The owner chose the answer "Confirmed: build it as written". Signed off on 2026-10-22 (first build): the owner chose the answer "Signed off as built".
 Source: owner decisions of 2026-10-21, quoted under [Owner decisions](#owner-decisions--2026-10-21).
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the node links under [Design](#design), plus the owner-approved composition. Design gaps remain.
 Replaces: none.
