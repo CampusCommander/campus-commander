@@ -10,12 +10,10 @@ import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/googl
 import { qualifyDeviceWritesOnMock } from './device-write-mock.mjs';
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
-  deviceWriteAccessMessage,
-} from '../libs/application-contracts/src/lib/device-write-access-message.ts';
-import {
   DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
   deviceOrgUnitTreeMessage,
-} from '../libs/application-contracts/src/lib/device-org-unit-tree.ts';
+  deviceWriteAccessMessage,
+} from '../libs/application-contracts/src/lib/device-write-access-message.ts';
 
 /** Google battery health values as Campus Commander classifies them. */
 const batteryHealth = {

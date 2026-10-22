@@ -51,14 +51,3 @@ export const deviceOrgUnitTreeSchema = deviceOrgUnitTreeShape
     { message: 'Only a granted answer carries no failure.' },
   );
 export type DeviceOrgUnitTree = z.infer<typeof deviceOrgUnitTreeSchema>;
-
-/** The exact message of section 6 while the state is denied. */
-export const DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE =
-  'Google denied the organization unit tree. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.';
-
-/** The message that the client shows for one tree state. */
-export function deviceOrgUnitTreeMessage(
-  tree: DeviceOrgUnitTree,
-): string | null {
-  return tree.state === 'denied' ? DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE : null;
-}
