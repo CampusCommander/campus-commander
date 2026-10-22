@@ -1,25 +1,54 @@
+import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // The D1 check of card t_085dd227. One command job sends its issue POST and Google never
-// answers, so the worker stores no HTTP status. The job ends needs-review, and the
-// operations read of the API answers the unknown row.
+// answers, so the worker stores no HTTP status. The job ends needs-review, and
+// GET /api/jobs/<displayId>/operations answers HTTP 200 with the unknown row.
 const workspace = resolve(import.meta.dirname, '../..');
 const load = (path) => import(pathToFileURL(resolve(workspace, path)).href);
+const require = createRequire(resolve(workspace, 'package.json'));
+const { Module } = require('@nestjs/common');
+const { Test } = require('@nestjs/testing');
 
 export async function qualifyDeviceCommandAnswers({
   runtime,
   migrator,
   issuer,
 }) {
-  const [worker, jobsModule] = await Promise.all([
+  const [
+    worker,
+    jobsModule,
+    controllerModule,
+    serviceModule,
+    guardModule,
+    authModule,
+    eventsModule,
+    orchestrationModule,
+    securityModule,
+  ] = await Promise.all([
     load('worker/src/device-update.ts'),
     load('api/src/app/jobs/jobs.ts'),
+    load('api/src/app/jobs/jobs.controller.ts'),
+    load('api/src/app/jobs/jobs.service.ts'),
+    load('api/src/app/auth/auth.guard.ts'),
+    load('api/src/app/auth/auth.service.ts'),
+    load('api/src/app/devices/device-events.service.ts'),
+    load('api/src/app/orchestration/orchestration.service.ts'),
+    load('api/src/app/security.ts'),
   ]);
   const { DeviceUpdateJobs } = worker;
   const { Jobs } = jobsModule;
+  const { JobsController } = controllerModule;
+  const { JobsService } = serviceModule;
+  const { AuthGuard } = guardModule;
+  const { AuthService } = authModule;
+  const { DeviceEventsService } = eventsModule;
+  const { OrchestrationService } = orchestrationModule;
+  const { ApplicationExceptionFilter, securityHeaders } = securityModule;
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
   ).rows[0];
@@ -48,6 +77,7 @@ export async function qualifyDeviceCommandAnswers({
     process.stderr.write(`check ${results.at(-1)}\n`);
   };
   let actor;
+  let apiServer;
   try {
     await migrator.query('UPDATE cc.google_connection SET active=true');
     // The read path of the API: one principal with the jobs:read grant of this district.
@@ -110,6 +140,40 @@ export async function qualifyDeviceCommandAnswers({
       },
     });
 
+    // Mount the production controller, its guard boundary, and the exception filter that the
+    // rehearsal's 400 passed through. The guard override supplies the seeded session only.
+    Reflect.defineMetadata(
+      'design:paramtypes',
+      [JobsService, AuthService, DeviceEventsService, OrchestrationService],
+      JobsController,
+    );
+    class DeviceCommandAnswersModule {}
+    Module({
+      controllers: [JobsController],
+      providers: [
+        { provide: JobsService, useValue: api },
+        { provide: AuthService, useValue: {} },
+        { provide: DeviceEventsService, useValue: {} },
+        { provide: OrchestrationService, useValue: {} },
+      ],
+    })(DeviceCommandAnswersModule);
+    const apiModule = await Test.createTestingModule({
+      imports: [DeviceCommandAnswersModule],
+    })
+      .overrideGuard(AuthGuard)
+      .useValue({
+        canActivate: (context) => {
+          context.switchToHttp().getRequest().session = session;
+          return true;
+        },
+      })
+      .compile();
+    apiServer = apiModule.createNestApplication({ logger: ['error'] });
+    apiServer.use(securityHeaders);
+    apiServer.useGlobalFilters(new ApplicationExceptionFilter());
+    await apiServer.listen(0, '127.0.0.1');
+    const origin = await apiServer.getUrl();
+
     /** One accepted command job with one pending operation (the step 5 shape). */
     const makeJob = async () => {
       const jobId = randomUUID();
@@ -160,7 +224,7 @@ export async function qualifyDeviceCommandAnswers({
     };
 
     await check(
-      'D1 a lost issuance answer ends needs-review and the operations read answers the unknown row',
+      'D1 a lost issuance answer ends needs-review and GET /api/jobs/<displayId>/operations answers 200 with the unknown row',
       async () => {
         const job = await makeJob();
         /** Google receives the POST and never answers it before the call ends. */
@@ -212,17 +276,19 @@ export async function qualifyDeviceCommandAnswers({
         );
         assert.equal(finished.outcome, 'finished');
         assert.equal(finished.status, 'needs-review');
-        // The API read of GET /api/jobs/<displayId>/operations.
-        const detail = await api.detail(session, customer, job.displayId);
-        assert.equal(detail.status, 'needs-review');
-        const page = await api.operations(
-          session,
-          customer,
-          job.displayId,
-          false,
-          undefined,
-          undefined,
+        // GET /api/jobs/<displayId> through the production controller.
+        const detailResponse = await fetch(
+          `${origin}/api/jobs/${job.displayId}`,
         );
+        const detail = await detailResponse.json();
+        assert.equal(detailResponse.status, 200, JSON.stringify(detail));
+        assert.equal(detail.status, 'needs-review');
+        // GET /api/jobs/<displayId>/operations: the route that answered 400 in the rehearsal.
+        const response = await fetch(
+          `${origin}/api/jobs/${job.displayId}/operations`,
+        );
+        const page = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(page));
         assert.equal(page.operations.length, 1);
         assert.deepEqual(
           {
@@ -246,6 +312,7 @@ export async function qualifyDeviceCommandAnswers({
       },
     );
   } finally {
+    await apiServer?.close().catch(() => undefined);
     for (const jobId of jobs)
       await migrator
         .query('DELETE FROM cc.jobs WHERE job_id=$1', [jobId])
