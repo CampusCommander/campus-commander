@@ -123,10 +123,23 @@ interface ApiOptions {
   /** The frozen preview read that the sheet makes when it enters a step. */
   previewReadStatus?: 410 | 403;
   abortPreviewRead?: boolean;
+  /** The answer to each confirm request, in order. `lost` drops the answer. */
+  confirmAnswers?: readonly ConfirmAnswer[];
 }
+
+type ConfirmAnswer =
+  | 'lost'
+  | 'accepted'
+  | 'forbidden'
+  | 'permission-changed'
+  | 'preview-changed'
+  | 'connection-required'
+  | 'connection-changed'
+  | 'preview-expired';
 
 /** The Devices page and the update routes needed by the sheet. */
 async function mockApi(page: Page, options: ApiOptions = {}) {
+  const confirmAnswers = [...(options.confirmAnswers ?? [])];
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -172,7 +185,19 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
     if (method === 'POST' && routePath.endsWith('/confirm')) {
       if (options.confirmStatus === 403)
         return route.fulfill({ status: 403, json: { reason: 'forbidden' } });
-      return route.fulfill({ status: 201, json: receipt });
+      const answer = confirmAnswers.shift() ?? 'accepted';
+      if (answer === 'lost') return route.abort('failed');
+      if (answer === 'accepted')
+        return route.fulfill({ status: 201, json: receipt });
+      if (answer === 'preview-expired')
+        return route.fulfill({
+          status: 410,
+          json: { reason: answer, expiresAt: '2026-10-19T12:15:00.000Z' },
+        });
+      return route.fulfill({
+        status: answer === 'forbidden' ? 403 : 409,
+        json: { reason: answer },
+      });
     }
     if (routePath === '/api/jobs/UPD-006') return route.fulfill({ json: job });
     if (routePath === '/api/application')
@@ -666,4 +691,177 @@ test('does not slide with reduced motion', async ({ page }) => {
     .locator('app-device-update-sheet .bulk-sheet')
     .evaluate((element) => getComputedStyle(element).transitionDuration);
   expect(parseFloat(duration)).toBeLessThan(0.001);
+});
+
+/** The retained record of one confirmation in this tab. */
+const confirmationKey = `cc.device-update-confirmation.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.${previewId}`;
+
+function countPreviewPosts(page: Page): () => number {
+  let posts = 0;
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/api/devices/updates/previews'
+    )
+      posts++;
+  });
+  return () => posts;
+}
+
+test('keeps an unresolved update confirmation across a reload and opens its receipt', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, {
+    confirmAnswers: ['lost', 'connection-required', 'accepted'],
+  });
+  const previewPosts = countPreviewPosts(page);
+  const stored = () =>
+    page.evaluate((key) => sessionStorage.getItem(key), confirmationKey);
+  await openDevices(page);
+  let sheet = await openSheet(page);
+  await fillDraft(page);
+  await savePreview(page);
+  await continueToConfirm(page);
+  await sheet.getByRole('checkbox').check();
+  await sheet.getByRole('button', { name: 'Create update job' }).click();
+  await expect(
+    sheet.getByRole('heading', {
+      level: 1,
+      name: 'The confirmation did not finish',
+    }),
+  ).toBeVisible();
+  expect(JSON.parse((await stored()) ?? '{}')).toEqual({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+  });
+  expect(previewPosts()).toBe(1);
+
+  // The same tab reloads. The draft and the record stay.
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Devices', exact: true }),
+  ).toBeVisible();
+  sheet = await openSheet(page);
+  await sheet.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    sheet.getByRole('heading', { level: 1, name: 'The update job may exist' }),
+  ).toBeVisible();
+  await expect(sheet.getByText('The receipt is unavailable')).toBeVisible();
+  await expect(sheet.getByText('Check Jobs for the update job')).toBeVisible();
+  expect(JSON.parse((await stored()) ?? '{}')).toEqual({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+  });
+  // The unresolved replay prepared no replacement preview.
+  expect(previewPosts()).toBe(1);
+  await expectNoAxeViolations(page);
+  await page.waitForTimeout(300);
+  await screenshot(page, 'sheet-replay-receipt-unavailable-light.png');
+
+  // A closure keeps the record. The next replay answers the receipt.
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(sheet).not.toHaveClass(/is-open/);
+  sheet = await openSheet(page);
+  await sheet.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await expect(sheet.getByText('Job UPD-006 · Running')).toBeVisible();
+  expect(await stored()).toBeNull();
+  expect(previewPosts()).toBe(1);
+});
+
+test('keeps an unresolved confirmation when the recovery prepares a new preview', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, {
+    targetsStatus: 410,
+    confirmAnswers: ['preview-changed'],
+  });
+  const previewPosts = countPreviewPosts(page);
+  await openDevices(page);
+  const sheet = await openSheet(page);
+  await fillDraft(page);
+  await sheet.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Preview expired' }),
+  ).toBeVisible();
+  await page.evaluate(
+    ({ key, record }) => sessionStorage.setItem(key, JSON.stringify(record)),
+    {
+      key: confirmationKey,
+      record: { previewId, manifestDigest: 'a'.repeat(64) },
+    },
+  );
+  expect(previewPosts()).toBe(1);
+
+  await sheet.getByRole('button', { name: 'Prepare new preview' }).click();
+  await expect(
+    sheet.getByRole('heading', { level: 1, name: 'The update job may exist' }),
+  ).toBeVisible();
+  await expect(
+    sheet.getByText('Review the Jobs page before you prepare another preview.'),
+  ).toBeVisible();
+  // The recovery answer kept the record and started no preview.
+  expect(previewPosts()).toBe(1);
+  expect(
+    await page.evaluate((key) => sessionStorage.getItem(key), confirmationKey),
+  ).not.toBeNull();
+  await expectNoAxeViolations(page);
+});
+
+test('clears a retained confirmation that a 410 expires and prepares the preview', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, { confirmAnswers: ['preview-expired'] });
+  const previewPosts = countPreviewPosts(page);
+  await openDevices(page);
+  await page.evaluate(
+    ({ key, record }) => sessionStorage.setItem(key, JSON.stringify(record)),
+    {
+      key: confirmationKey,
+      record: { previewId, manifestDigest: 'a'.repeat(64) },
+    },
+  );
+  const sheet = await openSheet(page);
+  await fillDraft(page);
+  await savePreview(page);
+  await expect(
+    sheet.getByRole('heading', { name: 'Review 6 device updates' }),
+  ).toBeVisible();
+  expect(previewPosts()).toBe(1);
+  expect(
+    await page.evaluate((key) => sessionStorage.getItem(key), confirmationKey),
+  ).toBeNull();
+});
+
+test('clears a retained confirmation when the replay answers connection-changed', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 990 });
+  await mockApi(page, { confirmAnswers: ['connection-changed'] });
+  const previewPosts = countPreviewPosts(page);
+  await openDevices(page);
+  await page.evaluate(
+    ({ key, record }) => sessionStorage.setItem(key, JSON.stringify(record)),
+    {
+      key: confirmationKey,
+      record: { previewId, manifestDigest: 'a'.repeat(64) },
+    },
+  );
+  const sheet = await openSheet(page);
+  await fillDraft(page);
+  await sheet.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    sheet.getByText(
+      'The Google connection changed. Reconnect Google Workspace before you create the job.',
+    ),
+  ).toBeVisible();
+  expect(previewPosts()).toBe(0);
+  expect(
+    await page.evaluate((key) => sessionStorage.getItem(key), confirmationKey),
+  ).toBeNull();
 });

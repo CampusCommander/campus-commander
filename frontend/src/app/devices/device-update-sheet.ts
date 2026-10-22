@@ -604,6 +604,14 @@ export class DeviceUpdateSheet {
       this.showProblem('confirm-uncertain');
       return;
     }
+    if (preparation.kind === 'unresolved') {
+      // The early answer cannot prove that the first request created no job. Keep
+      // the retained identity and show the receipt recovery, not a new preview.
+      this.submitted.set(preparation.submitted);
+      this.step.set('confirm');
+      this.showProblem('confirm-receipt-unavailable');
+      return;
+    }
     this.showPrepareProblem(preparation.answer);
   }
 
@@ -910,6 +918,13 @@ export class DeviceUpdateSheet {
         this.submitted.set(preparation.submitted);
         this.step.set('confirm');
         this.showProblem('confirm-uncertain');
+        return;
+      case 'unresolved':
+        // The early answer cannot prove that the first request created no job. Keep
+        // the retained identity and show the receipt recovery, not a new preview.
+        this.submitted.set(preparation.submitted);
+        this.step.set('confirm');
+        this.showProblem('confirm-receipt-unavailable');
         return;
       case 'problem':
         this.showProblem(
