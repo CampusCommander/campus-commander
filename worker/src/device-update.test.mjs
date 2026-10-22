@@ -1953,11 +1953,11 @@ test('a command issue classifies its accepted, refused, and lost answers', () =>
   );
   assert.equal(quota.outcome, 'failed');
   assert.equal(quota.outcomeReason, 'quota');
-  // A sent POST with no answer stays ambiguous.
+  // A sent POST with no answer stays ambiguous and stores no HTTP status.
   const lost = run(tracked());
   assert.equal(lost.outcome, 'unknown');
   assert.equal(lost.outcomeReason, 'ambiguous');
-  assert.equal(lost.googleStatus, 0);
+  assert.equal(lost.googleStatus, null);
 });
 
 test('a command batch issues one POST part per operation and settles issued', async () => {
@@ -2067,9 +2067,34 @@ test('a transient command refusal settles unknown ambiguous without a retry', as
   );
 });
 
-test('a command POST with no answer settles unknown ambiguous', async () => {
+test('a lost issuance answer stores no HTTP status', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
-  const source = reader([{ abortBeforeAnswer: true }]);
+  // The POST leaves the worker and Google never answers it before the call ends.
+  const source = reader([{ hang: true }]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(250));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(source.calls[0].aborted, true);
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'ambiguous', null]],
+  );
+});
+
+test('a transport-level part failure stores no HTTP status', async () => {
+  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  // The batch service reports a transport failure with status 0 (no HTTP answer).
+  const source = reader([
+    {
+      parts: { d1: { kind: 'transient', status: 0, reason: 'network' } },
+    },
+  ]);
   const { create } = jobs({ db, reader: source });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.equal(answer.outcome, 'settled');
@@ -2081,7 +2106,32 @@ test('a command POST with no answer settles unknown ambiguous', async () => {
       result.outcomeReason,
       result.googleStatus,
     ]),
-    [['unknown', 'ambiguous', 0]],
+    [['unknown', 'ambiguous', null]],
+  );
+});
+
+test('an invalid-response failure stores no HTTP status', async () => {
+  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  // A part that never arrived fails as invalid-response with no HTTP status.
+  const source = reader([
+    {
+      parts: {
+        d1: { kind: 'invalid-response', status: 0, reason: 'missing-part' },
+      },
+    },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'invalid-response', null]],
   );
 });
 
