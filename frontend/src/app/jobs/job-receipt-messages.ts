@@ -8,22 +8,23 @@ export function receiptSubtitle(job: JobDetail): string {
 }
 
 /**
- * "6 devices · 6 annotated-location updates. Google changes have not completed."
- * The frame names both counters, so the line keeps both. A reload can return a
- * finished job, so the last sentence follows the returned status.
+ * "5 devices · 15 field changes. Google changes have not completed."
+ * The frame names both counters, so the line keeps both. A reload can return a finished
+ * job, so the last sentence follows the returned status. A replayed receipt has no frozen
+ * preview, so its line names the device count only.
  */
-export function receiptCountLine(job: JobDetail): string {
+export function receiptCountLine(
+  job: JobDetail,
+  fieldChanges: number | null,
+): string {
   const devices = job.scope.deviceCount ?? job.progress.total ?? 0;
-  const updates = job.progress.total ?? job.scope.deviceCount ?? 0;
-  // The receipt names the one change of the step 4 sheet. F2 names each field.
-  const mode = job.changes?.length === 1 ? job.changes[0].mode : null;
-  const noun =
-    mode === 'clear'
-      ? 'annotated-location removals'
-      : 'annotated-location updates';
-  return `${deviceCountText(devices)} · ${updates.toLocaleString(
-    'en-US',
-  )} ${noun}. ${receiptCompletionSentence(job)}`;
+  const completion = receiptCompletionSentence(job);
+  if (fieldChanges === null)
+    return `${deviceCountText(devices)}. ${completion}`;
+  const rows = fieldChanges.toLocaleString('en-US');
+  return `${deviceCountText(devices)} · ${rows} ${
+    fieldChanges === 1 ? 'field change' : 'field changes'
+  }. ${completion}`;
 }
 
 /** The completion sentence of the status that the job read returned. */

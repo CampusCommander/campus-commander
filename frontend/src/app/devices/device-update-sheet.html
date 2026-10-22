@@ -58,7 +58,7 @@
     } }
   </ol>
 
-  <div class="sheet-body">
+  <div class="sheet-body" tabindex="0">
     @if (step() === 'edit') { @if (editOffline()) {
     <section class="banner" aria-labelledby="update-offline-title">
       <h2 id="update-offline-title">Cannot reach Campus Commander</h2>
@@ -133,48 +133,66 @@
       </p>
 
       <form (ngSubmit)="prepare()">
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Annotated location</mat-label>
-          <input
-            matInput
-            name="annotatedLocation"
-            autocomplete="off"
-            [ngModel]="draft.value()"
-            (ngModelChange)="draft.setValue($event)"
-            [readonly]="draft.mode() === 'clear'"
-            [attr.aria-invalid]="showValueError()"
-            [attr.aria-describedby]="
-              showValueError() ? 'location-help location-error' : 'location-help'
-            "
-          />
-          <mat-hint id="location-help"
-            >{{ draft.mode() === 'clear' ? 'Clear value removes the annotation.
-            The typed value is not sent.' : 'Use 200 characters or fewer. Spaces
-            alone do not count.' }}</mat-hint
-          >
-          <mat-hint align="end">{{ length() }} of 200 characters</mat-hint>
-        </mat-form-field>
-        @if (showValueError()) {
-        <p id="location-error" class="error" role="alert">{{ valueError() }}</p>
+        @for (field of fields; track field.id) {
+        <div class="field-block" [attr.data-field]="field.id">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>{{ field.label }}</mat-label>
+            <mat-select
+              [value]="draft.modeOf(field.id)"
+              (selectionChange)="setMode(field.id, $event.value)"
+            >
+              <mat-option value="unchanged">Leave unchanged</mat-option>
+              <mat-option value="replace"
+                >Update · Replace the existing value</mat-option
+              >
+              <mat-option value="clear">Clear value</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          @if (draft.modeOf(field.id) === 'replace') {
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>New value</mat-label>
+            @if (field.multiline) {
+            <textarea
+              matInput
+              rows="1"
+              cdkTextareaAutosize
+              [cdkAutosizeMinRows]="1"
+              [errorStateMatcher]="valueErrorMatcher(field.id)"
+              [ngModel]="draft.valueOf(field.id)"
+              [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="setValue(field.id, $event)"
+              (blur)="markBlurred(field.id)"
+              [attr.aria-invalid]="showValueError(field.id) ? 'true' : null"
+              [attr.aria-describedby]="describedBy(field.id)"
+            ></textarea>
+            } @else {
+            <input
+              matInput
+              autocomplete="off"
+              [errorStateMatcher]="valueErrorMatcher(field.id)"
+              [ngModel]="draft.valueOf(field.id)"
+              [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="setValue(field.id, $event)"
+              (blur)="markBlurred(field.id)"
+              [attr.aria-invalid]="showValueError(field.id) ? 'true' : null"
+              [attr.aria-describedby]="describedBy(field.id)"
+            />
+            }
+            <mat-hint [id]="field.id + '-help'"
+              >{{ hintOf(field.id) }}</mat-hint
+            >
+            <mat-hint align="end">{{ counterOf(field.id) }}</mat-hint>
+          </mat-form-field>
+          @if (showValueError(field.id)) {
+          <p class="error" role="alert" [id]="field.id + '-error'">
+            {{ valueError(field.id) }}
+          </p>
+          } }
+        </div>
         }
 
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <mat-label>Change mode</mat-label>
-          <mat-select
-            [value]="draft.mode()"
-            (selectionChange)="setMode($event.value)"
-          >
-            <mat-option value="replace"
-              >Update · Replace the existing value</mat-option
-            >
-            <mat-option value="clear">Clear value</mat-option>
-          </mat-select>
-        </mat-form-field>
-
         <p class="mt-lg">
-          Asset tag and notes remain unchanged. Telemetry is read-only.
-        </p>
-        <p class="mt-md">
           To remove an annotation, choose Clear value explicitly.
         </p>
 
@@ -213,30 +231,38 @@
     <p class="notice" role="status">{{ SELECTION_CHANGED_NOTE }}</p>
     }
 
-    <p class="list-label" id="targets-field">Annotated location</p>
+    <p class="list-label" id="targets-field">Field changes</p>
     <div class="targets-wrap">
-      <table class="targets">
+      <table class="targets" aria-describedby="targets-field">
         <caption class="visually-hidden">
           Frozen update targets
         </caption>
         <colgroup>
-          <col class="col-device" />
+          <col class="col-field" />
           <col />
           <col class="col-arrow" />
           <col />
         </colgroup>
         <thead>
           <tr>
-            <th scope="col">Device</th>
+            <th scope="col">Field</th>
             <th scope="col">Observed value</th>
             <th scope="col"><span class="visually-hidden">Change</span></th>
             <th scope="col">Approved value</th>
           </tr>
         </thead>
+        @for (group of groups(); track group.deviceId) {
         <tbody>
-          @for (target of targets(); track target.deviceId + target.field) {
+          <tr class="device-row">
+            <th scope="rowgroup" colspan="4">
+              {{ group.serialNumber }} @if (group.excluded) {
+              <span class="line">{{ group.excluded }}</span>
+              }
+            </th>
+          </tr>
+          @for (target of group.rows; track target.field) {
           <tr>
-            <th scope="row">{{ device(target) }}</th>
+            <th scope="row">{{ fieldLabel(target.field) }}</th>
             <td>{{ observed(target) }}</td>
             <td class="arrow-cell" aria-hidden="true">
               <span class="material-symbols-outlined">arrow_forward</span>
@@ -252,6 +278,7 @@
           </tr>
           }
         </tbody>
+        }
       </table>
     </div>
     @if (targets().length === 0) {
@@ -283,7 +310,14 @@
     } @else if (preview(); as activePreview) {
     <section aria-labelledby="confirm-scope-title">
       <h2 id="confirm-scope-title">{{ heading() }}</h2>
-      <p class="mt-md">{{ sentence() }}</p>
+      <ul class="change-list">
+        @for (item of sentences(); track item) {
+        <li>{{ item }}</li>
+        }
+      </ul>
+      @if (unchanged()) {
+      <p class="mt-md">{{ unchanged() }}</p>
+      }
       <p class="meta">{{ confirmMeta() }}</p>
       <p class="meta">{{ expiry() }}</p>
       @if (selectionChanged()) {

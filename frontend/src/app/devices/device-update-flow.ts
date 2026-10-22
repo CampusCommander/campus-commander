@@ -1,5 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import {
+  DEVICE_UPDATE_FIELD_LABELS,
+  DEVICE_UPDATE_TEXT_FIELDS,
   ENTITY_FRESHNESS_HOURS,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewSchema,
@@ -428,62 +430,94 @@ export function staleWarning(): string {
 }
 
 /**
- * The one change of the step 4 sheet. F2 replaces the draft with several fields, so this helper
- * names the change that the one-field sheet sends and reads.
+ * The confirmation card heading of frame 97:57 for several fields. The first count is the
+ * changed fields, and the second is the eligible devices of the frozen preview.
  */
-export function annotatedLocationChange(
-  preview: Pick<DeviceUpdatePreview, 'changes'>,
-): DeviceUpdateChange | null {
-  return (
-    preview.changes.find((change) => change.field === 'annotatedLocation') ??
-    null
-  );
-}
-
-/** The confirmation card heading of frame 97:57. */
 export function confirmationHeading(preview: DeviceUpdatePreview): string {
-  return annotatedLocationChange(preview)?.mode === 'clear'
-    ? `Clear the location on ${deviceCountText(preview.eligible)}`
-    : `Update the location on ${deviceCountText(preview.eligible)}`;
+  const fields = preview.changes.length;
+  return `Update ${fields.toLocaleString('en-US')} ${
+    fields === 1 ? 'field' : 'fields'
+  } on ${deviceCountText(preview.eligible)}`;
 }
 
 /**
- * The consequence sentence of frame 97:57. The observed values differ between devices
- * in a real preview, so the sentence names the common value or says that they differ.
+ * One confirmation sentence per changed field (Figma 172:2420). A Move sentence needs the
+ * destination and its policy note; F3 adds it.
  */
-export function confirmationSentence(
-  preview: DeviceUpdatePreview,
-  targets: readonly DeviceUpdateTarget[],
+export function changeSentence(
+  change: DeviceUpdateChange,
+  devices: number,
 ): string {
-  const change = annotatedLocationChange(preview);
-  if (change?.mode === 'clear')
-    return `Annotated location is cleared on ${deviceCountText(
-      preview.eligible,
-    )}. Other fields remain unchanged.`;
-  const approved = change?.value ?? 'the approved value';
-  const observed = new Set(
-    targets
-      .filter((target) => target.disposition === 'eligible')
-      .map((target) => target.observedValue),
-  );
-  const named = [...observed].filter(
-    (value): value is string => value !== null,
-  );
-  if (named.length === 0)
-    return `Annotated location is set to ${approved}. Other fields remain unchanged.`;
-  if (named.length === 1 && !observed.has(null))
-    return `Annotated location changes from ${named[0]} to ${approved}. Other fields remain unchanged.`;
-  if (named.length === 1)
-    return `Annotated location changes from ${named[0]} or no value to ${approved}. Other fields remain unchanged.`;
-  return `Annotated location changes from different current values to ${approved}. Other fields remain unchanged.`;
+  const label = DEVICE_UPDATE_FIELD_LABELS[change.field].toLowerCase();
+  const count = deviceCountText(devices);
+  switch (change.mode) {
+    case 'clear':
+      return `Clear the ${label} on ${count}.`;
+    case 'move':
+      return '';
+    case 'replace':
+      return `Set the ${label} to ${change.value ?? ''} on ${count}.`;
+  }
 }
 
-/** "Preview PV-006 · 6 devices · 6 field changes". */
+/** The eligible frozen targets of one field. A device that keeps its value is not a change. */
+export function fieldChangeCount(
+  targets: readonly DeviceUpdateTarget[],
+  field: DeviceUpdateChange['field'],
+): number {
+  return targets.filter(
+    (target) => target.field === field && target.disposition === 'eligible',
+  ).length;
+}
+
+/**
+ * The sentences of the Confirm step, one per changed field, in contract order. Each sentence
+ * counts that field's eligible frozen rows. `preview.eligible` counts devices that change at
+ * least one field, so it overstates a field whose devices partly keep their value (UI-06).
+ */
+export function changeSentences(
+  preview: DeviceUpdatePreview,
+  targets: readonly DeviceUpdateTarget[],
+): string[] {
+  return preview.changes
+    .map((change) =>
+      changeSentence(change, fieldChangeCount(targets, change.field)),
+    )
+    .filter((sentence) => sentence !== '');
+}
+
+/**
+ * The fields that keep their value, as the step 4 sentence names them. Only the three text
+ * fields of the draft appear, because the sheet offers no other change. F3 adds
+ * Organization unit to this sentence.
+ */
+export function unchangedSentence(preview: DeviceUpdatePreview): string {
+  const changed = new Set(preview.changes.map((change) => change.field));
+  const labels = DEVICE_UPDATE_TEXT_FIELDS.filter(
+    (field) => !changed.has(field),
+  ).map((field) => DEVICE_UPDATE_FIELD_LABELS[field].toLowerCase());
+  if (labels.length === 0) return '';
+  const joined =
+    labels.length === 1
+      ? labels[0]
+      : labels.length === 2
+        ? `${labels[0]} and ${labels[1]}`
+        : `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+  const sentence = `${joined} ${
+    labels.length === 1 ? 'remains' : 'remain'
+  } unchanged.`;
+  // The sentence opens with the field name, so its first letter is upper case.
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+/** "Preview PV-006 · 6 devices · 15 field changes". */
 export function confirmationMetaLine(preview: DeviceUpdatePreview): string {
-  const changes = preview.eligible.toLocaleString('en-US');
+  const changes = preview.fieldChanges.toLocaleString('en-US');
   return `Preview ${preview.displayId} · ${deviceCountText(
     preview.selected,
-  )} · ${changes} ${preview.eligible === 1 ? 'field change' : 'field changes'}`;
+  )} · ${changes} ${
+    preview.fieldChanges === 1 ? 'field change' : 'field changes'
+  }`;
 }
 
 /** "Expires Sep 5, 10:45 AM". */
@@ -527,8 +561,7 @@ export function exclusionReasonText(reason: string | null): string {
 
 /** A second line under Approved value, or an empty string. */
 export function targetNote(target: DeviceUpdateTarget): string {
-  if (target.disposition === 'excluded')
-    return `Excluded · ${exclusionReasonText(target.exclusionReason)}`;
+  // The device group row carries the exclusion reason (design note 16).
   if (target.disposition === 'unchanged') return 'No change';
   return '';
 }
@@ -536,6 +569,44 @@ export function targetNote(target: DeviceUpdateTarget): string {
 /** The device cell of a target row. */
 export function targetDeviceText(target: DeviceUpdateTarget): string {
   return target.serialNumber || target.deviceId;
+}
+
+/** One row group of the Review table: a device, then one row per changed field. */
+export interface TargetGroup {
+  deviceId: string;
+  /** The serial, or the device ID when Google reports no serial. */
+  serialNumber: string;
+  /** "Excluded · Removed from inventory", or null for a device that the job covers. */
+  excluded: string | null;
+  rows: DeviceUpdateTarget[];
+}
+
+/**
+ * The frozen targets as one group per device, in the order that the route returns them. A
+ * device of an excluded target shows its reason once, in the group row (design note 16).
+ */
+export function targetGroups(
+  targets: readonly DeviceUpdateTarget[],
+): TargetGroup[] {
+  const groups = new Map<string, TargetGroup>();
+  for (const target of targets) {
+    let group = groups.get(target.deviceId);
+    if (!group) {
+      group = {
+        deviceId: target.deviceId,
+        serialNumber: targetDeviceText(target),
+        excluded: null,
+        rows: [],
+      };
+      groups.set(target.deviceId, group);
+    }
+    group.rows.push(target);
+    if (target.disposition === 'excluded')
+      group.excluded = `Excluded · ${exclusionReasonText(
+        target.exclusionReason,
+      )}`;
+  }
+  return [...groups.values()];
 }
 
 /** One page of targets, or the answer that stopped the read. */
@@ -635,14 +706,12 @@ export class DeviceUpdateFlow {
 
   /** A new preview from the durable draft. The expired page uses it (design 2.4). */
   async prepareFromDraft(): Promise<FlowRead<DeviceUpdatePreview>> {
-    const mode = this.draft.mode();
     const key = { gridId: DEVICE_GRID_ID, tabId: this.devices.selectionTab };
-    // The step 4 sheet sends one change. F2 sends the whole draft.
-    const change: DeviceUpdateChange =
-      mode === 'clear'
-        ? { field: 'annotatedLocation', mode }
-        : { field: 'annotatedLocation', mode, value: this.draft.value() };
-    const request: DeviceUpdatePreviewRequest = { ...key, changes: [change] };
+    // One change per changed field, in contract order.
+    const request: DeviceUpdatePreviewRequest = {
+      ...key,
+      changes: this.draft.changes(),
+    };
     try {
       const response = await this.auth.request(
         '/api/devices/updates/previews',

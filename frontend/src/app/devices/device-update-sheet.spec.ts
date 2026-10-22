@@ -5,6 +5,8 @@ import { vi } from 'vitest';
 import type {
   DeviceSelectionSpec,
   DeviceUpdatePreview,
+  DeviceUpdateTarget,
+  DeviceUpdateTextField,
   JobDetail,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
@@ -89,6 +91,67 @@ const receipt = {
   updateCount: 6,
 };
 
+/** The three text fields of F2, one row per device and changed field. */
+function targetRows(
+  deviceId: string,
+  serialNumber: string,
+  disposition: 'eligible' | 'excluded',
+): DeviceUpdateTarget[] {
+  const values = [
+    ['annotatedLocation', 'Science wing', 'North lab'],
+    ['annotatedUser', 'luis.ortiz@example.org', 'maya.chen@example.org'],
+    ['notes', null, 'Cart 7 loaner pool'],
+  ] as const;
+  return values.map(([field, observedValue, approvedValue]) => ({
+    deviceId,
+    serialNumber,
+    field,
+    observedValue,
+    approvedValue: disposition === 'excluded' ? null : approvedValue,
+    disposition,
+    exclusionReason: disposition === 'excluded' ? 'removed' : null,
+  }));
+}
+
+const multiTargets: DeviceUpdateTarget[] = [
+  ...targetRows('synthetic-device-1', 'C0A1-0001', 'eligible'),
+  ...targetRows('synthetic-device-2', 'C0A1-0002', 'eligible'),
+  ...targetRows('synthetic-device-3', 'C0A1-0003', 'eligible'),
+  ...targetRows('synthetic-device-4', 'C0A1-0004', 'eligible'),
+  ...targetRows('synthetic-device-5', 'C0A1-0005', 'eligible'),
+  ...targetRows('synthetic-device-6', 'C0A1-0006', 'excluded'),
+];
+
+const multiPreview: DeviceUpdatePreview = {
+  ...preview,
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+    {
+      field: 'annotatedUser',
+      mode: 'replace',
+      value: 'maya.chen@example.org',
+    },
+    { field: 'notes', mode: 'replace', value: 'Cart 7 loaner pool' },
+  ],
+  fieldChanges: 15,
+  selected: 6,
+  eligible: 5,
+  excluded: 1,
+};
+
+const twoFieldPreview: DeviceUpdatePreview = {
+  ...multiPreview,
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+    { field: 'notes', mode: 'replace', value: 'Cart 7 loaner pool' },
+  ],
+  fieldChanges: 10,
+};
+
+const twoFieldTargets: DeviceUpdateTarget[] = multiTargets.filter(
+  (target) => target.field !== 'annotatedUser',
+);
+
 const job: JobDetail = {
   jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   displayId: 'UPD-006',
@@ -124,6 +187,14 @@ const job: JobDetail = {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+};
+
+/** The job of the several-field receipt: 5 devices and 15 field changes. */
+const multiJob: JobDetail = {
+  ...job,
+  scope: { kind: 'devices', deviceCount: 5 },
+  progress: { ...job.progress, total: 5, pending: 2 },
+  changes: multiPreview.changes,
 };
 
 type RequestHandler = (
@@ -220,13 +291,25 @@ async function setup(options: SetupOptions = {}) {
       (candidate) =>
         candidate.textContent?.replace(/\s+/g, ' ').trim() === name,
     );
-  const input = () =>
-    element.querySelector<HTMLInputElement>('input[name="annotatedLocation"]');
-  const type = async (value: string) => {
-    const field = input();
-    if (!field) throw new Error('The annotated location field is missing.');
-    field.value = value;
-    field.dispatchEvent(new Event('input'));
+  const block = (field: DeviceUpdateTextField) =>
+    element.querySelector<HTMLElement>(`.field-block[data-field="${field}"]`);
+  const valueInput = (field: DeviceUpdateTextField = 'annotatedLocation') =>
+    block(field)?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      'input, textarea',
+    ) ?? null;
+  const input = () => valueInput('annotatedLocation');
+  const type = async (
+    value: string,
+    field: DeviceUpdateTextField = 'annotatedLocation',
+  ) => {
+    if (TestBed.inject(DeviceUpdateDraftStore).modeOf(field) !== 'replace') {
+      TestBed.inject(DeviceUpdateDraftStore).setMode(field, 'replace');
+      await settle();
+    }
+    const target = valueInput(field);
+    if (!target) throw new Error(`The ${field} value field is missing.`);
+    target.value = value;
+    target.dispatchEvent(new Event('input'));
     await settle();
   };
   const open = async () => {
@@ -259,7 +342,9 @@ async function setup(options: SetupOptions = {}) {
     navigate,
     closed,
     button,
+    block,
     input,
+    valueInput,
     type,
     settle,
     open,
@@ -271,15 +356,36 @@ async function setup(options: SetupOptions = {}) {
 }
 
 it('opens at Edit with the selection count and no Organization unit', async () => {
-  const { element, button, input } = await setup();
+  const { element, button, block, input } = await setup();
   const heading = element.querySelector('h1');
   expect(heading?.textContent?.trim()).toBe('Update 6 devices');
   expect(element.textContent).toContain(
     '6 devices · 0 changed fields · Not submitted',
   );
   expect(element.textContent).not.toContain('Organization unit');
-  expect(input()).not.toBeNull();
-  expect(button('Save and preview')).toBeDefined();
+  expect(element.textContent).not.toContain('Asset tag');
+  expect(element.querySelectorAll('.field-block')).toHaveLength(3);
+  expect(
+    [...element.querySelectorAll('.field-block mat-label')].map((label) =>
+      label.textContent?.trim(),
+    ),
+  ).toEqual(['Annotated location', 'Annotated user', 'Notes']);
+  // Each field starts at Leave unchanged, so no value field is shown.
+  for (const field of [
+    'annotatedLocation',
+    'annotatedUser',
+    'notes',
+  ] as const) {
+    expect(block(field)?.textContent).toContain('Leave unchanged');
+    expect(
+      block(field)?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        'input, textarea',
+      ),
+    ).toBeNull();
+  }
+  expect(input()).toBeNull();
+  expect(button('Save and preview')?.disabled).toBe(true);
+  expect(button('Reset')?.disabled).toBe(true);
 });
 
 it('shows the step order and the stepper states', async () => {
@@ -335,8 +441,112 @@ it('shows one device and one changed field in the singular', async () => {
 it('rejects a whitespace-only value and keeps Save and preview disabled', async () => {
   const { element, button, type } = await setup();
   await type('   ');
-  expect(element.textContent).toContain('A value needs a visible character.');
+  expect(element.textContent).toContain(
+    'Annotated location needs a visible character.',
+  );
   expect(button('Save and preview')?.disabled).toBe(true);
+});
+
+it('explains an empty Replace value once the field loses focus', async () => {
+  const { block, draft, settle, valueInput } = await setup();
+  draft.setMode('notes', 'replace');
+  await settle();
+  const notes = block('notes');
+  expect(notes?.querySelector('.error')).toBeNull();
+  expect(
+    notes?.querySelector('mat-form-field.mat-form-field-invalid'),
+  ).toBeNull();
+
+  valueInput('notes')?.dispatchEvent(new Event('blur'));
+  await settle();
+  expect(notes?.textContent).toContain('Notes holds 1 to 500 characters.');
+  expect(
+    notes?.querySelector('mat-form-field.mat-form-field-invalid'),
+  ).not.toBeNull();
+});
+
+it('shows the limit of each field in its hint and counter', async () => {
+  const { element, block, type } = await setup();
+  await type('North lab', 'annotatedLocation');
+  await type('maya.chen@example.org', 'annotatedUser');
+  await type('Cart 7 loaner pool', 'notes');
+  expect(block('annotatedLocation')?.textContent).toContain(
+    'Use 200 characters or fewer. Spaces alone do not count.',
+  );
+  expect(block('annotatedLocation')?.textContent).toContain(
+    '9 of 200 characters',
+  );
+  expect(block('annotatedUser')?.textContent).toContain(
+    'Use 100 characters or fewer. Spaces alone do not count.',
+  );
+  expect(block('annotatedUser')?.textContent).toContain('21 of 100 characters');
+  expect(block('notes')?.textContent).toContain(
+    'Use 500 characters or fewer. Spaces alone do not count.',
+  );
+  expect(block('notes')?.textContent).toContain('18 of 500 characters');
+  expect(element.textContent).toContain(
+    '6 devices · 3 changed fields · Not submitted',
+  );
+});
+
+it('shows the Notes value in a text area that grows with the text', async () => {
+  const { block, type } = await setup();
+  await type('Cart 7 loaner pool', 'notes');
+  expect(
+    block('notes')?.querySelector('textarea.mat-mdc-input-element'),
+  ).not.toBeNull();
+  expect(block('annotatedLocation')?.querySelector('textarea')).toBeNull();
+});
+
+it('disables Save and preview while a value is over its limit', async () => {
+  const { block, button, type } = await setup();
+  await type('a'.repeat(501), 'notes');
+  expect(block('notes')?.textContent).toContain('501 of 500 characters');
+  const error = block('notes')?.querySelector('.error');
+  expect(error?.textContent?.trim()).toBe('Notes holds 1 to 500 characters.');
+  expect(error?.getAttribute('role')).toBe('alert');
+  // The value field takes the error outline of frame 04.
+  expect(
+    block('notes')?.querySelector('mat-form-field.mat-form-field-invalid'),
+  ).not.toBeNull();
+  expect(button('Save and preview')?.disabled).toBe(true);
+
+  await type('b'.repeat(101), 'annotatedUser');
+  expect(block('annotatedUser')?.textContent).toContain(
+    'Annotated user holds 1 to 100 characters.',
+  );
+  expect(button('Save and preview')?.disabled).toBe(true);
+
+  await type('North lab', 'annotatedUser');
+  await type('Cart 7 loaner pool', 'notes');
+  expect(block('annotatedUser')?.querySelector('.error')).toBeNull();
+  expect(block('notes')?.querySelector('.error')).toBeNull();
+  expect(button('Save and preview')?.disabled).toBe(false);
+});
+
+it('sends every changed field in contract order', async () => {
+  const { draft, request, type, save, settle } = await setup();
+  await type('Cart 7 loaner pool', 'notes');
+  await type('maya.chen@example.org', 'annotatedUser');
+  draft.setMode('annotatedLocation', 'clear');
+  await settle();
+  await save();
+  const create = request.mock.calls.find(([path]) =>
+    path.endsWith('/previews'),
+  );
+  expect(create?.[1]).toEqual({
+    gridId: 'devices',
+    tabId,
+    changes: [
+      { field: 'annotatedLocation', mode: 'clear' },
+      {
+        field: 'annotatedUser',
+        mode: 'replace',
+        value: 'maya.chen@example.org',
+      },
+      { field: 'notes', mode: 'replace', value: 'Cart 7 loaner pool' },
+    ],
+  });
 });
 
 it('sends the replace value and shows the frozen review', async () => {
@@ -370,9 +580,166 @@ it('sends the replace value and shows the frozen review', async () => {
   expect(element.textContent).toContain('Excluded · Removed from inventory');
 });
 
+it('shows one row group per device and one row per changed field', async () => {
+  const { element, type, save } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(multiPreview, { status: 201 });
+      if (path.includes('/targets'))
+        return Response.json({ targets: multiTargets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  expect(element.textContent).toContain(
+    '6 devices · 15 field changes · 1 excluded',
+  );
+  expect(element.querySelector('.list-label')?.textContent?.trim()).toBe(
+    'Field changes',
+  );
+  expect(
+    [...element.querySelectorAll('.targets thead th')].map((cell) =>
+      cell.textContent?.trim(),
+    ),
+  ).toEqual(['Field', 'Observed value', 'Change', 'Approved value']);
+
+  const groups = [...element.querySelectorAll('.targets tbody')];
+  expect(groups).toHaveLength(6);
+  expect(groups[0].querySelector('.device-row')?.textContent).toContain(
+    'C0A1-0001',
+  );
+  expect(groups[0].querySelectorAll('tr')).toHaveLength(4);
+  expect(
+    [...groups[0].querySelectorAll('th[scope="row"]')].map((cell) =>
+      cell.textContent?.trim(),
+    ),
+  ).toEqual(['Annotated location', 'Annotated user', 'Notes']);
+  expect(groups[5].querySelector('.device-row')?.textContent).toContain(
+    'Excluded · Removed from inventory',
+  );
+  expect(groups[5].querySelectorAll('td.not-updated')).toHaveLength(3);
+});
+
+it('lists one confirmation sentence per changed field and names the unchanged field', async () => {
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(twoFieldPreview, { status: 201 });
+      if (path === previewReadPath) return Response.json(twoFieldPreview);
+      if (path.includes('/targets'))
+        return Response.json({ targets: twoFieldTargets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Confirm 5 device updates',
+  );
+  expect(
+    element.querySelector('#confirm-scope-title')?.textContent?.trim(),
+  ).toBe('Update 2 fields on 5 devices');
+  expect(
+    [...element.querySelectorAll('.change-list li')].map((item) =>
+      item.textContent?.trim(),
+    ),
+  ).toEqual([
+    'Set the annotated location to North lab on 5 devices.',
+    'Set the notes to Cart 7 loaner pool on 5 devices.',
+  ]);
+  expect(element.textContent).toContain('Annotated user remains unchanged.');
+  expect(element.textContent).toContain(
+    'Preview PV-006 · 6 devices · 10 field changes',
+  );
+});
+
+it('counts each confirmation sentence from its field rows when eligibility differs', async () => {
+  // One eligible device already holds the requested Notes, so that sentence names four
+  // devices while the location sentence names five.
+  const mixedPreview: DeviceUpdatePreview = {
+    ...twoFieldPreview,
+    fieldChanges: 9,
+  };
+  const mixedTargets: DeviceUpdateTarget[] = twoFieldTargets.map((target) =>
+    target.field === 'notes' && target.deviceId === 'synthetic-device-1'
+      ? { ...target, disposition: 'unchanged' as const }
+      : target,
+  );
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(mixedPreview, { status: 201 });
+      if (path === previewReadPath) return Response.json(mixedPreview);
+      if (path.includes('/targets'))
+        return Response.json({ targets: mixedTargets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(
+    [...element.querySelectorAll('.change-list li')].map((item) =>
+      item.textContent?.trim(),
+    ),
+  ).toEqual([
+    'Set the annotated location to North lab on 5 devices.',
+    'Set the notes to Cart 7 loaner pool on 4 devices.',
+  ]);
+});
+
+it('omits the unchanged sentence when every field changes', async () => {
+  const { element, type, save, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(multiPreview, { status: 201 });
+      if (path === previewReadPath) return Response.json(multiPreview);
+      if (path.includes('/targets'))
+        return Response.json({ targets: multiTargets, nextCursor: null });
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  expect(element.querySelectorAll('.change-list li')).toHaveLength(3);
+  expect(element.textContent).not.toContain('unchanged.');
+});
+
+it('shows the receipt for several fields', async () => {
+  const { element, type, save, acknowledge, settle } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(multiPreview, { status: 201 });
+      if (path === previewReadPath) return Response.json(multiPreview);
+      if (path.includes('/targets'))
+        return Response.json({ targets: multiTargets, nextCursor: null });
+      if (path.endsWith('/confirm'))
+        return Response.json(receipt, { status: 201 });
+      if (path === '/api/jobs/UPD-006') return Response.json(multiJob);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  await type('North lab');
+  await save();
+  clickButton(element, 'Continue to confirmation');
+  await settle();
+  await acknowledge();
+  clickButton(element, 'Create update job');
+  await settle();
+  expect(element.textContent).toContain(
+    '5 devices · 15 field changes. Google changes have not completed.',
+  );
+});
+
 it('sends a clear choice without a value', async () => {
   const { draft, request, save, settle } = await setup();
-  draft.setMode('clear');
+  draft.setMode('annotatedLocation', 'clear');
   await settle();
   await save();
   const create = request.mock.calls.find(([path]) =>
@@ -535,7 +902,7 @@ it('sends the preview digest after the acknowledgement', async () => {
   expect(element.textContent).toContain('Job UPD-006 · Running');
   expect(element.textContent).toContain('Your job is saved');
   expect(element.textContent).toContain(
-    '6 devices · 6 annotated-location updates. Google changes have not completed.',
+    '6 devices · 6 field changes. Google changes have not completed.',
   );
   expect(element.textContent).toContain(
     'You can close this panel and follow progress in Jobs.',
@@ -699,7 +1066,7 @@ it('keeps a replayed update confirmation when the replay needs the connection', 
   expect(sessionStorage.getItem(key)).not.toBeNull();
 });
 
-it('shows the receipt answers of a clear job as removals', async () => {
+it('shows the receipt of a clear job with the field-change count', async () => {
   const clearJob: JobDetail = {
     ...job,
     changes: [{ field: 'annotatedLocation', mode: 'clear' }],
@@ -740,7 +1107,9 @@ it('shows the receipt answers of a clear job as removals', async () => {
       candidate.click();
   });
   await settle();
-  expect(element.textContent).toContain('annotated-location removals');
+  expect(element.textContent).toContain(
+    '6 devices · 6 field changes. Google changes have not completed.',
+  );
 });
 
 it('shows a job read failure as not found', async () => {
@@ -974,7 +1343,7 @@ it('shows the offline state when it enters Confirm and keeps the draft', async (
   expect(element.querySelector('li.step.is-active')?.textContent).toContain(
     'Confirm',
   );
-  expect(draft.value()).toBe('North lab');
+  expect(draft.valueOf('annotatedLocation')).toBe('North lab');
 });
 
 it('shows a failed frozen read inside Review after Back to preview', async () => {
@@ -1060,7 +1429,7 @@ it('ignores a successful confirmation from an earlier opening', async () => {
     'Update 6 devices',
   );
   expect(element.textContent).not.toContain('Job UPD-006 · Running');
-  expect(draft.value()).toBe('North lab');
+  expect(draft.valueOf('annotatedLocation')).toBe('North lab');
   expect(
     sessionStorage.getItem(
       `cc.device-update-confirmation.${principal}.${previewId}`,
@@ -1113,7 +1482,7 @@ it('keeps an uncertain confirmation out of a later opening', async () => {
     'Update 6 devices',
   );
   expect(element.textContent).not.toContain('The confirmation did not finish');
-  expect(draft.value()).toBe('North lab');
+  expect(draft.valueOf('annotatedLocation')).toBe('North lab');
   expect(
     sessionStorage.getItem(
       `cc.device-update-confirmation.${principal}.${previewId}`,

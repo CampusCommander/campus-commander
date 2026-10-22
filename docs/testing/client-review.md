@@ -65,6 +65,16 @@ The battery column shows the classes that the mock reports.
 It connects the mock credential, runs Refresh Devices, compares the device count and one battery class with the mock, and removes the containers.
 It exits 0 on success, so CI can run it.
 
+### Update device completion checks
+
+`npm exec -- nx run frontend-e2e:client-review-update` starts this environment and runs a browser check against it.
+The check is `frontend-e2e/src/device-update-u6-review.spec.ts`.
+It drives completion steps 1, 3, 4, and 5 of [the update workflow](../workflows/update-device-fields.md) in Chromium.
+Preview, the frozen targets, the durable job, the worker, settlement, the device stream, and the inventory read use the application.
+No route is intercepted. Every Google call reaches the mock.
+The command stops the environment that it started and writes screenshots to `dist/e2e-evidence/u6-review`.
+The normal Chromium suite skips these checks. Set `CC_U6_REVIEW=1` and `BASE_URL` to run the spec by hand.
+
 ### Recorded medium review run
 
 The environment reached its ready banner 27 seconds after the command started on 2026-10-16.

@@ -1,8 +1,10 @@
 import {
-  DEVICE_UPDATE_VALUE_MAX,
+  DEVICE_UPDATE_FIELD_LABELS,
+  DEVICE_UPDATE_FIELD_LIMITS,
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   GOOGLE_CAPABILITIES,
   GOOGLE_HEALTH_RECOVERY,
+  type DeviceUpdateTextField,
   type DeviceWriteAccess,
   type GoogleFailure,
 } from '@campus/application-contracts';
@@ -19,19 +21,33 @@ export const DEVICE_WRITE_SCOPE =
 export const DEVICE_UPDATE_PERMISSION_MESSAGE =
   'You need the devices:read, devices:write, and devices:bulk-actions permissions to update devices. Ask your administrator for access.';
 
-/** The two validation messages of the preview contract (design 2.3). */
-export const DEVICE_UPDATE_VALUE_MESSAGES = {
-  length: 'A value holds 1 to 200 characters.',
-  visible: 'A value needs a visible character.',
-} as const;
-
-/** The validation message for one annotated-location value, or null when it passes. */
-export function deviceUpdateValueError(value: string): string | null {
+/** The validation message for one field value, or null when it passes. */
+export function deviceUpdateValueError(
+  field: DeviceUpdateTextField,
+  value: string,
+): string | null {
+  const limit = DEVICE_UPDATE_FIELD_LIMITS[field];
+  const label = DEVICE_UPDATE_FIELD_LABELS[field];
   const length = [...value].length;
-  if (length < 1 || length > DEVICE_UPDATE_VALUE_MAX)
-    return DEVICE_UPDATE_VALUE_MESSAGES.length;
-  if (value.trim().length === 0) return DEVICE_UPDATE_VALUE_MESSAGES.visible;
+  if (length < 1 || length > limit)
+    return `${label} holds 1 to ${limit} characters.`;
+  if (value.trim().length === 0) return `${label} needs a visible character.`;
   return null;
+}
+
+/** The hint under a value field. It names the limit of its own field. */
+export function deviceUpdateValueHint(field: DeviceUpdateTextField): string {
+  return `Use ${DEVICE_UPDATE_FIELD_LIMITS[field]} characters or fewer. Spaces alone do not count.`;
+}
+
+/** The end counter under a value field, in code points. */
+export function deviceUpdateValueCounter(
+  field: DeviceUpdateTextField,
+  value: string,
+): string {
+  return `${[...value].length} of ${
+    DEVICE_UPDATE_FIELD_LIMITS[field]
+  } characters`;
 }
 
 /** A count with thousands separators and a singular or plural noun (design 1760). */
@@ -39,7 +55,7 @@ export function deviceCountText(value: number): string {
   return `${value.toLocaleString('en-US')} ${value === 1 ? 'device' : 'devices'}`;
 }
 
-/** The changed-field count of the draft summary. The draft holds one field. */
+/** The changed-field count of the draft summary. One count per changed field. */
 export function changedFieldsText(value: number): string {
   return `${value} changed ${value === 1 ? 'field' : 'fields'}`;
 }
