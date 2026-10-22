@@ -100,19 +100,6 @@ const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 const telemetryConcurrency = 4;
 const telemetryDevice = telemetryPage.shape.devices.unwrap().element;
 
-/** The part answer of one annotated-location PATCH. Other fields stay out of the body. */
-const writtenDevice = z.object({
-  deviceId: z.string().min(1).max(128).optional(),
-  annotatedLocation: z.string().max(4096).nullable().optional(),
-});
-export type WrittenDevice = z.infer<typeof writtenDevice>;
-
-/** One approved write: the device and its final value. Clear sends null. */
-export interface AnnotatedLocationWrite {
-  deviceId: string;
-  value: string | null;
-}
-
 /** The four writable device fields, in contract order. Each ID equals its Google property name. */
 const deviceWriteFields = [
   'annotatedLocation',
@@ -160,14 +147,6 @@ function deviceWriteBody(
   if (named === 0 || named !== Object.keys(body).length)
     throw new GoogleConnectionError('invalid-response');
   return body;
-}
-
-export interface AnnotatedLocationBatchOptions {
-  /** Parts of one multipart request. The worker setting defaults to 250. */
-  batchSize?: number;
-  onSend?(requestIds: readonly string[]): void | Promise<void>;
-  onResponse?(event: BatchResponseEvent<WrittenDevice>): void | Promise<void>;
-  onBatch?(event: BatchRoundEvent): void | Promise<void>;
 }
 
 /** The command ID format of the Directory API and the operation check. */
@@ -710,57 +689,6 @@ export class GoogleDeviceReader {
       else if (failed) throw batchFailure(failed);
     }
     return { devices, missing };
-  }
-
-  /**
-   * One annotated-location PATCH per device through the batch service. The body names one field.
-   * Clear sends null. The write scope comes from the `device-changes` capability.
-   * Part failures stay in the result; the caller classifies them (design section 7.1).
-   */
-  async patchAnnotatedLocations(
-    credential: DelegatedCredential,
-    customerId: string,
-    writes: readonly AnnotatedLocationWrite[],
-    signal: AbortSignal,
-    options: AnnotatedLocationBatchOptions = {},
-  ): Promise<BatchResult<WrittenDevice>> {
-    googleCustomerIdSchema.parse(customerId);
-    if (writes.length > batchLimit)
-      throw new GoogleConnectionError('invalid-response');
-    const mint: { failure?: GoogleConnectionError } = {};
-    const result = await this.batch.execute({
-      batchUrl: batchEndpoint,
-      requests: writes.map((write) => ({
-        id: String(write.deviceId),
-        method: 'PATCH' as const,
-        path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(write.deviceId)}`,
-        query: { projection: 'FULL', fields: deviceFields },
-        body: { annotatedLocation: write.value },
-      })),
-      parse: (body) => writtenDevice.parse(body) as WrittenDevice,
-      getClient: async (runSignal) => {
-        try {
-          return await scopedClient(
-            credential,
-            scopeFor('device-changes'),
-            runSignal,
-            batchResponseLimit,
-          );
-        } catch (error) {
-          mint.failure = failure(error, 'token');
-          throw mint.failure;
-        }
-      },
-      signal,
-      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
-      ...(options.onSend ? { onSend: options.onSend } : {}),
-      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
-      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
-    });
-    // A mint failure ends every waiting request without an event. The caller keeps
-    // the code as the job failure (design section 7.2).
-    if (mint.failure && !signal.aborted) throw mint.failure;
-    return result;
   }
 
   /**

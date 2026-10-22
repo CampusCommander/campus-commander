@@ -6,6 +6,7 @@ import {
   googleCustomerIdSchema,
   jobEventsChannel,
   queryGenerationKey,
+  type DeviceObservation,
 } from '@campus/application-contracts';
 import {
   BatchServiceError,
@@ -14,7 +15,6 @@ import {
   type BatchFailure,
   type BatchResponseEvent,
   type BatchResult,
-  type BatchRoundEvent,
   type CredentialCipher,
   type DelegatedCredential,
   type DeviceBatchOptions,
@@ -26,8 +26,9 @@ import {
   type DeviceStatusBatchOptions,
   type DeviceStatusChange,
   type DeviceStatusResult,
+  type DeviceWrite,
+  type DeviceWriteBatchOptions,
   type IssuedDeviceCommand,
-  type WrittenDevice,
 } from '@campus/google-connection';
 import { DeviceSyncError, type DeviceSyncDatabase } from './device-sync';
 import { EntityCacheError, type EntityCache } from './entity-cache';
@@ -126,13 +127,31 @@ export type DeviceCommandPollRequest = z.infer<
   typeof deviceCommandPollRequestSchema
 >;
 
-/** One claimed operation. The write value comes from the operation row. */
+/** One claimed operation. The write values come from the operation's field rows. */
+const deviceUpdateFieldSchema = z.enum([
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+]);
+export type DeviceUpdateField = z.infer<typeof deviceUpdateFieldSchema>;
+
+/** One field row of a claimed operation: its baseline and its request (addendum section 4). */
+const claimedFieldSchema = z.object({
+  field: deviceUpdateFieldSchema,
+  baselineValue: z.string().max(4096).nullable(),
+  requestedValue: z.string().max(4096).nullable(),
+});
+export type ClaimedField = z.infer<typeof claimedFieldSchema>;
+
 const claimedOperationSchema = z.object({
   operationNumber,
   deviceId,
   serialNumber: z.string().max(256).nullable(),
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
+  /** The field rows of an update operation, in contract order. A command or status row holds none. */
+  fields: z.array(claimedFieldSchema).max(4),
 });
 export type ClaimedOperation = z.infer<typeof claimedOperationSchema>;
 
@@ -198,6 +217,8 @@ const heldOperationSchema = z.object({
   serialNumber: z.string().max(256).nullable(),
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
+  /** The field rows of an update operation, in contract order (addendum section 4). */
+  fields: z.array(claimedFieldSchema).max(4),
   /** The batch claim omits both read-back stamps. Its fence time is the claim clock. */
   verifyAfter: z.string().nullable().optional(),
   /** The claim omits the lease end; the verification read returns it (C1, C2). */
@@ -363,20 +384,17 @@ const emptySummary = (): DeviceUpdateReadBackSummary => ({
 
 /** One reader of the write path. `GoogleDeviceReader` implements every method. */
 export interface DeviceUpdateReader {
-  patchAnnotatedLocations(
+  /**
+   * One PATCH part per device, carrying every changed field of that device (addendum section 4).
+   * A Clear value sends null, and the answer parses through `deviceObservation`.
+   */
+  patchDevices(
     credential: DelegatedCredential,
     customerId: string,
-    writes: readonly { deviceId: string; value: string | null }[],
+    writes: readonly DeviceWrite[],
     signal: AbortSignal,
-    options: {
-      batchSize?: number;
-      onSend?(requestIds: readonly string[]): void | Promise<void>;
-      onResponse?(
-        event: BatchResponseEvent<WrittenDevice>,
-      ): void | Promise<void>;
-      onBatch?(event: BatchRoundEvent): void | Promise<void>;
-    },
-  ): Promise<BatchResult<WrittenDevice>>;
+    options: DeviceWriteBatchOptions,
+  ): Promise<BatchResult<DeviceObservation>>;
   /** One part of up to 50 device IDs per status action (addendum section 5). */
   changeDeviceStatus(
     credential: DelegatedCredential,
@@ -496,6 +514,8 @@ export interface WriteOutcome {
   /** The digit command ID of an accepted issue (section 4 step 3). */
   commandId?: string;
   value?: string | null;
+  /** The observed value of each field of an update operation (addendum section 4). */
+  values?: Record<string, string | null>;
   googleStatus?: number | null;
   googleReason?: string | null;
   quotaRetries?: number;
@@ -510,10 +530,8 @@ interface TrackedWrite {
   /** True when the batch service sent this request at least once. */
   sent: boolean;
   succeeded: boolean;
-  /** The observed device of a 2xx answer. A success records its value and evidence. */
-  value: string | null;
-  /** True when the 2xx body named `annotatedLocation`. */
-  hasValue: boolean;
+  /** The observed value of every field of a 2xx answer. A field the body omits reads null. */
+  observed: Record<string, string | null> | null;
   /** The command ID of an accepted issue answer (section 4 step 3). */
   commandId: string | null;
   /** The per-device answer of a 2xx status part (addendum section 5). */
@@ -558,10 +576,56 @@ function storeError(error: unknown): DeviceSyncError {
 
 /**
  * A command job issues one Google command per operation. Its action is `reboot` (design
- * addendum section 1). Every other action writes the annotated location.
+ * addendum section 1). Every other action writes the annotated fields or the cached status.
  */
 function isCommandAction(action: string | undefined): boolean {
   return action === 'reboot';
+}
+
+/** The device fields that a write or read answer names, as Google reports them. */
+export type ObservedDeviceFields = Partial<
+  Record<
+    'annotatedLocation' | 'annotatedUser' | 'notes' | 'orgUnitPath',
+    string | null
+  >
+>;
+
+/**
+ * The observed value of one device field. `deviceObservation` maps a blank annotation to null,
+ * and a field that the answer omits reads null too (addendum section 4).
+ */
+export function observedField(
+  device: ObservedDeviceFields | null,
+  field: string,
+): string | null {
+  if (device === null) return null;
+  const value = device[field as keyof ObservedDeviceFields];
+  return typeof value === 'string' ? value : null;
+}
+
+/** The observed value of every field of one operation, keyed by field ID. */
+export function observedValues(
+  operation: { fields: readonly { field: string }[] },
+  observed: ObservedDeviceFields | null,
+): Record<string, string | null> {
+  const values: Record<string, string | null> = {};
+  for (const field of operation.fields)
+    values[field.field] = observedField(observed ?? null, field.field);
+  return values;
+}
+
+/**
+ * The compare of one field (addendum section 4). Google OU paths are case-insensitive, so a path
+ * compares without case. Every other field compares exactly.
+ */
+export function sameFieldValue(
+  field: string,
+  observed: string | null,
+  requested: string | null,
+): boolean {
+  if (field === 'orgUnitPath')
+    return observed?.toLowerCase() === requested?.toLowerCase();
+  return observed === requested;
 }
 
 /**
@@ -574,6 +638,7 @@ export function classifyWrite(
   tracked: TrackedWrite,
   stopFailure: string | null,
   command = false,
+  update = true,
 ): { outcome: WriteOutcome; observedFailure: string | null } {
   const base = { operationNumber: tracked.operation.operationNumber };
   if (tracked.succeeded) {
@@ -603,18 +668,46 @@ export function classifyWrite(
               },
         observedFailure: null,
       };
+    // Each field compares its observed value with its requested value (addendum section 4).
+    const values = observedValues(tracked.operation, tracked.observed);
+    const common = {
+      ...base,
+      googleStatus: tracked.status,
+      googleReason: null,
+      quotaRetries: tracked.attempts.quota,
+      transientRetries: tracked.attempts.transient,
+    };
+    // A status write carries no field rows, so it answers the row of a status action (section 1).
+    if (!update)
+      return {
+        outcome: {
+          ...common,
+          outcome: 'succeeded',
+          verifiedBy: 'write-response',
+        },
+        observedFailure: null,
+      };
+    const differs = tracked.operation.fields.some(
+      (field) =>
+        !sameFieldValue(
+          field.field,
+          values[field.field] ?? null,
+          field.requestedValue,
+        ),
+    );
+    const compared = {
+      ...common,
+      verifiedBy: 'write-response' as const,
+      values,
+    };
     return {
-      outcome: {
-        ...base,
-        outcome: 'succeeded',
-        verifiedBy: 'write-response',
-        googleStatus: tracked.status,
-        googleReason: null,
-        quotaRetries: tracked.attempts.quota,
-        transientRetries: tracked.attempts.transient,
-        // The accepted value is Google's observation, not the requested value.
-        ...(tracked.hasValue ? { value: tracked.value } : {}),
-      },
+      outcome: differs
+        ? {
+            ...compared,
+            outcome: 'failed' as const,
+            outcomeReason: 'value-differs',
+          }
+        : { ...compared, outcome: 'succeeded' as const },
       observedFailure: null,
     };
   }
@@ -783,7 +876,7 @@ export function classifyStatus(
   stopFailure: string | null,
 ): { outcome: WriteOutcome; observedFailure: string | null } {
   const result = tracked.statusResult;
-  if (result === null) return classifyWrite(tracked, stopFailure);
+  if (result === null) return classifyWrite(tracked, stopFailure, false, false);
   const base = {
     operationNumber: tracked.operation.operationNumber,
     googleStatus: null,
@@ -1189,14 +1282,18 @@ export class DeviceUpdateJobs {
       const classify = (entry: TrackedWrite, stopFailure: string | null) =>
         field === 'status'
           ? classifyStatus(entry, stopFailure)
-          : classifyWrite(entry, stopFailure, commandJob);
+          : classifyWrite(
+              entry,
+              stopFailure,
+              commandJob,
+              action === 'annotated-location',
+            );
       for (const operation of [...body.operations, ...body.readBack])
         tracked.set(operation.deviceId, {
           operation,
           sent: false,
           succeeded: false,
-          value: null,
-          hasValue: false,
+          observed: null,
           commandId: null,
           statusResult: null,
           status: null,
@@ -1364,7 +1461,7 @@ export class DeviceUpdateJobs {
             }
           },
           onResponse: (
-            event: BatchResponseEvent<WrittenDevice & IssuedDeviceCommand>,
+            event: BatchResponseEvent<DeviceObservation & IssuedDeviceCommand>,
           ) => {
             const entry = tracked.get(event.id);
             if (!entry) return;
@@ -1381,15 +1478,8 @@ export class DeviceUpdateJobs {
                   typeof page.commandId === 'string' ? page.commandId : null;
                 return;
               }
-              // Keep Google's observation. An absent field names no value.
-              if (
-                page !== null &&
-                typeof page === 'object' &&
-                Object.hasOwn(page, 'annotatedLocation')
-              ) {
-                entry.hasValue = true;
-                entry.value = page.annotatedLocation ?? null;
-              }
+              // Each field of the operation takes Google's observation. An absent field reads null.
+              entry.observed = observedValues(entry.operation, page);
               return;
             }
             if (event.outcome.kind === 'retry') {
@@ -1470,12 +1560,17 @@ export class DeviceUpdateJobs {
               },
             );
           else
-            await this.reader.patchAnnotatedLocations(
+            await this.reader.patchDevices(
               credential,
               input.customerId,
               claimedOperations.map((operation) => ({
                 deviceId: operation.deviceId,
-                value: operation.requestedValue,
+                fields: Object.fromEntries(
+                  operation.fields.map((field) => [
+                    field.field,
+                    field.requestedValue,
+                  ]),
+                ),
               })),
               callSignal,
               options,
@@ -1566,6 +1661,7 @@ export class DeviceUpdateJobs {
             serialNumber: entry.operation.serialNumber,
             baselineValue: entry.operation.baselineValue,
             requestedValue: entry.operation.requestedValue,
+            fields: entry.operation.fields,
             verifyAfter: new Date(after.getTime() + 30_000).toISOString(),
             verifyLeaseExpiresAt: new Date(
               after.getTime() + 120_000,
@@ -1581,6 +1677,7 @@ export class DeviceUpdateJobs {
             serialNumber: operation.serialNumber,
             baselineValue: operation.baselineValue,
             requestedValue: operation.requestedValue,
+            fields: operation.fields,
             verifyAfter: null,
             verifyLeaseExpiresAt: null,
           });
@@ -2086,20 +2183,39 @@ export class DeviceUpdateJobs {
         summary.failed += 1;
         continue;
       }
-      const observed =
-        field === 'status'
-          ? state.device.status
-          : state.device.annotatedLocation;
-      const matches =
-        operation.requestedValue === null
-          ? observed === null
-          : observed === operation.requestedValue;
+      // Each field compares its observed value with its requested value (addendum section 4).
+      const compared =
+        operation.fields.length > 0
+          ? operation.fields.map((one) => ({
+              field: one.field,
+              observed: observedField(state.device, one.field),
+              requested: one.requestedValue,
+            }))
+          : [
+              {
+                field,
+                observed: observedField(state.device, field),
+                requested: operation.requestedValue,
+              },
+            ];
+      const values: Record<string, string | null> = {};
+      let matches = true;
+      for (const one of compared) {
+        values[one.field] = one.observed;
+        if (!sameFieldValue(one.field, one.observed, one.requested))
+          matches = false;
+      }
+      // An update result carries `values`. A status result keeps `value` (addendum section 4).
+      const carried =
+        operation.fields.length > 0
+          ? { values }
+          : { value: compared[0]?.observed ?? null };
       if (matches) {
         results.push({
           operationNumber: operation.operationNumber,
           outcome: 'succeeded',
           verifiedBy: 'read-back',
-          value: observed,
+          ...carried,
         });
         summary.verified += 1;
       } else {
@@ -2108,7 +2224,7 @@ export class DeviceUpdateJobs {
           outcome: 'failed',
           outcomeReason: 'value-differs',
           verifiedBy: 'read-back',
-          value: observed,
+          ...carried,
         });
         summary.failed += 1;
       }

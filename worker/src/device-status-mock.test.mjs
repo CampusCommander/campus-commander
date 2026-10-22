@@ -24,13 +24,14 @@ let reader;
 let activeId;
 let disabledId;
 
-/** One claimed operation of a status job. */
+/** One claimed operation of a status job: no field rows, and its requested value is the status. */
 const op = (number, deviceId, value) => ({
   operationNumber: number,
   deviceId,
   serialNumber: `serial-${number}`,
   baselineValue: null,
   requestedValue: value,
+  fields: [],
 });
 
 /** A database that answers the batch path and records its calls. */
