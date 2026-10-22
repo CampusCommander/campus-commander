@@ -40,6 +40,7 @@ CREATE TABLE cc.devices (
   org_unit_path text NOT NULL CHECK(left(org_unit_path,1)='/' AND length(org_unit_path)<=4096),
   last_contact timestamptz,
   annotated_location text CHECK(length(annotated_location)<=4096),
+  annotated_user text CHECK(length(annotated_user)<=4096),
   notes text CHECK(length(notes)<=4096),
   status text CHECK(length(status)<=64),
   battery_status text NOT NULL DEFAULT 'no-report' CHECK(battery_status IN ('reported','no-report','unavailable')),
@@ -351,7 +352,8 @@ $$;
 CREATE FUNCTION cc.device_record(d cc.devices,p_telemetry_failure text) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT jsonb_build_object('deviceId',d.device_id,'serialNumber',d.serial_number,'model',d.model,'assetTag',d.asset_tag,
-    'orgUnitPath',d.org_unit_path,'lastContact',d.last_contact,'annotatedLocation',d.annotated_location,'notes',d.notes,
+    'orgUnitPath',d.org_unit_path,'lastContact',d.last_contact,'annotatedLocation',d.annotated_location,
+    'annotatedUser',d.annotated_user,'notes',d.notes,
     'status',d.status,
     'battery',CASE WHEN p_telemetry_failure IS NOT NULL THEN jsonb_build_object('status','unavailable')
       WHEN d.battery_status='reported' THEN jsonb_build_object('status','reported','health',d.battery_health,
@@ -388,10 +390,10 @@ BEGIN
     ORDER BY e.value->>'deviceId',e.position DESC
   ), upserted AS (
     INSERT INTO cc.devices(customer_id,device_id,serial_number,model,asset_tag,org_unit_path,last_contact,
-      annotated_location,notes,status,last_entity_sync,annotated_location_observed_at,status_observed_at)
+      annotated_location,annotated_user,notes,status,last_entity_sync,annotated_location_observed_at,status_observed_at)
     SELECT p_customer,i.device_id,i.row_value->>'serialNumber',i.row_value->>'model',i.row_value->>'assetTag',
       i.row_value->>'orgUnitPath',(i.row_value->>'lastContact')::timestamptz,i.row_value->>'annotatedLocation',
-      i.row_value->>'notes',i.row_value->>'status',p_synced_at,
+      i.row_value->>'annotatedUser',i.row_value->>'notes',i.row_value->>'status',p_synced_at,
       CASE WHEN p_observation='read' THEN p_synced_at END,
       CASE WHEN p_observation='read' THEN p_synced_at END
     FROM incoming i
@@ -433,7 +435,9 @@ BEGIN
       annotated_location_observed_at=CASE
         WHEN p_observation='read' AND (cc.devices.annotated_location_observed_at IS NULL OR
           EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) THEN EXCLUDED.last_entity_sync
-        ELSE cc.devices.annotated_location_observed_at END
+        ELSE cc.devices.annotated_location_observed_at END,
+      annotated_user=CASE WHEN cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync THEN EXCLUDED.annotated_user
+        ELSE cc.devices.annotated_user END
     WHERE cc.devices.last_entity_sync<=EXCLUDED.last_entity_sync OR (p_observation='read' AND
       ((cc.devices.annotated_location_observed_at IS NULL OR
         EXCLUDED.last_entity_sync>cc.devices.annotated_location_observed_at) OR

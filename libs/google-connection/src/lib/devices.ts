@@ -49,6 +49,7 @@ const devicePage = z.object({
         orgUnitPath: z.string().min(1).max(4096),
         lastSync: z.string().max(64).optional(),
         annotatedLocation: z.string().max(4096).optional(),
+        annotatedUser: z.string().max(4096).optional(),
         notes: z.string().max(4096).optional(),
         status: z.string().max(64).optional(),
       }),
@@ -92,7 +93,7 @@ type TelemetryDevice = NonNullable<
 const batchEndpoint = 'https://www.googleapis.com/batch/admin/directory_v1';
 const directoryPath = '/admin/directory/v1';
 const deviceFields =
-  'deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status';
+  'deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,annotatedUser,notes,status';
 const batchLimit = 1000;
 /** 250 devices with full notes and locations stay under this. */
 const batchResponseLimit = 4 * 1024 * 1024;
@@ -379,6 +380,7 @@ export function deviceObservation(device: DirectoryDevice): DeviceObservation {
     orgUnitPath: device.orgUnitPath,
     lastContact: instant(device.lastSync),
     annotatedLocation: blank(device.annotatedLocation),
+    annotatedUser: blank(device.annotatedUser),
     notes: blank(device.notes),
     status: blank(device.status),
   });
@@ -545,7 +547,7 @@ export class GoogleDeviceReader {
                 maxResults: 300,
                 projection: 'FULL',
                 fields:
-                  'nextPageToken,chromeosdevices(deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status)',
+                  'nextPageToken,chromeosdevices(deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,annotatedUser,notes,status)',
                 ...(pageToken ? { pageToken } : {}),
               },
             })

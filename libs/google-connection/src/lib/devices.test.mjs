@@ -62,6 +62,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
           orgUnitPath: '/School A',
           lastSync: '2026-09-05T14:28:12.345Z',
           annotatedLocation: 'Science wing',
+          annotatedUser: 'avery.chen@example.org',
           notes: '  ',
           status: 'ACTIVE',
         },
@@ -84,6 +85,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
   assert.equal(calls[0].params.maxResults, 300);
   assert.equal(calls[0].params.projection, 'FULL');
   assert.equal(calls[0].params.pageToken, undefined);
+  assert.match(calls[0].params.fields, /annotatedUser/);
   assert.equal(calls[1].params.pageToken, 'page-2');
   assert.deepEqual(pages[0][0], {
     deviceId: 'd1',
@@ -93,6 +95,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
     orgUnitPath: '/School A',
     lastContact: '2026-09-05T14:28:12.345Z',
     annotatedLocation: 'Science wing',
+    annotatedUser: 'avery.chen@example.org',
     notes: null,
     status: 'ACTIVE',
   });
@@ -104,6 +107,7 @@ test('device pages follow page tokens and normalize fields', async (t) => {
     orgUnitPath: '/',
     lastContact: null,
     annotatedLocation: null,
+    annotatedUser: null,
     notes: null,
     status: null,
   });

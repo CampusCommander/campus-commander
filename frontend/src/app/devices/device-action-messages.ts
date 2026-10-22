@@ -34,8 +34,6 @@ export interface DeviceActionFamilyCopy {
   menuLabel: string;
   /** The permission note of a person without the family action (record section 6). */
   permissionMessage: string;
-  /** The note of a person with no selected device. */
-  selectionMessage: string;
   chooseTitle: string;
   /** The radio group label of the Choose step (mockup choice 1). */
   chooseLabel: string;
@@ -59,7 +57,6 @@ export const FAMILY_COPY: Readonly<
   command: {
     menuLabel: 'Send command',
     permissionMessage: SEND_COMMAND_PERMISSION_MESSAGE,
-    selectionMessage: 'Select one or more devices to send a command.',
     chooseTitle: 'Choose a device command',
     chooseLabel: 'Command',
     stepperLabel: 'Send command steps',
@@ -70,7 +67,6 @@ export const FAMILY_COPY: Readonly<
   status: {
     menuLabel: 'Change status',
     permissionMessage: CHANGE_STATUS_PERMISSION_MESSAGE,
-    selectionMessage: 'Select one or more devices to change the status.',
     chooseTitle: 'Change device status',
     chooseLabel: 'Status change',
     stepperLabel: 'Change status steps',
@@ -110,7 +106,6 @@ export function deviceActionNote(
     access: availability.access,
     accessLoading: availability.accessLoading,
     permissionMessage: copy.permissionMessage,
-    selectionMessage: copy.selectionMessage,
   });
 }
 

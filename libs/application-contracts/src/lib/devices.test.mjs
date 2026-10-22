@@ -19,6 +19,8 @@ import {
   deviceByIdsSchema,
   deviceFreshnessSchema,
   deviceRowsSchema,
+  deviceSortFieldSchema,
+  deviceTextFieldSchema,
 } from './devices.ts';
 import {
   actionSchema,
@@ -34,6 +36,7 @@ const row = {
   orgUnitPath: '/',
   lastContact: null,
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status: 'ACTIVE',
   lastEntitySync: '2026-10-05T12:00:00.000Z',
@@ -169,6 +172,31 @@ test('a device row carries the Google status, including an unknown value and nul
     deviceRowSchema.safeParse({ ...missing, battery }).success,
     false,
   );
+});
+
+test('a device row carries the annotated user, and requires the key', () => {
+  const battery = { status: 'no-report' };
+  assert.equal(
+    deviceRowSchema.safeParse({
+      ...row,
+      annotatedUser: 'avery.chen@example.org',
+      battery,
+    }).success,
+    true,
+  );
+  assert.equal(
+    deviceRowSchema.safeParse({ ...row, annotatedUser: null, battery }).success,
+    true,
+  );
+  const missing = Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== 'annotatedUser'),
+  );
+  assert.equal(
+    deviceRowSchema.safeParse({ ...missing, battery }).success,
+    false,
+  );
+  assert.equal(deviceTextFieldSchema.safeParse('annotatedUser').success, true);
+  assert.equal(deviceSortFieldSchema.safeParse('annotatedUser').success, true);
 });
 
 test('battery values distinguish reported, missing, and unavailable data', () => {
