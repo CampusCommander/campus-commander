@@ -426,6 +426,34 @@ export async function qualifyDeviceCommandPolls({
       },
     );
 
+    await check(
+      'a poll answer with no HTTP status stores null, and a refusal keeps its status (D1)',
+      async () => {
+        // A transport failure reports status 0, and the stored value stays an HTTP status or null.
+        const pending = await claimed();
+        await settledIn(pending.jobId, pending.attempt, pending.leaseId, [
+          {
+            operationNumber: 1,
+            outcome: 'pending',
+            commandState: 'sent',
+            googleStatus: 0,
+          },
+        ]);
+        assert.equal((await opRow(pending.jobId, 1)).google_status, null);
+        // A 404 answer is a real HTTP status and keeps it.
+        const refused = await claimed();
+        await settledIn(refused.jobId, refused.attempt, refused.leaseId, [
+          {
+            operationNumber: 1,
+            outcome: 'unknown',
+            outcomeReason: 'command-not-found',
+            googleStatus: 404,
+          },
+        ]);
+        assert.equal((await opRow(refused.jobId, 1)).google_status, 404);
+      },
+    );
+
     await check('an expired observation fails the job', async () => {
       const { jobId, attempt, leaseId } = await claimed();
       const answer = await settledIn(jobId, attempt, leaseId, [

@@ -582,6 +582,19 @@ function isCommandAction(action: string | undefined): boolean {
   return action === 'reboot';
 }
 
+/**
+ * The HTTP status of Google's answer: a real status from 100 to 599, or null when no answer
+ * arrived. The batch service reports a transport failure as status 0 (fix D1).
+ */
+function answerStatus(status: number | null | undefined): number | null {
+  return status !== null &&
+    status !== undefined &&
+    status >= 100 &&
+    status <= 599
+    ? status
+    : null;
+}
+
 /** The device fields that a write or read answer names, as Google reports them. */
 export type ObservedDeviceFields = Partial<
   Record<
@@ -652,7 +665,7 @@ export function classifyWrite(
                 ...base,
                 outcome: 'unknown',
                 outcomeReason: 'invalid-response',
-                googleStatus: tracked.status,
+                googleStatus: answerStatus(tracked.status),
                 googleReason: null,
                 quotaRetries: tracked.attempts.quota,
                 transientRetries: tracked.attempts.transient,
@@ -661,7 +674,7 @@ export function classifyWrite(
                 ...base,
                 outcome: 'issued',
                 commandId: tracked.commandId,
-                googleStatus: tracked.status,
+                googleStatus: answerStatus(tracked.status),
                 googleReason: null,
                 quotaRetries: tracked.attempts.quota,
                 transientRetries: tracked.attempts.transient,
@@ -672,7 +685,7 @@ export function classifyWrite(
     const values = observedValues(tracked.operation, tracked.observed);
     const common = {
       ...base,
-      googleStatus: tracked.status,
+      googleStatus: answerStatus(tracked.status),
       googleReason: null,
       quotaRetries: tracked.attempts.quota,
       transientRetries: tracked.attempts.transient,
@@ -715,7 +728,7 @@ export function classifyWrite(
   if (failed) {
     const common = {
       ...base,
-      googleStatus: failed.status,
+      googleStatus: answerStatus(failed.status),
       googleReason: failed.reason,
       quotaRetries: failed.attempts.quota,
       transientRetries: failed.attempts.transient,
@@ -837,7 +850,7 @@ export function classifyWrite(
         ...base,
         outcome: 'unknown',
         outcomeReason: 'ambiguous',
-        googleStatus: 0,
+        googleStatus: null,
         googleReason: null,
         quotaRetries: 0,
         transientRetries: 0,
@@ -936,7 +949,7 @@ export function classifyCommandPoll(
       ...base,
       outcome: 'unknown',
       outcomeReason: 'command-not-found',
-      googleStatus: failure.status,
+      googleStatus: answerStatus(failure.status),
       googleReason: null,
     };
   }

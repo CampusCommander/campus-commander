@@ -174,7 +174,9 @@ CREATE TABLE cc.device_update_operations (
   batch integer NOT NULL CHECK(batch>=0),
   status text NOT NULL CHECK(status IN ('pending','dispatched','issued','succeeded','failed','unknown','skipped','expired')),
   attempt_id uuid,
-  google_status integer,
+  -- The HTTP status of Google's answer, or null when no answer arrived (fix D1). Both settlement
+  -- writers normalize a status outside 100 to 599 to null.
+  google_status integer CHECK(google_status IS NULL OR google_status BETWEEN 100 AND 599),
   google_reason text,
   quota_retries integer NOT NULL DEFAULT 0 CHECK(quota_retries>=0),
   transient_retries integer NOT NULL DEFAULT 0 CHECK(transient_retries>=0),
@@ -1167,7 +1169,10 @@ BEGIN
         o.verify_lease_expires_at>now_at))
   ), applied AS (
     UPDATE cc.device_update_operations o SET status=e.r->>'outcome',
-      google_status=(e.r->>'googleStatus')::integer,google_reason=e.r->>'googleReason',
+      -- A stored status is an HTTP status from 100 to 599, or null when no answer arrived (fix D1).
+      google_status=CASE WHEN (e.r->>'googleStatus')::integer BETWEEN 100 AND 599
+        THEN (e.r->>'googleStatus')::integer END,
+      google_reason=e.r->>'googleReason',
       quota_retries=COALESCE((e.r->>'quotaRetries')::integer,0),
       transient_retries=COALESCE((e.r->>'transientRetries')::integer,0),
       observed_value=e.value,
@@ -1949,7 +1954,9 @@ BEGIN
       command_state=CASE WHEN res.r->>'outcome'='pending' THEN res.r->>'commandState' ELSE o.command_state END,
       outcome_reason=CASE WHEN res.r->>'outcome'='pending' THEN o.outcome_reason
         ELSE res.r->>'outcomeReason' END,
-      google_status=(res.r->>'googleStatus')::integer,
+      -- A stored status is an HTTP status from 100 to 599, or null when no answer arrived (fix D1).
+      google_status=CASE WHEN (res.r->>'googleStatus')::integer BETWEEN 100 AND 599
+        THEN (res.r->>'googleStatus')::integer END,
       google_reason=res.r->>'googleReason',
       command_expires_at=COALESCE(o.command_expires_at,res.expires_at),
       command_executed_at=CASE WHEN res.r->>'outcome'='succeeded'

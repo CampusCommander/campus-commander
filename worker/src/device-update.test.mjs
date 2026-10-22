@@ -2008,11 +2008,11 @@ test('a command issue classifies its accepted, refused, and lost answers', () =>
   );
   assert.equal(quota.outcome, 'failed');
   assert.equal(quota.outcomeReason, 'quota');
-  // A sent POST with no answer stays ambiguous.
+  // A sent POST with no answer stays ambiguous and stores no HTTP status (fix D1).
   const lost = run(tracked());
   assert.equal(lost.outcome, 'unknown');
   assert.equal(lost.outcomeReason, 'ambiguous');
-  assert.equal(lost.googleStatus, 0);
+  assert.equal(lost.googleStatus, null);
 });
 
 test('a command batch issues one POST part per operation and settles issued', async () => {
@@ -2140,8 +2140,71 @@ test('a command POST with no answer settles unknown ambiguous', async () => {
       result.outcomeReason,
       result.googleStatus,
     ]),
-    [['unknown', 'ambiguous', 0]],
+    [['unknown', 'ambiguous', null]],
   );
+});
+
+test('a multi-field update with no answer stores no HTTP status', async () => {
+  const fields = [
+    {
+      field: 'annotatedUser',
+      baselineValue: null,
+      requestedValue: 'Ada Lovelace',
+    },
+    { field: 'notes', baselineValue: null, requestedValue: 'Front desk' },
+  ];
+  const db = database({ claim: () => claimed([op(1, 'd1', null, fields)]) });
+  // The PATCH leaves the worker and Google never answers it.
+  const source = reader([{ abortBeforeAnswer: true }]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'write');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'ambiguous', null]],
+  );
+});
+
+test('a multi-field update keeps a real HTTP status and drops a transport zero', async () => {
+  for (const [status, stored] of [
+    [0, null],
+    [503, 503],
+  ]) {
+    const fields = [
+      { field: 'annotatedUser', baselineValue: null, requestedValue: 'Ada' },
+      { field: 'notes', baselineValue: null, requestedValue: 'Front desk' },
+    ];
+    const db = database({ claim: () => claimed([op(1, 'd1', null, fields)]) });
+    const source = reader([
+      {
+        parts: {
+          d1: { kind: 'transient', status, reason: 'backendError' },
+        },
+      },
+    ]);
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runBatch(
+      batchRequest,
+      AbortSignal.timeout(5000),
+    );
+    assert.equal(answer.outcome, 'settled');
+    const [settlement] = settlements(db);
+    assert.deepEqual(
+      JSON.parse(settlement.values[5]).map((result) => [
+        result.outcome,
+        result.outcomeReason,
+        result.googleStatus,
+      ]),
+      [['unknown', 'ambiguous', stored]],
+      `Status ${status} stores ${stored}.`,
+    );
+  }
 });
 
 test('reconcile with a number answers not-held when the attempt holds nothing', async () => {
