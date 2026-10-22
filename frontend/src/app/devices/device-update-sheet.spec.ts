@@ -487,7 +487,7 @@ it('opens at Edit with the selection count and the four fields', async () => {
   expect(input()).toBeNull();
   // The granted read leaves the Organization unit field usable.
   expect(block('orgUnitPath')?.textContent).not.toContain(
-    'Google denied the organization unit tree',
+    'Google denied organization unit reads',
   );
   expect(button('Save and preview')?.disabled).toBe(true);
   expect(button('Reset')?.disabled).toBe(true);
@@ -1985,7 +1985,7 @@ it('closes the picker with Escape and keeps the sheet open', async () => {
   ).toBe(true);
 });
 
-it('reopens the picker from the Destination button and keeps the chosen path', async () => {
+it('reopens the picker from the Destination button with the chosen path and its branch', async () => {
   const { block, picker, pickerButton, chooseOrgMode, settle, draft } =
     await setup();
   await chooseOrgMode('Move to an organization unit');
@@ -2007,6 +2007,14 @@ it('reopens the picker from the Destination button and keeps the chosen path', a
     'Selected: /Chrome Devices/Cart Devices',
   );
   expect(pickerButton('Choose')?.disabled).toBe(false);
+  // The reopened tree shows the branch that holds the chosen destination.
+  expect(treeRow(picker(), 'Cart Devices')).toBeTruthy();
+  expect(treeRow(picker(), 'Cart Devices')?.getAttribute('aria-selected')).toBe(
+    'true',
+  );
+  expect(
+    treeRow(picker(), 'Chrome Devices')?.getAttribute('aria-expanded'),
+  ).toBe('true');
 
   // Cancel keeps the earlier destination.
   pickerButton('Cancel')?.click();
@@ -2089,7 +2097,7 @@ it('disables the field and names the read scope without the scope', async () => 
   });
   const orgBlock = block('orgUnitPath');
   expect(orgBlock?.textContent).toContain(
-    'Google denied the organization unit tree. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.',
+    'Google denied organization unit reads. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.',
   );
   expect(orgBlock?.querySelector('.mat-form-field-disabled')).not.toBeNull();
   // The select opens no panel while the read is refused.

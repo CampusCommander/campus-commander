@@ -14,7 +14,7 @@ export function deviceWriteAccessMessage(
 
 /** The exact message of design section 6 while the tree state is denied. */
 export const DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE =
-  'Google denied the organization unit tree. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.';
+  'Google denied organization unit reads. Add https://www.googleapis.com/auth/admin.directory.orgunit.readonly to the delegation client in the Google Admin Console.';
 
 /** The message that the client shows for one organization unit tree state. */
 export function deviceOrgUnitTreeMessage(

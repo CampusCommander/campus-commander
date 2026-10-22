@@ -27,6 +27,12 @@ type Row = { unit: Unit; level: number; position: number; size: number };
 export class OuReferencePicker {
   readonly units = input.required<Unit[]>();
   readonly selectedId = input<string | null>(null);
+  /**
+   * Reopen the ancestors of the chosen unit whenever the units change. The organization
+   * unit dialog opts in, so a chosen destination stays visible after it opens again. The
+   * Schools editor keeps its own tree state.
+   */
+  readonly revealSelected = input(false);
   readonly disabled = input(false);
   /**
    * A search query. A non-empty query shows the units whose path or name matches, with their
@@ -100,8 +106,10 @@ export class OuReferencePicker {
   });
 
   constructor() {
-    // A chosen destination stays visible when the picker opens again.
+    // A chosen destination stays visible when the picker opens again. The host opts in, so
+    // a unit-list refresh leaves a branch that the person closed closed elsewhere.
     effect(() => {
+      if (!this.revealSelected()) return;
       const id = this.selectedId();
       const units = this.units();
       untracked(() => {
