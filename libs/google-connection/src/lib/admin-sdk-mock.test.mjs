@@ -445,6 +445,154 @@ test('a status change of 51 devices splits into parts of 50 and 1', async () => 
   );
 });
 
+test('one PATCH sets three annotations and moves the device', async () => {
+  const device = inventory.find((entry) => entry.status === 'ACTIVE');
+  assert.ok(device, 'the seed holds an active device');
+  const destination = inventory.find(
+    (entry) => entry.orgUnitPath !== device.orgUnitPath,
+  );
+  assert.ok(destination, 'the seed holds a second organization unit');
+  const fields = {
+    annotatedLocation: 'Room 214',
+    annotatedUser: 'avery.chen@example.org',
+    notes: 'Assigned to the science wing.',
+    orgUnitPath: destination.orgUnitPath,
+  };
+  const patches = [];
+  const result = await reader.patchDevices(
+    credential,
+    domain.customerId,
+    [{ deviceId: device.deviceId, fields }],
+    AbortSignal.timeout(timeout),
+    {
+      onResponse: (event) => {
+        if (event.outcome.kind === 'success')
+          patches.push({
+            method: event.request.method,
+            body: event.request.body,
+          });
+      },
+    },
+  );
+  assert.deepEqual(
+    patches,
+    [{ method: 'PATCH', body: fields }],
+    'one PATCH carries every changed field',
+  );
+  const [written] = result.succeeded.get(device.deviceId);
+  assert.deepEqual(
+    {
+      annotatedLocation: written.annotatedLocation,
+      annotatedUser: written.annotatedUser,
+      notes: written.notes,
+      orgUnitPath: written.orgUnitPath,
+    },
+    fields,
+    'the answer maps through the device observation',
+  );
+  const { devices } = await reader.deviceBatch(
+    credential,
+    domain.customerId,
+    [device.deviceId],
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    {
+      annotatedLocation: devices[0].annotatedLocation,
+      annotatedUser: devices[0].annotatedUser,
+      notes: devices[0].notes,
+      orgUnitPath: devices[0].orgUnitPath,
+    },
+    fields,
+    'a later read shows every written field',
+  );
+});
+
+test('a PATCH with null clears a field', async () => {
+  const device = inventory.filter((entry) => entry.status === 'ACTIVE')[1];
+  assert.ok(device, 'the seed holds a second active device');
+  const set = await reader.patchDevices(
+    credential,
+    domain.customerId,
+    [{ deviceId: device.deviceId, fields: { notes: 'Cart 12' } }],
+    AbortSignal.timeout(timeout),
+  );
+  assert.equal(set.succeeded.get(device.deviceId)[0].notes, 'Cart 12');
+  const cleared = await reader.patchDevices(
+    credential,
+    domain.customerId,
+    [{ deviceId: device.deviceId, fields: { notes: null } }],
+    AbortSignal.timeout(timeout),
+  );
+  assert.equal(cleared.succeeded.get(device.deviceId)[0].notes, null);
+  const { devices } = await reader.deviceBatch(
+    credential,
+    domain.customerId,
+    [device.deviceId],
+    AbortSignal.timeout(timeout),
+  );
+  assert.equal(devices[0].notes, null, 'the stored value is cleared');
+});
+
+test('a refused PATCH changes no field', async () => {
+  const device = inventory.filter((entry) => entry.status === 'ACTIVE')[2];
+  assert.ok(device, 'the seed holds a third active device');
+  const read = async () => {
+    const { devices } = await reader.deviceBatch(
+      credential,
+      domain.customerId,
+      [device.deviceId],
+      AbortSignal.timeout(timeout),
+    );
+    return devices[0];
+  };
+  const before = await read();
+
+  const longNotes = await reader.patchDevices(
+    credential,
+    domain.customerId,
+    [
+      {
+        deviceId: device.deviceId,
+        fields: { annotatedLocation: 'Room 999', notes: 'x'.repeat(501) },
+      },
+    ],
+    AbortSignal.timeout(timeout),
+  );
+  const notesFailure = longNotes.failed.get(device.deviceId);
+  assert.ok(notesFailure, 'the part failed');
+  assert.deepEqual(
+    [notesFailure.kind, notesFailure.status],
+    ['rejected', 400],
+    'Notes over 500 answers 400',
+  );
+  assert.equal(longNotes.succeeded.size, 0);
+
+  const unknownUnit = await reader.patchDevices(
+    credential,
+    domain.customerId,
+    [
+      {
+        deviceId: device.deviceId,
+        fields: {
+          annotatedLocation: 'Room 998',
+          orgUnitPath: '/No Such Unit',
+        },
+      },
+    ],
+    AbortSignal.timeout(timeout),
+  );
+  const unitFailure = unknownUnit.failed.get(device.deviceId);
+  assert.ok(unitFailure, 'the part failed');
+  assert.deepEqual(
+    [unitFailure.kind, unitFailure.status],
+    ['rejected', 400],
+    'An unknown organization unit answers 400',
+  );
+
+  assert.deepEqual(await read(), before, 'a refused PATCH changes no field');
+});
+
 test('the mock releases every listener', async () => {
   const ports = [mock.googleUrl, mock.controlUrl, mock.proxyUrl]
     .filter(Boolean)
