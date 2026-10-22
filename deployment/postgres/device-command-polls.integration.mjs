@@ -70,10 +70,8 @@ export async function qualifyDeviceCommandPolls({
       const jobId = randomUUID();
       const previewId = randomUUID();
       await admin(
-        `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-          generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,$6,$6,0,0,
-          'manifest-digest',clock_timestamp()+interval '1 hour')`,
+        `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+        VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, $4, $5, 'reboot', 1, $6, $6, 0, 0, 'manifest-digest', clock_timestamp()+interval '1 hour')`,
         [previewId, customer, actor, version, generation, devices.length],
       );
       await admin(
@@ -92,10 +90,8 @@ export async function qualifyDeviceCommandPolls({
         ],
       );
       await admin(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
-          confirmer_permission_version,delegated_subject,batch_size,batch_count,poll_lease_expires_at)
-        VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1,
-          CASE WHEN $5::text IS NULL THEN NULL ELSE clock_timestamp()+$5::interval END)`,
+        `INSERT INTO cc.device_update_jobs(job_id, preview_id, action, confirmed_by, confirmer_permission_version, delegated_subject, batch_size, batch_count, poll_lease_expires_at)
+        VALUES($1, $2, 'reboot', $3, $4, 'admin@example.org', 250, 1, CASE WHEN $5::text IS NULL THEN NULL ELSE clock_timestamp()+$5::interval END)`,
         [jobId, previewId, actor, version, lease],
       );
       for (const [index, deviceId] of devices.entries())

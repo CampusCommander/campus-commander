@@ -234,22 +234,42 @@ export async function qualifyDeviceWriteJobs({
           [createdBy],
         )
       ).permission_version;
+      const fieldRows = fields ?? [
+        {
+          field: 'annotatedLocation',
+          baselineValue: null,
+          requestedValue: mode === 'clear' ? null : value,
+        },
+      ];
+      const changeMode = (row) =>
+        row.mode ??
+        (row.field === 'orgUnitPath'
+          ? 'move'
+          : (row.requestedValue ?? null) === null
+            ? 'clear'
+            : 'replace');
       await admin(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-          generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,
-          'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
+          manifest_digest,expires_at)
+        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location',2,
+          $6,$6,0,0,$7,'manifest-digest',clock_timestamp()+interval '1 hour')`,
         [
           previewId,
           customer,
           createdBy,
           version,
           generation,
-          mode,
-          mode === 'clear' ? null : value,
           devices.length,
+          devices.length * fieldRows.length,
         ],
       );
+      // The frozen changes of the preview. A job that names its own field rows writes each of them.
+      for (const row of fieldRows)
+        await admin(
+          'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
+          [previewId, row.field, changeMode(row), row.requestedValue ?? null],
+        );
       await admin(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
           target_count,correlation_id,created_at)
@@ -266,14 +286,12 @@ export async function qualifyDeviceWriteJobs({
         ],
       );
       await admin(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
-          delegated_subject,batch_size,batch_count)
-        VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,confirmed_by,
+          confirmer_permission_version,delegated_subject,batch_size,batch_count)
+        VALUES($1,$2,'annotated-location',$3,$4,'admin@example.org',$5,$6)`,
         [
           jobId,
           previewId,
-          mode,
-          mode === 'clear' ? null : value,
           createdBy,
           version,
           batchSize,
@@ -281,28 +299,15 @@ export async function qualifyDeviceWriteJobs({
         ],
       );
       for (const [index, deviceId] of devices.entries()) {
+        // An update keeps its values in the operation's field rows, so the value columns stay null.
         await admin(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
             baseline_value,requested_value,batch,status)
-          VALUES($1,$2,$3,$4,'/School A',NULL,$5,$6,'pending')`,
-          [
-            jobId,
-            index + 1,
-            deviceId,
-            `SN-${deviceId}`,
-            mode === 'clear' ? null : value,
-            Math.floor(index / batchSize),
-          ],
+          VALUES($1,$2,$3,$4,'/School A',NULL,NULL,$5,'pending')`,
+          [jobId, index + 1, deviceId, `SN-${deviceId}`, Math.floor(index / batchSize)],
         );
-        // One row per field holds the requested and observed values (addendum section 2). A job that
-        // names its own field rows writes each of them; the default is one annotatedLocation row.
-        for (const row of fields ?? [
-          {
-            field: 'annotatedLocation',
-            baselineValue: null,
-            requestedValue: mode === 'clear' ? null : value,
-          },
-        ])
+        // One row per field holds the requested and observed values (addendum section 2).
+        for (const row of fieldRows)
           await admin(
             `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
               baseline_value,requested_value)
@@ -616,10 +621,8 @@ export async function qualifyDeviceWriteJobs({
         );
         const previewId = randomUUID();
         await admin(
-          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,'annotated-location','annotatedLocation','replace',
-            'Room 12',1,1,0,0,'manifest-digest',clock_timestamp()-interval '25 hours')`,
+          `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+          VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, 1, $4, 'annotated-location', 2, 1, 1, 0, 0, 'manifest-digest', clock_timestamp()-interval '25 hours')`,
           [previewId, customer, confirmer, generation],
         );
         await admin(
@@ -10505,8 +10508,16 @@ export async function qualifyDeviceWriteJobs({
         );
         for (const row of answer.operations) {
           assert.equal(row.serialNumber, `SN-${row.deviceId}`);
+          // An update keeps its values in the operation's field rows (addendum section 2).
           assert.equal(row.baselineValue, null);
-          assert.equal(row.requestedValue, 'Room 12');
+          assert.equal(row.requestedValue, null);
+          assert.deepEqual(row.fields, [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 12',
+            },
+          ]);
           assert.equal(typeof row.verifyAfter, 'string');
           assert.equal(typeof row.verifyLeaseExpiresAt, 'string');
         }
@@ -12142,10 +12153,8 @@ export async function qualifyDeviceWriteJobs({
           const previewId = randomUUID();
           const jobId = randomUUID();
           await admin(
-            `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-              generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-            VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,NULL,NULL,NULL,$7,$7,0,0,
-              'manifest-digest',clock_timestamp()+interval '1 hour')`,
+            `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+            VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, $4, $5, $6, CASE WHEN $6='annotated-location' THEN 2 ELSE 1 END, $7, $7, 0, 0, 'manifest-digest', clock_timestamp()+interval '1 hour')`,
             [
               previewId,
               customer,
@@ -12173,9 +12182,8 @@ export async function qualifyDeviceWriteJobs({
             )
           ).display_id;
           await admin(
-            `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
-              confirmer_permission_version,delegated_subject,batch_size,batch_count)
-            VALUES($1,$2,$3,NULL,NULL,NULL,$4,$5,'admin@example.org',250,1)`,
+            `INSERT INTO cc.device_update_jobs(job_id, preview_id, action, confirmed_by, confirmer_permission_version, delegated_subject, batch_size, batch_count)
+            VALUES($1, $2, $3, $4, $5, 'admin@example.org', 250, 1)`,
             [jobId, previewId, action, confirmer, version],
           );
           for (const [index, deviceId] of devices.entries())
@@ -12301,10 +12309,8 @@ export async function qualifyDeviceWriteJobs({
           const previewId = randomUUID();
           const jobId = randomUUID();
           await admin(
-            `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-              generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-            VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,$6,$6,0,0,
-              'manifest-digest',clock_timestamp()+interval '1 hour')`,
+            `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+            VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, $4, $5, 'reboot', 1, $6, $6, 0, 0, 'manifest-digest', clock_timestamp()+interval '1 hour')`,
             [
               previewId,
               customer,
@@ -12328,9 +12334,8 @@ export async function qualifyDeviceWriteJobs({
             ],
           );
           await admin(
-            `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
-              confirmer_permission_version,delegated_subject,batch_size,batch_count)
-            VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+            `INSERT INTO cc.device_update_jobs(job_id, preview_id, action, confirmed_by, confirmer_permission_version, delegated_subject, batch_size, batch_count)
+            VALUES($1, $2, 'reboot', $3, $4, 'admin@example.org', 250, 1)`,
             [jobId, previewId, commandConfirmer, version],
           );
           for (const [index, deviceId] of devices.entries())
@@ -12471,10 +12476,8 @@ export async function qualifyDeviceWriteJobs({
         const previewId = randomUUID();
         const jobId = randomUUID();
         await admin(
-          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,1,1,0,0,
-            'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+          VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, $4, $5, 'reboot', 1, 1, 1, 0, 0, 'manifest-digest', clock_timestamp()+interval '1 hour')`,
           [previewId, customer, commandConfirmer, version, generation],
         );
         await admin(
@@ -12484,9 +12487,8 @@ export async function qualifyDeviceWriteJobs({
           [jobId, customer, commandConfirmer, generation, randomUUID()],
         );
         await admin(
-          `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
-            confirmer_permission_version,delegated_subject,batch_size,batch_count)
-          VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+          `INSERT INTO cc.device_update_jobs(job_id, preview_id, action, confirmed_by, confirmer_permission_version, delegated_subject, batch_size, batch_count)
+          VALUES($1, $2, 'reboot', $3, $4, 'admin@example.org', 250, 1)`,
           [jobId, previewId, commandConfirmer, version],
         );
         await admin(
@@ -12581,10 +12583,8 @@ export async function qualifyDeviceWriteJobs({
         const previewId = randomUUID();
         const jobId = randomUUID();
         await admin(
-          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-            generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,1,1,0,0,
-            'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+          VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, $4, $5, 'reboot', 1, 1, 1, 0, 0, 'manifest-digest', clock_timestamp()+interval '1 hour')`,
           [previewId, customer, commandConfirmer, version, generation],
         );
         await admin(
@@ -12594,9 +12594,8 @@ export async function qualifyDeviceWriteJobs({
           [jobId, customer, commandConfirmer, generation, randomUUID()],
         );
         await admin(
-          `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
-            confirmer_permission_version,delegated_subject,batch_size,batch_count)
-          VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+          `INSERT INTO cc.device_update_jobs(job_id, preview_id, action, confirmed_by, confirmer_permission_version, delegated_subject, batch_size, batch_count)
+          VALUES($1, $2, 'reboot', $3, $4, 'admin@example.org', 250, 1)`,
           [jobId, previewId, commandConfirmer, version],
         );
         await admin(
