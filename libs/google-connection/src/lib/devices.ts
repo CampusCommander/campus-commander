@@ -117,6 +117,55 @@ export interface AnnotatedLocationWrite {
   value: string | null;
 }
 
+/** The four writable device fields, in contract order. Each ID equals its Google property name. */
+const deviceWriteFields = [
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+] as const;
+export type DeviceWriteField = (typeof deviceWriteFields)[number];
+
+/** The final value of each changed field of one device. A Clear value is null. */
+export type DeviceWriteFields = Partial<
+  Record<DeviceWriteField, string | null>
+>;
+
+/** One approved write: the device and every changed field. */
+export interface DeviceWrite {
+  deviceId: string;
+  fields: DeviceWriteFields;
+}
+
+export interface DeviceWriteBatchOptions {
+  /** Parts of one multipart request. The worker setting defaults to 250. */
+  batchSize?: number;
+  onSend?(requestIds: readonly string[]): void | Promise<void>;
+  onResponse?(
+    event: BatchResponseEvent<DeviceObservation>,
+  ): void | Promise<void>;
+  onBatch?(event: BatchRoundEvent): void | Promise<void>;
+}
+
+/**
+ * The PATCH body of one write: only its changed fields, in contract order.
+ * Each key equals its Google property name. A Clear value stays null.
+ * A write without a contract field cannot stand for a changed device.
+ */
+function deviceWriteBody(
+  fields: DeviceWriteFields,
+): Record<string, string | null> {
+  const body: Record<string, string | null> = {};
+  for (const field of deviceWriteFields) {
+    const value = fields[field];
+    if (value !== undefined) body[field] = value;
+  }
+  const named = Object.keys(fields).length;
+  if (named === 0 || named !== Object.keys(body).length)
+    throw new GoogleConnectionError('invalid-response');
+  return body;
+}
+
 export interface AnnotatedLocationBatchOptions {
   /** Parts of one multipart request. The worker setting defaults to 250. */
   batchSize?: number;
@@ -760,6 +809,61 @@ export class GoogleDeviceReader {
         body: { annotatedLocation: write.value },
       })),
       parse: (body) => writtenDevice.parse(body) as WrittenDevice,
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-changes'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
+      ...(options.onSend ? { onSend: options.onSend } : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
+    // A mint failure ends every waiting request without an event. The caller keeps
+    // the code as the job failure (design section 7.2).
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+
+  /**
+   * One PATCH per device through the batch service, carrying every changed field of
+   * that device. A Clear value sends null. Each body key equals its Google property
+   * name. The part keeps `projection=FULL` and `fields=deviceFields`, so the answer
+   * parses through `directoryDevice` and maps through `deviceObservation`. The write
+   * scope comes from the `device-changes` capability. Part failures stay in the
+   * result; the caller classifies them (design section 7.1).
+   */
+  async patchDevices(
+    credential: DelegatedCredential,
+    customerId: string,
+    writes: readonly DeviceWrite[],
+    signal: AbortSignal,
+    options: DeviceWriteBatchOptions = {},
+  ): Promise<BatchResult<DeviceObservation>> {
+    googleCustomerIdSchema.parse(customerId);
+    if (writes.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    const requests = writes.map((write) => ({
+      id: write.deviceId,
+      method: 'PATCH' as const,
+      path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(write.deviceId)}`,
+      query: { projection: 'FULL', fields: deviceFields },
+      body: deviceWriteBody(write.fields),
+    }));
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute<DeviceObservation>({
+      batchUrl: batchEndpoint,
+      requests,
+      parse: (body) => deviceObservation(directoryDevice.parse(body)),
       getClient: async (runSignal) => {
         try {
           return await scopedClient(

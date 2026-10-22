@@ -55,6 +55,7 @@ it('orders columns after the details icon and hides optional fields', () => {
     'status',
     'model',
     'assetTag',
+    'annotatedUser',
     'orgUnitPath',
     'battery',
     'lastContact',
@@ -66,11 +67,12 @@ it('orders columns after the details icon and hides optional fields', () => {
   expect(columns[0].lockPosition).toBe('left');
   expect(
     columns.filter((column) => column.hide).map((column) => column.colId),
-  ).toEqual(['status', 'annotatedLocation', 'notes']);
+  ).toEqual(['status', 'annotatedUser', 'annotatedLocation', 'notes']);
   const value = (id: string) =>
     (columns.find((column) => column.colId === id)!.valueGetter as Getter)({
-      data: row,
+      data: { ...row, annotatedUser: 'maya.chen@example.org' },
     });
+  expect(value('annotatedUser')).toBe('maya.chen@example.org');
   expect(value('battery')).toBe('Replace soon');
   expect(value('lastContact')).toBe('2 min ago');
   expect(value('notes')).toBe('');

@@ -6,6 +6,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { devicePageSchema } from '@campus/application-contracts';
 
 const customerId = 'C0123456';
 const observedAt = '2026-10-19T12:00:00.000Z';
@@ -25,6 +26,7 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
   annotatedLocation: null,
   annotatedUser: null,
   notes: null,
+  status: 'ACTIVE',
   battery: {
     status: 'reported',
     health: 'normal',
@@ -141,13 +143,13 @@ async function signIn(page: Page, options: SessionOptions = {}) {
     if (path === '/api/devices/query')
       return route.fulfill({
         json: {
-          page: {
+          page: devicePageSchema.parse({
             rows,
             matching: rows.length,
             total: rows.length,
             observedAt,
             refreshJobId: null,
-          },
+          }),
         },
       });
     if (path === '/api/devices/freshness')
@@ -197,6 +199,9 @@ async function openDevices(page: Page, options: SessionOptions = {}) {
   });
   await expect(refresh).toBeVisible();
   await expect(bulk).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   return { refresh, bulk };
 }

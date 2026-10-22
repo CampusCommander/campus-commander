@@ -28,10 +28,13 @@
 }
 .annotations {
   display: grid;
+  /* An unbroken annotation value must wrap, not widen its row past the card. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--cc-space-md);
   margin: 0;
 }
 .annotation {
+  min-width: 0;
   padding: var(--cc-space-sm) var(--cc-space-md);
   border: 1px solid var(--cc-border-control);
   border-radius: var(--cc-radius-control);
@@ -42,6 +45,7 @@
 }
 .annotation dd {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .health {
   font-size: 16px;
