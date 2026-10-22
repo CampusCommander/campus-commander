@@ -1149,6 +1149,17 @@ BEGIN
         WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND r->>'outcome'='succeeded' AND
           write_field='status')
     ORDER BY w.device_id,w.field FOR UPDATE;
+  -- S1 (round 4, R4): the field rows of the eligible results lock next, in operation and contract-field
+  -- order. A result without `values` leaves its field rows unchanged and locks none. The clock below
+  -- then reads after this wait, so an attempt whose lease lapses in it changes nothing (review F3).
+  PERFORM 1 FROM cc.device_update_operation_fields f
+  WHERE f.job_id=p_job AND f.operation_number=ANY(candidates) AND EXISTS(
+      SELECT 1 FROM jsonb_array_elements(p_results) r
+      WHERE (r->>'operationNumber')::integer=f.operation_number AND
+        jsonb_typeof(r->'values')='object' AND ((r->'values') ? f.field))
+  ORDER BY f.operation_number,
+    array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath'],f.field)
+  FOR UPDATE;
   -- The write and read-back lease fences below read the clock after every row lock (review F3, F15).
   now_at:=clock_timestamp();
   WITH results AS (
