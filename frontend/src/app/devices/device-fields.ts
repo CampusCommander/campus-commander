@@ -44,6 +44,13 @@ export const DEVICE_FIELDS: readonly DeviceField[] = [
   { id: 'status', label: 'Status', kind: 'status', optional: true },
   { id: 'model', label: 'Model', kind: 'text', optional: false },
   { id: 'assetTag', label: 'Asset tag', kind: 'text', optional: false },
+  // The approved mockup shows this optional column after Asset tag (notes line 105).
+  {
+    id: 'annotatedUser',
+    label: 'Annotated user',
+    kind: 'text',
+    optional: true,
+  },
   {
     id: 'orgUnitPath',
     label: 'Organization unit',

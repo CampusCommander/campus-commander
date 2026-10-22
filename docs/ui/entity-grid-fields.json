@@ -143,6 +143,14 @@
       "filterable": true
     },
     {
+      "fieldId": "annotatedUser",
+      "label": "Annotated user",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true,
+      "defaultVisible": false
+    },
+    {
       "fieldId": "school",
       "label": "School",
       "dataType": "text",
