@@ -2488,12 +2488,16 @@ it('replays a retained confirmation after the blocked move returns to the draft'
   previewRead = 'expired';
   clickButton(element, 'Continue to confirmation');
   await settle();
-  expect(element.querySelector('h1')?.textContent?.trim()).toBe('Preview expired');
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Preview expired',
+  );
 
   // The blocked move returns to the draft and leaves the record for the replay.
   clickButton(element, 'Prepare new preview');
   await settle();
-  expect(element.querySelector('h1')?.textContent?.trim()).toBe('Update 6 devices');
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update 6 devices',
+  );
   expect(confirmations).toBe(0);
   expect(sessionStorage.getItem(earlierKey)).not.toBeNull();
 
