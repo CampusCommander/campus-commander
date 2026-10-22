@@ -5,7 +5,11 @@ import type {
 } from '@campus/application-contracts';
 import { z } from 'zod';
 import { AuthStore } from '../auth.store';
-import { DeviceUpdateFlow, type FlowProblemKind } from './device-update-flow';
+import {
+  DeviceUpdateFlow,
+  confirmationMayExist,
+  type FlowProblemKind,
+} from './device-update-flow';
 
 /** The storage prefix of one person's uncertain confirmations in this tab. */
 export const CONFIRMATION_PREFIX = 'cc.device-update-confirmation.';
@@ -19,12 +23,20 @@ export type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
 
 /**
  * The answer to a replay of a retained confirmation. `none` means the person holds
- * no record. `expired` means a 410 proved that no job exists.
+ * no record. `expired` means a 410 proved that no job exists. `unresolved` means the
+ * answer arrives before the API's existing-receipt lookup, so it cannot prove that
+ * the first request created no job.
  */
 export type ConfirmationReplay =
   | { kind: 'none' }
   | { kind: 'receipt'; receipt: DeviceUpdateJobReceipt }
   | { kind: 'expired' }
+  | {
+      kind: 'unresolved';
+      submitted: SubmittedConfirmation;
+      answer: FlowProblemKind;
+      expiresAt: string | null;
+    }
   | { kind: 'problem'; answer: FlowProblemKind; expiresAt: string | null }
   | { kind: 'uncertain'; submitted: SubmittedConfirmation };
 
@@ -32,6 +44,12 @@ export type ConfirmationReplay =
 export type PreviewPreparation =
   | { kind: 'preview'; preview: DeviceUpdatePreview }
   | { kind: 'receipt'; receipt: DeviceUpdateJobReceipt }
+  | {
+      kind: 'unresolved';
+      submitted: SubmittedConfirmation;
+      answer: FlowProblemKind;
+      expiresAt: string | null;
+    }
   | { kind: 'problem'; answer: FlowProblemKind; expiresAt: string | null }
   | { kind: 'uncertain'; submitted: SubmittedConfirmation };
 
@@ -95,7 +113,8 @@ export class DeviceUpdateConfirmationStore {
   /**
    * Replay every uncertain confirmation of this person. A 410 proves that no job
    * exists, so its record clears and the caller proceeds. Any other answer ends the
-   * replay: a receipt, the named problem, or the uncertain state.
+   * replay: a receipt, an unresolved answer that may hide a job, the named problem,
+   * or the uncertain state.
    */
   async resolvePending(): Promise<ConfirmationReplay> {
     let last: ConfirmationReplay = { kind: 'none' };
@@ -116,6 +135,7 @@ export class DeviceUpdateConfirmationStore {
     const replay = await this.resolvePending();
     if (replay.kind === 'receipt') return replay;
     if (replay.kind === 'problem') return replay;
+    if (replay.kind === 'unresolved') return replay;
     if (replay.kind === 'uncertain') return replay;
     const prepared = await this.flow.prepareFromDraft();
     return prepared.ok
@@ -145,8 +165,19 @@ export class DeviceUpdateConfirmationStore {
     if (result.answer === 'confirm-uncertain') {
       return { kind: 'uncertain', submitted };
     }
-    // A named answer is definitive. The design names every 4xx it returns, so the
-    // record clears and its Scope item 5 message tells the operator what happened.
+    // Some named answers arrive before the API checks for an existing receipt. They
+    // cannot prove that the first request created no job, so the identity stays.
+    if (confirmationMayExist(result.answer)) {
+      return {
+        kind: 'unresolved',
+        submitted,
+        answer: result.answer,
+        expiresAt: result.expiresAt,
+      };
+    }
+    // A definitive named answer settles the record. The design names every 4xx it
+    // returns after the receipt lookup, so its Scope item 5 message tells the operator
+    // what happened.
     this.release(submitted.previewId);
     return {
       kind: 'problem',

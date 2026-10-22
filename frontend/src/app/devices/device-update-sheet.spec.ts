@@ -1162,6 +1162,228 @@ it('keeps a replayed update confirmation when the replay needs the connection', 
   expect(sessionStorage.getItem(key)).not.toBeNull();
 });
 
+// These replay answers arrive before the API checks for an existing receipt. None of
+// them proves that the lost first request created no job.
+const earlyAnswers = [
+  { answer: 'forbidden', status: 403 },
+  { answer: 'permission-changed', status: 409 },
+  { answer: 'preview-changed', status: 409 },
+  { answer: 'connection-required', status: 409 },
+] as const;
+
+/** The record that a lost confirmation leaves in this tab. */
+function retainConfirmation(): void {
+  sessionStorage.setItem(
+    `cc.device-update-confirmation.${principal}.${previewId}`,
+    JSON.stringify({ previewId, manifestDigest: 'a'.repeat(64) }),
+  );
+}
+
+const retainedKey = `cc.device-update-confirmation.${principal}.${previewId}`;
+
+for (const { answer, status } of earlyAnswers) {
+  it(`keeps a retained confirmation when Save and preview answers ${answer}`, async () => {
+    const { element, request, type, save } = await setup({
+      request: (path) =>
+        path.endsWith('/confirm')
+          ? Response.json({ reason: answer }, { status })
+          : Response.json({}, { status: 404 }),
+    });
+    retainConfirmation();
+    await type('North lab');
+    await save();
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'The update job may exist',
+    );
+    expect(element.textContent).toContain('The receipt is unavailable');
+    expect(element.textContent).toContain('Check Jobs for the update job');
+    // No replacement preview leaves the page.
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/devices/updates/previews',
+      ),
+    ).toHaveLength(0);
+    expect(sessionStorage.getItem(retainedKey)).not.toBeNull();
+  });
+
+  it(`keeps a retained confirmation when Prepare new preview answers ${answer}`, async () => {
+    const { element, request, type, save, settle } = await setup({
+      request: (path) => {
+        if (path === '/api/devices/updates/previews')
+          return Response.json(preview, { status: 201 });
+        if (path.includes('/targets'))
+          return Response.json(
+            {
+              reason: 'preview-expired',
+              expiresAt: '2026-10-19T12:15:00.000Z',
+            },
+            { status: 410 },
+          );
+        if (path.endsWith('/confirm'))
+          return Response.json({ reason: answer }, { status });
+        return Response.json({}, { status: 404 });
+      },
+    });
+    await type('North lab');
+    await save();
+    expect(element.textContent).toContain('Preview expired');
+    retainConfirmation();
+    clickButton(element, 'Prepare new preview');
+    await settle();
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'The update job may exist',
+    );
+    expect(element.textContent).toContain(
+      'Review the Jobs page before you prepare another preview.',
+    );
+    // The only preview request is the one that produced the expired preview.
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/devices/updates/previews',
+      ),
+    ).toHaveLength(1);
+    expect(sessionStorage.getItem(retainedKey)).not.toBeNull();
+  });
+}
+
+it('replays the same preview and digest after a closure and opens the later receipt', async () => {
+  let confirmations = 0;
+  const { element, request, type, save, acknowledge, settle, close, open } =
+    await setup({
+      request: (path) => {
+        if (path === '/api/devices/updates/previews')
+          return Response.json(preview, { status: 201 });
+        if (path === previewReadPath) return Response.json(preview);
+        if (path.includes('/targets'))
+          return Response.json({ targets, nextCursor: null });
+        if (path.endsWith('/confirm')) {
+          confirmations++;
+          if (confirmations === 1)
+            return Promise.reject(new TypeError('The connection closed.'));
+          if (confirmations === 2)
+            return Response.json(
+              { reason: 'preview-changed' },
+              { status: 409 },
+            );
+          return Response.json(receipt, { status: 201 });
+        }
+        if (path === '/api/jobs/UPD-006') return Response.json(job);
+        return Response.json({}, { status: 404 });
+      },
+    });
+  await reachConfirm(element, type, save, settle);
+  await acknowledge();
+  clickButton(element, 'Create update job');
+  await settle();
+  expect(element.textContent).toContain('The confirmation did not finish');
+  expect(JSON.parse(sessionStorage.getItem(retainedKey) ?? '{}')).toEqual({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+  });
+
+  // The transaction lives in this tab, so a closure keeps the record.
+  element
+    .querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+    ?.click();
+  await close();
+  await open();
+  await save();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The update job may exist',
+  );
+  expect(confirmations).toBe(2);
+  expect(sessionStorage.getItem(retainedKey)).not.toBeNull();
+
+  // The next replay answers the receipt and settles the record.
+  element
+    .querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+    ?.click();
+  await close();
+  await open();
+  await save();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  expect(element.textContent).toContain('Job UPD-006 · Running');
+  expect(confirmations).toBe(3);
+  expect(sessionStorage.getItem(retainedKey)).toBeNull();
+  // No replay prepared a replacement preview.
+  expect(
+    request.mock.calls.filter(
+      ([path]) => path === '/api/devices/updates/previews',
+    ),
+  ).toHaveLength(1);
+  expect(
+    request.mock.calls
+      .filter(([path]) => path.endsWith('/confirm'))
+      .map(([path]) => path),
+  ).toEqual([
+    `/api/devices/updates/previews/${previewId}/confirm`,
+    `/api/devices/updates/previews/${previewId}/confirm`,
+    `/api/devices/updates/previews/${previewId}/confirm`,
+  ]);
+  expect(
+    request.mock.calls
+      .filter(([path]) => path.endsWith('/confirm'))
+      .map(([, body]) => (body as { manifestDigest: string }).manifestDigest),
+  ).toEqual(['a'.repeat(64), 'a'.repeat(64), 'a'.repeat(64)]);
+});
+
+it('clears a retained confirmation that a 410 expires and prepares the preview', async () => {
+  const { element, request, type, save } = await setup({
+    request: (path) => {
+      if (path === '/api/devices/updates/previews')
+        return Response.json(preview, { status: 201 });
+      if (path === previewReadPath) return Response.json(preview);
+      if (path.includes('/targets'))
+        return Response.json({ targets, nextCursor: null });
+      if (path.endsWith('/confirm'))
+        return Response.json(
+          {
+            reason: 'preview-expired',
+            expiresAt: '2026-10-19T12:15:00.000Z',
+          },
+          { status: 410 },
+        );
+      return Response.json({}, { status: 404 });
+    },
+  });
+  retainConfirmation();
+  await type('North lab');
+  await save();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 6 device updates',
+  );
+  expect(
+    request.mock.calls.filter(
+      ([path]) => path === '/api/devices/updates/previews',
+    ),
+  ).toHaveLength(1);
+  expect(sessionStorage.getItem(retainedKey)).toBeNull();
+});
+
+it('clears a retained confirmation when the replay answers connection-changed', async () => {
+  const { element, request, type, save } = await setup({
+    request: (path) =>
+      path.endsWith('/confirm')
+        ? Response.json({ reason: 'connection-changed' }, { status: 409 })
+        : Response.json({}, { status: 404 }),
+  });
+  retainConfirmation();
+  await type('North lab');
+  await save();
+  expect(element.textContent).toContain('The Google connection changed.');
+  expect(element.textContent).toContain(
+    'Reconnect Google Workspace before you create the job.',
+  );
+  expect(
+    request.mock.calls.filter(
+      ([path]) => path === '/api/devices/updates/previews',
+    ),
+  ).toHaveLength(0);
+  expect(sessionStorage.getItem(retainedKey)).toBeNull();
+});
+
 it('shows the receipt of a clear job with the field-change count', async () => {
   const clearJob: JobDetail = {
     ...job,
