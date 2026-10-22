@@ -710,7 +710,17 @@ test('captures the six approved states at 1440 x 900 in the light theme', async 
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await mockApi(page);
+  await mockApi(
+    page,
+    // The removed device has no observed annotations, as in the approved frames.
+    seedDevices({
+      [excludedIndex]: {
+        annotatedLocation: null,
+        annotatedUser: null,
+        notes: null,
+      },
+    }),
+  );
   await openDevices(page);
   await page.evaluate(() => {
     document.documentElement.dataset['theme'] = 'light';

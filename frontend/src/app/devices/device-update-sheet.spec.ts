@@ -145,7 +145,7 @@ const twoFieldPreview: DeviceUpdatePreview = {
     { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
     { field: 'notes', mode: 'replace', value: 'Cart 7 loaner pool' },
   ],
-  fieldChanges: 12,
+  fieldChanges: 10,
 };
 
 const twoFieldTargets: DeviceUpdateTarget[] = multiTargets.filter(
@@ -652,7 +652,7 @@ it('lists one confirmation sentence per changed field and names the unchanged fi
   ]);
   expect(element.textContent).toContain('Annotated user remains unchanged.');
   expect(element.textContent).toContain(
-    'Preview PV-006 · 6 devices · 12 field changes',
+    'Preview PV-006 · 6 devices · 10 field changes',
   );
 });
 

@@ -82,7 +82,7 @@ it('counts the changed fields and the eligible devices in the heading', () => {
 });
 
 /**
- * Frozen target rows for the confirmation tests. Each field lists its fields per device in
+ * Frozen target rows for the confirmation tests. Each entry lists its rows per device in
  * contract order, one row per device and field.
  */
 function targetRows(
