@@ -18,7 +18,7 @@ import {
   type DeviceSyncState,
   type SessionResponse,
 } from '@campus/application-contracts';
-import { parseIntCursor, type PreviewRow } from './device-update-rows';
+import type { PreviewRow } from './device-update-rows';
 import {
   deviceWriteFunctionError,
   measuredAt,
@@ -232,14 +232,13 @@ export class DeviceActions {
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-        $5::text,$6::text,$7::text,$8::text,$9::jsonb,$10::integer) AS result`,
+        $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
       [
         session.identity.id,
         session.identity.permissionVersion,
         current.customerId,
         current.generation,
         action,
-        null,
         null,
         digest,
         JSON.stringify(
@@ -310,7 +309,9 @@ export class DeviceActions {
     const row = await this.load(session, previewId, family);
     if (Date.parse(String(row['expires_at'])) <= Date.now()) this.expired(row);
     const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
-    const after = parseIntCursor(cursor);
+    // A command or status preview pages by the device ordinal alone, because each device is one row.
+    const parsed = Number(cursor ?? -1);
+    const after = Number.isInteger(parsed) && parsed >= -1 ? parsed : -1;
     const sql: SqlStatement = {
       text: `SELECT ordinal,device_id,serial_number,org_unit_path,observed_value,
         observed_at,disposition,exclusion_reason FROM cc.device_update_preview_targets

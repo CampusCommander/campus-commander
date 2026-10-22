@@ -238,14 +238,14 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
     (
       await runtime.query(
         `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-           $5::text,$6::text,$7::text,$8::text,$9::jsonb,$10::integer) AS result`,
+           $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
         [
           principal,
           1,
           customer,
           generation,
           action,
-          null,
+          // A command or status preview carries no change (card U6).
           null,
           digest,
           JSON.stringify(targets),
@@ -343,16 +343,15 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
         );
         const stored = (
           await migrator.query(
-            `SELECT action,field,mode,action_version,manifest_digest,selected,eligible,
+            `SELECT action,action_version,field_changes,manifest_digest,selected,eligible,
                unchanged,excluded FROM cc.device_update_previews WHERE preview_id=$1`,
             [rebootPreview.previewId],
           )
         ).rows[0];
         assert.deepEqual(stored, {
           action: 'reboot',
-          field: null,
-          mode: null,
           action_version: 1,
+          field_changes: 0,
           manifest_digest: rebootPreview.manifestDigest,
           selected: 3,
           eligible: 1,

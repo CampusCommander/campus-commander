@@ -56,11 +56,11 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-006',
-  field: 'annotatedLocation',
-  mode: 'replace',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
-  requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
@@ -137,10 +137,8 @@ const commandJobWithFailure = (
     displayId: 'CMD-001',
     action: 'reboot-devices',
     status: 'awaiting-devices',
-    field: null,
-    mode: null,
+    changes: null,
     commandType: 'REBOOT',
-    requestedValue: null,
     progress: progress({
       total: 1,
       succeeded: 0,
@@ -285,9 +283,7 @@ describe('latest activity', () => {
       displayId: 'REF-004',
       action: 'refresh-inventory',
       status: 'running',
-      field: null,
-      mode: null,
-      requestedValue: null,
+      changes: null,
       progress: progress({
         total: 48,
         succeeded: 36,
@@ -335,9 +331,7 @@ describe('latest activity', () => {
       displayId: 'REF-004',
       action: 'refresh-inventory',
       status: 'completed-with-errors',
-      field: null,
-      mode: null,
-      requestedValue: null,
+      changes: null,
       progress: progress({
         total: 12,
         succeeded: 6,
@@ -369,9 +363,7 @@ describe('latest activity', () => {
       displayId: 'REF-004',
       action: 'refresh-inventory',
       status: 'running',
-      field: null,
-      mode: null,
-      requestedValue: null,
+      changes: null,
       progress: progress({
         total: null,
         succeeded: 36,
@@ -409,8 +401,7 @@ describe('latest activity', () => {
       displayId: 'CMD-001',
       action: 'reboot-devices',
       status: 'awaiting-devices',
-      field: null,
-      mode: null,
+      changes: null,
       commandType: 'REBOOT',
       progress: progress({
         total: 6,
@@ -490,8 +481,7 @@ describe('latest activity', () => {
       displayId: 'STS-002',
       action: 'disable-devices',
       statusAction: 'disable',
-      field: null,
-      mode: null,
+      changes: null,
       status: 'completed',
       progress: progress({
         total: 6,
@@ -580,7 +570,7 @@ describe('job detail fields', () => {
       operation: 'reboot',
       requestedValue: null,
     });
-    expect(operationLabel(job(), reboot)).toBe('Reboot');
+    expect(operationLabel(reboot)).toBe('Reboot');
     expect(beforeText(reboot)).toBe('—');
     expect(requestedText(reboot)).toBe('Reboot');
     expect(isCommandOperation(reboot)).toBe(true);
@@ -590,13 +580,6 @@ describe('job detail fields', () => {
   });
 
   it('labels a status row with its baseline and requested status', () => {
-    const disableJob = job({
-      displayId: 'STS-002',
-      action: 'disable-devices',
-      statusAction: 'disable',
-      field: null,
-      mode: null,
-    });
     const disable = operation({
       operationId: 'STS-002-1',
       field: null,
@@ -604,7 +587,7 @@ describe('job detail fields', () => {
       baselineValue: 'ACTIVE',
       requestedValue: 'DISABLED',
     });
-    expect(operationLabel(disableJob, disable)).toBe('Disable');
+    expect(operationLabel(disable)).toBe('Disable');
     expect(beforeText(disable)).toBe('Active');
     expect(requestedText(disable)).toBe('Disabled');
 
@@ -614,7 +597,7 @@ describe('job detail fields', () => {
       baselineValue: 'DISABLED',
       requestedValue: 'ACTIVE',
     });
-    expect(operationLabel(disableJob, reenable)).toBe('Re-enable');
+    expect(operationLabel(reenable)).toBe('Re-enable');
     expect(beforeText(reenable)).toBe('Disabled');
     expect(requestedText(reenable)).toBe('Active');
   });

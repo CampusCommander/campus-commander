@@ -246,10 +246,10 @@ function operationOf(
   // Organization unit offers Move alone (design addendum section 1).
   if (field === 'orgUnitPath') return 'move';
   // Each annotation field row carries its own request, and a null request is the Clear mode
-  // (addendum section 2). The job-wide header names one field until U6, so it cannot decide a row.
+  // (addendum section 2). The job-wide header names no field, so the row decides its mode.
   if (field !== null)
     return row['field_requested_value'] == null ? 'clear' : 'replace';
-  return row['mode'] === 'clear' ? 'clear' : 'replace';
+  return 'replace';
 }
 
 /**
@@ -484,16 +484,21 @@ export class Jobs {
     return (
       await this.rows(
         `SELECT j.*, p.display_name AS requested_by_name,
-          u.confirmed_by, u.action, u.field, u.mode, u.value AS requested_value,
+          u.confirmed_by, u.action, c.changes,
           cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_strip_nulls(jsonb_build_object('field',ch.field,'mode',ch.mode,'value',ch.value))
+            ORDER BY array_position($5::text[],ch.field)) AS changes
+          FROM cc.device_update_changes ch WHERE ch.preview_id=u.preview_id) c ON true
         LEFT JOIN cc.application_principals cp ON cp.id=u.confirmed_by
         LEFT JOIN cc.device_update_previews pr ON pr.preview_id=u.preview_id
         WHERE j.customer_id=$3 AND j.display_id=$4
           AND cc.job_visible($1,$2,$3,j.requested_by)`,
-        [...this.actor(session), customerId, displayId],
+        [...this.actor(session), customerId, displayId, operationFieldOrder],
       )
     )[0];
   }
@@ -532,14 +537,12 @@ export class Jobs {
               displayName: job['confirmed_by_name'],
             },
       previewDisplayId: job['preview_display_id'] ?? null,
-      field: job['field'] ?? null,
-      mode: job['mode'] ?? null,
+      changes: job['changes'] ?? null,
       commandType: job['action'] === 'reboot' ? 'REBOOT' : null,
       statusAction:
         job['action'] === 'disable' || job['action'] === 'reenable'
           ? job['action']
           : null,
-      requestedValue: job['requested_value'] ?? null,
       targetOrgUnitPaths: job['target_org_unit_paths'] ?? null,
       correlationId: job['correlation_id'],
       latestActivity: latestActivity(
@@ -566,7 +569,7 @@ export class Jobs {
     // (design addendum section 1).
     const after = decodeOperationCursor(cursor);
     const rows = await this.rows(
-      `SELECT o.*, u.action, u.mode, f.field,
+      `SELECT o.*, u.action, f.field,
         f.baseline_value AS field_baseline_value,
         f.requested_value AS field_requested_value,
         f.observed_value AS field_observed_value,
@@ -629,7 +632,7 @@ export class Jobs {
     const jobId = String(job['job_id']);
     const row = (
       await this.rows(
-        `SELECT o.*, u.action, u.mode, f.field,
+        `SELECT o.*, u.action, f.field,
           f.baseline_value AS field_baseline_value,
           f.requested_value AS field_requested_value,
           f.observed_value AS field_observed_value,

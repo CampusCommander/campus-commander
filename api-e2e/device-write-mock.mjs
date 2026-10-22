@@ -193,9 +193,11 @@ export async function qualifyDeviceWritesOnMock({
     try {
       await migrator.query(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-        generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,0,0,
-        'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
+          manifest_digest,expires_at)
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,
+        CASE WHEN $6='annotated-location' THEN 2 ELSE 1 END,$7,$7,0,0,$8,'manifest-digest',
+        clock_timestamp()+interval '1 hour')`,
         [
           previewId,
           customer,
@@ -203,12 +205,24 @@ export async function qualifyDeviceWritesOnMock({
           principal.permission_version,
           connection.generation,
           action,
-          command ? null : 'annotatedLocation',
-          command ? null : mode,
-          command ? null : mode === 'clear' ? null : value,
           devices.length,
+          command ? 0 : devices.length * (fields?.length ?? 1),
         ],
       );
+      // The frozen changes of the preview. A command job carries none.
+      if (!command)
+        for (const [field, fieldValue] of fields ?? [
+          ['annotatedLocation', mode === 'clear' ? null : value],
+        ])
+          await migrator.query(
+            'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
+            [
+              previewId,
+              field,
+              fieldValue === null ? 'clear' : 'replace',
+              fieldValue,
+            ],
+          );
       await migrator.query(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
         target_count,correlation_id,created_at)
@@ -224,16 +238,13 @@ export async function qualifyDeviceWritesOnMock({
         ],
       );
       await migrator.query(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
-        delegated_subject,batch_size,batch_count)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)`,
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,confirmed_by,confirmer_permission_version,
+          delegated_subject,batch_size,batch_count)
+      VALUES($1,$2,$3,$4,$5,$6,$7,1)`,
         [
           jobId,
           previewId,
           action,
-          command ? null : 'annotatedLocation',
-          command ? null : mode,
-          command ? null : mode === 'clear' ? null : value,
           principal.id,
           principal.permission_version,
           mock.adminEmail,
@@ -241,17 +252,12 @@ export async function qualifyDeviceWritesOnMock({
         ],
       );
       for (const [index, deviceId] of devices.entries()) {
+        // An update keeps its values in the operation's field rows, so the value columns stay null.
         await migrator.query(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
-        VALUES($1,$2,$3,$4,'/School A',NULL,$5,0,'pending')`,
-          [
-            jobId,
-            index + 1,
-            deviceId,
-            `SN-${deviceId}`,
-            command ? null : mode === 'clear' ? null : value,
-          ],
+        VALUES($1,$2,$3,$4,'/School A',NULL,NULL,0,'pending')`,
+          [jobId, index + 1, deviceId, `SN-${deviceId}`],
         );
         // An update operation carries its values in one row per field (addendum section 2).
         if (!command)

@@ -163,11 +163,9 @@ const job = (options: {
     displayName: 'District operator',
   },
   previewDisplayId: options.displayId.replace('CMD', 'PV').replace('STS', 'PV'),
-  field: null,
-  mode: null,
+  changes: null,
   commandType: options.commandType,
   statusAction: options.statusAction,
-  requestedValue: null,
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
   latestActivity: {

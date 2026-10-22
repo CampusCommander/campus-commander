@@ -34,8 +34,10 @@ const selection = (
 const preview: DeviceUpdatePreview = {
   previewId,
   displayId: 'PV-006',
-  mode: 'replace',
-  value: 'North lab',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
+  fieldChanges: 6,
   selected: 6,
   eligible: 6,
   unchanged: 0,
@@ -110,11 +112,11 @@ const job: JobDetail = {
   failure: null,
   confirmedBy: { id: principal, displayName: 'District operator' },
   previewDisplayId: 'PV-006',
-  field: 'annotatedLocation',
-  mode: 'replace',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
-  requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
@@ -347,8 +349,9 @@ it('sends the replace value and shows the frozen review', async () => {
   expect(create?.[1]).toEqual({
     gridId: 'devices',
     tabId,
-    mode: 'replace',
-    value: 'North lab',
+    changes: [
+      { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+    ],
   });
   expect(element.querySelector('h1')?.textContent?.trim()).toBe(
     'Review 6 device updates',
@@ -375,7 +378,11 @@ it('sends a clear choice without a value', async () => {
   const create = request.mock.calls.find(([path]) =>
     path.endsWith('/previews'),
   );
-  expect(create?.[1]).toEqual({ gridId: 'devices', tabId, mode: 'clear' });
+  expect(create?.[1]).toEqual({
+    gridId: 'devices',
+    tabId,
+    changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+  });
 });
 
 it('shows the stored expired selection without losing the draft', async () => {
@@ -695,18 +702,23 @@ it('keeps a replayed update confirmation when the replay needs the connection', 
 it('shows the receipt answers of a clear job as removals', async () => {
   const clearJob: JobDetail = {
     ...job,
-    mode: 'clear',
-    requestedValue: null,
+    changes: [{ field: 'annotatedLocation', mode: 'clear' }],
   };
   const { element, type, save, acknowledge, settle } = await setup({
     request: (path) => {
       if (path === '/api/devices/updates/previews')
         return Response.json(
-          { ...preview, mode: 'clear', value: null },
+          {
+            ...preview,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          },
           { status: 201 },
         );
       if (path === previewReadPath)
-        return Response.json({ ...preview, mode: 'clear', value: null });
+        return Response.json({
+          ...preview,
+          changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+        });
       if (path.includes('/targets'))
         return Response.json({ targets, nextCursor: null });
       if (path.endsWith('/confirm'))

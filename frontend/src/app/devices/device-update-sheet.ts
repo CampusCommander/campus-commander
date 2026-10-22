@@ -170,6 +170,16 @@ export class DeviceUpdateSheet {
   protected readonly approved = approvedValueText;
   protected readonly device = targetDeviceText;
   protected readonly note = targetNote;
+  /**
+   * The mode of one target's field change. The step 4 sheet holds one change; F2 reads each
+   * change of the draft.
+   */
+  protected modeOf(field: DeviceUpdateTarget['field']): DeviceUpdateMode {
+    const change = this.preview()?.changes.find(
+      (entry) => entry.field === field,
+    );
+    return change?.mode ?? 'replace';
+  }
 
   protected readonly count = computed<number | null>(
     () => this.store.selection.spec()?.selectedCount ?? this.loadedCount(),

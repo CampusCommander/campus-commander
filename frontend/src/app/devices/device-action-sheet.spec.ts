@@ -143,11 +143,9 @@ function jobOf(
     failure: null,
     confirmedBy: { id: principal, displayName: 'District operator' },
     previewDisplayId: 'PV-002',
-    field: null,
-    mode: null,
+    changes: null,
     commandType: action === 'reboot-devices' ? 'REBOOT' : null,
     statusAction,
-    requestedValue: null,
     targetOrgUnitPaths: ['/School A'],
     correlationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     latestActivity: {

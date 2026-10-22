@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   deviceSelectionSpecSchema,
   deviceUpdatePreviewRequestSchema,
@@ -12,9 +12,14 @@ import {
   DeviceUpdates,
   displayNumber,
   manifestDigest,
+  previewInput,
   previewTargets,
 } from './device-updates.ts';
-import { previewTargetRow } from './device-update-rows.ts';
+import {
+  parseIntCursor,
+  previewTargetRow,
+  targetCursor,
+} from './device-update-rows.ts';
 
 const customer = 'C0123456';
 const actor = '11111111-1111-4111-8111-111111111111';
@@ -48,10 +53,16 @@ const device = (id, extra = {}) => ({
   serial_number: `SN-${id}`,
   org_unit_path: '/School A',
   annotated_location: null,
+  annotated_user: null,
+  notes: null,
   last_entity_sync: new Date().toISOString(),
   removed_at: null,
   ...extra,
 });
+const location = (mode, value) =>
+  value === undefined
+    ? { field: 'annotatedLocation', mode }
+    : { field: 'annotatedLocation', mode, value };
 
 test('the preview freezes eligible, unchanged, and excluded targets', () => {
   const targets = previewTargets(
@@ -62,8 +73,7 @@ test('the preview freezes eligible, unchanged, and excluded targets', () => {
       device('d4', { removed_at: new Date() }),
       device('bad id!'),
     ],
-    'replace',
-    'Room 12',
+    [location('replace', 'Room 12')],
   );
   assert.deepEqual(
     targets.map((target) => [target.deviceId, target.disposition]),
@@ -77,36 +87,111 @@ test('the preview freezes eligible, unchanged, and excluded targets', () => {
   );
   assert.equal(targets[3].exclusionReason, 'removed');
   assert.equal(targets[4].exclusionReason, 'invalid-device-id');
+  assert.deepEqual(
+    targets[0].fields,
+    [
+      {
+        field: 'annotatedLocation',
+        observedValue: null,
+        disposition: 'eligible',
+      },
+    ],
+    'A target holds one field row per change.',
+  );
+});
+
+test('a device is eligible when one of its fields changes', () => {
+  const targets = previewTargets(
+    [
+      device('d1', { annotated_user: 'A person', notes: 'Room 12' }),
+      device('d2', { annotated_user: 'A person', notes: null }),
+    ],
+    [
+      { field: 'annotatedUser', mode: 'replace', value: 'A person' },
+      { field: 'notes', mode: 'replace', value: 'Room 12' },
+    ],
+  );
+  assert.deepEqual(
+    targets.map((target) => [
+      target.deviceId,
+      target.disposition,
+      target.fields.map((field) => field.disposition),
+    ]),
+    [
+      ['d1', 'unchanged', ['unchanged', 'unchanged']],
+      ['d2', 'eligible', ['unchanged', 'eligible']],
+    ],
+  );
+});
+
+test('a path compares without case', () => {
+  const targets = previewTargets(
+    [device('d1', { org_unit_path: '/high school' })],
+    [{ field: 'orgUnitPath', mode: 'move', value: '/High School' }],
+  );
+  assert.equal(targets[0].disposition, 'unchanged');
+  assert.equal(targets[0].fields[0].disposition, 'unchanged');
 });
 
 test('Clear makes an empty observed value unchanged and writes a null value', () => {
-  const targets = previewTargets([device('d1')], 'clear', null);
+  const targets = previewTargets([device('d1')], [location('clear')]);
   assert.equal(targets[0].disposition, 'unchanged');
-  assert.equal(targets[0].observedValue, null);
+  assert.equal(targets[0].fields[0].observedValue, null);
 });
 
-test('the manifest digest covers the value and every eligible baseline', () => {
+test('the manifest digest covers the changes and every eligible baseline', () => {
+  const changes = [
+    { field: 'notes', mode: 'replace', value: 'Room 12' },
+    { field: 'annotatedUser', mode: 'clear' },
+  ];
   const targets = previewTargets(
-    [device('d1'), device('d2', { annotated_location: 'Room 12' })],
-    'replace',
-    'Room 12',
+    [
+      device('d1', { annotated_user: 'A person' }),
+      device('d2', { notes: 'Room 12', annotated_user: 'A person' }),
+    ],
+    changes,
   );
-  const digest = manifestDigest('replace', 'Room 12', targets);
+  const digest = manifestDigest(changes, targets);
   assert.match(digest, /^[a-f0-9]{64}$/);
-  assert.equal(digest, manifestDigest('replace', 'Room 12', targets));
-  assert.notEqual(digest, manifestDigest('replace', 'Room 13', targets));
-  const changed = previewTargets(
-    [device('d1', { annotated_location: 'Room 1' }), device('d2')],
-    'replace',
-    'Room 12',
+  assert.equal(digest, manifestDigest(changes, targets));
+  assert.notEqual(
+    digest,
+    manifestDigest([{ ...changes[0], value: 'Room 13' }, changes[1]], targets),
   );
-  assert.notEqual(digest, manifestDigest('replace', 'Room 12', changed));
+  const changed = previewTargets(
+    [device('d2', { notes: 'Room 12', annotated_user: 'A person' })],
+    changes,
+  );
+  assert.notEqual(digest, manifestDigest(changes, changed));
+  assert.equal(
+    digest,
+    manifestDigest([changes[1], changes[0]], targets),
+    'The digest sorts the changes into contract order.',
+  );
 });
 
 test('a display number keeps at least three digits without truncating 1000', () => {
   assert.equal(displayNumber('PV', 6), 'PV-006');
   assert.equal(displayNumber('UPD', 999), 'UPD-999');
   assert.equal(displayNumber('UPD', 1000), 'UPD-1000');
+});
+
+test('a targets cursor names the ordinal and the one-based field position', () => {
+  // The query compares against array_position, which counts the first field as 1.
+  assert.equal(targetCursor(0, 'annotatedLocation'), '0:1');
+  assert.equal(targetCursor(4, 'annotatedUser'), '4:2');
+  assert.equal(targetCursor(4, 'notes'), '4:3');
+  assert.equal(targetCursor(4, 'orgUnitPath'), '4:4');
+  assert.equal(targetCursor(4, 'status'), null);
+  assert.equal(targetCursor('4', 'notes'), null);
+  assert.deepEqual(parseIntCursor('4:2'), { ordinal: 4, position: 2 });
+  assert.deepEqual(parseIntCursor(undefined), { ordinal: -1, position: -1 });
+  for (const cursor of ['', 'x', '1:2:3', '1:-2', '-1:2', '1.5:2'])
+    assert.deepEqual(
+      parseIntCursor(cursor),
+      { ordinal: -1, position: -1 },
+      `The cursor ${JSON.stringify(cursor)} starts at the first row.`,
+    );
 });
 
 test('a target row reports the approved value and its exclusion reason', () => {
@@ -119,8 +204,7 @@ test('a target row reports the approved value and its exclusion reason', () => {
         disposition: 'eligible',
         exclusion_reason: null,
       },
-      'replace',
-      'Room 12',
+      { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
     ),
     {
       deviceId: 'd1',
@@ -131,6 +215,20 @@ test('a target row reports the approved value and its exclusion reason', () => {
       disposition: 'eligible',
       exclusionReason: null,
     },
+  );
+  assert.equal(
+    previewTargetRow(
+      {
+        device_id: 'd1',
+        serial_number: 'SN-1',
+        observed_value: 'Room 1',
+        disposition: 'eligible',
+        exclusion_reason: null,
+      },
+      { field: 'notes', mode: 'clear' },
+    ).approvedValue,
+    null,
+    'A clear change approves no value.',
   );
 });
 
@@ -237,7 +335,7 @@ test('an expired selection answers 409 selection-expired with its expiry time', 
   await assert.rejects(
     updates.preview(session, current, {
       ...key,
-      mode: 'clear',
+      changes: [{ field: 'annotatedLocation', mode: 'clear' }],
     }),
     (error) => {
       assert.equal(error.getStatus(), 409);
@@ -260,7 +358,10 @@ test('an empty selection answers 422 nothing-selected', async () => {
     { storeJson: async () => 'artifact' },
   );
   await assert.rejects(
-    updates.preview(session, current, { ...key, mode: 'clear' }),
+    updates.preview(session, current, {
+      ...key,
+      changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+    }),
     (error) => {
       assert.equal(error.getStatus(), 422);
       assert.deepEqual(error.getResponse(), { reason: 'nothing-selected' });
@@ -273,7 +374,7 @@ test('the preview request refuses a value on Clear', () => {
   assert.throws(() =>
     deviceUpdatePreviewRequestSchema.parse({
       ...key,
-      mode: 'clear',
+      changes: [{ field: 'annotatedLocation', mode: 'clear' }],
       value: 'Room 12',
     }),
   );
@@ -386,7 +487,10 @@ test('a selection above the 100,000 cap answers 422 selection-too-large', async 
     { storeJson: async () => 'unused' },
   );
   await assert.rejects(
-    updates.preview(session, current, { ...key, mode: 'clear' }),
+    updates.preview(session, current, {
+      ...key,
+      changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+    }),
     (error) => {
       assert.equal(error.getStatus(), 422);
       assert.equal(error.getResponse().reason, 'selection-too-large');
@@ -425,9 +529,7 @@ const previewRow = (extra = {}) => ({
   created_by: actor,
   permission_version: 1,
   generation: 1,
-  field: 'annotatedLocation',
-  mode: 'replace',
-  value: 'Room 12',
+  field_changes: 1,
   selected: 1,
   eligible: 1,
   unchanged: 0,
@@ -482,8 +584,9 @@ test('the preview create function freezes every target', async () => {
   );
   const result = await updates.preview(session, current, {
     ...key,
-    mode: 'replace',
-    value: 'Room 12',
+    changes: [
+      { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+    ],
   });
   assert.ok(
     calls.some((call) => call.text.includes('cc.create_device_update_preview')),
@@ -511,7 +614,10 @@ test('a forbidden preview create answers 403', async () => {
     { storeJson: async () => 'unused' },
   );
   await assert.rejects(
-    updates.preview(session, current, { ...key, mode: 'clear' }),
+    updates.preview(session, current, {
+      ...key,
+      changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+    }),
     (error) => {
       assert.equal(error.getStatus(), 403);
       return true;
@@ -679,7 +785,10 @@ test('a selection that resolves to no devices answers 422 nothing-selected', asy
     { storeJson: async () => 'unused' },
   );
   await assert.rejects(
-    updates.preview(session, current, { ...key, mode: 'clear' }),
+    updates.preview(session, current, {
+      ...key,
+      changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+    }),
     (error) => {
       assert.equal(error.getStatus(), 422);
       assert.deepEqual(error.getResponse(), { reason: 'nothing-selected' });
@@ -731,4 +840,75 @@ test('a missing manifest artifact fails the confirmation', async () => {
   );
   assert.equal(error.getStatus(), 500);
   assert.match(String(error.message), /manifest artifact/i);
+});
+
+test('the preview route names the field and its limit for every over-limit value', () => {
+  // The selection key of a preview route needs a UUID tab; `key` above is for the pure helpers.
+  const routeKey = {
+    gridId: 'devices',
+    tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  };
+  const body = (field, mode, value) => ({
+    ...routeKey,
+    changes: [{ field, mode, value }],
+  });
+  const refused = (input) => {
+    try {
+      previewInput(input);
+    } catch (failure) {
+      assert.ok(
+        failure instanceof BadRequestException,
+        'A refused change answers with a 400.',
+      );
+      return failure.getResponse();
+    }
+    return assert.fail('The preview input accepted an over-limit value.');
+  };
+
+  // A body of 65,537 UTF-16 units answers the field label and its own limit (review R1).
+  const huge = 'x'.repeat(65_537);
+  const rows = [
+    ['annotatedLocation', 'replace', huge, 'Annotated location', 200],
+    ['annotatedUser', 'replace', huge, 'Annotated user', 100],
+    ['notes', 'replace', huge, 'Notes', 500],
+    [
+      'orgUnitPath',
+      'move',
+      `/${'a'.repeat(65_536)}`,
+      'Organization unit',
+      4096,
+    ],
+  ];
+  for (const [field, mode, value, label, limit] of rows) {
+    const answer = refused(body(field, mode, value));
+    assert.equal(answer.reason, 'invalid-change');
+    assert.match(answer.message, new RegExp(label));
+    assert.match(answer.message, new RegExp(String(limit)));
+  }
+
+  // The ordinary N+1 value keeps the same answer.
+  const overByOne = refused(body('notes', 'replace', 'x'.repeat(501)));
+  assert.equal(overByOne.reason, 'invalid-change');
+  assert.equal(overByOne.message, 'Notes holds 1 to 500 characters.');
+
+  // A supplementary character counts as one code point: 100 preview, 101 refuse.
+  const fourByteCharacter = '\u{1D306}';
+  const accepted = previewInput(
+    body('annotatedUser', 'replace', fourByteCharacter.repeat(100)),
+  );
+  assert.deepEqual(accepted.changes, [
+    {
+      field: 'annotatedUser',
+      mode: 'replace',
+      value: fourByteCharacter.repeat(100),
+    },
+  ]);
+  const refusedSupplementary = refused(
+    body('annotatedUser', 'replace', fourByteCharacter.repeat(101)),
+  );
+  assert.equal(refusedSupplementary.reason, 'invalid-change');
+  assert.equal(
+    refusedSupplementary.message,
+    'Annotated user holds 1 to 100 characters.',
+  );
 });

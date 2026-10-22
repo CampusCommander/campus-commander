@@ -165,11 +165,11 @@ const reviewJob = {
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-006',
-  field: 'annotatedLocation',
-  mode: 'replace',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
-  requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
@@ -253,11 +253,9 @@ const refreshJob = {
   failure: null,
   confirmedBy: null,
   previewDisplayId: null,
-  field: null,
-  mode: null,
+  changes: null,
   commandType: null,
   statusAction: null,
-  requestedValue: null,
   targetOrgUnitPaths: null,
   correlationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   latestActivity: {

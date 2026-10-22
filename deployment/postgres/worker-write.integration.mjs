@@ -103,19 +103,15 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     const previewId = randomUUID();
     await admin(
       `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-        generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,
-        'manifest-digest',clock_timestamp()+interval '1 hour')`,
-      [
-        previewId,
-        customer,
-        confirmer,
-        version,
-        generation,
-        mode,
-        mode === 'clear' ? null : value,
-        devices.length,
-      ],
+        generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
+        manifest_digest,expires_at)
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location',2,
+        $6,$6,0,0,$6,'manifest-digest',clock_timestamp()+interval '1 hour')`,
+      [previewId, customer, confirmer, version, generation, devices.length],
+    );
+    await admin(
+      'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
+      [previewId, 'annotatedLocation', mode, mode === 'clear' ? null : value],
     );
     await admin(
       `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
@@ -125,14 +121,12 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       [jobId, customer, confirmer, generation, devices.length, randomUUID()],
     );
     await admin(
-      `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
+      `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,confirmed_by,confirmer_permission_version,
         delegated_subject,batch_size,batch_count)
-      VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,'admin@example.org',$7,$8)`,
+      VALUES($1,$2,'annotated-location',$3,$4,'admin@example.org',$5,$6)`,
       [
         jobId,
         previewId,
-        mode,
-        mode === 'clear' ? null : value,
         confirmer,
         version,
         batchSize,
@@ -143,13 +137,12 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       await admin(
         `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
-        VALUES($1,$2,$3,$4,'/School A',NULL,$5,$6,'pending')`,
+        VALUES($1,$2,$3,$4,'/School A',NULL,NULL,$5,'pending')`,
         [
           jobId,
           index + 1,
           deviceId,
           `SN-${deviceId}`,
-          mode === 'clear' ? null : value,
           Math.floor(index / batchSize),
         ],
       );
@@ -885,10 +878,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         const jobId = randomUUID();
         const previewId = randomUUID();
         await admin(
-          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-          generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
-        VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'annotated-location','annotatedLocation','replace','Room 12',1001,1001,0,0,
-          'manifest-digest',clock_timestamp()+interval '1 hour')`,
+          `INSERT INTO cc.device_update_previews(preview_id, display_id, customer_id, created_by, permission_version, generation, action, action_version, selected, eligible, unchanged, excluded, manifest_digest, expires_at)
+        VALUES($1, cc.job_display_id('PV',nextval('cc.preview_number_pv')), $2, $3, $4, $5, 'annotated-location', 2, 1001, 1001, 0, 0, 'manifest-digest', clock_timestamp()+interval '1 hour')`,
           [previewId, customer, confirmer, version, generation],
         );
         await admin(
@@ -899,9 +890,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           [jobId, customer, confirmer, generation, randomUUID()],
         );
         await admin(
-          `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,confirmer_permission_version,
-          delegated_subject,batch_size,batch_count)
-        VALUES($1,$2,'annotated-location','annotatedLocation','replace','Room 12',$3,$4,'admin@example.org',250,5)`,
+          `INSERT INTO cc.device_update_jobs(job_id, preview_id, action, confirmed_by, confirmer_permission_version, delegated_subject, batch_size, batch_count)
+        VALUES($1, $2, 'annotated-location', $3, $4, 'admin@example.org', 250, 5)`,
           [jobId, previewId, confirmer, version],
         );
         await admin(

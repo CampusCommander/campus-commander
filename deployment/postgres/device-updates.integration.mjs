@@ -382,8 +382,9 @@ export async function qualifyDeviceUpdates({
       async () => {
         preview = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         assert.equal(preview.selected, 4);
         assert.equal(preview.eligible, 2);
@@ -419,8 +420,9 @@ export async function qualifyDeviceUpdates({
         );
         const frozen = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         assert.equal(frozen.selected, 3);
         assert.equal(frozen.eligible, 2);
@@ -565,8 +567,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const first = await updates.confirm(session, current, other.previewId, {
           manifestDigest: other.manifestDigest,
@@ -615,8 +618,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const first = await updates.confirm(session, current, other.previewId, {
           manifestDigest: other.manifestDigest,
@@ -656,8 +660,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const first = await updates.confirm(session, current, other.previewId, {
           manifestDigest: other.manifestDigest,
@@ -713,8 +718,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const confirmed = await new DeviceUpdates(
           database,
@@ -766,8 +772,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const artifactId = await storeJsonDocument(artifactStore, {
           preview: {
@@ -835,8 +842,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const artifactId = await storeJsonDocument(artifactStore, {
           preview: {
@@ -909,8 +917,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        mode: 'replace',
-        value: 'Room 12',
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       await rejects(
         updates.confirm(session, current, other.previewId, {
@@ -926,8 +935,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        mode: 'replace',
-        value: 'Room 12',
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       await migrator.query(
         "UPDATE cc.device_update_previews SET expires_at=clock_timestamp()-interval '1 minute' WHERE preview_id=$1",
@@ -954,8 +964,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-c']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         assert.equal(other.eligible, 0);
         await rejects(
@@ -974,7 +985,10 @@ export async function qualifyDeviceUpdates({
       async () => {
         selections.set(selectionKey, raw({ additions: ['b3-missing'] }));
         await rejects(
-          updates.preview(session, current, { ...key, mode: 'clear' }),
+          updates.preview(session, current, {
+            ...key,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          }),
           'nothing-selected',
           422,
         );
@@ -1004,7 +1018,10 @@ export async function qualifyDeviceUpdates({
           }),
         );
         await rejects(
-          updates.preview(session, current, { ...key, mode: 'clear' }),
+          updates.preview(session, current, {
+            ...key,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          }),
           'nothing-selected',
           422,
         );
@@ -1015,8 +1032,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        mode: 'replace',
-        value: 'Room 12',
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       await migrator.query(
         "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
@@ -1046,8 +1064,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         await migrator.query('UPDATE cc.google_connection SET active=false');
         try {
@@ -1071,8 +1090,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const recorder = recordingStorage();
         await migrator.query(
@@ -1125,12 +1145,13 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const recorder = recordingStorage();
         await migrator.query(
-          'UPDATE cc.device_update_previews SET action_version=2 WHERE preview_id=$1',
+          'UPDATE cc.device_update_previews SET action_version=1 WHERE preview_id=$1',
           [other.previewId],
         );
         try {
@@ -1181,7 +1202,10 @@ export async function qualifyDeviceUpdates({
         ).toISOString();
         selections.set(selectionKey, raw({ additions: ['b3-a'], changedAt }));
         const error = await rejects(
-          updates.preview(session, current, { ...key, mode: 'clear' }),
+          updates.preview(session, current, {
+            ...key,
+            changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+          }),
           'selection-expired',
           409,
         );
@@ -1224,8 +1248,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const changedAt = new Date(
           Date.now() - 13 * 60 * 60 * 1000,
@@ -1249,8 +1274,9 @@ export async function qualifyDeviceUpdates({
       fresh(['b3-a']);
       const other = await updates.preview(session, current, {
         ...key,
-        mode: 'replace',
-        value: 'Room 12',
+        changes: [
+          { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+        ],
       });
       const before = (
         await migrator.query(
@@ -1379,7 +1405,7 @@ export async function qualifyDeviceUpdates({
         'INSERT INTO cc.jobs SELECT * FROM cc.jobs LIMIT 0',
         'UPDATE cc.jobs SET revision=revision WHERE false',
         'INSERT INTO cc.device_update_jobs SELECT * FROM cc.device_update_jobs LIMIT 0',
-        'UPDATE cc.device_update_jobs SET value=value WHERE false',
+        'UPDATE cc.device_update_jobs SET action=action WHERE false',
         'INSERT INTO cc.device_update_operations SELECT * FROM cc.device_update_operations LIMIT 0',
         'UPDATE cc.device_update_operations SET status=status WHERE false',
       ];
@@ -1514,7 +1540,10 @@ export async function qualifyDeviceUpdates({
         };
         try {
           await assert.rejects(
-            controller.preview(request, { ...controllerKey, mode: 'clear' }),
+            controller.preview(request, {
+              ...controllerKey,
+              changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+            }),
             (error) => {
               assert.equal(
                 typeof error?.getStatus,
@@ -1572,8 +1601,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         await migrator.query(
           "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='devices:bulk-actions'",
@@ -1615,8 +1645,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const revoked = new DeviceUpdates(database, cache, {
           async storeJson() {
@@ -1666,8 +1697,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const left = await connect('cc-app', 'cc-app');
         const right = await connect('cc-app', 'cc-app');
@@ -1710,8 +1742,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const artifactId = await storage.storeJson({
           preview: { previewId: other.previewId },
@@ -1820,8 +1853,9 @@ export async function qualifyDeviceUpdates({
         fresh(['b3-a']);
         const other = await updates.preview(session, current, {
           ...key,
-          mode: 'replace',
-          value: 'Room 12',
+          changes: [
+            { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
+          ],
         });
         const holder = await connect('cc-migrator', 'cc-app');
         const caller = await connect('cc-app', 'cc-app');
@@ -1912,7 +1946,10 @@ export async function qualifyDeviceUpdates({
             await caller.query('SELECT pg_backend_pid() AS pid')
           ).rows[0].pid;
           pending = new DeviceUpdates(databaseFor(caller), cache, storage)
-            .preview(session, current, { ...key, mode: 'clear' })
+            .preview(session, current, {
+              ...key,
+              changes: [{ field: 'annotatedLocation', mode: 'clear' }],
+            })
             .then(
               (value) => ({ value }),
               (error) => ({ error }),
@@ -2011,7 +2048,7 @@ export async function qualifyDeviceUpdates({
           pending = new DeviceUpdates(databaseFor(caller), cache, storage)
             .preview(sessionFor(victim, 1), current, {
               ...key,
-              mode: 'clear',
+              changes: [{ field: 'annotatedLocation', mode: 'clear' }],
             })
             .then(
               (value) => ({ value }),
@@ -2087,6 +2124,296 @@ export async function qualifyDeviceUpdates({
           ]);
           await removePrincipal(victim);
         }
+      },
+    );
+
+    // U6 (four fields): a preview sets two text fields on six devices and confirms each field row.
+    const insertFieldDevice = async (id, { user = null, notes = null } = {}) =>
+      await migrator.query(
+        `INSERT INTO cc.devices(customer_id,device_id,serial_number,model,asset_tag,org_unit_path,
+           annotated_location,annotated_user,notes,status,last_entity_sync,removed_at)
+         VALUES($1,$2,$3,'U6 model',$4,'/U6 School',NULL,$5,$6,'ACTIVE',clock_timestamp(),NULL)
+         ON CONFLICT(customer_id,device_id) DO UPDATE SET annotated_user=EXCLUDED.annotated_user,
+           notes=EXCLUDED.notes,removed_at=NULL,last_entity_sync=clock_timestamp()`,
+        [customer, id, `SN-${id}`, `AT-${id}`, user, notes],
+      );
+    const u6Devices = ['u6-a', 'u6-b', 'u6-c', 'u6-d', 'u6-e', 'u6-f'];
+    let twoFieldPreview;
+    await check(
+      'U6 a two-field preview answers six eligible devices and eleven field changes',
+      async () => {
+        for (const id of u6Devices)
+          await insertFieldDevice(id, { user: 'Old user' });
+        // The sixth device already holds the Notes value, so one of its two rows is unchanged.
+        await insertFieldDevice('u6-f', { user: 'Old user', notes: 'Room 12' });
+        fresh(u6Devices);
+        twoFieldPreview = await updates.preview(session, current, {
+          ...key,
+          changes: [
+            { field: 'notes', mode: 'replace', value: 'Room 12' },
+            { field: 'annotatedUser', mode: 'replace', value: 'New user' },
+          ],
+        });
+        assert.deepEqual(
+          twoFieldPreview.changes,
+          [
+            { field: 'annotatedUser', mode: 'replace', value: 'New user' },
+            { field: 'notes', mode: 'replace', value: 'Room 12' },
+          ],
+          'The answer orders the changes as the contract does.',
+        );
+        assert.equal(twoFieldPreview.selected, 6);
+        assert.equal(twoFieldPreview.eligible, 6);
+        assert.equal(twoFieldPreview.unchanged, 0);
+        assert.equal(twoFieldPreview.excluded, 0);
+        assert.equal(twoFieldPreview.fieldChanges, 11);
+        const targets = (
+          await migrator.query(
+            'SELECT count(*)::integer AS count FROM cc.device_update_preview_targets WHERE preview_id=$1',
+            [twoFieldPreview.previewId],
+          )
+        ).rows[0].count;
+        assert.equal(targets, 6, 'One preview target per device.');
+        const rows = (
+          await migrator.query(
+            `SELECT disposition,count(*)::integer AS count
+             FROM cc.device_update_target_fields WHERE preview_id=$1
+             GROUP BY disposition ORDER BY disposition`,
+            [twoFieldPreview.previewId],
+          )
+        ).rows;
+        assert.deepEqual(
+          rows,
+          [
+            { disposition: 'eligible', count: 11 },
+            { disposition: 'unchanged', count: 1 },
+          ],
+          'Six devices carry two field rows each, and twelve in total.',
+        );
+      },
+    );
+
+    await check(
+      'U6 the targets page returns every field row once across cursors',
+      async () => {
+        const seen = new Set();
+        let cursor;
+        do {
+          const page = await updates.targets(
+            session,
+            twoFieldPreview.previewId,
+            undefined,
+            cursor,
+            5,
+          );
+          for (const target of page.targets) {
+            const rowKey = `${target.deviceId}:${target.field}`;
+            assert.equal(
+              seen.has(rowKey),
+              false,
+              `The cursor repeated the row ${rowKey}.`,
+            );
+            seen.add(rowKey);
+            assert.equal(
+              target.disposition,
+              target.deviceId === 'u6-f' && target.field === 'notes'
+                ? 'unchanged'
+                : 'eligible',
+              `The row ${rowKey} holds its own disposition.`,
+            );
+            assert.equal(
+              target.approvedValue,
+              target.field === 'annotatedUser' ? 'New user' : 'Room 12',
+              `The row ${rowKey} names the approved value of its field.`,
+            );
+          }
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor);
+        assert.equal(
+          seen.size,
+          12,
+          'Twelve field rows in twelve cursor steps.',
+        );
+      },
+    );
+
+    await check(
+      'U6 an over-limit value answers 400 with the field label',
+      async () => {
+        const controller = new DeviceUpdatesController(
+          new DevicesService(database, {}, {}),
+          updates,
+          {},
+        );
+        const contractKey = { gridId: 'devices', tabId: randomUUID() };
+        const request = { session, correlationId: randomUUID() };
+        const overLimit = [
+          [
+            'annotatedLocation',
+            'x'.repeat(201),
+            'Annotated location holds 1 to 200 characters.',
+          ],
+          [
+            'annotatedUser',
+            'x'.repeat(101),
+            'Annotated user holds 1 to 100 characters.',
+          ],
+          ['notes', 'x'.repeat(501), 'Notes holds 1 to 500 characters.'],
+        ];
+        for (const [field, value, message] of overLimit)
+          await assert.rejects(
+            controller.preview(request, {
+              ...contractKey,
+              changes: [{ field, mode: 'replace', value }],
+            }),
+            (error) => {
+              assert.equal(
+                typeof error?.getStatus,
+                'function',
+                `The controller answered with ${error}`,
+              );
+              assert.equal(error.getStatus(), 400, `${field} answers 400.`);
+              assert.deepEqual(error.getResponse(), {
+                reason: 'invalid-change',
+                message,
+              });
+              return true;
+            },
+            `The controller refuses ${field}.`,
+          );
+        // A supplementary character counts once. One hundred preview; one hundred and one refuse.
+        const supplementary = '\u{1D306}'.repeat(100);
+        const accepted = await updates.preview(session, current, {
+          ...key,
+          changes: [
+            { field: 'annotatedUser', mode: 'replace', value: supplementary },
+          ],
+        });
+        assert.equal(accepted.fieldChanges, 6);
+        await assert.rejects(
+          controller.preview(request, {
+            ...contractKey,
+            changes: [
+              {
+                field: 'annotatedUser',
+                mode: 'replace',
+                value: '\u{1D306}'.repeat(101),
+              },
+            ],
+          }),
+          (error) =>
+            error.getStatus() === 400 &&
+            error.getResponse().message ===
+              'Annotated user holds 1 to 100 characters.',
+          'The hundred-and-first code point answers 400.',
+        );
+      },
+    );
+
+    let twoFieldJob;
+    await check(
+      'U6 the confirmation writes six operations and eleven field rows',
+      async () => {
+        const confirmed = await updates.confirm(
+          session,
+          current,
+          twoFieldPreview.previewId,
+          {
+            manifestDigest: twoFieldPreview.manifestDigest,
+            acknowledged: true,
+          },
+        );
+        twoFieldJob = confirmed.receipt.jobId;
+        assert.equal(confirmed.receipt.deviceCount, 6);
+        assert.equal(
+          confirmed.receipt.updateCount,
+          6,
+          'The receipt counts devices, not field rows.',
+        );
+        const operations = (
+          await migrator.query(
+            'SELECT count(*)::integer AS count FROM cc.device_update_operations WHERE job_id=$1',
+            [twoFieldJob],
+          )
+        ).rows[0].count;
+        assert.equal(operations, 6, 'One operation per device.');
+        const rows = (
+          await migrator.query(
+            `SELECT field,count(*)::integer AS count FROM cc.device_update_operation_fields
+             WHERE job_id=$1 GROUP BY field ORDER BY field`,
+            [twoFieldJob],
+          )
+        ).rows;
+        assert.deepEqual(
+          rows,
+          [
+            { field: 'annotatedUser', count: 6 },
+            { field: 'notes', count: 5 },
+          ],
+          'Eleven field rows in total.',
+        );
+        const request = (
+          await migrator.query(
+            `SELECT requested_value FROM cc.device_update_operation_fields
+             WHERE job_id=$1 AND field='annotatedUser' ORDER BY operation_number LIMIT 1`,
+            [twoFieldJob],
+          )
+        ).rows[0].requested_value;
+        assert.equal(request, 'New user');
+        const operation = (
+          await migrator.query(
+            `SELECT baseline_value,requested_value FROM cc.device_update_operations
+             WHERE job_id=$1 ORDER BY operation_number LIMIT 1`,
+            [twoFieldJob],
+          )
+        ).rows[0];
+        assert.deepEqual(
+          operation,
+          { baseline_value: null, requested_value: null },
+          'The operation keeps no value of its own.',
+        );
+      },
+    );
+
+    await check(
+      'U6 a version one preview answers 409 preview-changed',
+      async () => {
+        const previewId = randomUUID();
+        await migrator.query(
+          `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,
+             permission_version,generation,action,action_version,selected,eligible,unchanged,excluded,
+             field_changes,manifest_digest,expires_at)
+           VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,
+             'annotated-location',1,1,1,0,0,1,$6,clock_timestamp()+interval '10 minutes')`,
+          [
+            previewId,
+            customer,
+            actor,
+            session.identity.permissionVersion,
+            generation,
+            'b'.repeat(64),
+          ],
+        );
+        await migrator.query(
+          `INSERT INTO cc.device_update_changes(preview_id,field,mode,value)
+           VALUES($1,'annotatedLocation','replace','Room 12')`,
+          [previewId],
+        );
+        await rejects(
+          updates.confirm(session, current, previewId, {
+            manifestDigest: 'b'.repeat(64),
+            acknowledged: true,
+          }),
+          'preview-changed',
+          409,
+        );
+        const job = (
+          await migrator.query(
+            'SELECT job_id FROM cc.device_update_previews WHERE preview_id=$1',
+            [previewId],
+          )
+        ).rows[0].job_id;
+        assert.equal(job, null, 'The refused confirmation creates no job.');
       },
     );
   } finally {

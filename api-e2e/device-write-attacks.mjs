@@ -222,7 +222,7 @@ function createMock({ mock }) {
   };
 }
 
-function createDb({ migrator, customer }) {
+export function createDb({ migrator, customer }) {
   const query = (text, values = []) => migrator.query(text, values);
   const row = async (text, values = []) => (await query(text, values)).rows[0];
   const job = (jobId) =>
@@ -251,6 +251,15 @@ function createDb({ migrator, customer }) {
           observed_value,requested_value,observed_at,outcome_reason,google_status,google_reason,quota_retries,
           transient_retries,verify_attempt,verify_after,updated_at,batch
          FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number`,
+        [jobId],
+      )
+    ).rows;
+  const operationFields = async (jobId) =>
+    (
+      await query(
+        `SELECT operation_number,field,baseline_value,requested_value,observed_value
+         FROM cc.device_update_operation_fields WHERE job_id=$1
+         ORDER BY operation_number,field`,
         [jobId],
       )
     ).rows;
@@ -314,6 +323,7 @@ function createDb({ migrator, customer }) {
     job,
     jobByDisplay,
     operations,
+    operationFields,
     batches,
     overlay,
     device,
@@ -474,21 +484,24 @@ function createSeeder({ db, mock, customer }) {
     await db.query('BEGIN');
     try {
       await db.query(
-        `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,
-          permission_version,generation,action,field,mode,value,selected,eligible,unchanged,excluded,
+        `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+          generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
           manifest_digest,expires_at)
          VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,
-           'annotated-location','annotatedLocation',$6,$7,$8,$8,0,0,'manifest-digest',clock_timestamp()+interval '1 hour')`,
+           'annotated-location',2,$6,$6,0,0,$6,'manifest-digest',
+           clock_timestamp()+interval '1 hour')`,
         [
           previewId,
           customer,
           owner.id,
           owner.permission_version,
           connection.generation,
-          mode,
-          mode === 'clear' ? null : value,
           devices.length,
         ],
+      );
+      await db.query(
+        'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
+        [previewId, 'annotatedLocation', mode, mode === 'clear' ? null : value],
       );
       await db.query(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,
@@ -505,14 +518,12 @@ function createSeeder({ db, mock, customer }) {
         ],
       );
       await db.query(
-        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
-          confirmer_permission_version,delegated_subject,batch_size,batch_count)
-         VALUES($1,$2,'annotated-location','annotatedLocation',$3,$4,$5,$6,$7,$8,$9)`,
+        `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,confirmed_by,confirmer_permission_version,
+          delegated_subject,batch_size,batch_count)
+         VALUES($1,$2,'annotated-location',$3,$4,$5,$6,$7)`,
         [
           jobId,
           previewId,
-          mode,
-          mode === 'clear' ? null : value,
           owner.id,
           owner.permission_version,
           mock.adminEmail,
@@ -907,12 +918,16 @@ async function runCatalog(context) {
     });
     return grid;
   };
-  const preview = async (session, deviceIds, body) => {
+  // The preview request carries one change. The sheet sends the same shape (card U6).
+  const preview = async (session, deviceIds, change) => {
     const grid = await select(session, deviceIds);
     return apiJson(
       session,
       '/api/devices/updates/previews',
-      { method: 'POST', body: { gridId: 'devices', tabId: grid, ...body } },
+      {
+        method: 'POST',
+        body: { gridId: 'devices', tabId: grid, changes: [change] },
+      },
       [201],
     );
   };
@@ -1052,6 +1067,7 @@ async function runCatalog(context) {
     const [deviceId] = takeDevices(1);
     await faults.addCounter();
     const prepared = await preview(admin, [deviceId], {
+      field: 'annotatedLocation',
       mode: 'replace',
       value: 'Duplicate room',
     });
@@ -1284,6 +1300,7 @@ async function runCatalog(context) {
       docker('stop', '--time', '90', kestraName);
       try {
         const before = await preview(admin, [deviceId], {
+          field: 'annotatedLocation',
           mode: 'replace',
           value: 'Restart room',
         });
@@ -2178,6 +2195,7 @@ async function runCatalog(context) {
         let prepared;
         if (variant === 'n') {
           prepared = await preview(admin, [deviceId], {
+            field: 'annotatedLocation',
             mode: 'replace',
             value: `Read back N ${variant}`,
           });
@@ -2786,6 +2804,7 @@ async function runCatalog(context) {
         { atHold: countAtHold, later: countLater },
       );
       const previewF = await preview(admin, devicesF, {
+        field: 'annotatedLocation',
         mode: 'replace',
         value: 'Hold F',
       });
@@ -2795,6 +2814,7 @@ async function runCatalog(context) {
         previewF.manifestDigest,
       );
       const previewG = await preview(admin, devicesG, {
+        field: 'annotatedLocation',
         mode: 'replace',
         value: 'Hold G',
       });
@@ -2931,6 +2951,7 @@ async function runCatalog(context) {
       { timeout: 240_000, interval: 500 },
     );
     const previewJ = await preview(admin, devicesJ, {
+      field: 'annotatedLocation',
       mode: 'replace',
       value: 'Hold J',
     });
@@ -3097,6 +3118,7 @@ async function runCatalog(context) {
       { timeout: 240_000, interval: 500 },
     );
     const previewL = await preview(admin, devicesL, {
+      field: 'annotatedLocation',
       mode: 'replace',
       value: 'Hold L',
     });
@@ -3240,6 +3262,7 @@ async function runCatalog(context) {
       let prepared;
       try {
         prepared = await preview(admin, [deviceId], {
+          field: 'annotatedLocation',
           mode: 'replace',
           value: entry.value,
         });
@@ -3254,11 +3277,12 @@ async function runCatalog(context) {
       );
       await jobTerminal(receipt.jobId, 600_000);
       const operation = (await db.operations(receipt.jobId))[0];
+      const fieldRow = (await db.operationFields(receipt.jobId))[0];
       const rows = await byIds(admin, [deviceId]);
       rec.observe(`value.${entry.name}`, {
         requested: [...entry.value].length,
         observedValue: operation.observed_value,
-        requestedValue: operation.requested_value,
+        requestedValue: fieldRow?.requested_value,
         verifiedBy: operation.verified_by,
         status: operation.status,
         pageValue: rows[0]?.annotatedLocation,
@@ -3268,7 +3292,7 @@ async function runCatalog(context) {
         operation.status === 'succeeded' &&
           operation.verified_by === 'write-response' &&
           operation.observed_value === entry.value &&
-          operation.requested_value === entry.value,
+          fieldRow?.requested_value === entry.value,
         {
           status: operation.status,
           verifiedBy: operation.verified_by,

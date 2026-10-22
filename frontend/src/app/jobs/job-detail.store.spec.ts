@@ -39,11 +39,11 @@ const detail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-006',
-  field: 'annotatedLocation',
-  mode: 'replace',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
-  requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
@@ -88,9 +88,7 @@ const statusDetail = (overrides: Partial<JobDetail> = {}): JobDetail =>
     displayId: 'STS-002',
     action: 'disable-devices',
     statusAction: 'disable',
-    field: null,
-    mode: null,
-    requestedValue: null,
+    changes: null,
     ...overrides,
   });
 

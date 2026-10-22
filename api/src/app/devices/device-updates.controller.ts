@@ -12,16 +12,14 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
-import {
-  deviceUpdateConfirmRequestSchema,
-  deviceUpdatePreviewRequestSchema,
-} from '@campus/application-contracts';
+import { deviceUpdateConfirmRequestSchema } from '@campus/application-contracts';
 import { GoogleDeviceReader } from '@campus/google-connection';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { JobService } from '../jobs/job-service';
 import { requireDeviceUpdateActions } from './device-updates-actions';
 import { DeviceOrgUnitTreeRoute } from './device-org-unit-tree';
+import { previewInput } from './device-updates';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DeviceWriteAccessRoutes } from './device-write-access-routes';
 import { DeviceWriteAccessService } from './device-write-access.service';
@@ -30,7 +28,11 @@ import { DevicesService } from './devices.service';
 const previewIdSchema = z.uuid();
 const targetsQuerySchema = z.strictObject({
   disposition: z.enum(['eligible', 'unchanged', 'excluded']).optional(),
-  cursor: z.string().regex(/^\d+$/).optional(),
+  // The cursor names the previous target: its device ordinal and its field position.
+  cursor: z
+    .string()
+    .regex(/^\d{1,9}:\d{1,9}$/)
+    .optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
@@ -101,9 +103,13 @@ export class DeviceUpdatesController {
     return this.orgUnits.read(request.session, request.correlationId);
   }
 
+  /**
+   * A refused change names the field label and its limit (design section 1). The generic 400 body
+   * of the error filter would hide that message, so `previewInput` answers the first issue.
+   */
   @Post('previews')
   async preview(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    const input = deviceUpdatePreviewRequestSchema.parse(body);
+    const input = previewInput(body);
     const current = await this.current(request);
     if (!current)
       throw new ConflictException({ reason: 'connection-required' });

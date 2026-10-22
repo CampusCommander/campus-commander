@@ -40,8 +40,10 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
 const preview = {
   previewId,
   displayId: 'PV-006',
-  mode: 'replace',
-  value: 'North lab',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
+  fieldChanges: 6,
   selected: 6,
   eligible: 6,
   unchanged: 0,
@@ -100,11 +102,11 @@ const job = {
     displayName: 'District operator',
   },
   previewDisplayId: 'PV-006',
-  field: 'annotatedLocation',
-  mode: 'replace',
+  changes: [
+    { field: 'annotatedLocation', mode: 'replace', value: 'North lab' },
+  ],
   commandType: null,
   statusAction: null,
-  requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
