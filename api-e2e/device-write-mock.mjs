@@ -176,6 +176,8 @@ export async function qualifyDeviceWritesOnMock({
     value,
     mode = 'replace',
     command = false,
+    /** The field rows of every operation. The default is one `field` row from `value`. */
+    fields = null,
     beforeStart,
   }) => {
     const jobId = randomUUID();
@@ -253,12 +255,15 @@ export async function qualifyDeviceWritesOnMock({
         );
         // An update operation carries its values in one row per field (addendum section 2).
         if (!command)
-          await migrator.query(
-            `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+          for (const [field, fieldValue] of fields ?? [
+            ['annotatedLocation', mode === 'clear' ? null : value],
+          ])
+            await migrator.query(
+              `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
             baseline_value,requested_value)
-          VALUES($1,$2,'annotatedLocation',NULL,$3)`,
-            [jobId, index + 1, mode === 'clear' ? null : value],
-          );
+          VALUES($1,$2,$3,NULL,$4)`,
+              [jobId, index + 1, field, fieldValue],
+            );
       }
       // The fault exists before the job becomes visible, so the started worker always meets it.
       if (beforeStart) await beforeStart();
@@ -336,6 +341,17 @@ export async function qualifyDeviceWritesOnMock({
           LEFT JOIN cc.device_update_operation_fields f
             ON f.job_id=o.job_id AND f.operation_number=o.operation_number AND f.field='annotatedLocation'
           WHERE o.job_id=$1 ORDER BY o.operation_number`,
+        [jobId],
+      )
+    ).rows;
+  // The field rows of a job, in contract order, with the value each settlement recorded.
+  const fieldRows = async (jobId) =>
+    (
+      await migrator.query(
+        `SELECT operation_number,field,requested_value,observed_value
+          FROM cc.device_update_operation_fields WHERE job_id=$1
+          ORDER BY operation_number,
+            array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath'],field)`,
         [jobId],
       )
     ).rows;
@@ -786,6 +802,102 @@ export async function qualifyDeviceWritesOnMock({
       assert.equal(device.annotatedLocation, 'Room 5');
       results.push(
         'a hang then a 403 reads back the applied write, publishes entity-batch, and by-ids returns the read-back value: pass',
+      );
+    } finally {
+      await clearFaults();
+      await subscriber.unsubscribe(entityChannel(customer));
+      await subscriber.quit();
+    }
+  }
+
+  // The lost answer of a job that writes Annotated user and Notes. The PATCH applies, the
+  // answer is lost, the retry meets 403, and the read-back settles both fields (section 8).
+  {
+    const subscriber = redis.duplicate();
+    const events = [];
+    subscriber.on('error', () => undefined);
+    await subscriber.connect();
+    await subscriber.subscribe(entityChannel(customer), (message) => {
+      try {
+        events.push(JSON.parse(message));
+      } catch {
+        /* The schema check below reports a malformed message. */
+      }
+    });
+    try {
+      let hang;
+      const { jobId, executionId } = await seedJob({
+        devices: [deviceIds[0]],
+        value: 'Ada Lovelace',
+        fields: [
+          ['annotatedUser', 'Ada Lovelace'],
+          ['notes', 'Front desk'],
+        ],
+        beforeStart: async () => {
+          hang = await addFault({
+            kind: 'hang',
+            method: 'directory.chromeosdevices.patch',
+            ms: 12000,
+            count: 1,
+          });
+        },
+      });
+      const deadline = Date.now() + 60_000;
+      let remaining;
+      for (;;) {
+        const rule = (await faults()).find((one) => one.id === hang.id);
+        remaining = rule?.remaining;
+        if (remaining === 0) break;
+        assert.ok(
+          Date.now() < deadline,
+          `The hang rule still reads ${remaining} remaining.`,
+        );
+        await delay(200);
+      }
+      await addFault({
+        kind: 'status',
+        method: 'directory.chromeosdevices.patch',
+        status: 403,
+        reason: 'forbidden',
+        count: 1,
+      });
+      const execution = await waitExecution(executionId);
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
+      const state = await job(jobId);
+      assert.equal(state.status, 'completed', JSON.stringify(state));
+      const rows = await fieldRows(jobId);
+      assert.deepEqual(
+        rows.map((row) => [row.field, row.observed_value]),
+        [
+          ['annotatedUser', 'Ada Lovelace'],
+          ['notes', 'Front desk'],
+        ],
+        'The read-back settles both fields with the values Google holds.',
+      );
+      const operations = await fieldRows(jobId);
+      assert.ok(
+        operations.every((row) => row.observed_value === row.requested_value),
+        'Each field row keeps the value that the read-back observed.',
+      );
+      const published = events.find(
+        (event) =>
+          event.type === 'entity-batch' &&
+          event.deviceIds?.includes(deviceIds[0]),
+      );
+      assert.ok(
+        published,
+        `The read-back published entity-batch: ${JSON.stringify(events)}`,
+      );
+      assert.deepEqual(published.deviceIds, [deviceIds[0]]);
+      const device = (await byIds([deviceIds[0]]))[0];
+      assert.equal(device.annotatedUser, 'Ada Lovelace');
+      assert.equal(device.notes, 'Front desk');
+      results.push(
+        'a lost answer of annotated user and notes reads back both fields and publishes entity-batch: pass',
       );
     } finally {
       await clearFaults();

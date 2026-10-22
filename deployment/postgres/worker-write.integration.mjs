@@ -94,6 +94,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
     batchSize = 250,
     mode = 'replace',
     value = 'Room 12',
+    /** The default annotatedLocation field row. A multi-field job names its own rows instead. */
+    includeDefaultField = true,
     /** The field rows of every operation, in contract order. The default is one annotatedLocation. */
     fields = null,
   }) => {
@@ -151,12 +153,13 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           Math.floor(index / batchSize),
         ],
       );
-      await admin(
-        `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+      if (includeDefaultField)
+        await admin(
+          `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
           baseline_value,requested_value)
         VALUES($1,$2,'annotatedLocation',NULL,$3)`,
-        [jobId, index + 1, mode === 'clear' ? null : value],
-      );
+          [jobId, index + 1, mode === 'clear' ? null : value],
+        );
       for (const field of fields ?? [])
         await admin(
           `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
@@ -1182,6 +1185,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         const cache = cacheOf();
         const { jobId } = await makeJob({
           devices: idList,
+          includeDefaultField: false,
           fields: [
             { field: 'annotatedUser', requestedValue: 'Ada Lovelace' },
             { field: 'notes', requestedValue: 'Front desk' },
@@ -1209,27 +1213,15 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         assert.deepEqual(patches[0].writes, [
           {
             deviceId: 'd-two-1',
-            fields: {
-              annotatedLocation: 'Room 12',
-              annotatedUser: 'Ada Lovelace',
-              notes: 'Front desk',
-            },
+            fields: { annotatedUser: 'Ada Lovelace', notes: 'Front desk' },
           },
           {
             deviceId: 'd-two-2',
-            fields: {
-              annotatedLocation: 'Room 12',
-              annotatedUser: 'Ada Lovelace',
-              notes: 'Front desk',
-            },
+            fields: { annotatedUser: 'Ada Lovelace', notes: 'Front desk' },
           },
           {
             deviceId: 'd-two-3',
-            fields: {
-              annotatedLocation: 'Room 12',
-              annotatedUser: 'Ada Lovelace',
-              notes: 'Front desk',
-            },
+            fields: { annotatedUser: 'Ada Lovelace', notes: 'Front desk' },
           },
         ]);
         for (const id of idList) {
@@ -1237,7 +1229,7 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
             'SELECT annotated_location,annotated_user,notes FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
             [customer, id],
           );
-          assert.equal(row.annotated_location, 'Room 12');
+          assert.equal(row.annotated_location, 'Room 1');
           assert.equal(row.annotated_user, 'Ada Lovelace');
           assert.equal(row.notes, 'Front desk');
         }
@@ -1249,8 +1241,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         );
         assert.equal(
           fields.length,
-          9,
-          'Three operations carry three field rows each.',
+          6,
+          'Three operations carry two field rows each.',
         );
         assert.ok(
           fields.every((row) => row.observed_value === row.requested_value),
@@ -1275,6 +1267,87 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         assert.ok(
           rows.every((row) => row.device_ids.length === 0),
           `The published row is deleted after the event: ${JSON.stringify(rows)}`,
+        );
+        await releaseAll();
+        const state = await header(jobId);
+        assert.equal(state.status, 'completed');
+      },
+    );
+
+    await check(
+      'a move job writes the destination path and the organization-unit filter finds its devices there',
+      async () => {
+        const idList = ['d-move-1', 'd-move-2', 'd-move-3'];
+        for (const id of idList) await seedDevice(id);
+        // The job header keeps Annotated location until U6 widens the preview and header field
+        // checks. The operation field rows already name the destination path, so the settlement,
+        // the publication, and the filter below are the U5 behavior.
+        const { jobId } = await makeJob({
+          devices: idList,
+          value: '/School B',
+          includeDefaultField: false,
+          fields: [{ field: 'orgUnitPath', requestedValue: '/School B' }],
+        });
+        const token = await tokenOf(jobId);
+        const reader = readerOf({
+          rounds: [
+            {
+              ids: idList,
+              parts: {
+                'd-move-1': { kind: 'success' },
+                'd-move-2': { kind: 'success' },
+                'd-move-3': { kind: 'success' },
+              },
+            },
+          ],
+          state: () => null,
+        });
+        const response = await run(jobId, 0, { reader, token });
+        assert.equal(response.outcome, 'settled');
+        const patches = reader.calls.filter((one) => one.name === 'patch');
+        assert.equal(patches.length, 1, 'One batch carries every device.');
+        assert.deepEqual(
+          patches[0].writes.map((write) => write.fields),
+          [
+            { orgUnitPath: '/School B' },
+            { orgUnitPath: '/School B' },
+            { orgUnitPath: '/School B' },
+          ],
+        );
+        const moved = await admin(
+          `SELECT device_id,org_unit_path,org_unit_path_observed_at
+            FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[])
+            ORDER BY device_id`,
+          [customer, idList],
+        );
+        assert.deepEqual(
+          moved.map((row) => row.org_unit_path),
+          ['/School B', '/School B', '/School B'],
+          'Every device holds the destination path.',
+        );
+        assert.ok(
+          moved.every((row) => row.org_unit_path_observed_at !== null),
+          'Every device stamps the published path.',
+        );
+        const found = await admin(
+          `SELECT device_id FROM cc.devices
+            WHERE customer_id=$1 AND org_unit_path=ANY($2::text[]) AND removed_at IS NULL
+            ORDER BY device_id`,
+          [customer, ['/School B']],
+        );
+        assert.deepEqual(
+          found.map((row) => row.device_id),
+          idList,
+          'The organization-unit filter returns every device in the destination.',
+        );
+        const overlay = await admin(
+          "SELECT device_id,value FROM cc.device_write_overlays WHERE customer_id=$1 AND field='orgUnitPath' AND device_id=ANY($2::text[]) ORDER BY device_id",
+          [customer, idList],
+        );
+        assert.deepEqual(
+          overlay.map((row) => [row.device_id, row.value]),
+          idList.map((id) => [id, '/School B']),
+          'Each device keeps the destination path in the overlay.',
         );
         await releaseAll();
         const state = await header(jobId);

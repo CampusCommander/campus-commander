@@ -8915,6 +8915,24 @@ export async function qualifyDeviceWriteJobs({
           verifiedBy: 'write-response',
         },
       ],
+      [
+        'a value for a field its operation does not hold',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          values: { annotatedLocation: 'Room 12', notes: 'Front desk' },
+          verifiedBy: 'write-response',
+        },
+      ],
+      [
+        'values that omit a field of its operation',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          values: {},
+          verifiedBy: 'write-response',
+        },
+      ],
     ].entries())
       await ruleCheck(
         `S2 a write settlement with ${label} rejects before any lock`,
