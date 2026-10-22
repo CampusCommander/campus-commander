@@ -4,6 +4,9 @@ import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
 import { qualifyDeviceActions } from './device-actions.integration.mjs';
+import { qualifyDeviceStatusJobs } from './device-status-jobs.integration.mjs';
+import { qualifyDeviceCommandPolls } from './device-command-polls.integration.mjs';
+import { qualifyDeviceCommandAnswers } from './device-command-answers.integration.mjs';
 import { qualifyEntityEntries } from './entity-entries.integration.mjs';
 import { qualifyWorkerWrites } from './worker-write.integration.mjs';
 import { qualifyJobsApi } from './jobs-api.integration.mjs';
@@ -587,6 +590,28 @@ try {
       runtime,
       migrator: migrators[0],
       connect,
+      issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceStatusJobs({
+      runtime,
+      migrator: migrators[0],
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceCommandPolls({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      close,
+      password,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceCommandAnswers({
+      runtime,
+      migrator: migrators[0],
       issuer,
     })),
   );

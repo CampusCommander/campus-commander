@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { devicePageSchema } from '@campus/application-contracts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -23,7 +24,9 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
   orgUnitPath: '/School A',
   lastContact: '2026-10-19T11:58:00Z',
   annotatedLocation: 'Science wing',
+  annotatedUser: null,
   notes: null,
+  status: 'ACTIVE',
   battery: {
     status: 'reported',
     health: 'normal',
@@ -88,6 +91,7 @@ const job = {
     failed: 0,
     unknown: 0,
     skipped: 0,
+    expired: 0,
     pending: 4,
   },
   failure: null,
@@ -98,6 +102,8 @@ const job = {
   previewDisplayId: 'PV-006',
   field: 'annotatedLocation',
   mode: 'replace',
+  commandType: null,
+  statusAction: null,
   requestedValue: 'North lab',
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
@@ -226,13 +232,13 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
     if (routePath === '/api/devices/query')
       return route.fulfill({
         json: {
-          page: {
+          page: devicePageSchema.parse({
             rows,
             matching: rows.length,
             total: rows.length,
             observedAt,
             refreshJobId: null,
-          },
+          }),
         },
       });
     if (routePath === '/api/devices/freshness')
@@ -277,26 +283,29 @@ async function openDevices(page: Page) {
   await expect(
     page.getByRole('button', { name: 'Bulk Actions', exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
 }
 
 async function openSheet(page: Page) {
   await page.getByRole('button', { name: 'Bulk Actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Update device' }).click();
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await expect(sheet).toHaveClass(/is-open/);
   await expect(sheet).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
   return sheet;
 }
 
 async function fillDraft(page: Page, value = 'North lab') {
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await sheet.getByLabel('Annotated location').fill(value);
   await expect(sheet.getByLabel('Annotated location')).toHaveValue(value);
 }
 
 async function savePreview(page: Page) {
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await sheet.getByRole('button', { name: 'Save and preview' }).click();
   await expect(
     sheet.getByRole('heading', { name: 'Review 6 device updates' }),
@@ -305,7 +314,7 @@ async function savePreview(page: Page) {
 }
 
 async function continueToConfirm(page: Page) {
-  const sheet = page.locator('.bulk-sheet');
+  const sheet = page.locator('app-device-update-sheet .bulk-sheet');
   await sheet.getByRole('button', { name: 'Continue to confirmation' }).click();
   await expect(
     sheet.getByRole('heading', { name: 'Confirm 6 device updates' }),
@@ -346,7 +355,9 @@ test('hides a sheet that starts closed at the first paint', async ({
       true,
     );
     const sample = () => {
-      const sheet = document.querySelector('.bulk-sheet');
+      const sheet = document.querySelector(
+        'app-device-update-sheet .bulk-sheet',
+      );
       if (sheet && !evidence.visibility) {
         evidence.visibility = getComputedStyle(sheet).visibility;
         return;
@@ -360,7 +371,9 @@ test('hides a sheet that starts closed at the first paint', async ({
   await expect(
     page.getByRole('button', { name: 'Bulk Actions', exact: true }),
   ).toBeVisible();
-  await expect(page.locator('.bulk-sheet')).toBeAttached();
+  await expect(
+    page.locator('app-device-update-sheet .bulk-sheet'),
+  ).toBeAttached();
   await page.waitForTimeout(300);
   const evidence = await page.evaluate(
     () =>
@@ -630,7 +643,7 @@ test('does not slide with reduced motion', async ({ page }) => {
   await openDevices(page);
   await openSheet(page);
   const duration = await page
-    .locator('.bulk-sheet')
+    .locator('app-device-update-sheet .bulk-sheet')
     .evaluate((element) => getComputedStyle(element).transitionDuration);
   expect(parseFloat(duration)).toBeLessThan(0.001);
 });

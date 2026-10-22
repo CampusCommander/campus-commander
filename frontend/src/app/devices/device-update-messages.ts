@@ -64,6 +64,8 @@ export interface UpdateDeviceAvailability {
   /** Null before the first answer of GET /api/devices/updates/access. */
   access: DeviceWriteAccess | null;
   accessLoading: boolean;
+  /** The permission note of the family. Send command and Change status set their own. */
+  permissionMessage?: string;
 }
 
 function accessFailureText(failure: GoogleFailure | null): string {
@@ -88,7 +90,7 @@ export function updateDeviceNote(
     };
   if (!availability.canRead || !availability.canWrite || !availability.canBulk)
     return {
-      text: DEVICE_UPDATE_PERMISSION_MESSAGE,
+      text: availability.permissionMessage ?? DEVICE_UPDATE_PERMISSION_MESSAGE,
       actions: [],
       error: false,
     };

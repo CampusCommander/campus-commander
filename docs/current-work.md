@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-20.
+Updated: 2026-10-21.
 
 ## Authorized now
 
@@ -15,6 +15,25 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Step 5 device commands (screens approved 2026-10-21)
+
+On 2026-10-21 the owner approved the step 5 screens: "That looks good".
+The [device commands record](workflows/device-commands.md) holds the approved composition and the wording defaults.
+The owner also gave this direction. Owner: "I also want to give the hint now that update device needs to be expanded to include the other editable fields."
+The step 4 record excludes four fields: org unit, asset ID, user, and notes (`docs/workflows/update-device-annotated-location.md:196`).
+The Update device expansion is the next workflow after the step 5 first build.
+The [Update device fields record](workflows/update-device-fields.md) defines it. The owner confirmed that record on 2026-10-21.
+
+On the evening of 2026-10-21 the owner approved the Update device fields screens:
+
+<!-- prettier-ignore -->
+> Yea These screens are fine. I agree we can leave asset tag off of the bulk update.  We will be doing in-grid editing as well as individual device update like you show in the screens. That is the correct place to set asset tag. As well as import and export for bulk edit. If you dont know about that there should be sone notes.
+
+Asset tag leaves the bulk Update device. The approved mockup is [2026-10-21-update-device-fields.html](ui/designs/2026-10-21-update-device-fields.html).
+The owner places Asset tag in in-grid editing and the individual device update.
+The owner names three later workflows: in-grid editing, the individual device update, and import and export for bulk edit (gap G16).
+These workflows are direction, not authorization to build.
 
 ### Device update record (signed off 2026-10-20)
 

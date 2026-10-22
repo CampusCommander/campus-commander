@@ -114,7 +114,10 @@ function measuredAt(): string {
 }
 
 /** Resolve a promise before the deadline, or reject with the deadline error. */
-function beforeDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
+export function beforeDeadline<T>(
+  work: Promise<T>,
+  deadline: number,
+): Promise<T> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) {
     void work.catch(() => undefined);
@@ -156,6 +159,17 @@ export class DeviceWriteAccess {
     context: DeviceWriteAccessContext,
   ): Promise<DeviceWriteAccessState> {
     return (await this.store.read(context)) ?? UNCHECKED_WRITE_ACCESS;
+  }
+
+  /**
+   * Open the active credential of one generation for a caller that holds devices:write.
+   * cc.device_write_credential enforces that action and answers 42501 for every other caller.
+   */
+  async credential(
+    session: SessionResponse,
+    context: DeviceWriteAccessContext,
+  ): Promise<DelegatedCredential | null> {
+    return this.store.credential(session, context);
   }
 
   async check(

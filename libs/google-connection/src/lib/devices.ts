@@ -8,6 +8,7 @@ import {
   type BatteryHealth,
   type BatteryObservation,
   type DeviceObservation,
+  type DeviceOrgUnitTreeEntry,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
 import {
@@ -48,6 +49,7 @@ const devicePage = z.object({
         orgUnitPath: z.string().min(1).max(4096),
         lastSync: z.string().max(64).optional(),
         annotatedLocation: z.string().max(4096).optional(),
+        annotatedUser: z.string().max(4096).optional(),
         notes: z.string().max(4096).optional(),
         status: z.string().max(64).optional(),
       }),
@@ -91,10 +93,13 @@ type TelemetryDevice = NonNullable<
 const batchEndpoint = 'https://www.googleapis.com/batch/admin/directory_v1';
 const directoryPath = '/admin/directory/v1';
 const deviceFields =
-  'deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status';
+  'deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,annotatedUser,notes,status';
 const batchLimit = 1000;
 /** 250 devices with full notes and locations stay under this. */
 const batchResponseLimit = 4 * 1024 * 1024;
+/** The default 256 KiB response limit holds about 1,500 organization units. */
+const orgUnitTreeLimit = 4 * 1024 * 1024;
+const orgUnitTreeMaxUnits = 10_000;
 const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 const telemetryConcurrency = 4;
 const telemetryDevice = telemetryPage.shape.devices.unwrap().element;
@@ -110,6 +115,55 @@ export type WrittenDevice = z.infer<typeof writtenDevice>;
 export interface AnnotatedLocationWrite {
   deviceId: string;
   value: string | null;
+}
+
+/** The four writable device fields, in contract order. Each ID equals its Google property name. */
+const deviceWriteFields = [
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+] as const;
+export type DeviceWriteField = (typeof deviceWriteFields)[number];
+
+/** The final value of each changed field of one device. A Clear value is null. */
+export type DeviceWriteFields = Partial<
+  Record<DeviceWriteField, string | null>
+>;
+
+/** One approved write: the device and every changed field. */
+export interface DeviceWrite {
+  deviceId: string;
+  fields: DeviceWriteFields;
+}
+
+export interface DeviceWriteBatchOptions {
+  /** Parts of one multipart request. The worker setting defaults to 250. */
+  batchSize?: number;
+  onSend?(requestIds: readonly string[]): void | Promise<void>;
+  onResponse?(
+    event: BatchResponseEvent<DeviceObservation>,
+  ): void | Promise<void>;
+  onBatch?(event: BatchRoundEvent): void | Promise<void>;
+}
+
+/**
+ * The PATCH body of one write: only its changed fields, in contract order.
+ * Each key equals its Google property name. A Clear value stays null.
+ * A write without a contract field cannot stand for a changed device.
+ */
+function deviceWriteBody(
+  fields: DeviceWriteFields,
+): Record<string, string | null> {
+  const body: Record<string, string | null> = {};
+  for (const field of deviceWriteFields) {
+    const value = fields[field];
+    if (value !== undefined) body[field] = value;
+  }
+  const named = Object.keys(fields).length;
+  if (named === 0 || named !== Object.keys(body).length)
+    throw new GoogleConnectionError('invalid-response');
+  return body;
 }
 
 export interface AnnotatedLocationBatchOptions {
@@ -375,6 +429,7 @@ export function deviceObservation(device: DirectoryDevice): DeviceObservation {
     orgUnitPath: device.orgUnitPath,
     lastContact: instant(device.lastSync),
     annotatedLocation: blank(device.annotatedLocation),
+    annotatedUser: blank(device.annotatedUser),
     notes: blank(device.notes),
     status: blank(device.status),
   });
@@ -541,7 +596,7 @@ export class GoogleDeviceReader {
                 maxResults: 300,
                 projection: 'FULL',
                 fields:
-                  'nextPageToken,chromeosdevices(deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,notes,status)',
+                  'nextPageToken,chromeosdevices(deviceId,serialNumber,model,annotatedAssetId,orgUnitPath,lastSync,annotatedLocation,annotatedUser,notes,status)',
                 ...(pageToken ? { pageToken } : {}),
               },
             })
@@ -589,6 +644,73 @@ export class GoogleDeviceReader {
         };
       },
     );
+  }
+
+  /**
+   * Read the whole organization unit tree with the one read-only OU scope (design section 6).
+   * A tree above 10,000 units answers invalid-response. Returned paths keep Google's casing.
+   */
+  async readOrgUnitTree(
+    credential: DelegatedCredential,
+    customerId: string,
+    signal: AbortSignal,
+  ): Promise<DeviceOrgUnitTreeEntry[]> {
+    googleCustomerIdSchema.parse(customerId);
+    signal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+    const client = await scopedClient(
+      credential,
+      GOOGLE_CAPABILITIES.find(
+        (capability) => capability.id === 'school-ou-references',
+      )!.scope,
+      signal,
+      orgUnitTreeLimit,
+    );
+    let page: {
+      organizationUnits: {
+        orgUnitId: string;
+        name: string;
+        orgUnitPath: string;
+        parentOrgUnitId?: string;
+      }[];
+    };
+    try {
+      page = z
+        .object({
+          organizationUnits: z
+            .array(
+              z.object({
+                orgUnitId: z.string().min(1).max(128),
+                name: z.string().min(1).max(256),
+                orgUnitPath: z.string().min(1).max(4096).startsWith('/'),
+                /** The root carries no parent fields. */
+                parentOrgUnitId: z.string().min(1).max(128).optional(),
+              }),
+            )
+            .min(1)
+            .max(orgUnitTreeMaxUnits),
+        })
+        .parse(
+          (
+            await client.request({
+              url: `${directory}/customer/${customerId}/orgunits`,
+              method: 'GET',
+              params: {
+                type: 'all_including_parent',
+                fields:
+                  'organizationUnits(orgUnitId,name,orgUnitPath,parentOrgUnitId)',
+              },
+            })
+          ).data,
+        );
+    } catch (error) {
+      throw failure(error, 'read');
+    }
+    return page.organizationUnits.map((unit) => ({
+      orgUnitId: unit.orgUnitId,
+      name: unit.name,
+      orgUnitPath: unit.orgUnitPath,
+      parentOrgUnitId: unit.parentOrgUnitId ?? null,
+    }));
   }
 
   /**
@@ -687,6 +809,61 @@ export class GoogleDeviceReader {
         body: { annotatedLocation: write.value },
       })),
       parse: (body) => writtenDevice.parse(body) as WrittenDevice,
+      getClient: async (runSignal) => {
+        try {
+          return await scopedClient(
+            credential,
+            scopeFor('device-changes'),
+            runSignal,
+            batchResponseLimit,
+          );
+        } catch (error) {
+          mint.failure = failure(error, 'token');
+          throw mint.failure;
+        }
+      },
+      signal,
+      options: { batchSize: options.batchSize ?? BATCH_DEFAULTS.batchSize },
+      ...(options.onSend ? { onSend: options.onSend } : {}),
+      ...(options.onResponse ? { onResponse: options.onResponse } : {}),
+      ...(options.onBatch ? { onBatch: options.onBatch } : {}),
+    });
+    // A mint failure ends every waiting request without an event. The caller keeps
+    // the code as the job failure (design section 7.2).
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+
+  /**
+   * One PATCH per device through the batch service, carrying every changed field of
+   * that device. A Clear value sends null. Each body key equals its Google property
+   * name. The part keeps `projection=FULL` and `fields=deviceFields`, so the answer
+   * parses through `directoryDevice` and maps through `deviceObservation`. The write
+   * scope comes from the `device-changes` capability. Part failures stay in the
+   * result; the caller classifies them (design section 7.1).
+   */
+  async patchDevices(
+    credential: DelegatedCredential,
+    customerId: string,
+    writes: readonly DeviceWrite[],
+    signal: AbortSignal,
+    options: DeviceWriteBatchOptions = {},
+  ): Promise<BatchResult<DeviceObservation>> {
+    googleCustomerIdSchema.parse(customerId);
+    if (writes.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    const requests = writes.map((write) => ({
+      id: write.deviceId,
+      method: 'PATCH' as const,
+      path: `${directoryPath}/customer/${customerId}/devices/chromeos/${encodeURIComponent(write.deviceId)}`,
+      query: { projection: 'FULL', fields: deviceFields },
+      body: deviceWriteBody(write.fields),
+    }));
+    const mint: { failure?: GoogleConnectionError } = {};
+    const result = await this.batch.execute<DeviceObservation>({
+      batchUrl: batchEndpoint,
+      requests,
+      parse: (body) => deviceObservation(directoryDevice.parse(body)),
       getClient: async (runSignal) => {
         try {
           return await scopedClient(

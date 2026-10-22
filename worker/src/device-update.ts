@@ -19,7 +19,13 @@ import {
   type DelegatedCredential,
   type DeviceBatchOptions,
   type DeviceCommandIssue,
+  type DeviceCommandObservation,
+  type DeviceCommandPoll,
   type DeviceState,
+  type DeviceStatusBatch,
+  type DeviceStatusBatchOptions,
+  type DeviceStatusChange,
+  type DeviceStatusResult,
   type IssuedDeviceCommand,
   type WrittenDevice,
 } from '@campus/google-connection';
@@ -108,6 +114,18 @@ export type DeviceUpdateReconcileRequest = z.infer<
   typeof deviceUpdateReconcileRequestSchema
 >;
 
+/** One poll run of one awaiting-devices command job (design section 4 steps 5 to 7). */
+export const deviceCommandPollRequestSchema = z.strictObject({
+  customerId: googleCustomerId,
+  jobId: z.uuid(),
+  /** The identity of the job lease that the due call granted. */
+  leaseId: z.uuid(),
+  correlationId: z.uuid(),
+});
+export type DeviceCommandPollRequest = z.infer<
+  typeof deviceCommandPollRequestSchema
+>;
+
 /** One claimed operation. The write value comes from the operation row. */
 const claimedOperationSchema = z.object({
   operationNumber,
@@ -118,14 +136,22 @@ const claimedOperationSchema = z.object({
 });
 export type ClaimedOperation = z.infer<typeof claimedOperationSchema>;
 
+/** The action of one job. The claim names it, so the batch route sends the calls of that action. */
+const deviceUpdateActionSchema = z.enum([
+  'annotated-location',
+  'reboot',
+  'disable',
+  'reenable',
+]);
+export type DeviceUpdateAction = z.infer<typeof deviceUpdateActionSchema>;
+
 const claimSchema = z.object({
   outcome: z.literal('claimed'),
   generation: z.number().int().positive(),
   credentialId: z.uuid(),
   envelope: z.unknown(),
   batchCount: z.number().int().min(1),
-  /** The job action: a command job issues commands, every other action writes a field. */
-  action: z.enum(['annotated-location', 'reboot', 'disable', 'reenable']),
+  action: deviceUpdateActionSchema,
   operations: z.array(claimedOperationSchema).max(1000),
   readBack: z.array(claimedOperationSchema).max(1000),
 });
@@ -185,7 +211,66 @@ const verificationReadSchema = z.object({
   generation: z.number().int().positive(),
   credentialId: z.uuid(),
   envelope: z.unknown(),
+  action: deviceUpdateActionSchema,
   operations: z.array(heldOperationSchema).min(1).max(250),
+});
+
+/** One claimed issued operation of a poll run. The command ID is Google's digit ID. */
+const commandPollOperationSchema = z.object({
+  operationNumber,
+  deviceId,
+  commandId: z.string().regex(/^[0-9]{1,20}$/),
+});
+export type CommandPollOperation = z.infer<typeof commandPollOperationSchema>;
+
+/** The answer of one poll claim (design section 4 step 6). */
+const commandPollClaimSchema = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('claimed'),
+    generation: z.number().int().positive(),
+    credentialId: z.uuid(),
+    envelope: z.unknown(),
+    operations: z.array(commandPollOperationSchema).min(1).max(250),
+  }),
+  z.object({
+    outcome: z.literal('idle'),
+    status: z.string().optional(),
+    operations: z.array(z.unknown()).optional(),
+  }),
+  z.object({ outcome: z.literal('not-held'), status: z.string().optional() }),
+  z.object({
+    outcome: z.literal('unavailable'),
+    status: z.string().optional(),
+    detail: z.string().optional(),
+  }),
+  z.object({
+    outcome: z.literal('completed'),
+    status: z.string(),
+    publication: publicationElementSchema.nullable().optional(),
+  }),
+]);
+
+/** One observation of one polled command (design section 4 step 9). */
+export const commandPollResultSchema = z.object({
+  operationNumber,
+  outcome: z.enum(['succeeded', 'failed', 'expired', 'unknown', 'pending']),
+  commandState: z.enum(['pending-delivery', 'sent', 'acknowledged']).optional(),
+  outcomeReason: z.string().max(64).optional(),
+  googleStatus: z.number().int().nullable().optional(),
+  googleReason: z.string().max(256).nullable().optional(),
+  commandExecutedAt: z.string().nullable().optional(),
+  commandExpiresAt: z.string().nullable().optional(),
+});
+export type CommandPollResult = z.infer<typeof commandPollResultSchema>;
+
+const commandPollSettlementSchema = z.object({
+  outcome: z.enum(['settled', 'fenced']),
+  settled: z
+    .array(z.object({ operationNumber, deviceId, status: z.string() }))
+    .optional(),
+  publication: publicationElementSchema.nullable().optional(),
+  status: z.string().optional(),
+  jobStatusChanged: z.boolean().optional(),
 });
 
 const preparationSchema = z.object({
@@ -246,6 +331,18 @@ export type DeviceUpdateReconcileAnswer =
   | { outcome: 'not-held' }
   | { outcome: 'settled'; readBack: DeviceUpdateReadBackSummary };
 
+/** The answer of one poll run (design section 4 steps 5 to 7). */
+export interface DeviceCommandPollAnswer {
+  outcome: 'settled' | 'completed';
+  claimed: number;
+  settled: number;
+  succeeded: number;
+  failed: number;
+  expired: number;
+  unknown: number;
+  pending: number;
+}
+
 export interface DeviceUpdateReadBackSummary {
   claimed: number;
   notHeld: number;
@@ -280,6 +377,14 @@ export interface DeviceUpdateReader {
       onBatch?(event: BatchRoundEvent): void | Promise<void>;
     },
   ): Promise<BatchResult<WrittenDevice>>;
+  /** One part of up to 50 device IDs per status action (addendum section 5). */
+  changeDeviceStatus(
+    credential: DelegatedCredential,
+    customerId: string,
+    changes: readonly DeviceStatusChange[],
+    signal: AbortSignal,
+    options: DeviceStatusBatchOptions,
+  ): Promise<DeviceStatusBatch>;
   issueDeviceCommands(
     credential: DelegatedCredential,
     customerId: string,
@@ -287,6 +392,14 @@ export interface DeviceUpdateReader {
     signal: AbortSignal,
     options: DeviceBatchOptions<IssuedDeviceCommand>,
   ): Promise<BatchResult<IssuedDeviceCommand>>;
+  /** One getCommand GET per issued operation (design section 4 step 6). */
+  deviceCommands(
+    credential: DelegatedCredential,
+    customerId: string,
+    polls: readonly DeviceCommandPoll[],
+    signal: AbortSignal,
+    options: DeviceBatchOptions<DeviceCommandObservation>,
+  ): Promise<BatchResult<DeviceCommandObservation>>;
   deviceStates(
     credential: DelegatedCredential,
     customerId: string,
@@ -403,6 +516,8 @@ interface TrackedWrite {
   hasValue: boolean;
   /** The command ID of an accepted issue answer (section 4 step 3). */
   commandId: string | null;
+  /** The per-device answer of a 2xx status part (addendum section 5). */
+  statusResult: DeviceStatusResult | null;
   status: number | null;
   attempts: { quota: number; transient: number };
   /** A final answer arrived. A scheduled retry is not final. */
@@ -450,6 +565,19 @@ function isCommandAction(action: string | undefined): boolean {
 }
 
 /**
+ * The HTTP status of Google's answer: a real status from 100 to 599, or null when no
+ * answer arrived. The batch service reports a transport failure as status 0.
+ */
+function answerStatus(status: number | null | undefined): number | null {
+  return status !== null &&
+    status !== undefined &&
+    status >= 100 &&
+    status <= 599
+    ? status
+    : null;
+}
+
+/**
  * Classify one operation from the final result, the retry history, and the facts of
  * `onSend` and `onResponse` (design section 7.1). A stopping job turns a
  * no-request operation into skipped with the job failure. A command issue that Google
@@ -472,7 +600,7 @@ export function classifyWrite(
                 ...base,
                 outcome: 'unknown',
                 outcomeReason: 'invalid-response',
-                googleStatus: tracked.status,
+                googleStatus: answerStatus(tracked.status),
                 googleReason: null,
                 quotaRetries: tracked.attempts.quota,
                 transientRetries: tracked.attempts.transient,
@@ -481,7 +609,7 @@ export function classifyWrite(
                 ...base,
                 outcome: 'issued',
                 commandId: tracked.commandId,
-                googleStatus: tracked.status,
+                googleStatus: answerStatus(tracked.status),
                 googleReason: null,
                 quotaRetries: tracked.attempts.quota,
                 transientRetries: tracked.attempts.transient,
@@ -493,7 +621,7 @@ export function classifyWrite(
         ...base,
         outcome: 'succeeded',
         verifiedBy: 'write-response',
-        googleStatus: tracked.status,
+        googleStatus: answerStatus(tracked.status),
         googleReason: null,
         quotaRetries: tracked.attempts.quota,
         transientRetries: tracked.attempts.transient,
@@ -507,7 +635,7 @@ export function classifyWrite(
   if (failed) {
     const common = {
       ...base,
-      googleStatus: failed.status,
+      googleStatus: answerStatus(failed.status),
       googleReason: failed.reason,
       quotaRetries: failed.attempts.quota,
       transientRetries: failed.attempts.transient,
@@ -629,7 +757,7 @@ export function classifyWrite(
         ...base,
         outcome: 'unknown',
         outcomeReason: 'ambiguous',
-        googleStatus: 0,
+        googleStatus: null,
         googleReason: null,
         quotaRetries: 0,
         transientRetries: 0,
@@ -643,6 +771,140 @@ export function classifyWrite(
         : { ...base, outcome: 'skipped', outcomeReason: stopFailure },
     observedFailure: null,
   };
+}
+
+/**
+ * The cached device field of one action. A status action writes `status`; an annotated-location
+ * update writes `annotatedLocation` (addendum section 5).
+ */
+export function cacheField(
+  action: DeviceUpdateAction,
+): 'annotatedLocation' | 'status' {
+  return action === 'disable' || action === 'reenable'
+    ? 'status'
+    : 'annotatedLocation';
+}
+
+/**
+ * Classify one status operation. A 2xx part answers per device (addendum section 3), so the
+ * per-device element decides the outcome. The element code is a google.rpc.Code, not an HTTP
+ * status, so `googleStatus` stays null. A failed part settles each device it held by the step 4
+ * rules, through `classifyWrite`.
+ */
+export function classifyStatus(
+  tracked: TrackedWrite,
+  stopFailure: string | null,
+): { outcome: WriteOutcome; observedFailure: string | null } {
+  const result = tracked.statusResult;
+  if (result === null) return classifyWrite(tracked, stopFailure);
+  const base = {
+    operationNumber: tracked.operation.operationNumber,
+    googleStatus: null,
+    quotaRetries: tracked.attempts.quota,
+    transientRetries: tracked.attempts.transient,
+  };
+  if (result.outcome === 'succeeded')
+    return {
+      outcome: {
+        ...base,
+        outcome: 'succeeded',
+        verifiedBy: 'write-response',
+        googleReason: null,
+      },
+      observedFailure: null,
+    };
+  if (result.outcome === 'failed')
+    return {
+      outcome: {
+        ...base,
+        outcome: 'failed',
+        outcomeReason: result.reason ?? 'rejected',
+        googleReason: result.googleReason,
+        // Google answered with a refusal, so it observed no new status.
+        value: null,
+      },
+      observedFailure: null,
+    };
+  return {
+    outcome: {
+      ...base,
+      outcome: 'unknown',
+      outcomeReason: 'invalid-response',
+      googleReason: null,
+      value: null,
+    },
+    observedFailure: null,
+  };
+}
+
+/**
+ * Classify one polled command (design section 4 step 9). A terminal state settles the operation. A
+ * non-terminal state keeps it issued with the observed command state. A 404 settles unknown with
+ * command-not-found, and another state value settles unknown with unrecognized-state. Any other
+ * final answer (quota, transient, auth, transport, invalid-response) returns null: the operation
+ * keeps its state and the next scheduled poll repeats the GET.
+ */
+export function classifyCommandPoll(
+  operation: { operationNumber: number },
+  observation: DeviceCommandObservation | null,
+  failure: BatchFailure | null,
+): CommandPollResult | null {
+  const base = { operationNumber: operation.operationNumber };
+  if (failure !== null) {
+    if (failure.kind !== 'not-found') return null;
+    return {
+      ...base,
+      outcome: 'unknown',
+      outcomeReason: 'command-not-found',
+      googleStatus: answerStatus(failure.status),
+      googleReason: null,
+    };
+  }
+  if (observation === null) return null;
+  const observed = { ...base, commandExpiresAt: observation.expiresAt };
+  switch (observation.state) {
+    case 'PENDING':
+      return {
+        ...observed,
+        outcome: 'pending',
+        commandState: 'pending-delivery',
+      };
+    case 'SENT_TO_CLIENT':
+      return { ...observed, outcome: 'pending', commandState: 'sent' };
+    case 'ACKED_BY_CLIENT':
+      return { ...observed, outcome: 'pending', commandState: 'acknowledged' };
+    case 'EXECUTED_BY_CLIENT':
+      if (observation.result === 'SUCCESS')
+        return {
+          ...observed,
+          outcome: 'succeeded',
+          googleStatus: 200,
+          commandExecutedAt: observation.executedAt,
+        };
+      // DEVICE-02 forbids a success that Google did not report (section 4 step 9).
+      if (observation.result === null)
+        return {
+          ...observed,
+          outcome: 'pending',
+          commandState: 'acknowledged',
+        };
+      return {
+        ...observed,
+        outcome: 'failed',
+        outcomeReason: 'command-failed',
+        googleStatus: 200,
+        googleReason: observation.errorMessage?.slice(0, 256) ?? null,
+      };
+    case 'EXPIRED':
+      return { ...observed, outcome: 'expired', googleStatus: 200 };
+    default:
+      return {
+        ...observed,
+        outcome: 'unknown',
+        outcomeReason: 'unrecognized-state',
+        googleStatus: 200,
+      };
+  }
 }
 
 /** The watchdog of section 5.4: abort 150 s after the last claim or renewal started. */
@@ -934,6 +1196,13 @@ export class DeviceUpdateJobs {
       /** A command job issues one POST per operation and never reads back (section 4 steps 2 and 4). */
       const commandJob = isCommandAction(body.action);
       claimedOperations = body.operations;
+      const action = body.action;
+      const field = cacheField(action);
+      /** The classifier of the job action: a status element, a command issue, or a write. */
+      const classify = (entry: TrackedWrite, stopFailure: string | null) =>
+        field === 'status'
+          ? classifyStatus(entry, stopFailure)
+          : classifyWrite(entry, stopFailure, commandJob);
       for (const operation of [...body.operations, ...body.readBack])
         tracked.set(operation.deviceId, {
           operation,
@@ -942,6 +1211,7 @@ export class DeviceUpdateJobs {
           value: null,
           hasValue: false,
           commandId: null,
+          statusResult: null,
           status: null,
           attempts: { quota: 0, transient: 0 },
           final: null,
@@ -983,8 +1253,14 @@ export class DeviceUpdateJobs {
         for (const id of ids) {
           const entry = tracked.get(id);
           if (entry === undefined || entry.settled) continue;
-          if (!entry.succeeded && entry.final === null) continue;
-          const classified = classifyWrite(entry, failureCode, commandJob);
+          // A status element is an answer even when Google refused that device.
+          if (
+            !entry.succeeded &&
+            entry.final === null &&
+            entry.statusResult === null
+          )
+            continue;
+          const classified = classify(entry, failureCode);
           entries.push({ entry, outcome: classified.outcome });
           if (classified.observedFailure !== null && failureCode === null)
             failureCode = classified.observedFailure;
@@ -1067,6 +1343,29 @@ export class DeviceUpdateJobs {
       }, 30_000);
       if (credential !== null && claimedOperations.length > 0) {
         let roundIds: string[] = [];
+        /** The device IDs of each part sent in the current round, by part ID. */
+        const partDevices = new Map<string, readonly string[]>();
+        /** The renewal of the last round, and the settlement of the round that ended. */
+        const settleParts = async (): Promise<void> => {
+          if (callSignal.aborted) return;
+          let stamp: Date;
+          try {
+            stamp = await renewLease();
+          } catch (error) {
+            if (
+              error instanceof DeviceSyncError &&
+              error.code === 'attempt-fenced'
+            ) {
+              fenced = true;
+              stop.abort();
+              return;
+            }
+            throw error;
+          }
+          const ids = roundIds;
+          roundIds = [];
+          await settleRound(ids, stamp);
+        };
         /** The events of one write round. Both calls report them in the same order. */
         const options = {
           batchSize: this.batchSize,
@@ -1112,28 +1411,7 @@ export class DeviceUpdateJobs {
             }
             entry.final = event.outcome.failure;
           },
-          onBatch: async () => {
-            // The renewal after the round stamps its write responses (section 5.8).
-            if (callSignal.aborted) return;
-            let stamp: Date;
-            try {
-              stamp = await renewLease();
-            } catch (error) {
-              if (
-                error instanceof DeviceSyncError &&
-                error.code === 'attempt-fenced'
-              ) {
-                // A rejected renewal aborts the call through its signal.
-                fenced = true;
-                stop.abort();
-                return;
-              }
-              throw error;
-            }
-            const ids = roundIds;
-            roundIds = [];
-            await settleRound(ids, stamp);
-          },
+          onBatch: settleParts,
         };
         try {
           // A command job sends one issueCommand POST per operation. It never retries an
@@ -1148,6 +1426,61 @@ export class DeviceUpdateJobs {
               })),
               callSignal,
               options,
+            );
+          // One POST part per at most 50 device IDs, in operation order (section 5).
+          else if (field === 'status')
+            await this.reader.changeDeviceStatus(
+              credential,
+              input.customerId,
+              claimedOperations.map((operation) => ({
+                deviceId: operation.deviceId,
+                action: action === 'reenable' ? 'reenable' : 'disable',
+              })),
+              callSignal,
+              {
+                batchSize: this.batchSize,
+                onSend: (parts) => {
+                  roundIds = [];
+                  for (const part of parts) {
+                    partDevices.set(part.id, part.deviceIds);
+                    roundIds.push(...part.deviceIds);
+                  }
+                  for (const id of roundIds) {
+                    const entry = tracked.get(id);
+                    if (entry) entry.sent = true;
+                  }
+                },
+                onResponse: (event) => {
+                  const ids = partDevices.get(event.id) ?? [];
+                  if (event.outcome.kind === 'success') {
+                    // Google answers 2xx even when every device fails, so each
+                    // element carries its own answer (addendum section 3).
+                    for (const answer of event.outcome.page) {
+                      const entry = tracked.get(answer.deviceId);
+                      if (!entry) continue;
+                      entry.statusResult = answer;
+                      entry.status = event.status;
+                      entry.attempts = event.attempts;
+                      reporter?.noteAnswer(answer.deviceId);
+                    }
+                    return;
+                  }
+                  if (event.outcome.kind === 'retry') {
+                    for (const id of ids) {
+                      reporter?.noteRetry(id, event.outcome.failure.kind);
+                    }
+                    return;
+                  }
+                  for (const id of ids) {
+                    const entry = tracked.get(id);
+                    if (!entry) continue;
+                    entry.status = event.status;
+                    entry.attempts = event.attempts;
+                    entry.final = event.outcome.failure;
+                  }
+                },
+                onBatch: settleParts,
+              },
             );
           else
             await this.reader.patchAnnotatedLocations(
@@ -1194,7 +1527,7 @@ export class DeviceUpdateJobs {
       for (const operation of claimedOperations) {
         const entry = tracked.get(operation.deviceId);
         if (entry === undefined || entry.settled) continue;
-        const classified = classifyWrite(entry, failureCode, commandJob);
+        const classified = classify(entry, failureCode);
         leftovers.push({ entry, outcome: classified.outcome });
         if (classified.observedFailure !== null && failureCode === null)
           failureCode = classified.observedFailure;
@@ -1273,6 +1606,7 @@ export class DeviceUpdateJobs {
             held,
             signal,
             claimed.readBackBounds,
+            field,
           );
       }
     } catch (error) {
@@ -1406,6 +1740,7 @@ export class DeviceUpdateJobs {
     operations: readonly HeldOperation[],
     signal: AbortSignal,
     bounds: { verifyAfter: Date; leaseEnd: Date },
+    field: 'annotatedLocation' | 'status',
   ): Promise<DeviceUpdateReadBackSummary> {
     const summary = emptySummary();
     for (let start = 0; start < operations.length; start += 250) {
@@ -1419,6 +1754,7 @@ export class DeviceUpdateJobs {
         signal,
         summary,
         bounds,
+        field,
       );
     }
     return summary;
@@ -1477,6 +1813,7 @@ export class DeviceUpdateJobs {
         signal,
         summary,
         this.readBounds(read),
+        cacheField(read.action),
       );
     }
     return summary;
@@ -1521,6 +1858,7 @@ export class DeviceUpdateJobs {
       signal,
       summary,
       this.readBounds(read),
+      cacheField(read.action),
     );
     return summary;
   }
@@ -1672,6 +2010,7 @@ export class DeviceUpdateJobs {
     signal: AbortSignal,
     summary: DeviceUpdateReadBackSummary,
     bounds: { verifyAfter: Date; leaseEnd: Date } | null = null,
+    field: 'annotatedLocation' | 'status' = 'annotatedLocation',
   ): Promise<void> {
     const chunk = operations.slice(0, 250);
     if (chunk.length === 0) return;
@@ -1760,7 +2099,10 @@ export class DeviceUpdateJobs {
         summary.failed += 1;
         continue;
       }
-      const observed = state.device.annotatedLocation;
+      const observed =
+        field === 'status'
+          ? state.device.status
+          : state.device.annotatedLocation;
       const matches =
         operation.requestedValue === null
           ? observed === null
@@ -1935,6 +2277,206 @@ export class DeviceUpdateJobs {
     );
     if (readBack.settled === 0) return { outcome: 'not-held' };
     return { outcome: 'settled', readBack };
+  }
+
+  /**
+   * One poll run of one awaiting-devices command job (design section 4 steps 5 to 7). It claims due
+   * issued operations, sends one getCommand GET per operation, settles every answer, and repeats
+   * while due operations remain. A terminal settlement completes the job in its own transaction.
+   */
+  async runPoll(
+    request: DeviceCommandPollRequest,
+    signal: AbortSignal,
+  ): Promise<DeviceCommandPollAnswer> {
+    const input = deviceCommandPollRequestSchema.parse(request);
+    const attempt = randomUUID();
+    // One request stops before the ten-minute job lease lapses, so its flow releases the lease and
+    // the next tick starts the run that reads the rest. The reader call takes the same deadline, so
+    // no GET retry outlives the run.
+    const deadline = this.now() + 8 * 60_000;
+    const stop = new AbortController();
+    const abort = () => stop.abort();
+    if (signal.aborted) stop.abort();
+    else signal.addEventListener('abort', abort, { once: true });
+    const deadlineTimer = this.timers.setTimeout(
+      abort,
+      Math.max(0, deadline - this.now()),
+    );
+    const summary: DeviceCommandPollAnswer = {
+      outcome: 'settled',
+      claimed: 0,
+      settled: 0,
+      succeeded: 0,
+      failed: 0,
+      expired: 0,
+      unknown: 0,
+      pending: 0,
+    };
+    let finished = false;
+    try {
+      for (;;) {
+        if (stop.signal.aborted || this.now() >= deadline) break;
+        const claim = commandPollClaimSchema.parse(
+          await this.call(
+            'SELECT cc.claim_device_command_polls($1,$2,$3,$4) AS result',
+            [input.customerId, input.jobId, attempt, input.leaseId],
+          ),
+        );
+        if (claim.outcome === 'completed') {
+          summary.outcome = 'completed';
+          await this.publish(input.customerId, claim.publication ?? null);
+          break;
+        }
+        if (claim.outcome !== 'claimed') break;
+        summary.claimed += claim.operations.length;
+        let credential: DelegatedCredential;
+        try {
+          credential = this.openCredential(claim, input.customerId);
+        } catch {
+          // A key that cannot open stops the run. The deadlines settle the operations.
+          break;
+        }
+        /** The answer of one claimed operation. Settled as soon as it arrives (R3). */
+        const tracked = new Map<
+          string,
+          {
+            operationNumber: number;
+            observation: DeviceCommandObservation | null;
+            failure: BatchFailure | null;
+            answered: boolean;
+          }
+        >();
+        for (const operation of claim.operations)
+          tracked.set(operation.deviceId, {
+            operationNumber: operation.operationNumber,
+            observation: null,
+            failure: null,
+            answered: false,
+          });
+        /** Settle one answered operation and record what the settlement changed. */
+        const settleOne = async (result: CommandPollResult): Promise<void> => {
+          const settled = await this.settlePollCall(
+            input.customerId,
+            input.jobId,
+            input.leaseId,
+            attempt,
+            [result],
+          );
+          // A fenced lease or a settlement that holds no operation ends the run. The operations
+          // that stay unanswered keep their leases for the next poll.
+          if (
+            settled.outcome === 'fenced' ||
+            (settled.settled ?? []).length === 0
+          ) {
+            stop.abort();
+            return;
+          }
+          for (const one of settled.settled ?? []) {
+            summary.settled += 1;
+            if (one.status === 'succeeded') summary.succeeded += 1;
+            else if (one.status === 'failed') summary.failed += 1;
+            else if (one.status === 'expired') summary.expired += 1;
+            else if (one.status === 'unknown') summary.unknown += 1;
+            else if (one.status === 'issued') summary.pending += 1;
+          }
+          await this.publish(input.customerId, settled.publication ?? null);
+          if (settled.jobStatusChanged === true) {
+            summary.outcome = 'completed';
+            stop.abort();
+          }
+        };
+        /** The number of final answers of this call. A retry event is not an answer. */
+        let answered = 0;
+        // The operation lease is 120 s. The GET call takes the same bound, so a retry chain
+        // cannot outlive the leases of the operations it would settle.
+        const chunk = new AbortController();
+        const chunkTimer = this.timers.setTimeout(() => chunk.abort(), 120_000);
+        try {
+          await this.reader.deviceCommands(
+            credential,
+            input.customerId,
+            claim.operations.map((operation) => ({
+              deviceId: operation.deviceId,
+              commandId: operation.commandId,
+            })),
+            AbortSignal.any([stop.signal, chunk.signal]),
+            {
+              batchSize: this.batchSize,
+              // A success or a final failure settles at once, so a retrying or throwing sibling
+              // cannot cost the answer while its operation lease is live.
+              onResponse: async (event) => {
+                const entry = tracked.get(event.id);
+                if (entry === undefined || entry.answered) return;
+                if (event.outcome.kind === 'success') {
+                  entry.observation = event.outcome.page;
+                  entry.answered = true;
+                } else if (event.outcome.kind === 'failed') {
+                  entry.failure = event.outcome.failure;
+                  entry.answered = true;
+                } else return;
+                answered += 1;
+                const result = classifyCommandPoll(
+                  { operationNumber: entry.operationNumber },
+                  entry.observation,
+                  entry.failure,
+                );
+                if (result !== null) await settleOne(result);
+              },
+            },
+          );
+        } finally {
+          this.timers.clearTimeout(chunkTimer);
+        }
+        if (summary.outcome === 'completed' || stop.signal.aborted) break;
+        // No final answer leaves every operation to its 120 s lease and a later poll.
+        if (answered === 0) break;
+      }
+      finished = true;
+    } finally {
+      this.timers.clearTimeout(deadlineTimer);
+      signal.removeEventListener('abort', abort);
+      // A run that threw keeps the lease: its flow retries, and the lease lapses if it does not.
+      if (finished)
+        await this.call(
+          'SELECT cc.release_device_command_poll($1,$2,$3) AS result',
+          [input.customerId, input.jobId, input.leaseId],
+        ).catch(() => undefined);
+    }
+    return summary;
+  }
+
+  /** One poll settlement. A deadlock (`40P01`) rolls back and runs again, up to 3 times. */
+  private async settlePollCall(
+    customer: string,
+    jobId: string,
+    leaseId: string,
+    attempt: string,
+    results: readonly CommandPollResult[],
+  ): Promise<z.infer<typeof commandPollSettlementSchema>> {
+    for (let attemptNumber = 1; ; attemptNumber += 1) {
+      try {
+        const stamp = await this.clock();
+        const answer = await this.database.query(
+          'SELECT cc.settle_device_command_polls($1,$2,$3,$4,$5,$6) AS result',
+          [
+            customer,
+            jobId,
+            attempt,
+            leaseId,
+            JSON.stringify(results),
+            stamp.toISOString(),
+          ],
+        );
+        return commandPollSettlementSchema.parse(answer.rows[0]?.['result']);
+      } catch (error) {
+        const code =
+          error !== null && typeof error === 'object'
+            ? (error as { code?: unknown }).code
+            : undefined;
+        if (code === '40P01' && attemptNumber < 3) continue;
+        throw storeError(error);
+      }
+    }
   }
 
   private async release(

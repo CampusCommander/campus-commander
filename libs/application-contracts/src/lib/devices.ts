@@ -45,6 +45,7 @@ export const deviceObservationSchema = z.strictObject({
   orgUnitPath,
   lastContact: timestamp.nullable(),
   annotatedLocation: z.string().max(4096).nullable(),
+  annotatedUser: z.string().max(4096).nullable(),
   notes: z.string().max(4096).nullable(),
   status: z.string().max(64).nullable(),
 });
@@ -66,6 +67,7 @@ const recordShape = {
   orgUnitPath,
   lastContact: timestamp.nullable(),
   annotatedLocation: z.string().max(4096).nullable(),
+  annotatedUser: z.string().max(4096).nullable(),
   notes: z.string().max(4096).nullable(),
   /** Google's device status: ACTIVE, DISABLED, DEPROVISIONED, another value, or null. */
   status: z.string().max(64).nullable(),
@@ -113,6 +115,7 @@ export const deviceTextFieldSchema = z.enum([
   'model',
   'assetTag',
   'annotatedLocation',
+  'annotatedUser',
   'notes',
 ]);
 export const deviceSortFieldSchema = z.enum([
@@ -124,6 +127,7 @@ export const deviceSortFieldSchema = z.enum([
   'battery',
   'lastContact',
   'annotatedLocation',
+  'annotatedUser',
   'notes',
 ]);
 export const batteryFilterValueSchema = z.enum([

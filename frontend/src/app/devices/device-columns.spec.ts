@@ -10,6 +10,7 @@ const row = (stale: boolean): DeviceRow => ({
   orgUnitPath: '/',
   lastContact: '2026-10-05T12:00:00.000Z',
   annotatedLocation: null,
+  annotatedUser: null,
   notes: null,
   status: 'ACTIVE',
   battery: { status: 'no-report' },
@@ -45,4 +46,74 @@ it('mutes the contact time of a stale row and explains it', () => {
 it('mutes no other column', () => {
   const others = columns().filter((column) => column.colId !== 'lastContact');
   expect(others.every((column) => rule(column) === undefined)).toBe(true);
+});
+
+it('offers Status as a hidden column directly after Serial', () => {
+  const list = columns();
+  const ids = list.map((column) => column.colId);
+  expect(ids.indexOf('status')).toBe(ids.indexOf('serialNumber') + 1);
+  const status = list.find((column) => column.colId === 'status')!;
+  expect(status.headerName).toBe('Status');
+  expect(status.hide).toBe(true);
+  expect(status.sortable).toBe(true);
+  expect(status.suppressColumnsToolPanel).not.toBe(true);
+});
+
+const statusValue = (status: string | null): string => {
+  const column = columns().find((candidate) => candidate.colId === 'status')!;
+  const getter = column.valueGetter as (params: unknown) => string;
+  return getter({ data: { ...row(false), status }, node: { group: false } });
+};
+
+it('shows the three Google statuses as labels and any other value as Google sends it', () => {
+  expect(statusValue('ACTIVE')).toBe('Active');
+  expect(statusValue('DISABLED')).toBe('Disabled');
+  expect(statusValue('DEPROVISIONED')).toBe('Deprovisioned');
+  expect(statusValue('RETIRED')).toBe('RETIRED');
+  expect(statusValue(null)).toBe('');
+});
+
+it('offers the optional Annotated user text column directly after Asset tag', () => {
+  const list = columns();
+  const ids = list.map((column) => column.colId);
+  expect(ids.indexOf('annotatedUser')).toBe(ids.indexOf('assetTag') + 1);
+  const column = list.find((candidate) => candidate.colId === 'annotatedUser')!;
+  expect(column.headerName).toBe('Annotated user');
+  expect(column.hide).toBe(true);
+  expect(column.sortable).toBe(true);
+  expect(column.filter).toBe('agTextColumnFilter');
+  const params = column.filterParams as {
+    filterOptions: string[];
+    maxNumConditions: number;
+  };
+  expect(params.filterOptions).toEqual([
+    'contains',
+    'startsWith',
+    'equals',
+    'blank',
+  ]);
+  expect(params.maxNumConditions).toBe(1);
+  const getter = column.valueGetter as (params: unknown) => string;
+  expect(
+    getter({
+      data: { ...row(false), annotatedUser: 'maya.chen@example.org' },
+      node: { group: false },
+    }),
+  ).toBe('maya.chen@example.org');
+  expect(getter({ data: row(false), node: { group: false } })).toBe('');
+});
+
+it('filters status with the three contract values in the record order', () => {
+  const status = columns().find((column) => column.colId === 'status')!;
+  expect(status.filter).toBe('agSetColumnFilter');
+  const params = status.filterParams as {
+    values: string[];
+    suppressSorting: boolean;
+    valueFormatter: (params: { value: string }) => string;
+  };
+  expect(params.values).toEqual(['ACTIVE', 'DISABLED', 'DEPROVISIONED']);
+  expect(params.suppressSorting).toBe(true);
+  expect(params.valueFormatter({ value: 'DEPROVISIONED' })).toBe(
+    'Deprovisioned',
+  );
 });

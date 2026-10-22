@@ -7,10 +7,12 @@ import {
   chipLabel,
   dateInputToIso,
   dateInputValue,
+  DEVICE_FIELDS,
   groupLabel,
   orgUnitOptions,
   relativeTime,
   shortcutLabel,
+  statusText,
   suggestions,
   syncFailureText,
   telemetryFailureText,
@@ -53,6 +55,15 @@ describe('device fields', () => {
         },
         'Battery · Replace soon, No battery report',
       ],
+      [{ field: 'status', operator: 'is', values: [] }, 'Status · none'],
+      [
+        {
+          field: 'status',
+          operator: 'is',
+          values: ['DISABLED', 'DEPROVISIONED'],
+        },
+        'Status · Disabled, Deprovisioned',
+      ],
       [
         { field: 'lastContact', operator: 'before', value: day },
         'Device contact before: Oct 1, 2026',
@@ -70,8 +81,36 @@ describe('device fields', () => {
       'Serial contains "asset"',
     ]);
     const empty = suggestions('');
-    expect(empty.fields).toHaveLength(8);
+    expect(empty.fields).toHaveLength(10);
     expect(empty.shortcuts).toEqual([]);
+  });
+
+  it('places the optional Annotated user field directly after Asset tag', () => {
+    const ids = DEVICE_FIELDS.map((field) => field.id);
+    expect(
+      DEVICE_FIELDS.find((field) => field.id === 'annotatedUser'),
+    ).toMatchObject({
+      label: 'Annotated user',
+      kind: 'text',
+      optional: true,
+    });
+    expect(ids.indexOf('annotatedUser')).toBe(ids.indexOf('assetTag') + 1);
+  });
+
+  it('offers Annotated user as a text filter with chip labels', () => {
+    expect(suggestions('user').fields.map((field) => field.label)).toEqual([
+      'Annotated user',
+    ]);
+    expect(
+      chipLabel({
+        field: 'annotatedUser',
+        operator: 'contains',
+        value: 'maya.chen@example.org',
+      }),
+    ).toBe('Annotated user contains: maya.chen@example.org');
+    expect(chipLabel({ field: 'annotatedUser', operator: 'isEmpty' })).toBe(
+      'Annotated user is empty',
+    );
   });
 
   it('builds the organization unit tree with ancestors and search', () => {
@@ -206,4 +245,18 @@ it('labels group keys the way the filters read', () => {
   expect(groupLabel('model', '')).toBe('No model');
   expect(groupLabel('model', 'Lenovo 100e')).toBe('Lenovo 100e');
   expect(groupLabel('battery', 'replace-soon')).toBe('Replace soon');
+});
+
+it('shows the three Google statuses as labels and any other value as Google sends it', () => {
+  expect(statusText('ACTIVE')).toBe('Active');
+  expect(statusText('DISABLED')).toBe('Disabled');
+  expect(statusText('DEPROVISIONED')).toBe('Deprovisioned');
+  expect(statusText('RETIRED')).toBe('RETIRED');
+  expect(statusText(null)).toBe('');
+});
+
+it('offers Status as a filter field', () => {
+  expect(suggestions('status').fields.map((field) => field.label)).toEqual([
+    'Status',
+  ]);
 });
