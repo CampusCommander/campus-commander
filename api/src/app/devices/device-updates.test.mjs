@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   deviceSelectionSpecSchema,
   deviceUpdatePreviewRequestSchema,
@@ -12,6 +12,7 @@ import {
   DeviceUpdates,
   displayNumber,
   manifestDigest,
+  previewInput,
   previewTargets,
 } from './device-updates.ts';
 import {
@@ -839,4 +840,75 @@ test('a missing manifest artifact fails the confirmation', async () => {
   );
   assert.equal(error.getStatus(), 500);
   assert.match(String(error.message), /manifest artifact/i);
+});
+
+test('the preview route names the field and its limit for every over-limit value', () => {
+  // The selection key of a preview route needs a UUID tab; `key` above is for the pure helpers.
+  const routeKey = {
+    gridId: 'devices',
+    tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  };
+  const body = (field, mode, value) => ({
+    ...routeKey,
+    changes: [{ field, mode, value }],
+  });
+  const refused = (input) => {
+    try {
+      previewInput(input);
+    } catch (failure) {
+      assert.ok(
+        failure instanceof BadRequestException,
+        'A refused change answers with a 400.',
+      );
+      return failure.getResponse();
+    }
+    return assert.fail('The preview input accepted an over-limit value.');
+  };
+
+  // A body of 65,537 UTF-16 units answers the field label and its own limit (review R1).
+  const huge = 'x'.repeat(65_537);
+  const rows = [
+    ['annotatedLocation', 'replace', huge, 'Annotated location', 200],
+    ['annotatedUser', 'replace', huge, 'Annotated user', 100],
+    ['notes', 'replace', huge, 'Notes', 500],
+    [
+      'orgUnitPath',
+      'move',
+      `/${'a'.repeat(65_536)}`,
+      'Organization unit',
+      4096,
+    ],
+  ];
+  for (const [field, mode, value, label, limit] of rows) {
+    const answer = refused(body(field, mode, value));
+    assert.equal(answer.reason, 'invalid-change');
+    assert.match(answer.message, new RegExp(label));
+    assert.match(answer.message, new RegExp(String(limit)));
+  }
+
+  // The ordinary N+1 value keeps the same answer.
+  const overByOne = refused(body('notes', 'replace', 'x'.repeat(501)));
+  assert.equal(overByOne.reason, 'invalid-change');
+  assert.equal(overByOne.message, 'Notes holds 1 to 500 characters.');
+
+  // A supplementary character counts as one code point: 100 preview, 101 refuse.
+  const fourByteCharacter = '\u{1D306}';
+  const accepted = previewInput(
+    body('annotatedUser', 'replace', fourByteCharacter.repeat(100)),
+  );
+  assert.deepEqual(accepted.changes, [
+    {
+      field: 'annotatedUser',
+      mode: 'replace',
+      value: fourByteCharacter.repeat(100),
+    },
+  ]);
+  const refusedSupplementary = refused(
+    body('annotatedUser', 'replace', fourByteCharacter.repeat(101)),
+  );
+  assert.equal(refusedSupplementary.reason, 'invalid-change');
+  assert.equal(
+    refusedSupplementary.message,
+    'Annotated user holds 1 to 100 characters.',
+  );
 });

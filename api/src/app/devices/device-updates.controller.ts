@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -13,16 +12,14 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
-import {
-  deviceUpdateConfirmRequestSchema,
-  deviceUpdatePreviewRequestSchema,
-} from '@campus/application-contracts';
+import { deviceUpdateConfirmRequestSchema } from '@campus/application-contracts';
 import { GoogleDeviceReader } from '@campus/google-connection';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { JobService } from '../jobs/job-service';
 import { requireDeviceUpdateActions } from './device-updates-actions';
 import { DeviceOrgUnitTreeRoute } from './device-org-unit-tree';
+import { previewInput } from './device-updates';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DeviceWriteAccessRoutes } from './device-write-access-routes';
 import { DeviceWriteAccessService } from './device-write-access.service';
@@ -108,20 +105,11 @@ export class DeviceUpdatesController {
 
   /**
    * A refused change names the field label and its limit (design section 1). The generic 400 body
-   * of the error filter would hide that message, so this route answers the first issue.
+   * of the error filter would hide that message, so `previewInput` answers the first issue.
    */
-  private previewInput(body: unknown) {
-    const parsed = deviceUpdatePreviewRequestSchema.safeParse(body);
-    if (parsed.success) return parsed.data;
-    throw new BadRequestException({
-      reason: 'invalid-change',
-      message: parsed.error.issues[0]?.message ?? 'The request is invalid.',
-    });
-  }
-
   @Post('previews')
   async preview(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
-    const input = this.previewInput(body);
+    const input = previewInput(body);
     const current = await this.current(request);
     if (!current)
       throw new ConflictException({ reason: 'connection-required' });

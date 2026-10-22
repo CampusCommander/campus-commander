@@ -436,8 +436,8 @@ export const deviceUpdateChangeSchema = z
   .strictObject({
     field: deviceUpdateFieldSchema,
     mode: deviceUpdateModeSchema,
-    // The field limit in the refinement names the label. This bound only refuses an absurd body.
-    value: z.string().max(65_536).optional(),
+    // The refinement names the field and its limit at every length, an absurd body included.
+    value: z.string().optional(),
   })
   .superRefine((change, context) => {
     const label = DEVICE_UPDATE_FIELD_LABELS[change.field];
@@ -465,6 +465,10 @@ export const deviceUpdateChangeSchema = z
       return;
     }
     if (change.value === undefined) return refuse(`${label} needs a value.`);
+    // One code point takes at most two UTF-16 units. Refuse twice the limit before counting, so a
+    // giant body never reaches the spread and the refusal still names the field and its limit.
+    if (change.value.length > 2 * limit)
+      return refuse(`${label} holds 1 to ${limit} characters.`);
     const length = [...change.value].length;
     if (length < 1 || length > limit)
       return refuse(`${label} holds 1 to ${limit} characters.`);

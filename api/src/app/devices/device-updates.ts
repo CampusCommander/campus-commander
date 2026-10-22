@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   GoneException,
@@ -11,6 +12,7 @@ import {
   DEVICE_UPDATE_FIELD_ORDER,
   deviceUpdateChangesInOrder,
   deviceUpdateJobReceiptSchema,
+  deviceUpdatePreviewRequestSchema,
   deviceUpdatePreviewSchema,
   deviceUpdateTargetSchema,
   type DeviceSelectionKey,
@@ -248,6 +250,20 @@ function summary(
     preparedAt: measuredAt(row['prepared_at']),
     expiresAt: measuredAt(row['expires_at']),
     manifestDigest: row['manifest_digest'],
+  });
+}
+
+/**
+ * Parse a preview body. A refused change names its field label and its limit (design section 1).
+ * The generic 400 body of the error filter would hide that message, so the route answers the
+ * first issue.
+ */
+export function previewInput(body: unknown): DeviceUpdatePreviewRequest {
+  const parsed = deviceUpdatePreviewRequestSchema.safeParse(body);
+  if (parsed.success) return parsed.data;
+  throw new BadRequestException({
+    reason: 'invalid-change',
+    message: parsed.error.issues[0]?.message ?? 'The request is invalid.',
   });
 }
 

@@ -68,6 +68,13 @@ test('each field refuses a value over its limit and names its label', () => {
     assert.equal(over.success, false);
     assert.match(over.error.issues[0].message, new RegExp(label));
     assert.match(over.error.issues[0].message, new RegExp(String(limit)));
+    // A value far above any field limit still names the field and its limit (review R1).
+    const huge = deviceUpdateChangeSchema.safeParse(
+      change(field, 'replace', 'x'.repeat(65_537)),
+    );
+    assert.equal(huge.success, false);
+    assert.match(huge.error.issues[0].message, new RegExp(label));
+    assert.match(huge.error.issues[0].message, new RegExp(String(limit)));
   }
   assert.equal(DEVICE_UPDATE_FIELD_LIMITS.orgUnitPath, 4096);
   assert.match(
@@ -76,6 +83,13 @@ test('each field refuses a value over its limit and names its label', () => {
     ).error.issues[0].message,
     /Organization unit/,
   );
+  // The preliminary bound never replaces the path rule (review R1).
+  const hugePath = deviceUpdateChangeSchema.safeParse(
+    change('orgUnitPath', 'move', `/${'a'.repeat(65_536)}`),
+  );
+  assert.equal(hugePath.success, false);
+  assert.match(hugePath.error.issues[0].message, /Organization unit/);
+  assert.match(hugePath.error.issues[0].message, /4096/);
 });
 
 test('an over-limit value answers the preview request with the field label', () => {
