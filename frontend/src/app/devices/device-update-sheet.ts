@@ -244,12 +244,21 @@ export class DeviceUpdateSheet {
       ? deviceUpdateValueError(field, this.draft.valueOf(field))
       : null;
   }
-  /** An empty value shows its error only after a save attempt. */
+  /** An empty value shows its error once the operator leaves the field or tries to save. */
   protected showValueError(field: DeviceUpdateTextField): boolean {
     const error = this.valueError(field);
     return (
-      !!error && (this.draft.valueOf(field).length > 0 || this.attempted())
+      !!error &&
+      (this.draft.valueOf(field).length > 0 ||
+        this.attempted() ||
+        this.blurred().has(field))
     );
+  }
+  /** The fields that lost focus, so an empty value explains why Save stays disabled. */
+  private readonly blurred = signal<ReadonlySet<string>>(new Set());
+  protected markBlurred(field: DeviceUpdateTextField): void {
+    if (this.blurred().has(field)) return;
+    this.blurred.update((fields) => new Set(fields).add(field));
   }
   /** One matcher per field, so Material reuses it and the error outline follows the rule. */
   private readonly valueMatchers = new Map<string, ValueErrorMatcher>();

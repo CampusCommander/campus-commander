@@ -162,6 +162,7 @@
               [ngModel]="draft.valueOf(field.id)"
               [ngModelOptions]="{ standalone: true }"
               (ngModelChange)="setValue(field.id, $event)"
+              (blur)="markBlurred(field.id)"
               [attr.aria-invalid]="showValueError(field.id) ? 'true' : null"
               [attr.aria-describedby]="describedBy(field.id)"
             ></textarea>
@@ -173,6 +174,7 @@
               [ngModel]="draft.valueOf(field.id)"
               [ngModelOptions]="{ standalone: true }"
               (ngModelChange)="setValue(field.id, $event)"
+              (blur)="markBlurred(field.id)"
               [attr.aria-invalid]="showValueError(field.id) ? 'true' : null"
               [attr.aria-describedby]="describedBy(field.id)"
             />

@@ -444,6 +444,24 @@ it('rejects a whitespace-only value and keeps Save and preview disabled', async 
   expect(button('Save and preview')?.disabled).toBe(true);
 });
 
+it('explains an empty Replace value once the field loses focus', async () => {
+  const { block, draft, settle, valueInput } = await setup();
+  draft.setMode('notes', 'replace');
+  await settle();
+  const notes = block('notes');
+  expect(notes?.querySelector('.error')).toBeNull();
+  expect(
+    notes?.querySelector('mat-form-field.mat-form-field-invalid'),
+  ).toBeNull();
+
+  valueInput('notes')?.dispatchEvent(new Event('blur'));
+  await settle();
+  expect(notes?.textContent).toContain('Notes holds 1 to 500 characters.');
+  expect(
+    notes?.querySelector('mat-form-field.mat-form-field-invalid'),
+  ).not.toBeNull();
+});
+
 it('shows the limit of each field in its hint and counter', async () => {
   const { element, block, type } = await setup();
   await type('North lab', 'annotatedLocation');
