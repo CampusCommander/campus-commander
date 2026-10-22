@@ -1210,7 +1210,12 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
         assert.equal(response.outcome, 'settled');
         const patches = reader.calls.filter((one) => one.name === 'patch');
         assert.equal(patches.length, 1, 'One batch carries every device.');
-        assert.deepEqual(patches[0].writes, [
+        // The claim names the operations of one batch, and the aggregate does not promise an order.
+        // Compare the writes by device identity, and keep both fields of every device.
+        const writes = [...patches[0].writes].sort((left, right) =>
+          left.deviceId.localeCompare(right.deviceId),
+        );
+        assert.deepEqual(writes, [
           {
             deviceId: 'd-two-1',
             fields: { annotatedUser: 'Ada Lovelace', notes: 'Front desk' },
@@ -1262,7 +1267,8 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
           1,
           `One entity-batch event carries the batch: ${JSON.stringify(cache.calls)}`,
         );
-        assert.deepEqual(events[0].deviceIds, idList);
+        // The publication carries the devices of the batch; its order is not promised either.
+        assert.deepEqual([...events[0].deviceIds].sort(), [...idList].sort());
         assert.deepEqual(events[0].removedIds, []);
         assert.ok(
           rows.every((row) => row.device_ids.length === 0),
