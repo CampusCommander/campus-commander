@@ -222,7 +222,7 @@ function createMock({ mock }) {
   };
 }
 
-function createDb({ migrator, customer }) {
+export function createDb({ migrator, customer }) {
   const query = (text, values = []) => migrator.query(text, values);
   const row = async (text, values = []) => (await query(text, values)).rows[0];
   const job = (jobId) =>
@@ -323,6 +323,7 @@ function createDb({ migrator, customer }) {
     job,
     jobByDisplay,
     operations,
+    operationFields,
     batches,
     overlay,
     device,
