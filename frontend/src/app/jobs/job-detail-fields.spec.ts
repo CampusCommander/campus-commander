@@ -669,7 +669,7 @@ describe('job detail fields', () => {
     expect(operationNumber('XPD-006-1')).toBeNull();
   });
 
-  it('requires jobs:read and devices:write for Reconcile', () => {
+  it('requires jobs:read and the permission of the job kind for Reconcile', () => {
     const auth = (actions: string[]) =>
       ({
         metadata: () => ({ phase: 3 }),
@@ -682,10 +682,27 @@ describe('job detail fields', () => {
           },
         }),
       }) as unknown as Parameters<typeof canReconcile>[0];
-    expect(canReconcile(auth(['jobs:read', 'devices:write']))).toBe(true);
-    expect(canReconcile(auth(['jobs:read']))).toBe(false);
-    expect(canReconcile(auth(['devices:write']))).toBe(false);
-    expect(canReconcile(auth(['jobs:read', 'devices:read']))).toBe(false);
+    const update = { statusAction: null };
+    const status = { statusAction: 'disable' as const };
+
+    // An update operation keeps the step 4 rule (2026-10-16 design, OQ6).
+    expect(canReconcile(auth(['jobs:read', 'devices:write']), update)).toBe(
+      true,
+    );
+    expect(canReconcile(auth(['jobs:read', 'devices:status']), update)).toBe(
+      false,
+    );
+    // A status operation follows section 6 of the 2026-10-21 design.
+    expect(canReconcile(auth(['jobs:read', 'devices:status']), status)).toBe(
+      true,
+    );
+    expect(canReconcile(auth(['jobs:read', 'devices:write']), status)).toBe(
+      false,
+    );
+    // Both kinds need jobs:read.
+    expect(canReconcile(auth(['jobs:read']), update)).toBe(false);
+    expect(canReconcile(auth(['devices:write']), update)).toBe(false);
+    expect(canReconcile(auth(['devices:status']), status)).toBe(false);
   });
 
   it('renders the operations footer of the three frames', () => {

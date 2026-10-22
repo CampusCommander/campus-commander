@@ -73,6 +73,36 @@ it('shows the three Google statuses as labels and any other value as Google send
   expect(statusValue(null)).toBe('');
 });
 
+it('offers the optional Annotated user text column directly after Asset tag', () => {
+  const list = columns();
+  const ids = list.map((column) => column.colId);
+  expect(ids.indexOf('annotatedUser')).toBe(ids.indexOf('assetTag') + 1);
+  const column = list.find((candidate) => candidate.colId === 'annotatedUser')!;
+  expect(column.headerName).toBe('Annotated user');
+  expect(column.hide).toBe(true);
+  expect(column.sortable).toBe(true);
+  expect(column.filter).toBe('agTextColumnFilter');
+  const params = column.filterParams as {
+    filterOptions: string[];
+    maxNumConditions: number;
+  };
+  expect(params.filterOptions).toEqual([
+    'contains',
+    'startsWith',
+    'equals',
+    'blank',
+  ]);
+  expect(params.maxNumConditions).toBe(1);
+  const getter = column.valueGetter as (params: unknown) => string;
+  expect(
+    getter({
+      data: { ...row(false), annotatedUser: 'maya.chen@example.org' },
+      node: { group: false },
+    }),
+  ).toBe('maya.chen@example.org');
+  expect(getter({ data: row(false), node: { group: false } })).toBe('');
+});
+
 it('filters status with the three contract values in the record order', () => {
   const status = columns().find((column) => column.colId === 'status')!;
   expect(status.filter).toBe('agSetColumnFilter');

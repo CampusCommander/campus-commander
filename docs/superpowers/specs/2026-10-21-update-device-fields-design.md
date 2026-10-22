@@ -164,7 +164,7 @@ Replace, Clear, and Move each send an absolute final value, so step4:1360-1366 h
 | Storage   | `cc.devices` gains `annotated_user text CHECK(length(annotated_user)<=4096)` beside `016:42`. `cc.upsert_devices` inserts it (`016:390-397`). `cc.device_record` adds `annotatedUser` (`016:353-354`).            |
 | Contracts | `deviceObservationSchema` and the record shape add `annotatedUser` (`ac/devices.ts:39-50`, `:61-75`). The text field and sort field enums add it (`ac/devices.ts:111-128`).                                       |
 | API       | The column map (`api/devices/device-query.ts:13-22`) and `deviceRow` (`:305`) add `d.annotated_user`. U6 adds it to `selectionIdsSql` (`:400`), with `d.notes`.                                                   |
-| Grid      | `docs/ui/entity-grid-fields.json` adds an "Annotated user" text entry after Notes (`:184-191`), filterable and hidden by default. `fe/devices/device-fields.ts` adds the column (`:56`).                          |
+| Grid      | `docs/ui/entity-grid-fields.json` adds an "Annotated user" text entry after Asset tag, filterable and hidden by default. `fe/devices/device-fields.ts` adds the column.                                           |
 | Details   | An "Annotated user" row joins `fe/devices/device-detail.html:48-57`.                                                                                                                                              |
 
 - The reader bound is 4,096 UTF-16 units and the column bound 4,096 code points, as for location and notes. A longer Google value then never fails a list page. One long asset ID fails a page today (`gc/devices.ts:47`, `:535`).

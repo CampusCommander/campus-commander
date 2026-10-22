@@ -228,12 +228,6 @@ export class JobsController {
     const id = jobDisplayIdSchema.parse(displayId);
     const number = operationNumberSchema.parse(operationNumber);
     const customerId = await this.jobs.customer(request.session);
-    await requireReconcileActions(
-      this.auth,
-      request.session,
-      customerId,
-      request.correlationId,
-    );
     return this.jobs.reconcile(
       request.session,
       customerId,
@@ -241,6 +235,14 @@ export class JobsController {
       number,
       request.correlationId,
       this.orchestration,
+      (check) =>
+        requireReconcileActions(
+          this.auth,
+          request.session,
+          customerId,
+          request.correlationId,
+          check,
+        ),
     );
   }
 }

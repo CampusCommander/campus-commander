@@ -399,6 +399,50 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
     }
     return { jobId, displayId };
   };
+  // One command job fixture: a Reboot preview, one header, one detail row, and one issued command.
+  // The issued operation is what keeps the job in `awaiting-devices` after its finish (section 4 step 4).
+  const makeCommandJob = async ({ devices }) => {
+    const jobId = randomUUID();
+    const previewId = randomUUID();
+    const version = (
+      await adminRow(
+        'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+        [owner],
+      )
+    ).permission_version;
+    await admin(
+      `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+        generation,action,field,mode,value,selected,eligible,unchanged,excluded,manifest_digest,expires_at)
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,'reboot',NULL,NULL,NULL,$6,$6,0,0,
+        'manifest-digest',clock_timestamp()+interval '1 hour')`,
+      [previewId, customer, owner, version, generation, devices.length],
+    );
+    const displayId = (
+      await adminRow(
+        `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+          target_count,correlation_id,created_at)
+        VALUES($1,cc.job_display_id('CMD',nextval('cc.job_number_cmd')),$2,'device-command','devices','accepted',
+          $3,$4,$5,$6,clock_timestamp()) RETURNING display_id`,
+        [jobId, customer, owner, generation, devices.length, randomUUID()],
+      )
+    ).display_id;
+    await admin(
+      `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,field,mode,value,confirmed_by,
+        confirmer_permission_version,delegated_subject,batch_size,batch_count)
+      VALUES($1,$2,'reboot',NULL,NULL,NULL,$3,$4,'admin@example.org',250,1)`,
+      [jobId, previewId, owner, version],
+    );
+    for (const [index, deviceId] of devices.entries())
+      await admin(
+        `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+          org_unit_path,baseline_value,requested_value,batch,status,command_id,command_state,poll_after,
+          poll_deadline_at)
+        VALUES($1,$2,$3,$4,'/School A','ACTIVE',NULL,0,'issued',$5,'pending-delivery',clock_timestamp(),
+          clock_timestamp()+interval '7 days')`,
+        [jobId, index + 1, deviceId, `SN-${deviceId}`, `41000000${index + 1}`],
+      );
+    return { jobId, displayId };
+  };
   const refreshJob = async ({ status = 'running', progress = false } = {}) => {
     const jobId = randomUUID();
     const row = await adminRow(
@@ -1528,6 +1572,84 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
           0,
           JSON.stringify(left),
         );
+      },
+    );
+
+    await check(
+      'an awaiting-devices command job deletes its hold once and marks the registry entry',
+      async () => {
+        await settle();
+        const { jobId } = await makeCommandJob({ devices: ['b5-wait1'] });
+        assert.equal(await service.admit(customer), false);
+        const token = await tokenOf(jobId);
+        // The finish leaves the issued command behind, so the job waits without the write slot.
+        const finished = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, jobId, token],
+        );
+        assert.equal(
+          finished.status,
+          'awaiting-devices',
+          JSON.stringify(finished),
+        );
+        assert.equal((await jobRow(jobId)).finished_at, null);
+        // The report that wrote the hold left its registry entry, and the key still belongs to the job.
+        await admin(
+          'UPDATE cc.device_update_jobs SET hold_written_at=clock_timestamp() WHERE job_id=$1',
+          [jobId],
+        );
+        await publisher.set(jobHoldKey(customer), jobId, { EX: 120 });
+        assert.equal(await service.cleanup(customer), 1);
+        assert.equal(await cached(jobHoldKey(customer)), null);
+        assert.ok((await detail(jobId)).hold_cleaned_at instanceof Date);
+        // Cleanup removes the hold only. The command job keeps waiting for its issued operation.
+        assert.equal((await jobRow(jobId)).status, 'awaiting-devices');
+        // The mark ends the cleanup work: the next run reports nothing and keeps the first mark.
+        const marked = (await detail(jobId)).hold_cleaned_at;
+        assert.equal(await service.cleanup(customer), 0);
+        assert.deepEqual((await detail(jobId)).hold_cleaned_at, marked);
+
+        // The fence accepts the released status itself, and still refuses a live job.
+        const released = await makeCommandJob({ devices: ['b5-wait2'] });
+        assert.equal(await service.admit(customer), false);
+        const releasedToken = await tokenOf(released.jobId);
+        assert.equal(
+          (
+            await result(
+              'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+              [customer, released.jobId, releasedToken],
+            )
+          ).status,
+          'awaiting-devices',
+        );
+        await admin(
+          'UPDATE cc.device_update_jobs SET hold_written_at=clock_timestamp() WHERE job_id=$1',
+          [released.jobId],
+        );
+        assert.equal(
+          await result('SELECT cc.clean_device_update_hold($1,$2) AS result', [
+            customer,
+            released.jobId,
+          ]),
+          true,
+        );
+        assert.ok(
+          (await detail(released.jobId)).hold_cleaned_at instanceof Date,
+        );
+        const running = await makeJob({ devices: ['b5-wait3'] });
+        assert.equal(await service.admit(customer), false);
+        await admin(
+          'UPDATE cc.device_update_jobs SET hold_written_at=clock_timestamp() WHERE job_id=$1',
+          [running.jobId],
+        );
+        assert.equal(
+          await result('SELECT cc.clean_device_update_hold($1,$2) AS result', [
+            customer,
+            running.jobId,
+          ]),
+          false,
+        );
+        assert.equal((await detail(running.jobId)).hold_cleaned_at, null);
       },
     );
   } finally {

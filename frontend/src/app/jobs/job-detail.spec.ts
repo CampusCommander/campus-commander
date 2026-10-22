@@ -489,6 +489,12 @@ it('shows Reconcile only for an unknown row and the required actions', () => {
 
   const noJobsRead = setup({ grants: ['devices:read', 'devices:write'] });
   expect(button(noJobsRead.element, 'Reconcile')).toBeUndefined();
+
+  // An update job keeps the step 4 rule: Change device status grants no Reconcile.
+  const statusOnly = setup({
+    grants: ['jobs:read', 'devices:read', 'devices:status'],
+  });
+  expect(button(statusOnly.element, 'Reconcile')).toBeUndefined();
 });
 
 it('renders the command job of state 09 with counters, chips, and no Reconcile', () => {
@@ -600,20 +606,28 @@ it('renders the operations of a status job with the requested status', () => {
 });
 
 it('keeps Reconcile for an unknown status row but not for a command row', () => {
+  const unknownStatus = operation({
+    operationId: 'STS-002-1',
+    operation: 'disable',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DISABLED',
+    outcome: 'unknown',
+    outcomeReason: 'invalid-response',
+  });
   const status = setup({
     job: statusJob({ status: 'needs-review' }),
-    operations: [
-      operation({
-        operationId: 'STS-002-1',
-        operation: 'disable',
-        baselineValue: 'ACTIVE',
-        requestedValue: 'DISABLED',
-        outcome: 'unknown',
-        outcomeReason: 'invalid-response',
-      }),
-    ],
+    operations: [unknownStatus],
+    grants: ['jobs:read', 'devices:read', 'devices:status'],
   });
   expect(button(status.element, 'Reconcile')).toBeDefined();
+
+  // An update grant does not authorize the Reconcile of a status operation.
+  const writeOnly = setup({
+    job: statusJob({ status: 'needs-review' }),
+    operations: [unknownStatus],
+    grants: ['jobs:read', 'devices:read', 'devices:write'],
+  });
+  expect(button(writeOnly.element, 'Reconcile')).toBeUndefined();
 
   const command = setup({
     job: commandJob({ status: 'needs-review' }),
@@ -635,6 +649,7 @@ it('sends a status Reconcile click to the store with its operation', () => {
   const { element, store } = setup({
     job: statusJob({ status: 'needs-review' }),
     operations: [target],
+    grants: ['jobs:read', 'devices:read', 'devices:status'],
   });
   button(element, 'Reconcile')?.click();
   expect(store.reconcile).toHaveBeenCalledWith(target);

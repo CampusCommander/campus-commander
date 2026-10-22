@@ -10,6 +10,8 @@ import { GOOGLE_SETUP_SCOPES } from '../libs/application-contracts/src/lib/googl
 import { qualifyDeviceWritesOnMock } from './device-write-mock.mjs';
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
+  DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
+  deviceOrgUnitTreeMessage,
   deviceWriteAccessMessage,
 } from '../libs/application-contracts/src/lib/device-write-access-message.ts';
 
@@ -718,6 +720,79 @@ async function runAdminSdkMockIntegration({
     'granted',
     'the provider probe grants the write scope',
   );
+
+  // U2: the organization unit tree of the connected customer (design section 6).
+  {
+    const orgUnitScope =
+      'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+    const tree = async () => {
+      const response = await call('/api/devices/updates/org-units');
+      assert.equal(response.status, 200, response.text);
+      return JSON.parse(response.text);
+    };
+    const grantedTree = await tree();
+    assert.equal(grantedTree.state, 'granted', JSON.stringify(grantedTree));
+    assert.equal(grantedTree.scope, orgUnitScope);
+    assert.equal(grantedTree.failure, null);
+    assert.match(grantedTree.observedAt, /^\d{4}-\d{2}-\d{2}T/);
+    const seeded = (await control('/domains')).find(
+      (record) => record.customerId === mock.customerId,
+    );
+    assert.ok(seeded, 'The mock lists the connected domain.');
+    assert.equal(
+      grantedTree.orgUnits.length,
+      seeded.counts.orgUnits,
+      'The route answers the whole seeded tree.',
+    );
+    const root = grantedTree.orgUnits.find((unit) => unit.orgUnitPath === '/');
+    assert.ok(root, 'The tree holds the root unit.');
+    assert.equal(root.parentOrgUnitId, null, 'The root names no parent.');
+    const ids = new Set(grantedTree.orgUnits.map((unit) => unit.orgUnitId));
+    assert.equal(
+      ids.size,
+      grantedTree.orgUnits.length,
+      'Every unit of the tree holds its own id.',
+    );
+    for (const unit of grantedTree.orgUnits) {
+      assert.match(unit.orgUnitPath, /^\//, unit.orgUnitPath);
+      assert.ok(unit.name.length > 0, 'A unit names its name.');
+      if (unit !== root)
+        assert.ok(
+          ids.has(unit.parentOrgUnitId),
+          `${unit.orgUnitPath} names a unit of the tree as its parent.`,
+        );
+    }
+    assert.equal(
+      JSON.stringify(grantedTree).includes('envelope'),
+      false,
+      'The answer carries no credential envelope.',
+    );
+
+    // Removing the OU scope denies the tree with its scope-named message.
+    await addFault({
+      kind: 'remove-scope',
+      clientId: mock.key.client_id,
+      scope: orgUnitScope,
+    });
+    const deniedTree = await tree();
+    assert.equal(deniedTree.state, 'denied', JSON.stringify(deniedTree));
+    assert.equal(deniedTree.failure, 'delegation-not-authorized');
+    assert.equal(deniedTree.scope, orgUnitScope);
+    assert.equal(deniedTree.orgUnits, null);
+    assert.equal(
+      deviceOrgUnitTreeMessage(deniedTree),
+      DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
+      'The denied answer carries the exact scope-named message.',
+    );
+    await clearFaults();
+    const restoredTree = await tree();
+    assert.equal(
+      restoredTree.state,
+      'granted',
+      'Clearing the scope fault grants the tree again.',
+    );
+    assert.equal(restoredTree.orgUnits.length, grantedTree.orgUnits.length);
+  }
 
   // Refresh Selected re-reads the selected devices through the get-by-IDs pipeline.
   const refreshResults = [];

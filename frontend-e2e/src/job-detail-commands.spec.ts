@@ -379,8 +379,11 @@ const activity = {
   observedAt: secondsAgo(10),
 };
 
+/** The grants of every browser test that does not ask for another set. */
+const DEFAULT_GRANTS = ['jobs:read', 'devices:read', 'devices:write'];
+
 /** One mock for every read of the three screens. */
-async function signIn(page: Page) {
+async function signIn(page: Page, grants: readonly string[] = DEFAULT_GRANTS) {
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -401,12 +404,10 @@ async function signIn(page: Page) {
             displayName: person.displayName,
             permissionVersion: 1,
             permissions: [],
-            grants: ['jobs:read', 'devices:read', 'devices:write'].map(
-              (action) => ({
-                action,
-                scope: { kind: 'district', customerId },
-              }),
-            ),
+            grants: grants.map((action) => ({
+              action,
+              scope: { kind: 'district', customerId },
+            })),
             preferences: { theme: 'light', navigationCollapsed: false },
           },
           csrfToken: 'a'.repeat(64),
@@ -678,8 +679,8 @@ test('renders the operations and requested status of a status job', async ({
     'The device status conflicts with the request.',
   );
   await expect(rows.nth(2)).toContainText('Unknown');
-  // A status operation keeps the step 4 Reconcile action.
-  await expect(page.getByRole('button', { name: 'Reconcile' })).toHaveCount(1);
+  // These grants hold devices:write, so a status Reconcile stays hidden.
+  await expect(page.getByRole('button', { name: 'Reconcile' })).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Show 2 needing attention' }),
   ).toBeVisible();
@@ -695,11 +696,17 @@ test('renders the operations and requested status of a status job', async ({
 test('reconciles an unknown status operation through its numbered endpoint', async ({
   page,
 }, testInfo) => {
-  await signIn(page);
+  // A status Reconcile needs Change device status, not Update device fields.
+  await signIn(page, ['jobs:read', 'devices:read', 'devices:status']);
   await page.route('**/api/jobs/STS-002', (route) =>
     route.fulfill({ json: { ...statusJob, status: 'needs-review' } }),
   );
   const requests: { method: string; path: string }[] = [];
+  // Hold the answer so the pending Reconciling state is observable without a race.
+  let accept!: () => void;
+  const held = new Promise<void>((resolve) => {
+    accept = resolve;
+  });
   await page.route(
     '**/api/jobs/STS-002/operations/*/reconcile',
     async (route) => {
@@ -708,6 +715,7 @@ test('reconciles an unknown status operation through its numbered endpoint', asy
         method: request.method(),
         path: new URL(request.url()).pathname,
       });
+      await held;
       await route.fulfill({ status: 202, body: '' });
     },
   );
@@ -717,14 +725,13 @@ test('reconciles an unknown status operation through its numbered endpoint', asy
   await expect(row).toContainText('Unknown');
   await row.getByRole('button', { name: 'Reconcile' }).click();
 
-  // The click reaches the numbered endpoint and the accepted state remains visible.
+  // The click reaches the numbered endpoint and the pending state remains visible.
+  await expect(row).toContainText('Reconciling');
   await expect
     .poll(() => requests)
     .toEqual([
       { method: 'POST', path: '/api/jobs/STS-002/operations/3/reconcile' },
     ]);
-  await expect(page.getByText('Reconcile started for SYN-13.')).toBeVisible();
-  await expect(row).toContainText('Reconciling');
   await expect(row.getByRole('button', { name: 'Reconcile' })).toHaveCount(0);
 
   await page.evaluate(() => document.fonts.ready);
@@ -732,6 +739,10 @@ test('reconciles an unknown status operation through its numbered endpoint', asy
     path: testInfo.outputPath('job-detail-sts-reconcile.png'),
     fullPage: true,
   });
+
+  accept();
+  await expect(page.getByText('Reconcile started for SYN-13.')).toBeVisible();
+
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 

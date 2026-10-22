@@ -14,6 +14,7 @@ import {
   DEVICE_COMMAND_ROUTE_ACTIONS,
   DEVICE_STATUS_ROUTE_ACTIONS,
   requireDeviceActions,
+  requireReconcileActions,
 } from './device-updates-actions.ts';
 
 const customer = 'C0123456';
@@ -440,4 +441,30 @@ test('the status route requires devices:status after read and Bulk Actions', asy
     'devices:bulk-actions',
     'devices:status',
   ]);
+});
+
+test('each Reconcile check runs its own action at the district scope', async () => {
+  const cases = [
+    { check: 'read', action: 'jobs:read' },
+    { check: 'update', action: 'devices:write' },
+    { check: 'status', action: 'devices:status' },
+  ];
+  for (const { check, action } of cases) {
+    const calls = [];
+    const auth = {
+      authorize: async (_session, granted, resource, correlation) => {
+        calls.push([granted, resource, correlation]);
+      },
+    };
+    await requireReconcileActions(
+      auth,
+      session,
+      customer,
+      correlationId,
+      check,
+    );
+    assert.deepEqual(calls, [
+      [action, { kind: 'district', customerId: customer }, correlationId],
+    ]);
+  }
 });

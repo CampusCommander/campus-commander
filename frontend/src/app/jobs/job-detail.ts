@@ -79,7 +79,10 @@ export class JobDetailPage implements OnChanges, OnDestroy {
 
   /** The failed operation whose evidence panel is open. */
   protected readonly inspecting = signal<JobOperation | null>(null);
-  protected readonly canReconcile = computed(() => canReconcile(this.auth));
+  protected readonly canReconcile = computed(() => {
+    const job = this.store.job();
+    return job ? canReconcile(this.auth, job) : false;
+  });
   protected readonly canOpenDevices = computed(() =>
     devicesReadable(this.auth),
   );

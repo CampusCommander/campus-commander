@@ -25,15 +25,12 @@ test('the setup scope list holds the connection scopes and the device scopes in 
     INVENTORY,
     TELEMETRY,
     WRITE,
+    SCHOOL_OU,
   ]);
   assert.equal(
     new Set(GOOGLE_SETUP_SCOPES).size,
     GOOGLE_SETUP_SCOPES.length,
     'the setup scope list repeats a scope',
-  );
-  assert.ok(
-    !GOOGLE_SETUP_SCOPES.includes(SCHOOL_OU),
-    'the School OU scope stays out of the setup list',
   );
 });
 
