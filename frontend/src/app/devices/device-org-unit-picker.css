@@ -1,0 +1,76 @@
+:host {
+  display: contents;
+}
+
+.picker-scrim {
+  position: fixed;
+  z-index: 40;
+  inset: var(--cc-header-height) 0 0 0;
+  background: var(--cc-surface-scrim);
+}
+
+.picker-wrap {
+  position: fixed;
+  z-index: 41;
+  inset: var(--cc-header-height) 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--cc-space-lg);
+}
+
+/* A Material 3 dialog of 480 px, as frame 171:1283 shows it. */
+.picker {
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: 100%;
+  max-height: 65vh;
+  border-radius: var(--mat-sys-corner-extra-large, 28px);
+  background: var(--cc-surface-card);
+  box-shadow: 0 8px 24px rgb(32 33 36 / 18%);
+}
+
+.picker h2 {
+  margin: 0;
+  padding: 6px 24px 13px;
+  font:
+    400 24px / 32px Roboto,
+    sans-serif;
+  letter-spacing: 0;
+}
+
+.picker-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 24px;
+}
+
+.picker-content > :first-child {
+  margin-block-start: 0;
+}
+
+.current {
+  margin: 0;
+}
+
+mat-form-field {
+  display: block;
+  width: 100%;
+  margin-block-start: var(--cc-space-lg);
+}
+
+.selected-path {
+  margin: var(--cc-space-lg) 0 0;
+}
+
+.picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--cc-space-sm);
+  min-height: 52px;
+  padding: 16px 24px;
+}
