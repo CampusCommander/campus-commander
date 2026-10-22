@@ -76,6 +76,7 @@ const operation = (overrides: Partial<JobOperation> = {}): JobOperation => ({
   deviceId: 'synthetic-device-6',
   serialNumber: 'C0A1-7F84',
   orgUnitPath: '/School A',
+  field: 'annotatedLocation',
   operation: 'replace',
   baselineValue: 'Science wing',
   requestedValue: 'North lab',
@@ -574,12 +575,18 @@ describe('job detail fields', () => {
   });
 
   it('labels a command row and hides its baseline', () => {
-    const reboot = operation({ operation: 'reboot', requestedValue: null });
+    const reboot = operation({
+      field: null,
+      operation: 'reboot',
+      requestedValue: null,
+    });
     expect(operationLabel(job(), reboot)).toBe('Reboot');
     expect(beforeText(reboot)).toBe('—');
     expect(requestedText(reboot)).toBe('Reboot');
     expect(isCommandOperation(reboot)).toBe(true);
-    expect(isCommandOperation(operation({ operation: 'disable' }))).toBe(false);
+    expect(
+      isCommandOperation(operation({ field: null, operation: 'disable' })),
+    ).toBe(false);
   });
 
   it('labels a status row with its baseline and requested status', () => {
@@ -592,6 +599,7 @@ describe('job detail fields', () => {
     });
     const disable = operation({
       operationId: 'STS-002-1',
+      field: null,
       operation: 'disable',
       baselineValue: 'ACTIVE',
       requestedValue: 'DISABLED',
@@ -601,6 +609,7 @@ describe('job detail fields', () => {
     expect(requestedText(disable)).toBe('Disabled');
 
     const reenable = operation({
+      field: null,
       operation: 'reenable',
       baselineValue: 'DISABLED',
       requestedValue: 'ACTIVE',
@@ -648,9 +657,15 @@ describe('job detail fields', () => {
     expect(operationNumber('UPD-1000-1')).toBe('1');
     expect(operationNumber('STS-002-3')).toBe('3');
     expect(operationNumber('STS-1000-12')).toBe('12');
+    // An update row names its field, and the field never changes the number (addendum section 1).
+    expect(operationNumber('UPD-006-12-annotatedLocation')).toBe('12');
+    expect(operationNumber('UPD-006-1-annotatedUser')).toBe('1');
+    expect(operationNumber('UPD-006-2-notes')).toBe('2');
+    expect(operationNumber('UPD-006-3-orgUnitPath')).toBe('3');
     // Commands offer no reconciliation (record default 4), so their IDs stay invalid.
     expect(operationNumber('CMD-001-2')).toBeNull();
     expect(operationNumber('UPD-006')).toBeNull();
+    expect(operationNumber('UPD-006-1status')).toBeNull();
     expect(operationNumber('XPD-006-1')).toBeNull();
   });
 

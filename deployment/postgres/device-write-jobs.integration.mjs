@@ -220,6 +220,11 @@ export async function qualifyDeviceWriteJobs({
       value = 'Room 12',
       createdBy = confirmer,
       createdAt = null,
+      /**
+       * The field rows of every operation, in contract order. The default is one annotatedLocation
+       * row from the header. A multi-field job names its own rows (addendum section 2).
+       */
+      fields = null,
     }) => {
       const jobId = randomUUID();
       const previewId = randomUUID();
@@ -275,7 +280,7 @@ export async function qualifyDeviceWriteJobs({
           Math.ceil(devices.length / batchSize),
         ],
       );
-      for (const [index, deviceId] of devices.entries())
+      for (const [index, deviceId] of devices.entries()) {
         await admin(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
             baseline_value,requested_value,batch,status)
@@ -289,6 +294,28 @@ export async function qualifyDeviceWriteJobs({
             Math.floor(index / batchSize),
           ],
         );
+        // One row per field holds the requested and observed values (addendum section 2). A job that
+        // names its own field rows writes each of them; the default is one annotatedLocation row.
+        for (const row of fields ?? [
+          {
+            field: 'annotatedLocation',
+            baselineValue: null,
+            requestedValue: mode === 'clear' ? null : value,
+          },
+        ])
+          await admin(
+            `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+              baseline_value,requested_value)
+            VALUES($1,$2,$3,$4,$5)`,
+            [
+              jobId,
+              index + 1,
+              row.field,
+              row.baselineValue ?? null,
+              row.requestedValue ?? null,
+            ],
+          );
+      }
       return { jobId, previewId };
     };
     const admit = (held = false) =>
@@ -407,9 +434,20 @@ export async function qualifyDeviceWriteJobs({
     };
     const operations = (jobId) =>
       admin(
-        `SELECT operation_number,device_id,status,attempt_id,observed_value,observed_at,verified_by,outcome_reason,
-          verify_attempt FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number`,
+        `SELECT o.operation_number,o.device_id,o.status,o.attempt_id,o.observed_value,o.observed_at,
+          o.verified_by,o.outcome_reason,o.verify_attempt,f.observed_value AS field_observed_value
+          FROM cc.device_update_operations o
+          LEFT JOIN cc.device_update_operation_fields f
+            ON f.job_id=o.job_id AND f.operation_number=o.operation_number AND f.field='annotatedLocation'
+          WHERE o.job_id=$1 ORDER BY o.operation_number`,
         [jobId],
+      );
+    const fieldRow = (jobId, operationNumber, field) =>
+      adminRow(
+        `SELECT field,baseline_value,requested_value,observed_value
+          FROM cc.device_update_operation_fields
+          WHERE job_id=$1 AND operation_number=$2 AND field=$3`,
+        [jobId, operationNumber, field],
       );
     const jobRow = (jobId) =>
       adminRow('SELECT * FROM cc.jobs WHERE job_id=$1', [jobId]);
@@ -833,7 +871,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -938,7 +976,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Stale',
+              values: { annotatedLocation: 'Stale' },
               verifiedBy: 'write-response',
             },
             {
@@ -1118,7 +1156,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1151,7 +1189,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'read-back',
             },
           ],
@@ -1330,13 +1368,13 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1370,13 +1408,13 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: null,
+              values: { annotatedLocation: null },
               verifiedBy: 'write-response',
             },
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: null,
+              values: { annotatedLocation: null },
               verifiedBy: 'write-response',
             },
           ],
@@ -1421,7 +1459,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1837,7 +1875,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1882,7 +1920,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 9',
+              values: { annotatedLocation: 'Room 9' },
               verifiedBy: 'read-back',
             },
           ],
@@ -1944,7 +1982,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'quiet-room',
+              values: { annotatedLocation: 'quiet-room' },
               verifiedBy: 'write-response',
             },
           ],
@@ -1966,7 +2004,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'stale-room',
+              values: { annotatedLocation: 'stale-room' },
               verifiedBy: 'read-back',
             },
           ],
@@ -1975,7 +2013,7 @@ export async function qualifyDeviceWriteJobs({
         assert.equal(settled.settled.length, 1);
         const recorded = (await operations(older.jobId))[0];
         assert.equal(recorded.status, 'succeeded');
-        assert.equal(recorded.observed_value, 'stale-room');
+        assert.equal(recorded.field_observed_value, 'stale-room');
         const row = await deviceRow('s1');
         assert.equal(row.annotated_location, 'quiet-room');
         assert.equal(
@@ -2014,7 +2052,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'late-room',
+              values: { annotatedLocation: 'late-room' },
               verifiedBy: 'read-back',
             },
           ],
@@ -2073,7 +2111,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'stale-room',
+              values: { annotatedLocation: 'stale-room' },
               verifiedBy: 'read-back',
             },
           ],
@@ -2714,7 +2752,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -2853,7 +2891,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -2925,7 +2963,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -2999,7 +3037,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -3053,7 +3091,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -3119,7 +3157,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -3223,7 +3261,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'write-response',
                 },
               ]),
@@ -3271,6 +3309,221 @@ export async function qualifyDeviceWriteJobs({
           );
           assert.equal((await deviceRow('w2')).annotated_location, null);
           assert.equal(await overlay('w2'), undefined);
+          await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+          await endJob(job.jobId);
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+          await migrator
+            .query(
+              'UPDATE cc.device_update_batches SET lease_expires_at=NULL WHERE job_id=$1',
+              [job.jobId],
+            )
+            .catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'a settlement that waits on an operation field row fences on the lease that lapsed in the wait',
+      async () => {
+        await upsert([device('w4')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({
+          devices: ['w4'],
+          fields: [
+            { field: 'annotatedUser', requestedValue: 'Ada Lovelace' },
+            { field: 'notes', requestedValue: 'Front desk' },
+          ],
+        });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const holder = await connect('cc-migrator', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const before = await jobRow(job.jobId);
+          const recorded = await publications(job.jobId);
+          // The lease lives when the settlement starts, and lapses while it waits.
+          await migrator.query(
+            `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+              WHERE job_id=$1`,
+            [job.jobId],
+          );
+          await holder.query('BEGIN');
+          await holder.query(
+            `SELECT 1 FROM cc.device_update_operation_fields
+              WHERE job_id=$1 AND operation_number=1 AND field='notes' FOR UPDATE`,
+            [job.jobId],
+          );
+          const pending = writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'write',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  values: {
+                    annotatedUser: 'Ada Lovelace',
+                    notes: 'Front desk',
+                  },
+                  verifiedBy: 'write-response',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The settlement waits for the field row.',
+          );
+          assert.equal(
+            await until(
+              `SELECT clock_timestamp()>lease_expires_at AS lapsed FROM cc.device_update_batches
+                WHERE job_id=$1 AND batch=0`,
+              [job.jobId],
+            ),
+            true,
+            'The batch lease lapses in the wait.',
+          );
+          await holder.query('COMMIT');
+          const late = (await pending).rows[0].result;
+          assert.deepEqual(late.settled, []);
+          assert.equal(late.publication, null);
+          const after = await jobRow(job.jobId);
+          assert.deepEqual(
+            [
+              after.succeeded,
+              after.unknown,
+              Number(after.revision),
+              after.changed_at.getTime(),
+            ],
+            [
+              before.succeeded,
+              before.unknown,
+              Number(before.revision),
+              before.changed_at.getTime(),
+            ],
+          );
+          assert.equal(await publications(job.jobId), recorded);
+          assert.equal((await operations(job.jobId))[0].status, 'dispatched');
+          assert.equal(
+            (await fieldRow(job.jobId, 1, 'annotatedUser')).observed_value,
+            null,
+          );
+          assert.equal(
+            (await fieldRow(job.jobId, 1, 'notes')).observed_value,
+            null,
+          );
+          const device = await lagRow('w4');
+          assert.equal(device.annotated_user, null);
+          assert.equal(device.notes, null);
+          assert.equal(await overlayOf('w4', 'annotatedUser'), undefined);
+          assert.equal(await overlayOf('w4', 'notes'), undefined);
+          await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+          await endJob(job.jobId);
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+          await migrator
+            .query(
+              'UPDATE cc.device_update_batches SET lease_expires_at=NULL WHERE job_id=$1',
+              [job.jobId],
+            )
+            .catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'a settlement that waits on an operation field row settles when its lease still lives',
+      async () => {
+        await upsert([device('w5')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({
+          devices: ['w5'],
+          fields: [
+            { field: 'annotatedUser', requestedValue: 'Ada Lovelace' },
+            { field: 'notes', requestedValue: 'Front desk' },
+          ],
+        });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const holder = await connect('cc-migrator', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            `SELECT 1 FROM cc.device_update_operation_fields
+              WHERE job_id=$1 AND operation_number=1 AND field='notes' FOR UPDATE`,
+            [job.jobId],
+          );
+          const pending = writer.query(
+            'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+            [
+              customer,
+              job.jobId,
+              admitted.dispatchToken,
+              attempt,
+              'write',
+              JSON.stringify([
+                {
+                  operationNumber: 1,
+                  outcome: 'succeeded',
+                  values: {
+                    annotatedUser: 'Ada Lovelace',
+                    notes: 'Front desk',
+                  },
+                  verifiedBy: 'write-response',
+                },
+              ]),
+              new Date(),
+            ],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The settlement waits for the field row.',
+          );
+          await holder.query('COMMIT');
+          const answer = (await pending).rows[0].result;
+          assert.deepEqual(
+            answer.settled.map((one) => one.status),
+            ['succeeded'],
+          );
+          assert.equal(
+            (await fieldRow(job.jobId, 1, 'annotatedUser')).observed_value,
+            'Ada Lovelace',
+          );
+          assert.equal(
+            (await fieldRow(job.jobId, 1, 'notes')).observed_value,
+            'Front desk',
+          );
+          const device = await lagRow('w5');
+          assert.equal(device.annotated_user, 'Ada Lovelace');
+          assert.equal(device.notes, 'Front desk');
+          assert.equal(
+            (await overlayOf('w5', 'annotatedUser')).value,
+            'Ada Lovelace',
+          );
+          assert.equal((await overlayOf('w5', 'notes')).value, 'Front desk');
           await stop(job.jobId, admitted.dispatchToken, 0, attempt);
           await endJob(job.jobId);
         } finally {
@@ -3340,7 +3593,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -4362,7 +4615,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -4469,7 +4722,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -4839,8 +5092,8 @@ export async function qualifyDeviceWriteJobs({
       }
     };
     // A settled job and a lapsed lease give the writer its own contention fixture.
-    const heldJob = async (deviceId) => {
-      const job = await makeJob({ devices: [deviceId] });
+    const heldJob = async (deviceId, options = {}) => {
+      const job = await makeJob({ devices: [deviceId], ...options });
       const admitted = await admit(false);
       assert.equal(admitted.jobId, job.jobId, 'The admission picks this job.');
       const attempt = randomUUID();
@@ -7120,7 +7373,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   verifiedBy: 'read-back',
                 },
               ]),
@@ -7256,7 +7509,7 @@ export async function qualifyDeviceWriteJobs({
               {
                 operationNumber: 1,
                 outcome: 'succeeded',
-                value: 'Room 12',
+                values: { annotatedLocation: 'Room 12' },
                 verifiedBy: 'write-response',
               },
             ]),
@@ -7468,7 +7721,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'read-back',
             },
           ],
@@ -7574,7 +7827,7 @@ export async function qualifyDeviceWriteJobs({
           ? {
               operationNumber: 1,
               outcome,
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             }
           : {
@@ -7860,7 +8113,7 @@ export async function qualifyDeviceWriteJobs({
         [1, 2].map((operationNumber) => ({
           operationNumber,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'read-back',
         })),
       ),
@@ -8660,12 +8913,12 @@ export async function qualifyDeviceWriteJobs({
     ];
     // A write job holds its operation under a live lease. A read-back job ended as needs-review, and its
     // unknown operation keeps the live read-back lease of the same attempt.
-    const provenanceJob = async (deviceId, kind) => {
+    const provenanceJob = async (deviceId, kind, options = {}) => {
       await upsert(
         [device(deviceId, { annotatedLocation: 'Old' })],
         new Date(Date.now() - 60 * 60 * 1000),
       );
-      const job = await heldJob(deviceId);
+      const job = await heldJob(deviceId, options);
       if (kind === 'read-back') {
         await settle(
           job.jobId,
@@ -8759,7 +9012,7 @@ export async function qualifyDeviceWriteJobs({
                 {
                   operationNumber: 1,
                   outcome: 'succeeded',
-                  value: 'Room 12',
+                  values: { annotatedLocation: 'Room 12' },
                   ...provenance,
                 },
               ]),
@@ -8781,7 +9034,7 @@ export async function qualifyDeviceWriteJobs({
               {
                 operationNumber: 1,
                 outcome: 'succeeded',
-                value: 'Room 12',
+                values: { annotatedLocation: 'Room 12' },
                 verifiedBy: source,
               },
             ]),
@@ -8805,7 +9058,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'read-back',
         },
       ],
@@ -8815,7 +9068,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'write-response',
         },
       ],
@@ -8890,7 +9143,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'x'.repeat(4097),
+          values: { annotatedLocation: 'x'.repeat(4097) },
           verifiedBy: 'write-response',
         },
       ],
@@ -8899,7 +9152,25 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 12,
+          values: { annotatedLocation: 12 },
+          verifiedBy: 'write-response',
+        },
+      ],
+      [
+        'a value for a field its operation does not hold',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          values: { annotatedLocation: 'Room 12', notes: 'Front desk' },
+          verifiedBy: 'write-response',
+        },
+      ],
+      [
+        'values that omit a field of its operation',
+        {
+          operationNumber: 1,
+          outcome: 'succeeded',
+          values: {},
           verifiedBy: 'write-response',
         },
       ],
@@ -8915,6 +9186,130 @@ export async function qualifyDeviceWriteJobs({
             sql: settleSql,
             values: settlementValues(job, 'write', [entry]),
           });
+          await endJob(job.jobId);
+        },
+      );
+
+    // Design section 8 (Settlement domains): a succeeded path holds a leading '/', while a failed
+    // value-differs result carries the same value as evidence and publishes nothing.
+    for (const [index, [label, value]] of [
+      ['a null path', null],
+      ['a path without a leading slash', 'School B'],
+    ].entries())
+      await ruleCheck(
+        `S2 a succeeded write settlement with ${label} rejects before any lock`,
+        async () => {
+          const deviceId = `r7s-${index}`;
+          const job = await provenanceJob(deviceId, 'write', {
+            fields: [{ field: 'orgUnitPath', requestedValue: '/School B' }],
+          });
+          await rejectsBeforeLocks({
+            jobId: job.jobId,
+            deviceId,
+            sql: settleSql,
+            values: settlementValues(job, 'write', [
+              {
+                operationNumber: 1,
+                outcome: 'succeeded',
+                values: { orgUnitPath: value },
+                verifiedBy: 'write-response',
+              },
+            ]),
+          });
+          await endJob(job.jobId);
+        },
+      );
+
+    for (const [index, [label, value]] of [
+      ['a null path', null],
+      ['a path without a leading slash', 'School B'],
+    ].entries())
+      await ruleCheck(
+        `a failed value-differs result keeps ${label} as evidence and publishes nothing`,
+        async () => {
+          const deviceId = `r7f-${index}`;
+          const job = await provenanceJob(deviceId, 'write', {
+            fields: [{ field: 'orgUnitPath', requestedValue: '/School B' }],
+          });
+          const before = await lagRow(deviceId);
+          const answer = await settle(
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            [
+              {
+                operationNumber: 1,
+                outcome: 'failed',
+                outcomeReason: 'value-differs',
+                googleStatus: 200,
+                values: { orgUnitPath: value },
+                verifiedBy: 'write-response',
+              },
+            ],
+            new Date(),
+          );
+          assert.deepEqual(
+            answer.settled.map((one) => one.status),
+            ['failed'],
+          );
+          const operation = (await operations(job.jobId))[0];
+          assert.equal(operation.status, 'failed');
+          assert.equal(operation.outcome_reason, 'value-differs');
+          const evidence = await fieldRow(job.jobId, 1, 'orgUnitPath');
+          assert.equal(evidence.observed_value, value);
+          assert.deepEqual(await lagRow(deviceId), before);
+          assert.equal(await overlayOf(deviceId, 'orgUnitPath'), undefined);
+          // A failed result never publishes a device (step 4 rule 2).
+          const changes = await admin(
+            'SELECT device_ids FROM cc.job_publications WHERE job_id=$1',
+            [job.jobId],
+          );
+          assert.ok(
+            changes.every((row) => row.device_ids.length === 0),
+            `A failed result names no device: ${JSON.stringify(changes)}`,
+          );
+          await endJob(job.jobId);
+        },
+      );
+
+    // Fix D1: a stored status is an HTTP status from 100 to 599, or null when no answer arrived.
+    // The worker now sends null, and the settlement drops a transport zero from an older worker.
+    for (const [index, [label, given, stored]] of [
+      ['an absent status', undefined, null],
+      ['a transport zero', 0, null],
+      ['a real refusal', 403, 403],
+    ].entries())
+      await ruleCheck(
+        `a write settlement with ${label} stores google_status ${stored}`,
+        async () => {
+          const deviceId = `d1w-${index}`;
+          const job = await provenanceJob(deviceId, 'write');
+          const entry = {
+            operationNumber: 1,
+            outcome: 'failed',
+            outcomeReason: 'forbidden',
+            ...(given === undefined ? {} : { googleStatus: given }),
+          };
+          const answer = await settle(
+            job.jobId,
+            job.token,
+            job.attempt,
+            'write',
+            [entry],
+            new Date(),
+          );
+          assert.deepEqual(
+            answer.settled.map((one) => one.status),
+            ['failed'],
+          );
+          const operation = await adminRow(
+            `SELECT status,google_status FROM cc.device_update_operations
+              WHERE job_id=$1 AND operation_number=1`,
+            [job.jobId],
+          );
+          assert.equal(operation.status, 'failed');
+          assert.equal(operation.google_status, stored);
           await endJob(job.jobId);
         },
       );
@@ -9072,7 +9467,7 @@ export async function qualifyDeviceWriteJobs({
         {
           operationNumber: 1,
           outcome: 'succeeded',
-          value: 'Room 12',
+          values: { annotatedLocation: 'Room 12' },
           verifiedBy: 'write-response',
         },
       ]);
@@ -10041,7 +10436,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10177,7 +10572,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 2,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'read-back',
             },
           ],
@@ -10707,7 +11102,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10763,7 +11158,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10890,7 +11285,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -10935,7 +11330,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -11112,7 +11507,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],
@@ -11225,7 +11620,7 @@ export async function qualifyDeviceWriteJobs({
             {
               operationNumber: 1,
               outcome: 'succeeded',
-              value: 'Room 12',
+              values: { annotatedLocation: 'Room 12' },
               verifiedBy: 'write-response',
             },
           ],

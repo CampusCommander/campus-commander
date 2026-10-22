@@ -40,14 +40,20 @@ const batchRequest = {
 };
 const base = Date.now() - 5_000;
 
-/** One claimed operation of the write path. */
-const op = (number, deviceId, value = `Room ${number}`) => ({
+/** One claimed operation of the write path, with its one annotatedLocation field row. */
+const op = (number, deviceId, value = `Room ${number}`, fields = null) => ({
   operationNumber: number,
   deviceId,
   serialNumber: `serial-${number}`,
   baselineValue: null,
   requestedValue: value,
+  fields: fields ?? [
+    { field: 'annotatedLocation', baselineValue: null, requestedValue: value },
+  ],
 });
+
+/** One claimed operation of a status action: no field rows. */
+const statusOp = (number, deviceId, value) => op(number, deviceId, value, []);
 
 const claimed = (operations, readBack = [], action = 'annotated-location') => ({
   outcome: 'claimed',
@@ -68,6 +74,7 @@ const part = (
     reason = null,
     value = undefined,
     commandId = undefined,
+    fields = undefined,
     quota = 0,
     transient = 0,
   } = {},
@@ -82,9 +89,11 @@ const part = (
           page:
             commandId !== undefined
               ? { commandId }
-              : value === undefined
-                ? { deviceId: id }
-                : { deviceId: id, annotatedLocation: value },
+              : fields !== undefined
+                ? { deviceId: id, ...fields }
+                : value === undefined
+                  ? { deviceId: id }
+                  : { deviceId: id, annotatedLocation: value },
           pageIndex: 0,
           hasNextPage: false,
         }
@@ -120,15 +129,9 @@ const part = (
 function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
   return {
     calls: [],
-    async patchAnnotatedLocations(
-      _credential,
-      _customer,
-      writes,
-      signal,
-      options,
-    ) {
+    async patchDevices(_credential, _customer, writes, signal, options) {
       const call = {
-        name: 'patchAnnotatedLocations',
+        name: 'patchDevices',
         writes: writes.map((write) => ({ ...write })),
         batchSize: options.batchSize,
         aborted: false,
@@ -170,8 +173,20 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
         if (round.fatal) throw round.fatal;
         for (const id of ids) {
           const answer = round.parts?.[id] ?? { kind: 'success' };
+          // A 2xx body names the value it wrote, so an answer without an explicit
+          // value echoes the fields of its write.
+          const echo =
+            answer.kind === 'success' &&
+            answer.value === undefined &&
+            answer.fields === undefined &&
+            answer.commandId === undefined
+              ? {
+                  fields:
+                    writes.find((write) => write.deviceId === id)?.fields ?? {},
+                }
+              : {};
           const event = {
-            ...part(id, answer),
+            ...part(id, { ...answer, ...echo }),
             request: {
               id,
               method: 'PATCH',
@@ -765,8 +780,7 @@ test('classification covers each row of section 7.1', () => {
     operation: op(1, 'd1'),
     sent: false,
     succeeded: false,
-    value: null,
-    hasValue: false,
+    observed: null,
     status: null,
     attempts: { quota: 0, transient: 0 },
     final: null,
@@ -792,9 +806,29 @@ test('classification covers each row of section 7.1', () => {
       tracked({
         succeeded: true,
         status: 200,
-        hasValue: true,
-        value: 'Normalized Room 1',
+        observed: { annotatedLocation: 'Normalized Room 1' },
         attempts: { quota: 0, transient: 1 },
+      }),
+    ),
+    {
+      operationNumber: 1,
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      verifiedBy: 'write-response',
+      googleStatus: 200,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 1,
+      values: { annotatedLocation: 'Normalized Room 1' },
+    },
+  );
+  // A 2xx body that names the requested value verifies the write by its response.
+  assert.deepEqual(
+    run(
+      tracked({
+        succeeded: true,
+        status: 200,
+        observed: { annotatedLocation: 'Room 1' },
       }),
     ),
     {
@@ -804,19 +838,21 @@ test('classification covers each row of section 7.1', () => {
       googleStatus: 200,
       googleReason: null,
       quotaRetries: 0,
-      transientRetries: 1,
-      value: 'Normalized Room 1',
+      transientRetries: 0,
+      values: { annotatedLocation: 'Room 1' },
     },
   );
-  // A 2xx body without the field names no value. The settlement defaults it.
+  // A 2xx body without the field reads null, so a requested value differs (section 4).
   assert.deepEqual(run(tracked({ succeeded: true, status: 200 })), {
     operationNumber: 1,
-    outcome: 'succeeded',
+    outcome: 'failed',
+    outcomeReason: 'value-differs',
     verifiedBy: 'write-response',
     googleStatus: 200,
     googleReason: null,
     quotaRetries: 0,
     transientRetries: 0,
+    values: { annotatedLocation: null },
   });
   assert.deepEqual(
     run(tracked({ sent: true, final: failed('rejected', 403, 'forbidden') })),
@@ -934,8 +970,8 @@ test('item 18: the round-1 settlement takes the renewal stamp, so a later refres
     ['succeeded', 'succeeded'],
   );
   assert.deepEqual(source.calls[0].writes, [
-    { deviceId: 'd1', value: 'Room 1' },
-    { deviceId: 'd2', value: 'Room 2' },
+    { deviceId: 'd1', fields: { annotatedLocation: 'Room 1' } },
+    { deviceId: 'd2', fields: { annotatedLocation: 'Room 2' } },
   ]);
 });
 
@@ -944,7 +980,9 @@ test('a clear sends a null value', async () => {
   const source = reader([{ parts: { d1: { kind: 'success' } } }]);
   const { create } = jobs({ db, reader: source });
   await create.runBatch(batchRequest, AbortSignal.timeout(5000));
-  assert.deepEqual(source.calls[0].writes, [{ deviceId: 'd1', value: null }]);
+  assert.deepEqual(source.calls[0].writes, [
+    { deviceId: 'd1', fields: { annotatedLocation: null } },
+  ]);
 });
 
 test('first-attempt refusals fail without a read-back', async () => {
@@ -1018,7 +1056,7 @@ test('R3 response loss then refusal: the read-back settles the applied write', a
   const verified = JSON.parse(readBack.values[5])[0];
   assert.equal(verified.outcome, 'succeeded');
   assert.equal(verified.verifiedBy, 'read-back');
-  assert.equal(verified.value, 'Room 1');
+  assert.equal(verified.values.annotatedLocation, 'Room 1');
 });
 
 test('R3 response loss then a 400 or 404: the read-back settles the applied write', async () => {
@@ -1157,7 +1195,7 @@ test('a Disable claim sends one status part and settles each device element', as
   const db = database({
     claim: () =>
       claimed(
-        [op(1, 'd1', 'DISABLED'), op(2, 'd2', 'DISABLED')],
+        [statusOp(1, 'd1', 'DISABLED'), statusOp(2, 'd2', 'DISABLED')],
         [],
         'disable',
       ),
@@ -1267,7 +1305,7 @@ test('a Disable claim sends one status part and settles each device element', as
 
 test('a Re-enable claim sends the re-enable action', async () => {
   const db = database({
-    claim: () => claimed([op(1, 'd1', 'ACTIVE')], [], 'reenable'),
+    claim: () => claimed([statusOp(1, 'd1', 'ACTIVE')], [], 'reenable'),
   });
   const source = reader([], [], [{ results: {} }]);
   const { create } = jobs({ db, reader: source });
@@ -1282,7 +1320,7 @@ test('a status read-back compares the device status', async () => {
   const db = database({
     claim: () =>
       claimed(
-        [op(1, 'd1', 'DISABLED'), op(2, 'd2', 'DISABLED')],
+        [statusOp(1, 'd1', 'DISABLED'), statusOp(2, 'd2', 'DISABLED')],
         [],
         'disable',
       ),
@@ -1342,7 +1380,11 @@ test('a status read-back compares the device status', async () => {
 test('a failed status part settles every device it held by the step 4 rules', async () => {
   const db = database({
     claim: () =>
-      claimed([op(1, 'd1', 'ACTIVE'), op(2, 'd2', 'ACTIVE')], [], 'reenable'),
+      claimed(
+        [statusOp(1, 'd1', 'ACTIVE'), statusOp(2, 'd2', 'ACTIVE')],
+        [],
+        'reenable',
+      ),
   });
   const source = reader(
     [],
@@ -1466,8 +1508,8 @@ test('a graceful stop returns unsent operations to pending and releases', async 
     onSleep: async () => stopping.abort(),
   });
   // Abort during the claim poll-free path: abort after the claim, before the write.
-  const original = source.patchAnnotatedLocations;
-  source.patchAnnotatedLocations = async (...args) => {
+  const original = source.patchDevices;
+  source.patchDevices = async (...args) => {
     stopping.abort();
     return original.apply(source, args);
   };
@@ -1809,6 +1851,13 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
             serialNumber: 's1',
             baselineValue: null,
             requestedValue: 'Room 1',
+            fields: [
+              {
+                field: 'annotatedLocation',
+                baselineValue: null,
+                requestedValue: 'Room 1',
+              },
+            ],
             verifyAfter: null,
           },
         ];
@@ -1828,6 +1877,13 @@ test('the finish prepares, reads back a chunk, and returns the publication', asy
           serialNumber: 's1',
           baselineValue: null,
           requestedValue: 'Room 1',
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 1',
+            },
+          ],
           verifyAfter: new Date(base).toISOString(),
           verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
         },
@@ -1909,8 +1965,7 @@ test('a command issue classifies its accepted, refused, and lost answers', () =>
     operation: op(1, 'd1'),
     sent: true,
     succeeded: false,
-    value: null,
-    hasValue: false,
+    observed: null,
     commandId: null,
     status: null,
     attempts: { quota: 0, transient: 0 },
@@ -1953,7 +2008,7 @@ test('a command issue classifies its accepted, refused, and lost answers', () =>
   );
   assert.equal(quota.outcome, 'failed');
   assert.equal(quota.outcomeReason, 'quota');
-  // A sent POST with no answer stays ambiguous and stores no HTTP status.
+  // A sent POST with no answer stays ambiguous and stores no HTTP status (fix D1).
   const lost = run(tracked());
   assert.equal(lost.outcome, 'unknown');
   assert.equal(lost.outcomeReason, 'ambiguous');
@@ -1962,7 +2017,7 @@ test('a command issue classifies its accepted, refused, and lost answers', () =>
 
 test('a command batch issues one POST part per operation and settles issued', async () => {
   const db = database({
-    claim: () => claimed([op(1, 'd1'), op(2, 'd2')], [], 'reboot'),
+    claim: () => claimed([statusOp(1, 'd1'), statusOp(2, 'd2')], [], 'reboot'),
   });
   const source = reader([
     {
@@ -2009,7 +2064,7 @@ test('a command batch issues one POST part per operation and settles issued', as
 
 test('a command finish skips the read-back and answers awaiting-devices', async () => {
   const db = database({
-    claim: () => claimed([op(1, 'd1')], [], 'reboot'),
+    claim: () => claimed([statusOp(1, 'd1')], [], 'reboot'),
     prepare: () => ({ outcome: 'ready', failure: null, action: 'reboot' }),
     finish: () => ({
       jobId,
@@ -2045,7 +2100,9 @@ test('a command finish skips the read-back and answers awaiting-devices', async 
 });
 
 test('a transient command refusal settles unknown ambiguous without a retry', async () => {
-  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  const db = database({
+    claim: () => claimed([statusOp(1, 'd1')], [], 'reboot'),
+  });
   const source = reader([
     {
       parts: { d1: { kind: 'transient', status: 503, reason: 'backendError' } },
@@ -2067,8 +2124,31 @@ test('a transient command refusal settles unknown ambiguous without a retry', as
   );
 });
 
+test('a command POST with no answer settles unknown ambiguous', async () => {
+  const db = database({
+    claim: () => claimed([statusOp(1, 'd1')], [], 'reboot'),
+  });
+  const source = reader([{ abortBeforeAnswer: true }]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(source.calls[0].aborted, true);
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'ambiguous', null]],
+  );
+});
+
 test('a lost issuance answer stores no HTTP status', async () => {
-  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  const db = database({
+    claim: () => claimed([statusOp(1, 'd1')], [], 'reboot'),
+  });
   // The POST leaves the worker and Google never answers it before the call ends.
   const source = reader([{ hang: true }]);
   const { create } = jobs({ db, reader: source });
@@ -2088,7 +2168,9 @@ test('a lost issuance answer stores no HTTP status', async () => {
 });
 
 test('a transport-level part failure stores no HTTP status', async () => {
-  const db = database({ claim: () => claimed([op(1, 'd1')], [], 'reboot') });
+  const db = database({
+    claim: () => claimed([statusOp(1, 'd1')], [], 'reboot'),
+  });
   // The batch service reports a transport failure with status 0 (no HTTP answer).
   const source = reader([
     {
@@ -2135,6 +2217,69 @@ test('an invalid-response failure stores no HTTP status', async () => {
   );
 });
 
+test('a multi-field update with no answer stores no HTTP status', async () => {
+  const fields = [
+    {
+      field: 'annotatedUser',
+      baselineValue: null,
+      requestedValue: 'Ada Lovelace',
+    },
+    { field: 'notes', baselineValue: null, requestedValue: 'Front desk' },
+  ];
+  const db = database({ claim: () => claimed([op(1, 'd1', null, fields)]) });
+  // The PATCH leaves the worker and Google never answers it.
+  const source = reader([{ abortBeforeAnswer: true }]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  const [settlement] = settlements(db);
+  assert.equal(settlement.values[4], 'write');
+  assert.deepEqual(
+    JSON.parse(settlement.values[5]).map((result) => [
+      result.outcome,
+      result.outcomeReason,
+      result.googleStatus,
+    ]),
+    [['unknown', 'ambiguous', null]],
+  );
+});
+
+test('a multi-field update keeps a real HTTP status and drops a transport zero', async () => {
+  for (const [status, stored] of [
+    [0, null],
+    [503, 503],
+  ]) {
+    const fields = [
+      { field: 'annotatedUser', baselineValue: null, requestedValue: 'Ada' },
+      { field: 'notes', baselineValue: null, requestedValue: 'Front desk' },
+    ];
+    const db = database({ claim: () => claimed([op(1, 'd1', null, fields)]) });
+    const source = reader([
+      {
+        parts: {
+          d1: { kind: 'transient', status, reason: 'backendError' },
+        },
+      },
+    ]);
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runBatch(
+      batchRequest,
+      AbortSignal.timeout(5000),
+    );
+    assert.equal(answer.outcome, 'settled');
+    const [settlement] = settlements(db);
+    assert.deepEqual(
+      JSON.parse(settlement.values[5]).map((result) => [
+        result.outcome,
+        result.outcomeReason,
+        result.googleStatus,
+      ]),
+      [['unknown', 'ambiguous', stored]],
+      `Status ${status} stores ${stored}.`,
+    );
+  }
+});
+
 test('reconcile with a number answers not-held when the attempt holds nothing', async () => {
   const db = database({ verificationRead: () => ({ outcome: 'not-held' }) });
   const source = reader();
@@ -2171,6 +2316,13 @@ test('reconcile with a number reads its operation and settles it', async () => {
           serialNumber: 's3',
           baselineValue: null,
           requestedValue: 'Room 3',
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 3',
+            },
+          ],
           verifyAfter: new Date(base - 1000).toISOString(),
           verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
         },
@@ -2219,6 +2371,13 @@ test('reconcile for all claims chunks until an empty claim', async () => {
           serialNumber: null,
           baselineValue: null,
           requestedValue: `Room ${claims}`,
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: `Room ${claims}`,
+            },
+          ],
           verifyAfter: null,
         },
       ];
@@ -2239,6 +2398,13 @@ test('reconcile for all claims chunks until an empty claim', async () => {
             serialNumber: null,
             baselineValue: null,
             requestedValue: `Room ${number}`,
+            fields: [
+              {
+                field: 'annotatedLocation',
+                baselineValue: null,
+                requestedValue: `Room ${number}`,
+              },
+            ],
             verifyAfter: new Date(base).toISOString(),
             verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
           },
@@ -2351,7 +2517,7 @@ test('an empty or partial write recording fences the attempt and releases nothin
   }
 });
 
-test('a success records the observed value, its status, and the retry history', async () => {
+test('a success records the observed values, its status, and the retry history', async () => {
   const db = database({ claim: () => claimed([op(1, 'd1')]) });
   const source = reader([
     {
@@ -2367,7 +2533,7 @@ test('a success records the observed value, its status, and the retry history', 
     {
       reuse: true,
       parts: {
-        d1: { kind: 'success', value: 'Normalized Room 1', transient: 1 },
+        d1: { kind: 'success', value: 'Room 1', transient: 1 },
       },
     },
   ]);
@@ -2383,8 +2549,35 @@ test('a success records the observed value, its status, and the retry history', 
     googleReason: null,
     quotaRetries: 0,
     transientRetries: 1,
-    value: 'Normalized Room 1',
+    values: { annotatedLocation: 'Room 1' },
   });
+});
+
+test('a 2xx answer that names another value settles value-differs', async () => {
+  const db = database({ claim: () => claimed([op(1, 'd1')]) });
+  const source = reader([
+    {
+      parts: {
+        d1: { kind: 'success', value: 'Normalized Room 1' },
+      },
+    },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      verifiedBy: 'write-response',
+      googleStatus: 200,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+      values: { annotatedLocation: 'Normalized Room 1' },
+    },
+  ]);
 });
 
 test('a cache that cannot be configured keeps its publication row', async () => {
@@ -2448,6 +2641,13 @@ test('a verification read with a credential error settles unknown and the finish
               serialNumber: null,
               baselineValue: null,
               requestedValue: 'Room 1',
+              fields: [
+                {
+                  field: 'annotatedLocation',
+                  baselineValue: null,
+                  requestedValue: 'Room 1',
+                },
+              ],
             },
           ];
         };
@@ -2491,6 +2691,13 @@ test('an envelope that cannot open is a read-back failure, not a request failure
             serialNumber: null,
             baselineValue: null,
             requestedValue: 'Room 1',
+            fields: [
+              {
+                field: 'annotatedLocation',
+                baselineValue: null,
+                requestedValue: 'Room 1',
+              },
+            ],
           },
         ];
       };
@@ -2509,6 +2716,13 @@ test('an envelope that cannot open is a read-back failure, not a request failure
           serialNumber: null,
           baselineValue: null,
           requestedValue: 'Room 1',
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 1',
+            },
+          ],
           verifyAfter: new Date(base).toISOString(),
           verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
         },
@@ -2546,6 +2760,13 @@ test('a verification-read store failure stays a request failure', async () => {
         serialNumber: null,
         baselineValue: null,
         requestedValue: 'Room 1',
+        fields: [
+          {
+            field: 'annotatedLocation',
+            baselineValue: null,
+            requestedValue: 'Room 1',
+          },
+        ],
       },
     ],
   });
@@ -2649,6 +2870,13 @@ test('verifyAfter is measured on the database clock, not a worker clock ahead', 
             serialNumber: null,
             baselineValue: null,
             requestedValue: 'Room 3',
+            fields: [
+              {
+                field: 'annotatedLocation',
+                baselineValue: null,
+                requestedValue: 'Room 3',
+              },
+            ],
           },
         ];
       };
@@ -2667,6 +2895,13 @@ test('verifyAfter is measured on the database clock, not a worker clock ahead', 
           serialNumber: null,
           baselineValue: null,
           requestedValue: 'Room 3',
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 3',
+            },
+          ],
           verifyAfter: new Date(base + 30_000).toISOString(),
           verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
         },
@@ -2730,6 +2965,13 @@ test('a read-back inside the 15 s lease margin settles unknown without a GET', a
             serialNumber: null,
             baselineValue: null,
             requestedValue: 'Room 3',
+            fields: [
+              {
+                field: 'annotatedLocation',
+                baselineValue: null,
+                requestedValue: 'Room 3',
+              },
+            ],
           },
         ];
       };
@@ -2748,6 +2990,13 @@ test('a read-back inside the 15 s lease margin settles unknown without a GET', a
           serialNumber: null,
           baselineValue: null,
           requestedValue: 'Room 3',
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 3',
+            },
+          ],
           verifyAfter: new Date(base).toISOString(),
           // The lease ends inside the 15 s margin.
           verifyLeaseExpiresAt: new Date(base + 10_000).toISOString(),
@@ -2800,6 +3049,13 @@ test('a delayed database clock read aborts the read-back GET at the lease-minus-
           serialNumber: null,
           baselineValue: null,
           requestedValue: 'Room 3',
+          fields: [
+            {
+              field: 'annotatedLocation',
+              baselineValue: null,
+              requestedValue: 'Room 3',
+            },
+          ],
           verifyAfter: new Date(base).toISOString(),
           verifyLeaseExpiresAt: new Date(base + 120_000).toISOString(),
         },

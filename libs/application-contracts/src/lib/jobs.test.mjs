@@ -55,6 +55,7 @@ const operation = {
   deviceId: 'device-3',
   serialNumber: 'C0A1-7F2D',
   orgUnitPath: '/School A',
+  field: 'annotatedLocation',
   operation: 'replace',
   baselineValue: 'Room 7',
   requestedValue: 'Room 12',
@@ -118,10 +119,37 @@ test('the command and status vocabulary is accepted', () => {
   assert.equal(jobOutcomeSchema.safeParse('expired').success, true);
   assert.equal(jobCommandStateSchema.safeParse('sent').success, true);
   assert.equal(jobCommandStateSchema.safeParse('delivered').success, false);
-  for (const operationId of ['CMD-001-1', 'STS-001-12', 'UPD-006-3'])
+  for (const operationId of [
+    'CMD-001-1',
+    'STS-001-12',
+    'UPD-006-3',
+    'UPD-006-3-annotatedLocation',
+    'UPD-006-3-annotatedUser',
+    'UPD-006-3-notes',
+    'UPD-006-3-orgUnitPath',
+  ])
     assert.equal(jobOperationIdSchema.safeParse(operationId).success, true);
-  for (const operationId of ['REF-001-1', 'CMD-01-1', 'CMD-001'])
+  for (const operationId of [
+    'REF-001-1',
+    'CMD-01-1',
+    'CMD-001',
+    'UPD-006-3-assetTag',
+    'UPD-006-3-annotatedlocation',
+  ])
     assert.equal(jobOperationIdSchema.safeParse(operationId).success, false);
+  // A command row names no field, and an update row names exactly one of the four.
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, field: null }).success,
+    true,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, field: 'assetTag' }).success,
+    false,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, field: undefined }).success,
+    false,
+  );
   // One command summary and one operation carry the new fields.
   const command = {
     ...summary,

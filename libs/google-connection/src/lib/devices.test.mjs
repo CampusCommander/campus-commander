@@ -655,23 +655,20 @@ test('other page failures do not retry', async (t) => {
 const writeScope =
   'https://www.googleapis.com/auth/admin.directory.device.chromeos';
 
-test('patchAnnotatedLocations sends one PATCH part with only annotatedLocation', async (t) => {
+test('patchDevices sends one PATCH part with only annotatedLocation', async (t) => {
   const { google, scopes } = stubBatch(t, (part) => ({
     status: 200,
-    body: {
-      deviceId: part.key,
-      annotatedLocation: part.body.annotatedLocation,
-    },
+    body: { ...patchedDevice(part).body, deviceId: part.key },
   }));
   const sent = [];
   const result = await new GoogleDeviceReader({
     batch: fastBatch(),
-  }).patchAnnotatedLocations(
+  }).patchDevices(
     credential,
     'C0123456',
     [
-      { deviceId: 'd1', value: 'Room 1' },
-      { deviceId: 'd2', value: null },
+      { deviceId: 'd1', fields: { annotatedLocation: 'Room 1' } },
+      { deviceId: 'd2', fields: { annotatedLocation: null } },
     ],
     signal(),
     { onSend: (ids) => void sent.push(ids) },
@@ -714,18 +711,18 @@ test('patchAnnotatedLocations sends one PATCH part with only annotatedLocation',
   assert.equal(result.failed.size, 0);
 });
 
-test('patchAnnotatedLocations splits into multipart rounds of its batch size', async (t) => {
+test('patchDevices splits into multipart rounds of its batch size', async (t) => {
   const { google } = stubBatch(t, (part) => ({
     status: 200,
     body: { deviceId: part.key },
   }));
-  await new GoogleDeviceReader({ batch: fastBatch() }).patchAnnotatedLocations(
+  await new GoogleDeviceReader({ batch: fastBatch() }).patchDevices(
     credential,
     'C0123456',
     [
-      { deviceId: 'd1', value: 'A' },
-      { deviceId: 'd2', value: 'B' },
-      { deviceId: 'd3', value: 'C' },
+      { deviceId: 'd1', fields: { annotatedLocation: 'A' } },
+      { deviceId: 'd2', fields: { annotatedLocation: 'B' } },
+      { deviceId: 'd3', fields: { annotatedLocation: 'C' } },
     ],
     signal(),
     { batchSize: 2 },
@@ -733,13 +730,41 @@ test('patchAnnotatedLocations splits into multipart rounds of its batch size', a
   assert.deepEqual(google.keys(), [['d1', 'd2'], ['d3']]);
 });
 
-test('patchAnnotatedLocations rejects a batch size above 250', async (t) => {
+test('patchDevices sends every field of one device in one PATCH body', async (t) => {
+  const { google } = stubBatch(t, (part) => ({
+    status: 200,
+    body: { deviceId: part.key, ...part.body },
+  }));
+  await new GoogleDeviceReader({ batch: fastBatch() }).patchDevices(
+    credential,
+    'C0123456',
+    [
+      {
+        deviceId: 'd1',
+        fields: {
+          annotatedLocation: 'Room 1',
+          annotatedUser: 'Ada Lovelace',
+          notes: 'Front desk',
+        },
+      },
+    ],
+    signal(),
+  );
+  assert.equal(google.sent.length, 1, 'One PATCH carries the whole update.');
+  assert.deepEqual(google.sent[0][0].body, {
+    annotatedLocation: 'Room 1',
+    annotatedUser: 'Ada Lovelace',
+    notes: 'Front desk',
+  });
+});
+
+test('patchDevices rejects a batch size above 250', async (t) => {
   stubBatch(t, (part) => ({ status: 200, body: { deviceId: part.key } }));
   await assert.rejects(
-    new GoogleDeviceReader({ batch: fastBatch() }).patchAnnotatedLocations(
+    new GoogleDeviceReader({ batch: fastBatch() }).patchDevices(
       credential,
       'C0123456',
-      [{ deviceId: 'd1', value: 'A' }],
+      [{ deviceId: 'd1', fields: { annotatedLocation: 'A' } }],
       signal(),
       { batchSize: 251 },
     ),

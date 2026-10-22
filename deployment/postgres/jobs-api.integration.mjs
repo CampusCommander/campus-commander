@@ -4,6 +4,9 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+// The production Nest classes read decorator metadata. The API build emits it; this target transpiles
+// the sources with esbuild, which does not, so the harness supplies the tokens itself.
+import 'reflect-metadata';
 import { createClient } from 'redis';
 import {
   entityEventsChannel,
@@ -25,6 +28,9 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     { JobsService },
     { DevicesController },
     { DevicesService },
+    { AuthGuard },
+    { AuthService },
+    { ApplicationExceptionFilter, securityHeaders },
   ] = await Promise.all([
     load('api/src/app/jobs/jobs.ts'),
     load('api/src/app/devices/device-events.ts'),
@@ -32,6 +38,9 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     load('api/src/app/jobs/jobs.service.ts'),
     load('api/src/app/devices/devices.controller.ts'),
     load('api/src/app/devices/devices.service.ts'),
+    load('api/src/app/auth/auth.guard.ts'),
+    load('api/src/app/auth/auth.service.ts'),
+    load('api/src/app/security.ts'),
   ]);
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
@@ -291,6 +300,20 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     }
     return job;
   };
+  /** One field row of one operation: its baseline and its request (addendum section 2). */
+  const addFieldRow = (
+    jobId,
+    operationNumber,
+    field,
+    baselineValue,
+    requestedValue,
+  ) =>
+    admin(
+      `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+        baseline_value,requested_value)
+      VALUES($1,$2,$3,$4,$5)`,
+      [jobId, operationNumber, field, baselineValue, requestedValue],
+    );
 
   // --- The live stream harness: the production controllers, a real fanout on a test Redis, and
   // --- the jobs and Devices reads through the runtime role.
@@ -1235,7 +1258,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           customer,
           job.display_id,
           true,
-          '100',
+          '100:0',
           100,
         );
         assert.ok(
@@ -1247,6 +1270,289 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           secondPage.operations.length,
           3,
           'The second page holds the failed operations beyond operation 100.',
+        );
+      },
+    );
+
+    await check(
+      "the operations route follows the cursor it returned across one device's fields",
+      async () => {
+        await reset();
+        const job = await writeJob({
+          requestedBy: auditor,
+          operations: 2,
+          status: 'running',
+        });
+        // Two fields of operation 1 and one field of operation 2 (addendum section 2).
+        await addFieldRow(
+          job.job_id,
+          1,
+          'annotatedLocation',
+          'Room 1',
+          'Room 4',
+        );
+        await addFieldRow(job.job_id, 1, 'annotatedUser', null, 'Ada Lovelace');
+        await addFieldRow(job.job_id, 2, 'notes', null, 'Front desk');
+        const controller = new JobsController(jobsService, streamAuth, {}, {});
+        const request = {
+          session: auditorSession,
+          correlationId: randomUUID(),
+        };
+        const first = await controller.operations(request, job.display_id, {
+          limit: '1',
+        });
+        assert.deepEqual(
+          first.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-1-annotatedLocation`],
+        );
+        // The route answers a cursor within operation 1, and accepts it back.
+        assert.equal(first.nextCursor, '1:1');
+        const second = await controller.operations(request, job.display_id, {
+          cursor: first.nextCursor,
+          limit: '1',
+        });
+        assert.deepEqual(
+          second.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-1-annotatedUser`],
+        );
+        assert.equal(second.nextCursor, '1:2');
+        const third = await controller.operations(request, job.display_id, {
+          cursor: second.nextCursor,
+          limit: '1',
+        });
+        assert.deepEqual(
+          third.operations.map((operation) => operation.operationId),
+          [`${job.display_id}-2-notes`],
+        );
+        assert.equal(third.nextCursor, null);
+      },
+    );
+
+    await check(
+      'the operations route pages a status and a command job by a position-zero cursor',
+      async () => {
+        for (const action of ['disable', 'reboot']) {
+          await reset();
+          const job = await writeJob({
+            requestedBy: auditor,
+            action,
+            operations: 2,
+            status: 'running',
+          });
+          const controller = new JobsController(
+            jobsService,
+            streamAuth,
+            {},
+            {},
+          );
+          const request = {
+            session: auditorSession,
+            correlationId: randomUUID(),
+          };
+          const first = await controller.operations(request, job.display_id, {
+            limit: '1',
+          });
+          assert.deepEqual(
+            first.operations.map((operation) => operation.operationId),
+            [`${job.display_id}-1`],
+          );
+          assert.equal(first.nextCursor, '1:0');
+          const second = await controller.operations(request, job.display_id, {
+            cursor: first.nextCursor,
+            limit: '1',
+          });
+          assert.deepEqual(
+            second.operations.map((operation) => operation.operationId),
+            [`${job.display_id}-2`],
+          );
+          assert.equal(second.nextCursor, null);
+        }
+      },
+    );
+
+    /**
+     * The two job GET routes through the production Nest controller, router, and exception filter.
+     * The integration target transpiles the API sources with esbuild, which does not emit decorator
+     * metadata, so this harness supplies the constructor tokens that the production build emits.
+     * Authentication is a synthetic session; this checks routing and storage, not sign-in.
+     */
+    const startJobRoutes = async () => {
+      const common = (await import('@nestjs/common')).default;
+      const core = (await import('@nestjs/core')).default;
+      class DeviceEventsServiceToken {}
+      class OrchestrationServiceToken {}
+      class ConfigurationServiceToken {}
+      Reflect.defineMetadata(
+        'design:paramtypes',
+        [
+          JobsService,
+          AuthService,
+          DeviceEventsServiceToken,
+          OrchestrationServiceToken,
+        ],
+        JobsController,
+      );
+      Reflect.defineMetadata(
+        'design:paramtypes',
+        [AuthService, core.Reflector, ConfigurationServiceToken],
+        AuthGuard,
+      );
+      class JobRoutesModule {}
+      common.Module({
+        controllers: [JobsController],
+        providers: [
+          { provide: JobsService, useValue: jobsService },
+          {
+            provide: AuthService,
+            useValue: {
+              authenticate: async () => auditorSession,
+              recordDeniedRequest: async () => undefined,
+            },
+          },
+          {
+            provide: ConfigurationServiceToken,
+            useValue: { auth: { publicOrigin: 'http://127.0.0.1' } },
+          },
+          { provide: DeviceEventsServiceToken, useValue: {} },
+          { provide: OrchestrationServiceToken, useValue: {} },
+          { provide: core.Reflector, useValue: new core.Reflector() },
+        ],
+      })(JobRoutesModule);
+      const app = await core.NestFactory.create(JobRoutesModule, {
+        logger: false,
+      });
+      app.use(securityHeaders);
+      app.useGlobalFilters(new ApplicationExceptionFilter());
+      await app.listen(0, '127.0.0.1');
+      const { port } = app.getHttpServer().address();
+      return {
+        get: (path) => fetch(`http://127.0.0.1:${port}${path}`),
+        close: () => app.close(),
+      };
+    };
+
+    await check(
+      'a no-answer write settles null through the runtime writer and both job GET routes answer 200',
+      async () => {
+        await reset();
+        const attempt = randomUUID();
+        const token = randomUUID();
+        const job = await writeJob({
+          requestedBy: auditor,
+          operations: 2,
+          status: 'running',
+        });
+        // The state that a batch claim produces: the two operations dispatched under one live batch.
+        await admin(
+          `UPDATE cc.device_update_operations SET status='dispatched',attempt_id=$2,updated_at=clock_timestamp()
+            WHERE job_id=$1`,
+          [job.job_id, attempt],
+        );
+        for (const operationNumber of [1, 2]) {
+          await addFieldRow(
+            job.job_id,
+            operationNumber,
+            'annotatedUser',
+            null,
+            'Ada Lovelace',
+          );
+          await addFieldRow(
+            job.job_id,
+            operationNumber,
+            'notes',
+            null,
+            'Front desk',
+          );
+        }
+        await admin(
+          `INSERT INTO cc.device_update_batches(job_id,batch,attempt_id,execution_id,lease_expires_at,claimed_at)
+          VALUES($1,0,$2,'integration-check',clock_timestamp()+interval '180 seconds',clock_timestamp())`,
+          [job.job_id, attempt],
+        );
+        await admin(
+          'UPDATE cc.device_update_jobs SET dispatch_token=$2 WHERE job_id=$1',
+          [job.job_id, token],
+        );
+        // A Google call that never answered. The worker now sends null, and an older worker sent the
+        // transport zero. The writer stores null for both (fix D1), so both routes stay readable.
+        const [settled] = await statement(
+          'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            customer,
+            job.job_id,
+            token,
+            attempt,
+            'write',
+            JSON.stringify([
+              {
+                operationNumber: 1,
+                outcome: 'unknown',
+                outcomeReason: 'ambiguous',
+                googleStatus: null,
+              },
+              {
+                operationNumber: 2,
+                outcome: 'unknown',
+                outcomeReason: 'ambiguous',
+                googleStatus: 0,
+              },
+            ]),
+            new Date().toISOString(),
+          ],
+        );
+        assert.equal(settled.result.outcome, 'settled');
+        assert.deepEqual(
+          settled.result.settled.map((one) => one.status),
+          ['unknown', 'unknown'],
+        );
+        await statement(
+          'SELECT cc.release_device_update_batch($1,$2,$3,$4,$5) AS result',
+          [customer, job.job_id, token, 0, attempt],
+        );
+        const [finished] = await statement(
+          'SELECT cc.finish_device_update_job($1,$2,$3,$4) AS result',
+          [customer, job.job_id, token, null],
+        );
+        assert.equal(finished.result.status, 'needs-review');
+        const routes = await startJobRoutes();
+        try {
+          const detailAnswer = await routes.get(`/api/jobs/${job.display_id}`);
+          assert.equal(detailAnswer.status, 200);
+          const detail = await detailAnswer.json();
+          assert.equal(detail.status, 'needs-review');
+          assert.equal(detail.latestActivity.unknown.count, 2);
+          const pageAnswer = await routes.get(
+            `/api/jobs/${job.display_id}/operations?limit=1000`,
+          );
+          assert.equal(pageAnswer.status, 200);
+          const page = await pageAnswer.json();
+          assert.deepEqual(
+            page.operations.map((operation) => operation.operationId),
+            [
+              `${job.display_id}-1-annotatedUser`,
+              `${job.display_id}-1-notes`,
+              `${job.display_id}-2-annotatedUser`,
+              `${job.display_id}-2-notes`,
+            ],
+            'Both fields of both devices answer one row each.',
+          );
+          for (const operation of page.operations) {
+            assert.equal(operation.outcome, 'unknown');
+            assert.equal(operation.outcomeReason, 'ambiguous');
+            assert.equal(operation.googleStatus, null);
+          }
+        } finally {
+          await routes.close();
+        }
+        const stored = await admin(
+          `SELECT operation_number,google_status FROM cc.device_update_operations
+            WHERE job_id=$1 ORDER BY operation_number`,
+          [job.job_id],
+        );
+        assert.deepEqual(
+          stored.map((one) => one.google_status),
+          [null, null],
+          'A stored no-answer status is null.',
         );
       },
     );
@@ -1318,7 +1624,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           first.operations.map((operation) => operation.outcome),
           ['failed', 'unknown'],
         );
-        assert.equal(first.nextCursor, '3');
+        assert.equal(first.nextCursor, '3:0');
         const second = await jobs.operations(
           auditorSession,
           customer,

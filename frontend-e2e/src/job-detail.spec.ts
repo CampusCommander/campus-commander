@@ -15,6 +15,7 @@ const alexId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const operations = [
   {
     operationId: 'UPD-006-1',
+    field: 'annotatedLocation',
     deviceId: 'synthetic-device-1',
     serialNumber: 'C0A1-7F2D',
     orgUnitPath: '/School A',
@@ -35,6 +36,7 @@ const operations = [
   },
   {
     operationId: 'UPD-006-2',
+    field: 'annotatedLocation',
     deviceId: 'synthetic-device-2',
     serialNumber: 'C0A1-7F31',
     orgUnitPath: '/School A',
@@ -55,6 +57,7 @@ const operations = [
   },
   {
     operationId: 'UPD-006-3',
+    field: 'annotatedLocation',
     deviceId: 'synthetic-device-3',
     serialNumber: 'C0A1-7F44',
     orgUnitPath: '/School A',
@@ -75,6 +78,7 @@ const operations = [
   },
   {
     operationId: 'UPD-006-4',
+    field: 'annotatedLocation',
     deviceId: 'synthetic-device-4',
     serialNumber: 'C0A1-7F62',
     orgUnitPath: '/School A',
@@ -95,6 +99,7 @@ const operations = [
   },
   {
     operationId: 'UPD-006-5',
+    field: 'annotatedLocation',
     deviceId: 'synthetic-device-5',
     serialNumber: 'C0A1-7F77',
     orgUnitPath: '/School A',
@@ -115,6 +120,7 @@ const operations = [
   },
   {
     operationId: 'UPD-006-6',
+    field: 'annotatedLocation',
     deviceId: 'synthetic-device-6',
     serialNumber: 'C0A1-7F84',
     orgUnitPath: '/School A',

@@ -23,6 +23,7 @@ const secondsAgo = (seconds: number) =>
 
 interface OperationFixture {
   operationId: string;
+  field: 'annotatedLocation' | 'annotatedUser' | 'notes' | 'orgUnitPath' | null;
   deviceId: string;
   serialNumber: string;
   orgUnitPath: string;
@@ -52,6 +53,7 @@ const operation = (
   overrides: Partial<OperationFixture> = {},
 ): OperationFixture => ({
   operationId: 'CMD-001-1',
+  field: null,
   deviceId: 'synthetic-device-1',
   serialNumber: 'SYN-01',
   orgUnitPath: '/Schools/Example',

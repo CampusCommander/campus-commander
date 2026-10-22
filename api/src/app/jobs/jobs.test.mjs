@@ -13,6 +13,8 @@ import {
   jobSummary,
   latestActivity,
   Jobs,
+  operationCursor,
+  operationCursorSchema,
 } from './jobs.ts';
 
 const REQUESTER = '22222222-2222-4222-8222-222222222222';
@@ -319,7 +321,7 @@ test('an unknown or purged job answers 404', async () => {
   );
 });
 
-test('the operations page filters attention, pages by number, and reads dispatched as pending', async () => {
+test('the operations page filters attention and pages by operation and field', async () => {
   const db = database([
     [
       'FROM cc.device_update_operations o',
@@ -330,8 +332,37 @@ test('the operations page filters attention, pages by number, and reads dispatch
           serial_number: 'C0A1-0004',
           org_unit_path: '/Schools/A',
           status: 'dispatched',
+          action: 'annotated-location',
+          mode: 'replace',
+          field: 'annotatedLocation',
           baseline_value: 'Room 1',
           requested_value: 'Room 4',
+          field_baseline_value: 'Room 1',
+          field_requested_value: 'Room 4',
+          field_observed_value: null,
+          field_position: 1,
+          outcome_reason: null,
+          google_status: null,
+          google_reason: null,
+          observed_value: null,
+          verified_by: null,
+          updated_at: new Date('2026-10-06T12:04:00.000Z'),
+        },
+        {
+          operation_number: 4,
+          device_id: 'd4',
+          serial_number: 'C0A1-0004',
+          org_unit_path: '/Schools/A',
+          status: 'dispatched',
+          action: 'annotated-location',
+          mode: 'replace',
+          field: 'notes',
+          baseline_value: 'Room 1',
+          requested_value: 'Room 4',
+          field_baseline_value: null,
+          field_requested_value: 'Front desk',
+          field_observed_value: null,
+          field_position: 3,
           outcome_reason: null,
           google_status: null,
           google_reason: null,
@@ -348,16 +379,160 @@ test('the operations page filters attention, pages by number, and reads dispatch
     'C0123456',
     'UPD-006',
     true,
-    '3',
-    100,
+    '3:0',
+    1,
+  );
+  assert.deepEqual(
+    page.operations.map((operation) => operation.operationId),
+    ['UPD-006-4-annotatedLocation'],
   );
   assert.equal(page.operations[0].outcome, 'pending');
   assert.equal(page.operations[0].operation, 'replace');
-  assert.equal(page.operations[0].operationId, 'UPD-006-4');
-  assert.equal(page.nextCursor, null);
+  assert.equal(page.operations[0].field, 'annotatedLocation');
+  assert.equal(page.operations[0].baselineValue, 'Room 1');
+  assert.equal(page.operations[0].requestedValue, 'Room 4');
+  assert.equal(page.nextCursor, '4:1');
   const [, values] = db.calls[1];
   assert.equal(values[4], true);
   assert.equal(values[5], 3);
+  assert.equal(values[7], 0);
+  assert.deepEqual(values[6], [
+    'annotatedLocation',
+    'annotatedUser',
+    'notes',
+    'orgUnitPath',
+  ]);
+});
+
+test('an operation cursor that is not two positions answers job-not-found', async () => {
+  for (const cursor of ['3', '3:0:1', 'x:0', '0:0', '3:-1']) {
+    const db = database([
+      [
+        'LEFT JOIN cc.device_update_jobs u',
+        [jobRow({ kind: 'device-update' })],
+      ],
+    ]);
+    await assert.rejects(
+      new Jobs(db).operations(
+        session(),
+        'C0123456',
+        'UPD-006',
+        false,
+        cursor,
+        100,
+      ),
+      (error) =>
+        error instanceof NotFoundException &&
+        error.getResponse().reason === 'job-not-found',
+      `The cursor ${cursor} must be refused.`,
+    );
+  }
+});
+
+test('the operations route schema accepts the cursor format the route answers', () => {
+  // The service answers "<operation>:<fieldPosition>", with position 0 for a command or status row.
+  assert.equal(operationCursorSchema.parse('1:0'), '1:0');
+  assert.equal(operationCursorSchema.parse('1002:4'), '1002:4');
+  for (const cursor of ['3', '3:0:1', 'x:0', '3:-1', ''])
+    assert.equal(
+      operationCursorSchema.safeParse(cursor).success,
+      false,
+      `The route must refuse ${cursor}.`,
+    );
+});
+
+test('each annotation row reports its own replace or clear mode', () => {
+  const row = (field, requested, mode = 'replace') => ({
+    operation_number: 4,
+    device_id: 'd4',
+    serial_number: 'C0A1-0004',
+    org_unit_path: '/Schools/A',
+    status: 'succeeded',
+    action: 'annotated-location',
+    mode,
+    field,
+    baseline_value: 'Room 1',
+    requested_value: 'Room 4',
+    field_baseline_value: 'Room 1',
+    field_requested_value: requested,
+    field_observed_value: requested,
+    field_position: 1,
+    observed_value: null,
+    verified_by: 'write-response',
+    updated_at: new Date('2026-10-06T12:04:00.000Z'),
+  });
+  assert.equal(
+    jobOperation(row('annotatedLocation', 'Room 4'), 'UPD-006').operation,
+    'replace',
+  );
+  // A null request is Clear, whatever the job-wide header says (addendum section 2).
+  assert.equal(
+    jobOperation(row('notes', null, 'replace'), 'UPD-006').operation,
+    'clear',
+  );
+  assert.equal(
+    jobOperation(row('annotatedLocation', 'Room 4', 'clear'), 'UPD-006')
+      .operation,
+    'replace',
+  );
+  assert.equal(
+    jobOperation(row('orgUnitPath', '/Schools/B'), 'UPD-006').operation,
+    'move',
+  );
+  // A command and a status row keep the name of their action.
+  assert.equal(
+    jobOperation({ ...row(null, null), action: 'reboot' }, 'CMD-001').operation,
+    'reboot',
+  );
+  assert.equal(
+    jobOperation({ ...row(null, 'DISABLED'), action: 'disable' }, 'STS-002')
+      .operation,
+    'disable',
+  );
+});
+
+test('a field row reads its own values and names its field position', () => {
+  const row = {
+    operation_number: 12,
+    device_id: 'd12',
+    serial_number: 'C0A1-0012',
+    org_unit_path: '/Schools/A',
+    status: 'succeeded',
+    action: 'annotated-location',
+    mode: 'replace',
+    field: 'orgUnitPath',
+    baseline_value: 'Room 1',
+    requested_value: 'Room 12',
+    field_baseline_value: '/Schools/A',
+    field_requested_value: '/Schools/B',
+    field_observed_value: '/Schools/B',
+    field_position: 4,
+    observed_value: null,
+    verified_by: 'write-response',
+    updated_at: new Date('2026-10-06T12:04:00.000Z'),
+  };
+  assert.deepEqual(jobOperation(row, 'UPD-006'), {
+    operationId: 'UPD-006-12-orgUnitPath',
+    deviceId: 'd12',
+    serialNumber: 'C0A1-0012',
+    orgUnitPath: '/Schools/A',
+    field: 'orgUnitPath',
+    operation: 'move',
+    baselineValue: '/Schools/A',
+    requestedValue: '/Schools/B',
+    observedValue: '/Schools/B',
+    outcome: 'succeeded',
+    outcomeReason: null,
+    googleStatus: null,
+    googleReason: null,
+    verifiedBy: 'write-response',
+    commandId: null,
+    commandState: null,
+    commandExecutedAt: null,
+    commandExpiresAt: null,
+    updatedAt: '2026-10-06T12:04:00.000Z',
+  });
+  assert.equal(operationCursor(row), '12:4');
 });
 
 test('the activity answer caps each section and derives the window and attention', async () => {

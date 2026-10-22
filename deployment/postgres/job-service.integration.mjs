@@ -376,7 +376,7 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         Math.ceil(devices.length / batchSize),
       ],
     );
-    for (const [index, deviceId] of devices.entries())
+    for (const [index, deviceId] of devices.entries()) {
       await admin(
         `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
@@ -390,6 +390,13 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
           Math.floor(index / batchSize),
         ],
       );
+      await admin(
+        `INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,
+          baseline_value,requested_value)
+        VALUES($1,$2,'annotatedLocation',NULL,$3)`,
+        [jobId, index + 1, mode === 'clear' ? null : value],
+      );
+    }
     return { jobId, displayId };
   };
   // One command job fixture: a Reboot preview, one header, one detail row, and one issued command.
@@ -807,7 +814,7 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         assert.notEqual(currentToken, lateToken);
         const reader = {
           calls: [],
-          async patchAnnotatedLocations() {
+          async patchDevices() {
             this.calls.push('patch');
             return { succeeded: new Map(), failed: new Map() };
           },
@@ -857,13 +864,7 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         const token = await tokenOf(jobId);
         const reader = {
           calls: [],
-          async patchAnnotatedLocations(
-            _credential,
-            _customer,
-            writes,
-            _signal,
-            options,
-          ) {
+          async patchDevices(_credential, _customer, writes, _signal, options) {
             this.calls.push('patch');
             const succeeded = new Map();
             for (const write of writes) {
@@ -880,7 +881,7 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
                   kind: 'success',
                   page: {
                     deviceId: write.deviceId,
-                    annotatedLocation: write.value,
+                    ...write.fields,
                   },
                   pageIndex: 0,
                   hasNextPage: false,
@@ -1105,7 +1106,7 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
           displayId,
           '1',
         );
-        assert.equal(answer.operationId, `${displayId}-1`);
+        assert.equal(answer.operationId, `${displayId}-1-annotatedLocation`);
         assert.equal(answer.outcome, 'unknown');
         assert.equal(reconciles.length, before + 1);
         const flow = reconciles.at(-1);

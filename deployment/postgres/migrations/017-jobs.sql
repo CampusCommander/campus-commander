@@ -174,7 +174,9 @@ CREATE TABLE cc.device_update_operations (
   batch integer NOT NULL CHECK(batch>=0),
   status text NOT NULL CHECK(status IN ('pending','dispatched','issued','succeeded','failed','unknown','skipped','expired')),
   attempt_id uuid,
-  google_status integer,
+  -- The HTTP status of Google's answer, or null when no answer arrived (fix D1). Both settlement
+  -- writers normalize a status outside 100 to 599 to null.
+  google_status integer CHECK(google_status IS NULL OR google_status BETWEEN 100 AND 599),
   google_reason text,
   quota_retries integer NOT NULL DEFAULT 0 CHECK(quota_retries>=0),
   transient_retries integer NOT NULL DEFAULT 0 CHECK(transient_retries>=0),
@@ -205,6 +207,21 @@ CREATE INDEX device_update_operations_activity
 -- The poll claim reads the due issued operations of one job (section 4 step 6).
 CREATE INDEX device_update_operations_polls ON cc.device_update_operations(job_id,poll_after)
   WHERE status='issued';
+
+-- One field row of one eligible operation: its baseline, its request, and the value Google reported
+-- (addendum section 2). Every row of one device carries the result of that device's one PATCH, so the
+-- operation keeps the outcome and the field rows keep the values. The field IDs follow section 1.
+CREATE TABLE cc.device_update_operation_fields (
+  job_id uuid NOT NULL,
+  operation_number integer NOT NULL CHECK(operation_number>=1),
+  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedUser','notes','orgUnitPath')),
+  baseline_value text CHECK(baseline_value IS NULL OR length(baseline_value)<=4096),
+  requested_value text CHECK(requested_value IS NULL OR length(requested_value)<=4096),
+  observed_value text CHECK(observed_value IS NULL OR length(observed_value)<=4096),
+  PRIMARY KEY(job_id,operation_number,field),
+  FOREIGN KEY(job_id,operation_number)
+    REFERENCES cc.device_update_operations(job_id,operation_number) ON DELETE CASCADE
+);
 
 -- The accepted value of one device, until a list converges or the overlay expires.
 CREATE TABLE cc.device_write_overlays (
@@ -380,7 +397,14 @@ BEGIN
       (p_operations IS NULL OR o.operation_number IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_operations) e))
     RETURNING o.operation_number,o.device_id,o.serial_number,o.baseline_value,o.requested_value)
   SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',c.operation_number,'deviceId',c.device_id,
-    'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value)),'[]'::jsonb)
+    'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value,
+    -- The field rows of the operation, in contract order (addendum section 4).
+    'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
+        'requestedValue',f.requested_value)
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+        '[]'::jsonb)
+      FROM cc.device_update_operation_fields f
+      WHERE f.job_id=p_job AND f.operation_number=c.operation_number))),'[]'::jsonb)
   INTO fenced FROM changed c;
   RETURN fenced;
 END;
@@ -798,7 +822,14 @@ BEGIN
     WHERE o.job_id=p_job AND o.batch=p_batch AND o.status='pending'
     RETURNING o.operation_number,o.device_id,o.serial_number,o.baseline_value,o.requested_value)
   SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',c.operation_number,'deviceId',c.device_id,
-    'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value)),'[]'::jsonb)
+    'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value,
+    -- The field rows of the operation, in contract order (addendum section 4).
+    'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
+        'requestedValue',f.requested_value)
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+        '[]'::jsonb)
+      FROM cc.device_update_operation_fields f
+      WHERE f.job_id=p_job AND f.operation_number=c.operation_number))),'[]'::jsonb)
   INTO claim FROM claimed c;
   IF jsonb_array_length(claim)=0 AND jsonb_array_length(readback)=0 THEN
     -- B2c ruling 7: the detail row is held from the claim path, and the clock reads after its wait. The
@@ -923,9 +954,12 @@ CREATE FUNCTION cc.settle_device_update_operations(p_customer text,p_job uuid,p_
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; bad integer; provenance text;
   before text; after text; first_batch integer; element jsonb:=NULL; candidates integer[];
-  -- The cached field of the action: an annotated-location update writes its column and a status
-  -- change writes `status` (addendum section 5).
+  -- The cached field of a command or a status action: a status change writes `status` (addendum
+  -- section 5). An update action writes its field rows instead.
   write_field text;
+  -- True when the job's action writes the four fields of an update. The action never changes after
+  -- confirm, so this read takes no lock (addendum section 4, result checks).
+  action_is_update boolean;
   settled jsonb:='[]'::jsonb; devices jsonb:='[]'::jsonb; removed jsonb:='[]'::jsonb;
 BEGIN
   -- S2 (round 2, F2): a null kind never matches NOT IN, so the kind rejects explicitly before any lock.
@@ -946,6 +980,11 @@ BEGIN
   -- The observation source of each kind: a 2xx write answer (section 7.1) or a read (section 5.7).
   -- An issue answer is a write answer too.
   provenance:=CASE p_kind WHEN 'read-back' THEN 'read-back' ELSE 'write-response' END;
+  -- An update result carries `values` instead of `value` (addendum section 4). The action of the job
+  -- decides the contract, and it never changes after confirm, so this read takes no lock.
+  SELECT u.action='annotated-location' INTO action_is_update
+  FROM cc.device_update_jobs u WHERE u.job_id=p_job;
+  action_is_update:=COALESCE(action_is_update,false);
   -- S2/R6-1, round 2 F2, round 3 R2-F1: every result field holds a value of its domain, or the call rejects
   -- before any lock and changes nothing. No cast or CHECK below can then fail after a lock.
   -- 1. The operation number is a whole number from 1 to the integer limit.
@@ -978,7 +1017,48 @@ BEGIN
         ELSE jsonb_typeof(r->'verifyAfter')<>'string' OR NOT pg_input_is_valid(r->>'verifyAfter','timestamptz') END OR
       -- An issued result names the digit command ID of its 2xx answer. No other issue result names one.
       CASE WHEN r->'commandId' IS NULL THEN r->>'outcome'='issued'
-        ELSE jsonb_typeof(r->'commandId')<>'string' OR r->>'commandId' !~ '^[0-9]{1,20}$' OR r->>'outcome'<>'issued' END;
+        ELSE jsonb_typeof(r->'commandId')<>'string' OR r->>'commandId' !~ '^[0-9]{1,20}$' OR r->>'outcome'<>'issued' END OR
+      -- 7. An update result carries `values` when it publishes or reports a differing value, and no
+      -- other result of an update names one. Every result of a command or status action names none.
+      CASE WHEN action_is_update AND p_kind IN ('write','read-back') THEN
+        CASE WHEN r->>'outcome'='succeeded' OR
+            (r->>'outcome'='failed' AND r->>'outcomeReason'='value-differs')
+          THEN jsonb_typeof(r->'values') IS DISTINCT FROM 'object'
+          ELSE r ? 'values' END
+        ELSE r ? 'values' END;
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- 8. A present `values` names exactly the field rows of its operation, and each value fits the
+  -- domain of its outcome (addendum section 4). Field rows never change after confirm, so these
+  -- checks read them without a row lock and change nothing. PostgreSQL length() counts code points.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_results) r,
+      LATERAL jsonb_object_keys(CASE WHEN jsonb_typeof(r->'values')='object' THEN r->'values'
+        ELSE '{}'::jsonb END) k(field)
+    WHERE NOT EXISTS(SELECT 1 FROM cc.device_update_operation_fields f
+      WHERE f.job_id=p_job AND f.operation_number=(r->>'operationNumber')::integer AND f.field=k.field);
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_results) r
+    WHERE jsonb_typeof(r->'values')='object' AND EXISTS(
+      SELECT 1 FROM cc.device_update_operation_fields f
+      WHERE f.job_id=p_job AND f.operation_number=(r->>'operationNumber')::integer AND
+        NOT ((r->'values') ? f.field));
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- A published path holds a value with a leading '/', because 016 requires one. A failed path is
+  -- evidence alone, so it may hold null. Every other field publishes null or a text value.
+  SELECT count(*) INTO bad FROM (
+    SELECT r->>'outcome' AS outcome,f.field AS field,(r->'values'->f.field) AS value
+    FROM jsonb_array_elements(p_results) r
+    JOIN cc.device_update_operation_fields f
+      ON f.job_id=p_job AND f.operation_number=(r->>'operationNumber')::integer
+    WHERE jsonb_typeof(r->'values')='object' AND ((r->'values') ? f.field)) v
+  WHERE CASE WHEN v.value='null'::jsonb THEN v.field='orgUnitPath' AND v.outcome='succeeded'
+    ELSE jsonb_typeof(v.value)<>'string' OR length(v.value #>> '{}')>4096 OR
+      (v.field='orgUnitPath' AND v.outcome='succeeded' AND left(v.value #>> '{}',1)<>'/') END;
   IF bad>0 THEN
     RAISE EXCEPTION 'The settlement results are invalid.' USING ERRCODE='22023';
   END IF;
@@ -1034,9 +1114,9 @@ BEGIN
   IF candidates IS NULL THEN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
   END IF;
-  -- The action names the observation field. A value fits the device column of 016 in both cases.
-  write_field:=CASE detail.action WHEN 'disable' THEN 'status' WHEN 'reenable' THEN 'status'
-    ELSE 'annotatedLocation' END;
+  -- The action names the observation column of a command or status job. An update action publishes
+  -- each field row into its own column instead, so `write_field` stays null for it (section 4).
+  write_field:=CASE detail.action WHEN 'disable' THEN 'status' WHEN 'reenable' THEN 'status' END;
   -- S1 (round 3): the overlay and publication rows reference the connection row, so their insert checks
   -- take a key-share lock on it. That lock comes here, before the device rows: a full-sync finish takes the
   -- connection row first and its device rows second (016, cc.finish_device_sync), so the two calls never
@@ -1056,18 +1136,40 @@ BEGIN
   -- S1 (round 3): a published success replaces the overlay of its device. The overlay rows lock in device_id
   -- order after the device rows, as every overlay writer takes them. No write below then waits, so the clock
   -- below reads after every wait of this call.
-  PERFORM 1 FROM cc.device_write_overlays w WHERE w.customer_id=p_customer AND w.field=write_field AND
-      w.device_id IN (SELECT o.device_id FROM cc.device_update_operations o JOIN jsonb_array_elements(p_results) r
-        ON o.operation_number=(r->>'operationNumber')::integer
-      WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND r->>'outcome'='succeeded')
-    ORDER BY w.device_id FOR UPDATE;
+  PERFORM 1 FROM cc.device_write_overlays w WHERE w.customer_id=p_customer AND
+      (w.device_id,w.field) IN (
+        SELECT o.device_id,f.field FROM cc.device_update_operations o
+          JOIN jsonb_array_elements(p_results) r ON o.operation_number=(r->>'operationNumber')::integer
+          JOIN cc.device_update_operation_fields f
+            ON f.job_id=o.job_id AND f.operation_number=o.operation_number
+        WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND r->>'outcome'='succeeded'
+        UNION ALL
+        SELECT o.device_id,'status'::text FROM cc.device_update_operations o
+          JOIN jsonb_array_elements(p_results) r ON o.operation_number=(r->>'operationNumber')::integer
+        WHERE o.job_id=p_job AND o.operation_number=ANY(candidates) AND r->>'outcome'='succeeded' AND
+          write_field='status')
+    ORDER BY w.device_id,w.field FOR UPDATE;
+  -- S1 (round 4, R4): the field rows of the eligible results lock next, in operation and contract-field
+  -- order. A result without `values` leaves its field rows unchanged and locks none. The clock below
+  -- then reads after this wait, so an attempt whose lease lapses in it changes nothing (review F3).
+  PERFORM 1 FROM cc.device_update_operation_fields f
+  WHERE f.job_id=p_job AND f.operation_number=ANY(candidates) AND EXISTS(
+      SELECT 1 FROM jsonb_array_elements(p_results) r
+      WHERE (r->>'operationNumber')::integer=f.operation_number AND
+        jsonb_typeof(r->'values')='object' AND ((r->'values') ? f.field))
+  ORDER BY f.operation_number,
+    array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath'],f.field)
+  FOR UPDATE;
   -- The write and read-back lease fences below read the clock after every row lock (review F3, F15).
   now_at:=clock_timestamp();
   WITH results AS (
     SELECT (r->>'operationNumber')::integer AS operation_number,r FROM jsonb_array_elements(p_results) r
   ), eligible AS (
     SELECT res.operation_number,res.r,o.batch,o.device_id,
-      CASE WHEN res.r ? 'value' THEN res.r->>'value' ELSE o.requested_value END AS value
+      -- An update carries its values in the field rows, so its operation value columns stay null
+      -- (addendum sections 2 and 4). A command or a status change keeps the requested-value default.
+      CASE WHEN action_is_update THEN NULL
+        WHEN res.r ? 'value' THEN res.r->>'value' ELSE o.requested_value END AS value
     FROM results res JOIN cc.device_update_operations o ON o.job_id=p_job AND o.operation_number=res.operation_number
     -- Only a locked candidate settles, so no write below takes a row lock that the prefix did not decide.
     WHERE o.operation_number=ANY(candidates) AND ((p_kind IN ('write','issue') AND o.status='dispatched' AND o.attempt_id=p_attempt AND
@@ -1078,11 +1180,15 @@ BEGIN
         o.verify_lease_expires_at>now_at))
   ), applied AS (
     UPDATE cc.device_update_operations o SET status=e.r->>'outcome',
-      google_status=(e.r->>'googleStatus')::integer,google_reason=e.r->>'googleReason',
+      -- A stored status is an HTTP status from 100 to 599, or null when no answer arrived (fix D1).
+      google_status=CASE WHEN (e.r->>'googleStatus')::integer BETWEEN 100 AND 599
+        THEN (e.r->>'googleStatus')::integer END,
+      google_reason=e.r->>'googleReason',
       quota_retries=COALESCE((e.r->>'quotaRetries')::integer,0),
       transient_retries=COALESCE((e.r->>'transientRetries')::integer,0),
       observed_value=e.value,
-      observed_at=CASE WHEN e.r->>'outcome'='succeeded' THEN p_observed_at ELSE o.observed_at END,
+      observed_at=CASE WHEN e.r->>'outcome'='succeeded' AND NOT action_is_update THEN p_observed_at
+        ELSE o.observed_at END,
       verified_by=e.r->>'verifiedBy',outcome_reason=e.r->>'outcomeReason',updated_at=now_at,
       -- An accepted issue stores Google's command and its first poll (section 4 step 3). The poll waits
       -- 15 s from this settlement, and the 7-day cap counts from the issue answer.
@@ -1098,24 +1204,88 @@ BEGIN
         THEN COALESCE((e.r->>'verifyAfter')::timestamptz,p_observed_at+interval '30 seconds') END
     FROM eligible e WHERE o.job_id=p_job AND o.operation_number=e.operation_number
     RETURNING o.operation_number,o.device_id,o.batch,o.status,e.value,e.r->>'verifiedBy' AS verified_by,
-      e.r->>'outcomeReason' AS outcome_reason
+      e.r->>'outcomeReason' AS outcome_reason,e.r AS result
+  ), field_applied AS (
+    -- Each field row takes the value that its operation's result reported (addendum section 4). A
+    -- result without `values` leaves its field rows unchanged.
+    UPDATE cc.device_update_operation_fields f
+      SET observed_value=(a.result->'values'->f.field) #>> '{}'
+    FROM applied a
+    WHERE f.job_id=p_job AND f.operation_number=a.operation_number AND
+      jsonb_typeof(a.result->'values')='object' AND ((a.result->'values') ? f.field)
+    RETURNING f.operation_number
+  ), changes AS (
+    -- One row per published device and field, after the current-value stamp rule of step 4 rule 2.
+    -- `values` is read from the result, because a sibling CTE never reads another one's write.
+    SELECT a.device_id,a.operation_number,a.verified_by,v.field,v.value
+    FROM applied a
+    JOIN cc.devices d ON d.customer_id=p_customer AND d.device_id=a.device_id
+    CROSS JOIN LATERAL (
+      SELECT f.field,(a.result->'values'->f.field) #>> '{}' AS value
+      FROM cc.device_update_operation_fields f
+      WHERE f.job_id=p_job AND f.operation_number=a.operation_number AND
+        jsonb_typeof(a.result->'values')='object' AND ((a.result->'values') ? f.field)
+      UNION ALL
+      SELECT 'status',a.value WHERE write_field='status'
+    ) v
+    WHERE a.status='succeeded' AND a.verified_by IN ('write-response','read-back') AND
+      CASE v.field
+        WHEN 'annotatedLocation' THEN
+          d.annotated_location_observed_at IS NULL OR p_observed_at>d.annotated_location_observed_at
+        WHEN 'annotatedUser' THEN
+          d.annotated_user_observed_at IS NULL OR p_observed_at>d.annotated_user_observed_at
+        WHEN 'notes' THEN d.notes_observed_at IS NULL OR p_observed_at>d.notes_observed_at
+        WHEN 'orgUnitPath' THEN
+          d.org_unit_path_observed_at IS NULL OR p_observed_at>d.org_unit_path_observed_at
+        ELSE d.status_observed_at IS NULL OR p_observed_at>d.status_observed_at END
+  ), pivot AS (
+    -- One source row per device, so one UPDATE sets each published field and its own stamp.
+    SELECT c.device_id,c.operation_number,c.verified_by,
+      bool_or(c.field='annotatedLocation') AS has_annotated_location,
+      max(c.value) FILTER (WHERE c.field='annotatedLocation') AS annotated_location,
+      bool_or(c.field='annotatedUser') AS has_annotated_user,
+      max(c.value) FILTER (WHERE c.field='annotatedUser') AS annotated_user,
+      bool_or(c.field='notes') AS has_notes,
+      max(c.value) FILTER (WHERE c.field='notes') AS notes,
+      bool_or(c.field='orgUnitPath') AS has_org_unit_path,
+      max(c.value) FILTER (WHERE c.field='orgUnitPath') AS org_unit_path,
+      bool_or(c.field='status') AS has_status,
+      max(c.value) FILTER (WHERE c.field='status') AS status_value
+    FROM changes c GROUP BY c.device_id,c.operation_number,c.verified_by
   ), published AS (
     UPDATE cc.devices d SET
-      annotated_location=CASE WHEN write_field='annotatedLocation' THEN a.value ELSE d.annotated_location END,
-      annotated_location_observed_at=CASE WHEN write_field='annotatedLocation' THEN p_observed_at
+      annotated_location=CASE WHEN v.has_annotated_location THEN v.annotated_location
+        ELSE d.annotated_location END,
+      annotated_location_observed_at=CASE WHEN v.has_annotated_location THEN p_observed_at
         ELSE d.annotated_location_observed_at END,
-      status=CASE WHEN write_field='status' THEN a.value ELSE d.status END,
-      status_observed_at=CASE WHEN write_field='status' THEN p_observed_at ELSE d.status_observed_at END
-    FROM applied a WHERE a.status='succeeded' AND a.verified_by IN ('write-response','read-back') AND
-      d.customer_id=p_customer AND d.device_id=a.device_id AND
-      (CASE WHEN write_field='status' THEN (d.status_observed_at IS NULL OR p_observed_at>d.status_observed_at)
-        ELSE (d.annotated_location_observed_at IS NULL OR p_observed_at>d.annotated_location_observed_at) END)
-    RETURNING d.device_id,a.value,a.operation_number,a.verified_by
+      annotated_user=CASE WHEN v.has_annotated_user THEN v.annotated_user ELSE d.annotated_user END,
+      annotated_user_observed_at=CASE WHEN v.has_annotated_user THEN p_observed_at
+        ELSE d.annotated_user_observed_at END,
+      notes=CASE WHEN v.has_notes THEN v.notes ELSE d.notes END,
+      notes_observed_at=CASE WHEN v.has_notes THEN p_observed_at ELSE d.notes_observed_at END,
+      org_unit_path=CASE WHEN v.has_org_unit_path THEN v.org_unit_path ELSE d.org_unit_path END,
+      org_unit_path_observed_at=CASE WHEN v.has_org_unit_path THEN p_observed_at
+        ELSE d.org_unit_path_observed_at END,
+      status=CASE WHEN v.has_status THEN v.status_value ELSE d.status END,
+      status_observed_at=CASE WHEN v.has_status THEN p_observed_at ELSE d.status_observed_at END
+    FROM pivot v
+    WHERE d.customer_id=p_customer AND d.device_id=v.device_id
+    RETURNING d.device_id,v.operation_number,v.verified_by,
+      v.has_annotated_location,v.annotated_location,v.has_annotated_user,v.annotated_user,
+      v.has_notes,v.notes,v.has_org_unit_path,v.org_unit_path,v.has_status,v.status_value
   ), overlay AS (
     INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,
       operation_number,expires_at)
-    SELECT p_customer,p.device_id,write_field,p.value,p_observed_at,p.verified_by,p_job,p.operation_number,
-      p_observed_at+interval '36 hours' FROM published p
+    SELECT p_customer,p.device_id,v.field,v.value,p_observed_at,p.verified_by,p_job,p.operation_number,
+      p_observed_at+interval '36 hours'
+    FROM published p
+    CROSS JOIN LATERAL (VALUES
+      ('annotatedLocation',p.annotated_location,p.has_annotated_location),
+      ('annotatedUser',p.annotated_user,p.has_annotated_user),
+      ('notes',p.notes,p.has_notes),
+      ('orgUnitPath',p.org_unit_path,p.has_org_unit_path),
+      ('status',p.status_value,p.has_status)) v(field,value,published_field)
+    WHERE v.published_field
     ON CONFLICT(customer_id,device_id,field) DO UPDATE SET value=EXCLUDED.value,observed_at=EXCLUDED.observed_at,
       source=EXCLUDED.source,job_id=EXCLUDED.job_id,operation_number=EXCLUDED.operation_number,
       expires_at=EXCLUDED.expires_at
@@ -1216,7 +1386,14 @@ BEGIN
     RETURNING o.operation_number,o.device_id,o.serial_number,o.baseline_value,o.requested_value,o.verify_after)
   SELECT COALESCE(jsonb_agg(jsonb_build_object('operationNumber',c.operation_number,'deviceId',c.device_id,
     'serialNumber',c.serial_number,'baselineValue',c.baseline_value,'requestedValue',c.requested_value,
-    'verifyAfter',c.verify_after) ORDER BY c.operation_number),'[]'::jsonb)
+    'verifyAfter',c.verify_after,
+    -- The field rows of the operation, in contract order (addendum section 4).
+    'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
+        'requestedValue',f.requested_value)
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+        '[]'::jsonb)
+      FROM cc.device_update_operation_fields f
+      WHERE f.job_id=p_job AND f.operation_number=c.operation_number)) ORDER BY c.operation_number),'[]'::jsonb)
   INTO claimed FROM picked c;
   RETURN claimed;
 END;
@@ -1257,7 +1434,13 @@ BEGIN
   now_at:=clock_timestamp();
   SELECT jsonb_agg(jsonb_build_object('operationNumber',o.operation_number,'deviceId',o.device_id,
       'serialNumber',o.serial_number,'baselineValue',o.baseline_value,'requestedValue',o.requested_value,
-      'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at) ORDER BY o.operation_number)
+      'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at,
+      'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
+          'requestedValue',f.requested_value)
+          ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+          '[]'::jsonb)
+        FROM cc.device_update_operation_fields f
+        WHERE f.job_id=p_job AND f.operation_number=o.operation_number)) ORDER BY o.operation_number)
     INTO operations
   FROM cc.device_update_operations o
   WHERE o.job_id=p_job AND o.status='unknown' AND o.verify_attempt=p_attempt AND o.verify_lease_expires_at>now_at
@@ -1271,7 +1454,13 @@ BEGIN
   now_at:=clock_timestamp();
   SELECT jsonb_agg(jsonb_build_object('operationNumber',o.operation_number,'deviceId',o.device_id,
       'serialNumber',o.serial_number,'baselineValue',o.baseline_value,'requestedValue',o.requested_value,
-      'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at) ORDER BY o.operation_number)
+      'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at,
+      'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
+          'requestedValue',f.requested_value)
+          ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+          '[]'::jsonb)
+        FROM cc.device_update_operation_fields f
+        WHERE f.job_id=p_job AND f.operation_number=o.operation_number)) ORDER BY o.operation_number)
     INTO operations
   FROM cc.device_update_operations o
   WHERE o.job_id=p_job AND o.status='unknown' AND o.verify_attempt=p_attempt AND o.verify_lease_expires_at>now_at
@@ -1776,7 +1965,9 @@ BEGIN
       command_state=CASE WHEN res.r->>'outcome'='pending' THEN res.r->>'commandState' ELSE o.command_state END,
       outcome_reason=CASE WHEN res.r->>'outcome'='pending' THEN o.outcome_reason
         ELSE res.r->>'outcomeReason' END,
-      google_status=(res.r->>'googleStatus')::integer,
+      -- A stored status is an HTTP status from 100 to 599, or null when no answer arrived (fix D1).
+      google_status=CASE WHEN (res.r->>'googleStatus')::integer BETWEEN 100 AND 599
+        THEN (res.r->>'googleStatus')::integer END,
       google_reason=res.r->>'googleReason',
       command_expires_at=COALESCE(o.command_expires_at,res.expires_at),
       command_executed_at=CASE WHEN res.r->>'outcome'='succeeded'
@@ -2191,17 +2382,27 @@ BEGIN
     confirmer_permission_version,delegated_subject,batch_size,batch_count,manifest_artifact_id)
   VALUES(job.job_id,p_preview,preview.action,preview.field,preview.mode,preview.value,p_actor,p_version,subject,250,
     ceil(eligible/250.0),p_artifact);
+  -- An update carries its values in the operation's field rows, so its value columns stay null
+  -- (addendum sections 2 and 4). A command and a status change keep the columns.
   INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
     baseline_value,requested_value,batch,status)
   SELECT job.job_id,(row_number() OVER (ORDER BY t.ordinal))::integer,t.device_id,t.serial_number,
-    t.org_unit_path,t.observed_value,
-    CASE preview.action WHEN 'annotated-location' THEN
-        CASE WHEN preview.mode='clear' THEN NULL ELSE preview.value END
+    t.org_unit_path,
+    CASE WHEN preview.action='annotated-location' THEN NULL ELSE t.observed_value END,
+    CASE preview.action
       WHEN 'disable' THEN 'DISABLED'
       WHEN 'reenable' THEN 'ACTIVE' END,
     ((row_number() OVER (ORDER BY t.ordinal)-1)/250)::integer,'pending'
   FROM cc.device_update_preview_targets t
   WHERE t.preview_id=p_preview AND t.disposition='eligible' ORDER BY t.ordinal;
+  -- Until U6, a preview carries one change, so confirm writes one annotatedLocation field row per
+  -- operation from the preview columns (design card plan U5).
+  INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,baseline_value,requested_value)
+  SELECT o.job_id,o.operation_number,'annotatedLocation',t.observed_value,
+    CASE preview.mode WHEN 'clear' THEN NULL ELSE preview.value END
+  FROM cc.device_update_operations o
+  JOIN cc.device_update_preview_targets t ON t.preview_id=p_preview AND t.device_id=o.device_id
+  WHERE o.job_id=job.job_id AND preview.action='annotated-location';
   UPDATE cc.device_update_previews SET job_id=job.job_id WHERE preview_id=p_preview;
   -- The reference keeps the manifest artifact alive for the job. remove() refuses while the count is
   -- above zero. The increment belongs to this transaction, so a rollback releases the reference.

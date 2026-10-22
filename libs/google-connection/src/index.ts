@@ -21,8 +21,6 @@ export {
 export { GoogleConnectionProvider, GoogleStoreError } from './lib/coordinator';
 export { GoogleDeviceReader, statusResults } from './lib/devices';
 export type {
-  AnnotatedLocationBatchOptions,
-  AnnotatedLocationWrite,
   DeviceBatchOptions,
   DeviceCommandIssue,
   DeviceCommandObservation,
@@ -40,7 +38,6 @@ export type {
   DeviceWriteField,
   DeviceWriteFields,
   IssuedDeviceCommand,
-  WrittenDevice,
 } from './lib/devices';
 export type {
   GoogleConnectionDatabase,
