@@ -19,10 +19,22 @@ export type JobDisplayId = z.infer<typeof jobDisplayIdSchema>;
 export const previewDisplayIdSchema = z.string().regex(/^PV-\d{3,}$/);
 export type PreviewDisplayId = z.infer<typeof previewDisplayIdSchema>;
 
-/** One operation ID. Its prefix and number repeat the display ID of its job (section 1.4). */
+/** One operation ID. Its prefix and number repeat the display ID of its job (section 1.4). An
+ * update row adds the field ID, because an update job answers one row per device and field. */
 export const jobOperationIdSchema = z
   .string()
-  .regex(/^(UPD|CMD|STS)-\d{3,}-\d+$/);
+  .regex(
+    /^(UPD|CMD|STS)-\d{3,}-\d+(-(annotatedLocation|annotatedUser|notes|orgUnitPath))?$/,
+  );
+
+/** The four writable field IDs of an update operation, in contract order (addendum section 1). */
+export const jobOperationFieldSchema = z.enum([
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+]);
+export type JobOperationField = z.infer<typeof jobOperationFieldSchema>;
 
 /** The nine job statuses of section 1.2. An awaiting-devices command job holds no write slot. */
 export const jobStatusSchema = z.enum([
@@ -141,7 +153,16 @@ export const jobOperationSchema = z.strictObject({
   deviceId,
   serialNumber,
   orgUnitPath,
-  operation: z.enum(['replace', 'clear', 'reboot', 'disable', 'reenable']),
+  /** The written field of an update row. It stays null for a command or a status row. */
+  field: jobOperationFieldSchema.nullable(),
+  operation: z.enum([
+    'replace',
+    'clear',
+    'move',
+    'reboot',
+    'disable',
+    'reenable',
+  ]),
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
   outcome: jobOutcomeSchema,

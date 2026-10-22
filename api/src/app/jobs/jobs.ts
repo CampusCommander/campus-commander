@@ -185,29 +185,82 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
   });
 }
 
-/** The operation word of one row: the write action, or the annotated-location mode. */
-function operationOf(row: Record<string, unknown>): JobOperation['operation'] {
+/** The field IDs of an update operation, in contract order (design addendum section 1). */
+const operationFieldOrder = [
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+] as const;
+
+/**
+ * The operation page cursor of section 2.5: the operation number and the field position of the
+ * last row. A command or status row holds position 0 (design addendum section 1).
+ */
+export function operationCursor(row: Record<string, unknown>): string {
+  return `${String(row['operation_number'])}:${Number(row['field_position'] ?? 0)}`;
+}
+
+export function decodeOperationCursor(
+  cursor: string | undefined,
+): { number: number; position: number } | null {
+  if (!cursor) return null;
+  const [number, position, ...rest] = cursor.split(':');
+  const parsedNumber = Number(number);
+  const parsedPosition = Number(position);
+  if (
+    rest.length === 0 &&
+    Number.isInteger(parsedNumber) &&
+    parsedNumber >= 1 &&
+    Number.isInteger(parsedPosition) &&
+    parsedPosition >= 0
+  )
+    return { number: parsedNumber, position: parsedPosition };
+  throw new NotFoundException({ reason: 'job-not-found' });
+}
+
+/** The operation word of one row: the write action, the Move of a path, or the field mode. */
+function operationOf(
+  row: Record<string, unknown>,
+  field: JobOperation['field'],
+): JobOperation['operation'] {
   const action = writeActions[String(row['action'])];
   if (action === 'reboot-devices') return 'reboot';
   if (action === 'disable-devices') return 'disable';
   if (action === 'reenable-devices') return 'reenable';
+  // Organization unit offers Move alone (design addendum section 1).
+  if (field === 'orgUnitPath') return 'move';
   return row['mode'] === 'clear' ? 'clear' : 'replace';
 }
 
-/** One operation row. A dispatched or issued operation reads pending (section 2.2). */
+/**
+ * One operation row. A dispatched or issued operation reads pending (section 2.2). An update row
+ * reads its baseline, request, and observation from its field row, so every row of one device
+ * carries the result of that device's one PATCH (design addendum section 1).
+ */
 export function jobOperation(
   row: Record<string, unknown>,
   displayId: string,
 ): JobOperation {
   const status = String(row['status']);
+  const field = (row['field'] as JobOperation['field']) ?? null;
+  const number = String(row['operation_number']);
+  const fieldValue = (name: string): string | null =>
+    field === null
+      ? ((row[name] as string | null) ?? null)
+      : ((row[`field_${name}`] as string | null) ?? null);
   return {
-    operationId: `${displayId}-${row['operation_number']}`,
+    operationId:
+      field === null
+        ? `${displayId}-${number}`
+        : `${displayId}-${number}-${field}`,
     deviceId: String(row['device_id']),
     serialNumber: String(row['serial_number'] ?? ''),
     orgUnitPath: String(row['org_unit_path'] ?? ''),
-    operation: operationOf(row),
-    baselineValue: (row['baseline_value'] as string | null) ?? null,
-    requestedValue: (row['requested_value'] as string | null) ?? null,
+    field,
+    operation: operationOf(row, field),
+    baselineValue: fieldValue('baseline_value'),
+    requestedValue: fieldValue('requested_value'),
     outcome:
       status === 'dispatched' || status === 'issued'
         ? 'pending'
@@ -216,7 +269,7 @@ export function jobOperation(
     googleStatus:
       row['google_status'] == null ? null : Number(row['google_status']),
     googleReason: (row['google_reason'] as string | null) ?? null,
-    observedValue: (row['observed_value'] as string | null) ?? null,
+    observedValue: fieldValue('observed_value'),
     verifiedBy: (row['verified_by'] as JobOperation['verifiedBy']) ?? null,
     commandId: (row['command_id'] as string | null) ?? null,
     // The stored last observation stays as evidence. The API exposes it only while the command is issued.
@@ -490,24 +543,36 @@ export class Jobs {
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
     const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
-    const after = cursor ? Number(cursor) : Number.NaN;
-    if (cursor && !Number.isInteger(after))
-      throw new NotFoundException({ reason: 'job-not-found' });
+    // An update job answers one row per operation and field, so the cursor is "<number>:<position>"
+    // (design addendum section 1).
+    const after = decodeOperationCursor(cursor);
     const rows = await this.rows(
-      `SELECT o.*, u.action, u.mode FROM cc.device_update_operations o
+      `SELECT o.*, u.action, u.mode, f.field,
+        f.baseline_value AS field_baseline_value,
+        f.requested_value AS field_requested_value,
+        f.observed_value AS field_observed_value,
+        CASE WHEN f.field IS NULL THEN 0
+          ELSE array_position($7::text[],f.field) END AS field_position
+        FROM cc.device_update_operations o
         JOIN cc.jobs j ON j.job_id=o.job_id
         LEFT JOIN cc.device_update_jobs u ON u.job_id=o.job_id
+        LEFT JOIN cc.device_update_operation_fields f
+          ON f.job_id=o.job_id AND f.operation_number=o.operation_number
         WHERE j.customer_id=$3 AND j.display_id=$4
           AND cc.job_visible($1,$2,$3,j.requested_by)
           AND ($5::boolean IS NOT TRUE OR o.status IN ('failed','unknown'))
-          AND ($6::integer IS NULL OR o.operation_number>$6)
-        ORDER BY o.operation_number LIMIT $7`,
+          AND ($6::integer IS NULL OR (o.operation_number,
+            CASE WHEN f.field IS NULL THEN 0 ELSE array_position($7::text[],f.field) END)
+            > ($6::integer,$8::integer))
+        ORDER BY o.operation_number, field_position LIMIT $9`,
       [
         ...this.actor(session),
         customerId,
         displayId,
         attention,
-        cursor ? after : null,
+        after?.number ?? null,
+        operationFieldOrder,
+        after?.position ?? null,
         pageSize + 1,
       ],
     );
@@ -516,7 +581,7 @@ export class Jobs {
       operations: page.map((row) => jobOperation(row, displayId)),
       nextCursor:
         rows.length > pageSize && page.length > 0
-          ? String(page[page.length - 1]?.['operation_number'])
+          ? operationCursor(page[page.length - 1]!)
           : null,
     });
   }
@@ -539,12 +604,27 @@ export class Jobs {
     const jobId = String(job['job_id']);
     const row = (
       await this.rows(
-        `SELECT o.*, u.action, u.mode FROM cc.device_update_operations o
+        `SELECT o.*, u.action, u.mode, f.field,
+          f.baseline_value AS field_baseline_value,
+          f.requested_value AS field_requested_value,
+          f.observed_value AS field_observed_value,
+          CASE WHEN f.field IS NULL THEN 0
+            ELSE array_position($6::text[],f.field) END AS field_position
+          FROM cc.device_update_operations o
           JOIN cc.jobs j ON j.job_id=o.job_id
           JOIN cc.device_update_jobs u ON u.job_id=o.job_id
+          LEFT JOIN cc.device_update_operation_fields f
+            ON f.job_id=o.job_id AND f.operation_number=o.operation_number
           WHERE j.customer_id=$3 AND j.display_id=$4
-            AND cc.job_visible($1,$2,$3,j.requested_by) AND o.operation_number=$5`,
-        [...this.actor(session), customerId, displayId, operationNumber],
+            AND cc.job_visible($1,$2,$3,j.requested_by) AND o.operation_number=$5
+          ORDER BY field_position LIMIT 1`,
+        [
+          ...this.actor(session),
+          customerId,
+          displayId,
+          operationNumber,
+          operationFieldOrder,
+        ],
       )
     )[0];
     // A refresh job holds no operation rows, so it also answers operation-not-found.

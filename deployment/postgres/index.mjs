@@ -273,8 +273,8 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     if (migrations.some(({ id }) => id === '017-jobs')) {
       await client.query(`GRANT SELECT ON cc.jobs, cc.job_targets, cc.device_update_previews,
         cc.device_update_preview_targets, cc.device_update_jobs, cc.device_update_batches,
-        cc.device_update_operations, cc.device_write_overlays, cc.job_activity_seen,
-        cc.job_publications TO ${role};
+        cc.device_update_operations, cc.device_update_operation_fields, cc.device_write_overlays,
+        cc.job_activity_seen, cc.job_publications TO ${role};
         GRANT EXECUTE ON FUNCTION cc.job_visible(uuid,integer,text,uuid),
         cc.record_job_change(uuid,boolean,jsonb,jsonb,integer),
         cc.read_job_publications(text,integer),
