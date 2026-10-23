@@ -977,9 +977,10 @@ export function classifyStatus(
 /**
  * Classify one polled command (design section 4 step 9). A terminal state settles the operation. A
  * non-terminal state keeps it issued with the observed command state. A 404 settles unknown with
- * command-not-found, and another state value settles unknown with unrecognized-state. Any other
- * final answer (quota, transient, auth, transport, invalid-response) returns null: the operation
- * keeps its state and the next scheduled poll repeats the GET.
+ * command-not-found. D14 settles a reported IGNORED result failed with command-failed, as FAILURE
+ * does. STATE_UNSPECIFIED or another unknown state value settles unknown with unrecognized-state.
+ * Any other final answer (quota, transient, auth, transport, invalid-response) returns null: the
+ * operation keeps its state and the next scheduled poll repeats the GET.
  */
 export function classifyCommandPoll(
   operation: { operationNumber: number },
@@ -1025,6 +1026,8 @@ export function classifyCommandPoll(
           outcome: 'pending',
           commandState: 'acknowledged',
         };
+      // D14: IGNORED and FAILURE settle failed. Any other reported result settles the same way,
+      // so a result that Google adds later cannot pass as a success.
       return {
         ...observed,
         outcome: 'failed',
