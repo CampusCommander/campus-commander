@@ -15,7 +15,9 @@ export const actionLabels: Record<Action, string> = {
   'devices:read': 'View devices',
   'devices:write': 'Update devices',
   'devices:commands': 'Send device commands',
+  'devices:wipe': 'Wipe and Powerwash devices',
   'devices:status': 'Change device status',
+  'devices:deprovision': 'Device Deprovision',
   'devices:bulk-actions': 'Run device bulk actions',
   'jobs:read': 'View jobs',
 };

@@ -3,7 +3,8 @@
 -- The only statement below that alters a 016 object is the dependency-forced foreign key of cc.entity_sync_jobs.
 INSERT INTO cc.application_actions(action,scope_kinds) VALUES('devices:write',ARRAY['platform','district']),
   ('devices:bulk-actions',ARRAY['platform','district']),('jobs:read',ARRAY['platform','district']),
-  ('devices:commands',ARRAY['platform','district']),('devices:status',ARRAY['platform','district']);
+  ('devices:commands',ARRAY['platform','district']),('devices:wipe',ARRAY['platform','district']),
+  ('devices:status',ARRAY['platform','district']),('devices:deprovision',ARRAY['platform','district']);
 
 CREATE SEQUENCE cc.job_number_upd;
 CREATE SEQUENCE cc.job_number_ref;
