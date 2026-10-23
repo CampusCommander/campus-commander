@@ -1771,6 +1771,39 @@ test('a failed step writes no standalone console authentication value', async (t
   assert.equal(failure.url, `${publicOrigin}/api/auth/callback?code=redacted`);
 });
 
+test('a value registered after its console event is redacted at write time', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const marker = 'synthetic-late-marker-0123456789';
+  const security = new EvidenceSecurity();
+
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'late-redaction',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () => `late failure for ${marker}`,
+        });
+        // The response that carries the value arrives after the console event.
+        security.register('late-secret', marker);
+        throw new Error('The heading never appeared');
+      },
+    ),
+    /never appeared/,
+  );
+
+  const record = await readFile(
+    join(directory, 'late-redaction-failure.json'),
+    'utf8',
+  );
+  security.assertSafe(record, 'failure record');
+  assert.ok(!record.includes(marker));
+});
+
 test('a failed step writes no registered authentication value', async (t) => {
   const directory = await createEvidenceDirectory(t);
   const page = fakePage();
