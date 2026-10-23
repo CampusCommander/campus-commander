@@ -47,6 +47,7 @@ const load = async () => {
   const controller = await module(
     'api/src/app/devices/device-actions.controller.ts',
   );
+  const security = await module('api/src/app/security.ts');
   const devices = await module('api/src/app/devices/devices.service.ts');
   const auth = await module('api/src/app/auth/auth.service.ts');
   const database = await module('api/src/app/database/database.service.ts');
@@ -55,12 +56,13 @@ const load = async () => {
     COMMAND_PREVIEW_FAMILY: actions.COMMAND_PREVIEW_FAMILY,
     STATUS_PREVIEW_FAMILY: actions.STATUS_PREVIEW_FAMILY,
     actionManifestDigest: actions.actionManifestDigest,
-    DEVICE_COMMAND_ROUTE_ACTIONS: guards.DEVICE_COMMAND_ROUTE_ACTIONS,
-    DEVICE_STATUS_ROUTE_ACTIONS: guards.DEVICE_STATUS_ROUTE_ACTIONS,
+    DEVICE_ACTION_ROUTE_ACTIONS: guards.DEVICE_ACTION_ROUTE_ACTIONS,
     requireDeviceActions: guards.requireDeviceActions,
+    requireDeviceAction: guards.requireDeviceAction,
     selectionStorageKey: selection.selectionStorageKey,
     DeviceCommandsController: controller.DeviceCommandsController,
     DeviceStatusChangesController: controller.DeviceStatusChangesController,
+    ApplicationExceptionFilter: security.ApplicationExceptionFilter,
     DevicesService: devices.DevicesService,
     AuthService: auth.AuthService,
     DatabaseService: database.DatabaseService,
@@ -81,12 +83,13 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
     DeviceActions,
     COMMAND_PREVIEW_FAMILY,
     STATUS_PREVIEW_FAMILY,
-    DEVICE_COMMAND_ROUTE_ACTIONS,
-    DEVICE_STATUS_ROUTE_ACTIONS,
+    DEVICE_ACTION_ROUTE_ACTIONS,
     requireDeviceActions,
+    requireDeviceAction,
     selectionStorageKey,
     DeviceCommandsController,
     DeviceStatusChangesController,
+    ApplicationExceptionFilter,
     DevicesService,
     AuthService,
     DatabaseService,
@@ -103,7 +106,29 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
   const selectionKey = selectionStorageKey(actor, key);
   const selections = new Map();
   const cache = { get: async (name) => selections.get(name) ?? null };
-  const storage = { storeJson: async () => randomUUID() };
+  const storedDocuments = [];
+  /** A published, ready artifact row for one stored manifest. The confirmation checks its state. */
+  const publishArtifact = async () => {
+    const id = randomUUID();
+    const attempt = randomUUID();
+    // The artifact fixture publishes the same cc.artifacts state as the real store, without a file.
+    await migrator.query(
+      `INSERT INTO cc.artifacts(id,backend,locator,schema_version,attempt_id,sha256,size_bytes,
+         publication_state,active,reference_count)
+       VALUES($1,'local',$2,1,$3,$4,1,'ready',false,0)`,
+      [id, `${id}.${attempt}`, attempt, 'a'.repeat(64)],
+    );
+    artifacts.add(id);
+    return id;
+  };
+  // The service stores the manifest before the confirmation function runs. Publish a real, ready
+  // artifact for each stored document, so a confirmation that reaches the function finds one.
+  const storage = {
+    storeJson: async (document) => {
+      storedDocuments.push(document);
+      return publishArtifact();
+    },
+  };
   const database = {
     connection: { query: (text, values) => runtime.query(text, values) },
     async transaction(run) {
@@ -171,6 +196,9 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
       changedAt: new Date().toISOString(),
     });
   const fresh = (additions) => selections.set(selectionKey, raw(additions));
+  /** The stored selection of one person. Each principal reads its own cache key. */
+  const freshFor = (id, additions) =>
+    selections.set(selectionStorageKey(id, key), raw(additions));
   const insertDevice = async (id, status, extra = {}) =>
     migrator.query(
       `INSERT INTO cc.devices(customer_id,device_id,serial_number,model,asset_tag,org_unit_path,
@@ -258,7 +286,7 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
         .query('DELETE FROM cc.artifacts WHERE id=$1', [id])
         .catch(() => undefined);
     await migrator.query(
-      "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'b3a-%'",
+      "DELETE FROM cc.devices WHERE customer_id=$1 AND (device_id LIKE 'b3a-%' OR device_id LIKE 'b6-%')",
       [customer],
     );
   };
@@ -345,8 +373,14 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
       'b3a-reboot',
       'b3a-powerwash-early',
       'b3a-powerwash-late',
+      // The card B6 checks below.
+      'b6-active',
+      'b6-deprovision-target',
+      'b6-powerwash',
     ])
       await insertDevice(deviceId, 'ACTIVE');
+    await insertDevice('b6-disabled', 'DISABLED');
+    await insertDevice('b6-deprovisioned', 'DEPROVISIONED');
 
     let rebootPreview;
     await check(
@@ -691,7 +725,7 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'B3A the route guards require the read, Bulk Actions, and family action in order',
+      'B3A the route guard requires the read and Bulk Actions pair before the action permission',
       async () => {
         const calls = [];
         const auth = {
@@ -702,22 +736,32 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
           session,
           customer,
           randomUUID(),
-          DEVICE_COMMAND_ROUTE_ACTIONS,
+          DEVICE_ACTION_ROUTE_ACTIONS,
         );
-        await requireDeviceActions(
-          auth,
-          session,
-          customer,
-          randomUUID(),
-          DEVICE_STATUS_ROUTE_ACTIONS,
-        );
+        assert.deepEqual(calls, ['devices:read', 'devices:bulk-actions']);
+        calls.length = 0;
+        for (const action of [
+          'reboot',
+          'wipe-users',
+          'powerwash',
+          'disable',
+          'reenable',
+          'deprovision',
+        ])
+          await requireDeviceAction(
+            auth,
+            session,
+            customer,
+            randomUUID(),
+            action,
+          );
         assert.deepEqual(calls, [
-          'devices:read',
-          'devices:bulk-actions',
           'devices:commands',
-          'devices:read',
-          'devices:bulk-actions',
+          'devices:wipe',
+          'devices:wipe',
           'devices:status',
+          'devices:status',
+          'devices:deprovision',
         ]);
       },
     );
@@ -745,19 +789,6 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
     const digest = 'c'.repeat(64);
     const RETIRING = 'DEPROVISION_REASON_RETIRING_DEVICE';
     const SAME_MODEL = 'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT';
-    const publishArtifact = async () => {
-      const id = randomUUID();
-      const attempt = randomUUID();
-      // The artifact fixture publishes the same cc.artifacts state as the real store, without a file.
-      await migrator.query(
-        `INSERT INTO cc.artifacts(id,backend,locator,schema_version,attempt_id,sha256,size_bytes,
-           publication_state,active,reference_count)
-         VALUES($1,'local',$2,1,$3,$4,1,'ready',false,0)`,
-        [id, `${id}.${attempt}`, attempt, 'a'.repeat(64)],
-      );
-      artifacts.add(id);
-      return id;
-    };
     const previewOf = (actorId, action, deviceId, reason = null) =>
       directPreview(actorId, action, digest, [target(deviceId)], reason);
     const confirmOf = (actorId, row, phrase, artifactId) =>
@@ -1417,6 +1448,355 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
           );
           assert.equal(row.app_grant, true, `${signature} runtime grant`);
         }
+      },
+    );
+
+    // -------------------------------------------------------------------------------------------
+    // Card B6: the previews and confirmations of the three actions (design sections 1 to 3).
+    // -------------------------------------------------------------------------------------------
+    const commandsNames = [
+      'devices:read',
+      'devices:bulk-actions',
+      'devices:commands',
+    ];
+    const statusNames = [
+      'devices:read',
+      'devices:bulk-actions',
+      'devices:status',
+    ];
+    const wipeNames = [
+      'devices:read',
+      'devices:bulk-actions',
+      'devices:wipe',
+      'devices:deprovision',
+    ];
+    const wipeSession = sessionFor(wipeActor, wipeNames);
+    const commandsOnly = await createPrincipal('b6-commands', commandsNames);
+    const statusOnly = await createPrincipal('b6-status', statusNames);
+
+    await check(
+      'B6 a person with only devices:commands previews Reboot and receives 403 for Powerwash',
+      async () => {
+        freshFor(commandsOnly, ['b6-active']);
+        const reboot = await controllerFor('commands').preview(
+          routeRequest(commandsOnly, commandsNames),
+          { ...key, commandType: 'REBOOT' },
+        );
+        assert.equal(reboot.action, 'reboot');
+        assert.equal(reboot.commandType, 'REBOOT');
+        assert.equal(reboot.deprovisionReason, null);
+        assert.equal(reboot.selected, 1);
+        assert.equal(reboot.eligible, 1);
+        const correlationId = randomUUID();
+        await assert.rejects(
+          controllerFor('commands').preview(
+            routeRequest(commandsOnly, commandsNames, correlationId),
+            { ...key, commandType: 'REMOTE_POWERWASH' },
+          ),
+          (error) => {
+            assert.equal(error.getStatus?.(), 403, String(error));
+            return true;
+          },
+        );
+        const events = (
+          await migrator.query(
+            `SELECT detail FROM cc.security_events
+               WHERE event='access-denied' AND correlation_id=$1`,
+            [correlationId],
+          )
+        ).rows;
+        assert.deepEqual(
+          events.map((row) => row.detail),
+          ['devices:wipe'],
+          'The route checks the Powerwash permission after the family guard.',
+        );
+        assert.deepEqual(
+          await directPreview(commandsOnly, 'powerwash', digest, [
+            target('b6-active'),
+          ]),
+          { outcome: 'forbidden' },
+          'SQL refuses the Powerwash preview without devices:wipe.',
+        );
+      },
+    );
+
+    await check(
+      'B6 a person with only devices:status receives 403 for a Deprovision preview',
+      async () => {
+        const correlationId = randomUUID();
+        await assert.rejects(
+          controllerFor('status').preview(
+            routeRequest(statusOnly, statusNames, correlationId),
+            {
+              ...key,
+              statusAction: 'deprovision',
+              deprovisionReason: RETIRING,
+            },
+          ),
+          (error) => {
+            assert.equal(error.getStatus?.(), 403, String(error));
+            return true;
+          },
+        );
+        const events = (
+          await migrator.query(
+            `SELECT detail FROM cc.security_events
+               WHERE event='access-denied' AND correlation_id=$1`,
+            [correlationId],
+          )
+        ).rows;
+        assert.deepEqual(
+          events.map((row) => row.detail),
+          ['devices:deprovision'],
+        );
+        assert.deepEqual(
+          await directPreview(
+            statusOnly,
+            'deprovision',
+            digest,
+            [target('b6-deprovision-target')],
+            RETIRING,
+          ),
+          { outcome: 'forbidden' },
+          'SQL refuses the Deprovision preview without devices:deprovision.',
+        );
+      },
+    );
+
+    await check(
+      'B6 a Deprovision preview without a reason answers 400 before any person check',
+      async () => {
+        const correlationId = randomUUID();
+        const rejection = await controllerFor('status')
+          .preview(routeRequest(statusOnly, statusNames, correlationId), {
+            ...key,
+            statusAction: 'deprovision',
+          })
+          .then(
+            () => null,
+            (error) => error,
+          );
+        assert.ok(
+          rejection,
+          'The route refuses a Deprovision body without a reason.',
+        );
+        assert.equal(rejection.name, 'ZodError');
+        // The Zod handler answers the generic 400 body of the exception filter.
+        const response = {
+          code: 0,
+          body: null,
+          status(code) {
+            this.code = code;
+            return this;
+          },
+          json(body) {
+            this.body = body;
+            return this;
+          },
+        };
+        const host = {
+          switchToHttp: () => ({
+            getRequest: () => ({
+              path: '/api/devices/status-changes/previews',
+              correlationId,
+            }),
+            getResponse: () => response,
+          }),
+        };
+        new ApplicationExceptionFilter().catch(rejection, host);
+        assert.equal(response.code, 400);
+        assert.equal(response.body.code, 'invalid-request');
+        assert.equal(
+          (
+            await migrator.query(
+              'SELECT count(*)::integer AS count FROM cc.device_update_previews WHERE created_by=$1',
+              [statusOnly],
+            )
+          ).rows[0].count,
+          0,
+          'The refused body stores no preview.',
+        );
+      },
+    );
+
+    await check(
+      'B6 a Powerwash preview of ACTIVE, DISABLED, and DEPROVISIONED devices lists two exclusion reasons',
+      async () => {
+        freshFor(wipeActor, ['b6-active', 'b6-disabled', 'b6-deprovisioned']);
+        const preview = await actions.preview(
+          wipeSession,
+          current,
+          'powerwash',
+          key,
+        );
+        assert.equal(preview.action, 'powerwash');
+        assert.equal(preview.commandType, 'REMOTE_POWERWASH');
+        assert.equal(preview.statusAction, null);
+        assert.equal(preview.deprovisionReason, null);
+        assert.equal(preview.selected, 3);
+        assert.equal(preview.eligible, 1);
+        assert.equal(preview.excluded, 2);
+        const page = await actions.targets(
+          wipeSession,
+          preview.previewId,
+          COMMAND_PREVIEW_FAMILY,
+          undefined,
+          undefined,
+          100,
+        );
+        assert.deepEqual(
+          page.targets.map((row) => [
+            row.deviceId,
+            row.disposition,
+            row.exclusionReason,
+          ]),
+          [
+            ['b6-active', 'eligible', null],
+            ['b6-deprovisioned', 'excluded', 'device-deprovisioned'],
+            ['b6-disabled', 'excluded', 'device-disabled'],
+          ],
+        );
+      },
+    );
+
+    await check(
+      'B6 a Powerwash preview answers phrase-mismatch for WIPE and stores no manifest',
+      async () => {
+        freshFor(wipeActor, ['b6-powerwash']);
+        const preview = await actions.preview(
+          wipeSession,
+          current,
+          'powerwash',
+          key,
+        );
+        assert.equal(preview.action, 'powerwash');
+        const storedBefore = storedDocuments.length;
+        const jobsBefore = (
+          await adminRow(
+            'SELECT count(*)::integer AS count FROM cc.device_update_previews WHERE created_by=$1 AND job_id IS NOT NULL',
+            [wipeActor],
+          )
+        ).count;
+        await assert.rejects(
+          actions.confirm(
+            wipeSession,
+            current,
+            preview.previewId,
+            {
+              manifestDigest: preview.manifestDigest,
+              acknowledged: true,
+              typedPhrase: 'WIPE',
+            },
+            COMMAND_PREVIEW_FAMILY,
+          ),
+          (error) => {
+            assert.equal(error.getStatus(), 422, String(error));
+            assert.deepEqual(error.getResponse(), {
+              reason: 'phrase-mismatch',
+            });
+            return true;
+          },
+        );
+        assert.equal(
+          storedDocuments.length,
+          storedBefore,
+          'A mismatch stores no manifest.',
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT job_id FROM cc.device_update_previews WHERE preview_id=$1',
+              [preview.previewId],
+            )
+          ).job_id,
+          null,
+          'A mismatch leaves the preview without a job.',
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT count(*)::integer AS count FROM cc.device_update_previews WHERE created_by=$1 AND job_id IS NOT NULL',
+              [wipeActor],
+            )
+          ).count,
+          jobsBefore,
+          'A mismatch creates no job.',
+        );
+        // The right phrase still confirms, after trimming the typed spaces.
+        const accepted = await actions.confirm(
+          wipeSession,
+          current,
+          preview.previewId,
+          {
+            manifestDigest: preview.manifestDigest,
+            acknowledged: true,
+            typedPhrase: ' POWERWASH ',
+          },
+          COMMAND_PREVIEW_FAMILY,
+        );
+        assert.equal(accepted.existing, false);
+        assert.match(accepted.receipt.displayId, /^CMD-\d{3,}$/);
+        jobs.push(accepted.receipt.jobId);
+      },
+    );
+
+    await check(
+      'B6 a trimmed DEPROVISION phrase creates a Deprovision job with its reason',
+      async () => {
+        freshFor(wipeActor, ['b6-deprovision-target']);
+        const preview = await actions.preview(
+          wipeSession,
+          current,
+          'deprovision',
+          key,
+          undefined,
+          SAME_MODEL,
+        );
+        assert.equal(preview.action, 'deprovision');
+        assert.equal(preview.statusAction, 'deprovision');
+        assert.equal(preview.commandType, null);
+        assert.equal(preview.deprovisionReason, SAME_MODEL);
+        assert.deepEqual(
+          await adminRow(
+            'SELECT action,deprovision_reason FROM cc.device_update_previews WHERE preview_id=$1',
+            [preview.previewId],
+          ),
+          { action: 'deprovision', deprovision_reason: SAME_MODEL },
+        );
+        const confirmed = await actions.confirm(
+          wipeSession,
+          current,
+          preview.previewId,
+          {
+            manifestDigest: preview.manifestDigest,
+            acknowledged: true,
+            typedPhrase: ' DEPROVISION ',
+          },
+          STATUS_PREVIEW_FAMILY,
+        );
+        assert.equal(confirmed.existing, false);
+        assert.match(confirmed.receipt.displayId, /^STS-\d{3,}$/);
+        jobs.push(confirmed.receipt.jobId);
+        assert.deepEqual(
+          await adminRow(`SELECT kind FROM cc.jobs WHERE job_id=$1`, [
+            confirmed.receipt.jobId,
+          ]),
+          { kind: 'device-status' },
+        );
+        assert.deepEqual(
+          await adminRow(
+            `SELECT action,preview_id FROM cc.device_update_jobs WHERE job_id=$1`,
+            [confirmed.receipt.jobId],
+          ),
+          { action: 'deprovision', preview_id: preview.previewId },
+        );
+        assert.deepEqual(
+          await adminRow(
+            `SELECT baseline_value,requested_value FROM cc.device_update_operations WHERE job_id=$1`,
+            [confirmed.receipt.jobId],
+          ),
+          { baseline_value: 'ACTIVE', requested_value: 'DEPROVISIONED' },
+        );
       },
     );
   } finally {

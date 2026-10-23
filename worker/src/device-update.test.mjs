@@ -55,13 +55,19 @@ const op = (number, deviceId, value = `Room ${number}`, fields = null) => ({
 /** One claimed operation of a status action: no field rows. */
 const statusOp = (number, deviceId, value) => op(number, deviceId, value, []);
 
-const claimed = (operations, readBack = [], action = 'annotated-location') => ({
+const claimed = (
+  operations,
+  readBack = [],
+  action = 'annotated-location',
+  extra = {},
+) => ({
   outcome: 'claimed',
   generation: 1,
   credentialId: randomUUID(),
   envelope: { sealed: true },
   batchCount: 2,
   action,
+  ...extra,
   operations,
   readBack,
 });
@@ -381,12 +387,14 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
       };
       this.calls.push(call);
       // Group the changes into parts of up to 50, in request order, as the real reader does.
+      // A new action or a new deprovision reason starts a new part (addendum section 5).
       const parts = [];
       for (const change of changes) {
         const last = parts[parts.length - 1];
         if (
           last !== undefined &&
           last.action === change.action &&
+          last.deprovisionReason === change.deprovisionReason &&
           last.deviceIds.length < 50
         ) {
           last.deviceIds.push(change.deviceId);
@@ -395,6 +403,9 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
         parts.push({
           id: `status-${parts.length + 1}`,
           action: change.action,
+          ...(change.deprovisionReason === undefined
+            ? {}
+            : { deprovisionReason: change.deprovisionReason }),
           deviceIds: [change.deviceId],
         });
       }
@@ -413,6 +424,9 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
           call.parts.push({
             id: part.id,
             action: part.action,
+            ...(part.deprovisionReason === undefined
+              ? {}
+              : { deprovisionReason: part.deprovisionReason }),
             deviceIds: [...part.deviceIds],
           });
         await options.onSend?.(sent);
@@ -1316,6 +1330,106 @@ test('a Re-enable claim sends the re-enable action', async () => {
   );
 });
 
+test('a Deprovision claim sends its action and reason, and a deprovisioned target fails status-conflict', async () => {
+  const deprovisionReason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+  const db = database({
+    claim: () =>
+      claimed(
+        [
+          statusOp(1, 'd1', 'DEPROVISIONED'),
+          statusOp(2, 'd2', 'DEPROVISIONED'),
+        ],
+        [],
+        'deprovision',
+        { deprovisionReason },
+      ),
+  });
+  const source = reader(
+    [],
+    [],
+    [
+      {
+        results: {
+          d1: {
+            deviceId: 'd1',
+            outcome: 'succeeded',
+            reason: null,
+            googleReason: null,
+          },
+          d2: {
+            deviceId: 'd2',
+            outcome: 'failed',
+            reason: 'status-conflict',
+            googleReason:
+              'A device with status DEPROVISIONED does not allow this action.',
+          },
+        },
+      },
+    ],
+  );
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  const call = source.calls.find((one) => one.name === 'changeDeviceStatus');
+  // The reason of the job travels with every change and in its part (B2, section 4).
+  assert.deepEqual(call.changes, [
+    { deviceId: 'd1', action: 'deprovision', deprovisionReason },
+    { deviceId: 'd2', action: 'deprovision', deprovisionReason },
+  ]);
+  assert.deepEqual(call.parts, [
+    {
+      id: 'status-1',
+      action: 'deprovision',
+      deprovisionReason,
+      deviceIds: ['d1', 'd2'],
+    },
+  ]);
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'write-response',
+      googleStatus: null,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+    {
+      operationNumber: 2,
+      outcome: 'failed',
+      outcomeReason: 'status-conflict',
+      googleReason:
+        'A device with status DEPROVISIONED does not allow this action.',
+      value: null,
+      googleStatus: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+    },
+  ]);
+});
+
+test('a Deprovision claim without its reason is refused before any status call', async () => {
+  const db = database({
+    claim: () =>
+      claimed([statusOp(1, 'd1', 'DEPROVISIONED')], [], 'deprovision'),
+  });
+  const source = reader([], [], [{ results: {} }]);
+  const { create } = jobs({ db, reader: source });
+  await assert.rejects(
+    create.runBatch(batchRequest, AbortSignal.timeout(5000)),
+    (error) =>
+      error instanceof z.ZodError &&
+      error.issues.some(
+        (issue) => issue.path.join('.') === 'deprovisionReason',
+      ),
+  );
+  assert.equal(
+    source.calls.some((one) => one.name === 'changeDeviceStatus'),
+    false,
+    'No status call leaves the worker without a reason (B2 requires one).',
+  );
+});
+
 test('a status read-back compares the device status', async () => {
   const db = database({
     claim: () =>
@@ -2060,6 +2174,119 @@ test('a command batch issues one POST part per operation and settles issued', as
     source.calls.some((call) => call.name === 'deviceStates'),
     false,
   );
+});
+
+test('a Wipe user data and a Powerwash issue their Google command type with no payload', async () => {
+  for (const [action, commandType] of [
+    ['wipe-users', 'WIPE_USERS'],
+    ['powerwash', 'REMOTE_POWERWASH'],
+  ]) {
+    const db = database({
+      claim: () => claimed([statusOp(1, 'd1')], [], action),
+    });
+    const source = reader([
+      { parts: { d1: { kind: 'success', commandId: '4100000001' } } },
+    ]);
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runBatch(
+      batchRequest,
+      AbortSignal.timeout(5000),
+    );
+    assert.equal(answer.outcome, 'settled', action);
+    assert.equal(source.calls[0].name, 'issueDeviceCommands', action);
+    assert.deepEqual(
+      source.calls[0].commands,
+      [{ deviceId: 'd1', commandType }],
+      action,
+    );
+    // D6: neither command carries a payload, and the mock refuses one (B2).
+    assert.equal('payload' in source.calls[0].commands[0], false, action);
+    const [settlement] = settlements(db);
+    assert.equal(settlement.values[4], 'issue', action);
+    assert.deepEqual(
+      JSON.parse(settlement.values[5]).map((result) => [
+        result.outcome,
+        result.commandId,
+      ]),
+      [['issued', '4100000001']],
+      action,
+    );
+    // A command job skips the read-back of section 4 step 4.
+    assert.equal(
+      names(db.calls).includes('claim_device_update_verification'),
+      false,
+      action,
+    );
+  }
+});
+
+test('a CANCELLED answer settles a Reboot and a Powerwash command failed with command-cancelled', async () => {
+  // The poll claim names no job action: every command job settles through this classifier (D14).
+  for (const action of ['reboot', 'powerwash']) {
+    const db = database({
+      pollClaim: claimsOf(pollClaimed([pollOperation(1, 'd1', '4100000001')]), {
+        outcome: 'idle',
+        status: 'awaiting-devices',
+        operations: [],
+      }),
+    });
+    const source = reader(
+      [],
+      [],
+      [],
+      [
+        [
+          {
+            parts: {
+              d1: {
+                kind: 'success',
+                observation: pollObservation('CANCELLED'),
+              },
+            },
+          },
+        ],
+      ],
+    );
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+    assert.equal(answer.failed, 1, action);
+    assert.deepEqual(
+      pollSettled(db).map((one) => [one.outcome, one.outcomeReason]),
+      [['failed', 'command-cancelled']],
+      action,
+    );
+  }
+});
+
+test('an IGNORED result settles a Reboot, a Wipe user data, and a Powerwash command failed with command-failed', async () => {
+  // The poll claim names no job action: every command job settles through this classifier (D14).
+  const observation = pollObservation('EXECUTED_BY_CLIENT', {
+    result: 'IGNORED',
+    executedAt: '2026-10-21T12:00:00.000Z',
+  });
+  for (const action of ['reboot', 'wipe-users', 'powerwash']) {
+    const db = database({
+      pollClaim: claimsOf(pollClaimed([pollOperation(1, 'd1', '4100000001')]), {
+        outcome: 'idle',
+        status: 'awaiting-devices',
+        operations: [],
+      }),
+    });
+    const source = reader(
+      [],
+      [],
+      [],
+      [[{ parts: { d1: { kind: 'success', observation } } }]],
+    );
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+    assert.equal(answer.failed, 1, action);
+    assert.deepEqual(
+      pollSettled(db).map((one) => [one.outcome, one.outcomeReason]),
+      [['failed', 'command-failed']],
+      action,
+    );
+  }
 });
 
 test('a command finish skips the read-back and answers awaiting-devices', async () => {
@@ -3852,6 +4079,31 @@ test('each row of the poll settlement table classifies as section 4 step 9 says'
     },
   );
   assert.equal(run('EXPIRED').outcome, 'expired');
+  // D14: a reported IGNORED result settles failed with command-failed, as FAILURE does.
+  assert.deepEqual(run('EXECUTED_BY_CLIENT', { result: 'IGNORED' }), {
+    operationNumber: 7,
+    outcome: 'failed',
+    outcomeReason: 'command-failed',
+    googleStatus: 200,
+    googleReason: null,
+    commandExpiresAt: '2026-10-28T12:00:00.000Z',
+  });
+  // D14: STATE_UNSPECIFIED and another unknown state value keep the unknown default.
+  assert.deepEqual(run('STATE_UNSPECIFIED'), {
+    operationNumber: 7,
+    outcome: 'unknown',
+    outcomeReason: 'unrecognized-state',
+    googleStatus: 200,
+    commandExpiresAt: '2026-10-28T12:00:00.000Z',
+  });
+  // D14: CANCELLED settles failed with command-cancelled for every command type.
+  assert.deepEqual(run('CANCELLED'), {
+    operationNumber: 7,
+    outcome: 'failed',
+    outcomeReason: 'command-cancelled',
+    googleStatus: 200,
+    commandExpiresAt: '2026-10-28T12:00:00.000Z',
+  });
   assert.deepEqual(run('SOMETHING_NEW'), {
     operationNumber: 7,
     outcome: 'unknown',

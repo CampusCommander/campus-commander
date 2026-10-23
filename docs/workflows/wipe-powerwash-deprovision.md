@@ -63,20 +63,20 @@ Google refuses an ineligible device per device, and the row shows Failed with Go
 A lost issue answer shows Unknown, and the job ends Needs review.
 A `CANCELLED` command settles Failed (D14). An expired command shows Expired.
 Evidence is admin-sdk-mock v0.2.0 only.
-Live Google device writes stay unverified, because the test domain has no ChromeOS device (`docs/current-work.md:82`).
+Live Google device writes stay unverified, because the test domain has no ChromeOS device (`docs/current-work.md:84`).
 
 ## Owner direction — 2026-10-21
 
 From `docs/current-work.md` (2026-10-21):
 
-- Question "What should step 5 build first?" The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" (`docs/current-work.md:12`).
-- Question "If device commands come first: which commands go in the first build?" The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" (`docs/current-work.md:13`).
+- Question "What should step 5 build first?" The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" (`docs/current-work.md:14`).
+- Question "If device commands come first: which commands go in the first build?" The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" (`docs/current-work.md:15`).
 
 From `docs/workflows/device-commands.md:150`: "Wipe, Powerwash, and Deprovision need their own record."
 
 The owner signed off the first build on 2026-10-22 ("Signed off as built", `docs/current-work.md:8`). This record covers the next build.
 
-The owner chose "That looks good" for the step 5 screens on 2026-10-21 (`docs/current-work.md:62`). That answer covers the first build's screens only. It says nothing about this record or this build.
+The owner chose "That looks good" for the step 5 screens on 2026-10-21 (`docs/current-work.md:64`). That answer covers the first build's screens only. It says nothing about this record or this build.
 The owner confirmed this record on 2026-10-23, before any design or implementation.
 
 ## Implementation defaults — 2026-10-22
@@ -108,12 +108,31 @@ These defaults are engineering choices for owner review, not owner decisions. Ch
 17. D17 Target count: no new cap. The 100,000-device selection cap stays (`api/src/app/devices/device-actions.ts:39`). Review, Confirm, and the final button show the count.
 18. D18 No factory reset with Deprovision. The API has no such option [3]. Send Powerwash first for both.
 19. D19 No second approver. The 2026-09-04 instructions propose one for "mass powerwash" (`docs/reviews/2026-09-04-technical-change-instructions.md:242`), and G24 leaves approval policy unresolved (`docs/workflow-gaps.md:82`). The product has one administrator today.
-20. D20 Tests run on admin-sdk-mock only. Live device writes stay excluded (`docs/current-work.md:20`, `docs/workflows/device-commands.md:143`).
+20. D20 Tests run on admin-sdk-mock only. Live device writes stay excluded (`docs/current-work.md:22`, `docs/workflows/device-commands.md:143`).
 
 ## Design
 
 Figma page 09 (`94:2`) holds these frames in the file `lqZx6qpWevsN3AAfWkworl`. Inspection on 2026-10-22 used `figma-notes.md` and the exported PNGs.
 The step 5 side sheet supplies the composition (`docs/ui/designs/2026-10-21-device-commands.html`). The frames supply content and copy only. Job pages stay pages.
+
+The owner approved the screens on 2026-10-23. Owner, in the main chat: "All the screens look good. Go ahead and execute."
+The approved files:
+
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision.html`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-notes.md`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-01-send-command-choose.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-02-wipe-review.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-03-wipe-confirm.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-04-powerwash-confirm-wrong-phrase.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-05-change-status-reason.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-06-deprovision-review.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-07-deprovision-confirm.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-08-powerwash-receipt.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-09-powerwash-job.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-10-deprovision-job.png`
+- `docs/ui/designs/2026-10-23-wipe-powerwash-deprovision-11-choose-without-wipe-permission.png`
+
+The screenshots show the review build's simulated header. The eng-lead exception of PR #78 covers it. The domain is public in `AGENTS.md`, and the customer ID is simulated.
 
 | Node                                                                                                | Frame name                         | Use                                                                  |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
@@ -134,13 +153,13 @@ The step 5 side sheet supplies the composition (`docs/ui/designs/2026-10-21-devi
 
 Design gaps:
 
-1. No sheet composition for the three actions. The step 5 sheet has no typed field and no reason select. A mockup for the owner to review comes after the owner answers this record and before the build.
-2. No reason options. `97:93` shows one value, "Retired / End of life", which is not a Google label. Google offers four admin reasons.
-3. No place for the reason in the frozen preview. `97:93` puts it on the confirmation page, and the domain model surfaces it in the preview (`docs/portfolio/02-domain-model.md:85`).
-4. No per-device exclusion reasons (`106:156` reports a count), no partial or failed Deprovision result (`106:248` shows full success), and no pending Wipe user data state beyond `116:569` and `116:614`.
-5. No state for a command pending for months. The watch window of ruling 2 decides what the job shows.
-6. No Powerwash enrollment frame per organization unit or for ChromeOS Flex devices.
-7. No frame offers a factory reset with Deprovision, and none says Deprovision keeps local data. This build excludes factory reset (D18). Figma job IDs are WIP-, CMD-, and STATUS-. Default D4 keeps CMD- and STS-.
+1. No sheet composition for the three actions. The step 5 sheet has no typed field and no reason select. **Closed** by states 01 to 07. The screens add the typed field and the reason select.
+2. No reason options. `97:93` shows one value, "Retired / End of life", which is not a Google label. Google offers four admin reasons. **Closed** by state 05. The select lists the four Google labels of D11.
+3. No place for the reason in the frozen preview. `97:93` puts it on the confirmation page, and the domain model surfaces it in the preview (`docs/portfolio/02-domain-model.md:85`). **Closed** by states 06 and 07. Review shows the reason under the preview line, and Confirm repeats it.
+4. No per-device exclusion reasons (`106:156` reports a count), no partial or failed Deprovision result (`106:248` shows full success), and no pending Wipe user data state beyond `116:569` and `116:614`. **Closed** by states 02, 09, and 10. State 02 lists each exclusion reason, state 09 shows the pending command row, and state 10 shows a failed Deprovision row.
+5. No state for a command pending for months. The watch window of ruling 2 decides what the job shows. **Closed** by state 09. The row settles Unknown after 30 days and keeps the Google expiry.
+6. No Powerwash enrollment frame per organization unit or for ChromeOS Flex devices. **Open.** No state shows an enrollment frame.
+7. No frame offers a factory reset with Deprovision, and none says Deprovision keeps local data. This build excludes factory reset (D18). Figma job IDs are WIP-, CMD-, and STATUS-. Default D4 keeps CMD- and STS-. **Closed** by states 06 and 07 for the local data sentence. States 09 and 10 show the CMD- and STS- job IDs. No state offers a factory reset, and D18 keeps it excluded.
 
 ## Exclusions and open decisions
 
@@ -171,7 +190,7 @@ Open decisions:
 4. Deprovision is one-way and keeps local data. Recovery needs a hands-on wipe, manual enrollment, and an available upgrade [8][5][6]. A wrong reason changes license handling, and Google audits it [5]. A retired device keeps its user data unless Powerwash runs first [3][8].
 5. Blast radius. One job targets up to 100,000 devices (`api/src/app/devices/device-actions.ts:39`). The typed phrase and the count in the button are the main guards. No second approver exists (G24).
 6. A lost answer invites a repeat. An accepted Powerwash with a lost answer shows Unknown. A second request queues a second Powerwash (`docs/workflows/device-commands.md:90`). The mock also departs from Google: Powerwash keeps enrollment, every command expires in 5 days, deprecated reasons pass, and `CANCELLED` and `IGNORED` never occur. Green tests do not prove Google behavior.
-7. Live device writes stay unverified. The test domain has no ChromeOS device (`docs/current-work.md:82`). The standing authorization excludes Google mutations (`AGENTS.md:48`, `docs/portfolio/phase-3-google-credentials.md:26`). A live test needs an enrolled Chromebook that the owner accepts losing. It also needs a license, physical access, and his explicit authorization. Deprovisioning the only bundled device, with no other upgrade, removes settings and managed devices after 90 days [8]. No source states how a powerwashed device reports its result, so the live test answers that too.
+7. Live device writes stay unverified. The test domain has no ChromeOS device (`docs/current-work.md:84`). The standing authorization excludes Google mutations (`AGENTS.md:48`, `docs/portfolio/phase-3-google-credentials.md:26`). A live test needs an enrolled Chromebook that the owner accepts losing. It also needs a license, physical access, and his explicit authorization. Deprovisioning the only bundled device, with no other upgrade, removes settings and managed devices after 90 days [8]. No source states how a powerwashed device reports its result, so the live test answers that too.
 
 ## Completion
 

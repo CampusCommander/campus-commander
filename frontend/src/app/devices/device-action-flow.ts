@@ -38,9 +38,22 @@ export class DeviceActionFlow {
       gridId: DEVICE_GRID_ID,
       tabId: this.devices.selectionTab,
     };
-    return action === 'reboot'
-      ? { ...key, commandType: 'REBOOT' }
-      : { ...key, statusAction: action };
+    switch (action) {
+      case 'reboot':
+        return { ...key, commandType: 'REBOOT' };
+      case 'wipe-users':
+        return { ...key, commandType: 'WIPE_USERS' };
+      case 'powerwash':
+        return { ...key, commandType: 'REMOTE_POWERWASH' };
+      case 'disable':
+      case 'reenable':
+        return { ...key, statusAction: action };
+      case 'deprovision':
+        // Card F1 collects the reason. The sheets of the first build never offer Deprovision.
+        throw new Error(
+          'A Deprovision preview needs a reason that this sheet does not collect.',
+        );
+    }
   }
 
   /** Prepare a frozen preview from the stored selection. */
