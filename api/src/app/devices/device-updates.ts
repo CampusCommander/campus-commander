@@ -281,7 +281,7 @@ export function deviceWriteFunctionError(
       reason: 'preview-expired',
       expiresAt: measuredAt(result['expiresAt']),
     });
-  if (outcome === 'nothing-to-update')
+  if (outcome === 'nothing-to-update' || outcome === 'phrase-mismatch')
     throw new UnprocessableEntityException({ reason: outcome });
   if (outcome === 'artifact-missing')
     throw new InternalServerErrorException(

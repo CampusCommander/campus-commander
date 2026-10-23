@@ -6,14 +6,17 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  DEVICE_ACTION_PHRASES,
   deviceActionJobReceiptSchema,
   deviceActionPreviewSchema,
   deviceActionTargetSchema,
+  type DeprovisionReason,
   type DeviceAction,
   type DeviceActionConfirmRequest,
   type DeviceActionJobReceipt,
   type DeviceActionPreview,
   type DeviceActionTarget,
+  type DeviceCommandType,
   type DeviceSelectionKey,
   type DeviceSyncState,
   type SessionResponse,
@@ -40,16 +43,47 @@ export const MAX_ACTION_PREVIEW_TARGETS = 100_000;
 /** Device IDs travel into Google request paths. Only plain identifiers enter a job. */
 const plainDeviceId = /^[A-Za-z0-9_-]{1,128}$/;
 
-/** The action of each route family (section 7). */
-export const COMMAND_PREVIEW_FAMILY = ['reboot'] as const;
-export const STATUS_PREVIEW_FAMILY = ['disable', 'reenable'] as const;
+/** The action of each route family (section 1). */
+export const COMMAND_PREVIEW_FAMILY = [
+  'reboot',
+  'wipe-users',
+  'powerwash',
+] as const;
+export const STATUS_PREVIEW_FAMILY = [
+  'disable',
+  'reenable',
+  'deprovision',
+] as const;
 
-/** The Google action that each device action sends (section 2). */
+/** The action of each command preview body (section 1). */
+export const COMMAND_PREVIEW_ACTION: Readonly<
+  Record<DeviceCommandType, DeviceAction>
+> = Object.freeze({
+  REBOOT: 'reboot',
+  WIPE_USERS: 'wipe-users',
+  REMOTE_POWERWASH: 'powerwash',
+});
+
+/** The command type of each command action, and null for a status action. */
+const COMMAND_TYPE: Readonly<Partial<Record<DeviceAction, DeviceCommandType>>> =
+  Object.freeze({
+    reboot: 'REBOOT',
+    'wipe-users': 'WIPE_USERS',
+    powerwash: 'REMOTE_POWERWASH',
+  });
+
+/** The Google action that each device action sends (section 1). */
 export const GOOGLE_ACTION = {
   reboot: 'REBOOT',
+  'wipe-users': 'WIPE_USERS',
+  powerwash: 'REMOTE_POWERWASH',
   disable: 'DISABLE',
   reenable: 'REENABLE',
+  deprovision: 'DEPROVISION',
 } as const;
+
+/** One person check of the requested action, after the family guard (section 2). */
+export type DeviceActionAuthorizer = (action: DeviceAction) => Promise<void>;
 
 export interface ActionPreviewTarget {
   ordinal: number;
@@ -77,6 +111,8 @@ export function statusExclusion(
   )
     return 'status-unknown';
   if (status === 'DEPROVISIONED') return 'device-deprovisioned';
+  // Deprovision accepts an ACTIVE or a DISABLED device (section 3).
+  if (action === 'deprovision') return null;
   if (action === 'reenable')
     return status === 'DISABLED' ? null : 'device-active';
   return status === 'ACTIVE' ? null : 'device-disabled';
@@ -120,11 +156,13 @@ export function actionTargets(
 
 /**
  * SHA-256 over the action, its version, the Google action, and the ordered eligible device IDs
- * with their cached baseline statuses (section 2).
+ * with their cached baseline statuses (section 2). A Deprovision preview also covers its reason,
+ * so a new reason needs a new preview (D12).
  */
 export function actionManifestDigest(
   action: DeviceAction,
   targets: readonly ActionPreviewTarget[],
+  deprovisionReason: DeprovisionReason | null = null,
 ): string {
   const eligible = targets
     .filter((target) => target.disposition === 'eligible')
@@ -133,6 +171,7 @@ export function actionManifestDigest(
     action,
     actionVersion: 1,
     googleAction: GOOGLE_ACTION[action],
+    ...(action === 'deprovision' ? { deprovisionReason } : {}),
     targets: eligible.map((target) => [target.deviceId, target.observedStatus]),
   });
   return createHash('sha256').update(canonical).digest('hex');
@@ -141,13 +180,18 @@ export function actionManifestDigest(
 /** The preview summary of one route family (section 7). */
 function summary(row: PreviewRow, now = Date.now()): DeviceActionPreview {
   const action = row['action'] as DeviceAction;
+  const commandType = COMMAND_TYPE[action] ?? null;
   const oldestObservedAt = measuredAt(row['oldest_observed_at']);
   return deviceActionPreviewSchema.parse({
     previewId: row['preview_id'],
     displayId: row['display_id'],
     action,
-    commandType: action === 'reboot' ? 'REBOOT' : null,
-    statusAction: action === 'reboot' ? null : action,
+    commandType,
+    statusAction: commandType ? null : action,
+    deprovisionReason:
+      typeof row['deprovision_reason'] === 'string'
+        ? row['deprovision_reason']
+        : null,
     selected: row['selected'],
     eligible: row['eligible'],
     excluded: row['excluded'],
@@ -212,7 +256,11 @@ export class DeviceActions {
     current: DeviceSyncState,
     action: DeviceAction,
     input: DeviceSelectionKey,
+    authorize?: DeviceActionAuthorizer,
+    deprovisionReason: DeprovisionReason | null = null,
   ): Promise<DeviceActionPreview> {
+    // The person check of the requested action runs after the family guard and before any read.
+    await authorize?.(action);
     const { state, expiredAt } = await this.selection(session, input);
     if (expiredAt)
       throw new ConflictException({ reason: 'selection-expired', expiredAt });
@@ -228,11 +276,11 @@ export class DeviceActions {
         reason: 'selection-too-large',
       });
     const targets = actionTargets(rows, action);
-    const digest = actionManifestDigest(action, targets);
+    const digest = actionManifestDigest(action, targets, deprovisionReason);
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-        $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
+        $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer,$10::text) AS result`,
       [
         session.identity.id,
         session.identity.permissionVersion,
@@ -254,6 +302,7 @@ export class DeviceActions {
           })),
         ),
         PREVIEW_MINUTES,
+        deprovisionReason,
       ],
     );
     if (result['outcome'] !== 'created') deviceWriteFunctionError(result);
@@ -265,6 +314,7 @@ export class DeviceActions {
     session: SessionResponse,
     previewId: string,
     family: readonly DeviceAction[],
+    authorize?: DeviceActionAuthorizer,
   ): Promise<PreviewRow> {
     const row = (
       await this.database.connection.query(
@@ -278,6 +328,8 @@ export class DeviceActions {
       !family.includes(row['action'] as DeviceAction)
     )
       throw new NotFoundException({ reason: 'preview-not-found' });
+    // Another person's preview answers 404 before the person check of its action (section 2).
+    await authorize?.(row['action'] as DeviceAction);
     return row;
   }
 
@@ -292,8 +344,9 @@ export class DeviceActions {
     session: SessionResponse,
     previewId: string,
     family: readonly DeviceAction[],
+    authorize?: DeviceActionAuthorizer,
   ): Promise<DeviceActionPreview> {
-    const row = await this.load(session, previewId, family);
+    const row = await this.load(session, previewId, family, authorize);
     if (Date.parse(String(row['expires_at'])) <= Date.now()) this.expired(row);
     return summary(row);
   }
@@ -305,8 +358,9 @@ export class DeviceActions {
     disposition: string | undefined,
     cursor: string | undefined,
     limit: number | undefined,
+    authorize?: DeviceActionAuthorizer,
   ): Promise<{ targets: DeviceActionTarget[]; nextCursor: string | null }> {
-    const row = await this.load(session, previewId, family);
+    const row = await this.load(session, previewId, family, authorize);
     if (Date.parse(String(row['expires_at'])) <= Date.now()) this.expired(row);
     const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
     // A command or status preview pages by the device ordinal alone, because each device is one row.
@@ -349,9 +403,10 @@ export class DeviceActions {
     previewId: string,
     input: DeviceActionConfirmRequest,
     family: readonly DeviceAction[],
+    authorize?: DeviceActionAuthorizer,
   ): Promise<{ receipt: DeviceActionJobReceipt; existing: boolean }> {
     // A preview of another route family answers as a missing preview before any job is read.
-    await this.load(session, previewId, family);
+    const row = await this.load(session, previewId, family, authorize);
     const manifest = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.read_device_update_preview_manifest($1::uuid,$2::integer,$3::text,$4::uuid)
@@ -371,11 +426,18 @@ export class DeviceActions {
     };
     if (document.preview?.manifestDigest !== input.manifestDigest)
       throw new ConflictException({ reason: 'preview-changed' });
+    // The typed phrase of the action sits beside the digest check, before the manifest is stored,
+    // so a mismatch leaves no artifact (section 1).
+    const phrase = input.typedPhrase?.trim() ?? null;
+    const expected =
+      DEVICE_ACTION_PHRASES[row['action'] as DeviceAction] ?? null;
+    if (phrase !== expected)
+      throw new UnprocessableEntityException({ reason: 'phrase-mismatch' });
     const artifactId = await this.storage.storeJson(document);
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.confirm_device_update_preview($1::uuid,$2::integer,$3::text,$4::uuid,
-        $5::text,$6::text,$7::uuid) AS result`,
+        $5::text,$6::text,$7::uuid,$8::text) AS result`,
       [
         session.identity.id,
         session.identity.permissionVersion,
@@ -384,6 +446,7 @@ export class DeviceActions {
         input.manifestDigest,
         artifactId,
         randomUUID(),
+        phrase,
       ],
     );
     if (result['outcome'] === 'created')
