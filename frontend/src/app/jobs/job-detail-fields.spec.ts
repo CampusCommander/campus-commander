@@ -5,6 +5,7 @@ import type {
   JobProgress,
 } from '@campus/application-contracts';
 import { describe, expect, it } from 'vitest';
+import { formatTimestamp } from './job-fields';
 import {
   attentionCount,
   beforeText,
@@ -13,6 +14,7 @@ import {
   formatTime,
   identityLine,
   isCommandOperation,
+  isCommandJob,
   jobCounters,
   latestActivityLine,
   operationChip,
@@ -20,8 +22,10 @@ import {
   operationNumber,
   operationTotal,
   operationsFooter,
+  outcomeNotes,
   outcomeTone,
   pathParts,
+  reasonLine,
   requestedText,
   rowFailureText,
   scopeHeading,
@@ -505,6 +509,107 @@ describe('latest activity', () => {
     );
   });
 
+  it('names a Powerwash command and its cancellation in the activity line', () => {
+    const current = job({
+      displayId: 'CMD-008',
+      action: 'powerwash-devices',
+      status: 'needs-review',
+      changes: null,
+      commandType: 'REMOTE_POWERWASH',
+      progress: progress({
+        total: 4,
+        succeeded: 0,
+        failed: 2,
+        unknown: 1,
+        expired: 1,
+        pending: 0,
+      }),
+      latestActivity: {
+        at: '2026-10-22T14:40:00.000Z',
+        failed: {
+          count: 2,
+          operations: [
+            {
+              operationId: 'CMD-008-2',
+              deviceId: 'synthetic-device-2',
+              serialNumber: '02A1MB6',
+              outcomeReason: 'command-failed',
+              googleStatus: null,
+              googleReason: 'The device failed to execute the command.',
+              updatedAt: '2026-10-22T14:40:00.000Z',
+            },
+            {
+              operationId: 'CMD-008-3',
+              deviceId: 'synthetic-device-3',
+              serialNumber: '02QJANY',
+              outcomeReason: 'command-cancelled',
+              googleStatus: 200,
+              googleReason: null,
+              updatedAt: '2026-10-22T14:39:00.000Z',
+            },
+          ],
+        },
+        unknown: {
+          count: 1,
+          operations: [
+            {
+              operationId: 'CMD-008-4',
+              deviceId: 'synthetic-device-4',
+              serialNumber: '04XTBHJ',
+              updatedAt: '2026-10-22T14:38:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+    const line = latestActivityLine(current);
+    expect(line).toBe(
+      `${formatTime('2026-10-22T14:40:00.000Z')} · 1 Powerwash command expired before execution. 02A1MB6 reported an execution failure. Google cancelled the command for 02QJANY. The outcome for 04XTBHJ is uncertain.`,
+    );
+    expect(line).not.toContain('reconciliation');
+  });
+
+  it('names a Deprovision status change in the activity line', () => {
+    const current = job({
+      displayId: 'STS-003',
+      action: 'deprovision-devices',
+      statusAction: 'deprovision',
+      status: 'completed-with-errors',
+      changes: null,
+      deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+      progress: progress({
+        total: 5,
+        succeeded: 4,
+        failed: 1,
+        unknown: 0,
+        expired: 0,
+        pending: 0,
+      }),
+      latestActivity: {
+        at: '2026-10-22T14:16:00.000Z',
+        failed: {
+          count: 1,
+          operations: [
+            {
+              operationId: 'STS-003-5',
+              deviceId: 'synthetic-device-5',
+              serialNumber: '04XTBHJ',
+              outcomeReason: 'status-conflict',
+              googleStatus: null,
+              googleReason:
+                'A device with status DEPROVISIONED does not allow this action.',
+              updatedAt: '2026-10-22T14:16:00.000Z',
+            },
+          ],
+        },
+        unknown: { count: 0, operations: [] },
+      },
+    });
+    expect(latestActivityLine(current)).toBe(
+      `${formatTime('2026-10-22T14:16:00.000Z')} · Google rejected the status change for 04XTBHJ (status-conflict).`,
+    );
+  });
+
   it('names a refused command issue without claiming device execution', () => {
     const line = (outcomeReason: string | null, googleStatus: number | null) =>
       latestActivityLine(
@@ -723,6 +828,126 @@ describe('job detail fields', () => {
     ).toBe(false);
   });
 
+  it('labels the Wipe user data and Powerwash command rows', () => {
+    const wipe = operation({
+      field: null,
+      operation: 'wipe-users',
+      requestedValue: null,
+    });
+    expect(operationLabel(wipe)).toBe('Wipe user data');
+    expect(beforeText(wipe)).toBe('—');
+    expect(requestedText(wipe)).toBe('Wipe user data');
+    expect(isCommandOperation(wipe)).toBe(true);
+
+    const powerwash = operation({
+      field: null,
+      operation: 'powerwash',
+      requestedValue: null,
+    });
+    expect(operationLabel(powerwash)).toBe('Powerwash');
+    expect(beforeText(powerwash)).toBe('—');
+    expect(requestedText(powerwash)).toBe('Powerwash');
+    expect(isCommandOperation(powerwash)).toBe(true);
+
+    // A command job never offers Reconcile (record D13).
+    expect(isCommandJob({ action: 'reboot-devices' })).toBe(true);
+    expect(isCommandJob({ action: 'wipe-user-data' })).toBe(true);
+    expect(isCommandJob({ action: 'powerwash-devices' })).toBe(true);
+    expect(isCommandJob({ action: 'deprovision-devices' })).toBe(false);
+  });
+
+  it('labels a Deprovision row with its observed and requested status', () => {
+    const active = operation({
+      operationId: 'STS-003-1',
+      field: null,
+      operation: 'deprovision',
+      baselineValue: 'ACTIVE',
+      requestedValue: 'DEPROVISIONED',
+    });
+    expect(operationLabel(active)).toBe('Deprovision');
+    expect(beforeText(active)).toBe('Active');
+    expect(requestedText(active)).toBe('Deprovisioned');
+    expect(isCommandOperation(active)).toBe(false);
+
+    const disabled = operation({
+      operationId: 'STS-003-2',
+      field: null,
+      operation: 'deprovision',
+      baselineValue: 'DISABLED',
+      requestedValue: 'DEPROVISIONED',
+    });
+    expect(beforeText(disabled)).toBe('Disabled');
+  });
+
+  it('keeps Google expiry under a waiting or unknown command', () => {
+    const now = new Date('2026-10-22T14:11:00.000Z');
+    const expires = `Expires ${formatTimestamp(
+      '2031-10-22T14:11:00.000Z',
+      now,
+    )}`;
+    const acknowledged = operation({
+      field: null,
+      operation: 'powerwash',
+      outcome: 'pending',
+      commandState: 'acknowledged',
+      commandExpiresAt: '2031-10-22T14:11:00.000Z',
+    });
+    expect(outcomeNotes(acknowledged, now)).toEqual([expires]);
+
+    const missed = operation({
+      field: null,
+      operation: 'powerwash',
+      outcome: 'unknown',
+      outcomeReason: 'not-observed',
+      commandExpiresAt: '2031-10-22T14:11:00.000Z',
+    });
+    expect(outcomeNotes(missed, now)).toEqual([
+      'No result in 30 days',
+      expires,
+    ]);
+
+    const cancelled = operation({
+      field: null,
+      operation: 'powerwash',
+      outcome: 'failed',
+      outcomeReason: 'command-cancelled',
+      commandExpiresAt: '2031-10-22T14:11:00.000Z',
+    });
+    expect(outcomeNotes(cancelled, now)).toEqual([]);
+
+    // A status row carries no command note.
+    expect(
+      outcomeNotes(
+        operation({
+          field: null,
+          operation: 'deprovision',
+          outcome: 'unknown',
+        }),
+        now,
+      ),
+    ).toEqual([]);
+  });
+
+  it('names a cancelled command under its failed row', () => {
+    const cancelled = operation({
+      field: null,
+      operation: 'powerwash',
+      outcome: 'failed',
+      outcomeReason: 'command-cancelled',
+      googleReason: null,
+    });
+    expect(rowFailureText({ changes: null }, cancelled)).toBe(
+      'Google cancelled the command.',
+    );
+  });
+
+  it('names the Deprovision reason on the identity card', () => {
+    expect(
+      reasonLine({ deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE' }),
+    ).toBe('Deprovision reason: Retiring from fleet');
+    expect(reasonLine({ deprovisionReason: null })).toBeNull();
+  });
+
   it('labels a status row with its baseline and requested status', () => {
     const disable = operation({
       operationId: 'STS-002-1',
@@ -809,8 +1034,14 @@ describe('job detail fields', () => {
           },
         }),
       }) as unknown as Parameters<typeof canReconcile>[0];
-    const update = { statusAction: null };
-    const status = { statusAction: 'disable' as const };
+    const update = {
+      action: 'update-device-annotations' as const,
+      statusAction: null,
+    };
+    const status = {
+      action: 'disable-devices' as const,
+      statusAction: 'disable' as const,
+    };
 
     // An update operation keeps the step 4 rule (2026-10-16 design, OQ6).
     expect(canReconcile(auth(['jobs:read', 'devices:write']), update)).toBe(
@@ -830,6 +1061,39 @@ describe('job detail fields', () => {
     expect(canReconcile(auth(['jobs:read']), update)).toBe(false);
     expect(canReconcile(auth(['devices:write']), update)).toBe(false);
     expect(canReconcile(auth(['devices:status']), status)).toBe(false);
+
+    // A Deprovision operation names its own permission (record ruling 1).
+    const deprovision = {
+      action: 'deprovision-devices' as const,
+      statusAction: 'deprovision' as const,
+    };
+    expect(
+      canReconcile(auth(['jobs:read', 'devices:deprovision']), deprovision),
+    ).toBe(true);
+    expect(
+      canReconcile(auth(['jobs:read', 'devices:status']), deprovision),
+    ).toBe(false);
+    expect(
+      canReconcile(auth(['jobs:read', 'devices:deprovision']), status),
+    ).toBe(false);
+
+    // No command job offers Reconcile, even with every write grant (D13).
+    for (const action of [
+      'reboot-devices',
+      'wipe-user-data',
+      'powerwash-devices',
+    ] as const)
+      expect(
+        canReconcile(
+          auth([
+            'jobs:read',
+            'devices:write',
+            'devices:status',
+            'devices:wipe',
+          ]),
+          { action, statusAction: null },
+        ),
+      ).toBe(false);
   });
 
   it('renders the operations footer of the three frames', () => {

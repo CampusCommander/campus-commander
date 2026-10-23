@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { JobSummary } from '@campus/application-contracts';
 import {
+  JOB_ACTIONS,
+  actionLabel,
   durationLine,
   formatDuration,
   jobFilterLabel,
@@ -214,6 +216,42 @@ it('labels the scope with a thousands separator', () => {
   expect(scopeLabel({ kind: 'all-devices', deviceCount: null })).toBe(
     'All devices',
   );
+});
+
+it('lists every job action in the Actions filter', () => {
+  expect(JOB_ACTIONS).toEqual([
+    'update-device-annotations',
+    'refresh-inventory',
+    'reboot-devices',
+    'wipe-user-data',
+    'powerwash-devices',
+    'disable-devices',
+    'reenable-devices',
+    'deprovision-devices',
+  ]);
+  expect(actionLabel('wipe-user-data')).toBe('Wipe user data');
+  expect(actionLabel('powerwash-devices')).toBe('Powerwash devices');
+  expect(actionLabel('deprovision-devices')).toBe('Deprovision devices');
+});
+
+it('shows a Powerwash job like a command job', () => {
+  const job = summary({
+    action: 'powerwash-devices',
+    status: 'awaiting-devices',
+    progress: {
+      total: 4,
+      succeeded: 0,
+      failed: 1,
+      unknown: 1,
+      skipped: 0,
+      expired: 0,
+      pending: 2,
+    },
+  });
+  expect(progressLines(job)).toEqual([
+    '0 of 4 complete',
+    '2 pending · 1 failed · 1 unknown',
+  ]);
 });
 
 it('tones each status for its chip', () => {
