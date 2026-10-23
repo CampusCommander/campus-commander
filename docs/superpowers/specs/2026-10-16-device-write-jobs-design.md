@@ -1,7 +1,7 @@
 # Technical design: annotated-location writes, write jobs, the admission hold, and the jobs API
 
 Status: approved technical design, revision 6, 2026-10-17. Author: architect. The reviewer approved it at `057b990`.
-Slice: development order step 4 (`docs/current-work.md:58`). The intake brief (eng-lead, 2026-10-16, revision 3) is the contract.
+Slice: development order step 4 (`docs/current-work.md:60`). The intake brief (eng-lead, 2026-10-16, revision 3) is the contract.
 Owner decisions D1 to D6 in that brief are binding. This record invents no product behavior.
 The owner merged the workflow record `docs/workflows/update-device-annotated-location.md` through PR #36 as commit `3eab39a`, on 2026-10-16 at 23:39 EDT.
 The eng-lead note of 23:39 states that the merge confirms the record. This design follows that record on origin/main.
@@ -18,7 +18,7 @@ The section "Owner decision gate" states the gate. D10 stays outside the gate by
 - `main@3eab39a:` references name files at origin/main `3eab39a`. They cite the workflow record, the approved activity-area mockup, and the 401 classification of PR #33 (section 4.3).
   The record and the mockup do not exist at `72cd2c3`.
 - origin/main moves lines in four cited files. In `libs/google-connection/src/lib/provider.ts`, lines 115-121 move to 121-127.
-  Lines 122-126 move to 116-120. Lines after 126 move down by one. `docs/current-work.md:58` moves to line 66.
+  Lines 122-126 move to 116-120. Lines after 126 move down by one. The `docs/current-work.md` step 4 line moves from 58 to 66.
   In `docs/workflows/device-browsing.md`, lines after 119 move down by two. Line 141 moves to 143. Line 155 moves to 157.
   `frontend/src/app/shell/shell.html:121-127` moves to lines 122-128.
   No other file cited at `72cd2c3` differs between `72cd2c3` and `3eab39a`.
