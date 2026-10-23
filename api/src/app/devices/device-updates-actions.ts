@@ -69,20 +69,24 @@ export async function requireDeviceUpdateActions(
 
 /**
  * Reconcile of an update operation requires `jobs:read` and `devices:write` (design 469).
- * Reconcile of a status operation requires `jobs:read` and `devices:status` (design section 6).
+ * Reconcile of a disable or re-enable operation requires `jobs:read` and `devices:status`
+ * (design section 6). Reconcile of a Deprovision operation requires `jobs:read` and
+ * `devices:deprovision` (record default D13).
  * The read check runs before the job lookup. The write check runs after the operation lookup.
  * A command operation has no Reconcile, so it has no list.
  */
 export const RECONCILE_READ_ACTIONS = ['jobs:read'] as const;
 export const RECONCILE_UPDATE_ACTIONS = ['devices:write'] as const;
 export const RECONCILE_STATUS_ACTIONS = ['devices:status'] as const;
+export const RECONCILE_DEPROVISION_ACTIONS = ['devices:deprovision'] as const;
 
 /** One Reconcile check: the read of the job, or the write check of the operation kind. */
-export type ReconcileCheck = 'read' | 'update' | 'status';
+export type ReconcileCheck = 'read' | 'update' | 'status' | 'deprovision';
 
 /** The action list of one Reconcile check. */
 export function reconcileActions(check: ReconcileCheck): readonly Action[] {
   if (check === 'read') return RECONCILE_READ_ACTIONS;
+  if (check === 'deprovision') return RECONCILE_DEPROVISION_ACTIONS;
   return check === 'status'
     ? RECONCILE_STATUS_ACTIONS
     : RECONCILE_UPDATE_ACTIONS;

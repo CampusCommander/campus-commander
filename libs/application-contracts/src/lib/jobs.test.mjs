@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { entityEventSchema } from './entity-cache.ts';
 import {
+  DEPROVISION_REASON_LABELS,
+  DEPROVISION_REASONS,
+  deprovisionReasonSchema,
+} from './devices.ts';
+import {
   JOB_ACTION_LABELS,
   jobActionSchema,
   jobActivitySchema,
@@ -99,16 +104,57 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'update-device-annotations',
     'refresh-inventory',
     'reboot-devices',
+    'wipe-user-data',
+    'powerwash-devices',
     'disable-devices',
     'reenable-devices',
+    'deprovision-devices',
   ]);
   assert.deepEqual(JOB_ACTION_LABELS, {
     'update-device-annotations': 'Update device annotations',
     'refresh-inventory': 'Refresh inventory',
     'reboot-devices': 'Reboot devices',
+    'wipe-user-data': 'Wipe user data',
+    'powerwash-devices': 'Powerwash devices',
     'disable-devices': 'Disable devices',
     'reenable-devices': 'Re-enable devices',
+    'deprovision-devices': 'Deprovision devices',
   });
+});
+
+test('the Deprovision contract takes Google four admin reasons only', () => {
+  assert.deepEqual(DEPROVISION_REASONS, [
+    'DEPROVISION_REASON_RETIRING_DEVICE',
+    'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT',
+    'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+    'DEPROVISION_REASON_UPGRADE_TRANSFER',
+  ]);
+  assert.deepEqual(deprovisionReasonSchema.options, DEPROVISION_REASONS);
+  assert.deepEqual(DEPROVISION_REASON_LABELS, {
+    DEPROVISION_REASON_RETIRING_DEVICE: 'Retiring from fleet',
+    DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT:
+      'Different model replacement',
+    DEPROVISION_REASON_SAME_MODEL_REPLACEMENT: 'Same model replacement',
+    DEPROVISION_REASON_UPGRADE_TRANSFER: 'ChromeOS Flex upgrade transfer',
+  });
+  for (const value of DEPROVISION_REASONS)
+    assert.equal(deprovisionReasonSchema.safeParse(value).success, true);
+  // The seven values outside the four fail the schema before any Google call (record D11).
+  for (const value of [
+    'DEPROVISION_REASON_UNSPECIFIED',
+    'DEPROVISION_REASON_UPGRADE',
+    'DEPROVISION_REASON_DOMAIN_MOVE',
+    'DEPROVISION_REASON_SERVICE_EXPIRATION',
+    'DEPROVISION_REASON_OTHER',
+    'DEPROVISION_REASON_NOT_REQUIRED',
+    'DEPROVISION_REASON_REPAIR_CENTER',
+  ])
+    assert.equal(
+      deprovisionReasonSchema.safeParse(value).success,
+      false,
+      `${value} must fail.`,
+    );
+  assert.equal(deprovisionReasonSchema.safeParse(undefined).success, false);
 });
 
 test('the command and status vocabulary is accepted', () => {
@@ -193,6 +239,25 @@ test('the command and status vocabulary is accepted', () => {
     outcome: 'expired',
   };
   assert.equal(jobOperationSchema.safeParse(expired).success, true);
+  // Each command and status operation word parses (design section 1).
+  for (const word of [
+    'reboot',
+    'wipe-users',
+    'powerwash',
+    'disable',
+    'reenable',
+    'deprovision',
+  ])
+    assert.equal(
+      jobOperationSchema.safeParse({ ...issued, operation: word }).success,
+      true,
+      `${word} must parse.`,
+    );
+  assert.equal(
+    jobOperationSchema.safeParse({ ...issued, operation: 'powerwash-devices' })
+      .success,
+    false,
+  );
 });
 
 test('job summaries are strict objects', () => {
@@ -294,6 +359,7 @@ test('job detail extends the summary with the write fields', () => {
     ],
     commandType: null,
     statusAction: null,
+    deprovisionReason: null,
     targetOrgUnitPaths: ['/School A'],
     correlationId: jobId,
     latestActivity: {
@@ -349,8 +415,25 @@ test('job detail extends the summary with the write fields', () => {
   };
   assert.equal(jobDetailSchema.safeParse(command).success, true);
   assert.equal(
+    jobDetailSchema.safeParse({
+      ...command,
+      action: 'powerwash-devices',
+      commandType: 'REMOTE_POWERWASH',
+    }).success,
+    true,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...command,
+      action: 'wipe-user-data',
+      commandType: 'WIPE_USERS',
+    }).success,
+    true,
+  );
+  assert.equal(
     jobDetailSchema.safeParse({ ...command, commandType: 'POWERWASH' }).success,
     false,
+    'The contract names the Google command type.',
   );
   const status = {
     ...detail,
@@ -360,9 +443,30 @@ test('job detail extends the summary with the write fields', () => {
     statusAction: 'disable',
   };
   assert.equal(jobDetailSchema.safeParse(status).success, true);
+  const deprovision = {
+    ...status,
+    displayId: 'STS-002',
+    action: 'deprovision-devices',
+    statusAction: 'deprovision',
+    deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+  };
+  assert.equal(jobDetailSchema.safeParse(deprovision).success, true);
   assert.equal(
-    jobDetailSchema.safeParse({ ...status, statusAction: 'deprovision' })
+    jobDetailSchema.safeParse({ ...deprovision, deprovisionReason: null })
       .success,
+    false,
+    'A Deprovision job carries its reason.',
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...status,
+      deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+    }).success,
+    false,
+    'Another job carries no reason.',
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...status, statusAction: 'powerwash' }).success,
     false,
   );
 });

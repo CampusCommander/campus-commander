@@ -1,5 +1,9 @@
 import * as z from 'zod';
-import { deviceSyncFailureSchema, deviceUpdateChangeSchema } from './devices';
+import {
+  deprovisionReasonSchema,
+  deviceSyncFailureSchema,
+  deviceUpdateChangeSchema,
+} from './devices';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -50,21 +54,27 @@ export const jobStatusSchema = z.enum([
 ]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 
-/** The five job actions of section 1. A status job holds disable or re-enable. */
+/** The eight job actions of section 1. A status job holds disable, re-enable, or deprovision. */
 export const jobActionSchema = z.enum([
   'update-device-annotations',
   'refresh-inventory',
   'reboot-devices',
+  'wipe-user-data',
+  'powerwash-devices',
   'disable-devices',
   'reenable-devices',
+  'deprovision-devices',
 ]);
 export type JobAction = z.infer<typeof jobActionSchema>;
 export const JOB_ACTION_LABELS: Readonly<Record<JobAction, string>> = {
   'update-device-annotations': 'Update device annotations',
   'refresh-inventory': 'Refresh inventory',
   'reboot-devices': 'Reboot devices',
+  'wipe-user-data': 'Wipe user data',
+  'powerwash-devices': 'Powerwash devices',
   'disable-devices': 'Disable devices',
   'reenable-devices': 'Re-enable devices',
+  'deprovision-devices': 'Deprovision devices',
 };
 
 /** A running full sync knows no total. Its pending count stays unknown. */
@@ -160,8 +170,11 @@ export const jobOperationSchema = z.strictObject({
     'clear',
     'move',
     'reboot',
+    'wipe-users',
+    'powerwash',
     'disable',
     'reenable',
+    'deprovision',
   ]),
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
@@ -224,19 +237,33 @@ export const jobLatestActivitySchema = z.strictObject({
 export type JobLatestActivity = z.infer<typeof jobLatestActivitySchema>;
 
 /** One job detail row. Refresh jobs hold null in every write field. */
-export const jobDetailSchema = jobSummarySchema.extend({
-  confirmedBy: jobPersonSchema.nullable(),
-  previewDisplayId: previewDisplayIdSchema.nullable(),
-  /** The frozen changes of a write job, in contract order. Null outside an update job. */
-  changes: z.array(deviceUpdateChangeSchema).min(1).max(4).nullable(),
-  /** The Google command of a command job. It stays null for another job. */
-  commandType: z.literal('REBOOT').nullable(),
-  /** The request of a status job. It stays null for another job. */
-  statusAction: z.enum(['disable', 'reenable']).nullable(),
-  targetOrgUnitPaths: z.array(orgUnitPath).max(10000).nullable(),
-  correlationId: z.uuid(),
-  latestActivity: jobLatestActivitySchema,
-});
+export const jobDetailSchema = jobSummarySchema
+  .extend({
+    confirmedBy: jobPersonSchema.nullable(),
+    previewDisplayId: previewDisplayIdSchema.nullable(),
+    /** The frozen changes of a write job, in contract order. Null outside an update job. */
+    changes: z.array(deviceUpdateChangeSchema).min(1).max(4).nullable(),
+    /** The Google command of a command job. It stays null for another job. */
+    commandType: z
+      .enum(['REBOOT', 'WIPE_USERS', 'REMOTE_POWERWASH'])
+      .nullable(),
+    /** The request of a status job. It stays null for another job. */
+    statusAction: z.enum(['disable', 'reenable', 'deprovision']).nullable(),
+    /** The frozen reason of a Deprovision job. It stays null for another job. */
+    deprovisionReason: deprovisionReasonSchema.nullable(),
+    targetOrgUnitPaths: z.array(orgUnitPath).max(10000).nullable(),
+    correlationId: z.uuid(),
+    latestActivity: jobLatestActivitySchema,
+  })
+  .refine(
+    (detail) =>
+      (detail.action === 'deprovision-devices') ===
+      (detail.deprovisionReason !== null),
+    {
+      message:
+        'A Deprovision job carries its reason, and another job carries none.',
+    },
+  );
 export type JobDetail = z.infer<typeof jobDetailSchema>;
 
 /** The activity summary of section 2.5. Each section caps its rows. */

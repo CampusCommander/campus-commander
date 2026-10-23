@@ -212,11 +212,13 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     unknown = 0,
     status = 'completed',
     createdAt = null,
+    reason = 'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
   }) => {
+    const commandActions = ['reboot', 'wipe-users', 'powerwash'];
     const kind =
       action === 'annotated-location'
         ? 'device-update'
-        : action === 'reboot'
+        : commandActions.includes(action)
           ? 'device-command'
           : 'device-status';
     const field = action === 'annotated-location' ? 'annotatedLocation' : null;
@@ -228,7 +230,11 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           ? 'DISABLED'
           : action === 'reenable'
             ? 'ACTIVE'
-            : null;
+            : action === 'deprovision'
+              ? 'DEPROVISIONED'
+              : null;
+    // Only a Deprovision preview carries a reason (D12).
+    const deprovisionReason = action === 'deprovision' ? reason : null;
     const job = await header({
       kind,
       requestedBy,
@@ -243,10 +249,10 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     const fieldRows = field === null ? [] : [{ field, mode, value }];
     await admin(
       `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-        generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
+        generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,field_changes,
         manifest_digest,expires_at)
       VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,1,$4,$5,
-        CASE WHEN $5='annotated-location' THEN 2 ELSE 1 END,$6,$6,0,0,$7,'digest',
+        CASE WHEN $5='annotated-location' THEN 2 ELSE 1 END,$8,$6,$6,0,0,$7,'digest',
         clock_timestamp()+interval '1 hour')`,
       [
         previewId,
@@ -256,6 +262,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         action,
         operations,
         operations * fieldRows.length,
+        deprovisionReason,
       ],
     );
     for (const row of fieldRows)
@@ -286,7 +293,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
           org_unit_path,baseline_value,requested_value,batch,status,outcome_reason,google_status,
           google_reason,updated_at)
-        VALUES($1,$2,$3,$4,'/School A','Room 1','Room 12',$5,$6,
+        VALUES($1,$2,$3,$4,'/School A',$7,$8,$5,$6,
           CASE WHEN $6='failed' THEN 'not-found' WHEN $6='unknown' THEN 'ambiguous' END,
           CASE WHEN $6='failed' THEN 404 END,
           CASE WHEN $6='failed' THEN 'notFound' END,
@@ -298,6 +305,8 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           `SN-${index}`,
           Math.floor((index - 1) / 250),
           outcome,
+          action === 'annotated-location' ? 'Room 1' : 'ACTIVE',
+          value,
         ],
       );
     }
@@ -970,6 +979,109 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           ids: [disable.job_id, reboot.job_id].sort(),
           actions: ['disable-devices', 'reboot-devices'],
         });
+      },
+    );
+
+    await check(
+      'a Powerwash job answers powerwash-devices and REMOTE_POWERWASH, and the reboot filter excludes it',
+      async () => {
+        await reset();
+        const powerwash = await writeJob({
+          requestedBy: auditor,
+          action: 'powerwash',
+        });
+        const reboot = await writeJob({
+          requestedBy: auditor,
+          action: 'reboot',
+        });
+        const detail = await jobs.detail(
+          auditorSession,
+          customer,
+          powerwash.display_id,
+        );
+        assert.equal(detail.action, 'powerwash-devices');
+        assert.equal(detail.commandType, 'REMOTE_POWERWASH');
+        assert.equal(detail.statusAction, null);
+        assert.equal(detail.deprovisionReason, null);
+        const page = await jobs.operations(
+          auditorSession,
+          customer,
+          powerwash.display_id,
+          false,
+          undefined,
+          100,
+        );
+        assert.deepEqual(
+          page.operations.map((operation) => operation.operation),
+          ['powerwash'],
+        );
+        assert.equal(page.operations[0].requestedValue, null);
+        const listed = async (action) =>
+          (
+            await jobs.list(
+              auditorSession,
+              customer,
+              { action },
+              undefined,
+              100,
+            )
+          ).jobs.map((job) => job.displayId);
+        assert.deepEqual(await listed(['reboot-devices']), [reboot.display_id]);
+        assert.deepEqual(await listed(['powerwash-devices']), [
+          powerwash.display_id,
+        ]);
+        assert.deepEqual(await listed(['wipe-user-data']), []);
+        assert.deepEqual(
+          (await listed(['reboot-devices', 'powerwash-devices'])).sort(),
+          [powerwash.display_id, reboot.display_id].sort(),
+        );
+      },
+    );
+
+    await check(
+      'a Deprovision job answers deprovision and its reason',
+      async () => {
+        await reset();
+        const reason = 'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT';
+        const job = await writeJob({
+          requestedBy: auditor,
+          action: 'deprovision',
+          reason,
+        });
+        assert.match(job.display_id, /^STS-/);
+        const detail = await jobs.detail(
+          auditorSession,
+          customer,
+          job.display_id,
+        );
+        assert.equal(detail.action, 'deprovision-devices');
+        assert.equal(detail.statusAction, 'deprovision');
+        assert.equal(detail.commandType, null);
+        assert.equal(detail.deprovisionReason, reason);
+        const page = await jobs.operations(
+          auditorSession,
+          customer,
+          job.display_id,
+          false,
+          undefined,
+          100,
+        );
+        assert.deepEqual(
+          page.operations.map((operation) => operation.operation),
+          ['deprovision'],
+        );
+        assert.equal(page.operations[0].requestedValue, 'DEPROVISIONED');
+        const listed = await jobs.list(
+          auditorSession,
+          customer,
+          { action: ['deprovision-devices'] },
+          undefined,
+          100,
+        );
+        assert.deepEqual(
+          listed.jobs.map((entry) => entry.displayId),
+          [job.display_id],
+        );
       },
     );
 
