@@ -1,6 +1,6 @@
 # Edit device fields in the grid, or update one device
 
-Status: proposed
+Status: owner-confirmed on 2026-10-23. The owner chose the answer "Confirmed: build it as written".
 Source: owner direction of 2026-10-21 and 2026-10-23, quoted under [Owner direction](#owner-direction).
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain.
 Replaces: none. This record extends [Update device fields](update-device-fields.md).
@@ -236,7 +236,7 @@ Excluded from this build:
 
 Open decisions:
 
-- The owner confirms this record before any design or implementation starts. The record is not confirmed.
+- The owner confirmed this record on 2026-10-23, before any design or implementation. He chose the answer "Confirmed: build it as written".
 - The design addendum decides the one-change path, the request size cap, and the per-device contract.
 - Each design gap needs a composition before its screen is built.
 - Live device writes need explicit owner authorization and an enrolled test device.
