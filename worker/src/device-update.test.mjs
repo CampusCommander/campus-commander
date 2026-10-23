@@ -2266,14 +2266,11 @@ test('an IGNORED result settles a Reboot, a Wipe user data, and a Powerwash comm
   });
   for (const action of ['reboot', 'wipe-users', 'powerwash']) {
     const db = database({
-      pollClaim: claimsOf(
-        pollClaimed([pollOperation(1, 'd1', '4100000001')]),
-        {
-          outcome: 'idle',
-          status: 'awaiting-devices',
-          operations: [],
-        },
-      ),
+      pollClaim: claimsOf(pollClaimed([pollOperation(1, 'd1', '4100000001')]), {
+        outcome: 'idle',
+        status: 'awaiting-devices',
+        operations: [],
+      }),
     });
     const source = reader(
       [],
