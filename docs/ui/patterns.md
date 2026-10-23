@@ -197,14 +197,14 @@ Publisher source: [package metadata and README](https://registry.npmjs.org/@libr
 
 **DEVICE-01 — Command consequences.** Verify supported methods and result semantics against capability evidence before release.
 
-| Action         | Required consequence                                                                                         | Confirmation                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Reboot         | Restarts the device and interrupts active sessions.                                                          | Reviewed targets and an acknowledgment naming Reboot.                              |
-| Wipe user data | Removes local user profiles. Device policy and enrollment remain.                                            | Reviewed targets, data-loss acknowledgment, and typed confirmation.                |
-| Powerwash      | Removes local data, user and device policies, and enrollment. Enrollment rules govern subsequent enrollment. | Reviewed targets, data-loss and enrollment acknowledgment, and typed confirmation. |
-| Disable        | Blocks user access while enrollment remains. Re-enable restores access where eligible.                       | Reviewed eligibility, exact targets, consequence, and explicit confirmation.       |
-| Re-enable      | Restores access only for eligible disabled devices.                                                          | Reviewed eligibility and explicit confirmation.                                    |
-| Deprovision    | Removes devices from active management. Do not promise restoration of the previous management state.         | Reviewed targets, required reason, and destructive confirmation.                   |
+| Action         | Required consequence                                                                                         | Confirmation                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Reboot         | Restarts the device and interrupts active sessions.                                                          | Reviewed targets and an acknowledgment naming Reboot.                                |
+| Wipe user data | Removes local user profiles. Device policy and enrollment remain.                                            | Reviewed targets, data-loss acknowledgment, and typed confirmation.                  |
+| Powerwash      | Removes local data, user and device policies, and enrollment. Enrollment rules govern subsequent enrollment. | Reviewed targets, data-loss and enrollment acknowledgment, and typed confirmation.   |
+| Disable        | Blocks user access while enrollment remains. Re-enable restores access where eligible.                       | Reviewed eligibility, exact targets, consequence, and explicit confirmation.         |
+| Re-enable      | Restores access only for eligible disabled devices.                                                          | Reviewed eligibility and explicit confirmation.                                      |
+| Deprovision    | Removes devices from active management. Do not promise restoration of the previous management state.         | Reviewed targets, required reason, destructive confirmation, and typed confirmation. |
 
 - Explain excluded targets and their reasons. Do not silently narrow six selected devices to two command targets.
 - Keep the typed phrase and action name consistent. A Wipe confirmation must not require the Powerwash phrase.
