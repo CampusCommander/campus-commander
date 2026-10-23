@@ -152,6 +152,8 @@ export class U6Simulator {
       eligible,
       unchanged,
       excluded,
+      // No conflict arises until the fresh read of the edit route compares baselines.
+      conflicts: 0,
       oldestObservedAt: observedAt,
       stale: false,
       preparedAt: '2026-10-21T18:02:00.000Z',
@@ -176,12 +178,14 @@ export class U6Simulator {
           serialNumber: target.serialNumber,
           field: field.field,
           observedValue: field.observedValue,
+          baselineValue: field.observedValue,
           approvedValue:
             target.disposition === 'excluded'
               ? null
               : this.value(
                   this.changes.find((change) => change.field === field.field)!,
                 ),
+          duplicateSerialNumber: null,
           disposition: field.disposition,
           exclusionReason: target.exclusionReason,
         })),
