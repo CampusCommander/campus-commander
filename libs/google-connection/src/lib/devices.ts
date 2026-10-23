@@ -159,23 +159,28 @@ const commandIdPattern = /^[0-9]{1,20}$/;
 const statusPartLimit = 50;
 
 /** The status actions this build sends. */
-export type DeviceStatusAction = 'disable' | 'reenable';
+export type DeviceStatusAction = 'disable' | 'reenable' | 'deprovision';
 const statusActionNames: Readonly<Record<DeviceStatusAction, string>> = {
   disable: 'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE',
   reenable: 'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_REENABLE',
+  deprovision: 'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DEPROVISION',
 };
 
 /** One device and its approved status change. */
 export interface DeviceStatusChange {
   deviceId: string;
   action: DeviceStatusAction;
+  /** The Directory deprovision reason. Only a Deprovision change carries one. */
+  deprovisionReason?: string;
 }
 
-/** One batchChangeStatus part: up to 50 device IDs under one action. */
+/** One batchChangeStatus part: up to 50 device IDs under one action and one reason. */
 export interface DeviceStatusPart {
   /** The caller key of the part. */
   id: string;
   action: DeviceStatusAction;
+  /** The Directory deprovision reason. Only a Deprovision part carries one. */
+  deprovisionReason?: string;
   deviceIds: string[];
 }
 
@@ -349,7 +354,10 @@ export function statusResults(
   });
 }
 
-/** Group changes into parts of up to 50 devices. A new action starts a new part. */
+/**
+ * Group changes into parts of up to 50 devices. A new action or a new
+ * deprovision reason starts a new part.
+ */
 function statusParts(
   changes: readonly DeviceStatusChange[],
 ): DeviceStatusPart[] {
@@ -359,10 +367,23 @@ function statusParts(
     if (seen.has(change.deviceId))
       throw new GoogleConnectionError('invalid-response');
     seen.add(change.deviceId);
+    // Google requires the reason of a Deprovision and refuses one on another action.
+    if (
+      change.action === 'deprovision' &&
+      change.deprovisionReason === undefined
+    )
+      throw new GoogleConnectionError('invalid-response');
+    if (
+      change.action !== 'deprovision' &&
+      change.deprovisionReason !== undefined
+    )
+      throw new GoogleConnectionError('invalid-response');
+    const reason = change.deprovisionReason;
     const last = parts[parts.length - 1];
     if (
       last !== undefined &&
       last.action === change.action &&
+      last.deprovisionReason === reason &&
       last.deviceIds.length < statusPartLimit
     ) {
       last.deviceIds.push(change.deviceId);
@@ -371,6 +392,7 @@ function statusParts(
     parts.push({
       id: `status-${parts.length + 1}`,
       action: change.action,
+      ...(reason === undefined ? {} : { deprovisionReason: reason }),
       deviceIds: [change.deviceId],
     });
   }
@@ -944,6 +966,7 @@ export class GoogleDeviceReader {
 
   /**
    * One batchChangeStatus POST part per group of up to 50 devices, in request order.
+   * A Deprovision part carries its reason; a Disable or Re-enable part carries none.
    * Google answers HTTP 200 even when every device fails, so `statusResults` reads
    * each device element. A failed part returns its failure for every device it held.
    */
@@ -968,6 +991,9 @@ export class GoogleDeviceReader {
         body: {
           deviceIds: part.deviceIds,
           changeChromeOsDeviceStatusAction: statusActionNames[part.action],
+          ...(part.deprovisionReason === undefined
+            ? {}
+            : { deprovisionReason: part.deprovisionReason }),
         },
       })),
       parse: (body, request) =>

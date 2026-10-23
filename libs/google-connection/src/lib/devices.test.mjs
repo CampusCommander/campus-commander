@@ -1280,6 +1280,156 @@ test('changeDeviceStatus reports a malformed duplicate as unknown on both surfac
   }
 });
 
+/** The two Google deprovision reasons these tests send. */
+const retireReason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+const replacementReason = 'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT';
+
+/** Answer every device of a part as succeeded, so a test reads only the request. */
+const statusSucceeded = (part) => ({
+  status: 200,
+  body: {
+    changeChromeOsDeviceStatusResults: part.body.deviceIds.map((deviceId) => ({
+      deviceId,
+      response: {},
+    })),
+  },
+});
+
+test('a deprovision part carries its action name and its reason', async (t) => {
+  const { google } = stubBatch(t, statusSucceeded);
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).changeDeviceStatus(
+    credential,
+    'C0123456',
+    [
+      {
+        deviceId: 'd1',
+        action: 'deprovision',
+        deprovisionReason: retireReason,
+      },
+      { deviceId: 'd2', action: 'disable' },
+      { deviceId: 'd3', action: 'reenable' },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [
+      part.body.changeChromeOsDeviceStatusAction,
+      part.body.deviceIds,
+      part.body.deprovisionReason,
+    ]),
+    [
+      [
+        'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DEPROVISION',
+        ['d1'],
+        retireReason,
+      ],
+      ['CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DISABLE', ['d2'], undefined],
+      ['CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_REENABLE', ['d3'], undefined],
+    ],
+    'Only the Deprovision part carries the reason.',
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => Object.hasOwn(part.body, 'deprovisionReason')),
+    [true, false, false],
+    'A Disable or Re-enable part sends no reason key.',
+  );
+  assert.deepEqual(
+    result.parts.map((part) => [part.action, part.deprovisionReason]),
+    [
+      ['deprovision', retireReason],
+      ['disable', undefined],
+      ['reenable', undefined],
+    ],
+    'The returned parts name the action and hold the reason of Deprovision alone.',
+  );
+  assert.deepEqual(
+    result.answers.map((answer) => answer.result.outcome),
+    ['succeeded', 'succeeded', 'succeeded'],
+  );
+});
+
+test('a new deprovision reason starts a new part', async (t) => {
+  const { google } = stubBatch(t, statusSucceeded);
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).changeDeviceStatus(
+    credential,
+    'C0123456',
+    [
+      {
+        deviceId: 'd1',
+        action: 'deprovision',
+        deprovisionReason: retireReason,
+      },
+      {
+        deviceId: 'd2',
+        action: 'deprovision',
+        deprovisionReason: retireReason,
+      },
+      {
+        deviceId: 'd3',
+        action: 'deprovision',
+        deprovisionReason: replacementReason,
+      },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [
+      part.body.changeChromeOsDeviceStatusAction,
+      part.body.deprovisionReason,
+      part.body.deviceIds,
+    ]),
+    [
+      [
+        'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DEPROVISION',
+        retireReason,
+        ['d1', 'd2'],
+      ],
+      [
+        'CHANGE_CHROME_OS_DEVICE_STATUS_ACTION_DEPROVISION',
+        replacementReason,
+        ['d3'],
+      ],
+    ],
+    'One part holds one reason.',
+  );
+  assert.deepEqual(
+    result.parts.map((part) => [part.deprovisionReason, part.deviceIds.length]),
+    [
+      [retireReason, 2],
+      [replacementReason, 1],
+    ],
+  );
+});
+
+test('a status change refuses a reason that does not match its action', async (t) => {
+  const { google } = stubBatch(t, () => ({ status: 200, body: {} }));
+  for (const change of [
+    { deviceId: 'd1', action: 'deprovision' },
+    { deviceId: 'd1', action: 'disable', deprovisionReason: retireReason },
+    {
+      deviceId: 'd1',
+      action: 'reenable',
+      deprovisionReason: replacementReason,
+    },
+  ]) {
+    await assert.rejects(
+      new GoogleDeviceReader({ batch: fastBatch() }).changeDeviceStatus(
+        credential,
+        'C0123456',
+        [change],
+        signal(),
+      ),
+      { name: 'GoogleConnectionError', code: 'invalid-response' },
+      `${change.action} with ${change.deprovisionReason}`,
+    );
+  }
+  assert.equal(google.sent.length, 0, 'No part leaves the worker.');
+});
+
 test('issueDeviceCommands sends one POST part per device with the write scope', async (t) => {
   const commands = { d1: '4100000001', d2: '4100000002' };
   const { google, scopes } = stubBatch(t, (part) => {
