@@ -1,8 +1,10 @@
 import * as z from 'zod';
 import {
+  DEVICE_BY_IDS_LIMIT,
   DEVICE_UPDATE_FIELD_LIMITS,
   deviceSelectionKeySchema,
   deviceUpdateChangesSchema,
+  deviceUpdateEditSchema,
   deviceUpdateFieldSchema,
 } from './devices';
 import { googleFailureSchema } from './google-connection';
@@ -46,19 +48,54 @@ export type DeviceUpdatePreviewRequest = z.infer<
   typeof deviceUpdatePreviewRequestSchema
 >;
 
+/** The edits of one save: 1 to 2,500 edits on at most 500 devices (addendum section 1). */
+export const DEVICE_UPDATE_EDITS_LIMIT = 2500;
+export const deviceUpdateEditsSchema = z
+  .array(deviceUpdateEditSchema)
+  .min(1)
+  .max(DEVICE_UPDATE_EDITS_LIMIT)
+  .refine(
+    (edits) =>
+      new Set(edits.map((edit) => edit.deviceId)).size <= DEVICE_BY_IDS_LIMIT,
+    { message: `An edit list holds at most ${DEVICE_BY_IDS_LIMIT} devices.` },
+  )
+  .refine(
+    (edits) =>
+      new Set(edits.map((edit) => `${edit.deviceId}\u0000${edit.field}`))
+        .size === edits.length,
+    { message: 'A device and field occur once.' },
+  );
+export type DeviceUpdateEdits = z.infer<typeof deviceUpdateEditsSchema>;
+
+/**
+ * The edit-list preview request of section 1. Each edit carries its own baseline, so one request
+ * serves the grid, the single-device sheet, and a later CSV import.
+ */
+export const deviceUpdateEditPreviewRequestSchema = z.strictObject({
+  edits: deviceUpdateEditsSchema,
+});
+export type DeviceUpdateEditPreviewRequest = z.infer<
+  typeof deviceUpdateEditPreviewRequestSchema
+>;
+
 /** The preview summary of section 2.3. Its counts cover the frozen targets. */
 export const deviceUpdatePreviewSchema = z
   .strictObject({
     previewId: z.uuid(),
     displayId: previewDisplayIdSchema,
-    /** The frozen changes, in contract order. */
-    changes: deviceUpdateChangesSchema,
+    /**
+     * The frozen changes, in contract order. A selection preview carries one to four. An edit
+     * list answers null, because each of its rows carries its own request.
+     */
+    changes: deviceUpdateChangesSchema.nullable(),
     /** The number of eligible device-field rows. */
     fieldChanges: count,
     selected: count,
     eligible: count,
     unchanged: count,
     excluded: count,
+    /** The devices whose current value differs from their baseline and their request. */
+    conflicts: count,
     oldestObservedAt: timestamp.nullable(),
     stale: z.boolean(),
     preparedAt: timestamp,
@@ -68,9 +105,13 @@ export const deviceUpdatePreviewSchema = z
   .refine(
     (preview) =>
       preview.selected ===
-      preview.eligible + preview.unchanged + preview.excluded,
+      preview.eligible +
+        preview.unchanged +
+        preview.excluded +
+        preview.conflicts,
     {
-      message: 'Selected equals the sum of eligible, unchanged, and excluded.',
+      message:
+        'Selected equals the sum of eligible, unchanged, excluded, and conflicts.',
     },
   );
 export type DeviceUpdatePreview = z.infer<typeof deviceUpdatePreviewSchema>;
@@ -81,8 +122,12 @@ export const deviceUpdateTargetSchema = z.strictObject({
   serialNumber,
   field: deviceUpdateFieldSchema,
   observedValue: z.string().max(4096).nullable(),
+  /** The value that the row held when the preview froze it. */
+  baselineValue: z.string().max(4096).nullable(),
   approvedValue: z.string().max(4096).nullable(),
-  disposition: z.enum(['eligible', 'unchanged', 'excluded']),
+  /** The serial number of another device that holds the requested Asset tag. */
+  duplicateSerialNumber: serialNumber.nullable(),
+  disposition: z.enum(['eligible', 'unchanged', 'excluded', 'conflict']),
   /** Present for an excluded target only: for example `removed`. */
   exclusionReason: z.string().min(1).max(64).nullable(),
 });

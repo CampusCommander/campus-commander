@@ -170,6 +170,7 @@ test('the command and status vocabulary is accepted', () => {
     'STS-001-12',
     'UPD-006-3',
     'UPD-006-3-annotatedLocation',
+    'UPD-006-3-annotatedAssetId',
     'UPD-006-3-annotatedUser',
     'UPD-006-3-notes',
     'UPD-006-3-orgUnitPath',
@@ -183,9 +184,16 @@ test('the command and status vocabulary is accepted', () => {
     'UPD-006-3-annotatedlocation',
   ])
     assert.equal(jobOperationIdSchema.safeParse(operationId).success, false);
-  // A command row names no field, and an update row names exactly one of the four.
+  // A command row names no field, and an update row names exactly one of the five.
   assert.equal(
     jobOperationSchema.safeParse({ ...operation, field: null }).success,
+    true,
+  );
+  assert.equal(
+    jobOperationSchema.safeParse({
+      ...operation,
+      field: 'annotatedAssetId',
+    }).success,
     true,
   );
   assert.equal(
@@ -395,6 +403,14 @@ test('job detail extends the summary with the write fields', () => {
     jobDetailSchema.safeParse({ ...detail, changes: null }).success,
     true,
     'A command or status job carries no changes.',
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...detail,
+      changes: [{ field: 'annotatedAssetId', mode: 'replace', value: 'AT-42' }],
+    }).success,
+    false,
+    'An edit-list job answers no changes, never its per-row requests.',
   );
   const refresh = {
     ...detail,
