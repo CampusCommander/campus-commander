@@ -77,6 +77,22 @@ const disablePreview = preview(disablePreviewId, 'disable', 8, 6);
 const reenablePreview = preview(reenablePreviewId, 'reenable', 8, 1);
 /** The mockup scenario of state 07: 3 active devices, no target. */
 const reenableNone = preview(reenablePreviewId, 'reenable', 3, 0);
+const wipePreviewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac';
+const powerwashPreviewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaad';
+const deprovisionPreviewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaae';
+const wipePreview: DeviceActionPreview = {
+  ...preview(wipePreviewId, 'wipe-users', 8, 6),
+  displayId: 'PV-010',
+};
+const powerwashPreview: DeviceActionPreview = {
+  ...preview(powerwashPreviewId, 'powerwash', 8, 6),
+  displayId: 'PV-011',
+};
+const deprovisionPreview: DeviceActionPreview = {
+  ...preview(deprovisionPreviewId, 'deprovision', 8, 5),
+  displayId: 'PV-012',
+  deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+};
 
 const target = (
   index: number,
@@ -195,22 +211,42 @@ function standardRequest(
   reenableTargetValues: DeviceActionTarget[],
 ): RequestHandler {
   return (path, body) => {
-    if (path === '/api/devices/commands/previews')
-      return Response.json(commandPreview, { status: 201 });
+    if (path === '/api/devices/commands/previews') {
+      const commandType = (body as { commandType?: string } | undefined)
+        ?.commandType;
+      return Response.json(
+        commandType === 'WIPE_USERS'
+          ? wipePreview
+          : commandType === 'REMOTE_POWERWASH'
+            ? powerwashPreview
+            : commandPreview,
+        { status: 201 },
+      );
+    }
     if (path === '/api/devices/status-changes/previews') {
       const action = (body as { statusAction?: string } | undefined)
         ?.statusAction;
       return Response.json(
-        action === 'reenable' ? reenablePreviewValue : disablePreview,
+        action === 'reenable'
+          ? reenablePreviewValue
+          : action === 'deprovision'
+            ? deprovisionPreview
+            : disablePreview,
         { status: 201 },
       );
     }
     if (path === `/api/devices/commands/previews/${commandPreviewId}`)
       return Response.json(commandPreview);
+    if (path === `/api/devices/commands/previews/${wipePreviewId}`)
+      return Response.json(wipePreview);
+    if (path === `/api/devices/commands/previews/${powerwashPreviewId}`)
+      return Response.json(powerwashPreview);
     if (path === `/api/devices/status-changes/previews/${disablePreviewId}`)
       return Response.json(disablePreview);
     if (path === `/api/devices/status-changes/previews/${reenablePreviewId}`)
       return Response.json(reenablePreviewValue);
+    if (path === `/api/devices/status-changes/previews/${deprovisionPreviewId}`)
+      return Response.json(deprovisionPreview);
     if (path.includes(`${reenablePreviewId}/targets`))
       return Response.json({
         targets: reenableTargetValues,
@@ -240,7 +276,18 @@ interface SetupOptions {
   reenable?: DeviceActionPreview;
   /** The Re-enable targets of that preview. */
   reenableTargets?: DeviceActionTarget[];
+  /** The action permissions of the person. The default is the first build's set. */
+  actions?: readonly string[];
 }
+
+const DISTRICT_CUSTOMER = 'C0123456';
+const DEVICES_GRID = 'devices';
+const DEFAULT_ACTIONS = [
+  'devices:read',
+  'devices:bulk-actions',
+  'devices:commands',
+  'devices:status',
+];
 
 async function setup(options: SetupOptions = {}) {
   sessionStorage.clear();
@@ -265,6 +312,7 @@ async function setup(options: SetupOptions = {}) {
     selectionTab: tabId,
     selectedView: signal(false),
     offline: signal(false),
+    sync: signal({ customerId: DISTRICT_CUSTOMER }),
   };
   const reenablePreviewValue = options.reenable ?? reenablePreview;
   const reenableTargetValues = options.reenableTargets ?? reenableTargets;
@@ -295,6 +343,9 @@ async function setup(options: SetupOptions = {}) {
             version: 'test',
             build: 'client-review',
           }),
+          // The district scope grants of this person, read by each Choose option.
+          can: (action: string) =>
+            (options.actions ?? DEFAULT_ACTIONS).includes(action),
           request,
         },
       },
@@ -362,8 +413,10 @@ it('opens at Choose with the command and its target summary', async () => {
   );
   expect(element.textContent).toContain('8 selected devices · Not submitted');
   expect(element.textContent).toContain('Command');
-  expect(radios()).toHaveLength(1);
+  expect(radios()).toHaveLength(3);
   expect(radios()[0].checked).toBe(true);
+  expect(radios()[1].disabled).toBe(true);
+  expect(radios()[2].disabled).toBe(true);
   expect(element.textContent).toContain(
     'Restarts the devices and interrupts active sessions.',
   );
@@ -715,13 +768,15 @@ it('recovers a status receipt without a chosen option', async () => {
 
 it('prepares a new preview when the selection changes under Choose', async () => {
   const ordinary = standardRequest(reenablePreview, reenableTargets);
-  let commandPosts = 0;
+  let rebootPosts = 0;
   const { element, button, spec, settle } = await setup({
-    request: (path) => {
+    request: (path, body) => {
       if (path === '/api/devices/commands/previews') {
-        commandPosts++;
+        if ((body as { commandType?: string }).commandType !== 'REBOOT')
+          return ordinary(path, body);
+        rebootPosts++;
         return Response.json(
-          commandPosts === 1 ? commandPreview : replacementPreview,
+          rebootPosts === 1 ? commandPreview : replacementPreview,
           { status: 201 },
         );
       }
@@ -732,7 +787,7 @@ it('prepares a new preview when the selection changes under Choose', async () =>
           targets: commandTargets.slice(0, 4),
           nextCursor: null,
         });
-      return ordinary(path);
+      return ordinary(path, body);
     },
   });
   // The same device count with another scope is still another selection.
@@ -740,7 +795,7 @@ it('prepares a new preview when the selection changes under Choose', async () =>
   await settle();
   button('Review Reboot')?.click();
   await settle();
-  expect(commandPosts).toBe(2);
+  expect(rebootPosts).toBe(2);
   expect(element.querySelector('h1')?.textContent?.trim()).toBe(
     'Review 4 Reboot commands',
   );
@@ -751,13 +806,15 @@ it('prepares a new preview when the selection changes under Choose', async () =>
 
 it('keeps the frozen scope when Back to preview follows a selection change', async () => {
   const ordinary = standardRequest(reenablePreview, reenableTargets);
-  let commandPosts = 0;
+  let rebootPosts = 0;
   const { element, button, spec, settle } = await setup({
-    request: (path) => {
+    request: (path, body) => {
       if (path === '/api/devices/commands/previews') {
-        commandPosts++;
+        if ((body as { commandType?: string }).commandType !== 'REBOOT')
+          return ordinary(path, body);
+        rebootPosts++;
         return Response.json(
-          commandPosts === 1 ? commandPreview : replacementPreview,
+          rebootPosts === 1 ? commandPreview : replacementPreview,
           { status: 201 },
         );
       }
@@ -768,7 +825,7 @@ it('keeps the frozen scope when Back to preview follows a selection change', asy
           targets: commandTargets.slice(0, 4),
           nextCursor: null,
         });
-      return ordinary(path);
+      return ordinary(path, body);
     },
   });
   button('Review Reboot')?.click();
@@ -780,7 +837,7 @@ it('keeps the frozen scope when Back to preview follows a selection change', asy
   button('Back to preview')?.click();
   await settle();
   // The reviewed scope stays frozen; a new selection needs Change action.
-  expect(commandPosts).toBe(1);
+  expect(rebootPosts).toBe(1);
   expect(element.querySelector('h1')?.textContent?.trim()).toBe(
     'Review 6 Reboot commands',
   );
@@ -791,14 +848,16 @@ it('keeps the frozen scope when Back to preview follows a selection change', asy
 
 it('prepares a fresh command preview after the cached one expires', async () => {
   const ordinary = standardRequest(reenablePreview, reenableTargets);
-  let commandPosts = 0;
+  let rebootPosts = 0;
   let expiredReads = 0;
   const { element, button, settle } = await setup({
-    request: (path) => {
+    request: (path, body) => {
       if (path === '/api/devices/commands/previews') {
-        commandPosts++;
+        if ((body as { commandType?: string }).commandType !== 'REBOOT')
+          return ordinary(path, body);
+        rebootPosts++;
         return Response.json(
-          commandPosts === 1 ? commandPreview : replacementPreview,
+          rebootPosts === 1 ? commandPreview : replacementPreview,
           { status: 201 },
         );
       }
@@ -816,7 +875,7 @@ it('prepares a fresh command preview after the cached one expires', async () => 
           targets: commandTargets.slice(0, 4),
           nextCursor: null,
         });
-      return ordinary(path);
+      return ordinary(path, body);
     },
   });
   button('Review Reboot')?.click();
@@ -829,7 +888,7 @@ it('prepares a fresh command preview after the cached one expires', async () => 
   button('Review Reboot')?.click();
   await settle();
   expect(expiredReads).toBe(1);
-  expect(commandPosts).toBe(2);
+  expect(rebootPosts).toBe(2);
   expect(element.querySelector('h1')?.textContent?.trim()).toBe(
     'Review 4 Reboot commands',
   );
@@ -891,14 +950,22 @@ it('retries the preparation when Review has no preview', async () => {
   const ordinary = standardRequest(reenablePreview, reenableTargets);
   let commandPosts = 0;
   const { element, button, settle } = await setup({
-    request: (path) => {
+    request: (path, body) => {
       if (path === '/api/devices/commands/previews') {
         commandPosts++;
-        return commandPosts < 3
-          ? Response.json({ reason: 'unavailable' }, { status: 503 })
-          : Response.json(commandPreview, { status: 201 });
+        if (commandPosts < 3)
+          return Response.json({ reason: 'unavailable' }, { status: 503 });
+        const commandType = (body as { commandType?: string }).commandType;
+        return Response.json(
+          commandType === 'WIPE_USERS'
+            ? wipePreview
+            : commandType === 'REMOTE_POWERWASH'
+              ? powerwashPreview
+              : commandPreview,
+          { status: 201 },
+        );
       }
-      return ordinary(path);
+      return ordinary(path, body);
     },
   });
   button('Review Reboot')?.click();
@@ -1169,3 +1236,270 @@ for (const family of ['command', 'status'] as const) {
     expect(previewPosts).toBe(family === 'command' ? 1 : 2);
   });
 }
+
+/** The four labels of the Deprovision reason select, in record order (D11). */
+const REASON_LABELS = [
+  'Retiring from fleet',
+  'Different model replacement',
+  'Same model replacement',
+  'ChromeOS Flex upgrade transfer',
+];
+
+/** Open the reason select and return its options. */
+async function openReasons(
+  element: HTMLElement,
+  settle: () => Promise<void>,
+): Promise<HTMLElement[]> {
+  const select = element.querySelector<HTMLElement>('mat-select');
+  if (!select) throw new Error('The reason select is missing.');
+  select.click();
+  await settle();
+  const panels = [
+    ...document.querySelectorAll<HTMLElement>('.mat-mdc-select-panel'),
+  ];
+  return [
+    ...(panels.at(-1)?.querySelectorAll<HTMLElement>('mat-option') ?? []),
+  ];
+}
+
+/** Type one value into the typed phrase field. */
+async function typePhrase(
+  element: HTMLElement,
+  settle: () => Promise<void>,
+  value: string,
+): Promise<void> {
+  const input = element.querySelector<HTMLInputElement>('.field-block input');
+  if (!input) throw new Error('The typed phrase field is missing.');
+  input.value = value;
+  input.dispatchEvent(new Event('input'));
+  await settle();
+}
+
+it('keeps Wipe and Powerwash visible and disabled without devices:wipe', async () => {
+  const { element, radios } = await setup();
+  expect(radios()).toHaveLength(3);
+  expect(radios()[1].disabled).toBe(true);
+  expect(radios()[2].disabled).toBe(true);
+  expect(element.textContent).toContain(
+    'You need the devices:read, devices:wipe, and devices:bulk-actions permissions to wipe user data or powerwash devices. Ask your administrator for access.',
+  );
+  // The one command that this person can send starts selected (state 11).
+  expect(radios()[0].checked).toBe(true);
+});
+
+it('keeps Deprovision visible and disabled without devices:deprovision', async () => {
+  const { element, radios } = await setup({
+    family: 'status',
+    actions: ['devices:read', 'devices:bulk-actions', 'devices:status'],
+  });
+  expect(radios()).toHaveLength(3);
+  expect(radios()[0].disabled).toBe(false);
+  expect(radios()[1].disabled).toBe(false);
+  expect(radios()[2].disabled).toBe(true);
+  expect(element.textContent).toContain(
+    'You need the devices:read, devices:deprovision, and devices:bulk-actions permissions to deprovision devices. Ask your administrator for access.',
+  );
+});
+
+it('collects the Deprovision reason and freezes it into the preview (D12)', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  const { element, button, choose, radios, settle, request } = await setup({
+    family: 'status',
+    actions: [...DEFAULT_ACTIONS, 'devices:deprovision'],
+    request: (path, body) => ordinary(path, body),
+  });
+  await choose(2);
+  expect(radios()[2].checked).toBe(true);
+  expect(button('Review Deprovision')?.disabled).toBe(true);
+
+  const options = await openReasons(element, settle);
+  expect(options.map((option) => option.textContent?.trim())).toEqual(
+    REASON_LABELS,
+  );
+  options[0].click();
+  await settle();
+
+  expect(request).toHaveBeenCalledWith('/api/devices/status-changes/previews', {
+    gridId: DEVICES_GRID,
+    tabId,
+    statusAction: 'deprovision',
+    deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+  });
+  expect(element.textContent).toContain(
+    '5 of 8 selected devices are active or disabled.',
+  );
+  expect(button('Review Deprovision')?.disabled).toBe(false);
+
+  button('Review Deprovision')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 5 Deprovision status changes',
+  );
+  expect(element.textContent).toContain(
+    'Deprovision reason: Retiring from fleet',
+  );
+  expect(element.textContent).toContain(
+    'Deprovision does not erase local data. Send Powerwash first to erase a device that leaves the district.',
+  );
+});
+
+it('requires a new preview when the Deprovision reason changes (D12)', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  const posts: (string | undefined)[] = [];
+  let currentReason: string | undefined;
+  const { element, button, choose, settle } = await setup({
+    family: 'status',
+    actions: [...DEFAULT_ACTIONS, 'devices:deprovision'],
+    request: (path, body) => {
+      const parsed = body as
+        | { statusAction?: string; deprovisionReason?: string }
+        | undefined;
+      if (
+        path === '/api/devices/status-changes/previews' &&
+        parsed?.statusAction === 'deprovision'
+      ) {
+        posts.push(parsed.deprovisionReason);
+        currentReason = parsed.deprovisionReason;
+        return Response.json({
+          ...deprovisionPreview,
+          deprovisionReason: parsed.deprovisionReason,
+        });
+      }
+      if (
+        path ===
+          `/api/devices/status-changes/previews/${deprovisionPreviewId}` &&
+        currentReason
+      )
+        return Response.json({
+          ...deprovisionPreview,
+          deprovisionReason: currentReason,
+        });
+      return ordinary(path, body);
+    },
+  });
+  await choose(2);
+  let options = await openReasons(element, settle);
+  options[0].click();
+  await settle();
+  expect(posts).toEqual(['DEPROVISION_REASON_RETIRING_DEVICE']);
+
+  // A second reason drops the frozen preview and prepares another one.
+  options = await openReasons(element, settle);
+  options[1].click();
+  await settle();
+  expect(posts).toEqual([
+    'DEPROVISION_REASON_RETIRING_DEVICE',
+    'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT',
+  ]);
+
+  button('Review Deprovision')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 5 Deprovision status changes',
+  );
+  expect(element.textContent).toContain(
+    'Deprovision reason: Different model replacement',
+  );
+});
+
+it('enables Deprovision only when DEPROVISION is typed exactly (D7)', async () => {
+  const ordinary = standardRequest(reenablePreview, reenableTargets);
+  let confirmBody: unknown = null;
+  const { element, button, choose, settle } = await setup({
+    family: 'status',
+    actions: [...DEFAULT_ACTIONS, 'devices:deprovision'],
+    request: (path, body) => {
+      if (path.endsWith('/confirm')) {
+        confirmBody = body;
+        return Response.json(statusReceipt, { status: 201 });
+      }
+      return ordinary(path, body);
+    },
+  });
+  await choose(2);
+  const options = await openReasons(element, settle);
+  options[0].click();
+  await settle();
+  button('Review Deprovision')?.click();
+  await settle();
+  button('Continue to confirmation')?.click();
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Deprovision 5 devices',
+  );
+  // Deprovision carries no acknowledgment box (D8).
+  expect(element.querySelectorAll('mat-checkbox')).toHaveLength(0);
+  const create = () => button('Deprovision 5 devices');
+  expect(create()?.disabled).toBe(true);
+  expect(element.textContent).not.toContain('The phrase does not match.');
+
+  await typePhrase(element, settle, 'deprovision');
+  expect(create()?.disabled).toBe(true);
+  expect(element.textContent).toContain(
+    'The phrase does not match. Type DEPROVISION.',
+  );
+
+  await typePhrase(element, settle, ' DEPROVISION ');
+  expect(create()?.disabled).toBe(false);
+  create()?.click();
+  await settle();
+  expect(confirmBody).toEqual({
+    manifestDigest: deprovisionPreview.manifestDigest,
+    acknowledged: true,
+    typedPhrase: 'DEPROVISION',
+  });
+});
+
+it('requires the acknowledgment and the phrase of Wipe and Powerwash (D8)', async () => {
+  const { element, button, choose, acknowledge, settle } = await setup({
+    actions: [...DEFAULT_ACTIONS, 'devices:wipe'],
+  });
+  await choose(1);
+  expect(element.textContent).toContain(
+    'Removes local user profiles. Device policy and enrollment remain.',
+  );
+  button('Review Wipe user data')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 6 Wipe user data commands',
+  );
+  expect(element.textContent).toContain(
+    'An offline device runs Wipe user data when it next connects, unless the command expires first. The job shows the expiry that Google returns.',
+  );
+  button('Continue to confirmation')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Wipe user data on 6 devices',
+  );
+  expect(element.textContent).toContain(
+    'I understand that all local user profile data will be removed.',
+  );
+  expect(button('Send Wipe to 6 devices')?.disabled).toBe(true);
+  await typePhrase(element, settle, 'WIPE');
+  expect(button('Send Wipe to 6 devices')?.disabled).toBe(true);
+  await acknowledge();
+  expect(button('Send Wipe to 6 devices')?.disabled).toBe(false);
+
+  // POWERWASH is not WIPE (completion step 3).
+  await typePhrase(element, settle, 'POWERWASH');
+  expect(button('Send Wipe to 6 devices')?.disabled).toBe(true);
+
+  button('Back to preview')?.click();
+  await settle();
+  button('Back to command')?.click();
+  await settle();
+  await choose(2);
+  button('Review Powerwash')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 6 Powerwash commands',
+  );
+  button('Continue to confirmation')?.click();
+  await settle();
+  await typePhrase(element, settle, 'WIPE');
+  await acknowledge();
+  expect(button('Send Powerwash to 6 devices')?.disabled).toBe(true);
+  await typePhrase(element, settle, 'POWERWASH');
+  expect(button('Send Powerwash to 6 devices')?.disabled).toBe(false);
+});
