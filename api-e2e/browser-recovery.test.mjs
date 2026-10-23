@@ -6,9 +6,12 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import {
+  navigateToSignInPage,
   openPlatformUsers,
   openSignInPage,
   reloadCustomerSettings,
+  reloadDiagnosticsPage,
+  reloadSignInView,
 } from './browser-recovery.mjs';
 
 const publicOrigin = 'https://qualification.invalid';
@@ -48,6 +51,30 @@ const fakeSettingsPage = (reload, waitFor) => {
       return waitFor(page.reloads, options);
     },
   });
+  return page;
+};
+
+/** A fake page that a reload helper drives. `waitFor` scripts the ready check. */
+const fakeReloadPage = (reload, waitFor) => {
+  const page = new EventEmitter();
+  page.reloads = 0;
+  page.reloadOptions = [];
+  page.readyOptions = [];
+  page.headingQueries = [];
+  page.reload = async (options) => {
+    page.reloads++;
+    page.reloadOptions.push(options);
+    return reload(page.reloads, options);
+  };
+  page.getByRole = (role, options) => {
+    page.headingQueries.push({ role, ...options });
+    return {
+      waitFor: async (readyOptions) => {
+        page.readyOptions.push(readyOptions);
+        return waitFor(page.reloads, readyOptions);
+      },
+    };
+  };
   return page;
 };
 
@@ -401,3 +428,181 @@ test(
     assert.equal(page.clicks, 1);
   },
 );
+
+test('a network change during the diagnostics ready wait reloads the page again', async () => {
+  const page = fakeReloadPage(
+    async (reloads) => {
+      if (reloads === 1)
+        setImmediate(() =>
+          failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED'),
+        );
+      return okResponse();
+    },
+    async (reloads) => {
+      if (reloads !== 1) return;
+      await delay(50);
+      throw new Error('The Diagnostics heading did not appear');
+    },
+  );
+  assert.deepEqual(await reloadDiagnosticsPage(page, { retryDelayMs: 0 }), {
+    attempts: 2,
+    networkChanges: 1,
+  });
+  assert.equal(page.reloads, 2);
+});
+
+test('a diagnostics reload without a network change fails the heading wait at once', async () => {
+  const page = fakeReloadPage(
+    async () => okResponse(),
+    async () => {
+      throw new Error('The Diagnostics heading did not appear');
+    },
+  );
+  await assert.rejects(
+    reloadDiagnosticsPage(page, { retryDelayMs: 0 }),
+    /did not appear/,
+  );
+  assert.equal(page.reloads, 1);
+});
+
+test('the diagnostics reload waits for the Diagnostics heading with the 30 s and 15 s budgets', async () => {
+  const page = fakeReloadPage(
+    async () => okResponse(),
+    async () => undefined,
+  );
+  assert.deepEqual(await reloadDiagnosticsPage(page), {
+    attempts: 1,
+    networkChanges: 0,
+  });
+  assert.deepEqual(page.headingQueries, [
+    { role: 'heading', name: 'Diagnostics', exact: true },
+  ]);
+  assert.equal(page.reloadOptions[0].timeout, 30000);
+  assert.equal(page.readyOptions[0].state, 'visible');
+  assert.equal(page.readyOptions[0].timeout, 15000);
+});
+
+test('a server error during the diagnostics ready wait fails the reload at once', async () => {
+  const page = fakeReloadPage(
+    async () => okResponse(),
+    async () => {
+      page.emit('response', {
+        status: () => 503,
+        url: () => `${publicOrigin}/api/application`,
+      });
+      failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+      throw new Error('The Diagnostics heading did not appear');
+    },
+  );
+  await assert.rejects(
+    reloadDiagnosticsPage(page, { retryDelayMs: 0 }),
+    /HTTP 503/,
+  );
+  assert.equal(page.reloads, 1);
+});
+
+test('an expected session 401 does not suppress a network-change retry of the sign-in navigation', async () => {
+  const page = fakeSignInPage({
+    goto: async (navigations) => {
+      if (navigations === 1) {
+        // The page commits, reads the session, records 401, and the bundle
+        // request fails before the load settles.
+        page.emit('response', {
+          status: () => 401,
+          url: () => `${publicOrigin}/api/auth/session`,
+        });
+        failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+        throw new Error('page.goto: net::ERR_NETWORK_CHANGED');
+      }
+      return okResponse('/login');
+    },
+  });
+  assert.deepEqual(
+    await navigateToSignInPage(page, `${publicOrigin}/login`, {
+      retryDelayMs: 0,
+    }),
+    { attempts: 2, networkChanges: 1 },
+  );
+  assert.deepEqual(page.navigations, [
+    `${publicOrigin}/login`,
+    `${publicOrigin}/login`,
+  ]);
+});
+
+test('a server error during the sign-in navigation fails at once without a retry', async () => {
+  const page = fakeSignInPage({
+    goto: async (navigations) => {
+      if (navigations === 1) {
+        page.emit('response', {
+          status: () => 500,
+          url: () => `${publicOrigin}/api/auth/session`,
+        });
+        failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+        throw new Error('page.goto: net::ERR_NETWORK_CHANGED');
+      }
+      return okResponse('/login');
+    },
+  });
+  await assert.rejects(
+    navigateToSignInPage(page, `${publicOrigin}/login`, { retryDelayMs: 0 }),
+    /HTTP 500/,
+  );
+  assert.equal(page.navigations.length, 1);
+});
+
+test('the sign-in navigation keeps the Playwright load budget and runs the ready check', async () => {
+  const page = fakeSignInPage({ goto: async () => okResponse('/login') });
+  const ready = { calls: 0 };
+  assert.deepEqual(
+    await navigateToSignInPage(page, `${publicOrigin}/login`, {
+      ready: async () => {
+        ready.calls++;
+      },
+    }),
+    { attempts: 1, networkChanges: 0 },
+  );
+  assert.equal(page.navigationOptions[0].timeout, 30000);
+  assert.equal(ready.calls, 1);
+});
+
+test('an expected session 401 does not suppress a network-change retry of the resume reload', async () => {
+  const page = fakeReloadPage(
+    async (reloads) => {
+      if (reloads === 1) {
+        page.emit('response', {
+          status: () => 401,
+          url: () => `${publicOrigin}/api/auth/session`,
+        });
+        failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+      }
+      return okResponse('/login');
+    },
+    async (reloads) => {
+      if (reloads !== 1) return;
+      await delay(50);
+      throw new Error('The sign-in heading did not appear');
+    },
+  );
+  assert.deepEqual(await reloadSignInView(page, { retryDelayMs: 0 }), {
+    attempts: 2,
+    networkChanges: 1,
+  });
+  assert.equal(page.reloads, 2);
+  assert.deepEqual(page.headingQueries, [
+    { role: 'heading', name: 'Sign in', exact: true },
+  ]);
+});
+
+test('the resume reload keeps the Playwright load budget and the 15 s sign-in wait', async () => {
+  const page = fakeReloadPage(
+    async () => okResponse('/login'),
+    async () => undefined,
+  );
+  assert.deepEqual(await reloadSignInView(page), {
+    attempts: 1,
+    networkChanges: 0,
+  });
+  assert.equal(page.reloadOptions[0].timeout, 30000);
+  assert.equal(page.readyOptions[0].state, 'visible');
+  assert.equal(page.readyOptions[0].timeout, 15000);
+});
