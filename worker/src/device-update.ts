@@ -159,21 +159,60 @@ export type ClaimedOperation = z.infer<typeof claimedOperationSchema>;
 const deviceUpdateActionSchema = z.enum([
   'annotated-location',
   'reboot',
+  'wipe-users',
+  'powerwash',
   'disable',
   'reenable',
+  'deprovision',
 ]);
 export type DeviceUpdateAction = z.infer<typeof deviceUpdateActionSchema>;
 
-const claimSchema = z.object({
-  outcome: z.literal('claimed'),
-  generation: z.number().int().positive(),
-  credentialId: z.uuid(),
-  envelope: z.unknown(),
-  batchCount: z.number().int().min(1),
-  action: deviceUpdateActionSchema,
-  operations: z.array(claimedOperationSchema).max(1000),
-  readBack: z.array(claimedOperationSchema).max(1000),
-});
+/** The Google command type of each command action (section 1). */
+type CommandAction = 'reboot' | 'wipe-users' | 'powerwash';
+const commandTypes: Readonly<Record<CommandAction, string>> = {
+  reboot: 'REBOOT',
+  'wipe-users': 'WIPE_USERS',
+  powerwash: 'REMOTE_POWERWASH',
+};
+
+/**
+ * The four Google deprovision reasons of D11. A job holds one reason, and the claim carries it from
+ * the preview (section 4). The contract refuses the seven other values before any call.
+ */
+const deprovisionReasonSchema = z.enum([
+  'DEPROVISION_REASON_RETIRING_DEVICE',
+  'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT',
+  'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+  'DEPROVISION_REASON_UPGRADE_TRANSFER',
+]);
+
+const claimSchema = z
+  .object({
+    outcome: z.literal('claimed'),
+    generation: z.number().int().positive(),
+    credentialId: z.uuid(),
+    envelope: z.unknown(),
+    batchCount: z.number().int().min(1),
+    action: deviceUpdateActionSchema,
+    /** The frozen reason of a Deprovision job. The batch claim carries it from the preview. */
+    deprovisionReason: deprovisionReasonSchema.nullable().optional(),
+    operations: z.array(claimedOperationSchema).max(1000),
+    readBack: z.array(claimedOperationSchema).max(1000),
+  })
+  // A Deprovision job always holds one reason, as its preview row does (D11, section 5). Another
+  // action never carries one. A violation is a store contract failure, not a status call with no
+  // reason.
+  .refine(
+    (claim) =>
+      claim.action === 'deprovision'
+        ? claim.deprovisionReason != null
+        : claim.deprovisionReason == null,
+    {
+      message:
+        'Only a Deprovision job carries a reason, and it always carries one.',
+      path: ['deprovisionReason'],
+    },
+  );
 
 const settledOperationSchema = z.object({
   operationNumber,
@@ -575,11 +614,14 @@ function storeError(error: unknown): DeviceSyncError {
 }
 
 /**
- * A command job issues one Google command per operation. Its action is `reboot` (design
- * addendum section 1). Every other action writes the annotated fields or the cached status.
+ * A command job issues one Google command per operation. Its action is Reboot, Wipe user data, or
+ * Powerwash (design addendum section 1). Every other action writes the annotated fields or the
+ * cached status.
  */
-function isCommandAction(action: string | undefined): boolean {
-  return action === 'reboot';
+function isCommandAction(action: string | undefined): action is CommandAction {
+  return (
+    action === 'reboot' || action === 'wipe-users' || action === 'powerwash'
+  );
 }
 
 /**
@@ -873,7 +915,9 @@ export function classifyWrite(
 export function cacheField(
   action: DeviceUpdateAction,
 ): 'annotatedLocation' | 'status' {
-  return action === 'disable' || action === 'reenable'
+  return action === 'disable' ||
+    action === 'reenable' ||
+    action === 'deprovision'
     ? 'status'
     : 'annotatedLocation';
 }
@@ -990,6 +1034,14 @@ export function classifyCommandPoll(
       };
     case 'EXPIRED':
       return { ...observed, outcome: 'expired', googleStatus: 200 };
+    // D14: a cancelled command settles failed for every command type, Reboot included.
+    case 'CANCELLED':
+      return {
+        ...observed,
+        outcome: 'failed',
+        outcomeReason: 'command-cancelled',
+        googleStatus: 200,
+      };
     default:
       return {
         ...observed,
@@ -1286,10 +1338,10 @@ export class DeviceUpdateJobs {
       // established the lease (section 5.4).
       watchdog.arm(WRITE_WATCHDOG_MS - (this.now() - claimed.startedAt));
       const body = claimSchema.parse(claimed.answer);
-      /** A command job issues one POST per operation and never reads back (section 4 steps 2 and 4). */
-      const commandJob = isCommandAction(body.action);
-      claimedOperations = body.operations;
       const action = body.action;
+      /** A command job issues one POST per operation and never reads back (section 4 steps 2 and 4). */
+      const commandJob = isCommandAction(action);
+      claimedOperations = body.operations;
       const field = cacheField(action);
       /** The classifier of the job action: a status element, a command issue, or a write. */
       const classify = (entry: TrackedWrite, stopFailure: string | null) =>
@@ -1512,7 +1564,8 @@ export class DeviceUpdateJobs {
               input.customerId,
               claimedOperations.map((operation) => ({
                 deviceId: operation.deviceId,
-                commandType: 'REBOOT',
+                // The command type of the job action. Neither command carries a payload (D6).
+                commandType: commandTypes[action],
               })),
               callSignal,
               options,
@@ -1524,7 +1577,16 @@ export class DeviceUpdateJobs {
               input.customerId,
               claimedOperations.map((operation) => ({
                 deviceId: operation.deviceId,
-                action: action === 'reenable' ? 'reenable' : 'disable',
+                action:
+                  action === 'reenable'
+                    ? 'reenable'
+                    : action === 'deprovision'
+                      ? 'deprovision'
+                      : 'disable',
+                // The frozen reason of the job travels in every Deprovision change (section 4).
+                ...(action === 'deprovision'
+                  ? { deprovisionReason: body.deprovisionReason ?? undefined }
+                  : {}),
               })),
               callSignal,
               {
