@@ -93,6 +93,9 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
   } = await load();
   const actor = randomUUID();
   const createdPrincipals = [actor];
+  // The artifacts, jobs, and devices of the card B3 checks below. Each one leaves in cleanup().
+  const artifacts = new Set();
+  const jobs = [];
   const key = {
     gridId: 'devices',
     tabId: '66666666-6666-4666-8666-666666666666',
@@ -227,18 +230,49 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
       'DELETE FROM cc.security_events WHERE actor_id=ANY($1::uuid[])',
       [createdPrincipals],
     );
+    // A job of the B3 checks holds operations and overlays. End it, so the write slot and the
+    // next suite stay free, then remove its rows.
+    for (const jobId of jobs)
+      try {
+        await migrator.query(
+          `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '60 seconds'
+            WHERE job_id=$1`,
+          [jobId],
+        );
+        await migrator.query('SELECT cc.finalize_device_update_job($1,$2,$3)', [
+          customer,
+          jobId,
+          null,
+        ]);
+      } catch {
+        /* A job that another check ended stays. */
+      }
+    await migrator.query(
+      "DELETE FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id LIKE 'b3a-%'",
+      [customer],
+    );
     for (const id of createdPrincipals.slice(1)) await removePrincipal(id);
     await removePrincipal(actor);
+    for (const id of artifacts)
+      await migrator
+        .query('DELETE FROM cc.artifacts WHERE id=$1', [id])
+        .catch(() => undefined);
     await migrator.query(
       "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'b3a-%'",
       [customer],
     );
   };
-  const directPreview = async (principal, action, digest, targets) =>
+  const directPreview = async (
+    principal,
+    action,
+    digest,
+    targets,
+    reason = null,
+  ) =>
     (
       await runtime.query(
         `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
-           $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
+           $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer,$10::text) AS result`,
         [
           principal,
           1,
@@ -250,6 +284,7 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
           digest,
           JSON.stringify(targets),
           15,
+          reason,
         ],
       )
     ).rows[0].result;
@@ -302,6 +337,16 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
     await insertDevice('b3a-active-2', 'ACTIVE');
     await insertDevice('b3a-active-3', 'ACTIVE');
     await insertDevice('b3a-removed', 'ACTIVE', { removed: new Date() });
+    // The devices of the card B3 checks below.
+    for (const deviceId of [
+      'b3a-powerwash',
+      'b3a-deprovision',
+      'b3a-wipe',
+      'b3a-reboot',
+      'b3a-powerwash-early',
+      'b3a-powerwash-late',
+    ])
+      await insertDevice(deviceId, 'ACTIVE');
 
     let rebootPreview;
     await check(
@@ -674,6 +719,704 @@ export async function qualifyDeviceActions({ runtime, migrator, issuer }) {
           'devices:bulk-actions',
           'devices:status',
         ]);
+      },
+    );
+
+    // -------------------------------------------------------------------------------------------
+    // Card B3: the three actions, the reason, and the typed phrase (design section 5). The routes and
+    // the API contracts of these actions arrive in card B6, so each check calls the schema functions
+    // directly and reads the rows they write.
+    // -------------------------------------------------------------------------------------------
+    const wipeActor = await createPrincipal('wipe', [
+      'devices:read',
+      'devices:bulk-actions',
+      'devices:wipe',
+      'devices:deprovision',
+    ]);
+    const adminRow = (text, values = []) =>
+      migrator.query(text, values).then((answer) => answer.rows[0]);
+    const call = (text, values = []) =>
+      runtime.query(text, values).then((answer) => answer.rows[0].result);
+    /** A timestamp shifted by one interval, as the database computes it. */
+    const plus = (at, interval) =>
+      migrator
+        .query('SELECT ($1::timestamptz+$2::interval) AS at', [at, interval])
+        .then((answer) => answer.rows[0].at.getTime());
+    const digest = 'c'.repeat(64);
+    const RETIRING = 'DEPROVISION_REASON_RETIRING_DEVICE';
+    const SAME_MODEL = 'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT';
+    const publishArtifact = async () => {
+      const id = randomUUID();
+      const attempt = randomUUID();
+      // The artifact fixture publishes the same cc.artifacts state as the real store, without a file.
+      await migrator.query(
+        `INSERT INTO cc.artifacts(id,backend,locator,schema_version,attempt_id,sha256,size_bytes,
+           publication_state,active,reference_count)
+         VALUES($1,'local',$2,1,$3,$4,1,'ready',false,0)`,
+        [id, `${id}.${attempt}`, attempt, 'a'.repeat(64)],
+      );
+      artifacts.add(id);
+      return id;
+    };
+    const previewOf = (actorId, action, deviceId, reason = null) =>
+      directPreview(actorId, action, digest, [target(deviceId)], reason);
+    const confirmOf = (actorId, row, phrase, artifactId) =>
+      call(
+        `SELECT cc.confirm_device_update_preview($1::uuid,$2::integer,$3::text,$4::uuid,
+           $5::text,$6::text,$7::uuid,$8::text) AS result`,
+        [
+          actorId,
+          1,
+          customer,
+          row.preview_id,
+          row.manifest_digest,
+          artifactId,
+          randomUUID(),
+          phrase,
+        ],
+      );
+    const manifestOf = (actorId, previewId) =>
+      call(
+        'SELECT cc.read_device_update_preview_manifest($1,$2,$3,$4) AS result',
+        [actorId, 1, customer, previewId],
+      );
+    /** One preview through its confirmation: the job that a card B6 route creates. */
+    const confirmedJob = async ({
+      actor: owner = wipeActor,
+      action,
+      deviceId,
+      reason = null,
+      phrase,
+    }) => {
+      const created = await previewOf(owner, action, deviceId, reason);
+      assert.equal(created.outcome, 'created', `${action} preview`);
+      // The manifest names an unconfirmed preview. A preview that holds a job answers its receipt.
+      const manifest = await manifestOf(owner, created.preview.preview_id);
+      assert.equal(manifest.outcome, 'manifest', `${action} manifest`);
+      const artifactId = await publishArtifact();
+      const answer = await confirmOf(
+        owner,
+        created.preview,
+        phrase,
+        artifactId,
+      );
+      assert.equal(answer.outcome, 'created', `${action} confirmation`);
+      jobs.push(answer.receipt.jobId);
+      return {
+        ...answer.receipt,
+        preview: created.preview,
+        artifactId,
+        manifest,
+      };
+    };
+    const admit = () =>
+      call('SELECT cc.admit_device_update_job($1,$2) AS result', [
+        customer,
+        false,
+      ]);
+    const finishJob = async (jobId) => {
+      await migrator.query(
+        `UPDATE cc.device_update_batches SET lease_expires_at=clock_timestamp()-interval '60 seconds'
+          WHERE job_id=$1`,
+        [jobId],
+      );
+      return call('SELECT cc.finalize_device_update_job($1,$2,$3) AS result', [
+        customer,
+        jobId,
+        null,
+      ]);
+    };
+    /** The write slot admits one job at a time. A leftover job of an earlier suite ends first. */
+    const start = async (jobId) => {
+      for (let tries = 0; tries < 20; tries += 1) {
+        const admitted = await admit();
+        if (admitted?.jobId === jobId) return admitted;
+        const leftover =
+          admitted?.jobId ??
+          (
+            await adminRow(
+              `SELECT job_id FROM cc.jobs WHERE customer_id=$1 AND
+                kind IN ('device-update','device-command','device-status') AND status='running'`,
+              [customer],
+            )
+          )?.job_id;
+        if (!leftover) break;
+        await finishJob(leftover);
+      }
+      throw new Error(`The ${jobId} job was not admitted.`);
+    };
+    const claim = (jobId, token, attempt, batch = 0) =>
+      call('SELECT cc.claim_device_update_batch($1,$2,$3,$4,$5,$6) AS result', [
+        customer,
+        jobId,
+        token,
+        batch,
+        attempt,
+        'kestra-execution',
+      ]);
+    const settleJob = (jobId, token, attempt, kind, results, observedAt) =>
+      call(
+        'SELECT cc.settle_device_update_operations($1,$2,$3,$4,$5,$6,$7) AS result',
+        [
+          customer,
+          jobId,
+          kind === 'read-back' ? null : token,
+          attempt,
+          kind,
+          JSON.stringify(results),
+          observedAt,
+        ],
+      );
+
+    await check(
+      "B3 a Deprovision preview needs one of Google's four reasons, and no other action carries one",
+      async () => {
+        const rejected = (action, reason, message) =>
+          assert.rejects(
+            previewOf(wipeActor, action, 'b3a-deprovision', reason),
+            (error) => {
+              assert.equal(error.code, '22023', `${message}: ${error.message}`);
+              return true;
+            },
+          );
+        await rejected(
+          'deprovision',
+          null,
+          'A Deprovision preview without a reason',
+        );
+        await rejected(
+          'deprovision',
+          'DEPROVISION_REASON_OTHER',
+          'A fifth reason value',
+        );
+        await rejected(
+          'powerwash',
+          RETIRING,
+          'A Powerwash preview with a reason',
+        );
+        await rejected('disable', RETIRING, 'A Disable preview with a reason');
+        await rejected(
+          'reenable',
+          RETIRING,
+          'A Re-enable preview with a reason',
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT count(*)::integer AS count FROM cc.device_update_previews WHERE created_by=$1',
+              [wipeActor],
+            )
+          ).count,
+          0,
+          'A refused preview stores no row.',
+        );
+        const stored = await previewOf(
+          wipeActor,
+          'deprovision',
+          'b3a-deprovision',
+          RETIRING,
+        );
+        assert.equal(stored.outcome, 'created');
+        assert.equal(stored.preview.action, 'deprovision');
+        assert.equal(stored.preview.action_version, 1);
+        assert.equal(stored.preview.deprovision_reason, RETIRING);
+        const command = await previewOf(
+          wipeActor,
+          'powerwash',
+          'b3a-powerwash',
+        );
+        assert.equal(command.outcome, 'created');
+        assert.equal(command.preview.deprovision_reason, null);
+      },
+    );
+
+    let powerwashJob;
+    await check(
+      'B3 a Powerwash preview becomes a CMD- job with no requested value',
+      async () => {
+        powerwashJob = await confirmedJob({
+          action: 'powerwash',
+          deviceId: 'b3a-powerwash',
+          phrase: 'POWERWASH',
+        });
+        assert.match(powerwashJob.displayId, /^CMD-\d{3,}$/);
+        assert.deepEqual(
+          await adminRow(
+            'SELECT kind,scope_kind,target_count FROM cc.jobs WHERE job_id=$1',
+            [powerwashJob.jobId],
+          ),
+          { kind: 'device-command', scope_kind: 'devices', target_count: 1 },
+        );
+        assert.deepEqual(
+          await adminRow(
+            `SELECT device_id,baseline_value,requested_value,batch,status
+               FROM cc.device_update_operations WHERE job_id=$1`,
+            [powerwashJob.jobId],
+          ),
+          {
+            device_id: 'b3a-powerwash',
+            baseline_value: 'ACTIVE',
+            requested_value: null,
+            batch: 0,
+            status: 'pending',
+          },
+        );
+        assert.deepEqual(
+          await adminRow(
+            'SELECT action,preview_id FROM cc.device_update_jobs WHERE job_id=$1',
+            [powerwashJob.jobId],
+          ),
+          { action: 'powerwash', preview_id: powerwashJob.preview.preview_id },
+        );
+      },
+    );
+
+    let deprovisionJob;
+    await check(
+      'B3 a Deprovision preview becomes an STS- job with DEPROVISIONED as its requested value',
+      async () => {
+        deprovisionJob = await confirmedJob({
+          action: 'deprovision',
+          deviceId: 'b3a-deprovision',
+          reason: SAME_MODEL,
+          phrase: 'DEPROVISION',
+        });
+        assert.match(deprovisionJob.displayId, /^STS-\d{3,}$/);
+        assert.equal(
+          (
+            await adminRow('SELECT kind FROM cc.jobs WHERE job_id=$1', [
+              deprovisionJob.jobId,
+            ])
+          ).kind,
+          'device-status',
+        );
+        assert.deepEqual(
+          await adminRow(
+            `SELECT device_id,baseline_value,requested_value,status
+               FROM cc.device_update_operations WHERE job_id=$1`,
+            [deprovisionJob.jobId],
+          ),
+          {
+            device_id: 'b3a-deprovision',
+            baseline_value: 'ACTIVE',
+            requested_value: 'DEPROVISIONED',
+            status: 'pending',
+          },
+        );
+      },
+    );
+
+    await check(
+      'B3 a Wipe user data confirm without WIPE answers phrase-mismatch and creates no job',
+      async () => {
+        const created = await previewOf(wipeActor, 'wipe-users', 'b3a-wipe');
+        assert.equal(created.outcome, 'created');
+        const artifactId = await publishArtifact();
+        const before = (
+          await adminRow(
+            'SELECT count(*)::integer AS count FROM cc.jobs WHERE requested_by=$1',
+            [wipeActor],
+          )
+        ).count;
+        for (const [phrase, label] of [
+          [null, 'an absent phrase'],
+          ['wipe', 'a lower-case phrase'],
+          [' WIPE ', 'an untrimmed phrase'],
+          ['WIPEX', 'a longer phrase'],
+        ]) {
+          assert.deepEqual(
+            await confirmOf(wipeActor, created.preview, phrase, artifactId),
+            { outcome: 'phrase-mismatch' },
+            label,
+          );
+        }
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT job_id FROM cc.device_update_previews WHERE preview_id=$1',
+              [created.preview.preview_id],
+            )
+          ).job_id,
+          null,
+          'A mismatch leaves the preview without a job.',
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT count(*)::integer AS count FROM cc.jobs WHERE requested_by=$1',
+              [wipeActor],
+            )
+          ).count,
+          before,
+          'A mismatch creates no job.',
+        );
+        // The check refuses a wrong phrase, and the right one still creates the job.
+        const accepted = await confirmOf(
+          wipeActor,
+          created.preview,
+          'WIPE',
+          artifactId,
+        );
+        assert.equal(accepted.outcome, 'created');
+        assert.match(accepted.receipt.displayId, /^CMD-\d{3,}$/);
+        jobs.push(accepted.receipt.jobId);
+      },
+    );
+
+    const deprovisionRun = { admitted: null, attempt: null };
+    await check(
+      'B3 the manifest and the batch claim carry the reason',
+      async () => {
+        const manifest = deprovisionJob.manifest;
+        assert.equal(manifest.outcome, 'manifest');
+        assert.equal(manifest.manifest.preview.action, 'deprovision');
+        assert.equal(manifest.manifest.preview.deprovisionReason, SAME_MODEL);
+        const commandManifest = powerwashJob.manifest;
+        assert.equal(commandManifest.outcome, 'manifest');
+        assert.equal(
+          commandManifest.manifest.preview.deprovisionReason,
+          null,
+          'A command manifest carries no reason.',
+        );
+        deprovisionRun.admitted = await start(deprovisionJob.jobId);
+        deprovisionRun.attempt = randomUUID();
+        const claimed = await claim(
+          deprovisionJob.jobId,
+          deprovisionRun.admitted.dispatchToken,
+          deprovisionRun.attempt,
+        );
+        assert.equal(claimed.outcome, 'claimed');
+        assert.equal(claimed.action, 'deprovision');
+        assert.equal(claimed.deprovisionReason, SAME_MODEL);
+        assert.deepEqual(
+          claimed.operations.map((one) => [
+            one.deviceId,
+            one.baselineValue,
+            one.requestedValue,
+          ]),
+          [['b3a-deprovision', 'ACTIVE', 'DEPROVISIONED']],
+        );
+      },
+    );
+
+    await check(
+      'B3 a person without devices:wipe receives forbidden for a Powerwash preview',
+      async () => {
+        const limited = await createPrincipal('no-wipe', [
+          'devices:read',
+          'devices:bulk-actions',
+          'devices:commands',
+        ]);
+        for (const action of ['powerwash', 'wipe-users'])
+          assert.deepEqual(
+            await directPreview(limited, action, digest, [
+              target('b3a-powerwash'),
+            ]),
+            { outcome: 'forbidden' },
+            `SQL refuses ${action} without devices:wipe.`,
+          );
+        const capable = (principal, action) =>
+          adminRow('SELECT cc.write_capable($1,$2,$3) AS capable', [
+            principal,
+            customer,
+            action,
+          ]).then((row) => row.capable);
+        assert.equal(await capable(limited, 'reboot'), true);
+        assert.equal(await capable(limited, 'powerwash'), false);
+        assert.equal(await capable(limited, 'wipe-users'), false);
+        assert.equal(await capable(limited, 'deprovision'), false);
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT count(*)::integer AS count FROM cc.device_update_previews WHERE created_by=$1',
+              [limited],
+            )
+          ).count,
+          0,
+          'The refusal stores no preview.',
+        );
+        assert.equal(await capable(wipeActor, 'powerwash'), true);
+        assert.equal(await capable(wipeActor, 'wipe-users'), true);
+        assert.equal(await capable(wipeActor, 'deprovision'), true);
+        assert.equal(await capable(wipeActor, 'reboot'), false);
+      },
+    );
+
+    await check(
+      'B3 a succeeded Deprovision settlement publishes DEPROVISIONED with an overlay',
+      async () => {
+        const { admitted, attempt } = deprovisionRun;
+        const observedAt = new Date();
+        const settled = await settleJob(
+          deprovisionJob.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              verifiedBy: 'write-response',
+            },
+          ],
+          observedAt,
+        );
+        assert.deepEqual(
+          settled.settled.map((one) => [one.deviceId, one.status]),
+          [['b3a-deprovision', 'succeeded']],
+        );
+        const device = await adminRow(
+          'SELECT status,status_observed_at FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+          [customer, 'b3a-deprovision'],
+        );
+        assert.equal(device.status, 'DEPROVISIONED');
+        assert.equal(device.status_observed_at.getTime(), observedAt.getTime());
+        const overlay = await adminRow(
+          `SELECT value,source,job_id,expires_at FROM cc.device_write_overlays
+            WHERE customer_id=$1 AND device_id=$2 AND field='status'`,
+          [customer, 'b3a-deprovision'],
+        );
+        assert.equal(overlay.value, 'DEPROVISIONED');
+        assert.equal(overlay.source, 'write-response');
+        assert.equal(overlay.job_id, deprovisionJob.jobId);
+        assert.equal(
+          overlay.expires_at.getTime(),
+          observedAt.getTime() + 36 * 60 * 60 * 1000,
+        );
+        assert.deepEqual(
+          await adminRow(
+            `SELECT observed_value,observed_at FROM cc.device_update_operations WHERE job_id=$1`,
+            [deprovisionJob.jobId],
+          ).then((row) => [row.observed_value, row.observed_at.getTime()]),
+          ['DEPROVISIONED', observedAt.getTime()],
+        );
+        assert.deepEqual(settled.publication.deviceIds, ['b3a-deprovision']);
+      },
+    );
+
+    /** One command job issued through its settlement, ready for its first expiry observation. */
+    const issuedJob = async ({
+      actor: owner = wipeActor,
+      action,
+      deviceId,
+      phrase,
+    }) => {
+      const job = await confirmedJob({
+        actor: owner,
+        action,
+        deviceId,
+        phrase,
+      });
+      const admitted = await start(job.jobId);
+      const attempt = randomUUID();
+      const claimed = await claim(job.jobId, admitted.dispatchToken, attempt);
+      assert.equal(claimed.outcome, 'claimed');
+      const observedAt = new Date(Date.now() - 60 * 1000);
+      const settled = await settleJob(
+        job.jobId,
+        admitted.dispatchToken,
+        attempt,
+        'issue',
+        [
+          {
+            operationNumber: 1,
+            outcome: 'issued',
+            commandId: '4100000123',
+            verifiedBy: 'write-response',
+          },
+        ],
+        observedAt,
+      );
+      assert.deepEqual(
+        settled.settled.map((one) => one.status),
+        ['issued'],
+      );
+      return { job, observedAt };
+    };
+    /** The first expiry observation of the job's one operation. */
+    const observeExpiry = async (jobId, expiresAt) => {
+      await migrator.query(
+        `UPDATE cc.device_update_operations SET poll_after=clock_timestamp()-interval '1 second'
+          WHERE job_id=$1`,
+        [jobId],
+      );
+      let lease = (
+        await call('SELECT cc.due_device_command_polls($1) AS result', [
+          customer,
+        ])
+      ).find((one) => one.jobId === jobId);
+      if (lease === undefined) {
+        // A due job of an earlier suite holds the ten-entry answer. Grant this job its lease.
+        lease = { leaseId: randomUUID() };
+        await migrator.query(
+          `UPDATE cc.device_update_jobs SET poll_lease_id=$2,
+             poll_lease_expires_at=clock_timestamp()+interval '10 minutes' WHERE job_id=$1`,
+          [jobId, lease.leaseId],
+        );
+      }
+      const attempt = randomUUID();
+      const claimed = await call(
+        'SELECT cc.claim_device_command_polls($1,$2,$3,$4) AS result',
+        [customer, jobId, attempt, lease.leaseId],
+      );
+      assert.equal(claimed.outcome, 'claimed');
+      const settled = await call(
+        'SELECT cc.settle_device_command_polls($1,$2,$3,$4,$5,$6) AS result',
+        [
+          customer,
+          jobId,
+          attempt,
+          lease.leaseId,
+          JSON.stringify([
+            {
+              operationNumber: 1,
+              outcome: 'pending',
+              commandState: 'sent',
+              commandExpiresAt: expiresAt.toISOString(),
+            },
+          ]),
+          new Date().toISOString(),
+        ],
+      );
+      assert.equal(settled.outcome, 'settled');
+      return { leaseId: lease.leaseId, expired: settled.expired };
+    };
+    const operationOf = (jobId) =>
+      adminRow(
+        `SELECT status,command_state,command_id,command_expires_at,poll_deadline_at,outcome_reason
+           FROM cc.device_update_operations WHERE job_id=$1 AND operation_number=1`,
+        [jobId],
+      );
+
+    await check(
+      'B3 both deadline rules hold for Powerwash and for Reboot',
+      async () => {
+        const day = 24 * 60 * 60 * 1000;
+        const powerwash = await issuedJob({
+          action: 'powerwash',
+          deviceId: 'b3a-powerwash-early',
+          phrase: 'POWERWASH',
+        });
+        const reboot = await issuedJob({
+          actor,
+          action: 'reboot',
+          deviceId: 'b3a-reboot',
+          phrase: null,
+        });
+        // The issue settlement of a Powerwash ends 30 days after the issue answer. Reboot keeps 7.
+        assert.equal(
+          (await operationOf(powerwash.job.jobId)).poll_deadline_at.getTime(),
+          await plus(powerwash.observedAt, '30 days'),
+          'A Powerwash issue settlement takes 30 days.',
+        );
+        assert.equal(
+          (await operationOf(reboot.job.jobId)).poll_deadline_at.getTime(),
+          await plus(reboot.observedAt, '7 days'),
+          'A Reboot issue settlement keeps 7 days.',
+        );
+        await finishJob(powerwash.job.jobId);
+        await finishJob(reboot.job.jobId);
+        // The first expiry observation of a Powerwash takes the earlier of the two deadlines.
+        const earlyExpiry = new Date(powerwash.observedAt.getTime() + 10 * day);
+        const early = await observeExpiry(powerwash.job.jobId, earlyExpiry);
+        const powerwashObserved = await operationOf(powerwash.job.jobId);
+        assert.equal(
+          powerwashObserved.command_expires_at.getTime(),
+          earlyExpiry.getTime(),
+          'The first poll stores Google expiry.',
+        );
+        assert.equal(
+          powerwashObserved.poll_deadline_at.getTime(),
+          await plus(earlyExpiry, '24 hours'),
+          'Powerwash takes Google expiry plus 24 hours when that comes first.',
+        );
+        // Reboot keeps the expiry plus 24 hours, even beyond its 7-day issue cap.
+        const lateExpiry = new Date(reboot.observedAt.getTime() + 45 * day);
+        await observeExpiry(reboot.job.jobId, lateExpiry);
+        assert.equal(
+          (await operationOf(reboot.job.jobId)).poll_deadline_at.getTime(),
+          await plus(lateExpiry, '24 hours'),
+          'Reboot takes Google expiry plus 24 hours.',
+        );
+        // A Powerwash whose expiry comes later keeps the 30-day issue deadline.
+        const late = await issuedJob({
+          action: 'powerwash',
+          deviceId: 'b3a-powerwash-late',
+          phrase: 'POWERWASH',
+        });
+        await finishJob(late.job.jobId);
+        await observeExpiry(
+          late.job.jobId,
+          new Date(late.observedAt.getTime() + 45 * day),
+        );
+        assert.equal(
+          (await operationOf(late.job.jobId)).poll_deadline_at.getTime(),
+          await plus(late.observedAt, '30 days'),
+          'Powerwash keeps the 30-day deadline when the expiry is later.',
+        );
+        // The deadline sweep settles the operation not-observed and the job needs review.
+        await migrator.query(
+          `UPDATE cc.device_update_operations SET poll_deadline_at=clock_timestamp()-interval '1 second'
+            WHERE job_id=$1`,
+          [powerwash.job.jobId],
+        );
+        const swept = await call(
+          'SELECT cc.claim_device_command_polls($1,$2,$3,$4) AS result',
+          [customer, powerwash.job.jobId, randomUUID(), early.leaseId],
+        );
+        assert.equal(swept.status, 'needs-review');
+        const sweptOperation = await operationOf(powerwash.job.jobId);
+        assert.equal(sweptOperation.status, 'unknown');
+        assert.equal(sweptOperation.outcome_reason, 'not-observed');
+      },
+    );
+
+    await check(
+      'B3 the migrated functions keep PUBLIC out, grant the runtime, and hold one identity',
+      async () => {
+        assert.ok(
+          (
+            await adminRow(
+              `SELECT to_regprocedure('cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer,text)') AS found`,
+            )
+          ).found,
+          'The preview function carries its new signature.',
+        );
+        assert.ok(
+          (
+            await adminRow(
+              `SELECT to_regprocedure('cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid,text)') AS found`,
+            )
+          ).found,
+          'The confirm function carries its new signature.',
+        );
+        for (const old of [
+          'cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer)',
+          'cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid)',
+        ])
+          assert.equal(
+            (await adminRow('SELECT to_regprocedure($1) AS found', [old]))
+              .found,
+            null,
+            `${old} no longer exists.`,
+          );
+        for (const signature of [
+          'create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer,text)',
+          'confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid,text)',
+        ]) {
+          const row = await adminRow(
+            `SELECT COALESCE(bool_or(a.grantee=0),false) AS public_grant,
+              COALESCE(bool_or(a.grantee=(SELECT oid FROM pg_roles WHERE rolname='cc-app')),false) AS app_grant
+             FROM pg_proc p LEFT JOIN aclexplode(p.proacl) a ON true
+             WHERE p.oid=to_regprocedure('cc.${signature}')`,
+          );
+          assert.equal(
+            row.public_grant,
+            false,
+            `${signature} grants PUBLIC EXECUTE.`,
+          );
+          assert.equal(row.app_grant, true, `${signature} runtime grant`);
+        }
       },
     );
   } finally {
