@@ -5,7 +5,7 @@ import {
   requestFailureErrorText,
 } from './network-change.mjs';
 
-const reloadAttemptLimit = 3;
+const attemptLimit = 3;
 
 const createAttempt = () => {
   let decide;
@@ -30,8 +30,8 @@ const createAttempt = () => {
 };
 
 /** Build the failure of an attempt that recorded an HTTP error status. */
-const httpErrorFailure = ({ status, url }, cause) =>
-  new Error(`page.reload: HTTP ${status} for ${url}`, { cause });
+const httpErrorFailure = ({ status, url, name }, cause) =>
+  new Error(`${name}: HTTP ${status} for ${url}`, { cause });
 
 /** Read the HTTP error status of a page response. */
 const httpErrorStatus = (response) => {
@@ -40,25 +40,25 @@ const httpErrorStatus = (response) => {
 };
 
 /**
- * Reload a page and recover a reload that an installation network change
+ * Load a page document and recover a load that an installation network change
  * aborts.
  *
- * A request of the page that fails with ERR_NETWORK_CHANGED after a reload
- * starts, and before the page is ready, starts another reload. The optional
- * `ready` function reports that the page reached the state the caller needs.
- * Without `ready`, a resolved reload is ready. The helper observes every
- * response of the page for the whole attempt, the reload and the ready wait
- * included. An HTTP error status of the page, or of a request of the page,
- * ends a failed attempt at once, and that attempt never retries. A passing
- * ready decides the attempt, with or without a recorded HTTP error. A reload
- * error other than a network change fails at once. A request failure with
- * another error code does not decide the attempt, because a reload cancels the
- * in-flight requests of the previous page. No attempt starts after the
- * deadline `timeoutMs`, the first attempt included.
+ * `load` starts one document load and takes the timeout of that load. The
+ * optional `ready` function reports that the page reached the state the caller
+ * needs. Without `ready`, a resolved load is ready. `name` names the action in
+ * a failure, and `started` names the action in the deadline failure. The
+ * helper observes every response of the page for the whole attempt, the load
+ * and the ready wait included. An HTTP error status of the page, or of a
+ * request of the page, ends a failed attempt at once, and that attempt never
+ * retries. A passing ready decides the attempt, with or without a recorded
+ * HTTP error. A load error other than a network change fails at once. A
+ * request failure with another error code does not decide the attempt,
+ * because a load cancels the in-flight requests of the previous page. No
+ * attempt starts after the deadline `timeoutMs`, the first attempt included.
  */
-export async function reloadAfterNetworkChange(
+async function loadAfterNetworkChange(
   page,
-  { retryDelayMs = 250, timeoutMs = 15000, ready } = {},
+  { name, started, load, retryDelayMs = 250, timeoutMs = 15000, ready },
 ) {
   const deadline = Date.now() + timeoutMs;
   let networkChanges = 0;
@@ -69,15 +69,15 @@ export async function reloadAfterNetworkChange(
     previousError ??
     new Error(
       Number.isFinite(timeoutMs)
-        ? `page.reload: the ${timeoutMs} ms timeout expired before a reload started`
-        : `page.reload: invalid timeoutMs ${timeoutMs}`,
+        ? `${name}: the ${timeoutMs} ms timeout expired before ${started} started`
+        : `${name}: invalid timeoutMs ${timeoutMs}`,
     );
 
   const onRequestFailed = (request) => {
     if (!attempt) return;
     // Only a network change decides the attempt. Every other request failure,
     // such as the ERR_ABORTED cancellation of an in-flight request, keeps the
-    // behavior of the reload helper before this change: the reload result and
+    // behavior of the reload helper before this change: the load result and
     // the ready function decide.
     if (!isNetworkChangeRequest(request)) return;
     attempt.observe({
@@ -89,8 +89,8 @@ export async function reloadAfterNetworkChange(
   };
 
   // The active attempt records every response of the page for the whole
-  // attempt, the reload and the ready wait included. An attempt that fails
-  // with such a record fails at once, and that attempt never retries.
+  // attempt, the load and the ready wait included. An attempt that fails with
+  // such a record fails at once, and that attempt never retries.
   const onResponse = (response) => {
     if (!attempt || attempt.httpError) return;
     const status = httpErrorStatus(response);
@@ -107,7 +107,7 @@ export async function reloadAfterNetworkChange(
   try {
     for (
       let attemptNumber = 1;
-      attemptNumber <= reloadAttemptLimit;
+      attemptNumber <= attemptLimit;
       attemptNumber++
     ) {
       if (attemptNumber > 1) {
@@ -119,14 +119,12 @@ export async function reloadAfterNetworkChange(
       attempt = current;
       let response = null;
       try {
-        response = await page.reload({
-          timeout: Math.max(1, deadline - Date.now()),
-        });
+        response = await load(Math.max(1, deadline - Date.now()));
       } catch (error) {
         if (!isNetworkChangeReloadError(error)) throw error;
         current.observe({ retry: true, error });
       }
-      // The document response of the reload belongs to the attempt. An HTTP
+      // The document response of the load belongs to the attempt. An HTTP
       // error status there ends the attempt at once.
       if (httpErrorStatus(response) !== null)
         current.override({
@@ -134,6 +132,7 @@ export async function reloadAfterNetworkChange(
           error: httpErrorFailure({
             status: response.status(),
             url: response.url(),
+            name,
           }),
         });
       let outcome = current.outcome;
@@ -149,15 +148,18 @@ export async function reloadAfterNetworkChange(
         ]);
       if (!outcome) return { attempts: attemptNumber, networkChanges };
       // A retry hides the server failure of the attempt. An HTTP error status
-      // recorded in the attempt, from the reload or the ready wait, ends it at
+      // recorded in the attempt, from the load or the ready wait, ends it at
       // once. The ready function decides a passing attempt.
       if (current.httpError)
         outcome = {
           retry: false,
-          error: httpErrorFailure(current.httpError, outcome.error),
+          error: httpErrorFailure(
+            { ...current.httpError, name },
+            outcome.error,
+          ),
         };
       if (!outcome.retry) throw outcome.error;
-      if (attemptNumber === reloadAttemptLimit || Date.now() >= deadline)
+      if (attemptNumber === attemptLimit || Date.now() >= deadline)
         throw outcome.error;
       networkChanges++;
       previousError = outcome.error;
@@ -168,4 +170,30 @@ export async function reloadAfterNetworkChange(
       page.off('response', onResponse);
     }
   }
+}
+
+/**
+ * Reload a page and recover a reload that an installation network change
+ * aborts. See `loadAfterNetworkChange` for the recovery rules.
+ */
+export async function reloadAfterNetworkChange(page, options = {}) {
+  return loadAfterNetworkChange(page, {
+    ...options,
+    name: 'page.reload',
+    started: 'a reload',
+    load: (timeout) => page.reload({ timeout }),
+  });
+}
+
+/**
+ * Navigate a page to `url` and recover a navigation that an installation
+ * network change aborts. See `loadAfterNetworkChange` for the recovery rules.
+ */
+export async function navigateAfterNetworkChange(page, url, options = {}) {
+  return loadAfterNetworkChange(page, {
+    ...options,
+    name: 'page.goto',
+    started: 'a navigation',
+    load: (timeout) => page.goto(url, { timeout }),
+  });
 }
