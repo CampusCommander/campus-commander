@@ -13,7 +13,8 @@ The approved mockup is [2026-10-23-wipe-powerwash-deprovision.html](ui/designs/2
 On 2026-10-23 the owner signed off the step 5 second build: Wipe user data, Powerwash, and Deprovision. The owner chose the answer "Signed off as built" to "Wipe user data, Powerwash, and Deprovision (the three destructive device actions): do you sign them off?".
 On 2026-10-23 the owner chose the next workflow. Question: "Pick the next workflow".
 Owner, in the main chat: "2", which chose the option "In-grid editing and the single-device update". On 2026-10-23 the owner confirmed the [in-grid editing record](workflows/in-grid-editing.md). He chose the answer "Confirmed: build it as written".
-The [in-grid editing record](workflows/in-grid-editing.md) is owner-confirmed. Its design addendum and a mockup for owner approval come before the build.
+The [in-grid editing record](workflows/in-grid-editing.md) is owner-confirmed. Its [design addendum](superpowers/specs/2026-10-23-in-grid-editing-design.md) comes before the build.
+On 2026-10-23 the owner approved the in-grid editing mockup. Owner: "Yea go ahead with this visual design." The approved mockup is [2026-10-23-in-grid-editing.html](ui/designs/2026-10-23-in-grid-editing.html).
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
