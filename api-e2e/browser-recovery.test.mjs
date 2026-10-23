@@ -593,6 +593,54 @@ test('an expected session 401 does not suppress a network-change retry of the re
   ]);
 });
 
+test('a sign-in ready failure with a network change navigates again', async () => {
+  const page = fakeSignInPage({
+    goto: async (navigations) => {
+      if (navigations === 1)
+        setImmediate(() =>
+          failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED'),
+        );
+      return okResponse('/login');
+    },
+    waitFor: async (navigations) => {
+      if (navigations !== 1) return;
+      await delay(50);
+      throw new Error('The login or account view did not appear');
+    },
+  });
+  assert.deepEqual(
+    await navigateToSignInPage(page, `${publicOrigin}/login`, {
+      retryDelayMs: 0,
+      ready: () =>
+        page
+          .getByRole('heading', { name: 'Sign in', exact: true })
+          .waitFor({ timeout: 15000 }),
+    }),
+    { attempts: 2, networkChanges: 1 },
+  );
+  assert.equal(page.navigations.length, 2);
+});
+
+test('a sign-in ready failure without a network change fails once', async () => {
+  const page = fakeSignInPage({
+    goto: async () => okResponse('/login'),
+    waitFor: async () => {
+      throw new Error('The login or account view did not appear');
+    },
+  });
+  await assert.rejects(
+    navigateToSignInPage(page, `${publicOrigin}/login`, {
+      retryDelayMs: 0,
+      ready: () =>
+        page
+          .getByRole('heading', { name: 'Sign in', exact: true })
+          .waitFor({ timeout: 15000 }),
+    }),
+    /did not appear/,
+  );
+  assert.equal(page.navigations.length, 1);
+});
+
 test('the resume reload keeps the Playwright load budget and the 15 s sign-in wait', async () => {
   const page = fakeReloadPage(
     async () => okResponse('/login'),
