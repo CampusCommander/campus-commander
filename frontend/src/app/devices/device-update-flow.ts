@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
-  DEVICE_UPDATE_FIELD_ORDER,
+  DEVICE_UPDATE_SELECTION_FIELDS,
   ENTITY_FRESHNESS_HOURS,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewSchema,
@@ -434,7 +434,8 @@ export function staleWarning(): string {
  * changed fields, and the second is the eligible devices of the frozen preview.
  */
 export function confirmationHeading(preview: DeviceUpdatePreview): string {
-  const fields = preview.changes.length;
+  // An edit list answers no changes, so its heading counts no changed fields.
+  const fields = preview.changes?.length ?? 0;
   return `Update ${fields.toLocaleString('en-US')} ${
     fields === 1 ? 'field' : 'fields'
   } on ${deviceCountText(preview.eligible)}`;
@@ -507,7 +508,8 @@ export function changeSentences(
   preview: DeviceUpdatePreview,
   targets: readonly DeviceUpdateTarget[],
 ): ChangeSentence[] {
-  return preview.changes.map((change) =>
+  // An edit list answers no changes: its rows carry their own requests.
+  return (preview.changes ?? []).map((change) =>
     changeSentence(change, fieldChangeCount(targets, change.field)),
   );
 }
@@ -517,8 +519,10 @@ export function changeSentences(
  * fields of the draft appear, because the sheet offers no other change.
  */
 export function unchangedSentence(preview: DeviceUpdatePreview): string {
-  const changed = new Set(preview.changes.map((change) => change.field));
-  const labels = DEVICE_UPDATE_FIELD_ORDER.filter(
+  const changed = new Set(
+    (preview.changes ?? []).map((change) => change.field),
+  );
+  const labels = DEVICE_UPDATE_SELECTION_FIELDS.filter(
     (field) => !changed.has(field),
   ).map((field) => DEVICE_UPDATE_FIELD_LABELS[field].toLowerCase());
   if (labels.length === 0) return '';

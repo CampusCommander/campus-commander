@@ -28,6 +28,7 @@ const preview: DeviceUpdatePreview = {
   eligible: 6,
   unchanged: 0,
   excluded: 0,
+  conflicts: 0,
   oldestObservedAt: '2026-10-19T10:00:00.000Z',
   stale: false,
   preparedAt: '2026-10-19T12:00:00.000Z',

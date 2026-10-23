@@ -10,9 +10,10 @@ import { z } from 'zod';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
   DEVICE_UPDATE_FIELD_LIMITS,
-  DEVICE_UPDATE_FIELD_ORDER,
-  type DeviceUpdateChange,
-  type DeviceUpdateField,
+  DEVICE_UPDATE_SELECTION_FIELDS,
+  deviceUpdateSelectionFieldSchema,
+  type DeviceUpdateSelectionChange,
+  type DeviceUpdateSelectionField,
   type DeviceUpdateTextField,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
@@ -65,7 +66,7 @@ export const DEVICE_UPDATE_DRAFT_FIELDS: readonly DeviceUpdateDraftFieldView[] =
 
 /** One saved field. A field that is left unchanged is not stored. */
 const savedFieldSchema = z.strictObject({
-  field: z.enum(DEVICE_UPDATE_FIELD_ORDER),
+  field: deviceUpdateSelectionFieldSchema,
   mode: z.enum(['replace', 'clear', 'move']),
   value: z.string().max(4096),
   /** Only a Move carries the identity of its destination unit. */
@@ -74,7 +75,9 @@ const savedFieldSchema = z.strictObject({
 
 const savedDraftSchema = z
   .strictObject({
-    fields: z.array(savedFieldSchema).max(DEVICE_UPDATE_FIELD_ORDER.length),
+    fields: z
+      .array(savedFieldSchema)
+      .max(DEVICE_UPDATE_SELECTION_FIELDS.length),
   })
   .refine(
     (draft) =>
@@ -86,7 +89,10 @@ const savedDraftSchema = z
     { message: 'A Move stores a path that starts with /.' },
   );
 
-type DraftFieldRecord = Record<DeviceUpdateField, DeviceUpdateDraftFieldState>;
+type DraftFieldRecord = Record<
+  DeviceUpdateSelectionField,
+  DeviceUpdateDraftFieldState
+>;
 
 function emptyFields(): DraftFieldRecord {
   return {
@@ -109,18 +115,22 @@ export class DeviceUpdateDraftStore {
   private readonly auth = inject(AuthStore);
   private readonly fields = signal<DraftFieldRecord>(emptyFields());
   /** The fields in contract order that hold a change. A Move needs a destination. */
-  readonly changes = computed<DeviceUpdateChange[]>(() =>
-    DEVICE_UPDATE_FIELD_ORDER.flatMap<DeviceUpdateChange>((field) => {
-      const state = this.fields()[field];
-      if (state.mode === 'unchanged') return [];
-      if (state.mode === 'move')
-        return state.value ? [{ field, mode: 'move', value: state.value }] : [];
-      return [
-        state.mode === 'clear'
-          ? { field, mode: state.mode }
-          : { field, mode: state.mode, value: state.value },
-      ];
-    }),
+  readonly changes = computed<DeviceUpdateSelectionChange[]>(() =>
+    DEVICE_UPDATE_SELECTION_FIELDS.flatMap<DeviceUpdateSelectionChange>(
+      (field) => {
+        const state = this.fields()[field];
+        if (state.mode === 'unchanged') return [];
+        if (state.mode === 'move')
+          return state.value
+            ? [{ field, mode: 'move', value: state.value }]
+            : [];
+        return [
+          state.mode === 'clear'
+            ? { field, mode: state.mode }
+            : { field, mode: state.mode, value: state.value },
+        ];
+      },
+    ),
   );
   /** The number of changed fields, as the Edit summary counts it. */
   readonly changedCount = computed(() => this.changes().length);
@@ -138,11 +148,11 @@ export class DeviceUpdateDraftStore {
     });
   }
 
-  modeOf(field: DeviceUpdateField): DeviceUpdateDraftMode {
+  modeOf(field: DeviceUpdateSelectionField): DeviceUpdateDraftMode {
     return this.fields()[field].mode;
   }
 
-  valueOf(field: DeviceUpdateField): string {
+  valueOf(field: DeviceUpdateSelectionField): string {
     return this.fields()[field].value;
   }
 
@@ -156,7 +166,7 @@ export class DeviceUpdateDraftStore {
     return [...this.valueOf(field)].length;
   }
 
-  setValue(field: DeviceUpdateField, value: string): void {
+  setValue(field: DeviceUpdateSelectionField, value: string): void {
     this.fields.update((fields) => ({
       ...fields,
       [field]: { ...fields[field], value },
@@ -168,7 +178,10 @@ export class DeviceUpdateDraftStore {
    * Another mode drops the value of the Organization unit field, because its value is a
    * chosen destination and not typed text (design note 10).
    */
-  setMode(field: DeviceUpdateField, mode: DeviceUpdateDraftMode): void {
+  setMode(
+    field: DeviceUpdateSelectionField,
+    mode: DeviceUpdateDraftMode,
+  ): void {
     const dropValue = field === 'orgUnitPath' && mode !== 'move';
     this.fields.update((fields) => ({
       ...fields,

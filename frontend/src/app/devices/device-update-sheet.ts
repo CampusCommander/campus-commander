@@ -243,7 +243,7 @@ export class DeviceUpdateSheet {
    * Clear row shows the removed value.
    */
   protected modeOf(field: DeviceUpdateTarget['field']): DeviceUpdateMode {
-    const change = this.preview()?.changes.find(
+    const change = this.preview()?.changes?.find(
       (entry) => entry.field === field,
     );
     return change?.mode ?? 'replace';
