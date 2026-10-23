@@ -2258,48 +2258,38 @@ test('a CANCELLED answer settles a Reboot and a Powerwash command failed with co
   }
 });
 
-test('an IGNORED answer settles a Reboot, a Wipe user data, and a Powerwash command failed with command-failed', async () => {
+test('an IGNORED result settles a Reboot, a Wipe user data, and a Powerwash command failed with command-failed', async () => {
   // The poll claim names no job action: every command job settles through this classifier (D14).
-  const answers = [
-    ['IGNORED state', pollObservation('IGNORED')],
-    [
-      'IGNORED result',
-      pollObservation('EXECUTED_BY_CLIENT', {
-        result: 'IGNORED',
-        executedAt: '2026-10-21T12:00:00.000Z',
-      }),
-    ],
-  ];
-  for (const action of ['reboot', 'wipe-users', 'powerwash'])
-    for (const [shape, observation] of answers) {
-      const db = database({
-        pollClaim: claimsOf(
-          pollClaimed([pollOperation(1, 'd1', '4100000001')]),
-          {
-            outcome: 'idle',
-            status: 'awaiting-devices',
-            operations: [],
-          },
-        ),
-      });
-      const source = reader(
-        [],
-        [],
-        [],
-        [[{ parts: { d1: { kind: 'success', observation } } }]],
-      );
-      const { create } = jobs({ db, reader: source });
-      const answer = await create.runPoll(
-        pollRequest,
-        AbortSignal.timeout(5000),
-      );
-      assert.equal(answer.failed, 1, `${action} ${shape}`);
-      assert.deepEqual(
-        pollSettled(db).map((one) => [one.outcome, one.outcomeReason]),
-        [['failed', 'command-failed']],
-        `${action} ${shape}`,
-      );
-    }
+  const observation = pollObservation('EXECUTED_BY_CLIENT', {
+    result: 'IGNORED',
+    executedAt: '2026-10-21T12:00:00.000Z',
+  });
+  for (const action of ['reboot', 'wipe-users', 'powerwash']) {
+    const db = database({
+      pollClaim: claimsOf(
+        pollClaimed([pollOperation(1, 'd1', '4100000001')]),
+        {
+          outcome: 'idle',
+          status: 'awaiting-devices',
+          operations: [],
+        },
+      ),
+    });
+    const source = reader(
+      [],
+      [],
+      [],
+      [[{ parts: { d1: { kind: 'success', observation } } }]],
+    );
+    const { create } = jobs({ db, reader: source });
+    const answer = await create.runPoll(pollRequest, AbortSignal.timeout(5000));
+    assert.equal(answer.failed, 1, action);
+    assert.deepEqual(
+      pollSettled(db).map((one) => [one.outcome, one.outcomeReason]),
+      [['failed', 'command-failed']],
+      action,
+    );
+  }
 });
 
 test('a command finish skips the read-back and answers awaiting-devices', async () => {
@@ -4092,19 +4082,16 @@ test('each row of the poll settlement table classifies as section 4 step 9 says'
     },
   );
   assert.equal(run('EXPIRED').outcome, 'expired');
-  // D14: IGNORED settles failed with command-failed, as FAILURE does.
-  assert.deepEqual(run('IGNORED'), {
+  // D14: a reported IGNORED result settles failed with command-failed, as FAILURE does.
+  assert.deepEqual(run('EXECUTED_BY_CLIENT', { result: 'IGNORED' }), {
     operationNumber: 7,
     outcome: 'failed',
     outcomeReason: 'command-failed',
     googleStatus: 200,
+    googleReason: null,
     commandExpiresAt: '2026-10-28T12:00:00.000Z',
   });
-  assert.equal(
-    run('EXECUTED_BY_CLIENT', { result: 'IGNORED' }).outcomeReason,
-    'command-failed',
-  );
-  // D14: STATE_UNSPECIFIED and another unknown value keep the unknown default.
+  // D14: STATE_UNSPECIFIED and another unknown state value keep the unknown default.
   assert.deepEqual(run('STATE_UNSPECIFIED'), {
     operationNumber: 7,
     outcome: 'unknown',
