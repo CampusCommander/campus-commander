@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { expect } from '@playwright/test';
-import { navigateAfterNetworkChange } from './navigation-fixture.mjs';
+import { navigateToSignInPage } from './browser-recovery.mjs';
 import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
 
@@ -365,12 +365,11 @@ export async function faultAllDocker({
           .toBe(401);
         record.sourceSessionRejected = true;
         // A stopped service can abort the page load of the recovery. The
-        // navigation keeps the Playwright budget and starts again when a
-        // network change aborts it.
-        await navigateAfterNetworkChange(
+        // navigation keeps the Playwright budget, starts again when a network
+        // change aborts it, and accepts the expected 401 of the session read.
+        await navigateToSignInPage(
           page,
           config.applicationAuth.publicOrigin + '/login',
-          { timeoutMs: 30000, loadTimeoutMs: 30000 },
         );
         // The sign-in link flow of a fault recovery runs inside the step, so
         // the step recovers a navigation that the fault leaves pending.

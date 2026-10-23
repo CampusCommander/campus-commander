@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { reloadSignInView } from './browser-recovery.mjs';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
@@ -710,18 +711,13 @@ console.log(JSON.stringify({status:response.status,principalId:body?.identity?.i
               async () => {
                 navigationRecovery.push({
                   phase: `${command}-resume`,
-                  ...(await reloadAfterNetworkChange(page, {
-                    ready: () =>
-                      expect(
-                        page.getByRole('heading', {
-                          name: 'Sign in',
-                          exact: true,
-                        }),
-                      ).toBeVisible({ timeout: 15000 }),
-                  })),
+                  // The resume aborts a page load. The reload keeps the
+                  // Playwright budget and starts again after a network change,
+                  // and it accepts the expected 401 of the session read.
+                  ...(await reloadSignInView(page)),
                 });
               },
-              // The action recovers through reloadAfterNetworkChange and
+              // The action recovers through reloadSignInView and
               // appends its recovery record. A step retry would multiply both.
               { retryOnNetworkChange: false },
             );

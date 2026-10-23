@@ -8,7 +8,7 @@ import { qualifyHybridRestore } from '../deployment/profiles/hybrid/restore-inte
 import { prepareHybrid } from '../deployment/profiles/hybrid/prepare.mjs';
 import { renderFiles } from '../deployment/profiles/hybrid/render.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
-import { navigateAfterNetworkChange } from './navigation-fixture.mjs';
+import { navigateToSignInPage } from './browser-recovery.mjs';
 import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 
 const execute = promisify(execFile);
@@ -252,11 +252,10 @@ export async function qualifyHybridApplicationRestore({
         exact: true,
       });
       // The restore starts the source services again. The navigation keeps the
-      // Playwright budget, and the ready check keeps the 15 s wait that this
-      // flow used before the recovery.
-      await navigateAfterNetworkChange(page, publicOrigin, {
-        timeoutMs: 45000,
-        loadTimeoutMs: 30000,
+      // Playwright budget, starts again when a network change aborts it, and
+      // accepts the expected 401 of the session read. The ready check keeps the
+      // 15 s wait that this flow used before the recovery.
+      await navigateToSignInPage(page, publicOrigin, {
         ready: () => expect(login.or(account)).toBeVisible({ timeout: 15000 }),
       });
       // The sign-in link flow of a restore runs inside the step, so the step

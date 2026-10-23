@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import { navigateAfterNetworkChange } from './navigation-fixture.mjs';
+import { navigateToSignInPage } from './browser-recovery.mjs';
 
 async function navigate(page, url) {
   try {
     // A source or target service start can abort the load. The navigation
-    // keeps the Playwright budget and starts again when a network change
-    // aborts it.
-    await navigateAfterNetworkChange(page, url, {
-      timeoutMs: 30000,
-      loadTimeoutMs: 30000,
-    });
+    // keeps the Playwright budget, starts again when a network change aborts
+    // it, and accepts the expected 401 of an unauthenticated session read.
+    await navigateToSignInPage(page, url);
   } catch {
     throw new Error('Restore admission navigation failed.');
   }

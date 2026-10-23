@@ -16,6 +16,13 @@ const settingsViewTimeoutMs = 15000;
 // of 5 s, and the run of 2026-10-23 expired that budget after the test paused
 // and resumed PostgreSQL and Redis.
 const signInViewTimeoutMs = 15000;
+// The diagnostics assertion after a service restart uses 15 s. The ready check
+// stands in for that assertion.
+const diagnosticsViewTimeoutMs = 15000;
+// A page that loads signed out reads the session and answers 401 by design.
+// That status is not a server failure, and it must not suppress the recovery
+// of a network change in the same attempt.
+const signedOutSessionStatuses = [401];
 
 /**
  * Reload the customer settings page and recover a reload that an installation
@@ -37,6 +44,74 @@ export function reloadCustomerSettings(page, options = {}) {
 }
 
 /**
+ * Reload the diagnostics page after a service restart and recover a reload
+ * that an installation network change aborts. The ready check waits for the
+ * diagnostics heading, so a reload that leaves the document blank fails the
+ * attempt instead of passing. The load keeps the Playwright navigation budget,
+ * and the ready check keeps the 15 s wait that the qualification flows used
+ * before the recovery.
+ */
+export function reloadDiagnosticsPage(page, options = {}) {
+  const heading = page.getByRole('heading', {
+    name: 'Diagnostics',
+    exact: true,
+  });
+  return reloadAfterNetworkChange(page, {
+    timeoutMs: navigationTimeoutMs + diagnosticsViewTimeoutMs,
+    loadTimeoutMs: navigationTimeoutMs,
+    ...options,
+    ready: () =>
+      heading.waitFor({
+        state: 'visible',
+        timeout: diagnosticsViewTimeoutMs,
+      }),
+  });
+}
+
+/**
+ * Navigate to a page that loads signed out, such as the sign-in page, and
+ * recover a navigation that an installation network change aborts. The page
+ * reads the session and answers 401 before it renders, so that status is not a
+ * server failure and it does not suppress the recovery. Every other server
+ * error keeps its failure. The load keeps the Playwright navigation budget.
+ * `ready` reports that the page reached the view that the caller needs.
+ */
+export function navigateToSignInPage(page, url, options = {}) {
+  return navigateAfterNetworkChange(page, url, {
+    timeoutMs: navigationTimeoutMs + signInViewTimeoutMs,
+    loadTimeoutMs: navigationTimeoutMs,
+    ...options,
+    ignoreHttpStatuses: [
+      ...signedOutSessionStatuses,
+      ...(options.ignoreHttpStatuses ?? []),
+    ],
+  });
+}
+
+/**
+ * Reload a page that loads signed out after a service resume and recover a
+ * reload that an installation network change aborts. The ready check waits for
+ * the sign-in heading, so a reload that leaves the previous document or a blank
+ * document fails the attempt instead of passing. The load keeps the Playwright
+ * navigation budget, and the ready check keeps the 15 s wait of the resume
+ * gate.
+ */
+export function reloadSignInView(page, options = {}) {
+  const heading = page.getByRole('heading', { name: 'Sign in', exact: true });
+  return reloadAfterNetworkChange(page, {
+    timeoutMs: navigationTimeoutMs + signInViewTimeoutMs,
+    loadTimeoutMs: navigationTimeoutMs,
+    ...options,
+    ignoreHttpStatuses: [
+      ...signedOutSessionStatuses,
+      ...(options.ignoreHttpStatuses ?? []),
+    ],
+    ready: () =>
+      heading.waitFor({ state: 'visible', timeout: signInViewTimeoutMs }),
+  });
+}
+
+/**
  * Open the sign-in page and recover a navigation that an installation network
  * change aborts. The ready check waits for the sign-in heading, so a document
  * that loads without a sign-in view fails the attempt instead of passing. The
@@ -54,13 +129,7 @@ export function openSignInPage(
     evidenceDirectory,
     label,
     async () => {
-      await navigateAfterNetworkChange(page, publicOrigin, {
-        timeoutMs: navigationTimeoutMs + signInViewTimeoutMs,
-        loadTimeoutMs: navigationTimeoutMs,
-        // The sign-in page reads the session and answers 401 before it renders
-        // the heading. That status is not a server failure, and it must not
-        // suppress the recovery of a network change in the same attempt.
-        ignoreHttpStatuses: [401],
+      await navigateToSignInPage(page, publicOrigin, {
         ready: () =>
           heading.waitFor({ state: 'visible', timeout: signInViewTimeoutMs }),
       });
