@@ -57,7 +57,7 @@ One inventory in every state: the 7,000-device inventory of the update device fi
 - Real values come from the review screenshots `setup-devices.png`, `step1-06-grid-after.png`, `step1-03-review-preview.png`, and `step2-04-ou-preview.png`.
 - 01P0T1V, 02A1MB6, and 02QJANY hold the annotation values that an earlier review run wrote (suffix mvjusgh0). The mockup keeps them, because the inventory of Oct 22, 2:05 PM holds them.
 - Four Organization unit paths (04QVJBY, 04XTBHJ, 0727D2E, 08V5B5S) show only in part in the screenshots. The mockup holds the visible prefix with an ellipsis, and `render.cjs` checks that every such cell truncates before the prefix ends.
-- The screenshots show the annotated users up to about 20 characters. The mockup completes them with the connected domain easton-consulting.com.
+- The screenshots show the annotated users up to about 20 characters. The mockup completes them with the connected domain example.org.
 - "Last device contact: 3 h ago" for 04A9BVS comes from the approved device details design of 2026-10-21. The Oct 22 screenshots do not show the Device contact column.
 - Drafted values: CB415508, CB415509, CB488031, Library, Hinge repaired, Media center, and the 512-character note.
 - The PNGs show the header of the review build: the connected domain and a simulated customer ID. The page footer comes from the same build.
@@ -266,19 +266,19 @@ Serials, inventory values, typed values, organization unit names, and times. Gri
 - "/Chrome Devices/Lowell Academy/One to One" · grid cell, state 01
 - "North lab mvjusgh0" · grid cell, state 01
 - "Cart 7 loaner pool mvjusgh0" · grid cell, state 01
-- "awells322@easton-consulting.com" · grid cell, state 01
+- "awells322@example.org" · grid cell, state 01
 - "02QJANY" · grid cell, state 01
 - "CB246165" · grid cell, state 01
-- "dhenry37@easton-consulting.com" · grid cell, state 01
+- "dhenry37@example.org" · grid cell, state 01
 - "/Chrome Devices/Lowell School/One to One" · grid cell, state 01
 - "CB488013" · grid cell, state 01
-- "mbennett27@easton-consulting.com" · grid cell, state 01
+- "mbennett27@example.org" · grid cell, state 01
 - "/Chrome Devices/Lowell …" · grid cell, state 01
 - "Screen replaced" · grid cell, state 01
 - "CB412049" · grid cell, state 01
-- "deborah.warren@easton-consulting.com" · grid cell, state 01
+- "deborah.warren@example.org" · grid cell, state 01
 - "CB970992" · grid cell, state 01
-- "tdaniels29@easton-consulting.com" · grid cell, state 01
+- "tdaniels29@example.org" · grid cell, state 01
 - "/Chrome Devices/Hughes…" · grid cell, state 01
 - "08V5B5S" · grid cell, state 01
 - "CB438308" · grid cell, state 01
