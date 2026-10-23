@@ -149,7 +149,7 @@
     "e2e": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs api-e2e/provider-fixture.test.mjs api-e2e/all-docker-faults-fixture.test.mjs api-e2e/navigation-fixture.test.mjs api-e2e/qualification-sign-in.test.mjs api-e2e/device-write-attacks-fixture.test.mjs"
+        "command": "node --test api-e2e/api.test.mjs api-e2e/evidence-security.test.mjs api-e2e/provider-fixture.test.mjs api-e2e/all-docker-faults-fixture.test.mjs api-e2e/navigation-fixture.test.mjs api-e2e/browser-recovery.test.mjs api-e2e/qualification-sign-in.test.mjs api-e2e/device-write-attacks-fixture.test.mjs"
       },
       "dependsOn": ["api:build"]
     },
