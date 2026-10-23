@@ -104,9 +104,10 @@ const directoryDevice = devicePage.shape.chromeosdevices.unwrap().element;
 const telemetryConcurrency = 4;
 const telemetryDevice = telemetryPage.shape.devices.unwrap().element;
 
-/** The four writable device fields, in contract order. Each ID equals its Google property name. */
+/** The five writable device fields, in contract order. Each ID equals its Google property name. */
 const deviceWriteFields = [
   'annotatedLocation',
+  'annotatedAssetId',
   'annotatedUser',
   'notes',
   'orgUnitPath',

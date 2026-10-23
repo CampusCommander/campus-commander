@@ -130,6 +130,7 @@ export type DeviceCommandPollRequest = z.infer<
 /** One claimed operation. The write values come from the operation's field rows. */
 const deviceUpdateFieldSchema = z.enum([
   'annotatedLocation',
+  'annotatedAssetId',
   'annotatedUser',
   'notes',
   'orgUnitPath',
@@ -151,7 +152,7 @@ const claimedOperationSchema = z.object({
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
   /** The field rows of an update operation, in contract order. A command or status row holds none. */
-  fields: z.array(claimedFieldSchema).max(4),
+  fields: z.array(claimedFieldSchema).max(5),
 });
 export type ClaimedOperation = z.infer<typeof claimedOperationSchema>;
 
@@ -257,7 +258,7 @@ const heldOperationSchema = z.object({
   baselineValue: z.string().max(4096).nullable(),
   requestedValue: z.string().max(4096).nullable(),
   /** The field rows of an update operation, in contract order (addendum section 4). */
-  fields: z.array(claimedFieldSchema).max(4),
+  fields: z.array(claimedFieldSchema).max(5),
   /** The batch claim omits both read-back stamps. Its fence time is the claim clock. */
   verifyAfter: z.string().nullable().optional(),
   /** The claim omits the lease end; the verification read returns it (C1, C2). */
@@ -569,8 +570,8 @@ interface TrackedWrite {
   /** True when the batch service sent this request at least once. */
   sent: boolean;
   succeeded: boolean;
-  /** The observed value of every field of a 2xx answer. A field the body omits reads null. */
-  observed: Record<string, string | null> | null;
+  /** The observed device of a 2xx write answer. A field the body omits reads null. */
+  observed: ObservedDeviceFields | null;
   /** The command ID of an accepted issue answer (section 4 step 3). */
   commandId: string | null;
   /** The per-device answer of a 2xx status part (addendum section 5). */
@@ -637,24 +638,38 @@ function answerStatus(status: number | null | undefined): number | null {
     : null;
 }
 
-/** The device fields that a write or read answer names, as Google reports them. */
+/**
+ * The device fields that a write or read answer names, as Google reports them. Asset tag reads
+ * `assetTag`, because the device observation carries the record name of that field.
+ */
 export type ObservedDeviceFields = Partial<
   Record<
-    'annotatedLocation' | 'annotatedUser' | 'notes' | 'orgUnitPath',
+    | 'annotatedLocation'
+    | 'assetTag'
+    | 'annotatedUser'
+    | 'notes'
+    | 'orgUnitPath',
     string | null
   >
 >;
 
+/** The observation key of each write field that does not equal its field ID. */
+const observationKeys: Readonly<Record<string, keyof ObservedDeviceFields>> = {
+  annotatedAssetId: 'assetTag',
+};
+
 /**
  * The observed value of one device field. `deviceObservation` maps a blank annotation to null,
- * and a field that the answer omits reads null too (addendum section 4).
+ * and a field that the answer omits reads null too (addendum section 4). Asset tag reads the
+ * observation's `assetTag` key.
  */
 export function observedField(
   device: ObservedDeviceFields | null,
   field: string,
 ): string | null {
   if (device === null) return null;
-  const value = device[field as keyof ObservedDeviceFields];
+  const value =
+    device[(observationKeys[field] ?? field) as keyof ObservedDeviceFields];
   return typeof value === 'string' ? value : null;
 }
 
@@ -1546,8 +1561,9 @@ export class DeviceUpdateJobs {
                   typeof page.commandId === 'string' ? page.commandId : null;
                 return;
               }
-              // Each field of the operation takes Google's observation. An absent field reads null.
-              entry.observed = observedValues(entry.operation, page);
+              // Each field of the operation reads Google's observation. An absent field reads null.
+              // The raw device answer keeps its own keys, so `assetTag` stays the Asset tag key.
+              entry.observed = page;
               return;
             }
             if (event.outcome.kind === 'retry') {

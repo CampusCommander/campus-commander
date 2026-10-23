@@ -247,7 +247,7 @@ CREATE INDEX device_update_operations_polls ON cc.device_update_operations(job_i
 CREATE TABLE cc.device_update_operation_fields (
   job_id uuid NOT NULL,
   operation_number integer NOT NULL CHECK(operation_number>=1),
-  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedUser','notes','orgUnitPath')),
+  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath')),
   baseline_value text CHECK(baseline_value IS NULL OR length(baseline_value)<=4096),
   requested_value text CHECK(requested_value IS NULL OR length(requested_value)<=4096),
   observed_value text CHECK(observed_value IS NULL OR length(observed_value)<=4096),
@@ -260,7 +260,7 @@ CREATE TABLE cc.device_update_operation_fields (
 CREATE TABLE cc.device_write_overlays (
   customer_id text NOT NULL REFERENCES cc.google_connection(customer_id),
   device_id text NOT NULL,
-  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedUser','notes','orgUnitPath','status')),
+  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath','status')),
   value text,
   observed_at timestamptz NOT NULL,
   source text NOT NULL CHECK(source IN ('write-response','read-back','refresh-read')),
@@ -434,7 +434,7 @@ BEGIN
     -- The field rows of the operation, in contract order (addendum section 4).
     'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
         'requestedValue',f.requested_value)
-        ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath']::text[],f.field)),
         '[]'::jsonb)
       FROM cc.device_update_operation_fields f
       WHERE f.job_id=p_job AND f.operation_number=c.operation_number))),'[]'::jsonb)
@@ -863,7 +863,7 @@ BEGIN
     -- The field rows of the operation, in contract order (addendum section 4).
     'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
         'requestedValue',f.requested_value)
-        ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath']::text[],f.field)),
         '[]'::jsonb)
       FROM cc.device_update_operation_fields f
       WHERE f.job_id=p_job AND f.operation_number=c.operation_number))),'[]'::jsonb)
@@ -1202,7 +1202,7 @@ BEGIN
       WHERE (r->>'operationNumber')::integer=f.operation_number AND
         jsonb_typeof(r->'values')='object' AND ((r->'values') ? f.field))
   ORDER BY f.operation_number,
-    array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath'],f.field)
+    array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath'],f.field)
   FOR UPDATE;
   -- The write and read-back lease fences below read the clock after every row lock (review F3, F15).
   now_at:=clock_timestamp();
@@ -1280,6 +1280,8 @@ BEGIN
       CASE v.field
         WHEN 'annotatedLocation' THEN
           d.annotated_location_observed_at IS NULL OR p_observed_at>d.annotated_location_observed_at
+        WHEN 'annotatedAssetId' THEN
+          d.asset_tag_observed_at IS NULL OR p_observed_at>d.asset_tag_observed_at
         WHEN 'annotatedUser' THEN
           d.annotated_user_observed_at IS NULL OR p_observed_at>d.annotated_user_observed_at
         WHEN 'notes' THEN d.notes_observed_at IS NULL OR p_observed_at>d.notes_observed_at
@@ -1291,6 +1293,8 @@ BEGIN
     SELECT c.device_id,c.operation_number,c.verified_by,
       bool_or(c.field='annotatedLocation') AS has_annotated_location,
       max(c.value) FILTER (WHERE c.field='annotatedLocation') AS annotated_location,
+      bool_or(c.field='annotatedAssetId') AS has_asset_tag,
+      max(c.value) FILTER (WHERE c.field='annotatedAssetId') AS asset_tag,
       bool_or(c.field='annotatedUser') AS has_annotated_user,
       max(c.value) FILTER (WHERE c.field='annotatedUser') AS annotated_user,
       bool_or(c.field='notes') AS has_notes,
@@ -1306,6 +1310,9 @@ BEGIN
         ELSE d.annotated_location END,
       annotated_location_observed_at=CASE WHEN v.has_annotated_location THEN p_observed_at
         ELSE d.annotated_location_observed_at END,
+      asset_tag=CASE WHEN v.has_asset_tag THEN v.asset_tag ELSE d.asset_tag END,
+      asset_tag_observed_at=CASE WHEN v.has_asset_tag THEN p_observed_at
+        ELSE d.asset_tag_observed_at END,
       annotated_user=CASE WHEN v.has_annotated_user THEN v.annotated_user ELSE d.annotated_user END,
       annotated_user_observed_at=CASE WHEN v.has_annotated_user THEN p_observed_at
         ELSE d.annotated_user_observed_at END,
@@ -1319,7 +1326,8 @@ BEGIN
     FROM pivot v
     WHERE d.customer_id=p_customer AND d.device_id=v.device_id
     RETURNING d.device_id,v.operation_number,v.verified_by,
-      v.has_annotated_location,v.annotated_location,v.has_annotated_user,v.annotated_user,
+      v.has_annotated_location,v.annotated_location,v.has_asset_tag,v.asset_tag,
+      v.has_annotated_user,v.annotated_user,
       v.has_notes,v.notes,v.has_org_unit_path,v.org_unit_path,v.has_status,v.status_value
   ), overlay AS (
     INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,
@@ -1329,6 +1337,7 @@ BEGIN
     FROM published p
     CROSS JOIN LATERAL (VALUES
       ('annotatedLocation',p.annotated_location,p.has_annotated_location),
+      ('annotatedAssetId',p.asset_tag,p.has_asset_tag),
       ('annotatedUser',p.annotated_user,p.has_annotated_user),
       ('notes',p.notes,p.has_notes),
       ('orgUnitPath',p.org_unit_path,p.has_org_unit_path),
@@ -1438,7 +1447,7 @@ BEGIN
     -- The field rows of the operation, in contract order (addendum section 4).
     'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
         'requestedValue',f.requested_value)
-        ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath']::text[],f.field)),
         '[]'::jsonb)
       FROM cc.device_update_operation_fields f
       WHERE f.job_id=p_job AND f.operation_number=c.operation_number)) ORDER BY c.operation_number),'[]'::jsonb)
@@ -1485,7 +1494,7 @@ BEGIN
       'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at,
       'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
           'requestedValue',f.requested_value)
-          ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+          ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath']::text[],f.field)),
           '[]'::jsonb)
         FROM cc.device_update_operation_fields f
         WHERE f.job_id=p_job AND f.operation_number=o.operation_number)) ORDER BY o.operation_number)
@@ -1505,7 +1514,7 @@ BEGIN
       'verifyAfter',o.verify_after,'verifyLeaseExpiresAt',o.verify_lease_expires_at,
       'fields',(SELECT COALESCE(jsonb_agg(jsonb_build_object('field',f.field,'baselineValue',f.baseline_value,
           'requestedValue',f.requested_value)
-          ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],f.field)),
+          ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath']::text[],f.field)),
           '[]'::jsonb)
         FROM cc.device_update_operation_fields f
         WHERE f.job_id=p_job AND f.operation_number=o.operation_number)) ORDER BY o.operation_number)
