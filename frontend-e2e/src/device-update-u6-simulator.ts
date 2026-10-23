@@ -266,6 +266,7 @@ export class U6Simulator {
       changes: this.changes.length ? this.changes : null,
       commandType: null,
       statusAction: null,
+      deprovisionReason: null,
       targetOrgUnitPaths: [],
       correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
       latestActivity: {

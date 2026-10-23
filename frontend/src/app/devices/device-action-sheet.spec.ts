@@ -146,6 +146,7 @@ function jobOf(
     changes: null,
     commandType: action === 'reboot-devices' ? 'REBOOT' : null,
     statusAction,
+    deprovisionReason: null,
     targetOrgUnitPaths: ['/School A'],
     correlationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     latestActivity: {
