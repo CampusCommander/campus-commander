@@ -53,6 +53,7 @@ const preview = (options: {
   action: options.action,
   commandType: options.action === 'reboot' ? 'REBOOT' : null,
   statusAction: options.action === 'reboot' ? null : options.action,
+  deprovisionReason: null,
   selected,
   eligible: options.eligible,
   excluded: selected - options.eligible,
