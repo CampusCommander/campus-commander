@@ -1,9 +1,28 @@
 // CI uploads failure evidence even when a step throws, so the run-time record
 // must not carry an authentication value. Redaction keeps the origin, the
 // path, and the parameter names, and drops every value.
+import { registeredEvidenceValues } from './evidence-security.mjs';
 
 /** Match the value of a parameter in a query string or a fragment. */
 const parameterValues = /([?&#][A-Za-z0-9_.~\-[\]]+)=([^&\s"'<>#]*)/g;
+
+/**
+ * Replace every registered protected value, whatever its length and whatever
+ * text surrounds it. Each value is replaced as it stands, so a bare console
+ * value needs no parameter name. The longest value goes first, so a value
+ * that contains another value cannot leave a suffix behind.
+ */
+const redactKnownValues = (value, knownValues) => {
+  const longestFirst = [
+    ...new Set([...registeredEvidenceValues(), ...knownValues]),
+  ]
+    .filter((known) => typeof known === 'string' && known.length > 0)
+    .sort((left, right) => right.length - left.length);
+  let redacted = value;
+  for (const known of longestFirst)
+    redacted = redacted.split(known).join('redacted');
+  return redacted;
+};
 
 /** Replace the value of every parameter of a URL-shaped text. */
 const redactParameterValues = (value) =>
@@ -19,15 +38,17 @@ const redactRelativeUrl = (value) => {
 /**
  * Redact the credentials, the query values, and the fragment of a URL. The
  * scheme, the host, the port, the path, and the query names stay, so the
- * record still names the page that failed.
+ * record still names the page that failed. The optional `knownValues` are
+ * registered credentials, which are replaced whatever their position.
  */
-export function redactUrl(value) {
+export function redactUrl(value, knownValues = []) {
   if (typeof value !== 'string') return '';
+  const text = redactKnownValues(value, knownValues);
   let url;
   try {
-    url = new URL(value);
+    url = new URL(text);
   } catch {
-    return redactRelativeUrl(value);
+    return redactRelativeUrl(text);
   }
   // Build the URL from its parts. The user information is never read, so a
   // credential in it cannot reach the record.
@@ -55,12 +76,13 @@ const opaqueValue = /\b[A-Za-z0-9_-]{40,}\b/g;
 
 /**
  * Redact the credentials of a console message before the record truncates it.
- * Truncation follows redaction, so a cut cannot keep part of a value. The
- * optional `limit` bounds the redacted text.
+ * Registered `knownValues` go first, so a value of any length and with any
+ * delimiter around it is removed. Truncation follows redaction, so a cut
+ * cannot keep part of a value. The optional `limit` bounds the redacted text.
  */
-export function redactText(value, limit = Infinity) {
+export function redactText(value, limit = Infinity, knownValues = []) {
   if (typeof value !== 'string') return '';
-  const redacted = value
+  const redacted = redactKnownValues(value, knownValues)
     .replace(absoluteUrl, (url) => redactUrl(url))
     .replace(bearerValue, 'Bearer redacted')
     .replace(jwtValue, 'redacted')

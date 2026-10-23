@@ -39,13 +39,38 @@ test('a console message keeps its words and loses the credentials inside it', ()
 });
 
 test('redaction runs before truncation, so a cut keeps no part of a value', () => {
+  // The marker straddles the cutoff. Truncation before redaction would keep
+  // its first characters in the record.
   const message =
     'The page failed after the sign-in redirect and the navigation error ' +
     '?code=SYNTHETIC-AUTH-CODE-0123456789';
-  const redacted = redactText(message, 64);
-  assert.equal(redacted.length, 64);
+  const redacted = redactText(message, 82);
+  assert.equal(redacted.length, 82);
   assert.ok(!redacted.includes('SYNTHETIC'));
   assert.ok(!redacted.includes('SYN'));
+  assert.ok(redacted.includes('code=redacted'));
+});
+
+test('a registered value is redacted whatever its length and delimiter', () => {
+  const marker = 'synthetic-marker-0123456789';
+  const message =
+    `callback failed for ${marker} ` +
+    `code=${marker} ` +
+    `{"code":"${marker}"}`;
+  assert.equal(
+    redactText(message, Infinity, [marker]),
+    'callback failed for redacted code=redacted {"code":"redacted"}',
+  );
+});
+
+test('a longer registered value is redacted before a value that it contains', () => {
+  assert.equal(
+    redactText('value synthetic-marker-0123456789-extended', Infinity, [
+      'synthetic-marker-0123456789',
+      'synthetic-marker-0123456789-extended',
+    ]),
+    'value redacted',
+  );
 });
 
 test('a value that is not text yields an empty string', () => {

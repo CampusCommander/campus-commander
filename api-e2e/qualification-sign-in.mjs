@@ -616,7 +616,8 @@ export async function qualificationBrowserStep(
     if (message.type?.() !== 'error') return;
     if (consoleErrors.length >= consoleErrorLimit) return;
     // The record is uploaded when the step throws, so redact the message
-    // before the limit truncates it.
+    // before the limit truncates it. A registered value is removed even when
+    // no delimiter marks it as a credential.
     consoleErrors.push(
       redactText(message.text?.() ?? '', consoleErrorTextLimit),
     );
@@ -711,7 +712,11 @@ export async function qualificationBrowserStep(
           url: redactUrl(page.url()),
           finalLocation: resource(page.url()),
           documentState,
-          consoleErrors,
+          // A value registered during the step can postdate its console
+          // event, so redact the stored messages again at write time.
+          consoleErrors: consoleErrors.map((text) =>
+            redactText(text, consoleErrorTextLimit),
+          ),
           failedRequests,
           events,
         },

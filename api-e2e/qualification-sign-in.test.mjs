@@ -1730,6 +1730,47 @@ test('a failed step records the page URL, the console errors, and the failed req
   ]);
 });
 
+test('a failed step writes no standalone console authentication value', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  // The marker is shorter than the opaque-value pattern of the redaction, and
+  // the console message has no delimiter around it.
+  const marker = 'synthetic-review-auth-marker-00000001';
+  page.url = () => `${publicOrigin}/api/auth/callback?code=${marker}`;
+  const security = new EvidenceSecurity();
+  security.register('authorization-code', marker);
+
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'console-redaction',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () => `callback failed for ${marker}`,
+        });
+        throw new Error('locator.click: Timeout 30000ms exceeded.');
+      },
+    ),
+    /Timeout 30000ms exceeded/,
+  );
+
+  const record = await readFile(
+    join(directory, 'console-redaction-failure.json'),
+    'utf8',
+  );
+  assert.ok(
+    !record.includes(marker),
+    'the record retained the registered value',
+  );
+  security.assertSafe(record, 'failure record');
+  const failure = JSON.parse(record);
+  assert.deepEqual(failure.consoleErrors, ['callback failed for redacted']);
+  assert.equal(failure.url, `${publicOrigin}/api/auth/callback?code=redacted`);
+});
+
 test('a failed step writes no registered authentication value', async (t) => {
   const directory = await createEvidenceDirectory(t);
   const page = fakePage();
