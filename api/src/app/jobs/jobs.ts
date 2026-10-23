@@ -130,22 +130,48 @@ const actionKinds: Readonly<Record<JobAction, string>> = {
   'update-device-annotations': 'device-update',
   'refresh-inventory': 'inventory-refresh',
   'reboot-devices': 'device-command',
+  'wipe-user-data': 'device-command',
+  'powerwash-devices': 'device-command',
   'disable-devices': 'device-status',
   'reenable-devices': 'device-status',
+  'deprovision-devices': 'device-status',
 };
 
 /** The job action of one write row. A missing action reads as the annotated-location update. */
 const writeActions: Readonly<Record<string, JobAction>> = {
   'annotated-location': 'update-device-annotations',
   reboot: 'reboot-devices',
+  'wipe-users': 'wipe-user-data',
+  powerwash: 'powerwash-devices',
   disable: 'disable-devices',
   reenable: 'reenable-devices',
+  deprovision: 'deprovision-devices',
 };
 
-/** The stored action of each public status action. The action filter needs this direction. */
-const storedStatusActions: Readonly<Record<string, string>> = {
+/**
+ * The stored action of each public command or status job action. The action filter needs this
+ * direction: both commands share the `device-command` kind, and all three status changes share
+ * `device-status`, so the stored row decides which job of the kind matches.
+ */
+const storedActions: Readonly<Partial<Record<JobAction, string>>> = {
+  'reboot-devices': 'reboot',
+  'wipe-user-data': 'wipe-users',
+  'powerwash-devices': 'powerwash',
   'disable-devices': 'disable',
   'reenable-devices': 'reenable',
+  'deprovision-devices': 'deprovision',
+};
+
+/** The operation word of each command or status job action. */
+const operationWords: Readonly<
+  Partial<Record<JobAction, JobOperation['operation']>>
+> = {
+  'reboot-devices': 'reboot',
+  'wipe-user-data': 'wipe-users',
+  'powerwash-devices': 'powerwash',
+  'disable-devices': 'disable',
+  'reenable-devices': 'reenable',
+  'deprovision-devices': 'deprovision',
 };
 
 /** One job header row as a summary of section 2.5. */
@@ -240,9 +266,8 @@ function operationOf(
   field: JobOperation['field'],
 ): JobOperation['operation'] {
   const action = writeActions[String(row['action'])];
-  if (action === 'reboot-devices') return 'reboot';
-  if (action === 'disable-devices') return 'disable';
-  if (action === 'reenable-devices') return 'reenable';
+  const word = action === undefined ? undefined : operationWords[action];
+  if (word !== undefined) return word;
   // Organization unit offers Move alone (design addendum section 1).
   if (field === 'orgUnitPath') return 'move';
   // Each annotation field row carries its own request, and a null request is the Clear mode
@@ -416,13 +441,14 @@ export class Jobs {
           ...new Set(filters.action.map((action) => actionKinds[action])),
         ];
         where.push(`j.kind=ANY(${add(kinds)}::text[])`);
-        // The two status actions share one kind, so the detail action decides when only one is chosen.
-        const statusActions = filters.action
-          .filter((action) => storedStatusActions[action] !== undefined)
-          .map((action) => storedStatusActions[action]);
-        if (statusActions.length === 1)
+        // Both commands share one kind, and so do the three status changes. The stored action
+        // narrows each single action, and a mix keeps one predicate that admits every chosen one.
+        const stored = filters.action
+          .map((action) => storedActions[action])
+          .filter((action): action is string => action !== undefined);
+        if (stored.length > 0)
           where.push(
-            `(j.kind<>'device-status' OR u.action=${add(statusActions[0])})`,
+            `(j.kind NOT IN ('device-command','device-status') OR u.action=ANY(${add(stored)}::text[]))`,
           );
       }
       if (filters.entityType?.length && !filters.entityType.includes('device'))
@@ -484,7 +510,7 @@ export class Jobs {
     return (
       await this.rows(
         `SELECT j.*, p.display_name AS requested_by_name,
-          u.confirmed_by, u.action, c.changes,
+          u.confirmed_by, u.action, c.changes, pr.deprovision_reason,
           cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
@@ -538,11 +564,21 @@ export class Jobs {
             },
       previewDisplayId: job['preview_display_id'] ?? null,
       changes: job['changes'] ?? null,
-      commandType: job['action'] === 'reboot' ? 'REBOOT' : null,
+      commandType:
+        job['action'] === 'reboot'
+          ? 'REBOOT'
+          : job['action'] === 'wipe-users'
+            ? 'WIPE_USERS'
+            : job['action'] === 'powerwash'
+              ? 'REMOTE_POWERWASH'
+              : null,
       statusAction:
-        job['action'] === 'disable' || job['action'] === 'reenable'
+        job['action'] === 'disable' ||
+        job['action'] === 'reenable' ||
+        job['action'] === 'deprovision'
           ? job['action']
           : null,
+      deprovisionReason: job['deprovision_reason'] ?? null,
       targetOrgUnitPaths: job['target_org_unit_paths'] ?? null,
       correlationId: job['correlation_id'],
       latestActivity: latestActivity(
@@ -662,12 +698,22 @@ export class Jobs {
       (row['field'] as JobOperation['field']) ?? null,
     );
     // A command operation has no Reconcile: record default 4 keeps a lost answer unknown, and the
-    // job ends as Needs review (section 4 step 11). No permission allows it.
-    if (operation === 'reboot')
+    // job ends as Needs review (section 4 step 11). The rule covers Wipe user data and Powerwash
+    // beside Reboot. No permission allows it.
+    if (
+      operation === 'reboot' ||
+      operation === 'wipe-users' ||
+      operation === 'powerwash'
+    )
       throw new ConflictException({ reason: 'reconcile-unsupported' });
-    // A status operation reads the status back, so it takes `devices:status` instead of `devices:write`.
+    // A status operation reads the status back, so it takes the permission of its action instead
+    // of `devices:write`. A Deprovision takes `devices:deprovision` (record default 4).
     await authorize(
-      operation === 'disable' || operation === 'reenable' ? 'status' : 'update',
+      operation === 'disable' || operation === 'reenable'
+        ? 'status'
+        : operation === 'deprovision'
+          ? 'deprovision'
+          : 'update',
     );
     if (String(row['status']) !== 'unknown')
       throw new ConflictException({ reason: 'operation-settled' });
