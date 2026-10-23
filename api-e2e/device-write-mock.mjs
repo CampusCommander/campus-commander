@@ -15,6 +15,9 @@ const terminalStates = new Set([
 /** The one channel that carries the write path's entity events. */
 const entityChannel = (customer) => `cc:entity-events:${customer}`;
 
+/** The reason every Deprovision job of this file sends. One job holds one reason (D11). */
+const deprovisionReason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+
 /** Mint an access token for the mock's administrator through the control API. */
 async function mockToken(mock, scope) {
   const response = await fetch(
@@ -66,6 +69,31 @@ function mockGoogleGet({ mock, host, path, token }) {
     );
     request.end();
   });
+}
+
+/** The command IDs of the mock's first directory rows. */
+const COMMAND_ID_BASE = 4_100_000_001;
+
+/**
+ * The commands that the mock holds for one device, read through the published Google port.
+ * The mock lists no commands, so a bounded scan of the first IDs proves which ones exist.
+ */
+async function storedCommands({ mock, token, customer, deviceId, limit = 24 }) {
+  const host = 'admin.googleapis.com';
+  const commandPath = (id) =>
+    `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(deviceId)}/commands/${id}`;
+  const commands = [];
+  for (let id = COMMAND_ID_BASE; id < COMMAND_ID_BASE + limit; id += 1) {
+    const answer = await mockGoogleGet({
+      mock,
+      host,
+      path: commandPath(id),
+      token,
+    });
+    if (answer.status === 200) commands.push(JSON.parse(answer.text));
+    else assert.equal(answer.status, 404, answer.text);
+  }
+  return commands;
 }
 
 /**
@@ -171,33 +199,83 @@ export async function qualifyDeviceWritesOnMock({
     'The mock stack holds two devices to write.',
   );
 
+  /**
+   * The action of every job this file seeds. The first build's `command` flag names a Reboot job;
+   * `action` names any other action of section 1.
+   */
+  const ACTIONS = {
+    'annotated-location': {
+      kind: 'device-update',
+      prefix: 'UPD',
+      sequence: 'cc.job_number_upd',
+      requestedValue: null,
+    },
+    reboot: {
+      kind: 'device-command',
+      prefix: 'CMD',
+      sequence: 'cc.job_number_cmd',
+      requestedValue: null,
+    },
+    'wipe-users': {
+      kind: 'device-command',
+      prefix: 'CMD',
+      sequence: 'cc.job_number_cmd',
+      requestedValue: null,
+    },
+    powerwash: {
+      kind: 'device-command',
+      prefix: 'CMD',
+      sequence: 'cc.job_number_cmd',
+      requestedValue: null,
+    },
+    disable: {
+      kind: 'device-status',
+      prefix: 'STS',
+      sequence: 'cc.job_number_sts',
+      requestedValue: 'DISABLED',
+    },
+    reenable: {
+      kind: 'device-status',
+      prefix: 'STS',
+      sequence: 'cc.job_number_sts',
+      requestedValue: 'ACTIVE',
+    },
+    deprovision: {
+      kind: 'device-status',
+      prefix: 'STS',
+      sequence: 'cc.job_number_sts',
+      requestedValue: 'DEPROVISIONED',
+    },
+  };
+
   const seedJob = async ({
     devices,
     value,
     mode = 'replace',
     command = false,
+    /** The job action of section 1. Its kind, prefix, sequence, and value follow the action. */
+    action = command ? 'reboot' : 'annotated-location',
+    /** The frozen Deprovision reason. A Deprovision job requires one (D11). */
+    deprovisionReason = null,
     /** The field rows of every operation. The default is one `field` row from `value`. */
     fields = null,
     beforeStart,
   }) => {
+    const plan = ACTIONS[action];
+    assert.ok(plan, `A known job action: ${action}`);
+    const update = action === 'annotated-location';
     const jobId = randomUUID();
     const previewId = randomUUID();
-    // A command job carries the reboot action and no field, mode, or value.
-    const action = command ? 'reboot' : 'annotated-location';
-    const kind = command ? 'device-command' : 'device-update';
-    const prefix = command ? 'CMD' : 'UPD';
-    const sequence = command ? 'cc.job_number_cmd' : 'cc.job_number_upd';
     // One transaction: the preview, the header, the detail, and the operations become visible together.
     // A tick that runs during the seed cannot admit a half-written job (R1-F2).
     await migrator.query('BEGIN');
     try {
       await migrator.query(
         `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-          generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
+          generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,field_changes,
           manifest_digest,expires_at)
-      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,
-        CASE WHEN $6='annotated-location' THEN 2 ELSE 1 END,$7,$7,0,0,$8,'manifest-digest',
-        clock_timestamp()+interval '1 hour')`,
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,$7,$8,$9,$9,0,0,$10,
+        'manifest-digest',clock_timestamp()+interval '1 hour')`,
         [
           previewId,
           customer,
@@ -205,12 +283,15 @@ export async function qualifyDeviceWritesOnMock({
           principal.permission_version,
           connection.generation,
           action,
+          // The first build's update action carries the second action version.
+          update ? 2 : 1,
+          deprovisionReason,
           devices.length,
-          command ? 0 : devices.length * (fields?.length ?? 1),
+          update ? devices.length * (fields?.length ?? 1) : 0,
         ],
       );
-      // The frozen changes of the preview. A command job carries none.
-      if (!command)
+      // The frozen changes of the preview. Only an update carries them.
+      if (update)
         for (const [field, fieldValue] of fields ?? [
           ['annotatedLocation', mode === 'clear' ? null : value],
         ])
@@ -226,7 +307,7 @@ export async function qualifyDeviceWritesOnMock({
       await migrator.query(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
         target_count,correlation_id,created_at)
-      VALUES($1,cc.job_display_id('${prefix}',nextval('${sequence}')),$2,'${kind}','devices','accepted',$3,$4,
+      VALUES($1,cc.job_display_id('${plan.prefix}',nextval('${plan.sequence}')),$2,'${plan.kind}','devices','accepted',$3,$4,
         $5,$6,clock_timestamp())`,
         [
           jobId,
@@ -253,14 +334,15 @@ export async function qualifyDeviceWritesOnMock({
       );
       for (const [index, deviceId] of devices.entries()) {
         // An update keeps its values in the operation's field rows, so the value columns stay null.
+        // A status change carries its requested status, as confirm writes it (section 5).
         await migrator.query(
           `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,org_unit_path,
           baseline_value,requested_value,batch,status)
-        VALUES($1,$2,$3,$4,'/School A',NULL,NULL,0,'pending')`,
-          [jobId, index + 1, deviceId, `SN-${deviceId}`],
+        VALUES($1,$2,$3,$4,'/School A',NULL,$5,0,'pending')`,
+          [jobId, index + 1, deviceId, `SN-${deviceId}`, plan.requestedValue],
         );
         // An update operation carries its values in one row per field (addendum section 2).
-        if (!command)
+        if (update)
           for (const [field, fieldValue] of fields ?? [
             ['annotatedLocation', mode === 'clear' ? null : value],
           ])
@@ -698,6 +780,198 @@ export async function qualifyDeviceWritesOnMock({
     }
   }
 
+  // B5 acceptance 4 (design section 7, lost issue answer): a 12 s hang loses the answer of a
+  // Powerwash that Google stored. The rule accepts one POST, the mock holds one REMOTE_POWERWASH
+  // command, the operation settles unknown ambiguous, and the job ends needs-review.
+  {
+    const clock = await control('/clock');
+    assert.ok(
+      clock.scale <= 50,
+      `The hang test needs a scale of at most 50: ${clock.scale}`,
+    );
+    let hang;
+    try {
+      const { jobId, executionId } = await seedJob({
+        devices: [deviceIds[0]],
+        action: 'powerwash',
+        beforeStart: async () => {
+          hang = await addFault({
+            kind: 'hang',
+            method: 'directory.chromeos.issueCommand',
+            ms: Math.ceil(12_000 * clock.scale),
+            count: 2,
+          });
+        },
+      });
+      const execution = await waitExecution(executionId);
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
+      const rule = (await faults()).find((one) => one.id === hang.id);
+      assert.equal(
+        rule.remaining,
+        1,
+        'The rule accepted exactly one Powerwash issue POST.',
+      );
+      const state = await job(jobId);
+      assert.equal(state.status, 'needs-review', JSON.stringify(state));
+      const [operation] = await operations(jobId);
+      assert.deepEqual(
+        [operation.status, operation.outcome_reason, operation.command_id],
+        ['unknown', 'ambiguous', null],
+      );
+      // The mock stores the command after its delayed handler runs, which follows the lost answer.
+      // Poll the command surface until the stored command appears, as the Reboot check does.
+      const token = await mockToken(mock, writeScope);
+      const deadline = Date.now() + 20_000;
+      let stored = [];
+      for (;;) {
+        stored = await storedCommands({
+          mock,
+          token,
+          customer,
+          deviceId: deviceIds[0],
+        });
+        if (
+          stored.some((command) => command.type === 'REMOTE_POWERWASH') ||
+          Date.now() >= deadline
+        )
+          break;
+        await delay(250);
+      }
+      const powerwashes = stored.filter(
+        (command) => command.type === 'REMOTE_POWERWASH',
+      );
+      assert.equal(
+        powerwashes.length,
+        1,
+        `The mock holds one REMOTE_POWERWASH command: ${JSON.stringify(stored)}`,
+      );
+      results.push(
+        'a 12 s hang on a Powerwash issue sends one POST, stores one REMOTE_POWERWASH command, settles unknown ambiguous, and ends needs-review: pass',
+      );
+    } finally {
+      await clearFaults();
+    }
+  }
+
+  // B5 acceptance 6 (design section 7): at scale 60 an online Wipe user data issues, executes, polls
+  // to succeeded, and completes its command job.
+  {
+    const online = (
+      await migrator.query(
+        `SELECT device_id FROM cc.devices
+          WHERE customer_id=$1 AND removed_at IS NULL AND status='ACTIVE' AND last_contact IS NOT NULL
+            AND last_contact > now() - interval '6 hours'
+          ORDER BY device_id LIMIT 1`,
+        [customer],
+      )
+    ).rows[0];
+    assert.ok(online, 'The mock stack holds an online ACTIVE device.');
+    const clock = await control('/clock');
+    try {
+      await control('/clock', { method: 'PUT', body: { scale: 60 } });
+      const { jobId } = await seedJob({
+        devices: [online.device_id],
+        action: 'wipe-users',
+      });
+      const issued = await waitCommandIssued(jobId);
+      assert.equal(issued[0].command_state, 'pending-delivery');
+      // The mock holds the command type of the job action, and the command carries no payload (D6).
+      const token = await mockToken(mock, writeScope);
+      const command = await mockGoogleGet({
+        mock,
+        host: 'admin.googleapis.com',
+        path: `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(online.device_id)}/commands/${issued[0].command_id}`,
+        token,
+      });
+      assert.equal(command.status, 200, command.text);
+      const storedCommand = JSON.parse(command.text);
+      assert.equal(storedCommand.type, 'WIPE_USERS', command.text);
+      assert.equal('payload' in storedCommand, false, command.text);
+      const state = await waitJob(
+        jobId,
+        ['completed'],
+        'The online Wipe user data job',
+      );
+      assert.equal(state.status, 'completed', JSON.stringify(state));
+      const rows = await operations(jobId);
+      assert.deepEqual(
+        rows.map((row) => row.status),
+        ['succeeded'],
+        JSON.stringify(rows),
+      );
+      results.push(
+        'at scale 60 an online Wipe user data reaches succeeded and its command job completes: pass',
+      );
+    } finally {
+      await control('/clock', {
+        method: 'PUT',
+        body: { scale: clock.scale, delays: clock.delays },
+      });
+    }
+  }
+
+  // B5 acceptance 6 (design section 7): with a commandExpirySeconds of 120, an offline Powerwash
+  // reaches expired and the job ends failed.
+  {
+    const offline = (
+      await migrator.query(
+        `SELECT device_id FROM cc.devices
+          WHERE customer_id=$1 AND removed_at IS NULL AND status='ACTIVE'
+            AND (last_contact IS NULL OR last_contact <= now() - interval '30 hours')
+          ORDER BY device_id LIMIT 1`,
+        [customer],
+      )
+    ).rows[0];
+    assert.ok(offline, 'The mock stack holds an offline ACTIVE device.');
+    const clock = await control('/clock');
+    const record = await control(`/domains/${mock.customerId}`);
+    const expiry = record.settings.writes.commandExpirySeconds;
+    try {
+      await control('/clock', { method: 'PUT', body: { scale: 60 } });
+      await control(`/domains/${mock.customerId}/settings`, {
+        method: 'PUT',
+        body: { writes: { commandExpirySeconds: 120 } },
+      });
+      const { jobId } = await seedJob({
+        devices: [offline.device_id],
+        action: 'powerwash',
+      });
+      await waitCommandIssued(jobId);
+      const state = await waitJob(
+        jobId,
+        ['failed', 'completed-with-errors'],
+        'The offline Powerwash job',
+      );
+      const rows = await operations(jobId);
+      assert.deepEqual(
+        rows.map((row) => row.status),
+        ['expired'],
+        JSON.stringify(rows),
+      );
+      assert.equal(
+        state.status,
+        'failed',
+        `A job with one expired command ends failed: ${JSON.stringify(state)}`,
+      );
+      results.push(
+        'with commandExpirySeconds 120 an offline Powerwash reaches expired and its command job ends failed: pass',
+      );
+    } finally {
+      await control(`/domains/${mock.customerId}/settings`, {
+        method: 'PUT',
+        body: { writes: { commandExpirySeconds: expiry } },
+      });
+      await control('/clock', {
+        method: 'PUT',
+        body: { scale: clock.scale, delays: clock.delays },
+      });
+    }
+  }
+
   // Item 24: Kestra runs device_update against the real worker; the job reaches
   // its terminal status through the mock.
   {
@@ -1011,6 +1285,83 @@ export async function qualifyDeviceWritesOnMock({
     results.push(
       'Replace then a lagged list keeps the written value, a flush then a list deletes the overlay, and Clear leaves null: pass',
     );
+  }
+
+  // B5 acceptance 5 (design section 4, Deprovision): a 12 s hang loses the answer of a status change
+  // that Google applied. The worker reads the status back, settles the operation succeeded, and the
+  // mock device holds the reason of the job. This block runs last, because it deprovisions its device.
+  {
+    const clock = await control('/clock');
+    assert.ok(
+      clock.scale <= 50,
+      `The hang test needs a scale of at most 50: ${clock.scale}`,
+    );
+    const target = (
+      await migrator.query(
+        `SELECT device_id FROM cc.devices
+          WHERE customer_id=$1 AND removed_at IS NULL AND status='ACTIVE'
+          ORDER BY device_id LIMIT 1`,
+        [customer],
+      )
+    ).rows[0];
+    assert.ok(target, 'The mock stack holds an ACTIVE device to deprovision.');
+    let hang;
+    try {
+      const { jobId, executionId } = await seedJob({
+        devices: [target.device_id],
+        action: 'deprovision',
+        deprovisionReason,
+        beforeStart: async () => {
+          hang = await addFault({
+            kind: 'hang',
+            method: 'directory.chromeos.batchChangeStatus',
+            ms: Math.ceil(12_000 * clock.scale),
+            count: 2,
+          });
+        },
+      });
+      const execution = await waitExecution(executionId);
+      assert.equal(
+        execution.state.current,
+        'SUCCESS',
+        JSON.stringify(execution),
+      );
+      const rule = (await faults()).find((one) => one.id === hang.id);
+      assert.equal(
+        rule.remaining,
+        1,
+        'The rule accepted exactly one Deprovision part.',
+      );
+      const state = await waitJob(jobId, ['completed'], 'The Deprovision job');
+      assert.equal(state.status, 'completed', JSON.stringify(state));
+      const [operation] = await operations(jobId);
+      assert.deepEqual(
+        [operation.status, operation.verified_by, operation.observed_value],
+        ['succeeded', 'read-back', 'DEPROVISIONED'],
+        JSON.stringify(operation),
+      );
+      // The mock device holds the status and the reason that the job sent.
+      const token = await mockToken(mock, writeScope);
+      const answer = await mockGoogleGet({
+        mock,
+        host: 'admin.googleapis.com',
+        path: `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(target.device_id)}`,
+        token,
+      });
+      assert.equal(answer.status, 200, answer.text);
+      const device = JSON.parse(answer.text);
+      assert.equal(device.status, 'DEPROVISIONED');
+      assert.equal(
+        device.deprovisionReason,
+        deprovisionReason,
+        'The mock device holds the reason of the job.',
+      );
+      results.push(
+        'a 12 s hang on a Deprovision part reads the applied status back as succeeded, and the mock device holds the reason of the job: pass',
+      );
+    } finally {
+      await clearFaults();
+    }
   }
 
   await clearFaults();
