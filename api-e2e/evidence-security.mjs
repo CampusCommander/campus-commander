@@ -20,6 +20,14 @@ const tokenBodyPaths = new Set([
   '/pair',
   '/api/auth/invitations',
 ]);
+// Every protected value registered in this process, in the forms that the
+// evidence scan rejects. A failure record redacts free text, which has no
+// delimiter or length rule that identifies a credential, so it reads the
+// values of every registry instance rather than one instance.
+const registeredValues = new Set();
+
+/** The registered protected values that a failure record must redact. */
+export const registeredEvidenceValues = () => [...registeredValues];
 
 export function captureEvidenceOutput(command, args) {
   const result = spawnSync(command, args, {
@@ -359,6 +367,11 @@ export class EvidenceSecurity {
       );
     }
     this.#markers.set(key, { category, variants });
+    // The failure record redacts free text, which has no delimiter or length
+    // rule that identifies a credential. The redaction reads every value
+    // registered in this process, whichever instance registered it.
+    for (const variant of variants)
+      registeredValues.add(variant.toString('utf8'));
     this.#counts.set(category, (this.#counts.get(category) ?? 0) + 1);
   }
 

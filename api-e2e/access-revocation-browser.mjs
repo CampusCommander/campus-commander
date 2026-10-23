@@ -3,6 +3,7 @@ import { expect } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { changeApplicationAccess } from '../deployment/bootstrap/application-access.mjs';
+import { openPlatformUsers } from './browser-recovery.mjs';
 import {
   qualificationBrowserStep,
   qualificationSignIn,
@@ -55,11 +56,12 @@ export async function qualifyAccessRevocationBrowser({
       },
     );
     const access = await context.newPage();
-    await access.goto(`${publicOrigin}/platform-users`);
-    await access
-      .locator(`[data-principal-id="${target.id}"]`)
-      .getByRole('button')
-      .click();
+    await openPlatformUsers(access, {
+      publicOrigin,
+      principalId: target.id,
+      evidenceDirectory,
+      label: 'access-revocation-platform-users',
+    });
     const grant = access.getByRole('checkbox', {
       name: 'View security events',
       exact: true,
