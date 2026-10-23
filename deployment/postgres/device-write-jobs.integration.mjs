@@ -265,11 +265,15 @@ export async function qualifyDeviceWriteJobs({
         ],
       );
       // The frozen changes of the preview. A job that names its own field rows writes each of them.
+      // An edit preview holds no selection change row, and cc.device_update_changes keeps the four
+      // selection fields until IB4 stores the edit rows. An Asset tag job therefore seeds its field
+      // rows alone.
       for (const row of fieldRows)
-        await admin(
-          'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
-          [previewId, row.field, changeMode(row), row.requestedValue ?? null],
-        );
+        if (row.field !== 'annotatedAssetId')
+          await admin(
+            'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
+            [previewId, row.field, changeMode(row), row.requestedValue ?? null],
+          );
       await admin(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
           target_count,correlation_id,created_at)
@@ -473,6 +477,13 @@ export async function qualifyDeviceWriteJobs({
       adminRow(
         `SELECT annotated_user,annotated_user_observed_at,notes,notes_observed_at,org_unit_path,
           org_unit_path_observed_at FROM cc.devices WHERE customer_id=$1 AND device_id=$2`,
+        [customer, deviceId],
+      );
+    // The Asset tag of a device and the stamp of the observation that set it (016 section 5.8 rule 2).
+    const assetRow = (deviceId) =>
+      adminRow(
+        `SELECT asset_tag,asset_tag_observed_at FROM cc.devices
+          WHERE customer_id=$1 AND device_id=$2`,
         [customer, deviceId],
       );
     const overlayOf = async (deviceId, field) =>
@@ -1503,6 +1514,112 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    await check(
+      'an Asset tag write publishes the tag, its stamp, and its overlay, and a lagged list keeps it',
+      async () => {
+        const listed = new Date(Date.now() - 60 * 60 * 1000);
+        await upsert(
+          [
+            device('at1', { assetTag: 'HS-OLD-1' }),
+            device('at2', { assetTag: 'HS-OLD-2' }),
+          ],
+          listed,
+        );
+        const job = await makeJob({
+          devices: ['at1', 'at2'],
+          fields: [
+            {
+              field: 'annotatedAssetId',
+              baselineValue: 'HS-OLD',
+              requestedValue: 'PV-CART-07',
+            },
+          ],
+        });
+        const admitted = await admit(false);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        const writtenAt = new Date();
+        const settled = await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              values: { annotatedAssetId: 'PV-CART-07' },
+              verifiedBy: 'write-response',
+            },
+            {
+              operationNumber: 2,
+              outcome: 'succeeded',
+              values: { annotatedAssetId: 'PV-CART-07' },
+              verifiedBy: 'write-response',
+            },
+          ],
+          writtenAt,
+        );
+        assert.deepEqual(settled.published, ['at1', 'at2']);
+        for (const id of ['at1', 'at2']) {
+          const row = await assetRow(id);
+          assert.equal(row.asset_tag, 'PV-CART-07');
+          assert.equal(
+            row.asset_tag_observed_at.getTime(),
+            writtenAt.getTime(),
+            'The write stamps the Asset tag with its observation time.',
+          );
+          const written = await overlayOf(id, 'annotatedAssetId');
+          assert.equal(written.value, 'PV-CART-07');
+          assert.equal(written.source, 'write-response');
+          assert.equal(written.observed_at.getTime(), writtenAt.getTime());
+          assert.equal(
+            written.expires_at.getTime() - writtenAt.getTime(),
+            36 * 60 * 60 * 1000,
+          );
+        }
+        assert.equal(
+          (await fieldRow(job.jobId, 1, 'annotatedAssetId')).observed_value,
+          'PV-CART-07',
+          'The field row keeps the value Google reported.',
+        );
+        await prepareFinish(job.jobId, admitted.dispatchToken);
+        assert.equal((await finishJob(job.jobId)).status, 'completed');
+        // A lagged list, stamped after the write, keeps the accepted tag and its overlay.
+        await upsert(
+          [
+            device('at1', { assetTag: 'HS-OLD-1' }),
+            device('at2', { assetTag: 'HS-OLD-2' }),
+          ],
+          new Date(writtenAt.getTime() + 1000),
+        );
+        for (const id of ['at1', 'at2']) {
+          const row = await assetRow(id);
+          assert.equal(row.asset_tag, 'PV-CART-07');
+          assert.equal(
+            row.asset_tag_observed_at.getTime(),
+            writtenAt.getTime(),
+          );
+          assert.equal(
+            (await overlayOf(id, 'annotatedAssetId')).value,
+            'PV-CART-07',
+          );
+        }
+        // A list of the accepted tag converges the overlay and keeps the value.
+        await upsert(
+          [
+            device('at1', { assetTag: 'PV-CART-07' }),
+            device('at2', { assetTag: 'PV-CART-07' }),
+          ],
+          new Date(writtenAt.getTime() + 2000),
+        );
+        for (const id of ['at1', 'at2']) {
+          assert.equal((await assetRow(id)).asset_tag, 'PV-CART-07');
+          assert.equal(await overlayOf(id, 'annotatedAssetId'), undefined);
+        }
+      },
+    );
+
     // Section 5 of the addendum: the status field follows the same overlay and observation rules.
     await check(
       'a status list converges its overlay and leaves a different annotated-location overlay',
@@ -1747,6 +1864,7 @@ export async function qualifyDeviceWriteJobs({
           await upsert(
             [
               device('lu4', {
+                assetTag: 'HS-READ',
                 annotatedUser: 'read@example.org',
                 notes: 'Read note',
                 orgUnitPath: '/School B',
@@ -1767,10 +1885,17 @@ export async function qualifyDeviceWriteJobs({
         );
         assert.equal(row.notes_observed_at.getTime(), readAt.getTime());
         assert.equal(row.org_unit_path_observed_at.getTime(), readAt.getTime());
+        assert.equal((await assetRow('lu4')).asset_tag, 'HS-READ');
+        assert.equal(
+          (await assetRow('lu4')).asset_tag_observed_at.getTime(),
+          readAt.getTime(),
+          'A current read stamps the Asset tag.',
+        );
         assert.equal(
           await upsert(
             [
               device('lu4', {
+                assetTag: 'HS-OLDER',
                 annotatedUser: 'older@example.org',
                 notes: 'Older note',
                 orgUnitPath: '/School C',
@@ -1795,14 +1920,25 @@ export async function qualifyDeviceWriteJobs({
           kept.org_unit_path_observed_at.getTime(),
           readAt.getTime(),
         );
+        assert.equal((await assetRow('lu4')).asset_tag, 'HS-READ');
+        assert.equal(
+          (await assetRow('lu4')).asset_tag_observed_at.getTime(),
+          readAt.getTime(),
+          'An older read leaves the Asset tag and its stamp.',
+        );
       },
     );
 
     await check(
-      'the overlay field check accepts the three fields and refuses an unknown one',
+      'the overlay field check accepts the annotation fields and refuses an unknown one',
       async () => {
         const job = await makeJob({ devices: ['lu5'] });
-        for (const field of ['annotatedUser', 'notes', 'orgUnitPath'])
+        for (const field of [
+          'annotatedUser',
+          'annotatedAssetId',
+          'notes',
+          'orgUnitPath',
+        ])
           await admin(
             `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,job_id,expires_at)
               VALUES($1,'lu5',$2,'value',clock_timestamp(),'write-response',$3,clock_timestamp()+interval '36 hours')`,

@@ -222,6 +222,7 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
 /** The field IDs of an update operation, in contract order (design addendum section 1). */
 const operationFieldOrder = [
   'annotatedLocation',
+  'annotatedAssetId',
   'annotatedUser',
   'notes',
   'orgUnitPath',

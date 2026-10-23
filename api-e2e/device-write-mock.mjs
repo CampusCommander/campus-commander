@@ -291,19 +291,22 @@ export async function qualifyDeviceWritesOnMock({
         ],
       );
       // The frozen changes of the preview. Only an update carries them.
+      // An edit preview holds no selection change row, and cc.device_update_changes keeps the four
+      // selection fields until IB4 stores the edit rows. An Asset tag job seeds its field rows alone.
       if (update)
         for (const [field, fieldValue] of fields ?? [
           ['annotatedLocation', mode === 'clear' ? null : value],
         ])
-          await migrator.query(
-            'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
-            [
-              previewId,
-              field,
-              fieldValue === null ? 'clear' : 'replace',
-              fieldValue,
-            ],
-          );
+          if (field !== 'annotatedAssetId')
+            await migrator.query(
+              'INSERT INTO cc.device_update_changes(preview_id,field,mode,value) VALUES($1,$2,$3,$4)',
+              [
+                previewId,
+                field,
+                fieldValue === null ? 'clear' : 'replace',
+                fieldValue,
+              ],
+            );
       await migrator.query(
         `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
         target_count,correlation_id,created_at)
@@ -439,7 +442,7 @@ export async function qualifyDeviceWritesOnMock({
         `SELECT operation_number,field,requested_value,observed_value
           FROM cc.device_update_operation_fields WHERE job_id=$1
           ORDER BY operation_number,
-            array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath'],field)`,
+            array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath'],field)`,
         [jobId],
       )
     ).rows;
@@ -488,6 +491,9 @@ export async function qualifyDeviceWritesOnMock({
     return JSON.parse(response.text).rows;
   };
   const runSync = async () => {
+    // The sync can outlive the session. Confirm or renew it before every call, without the
+    // rate limit of keepSession, so a hard expiry cannot fail a poll.
+    await session();
     const started = await call('/api/devices/sync', {
       method: 'POST',
       headers: headers(),
@@ -496,6 +502,7 @@ export async function qualifyDeviceWritesOnMock({
     assert.ok([200, 201].includes(started.status), started.text);
     const deadline = Date.now() + totalMs;
     for (;;) {
+      await session();
       const response = await call('/api/devices/sync');
       assert.equal(response.status, 200, response.text);
       const state = JSON.parse(response.text).sync;
@@ -1284,6 +1291,76 @@ export async function qualifyDeviceWritesOnMock({
     );
     results.push(
       'Replace then a lagged list keeps the written value, a flush then a list deletes the overlay, and Clear leaves null: pass',
+    );
+  }
+
+  // IB3 of the in-grid editing design: a seeded Asset tag job writes two tags on two mock devices.
+  // The job ends completed, the mock holds both tags, and a Refresh all inside the mock's 300 s
+  // search lag keeps both.
+  {
+    const tag = 'PV-CART-07';
+    const { jobId, executionId } = await seedJob({
+      devices: deviceIds,
+      fields: [['annotatedAssetId', tag]],
+    });
+    const execution = await waitExecution(executionId);
+    assert.equal(execution.state.current, 'SUCCESS', JSON.stringify(execution));
+    const state = await waitJob(jobId, ['completed'], 'The Asset tag job');
+    assert.equal(state.status, 'completed', JSON.stringify(state));
+    assert.deepEqual(
+      (await fieldRows(jobId)).map((row) => [
+        row.operation_number,
+        row.field,
+        row.requested_value,
+        row.observed_value,
+      ]),
+      [
+        [1, 'annotatedAssetId', tag, tag],
+        [2, 'annotatedAssetId', tag, tag],
+      ],
+      'Each operation carries the tag it wrote.',
+    );
+    const token = await mockToken(mock, writeScope);
+    for (const deviceId of deviceIds) {
+      const answer = await mockGoogleGet({
+        mock,
+        host: 'admin.googleapis.com',
+        path: `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(deviceId)}`,
+        token,
+      });
+      assert.equal(answer.status, 200, answer.text);
+      assert.equal(
+        JSON.parse(answer.text).annotatedAssetId,
+        tag,
+        'The mock holds the tag of the PATCH body.',
+      );
+    }
+    let listed = await byIds(deviceIds);
+    assert.deepEqual(
+      listed.map((row) => row.assetTag),
+      [tag, tag],
+    );
+    // The mock lists the old tags until its search index catches up (300 s).
+    await runSync();
+    listed = await byIds(deviceIds);
+    assert.deepEqual(
+      listed.map((row) => row.assetTag),
+      [tag, tag],
+      'The lagged Refresh all keeps both accepted tags.',
+    );
+    const overlays = await migrator.query(
+      `SELECT device_id,value FROM cc.device_write_overlays
+        WHERE customer_id=$1 AND field='annotatedAssetId' AND device_id=ANY($2::text[])
+        ORDER BY device_id`,
+      [customer, deviceIds],
+    );
+    assert.deepEqual(
+      overlays.rows.map((row) => [row.device_id, row.value]),
+      deviceIds.map((deviceId) => [deviceId, tag]),
+      'Each tag waits in its overlay for a converging list.',
+    );
+    results.push(
+      'a seeded Asset tag job sets two tags on two mock devices, ends completed, and keeps both through a Refresh all inside 300 s: pass',
     );
   }
 
