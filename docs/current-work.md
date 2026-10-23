@@ -10,6 +10,7 @@ On 2026-10-22 the owner signed off the Update device fields workflow after he tr
 On 2026-10-23 the owner confirmed the [Wipe user data, Powerwash, and Deprovision record](workflows/wipe-powerwash-deprovision.md). Owner, in the main chat: "1", which chose the option "Confirmed: build it as written".
 On 2026-10-23 the owner approved the Wipe user data, Powerwash, and Deprovision screens. Owner, in the main chat: "All the screens look good. Go ahead and execute."
 The approved mockup is [2026-10-23-wipe-powerwash-deprovision.html](ui/designs/2026-10-23-wipe-powerwash-deprovision.html). The [record](workflows/wipe-powerwash-deprovision.md#design) marks each design gap that the screens close.
+On 2026-10-23 the owner signed off the step 5 second build: Wipe user data, Powerwash, and Deprovision. The owner chose the answer "Signed off as built" to "Wipe user data, Powerwash, and Deprovision (the three destructive device actions): do you sign them off?".
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -83,7 +84,34 @@ The step 5 first build leaves these follow-ups. None is scheduled:
 
 Live device writes stay unverified. The test domain has no ChromeOS device (read-only check on 2026-10-22). A live check needs an enrolled test device and the owner's authorization (risk DEVICE-01 of the design).
 
-Wipe, Powerwash, and Deprovision stay next in step 5, as the owner chose on 2026-10-21.
+### Wipe user data, Powerwash, and Deprovision (second build signed off 2026-10-23)
+
+The [record](workflows/wipe-powerwash-deprovision.md) defines this build.
+On 2026-10-23 the owner signed off the step 5 second build.
+Question: "Wipe user data, Powerwash, and Deprovision (the three destructive device actions): do you sign them off?"
+Answer: "Signed off as built".
+The sign-off accepts the drafted wording and these defaults as built:
+
+- Change status shows the Deprovision line "5 of 6 selected devices are active or disabled." after the reason choice. PNG 05 shows the line before the choice. The reason choice prepares the preview at once.
+- A job whose commands all expired shows the job chip Failed.
+- The Wipe user data button reads "Send Wipe to N devices". The option, the titles, and the job name the action "Wipe user data".
+- The typed phrase is case-sensitive. The phrase "powerwash" keeps Send disabled.
+- A Google `CANCELLED` command settles Failed with "Google cancelled the command." This covers Reboot too.
+- Waiting and Unknown command rows show the Google expiry. Reboot rows show it too, and the first build's Reboot job page showed none. Wipe user data and Powerwash rows add "No result in 30 days" after the watch window.
+- A new reason discards the old Deprovision preview. A switch to another action and back keeps the reason. Review and Confirm clear the typed phrase on entry. A phrase of spaces alone shows the mismatch error.
+- The drafted wording in the review package's `owner-review-wording.md`.
+
+The second build leaves these follow-ups. None is scheduled:
+
+- Security: four read call sites in `api/src/app/devices/device-actions.controller.ts` skip the action callbacks on the nullable-sync fallback. Future connection-removal work must keep these reads fail-closed.
+- After a 403 or a permission change, the sheet shows the step 5 permission note. It names `devices:commands` for Wipe user data and Powerwash. It names `devices:status` for Deprovision. The permission checks stay correct.
+- A Reboot row that settles Unknown after its watch window shows no sentence.
+- Every reported command result other than SUCCESS settles Failed, an unspecified result included.
+- The inventory does not keep the deprovision reason that Google stores.
+- The F2 activity mock omits `recent.nextExpiryAt`. The reason-change fixtures reuse one preview ID across reasons. api-e2e holds no Disable or Re-enable case. admin-sdk-mock returns no `IGNORED` result.
+- The [record](workflows/wipe-powerwash-deprovision.md) still calls the mockup and the DEVICE-01 update pending. `docs/portfolio/02-domain-model.md:83` lists a cached deprovision reason that the inventory does not hold.
+
+Live device writes stay unverified. The test domain has no ChromeOS device (read-only check on 2026-10-22).
 
 ### Device update record (signed off 2026-10-20)
 
@@ -157,7 +185,7 @@ Read-only device work does not depend on school creation, invitations, or comple
 Device-specific Google scopes and method support still require verification before real provider access.
 The existing test authorization does not include device writes.
 
-Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. The owner signed off the step 5 first build on 2026-10-22. The owner signed off the Update device fields workflow on 2026-10-22. Later steps require their own authorization.
+Steps 2, 3, and 4 are complete. The owner signed off device browsing on 2026-10-16 and device update on 2026-10-20. The owner signed off the step 5 first build on 2026-10-22. The owner signed off the Update device fields workflow on 2026-10-22. The owner signed off the step 5 second build on 2026-10-23. Later steps require their own authorization.
 Keep one workflow active. Finish its usable result before expanding the feature surface.
 
 ## How to choose and finish a task
