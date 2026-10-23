@@ -9,6 +9,10 @@ import {
 
 const stepAttemptLimit = 3;
 const attemptEventLimit = 100;
+// The failure record keeps the console errors of the failed step. The record
+// is evidence, so its size stays bounded.
+const consoleErrorLimit = 20;
+const consoleErrorTextLimit = 500;
 // A failed navigation makes the browser commit its own error page. The commit
 // arrives as a navigation of its own, and it interrupts a navigation that
 // starts before it.
@@ -506,8 +510,10 @@ export async function qualificationHeldSignIn(
  * error status fails the attempt at once, even when the same attempt saw a
  * network change.
  * Every other failure fails at once. A final failure writes a record with the
- * events of every attempt. A passing step reports every recovered attempt with
- * its failed request routes, the attempts of a nested reload helper included.
+ * page URL, the document state, the console errors, the failed requests, and
+ * the events of every attempt. A passing step reports every recovered attempt
+ * with its failed request routes, the attempts of a nested reload helper
+ * included.
  * A caller passes `retryOnNetworkChange: false` when the action must not run
  * again, or when another helper already recovers the action.
  */
@@ -521,6 +527,8 @@ export async function qualificationBrowserStep(
 ) {
   const events = [];
   const recoveries = [];
+  const failedRequests = [];
+  const consoleErrors = [];
   let attempt = 0;
   let attemptEventCount = 0;
   let attemptNetworkChange = false;
@@ -557,6 +565,15 @@ export async function qualificationBrowserStep(
   };
   const failed = (request) => {
     const target = resource(request.url());
+    if (failedRequests.length < attemptEventLimit)
+      failedRequests.push({
+        route: target.route,
+        path: new URL(request.url()).pathname,
+        method: request.method?.() ?? 'GET',
+        error:
+          requestFailureErrorText(request).match(/ERR_[A-Z_]+/)?.[0] ??
+          'unclassified',
+      });
     if (isNetworkChangeRequest(request)) {
       attemptNetworkChange = true;
       attemptRoutes.push(target.route);
@@ -593,9 +610,17 @@ export async function qualificationBrowserStep(
         )
         ?.slice(0, 10) ?? ['unclassified'],
     });
+  const consoleError = (message) => {
+    if (message.type?.() !== 'error') return;
+    if (consoleErrors.length >= consoleErrorLimit) return;
+    consoleErrors.push(
+      (message.text?.() ?? '').slice(0, consoleErrorTextLimit),
+    );
+  };
   page.on('requestfailed', failed);
   page.on('response', response);
   page.on('pageerror', pageError);
+  page.on('console', consoleError);
   try {
     let failure = null;
     for (attempt = 1; attempt <= stepAttemptLimit; attempt++) {
@@ -679,8 +704,11 @@ export async function qualificationBrowserStep(
       JSON.stringify(
         {
           schemaVersion: 1,
+          url: page.url(),
           finalLocation: resource(page.url()),
           documentState,
+          consoleErrors,
+          failedRequests,
           events,
         },
         null,
@@ -692,5 +720,6 @@ export async function qualificationBrowserStep(
     page.off('requestfailed', failed);
     page.off('response', response);
     page.off('pageerror', pageError);
+    page.off('console', consoleError);
   }
 }

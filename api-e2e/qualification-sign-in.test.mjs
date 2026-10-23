@@ -1678,3 +1678,53 @@ test('recovers a held sign-in whose navigation a network change aborts', async (
   });
   assert.deepEqual(await readdir(directory), []);
 });
+
+test('a failed step records the page URL, the console errors, and the failed requests', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'diagnostics',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () => 'Failed to load resource: net::ERR_CONNECTION_CLOSED',
+        });
+        // A console message that is not an error stays out of the record.
+        page.emit('console', { type: () => 'log', text: () => 'ignored' });
+        page.emit('requestfailed', {
+          url: () => `${publicOrigin}/api/platform-users?page=2`,
+          method: () => 'GET',
+          failure: () => ({ errorText: 'net::ERR_CONNECTION_CLOSED' }),
+        });
+        throw new Error('The customer settings field did not appear');
+      },
+    ),
+    /did not appear/,
+  );
+  const failure = JSON.parse(
+    await readFile(join(directory, 'diagnostics-failure.json'), 'utf8'),
+  );
+  assert.equal(failure.url, `${publicOrigin}/account`);
+  assert.deepEqual(failure.documentState, {
+    readyState: 'complete',
+    applicationChildren: 0,
+    headings: 0,
+    busyRegions: 0,
+    alerts: 0,
+  });
+  assert.deepEqual(failure.consoleErrors, [
+    'Failed to load resource: net::ERR_CONNECTION_CLOSED',
+  ]);
+  assert.deepEqual(failure.failedRequests, [
+    {
+      route: 'other',
+      path: '/api/platform-users',
+      method: 'GET',
+      error: 'ERR_CONNECTION_CLOSED',
+    },
+  ]);
+});
