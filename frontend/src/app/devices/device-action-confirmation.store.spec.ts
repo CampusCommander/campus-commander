@@ -58,8 +58,25 @@ it('replays the retained family, preview, and digest', async () => {
     kind: 'receipt',
     receipt,
   });
-  expect(confirm).toHaveBeenCalledWith('command', previewId, manifestDigest);
+  expect(confirm).toHaveBeenCalledWith(
+    'command',
+    previewId,
+    manifestDigest,
+    undefined,
+  );
   expect(store.pending('command')).toEqual([]);
+});
+
+it('replays a retained typed phrase with its digest (D7)', async () => {
+  const { store, confirm } = setup();
+  store.retain({ ...submitted, typedPhrase: 'WIPE' });
+  await store.resolvePending('command');
+  expect(confirm).toHaveBeenCalledWith(
+    'command',
+    previewId,
+    manifestDigest,
+    'WIPE',
+  );
 });
 
 it('keeps an uncertain confirmation for another replay', async () => {
@@ -149,12 +166,14 @@ it('replays the retained identity until a receipt settles it', async () => {
     'status',
     previewId,
     manifestDigest,
+    undefined,
   );
   expect(confirm).toHaveBeenNthCalledWith(
     2,
     'status',
     previewId,
     manifestDigest,
+    undefined,
   );
   expect(store.pending('status')).toEqual([]);
 });

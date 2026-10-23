@@ -3,6 +3,7 @@ import {
   deviceActionJobReceiptSchema,
   deviceActionPreviewSchema,
   deviceActionTargetsPageSchema,
+  type DeprovisionReason,
   type DeviceAction,
   type DeviceActionJobReceipt,
   type DeviceActionPreview,
@@ -33,7 +34,10 @@ export class DeviceActionFlow {
   private readonly devices = inject(DevicesStore);
 
   /** The preview body of section 7. It carries the selection key and the action. */
-  private body(action: DeviceAction): DeviceActionPreviewRequest {
+  private body(
+    action: DeviceAction,
+    reason: DeprovisionReason | null,
+  ): DeviceActionPreviewRequest {
     const key = {
       gridId: DEVICE_GRID_ID,
       tabId: this.devices.selectionTab,
@@ -49,10 +53,13 @@ export class DeviceActionFlow {
       case 'reenable':
         return { ...key, statusAction: action };
       case 'deprovision':
-        // Card F1 collects the reason. The sheets of the first build never offer Deprovision.
-        throw new Error(
-          'A Deprovision preview needs a reason that this sheet does not collect.',
-        );
+        // The reason is frozen into the preview and its digest (D12).
+        if (!reason) throw new Error('A Deprovision preview needs a reason.');
+        return {
+          ...key,
+          statusAction: 'deprovision',
+          deprovisionReason: reason,
+        };
     }
   }
 
@@ -60,11 +67,13 @@ export class DeviceActionFlow {
   async prepare(
     family: DeviceActionFamily,
     action: DeviceAction,
+    reason: DeprovisionReason | null = null,
   ): Promise<FlowRead<DeviceActionPreview>> {
+    const payload = this.body(action, reason);
     try {
       const response = await this.auth.request(
         `${actionFamilyPath(family)}/previews`,
-        this.body(action),
+        payload,
       );
       const body: unknown = await response.json().catch(() => null);
       if (response.ok) {
@@ -154,11 +163,17 @@ export class DeviceActionFlow {
     family: DeviceActionFamily,
     previewId: string,
     manifestDigest: string,
+    typedPhrase?: string,
   ): Promise<FlowRead<DeviceActionJobReceipt>> {
     try {
       const response = await this.auth.request(
         `${actionFamilyPath(family)}/previews/${encodeURIComponent(previewId)}/confirm`,
-        { manifestDigest, acknowledged: true },
+        {
+          manifestDigest,
+          acknowledged: true,
+          // An action without a phrase requires an absent field (section 1).
+          ...(typedPhrase === undefined ? {} : { typedPhrase }),
+        },
       );
       const body: unknown = await response.json().catch(() => null);
       if (response.ok) {

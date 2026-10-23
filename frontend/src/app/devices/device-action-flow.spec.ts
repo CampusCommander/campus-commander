@@ -78,6 +78,33 @@ it('prepares a status preview with the chosen status action', async () => {
   });
 });
 
+it('freezes the Deprovision reason into its preview body (D12)', async () => {
+  const { flow, request } = setup(() =>
+    Response.json(preview, { status: 201 }),
+  );
+  await flow.prepare(
+    'status',
+    'deprovision',
+    'DEPROVISION_REASON_RETIRING_DEVICE',
+  );
+  expect(request).toHaveBeenCalledWith('/api/devices/status-changes/previews', {
+    gridId: 'devices',
+    tabId,
+    statusAction: 'deprovision',
+    deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+  });
+});
+
+it('refuses a Deprovision preview without a reason', async () => {
+  const { flow, request } = setup(() =>
+    Response.json(preview, { status: 201 }),
+  );
+  await expect(flow.prepare('status', 'deprovision')).rejects.toThrow(
+    'A Deprovision preview needs a reason.',
+  );
+  expect(request).not.toHaveBeenCalled();
+});
+
 it('reads the frozen summary and every target page', async () => {
   const { flow, request } = setup((path) =>
     path.includes('/targets')
@@ -128,6 +155,30 @@ it('confirms with the digest and the acknowledgment', async () => {
   expect(request).toHaveBeenCalledWith(
     `/api/devices/commands/previews/${previewId}/confirm`,
     { manifestDigest: 'b'.repeat(64), acknowledged: true },
+  );
+});
+
+it('sends the typed phrase of an action that requires one (D7)', async () => {
+  const { flow, request } = setup(() =>
+    Response.json(
+      {
+        jobId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        displayId: 'CMD-001',
+        status: 'accepted',
+        deviceCount: 6,
+        updateCount: 6,
+      },
+      { status: 201 },
+    ),
+  );
+  await flow.confirm('command', previewId, 'b'.repeat(64), 'WIPE');
+  expect(request).toHaveBeenCalledWith(
+    `/api/devices/commands/previews/${previewId}/confirm`,
+    {
+      manifestDigest: 'b'.repeat(64),
+      acknowledged: true,
+      typedPhrase: 'WIPE',
+    },
   );
 });
 
