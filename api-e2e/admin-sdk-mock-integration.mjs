@@ -275,7 +275,9 @@ async function runAdminSdkMockIntegration({
   const check = () => watch?.assertRunning();
   check();
   let cookie = await reviewSignIn({ request, ca, publicOrigin });
-  // The idle window slides on every request. An expired session signs in again.
+  // The idle window slides on every request. An expired session signs in again,
+  // and every sign-in also replaces the CSRF token the callers send.
+  let active;
   const session = async () => {
     check();
     const response = await request(`${publicOrigin}/api/auth/session`, {
@@ -284,15 +286,17 @@ async function runAdminSdkMockIntegration({
     });
     if (response.status === 401) {
       cookie = await reviewSignIn({ request, ca, publicOrigin });
-      return JSON.parse(
+      active = JSON.parse(
         (await request(`${publicOrigin}/api/auth/session`, { ca, cookie }))
           .text,
       );
+      return active;
     }
     assert.equal(response.status, 200, response.text);
-    return JSON.parse(response.text);
+    active = JSON.parse(response.text);
+    return active;
   };
-  let active = await session();
+  active = await session();
   const headers = () => ({
     origin: publicOrigin,
     'x-csrf-token': active.csrfToken,
