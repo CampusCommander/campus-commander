@@ -153,6 +153,7 @@ const commandJob = {
   changes: null,
   commandType: 'REBOOT',
   statusAction: null,
+  deprovisionReason: null,
   targetOrgUnitPaths: ['/Schools/Example'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
@@ -255,6 +256,7 @@ const statusJob = {
   changes: null,
   commandType: null,
   statusAction: 'disable',
+  deprovisionReason: null,
   targetOrgUnitPaths: ['/Schools/Example'],
   correlationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   latestActivity: {

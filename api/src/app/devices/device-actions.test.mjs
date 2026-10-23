@@ -448,6 +448,7 @@ test('each Reconcile check runs its own action at the district scope', async () 
     { check: 'read', action: 'jobs:read' },
     { check: 'update', action: 'devices:write' },
     { check: 'status', action: 'devices:status' },
+    { check: 'deprovision', action: 'devices:deprovision' },
   ];
   for (const { check, action } of cases) {
     const calls = [];

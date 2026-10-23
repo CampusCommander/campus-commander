@@ -329,6 +329,7 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   ],
   commandType: null,
   statusAction: null,
+  deprovisionReason: null,
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {

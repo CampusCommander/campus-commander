@@ -171,6 +171,7 @@ const reviewJob = {
   ],
   commandType: null,
   statusAction: null,
+  deprovisionReason: null,
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
@@ -257,6 +258,7 @@ const refreshJob = {
   changes: null,
   commandType: null,
   statusAction: null,
+  deprovisionReason: null,
   targetOrgUnitPaths: null,
   correlationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   latestActivity: {
@@ -359,6 +361,7 @@ const png09Job = {
   ],
   commandType: null,
   statusAction: null,
+  deprovisionReason: null,
   targetOrgUnitPaths: [lowell, hughes],
   correlationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
   latestActivity: {

@@ -166,6 +166,7 @@ const job = (options: {
   changes: null,
   commandType: options.commandType,
   statusAction: options.statusAction,
+  deprovisionReason: null,
   targetOrgUnitPaths: ['/School A'],
   correlationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
   latestActivity: {

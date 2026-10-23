@@ -488,6 +488,26 @@ export const deviceUpdateChangesSchema = z
     { message: 'A field occurs once.' },
   );
 
+/** The four Deprovision reasons that Google accepts (record D11). The other seven fail. */
+export const DEPROVISION_REASONS = [
+  'DEPROVISION_REASON_RETIRING_DEVICE',
+  'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT',
+  'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+  'DEPROVISION_REASON_UPGRADE_TRANSFER',
+] as const;
+export const deprovisionReasonSchema = z.enum(DEPROVISION_REASONS);
+export type DeprovisionReason = z.infer<typeof deprovisionReasonSchema>;
+
+/** The label of each reason (D11). The schema holds no default, so no reason starts selected. */
+export const DEPROVISION_REASON_LABELS: Readonly<
+  Record<DeprovisionReason, string>
+> = Object.freeze({
+  DEPROVISION_REASON_RETIRING_DEVICE: 'Retiring from fleet',
+  DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT: 'Different model replacement',
+  DEPROVISION_REASON_SAME_MODEL_REPLACEMENT: 'Same model replacement',
+  DEPROVISION_REASON_UPGRADE_TRANSFER: 'ChromeOS Flex upgrade transfer',
+});
+
 /** Sort changes into contract order. The rows, the bodies, and the digest use that order. */
 export function deviceUpdateChangesInOrder(
   changes: readonly DeviceUpdateChange[],

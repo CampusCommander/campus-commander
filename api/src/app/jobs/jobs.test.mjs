@@ -47,6 +47,7 @@ const jobRow = (overrides = {}) => ({
   finished_at: new Date('2026-10-06T12:02:00.000Z'),
   confirmed_by: null,
   changes: null,
+  deprovision_reason: null,
   confirmed_by_name: null,
   preview_display_id: null,
   ...overrides,
@@ -319,6 +320,51 @@ test('an unknown or purged job answers 404', async () => {
     new Jobs(db).detail(session(), 'C0123456', 'UPD-999'),
     (error) => error instanceof NotFoundException,
   );
+});
+
+test('a Powerwash job detail answers powerwash-devices and REMOTE_POWERWASH', async () => {
+  const row = jobRow({
+    kind: 'device-command',
+    display_id: 'CMD-002',
+    action: 'powerwash',
+    status: 'awaiting-devices',
+    target_count: 1,
+  });
+  const db = database([
+    ['pr.deprovision_reason', [row]],
+    ['FROM cc.device_update_operations', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'CMD-002');
+  assert.equal(detail.action, 'powerwash-devices');
+  assert.equal(detail.commandType, 'REMOTE_POWERWASH');
+  assert.equal(detail.statusAction, null);
+  assert.equal(detail.deprovisionReason, null);
+  assert.ok(
+    db.calls[0][0].includes('pr.deprovision_reason'),
+    'The header reads the reason from the preview.',
+  );
+});
+
+test('a Deprovision job detail answers deprovision and its reason', async () => {
+  const reason = 'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT';
+  const row = jobRow({
+    kind: 'device-status',
+    display_id: 'STS-002',
+    action: 'deprovision',
+    status: 'completed',
+    deprovision_reason: reason,
+    preview_display_id: 'PV-002',
+  });
+  const db = database([
+    ['pr.deprovision_reason', [row]],
+    ['FROM cc.device_update_operations', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'STS-002');
+  assert.equal(detail.action, 'deprovision-devices');
+  assert.equal(detail.statusAction, 'deprovision');
+  assert.equal(detail.commandType, null);
+  assert.equal(detail.deprovisionReason, reason);
+  assert.equal(detail.previewDisplayId, 'PV-002');
 });
 
 test('the operations page filters attention and pages by operation and field', async () => {
@@ -762,6 +808,130 @@ test('reconcile of a status operation refuses devices:write without devices:stat
   assert.deepEqual(orchestration.started, []);
 });
 
+test('reconcile refuses a Wipe user data operation with reconcile-unsupported', async () => {
+  const db = database([
+    [
+      'p.display_name AS requested_by_name',
+      [jobRow({ kind: 'device-command', action: 'wipe-users' })],
+    ],
+    [
+      'o.operation_number=$5',
+      [
+        {
+          operation_number: 1,
+          status: 'unknown',
+          action: 'wipe-users',
+          mode: null,
+        },
+      ],
+    ],
+  ]);
+  const orchestration = reconcileOrchestration();
+  const authorize = authorizer(['read', 'update', 'status', 'deprovision']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'CMD-003',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) =>
+      error instanceof ConflictException &&
+      error.getResponse().reason === 'reconcile-unsupported',
+  );
+  assert.deepEqual(authorize.checks, ['read']);
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
+});
+
+test('reconcile refuses a Powerwash operation with reconcile-unsupported', async () => {
+  const db = database([
+    [
+      'p.display_name AS requested_by_name',
+      [jobRow({ kind: 'device-command', action: 'powerwash' })],
+    ],
+    [
+      'o.operation_number=$5',
+      [
+        {
+          operation_number: 1,
+          status: 'unknown',
+          action: 'powerwash',
+          mode: null,
+        },
+      ],
+    ],
+  ]);
+  const orchestration = reconcileOrchestration();
+  const authorize = authorizer(['read', 'update', 'status', 'deprovision']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'CMD-004',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) =>
+      error instanceof ConflictException &&
+      error.getResponse().reason === 'reconcile-unsupported',
+  );
+  assert.deepEqual(authorize.checks, ['read']);
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
+});
+
+test('reconcile of a Deprovision operation takes devices:deprovision', async () => {
+  const db = reconcileDatabase(
+    { kind: 'device-status', action: 'deprovision' },
+    { action: 'deprovision', mode: null, requested_value: 'DEPROVISIONED' },
+  );
+  const orchestration = reconcileOrchestration();
+  const authorize = authorizer(['read', 'deprovision']);
+  const operation = await new Jobs(db).reconcile(
+    session(),
+    'C0123456',
+    'STS-002',
+    1,
+    '55555555-5555-4555-8555-555555555555',
+    orchestration,
+    authorize,
+  );
+  assert.equal(operation.operation, 'deprovision');
+  assert.deepEqual(authorize.checks, ['read', 'deprovision']);
+  assert.equal(claimCount(db), 1);
+  assert.equal(orchestration.started.length, 1);
+});
+
+test('reconcile of a Deprovision operation refuses devices:status without devices:deprovision', async () => {
+  const db = reconcileDatabase(
+    { kind: 'device-status', action: 'deprovision' },
+    { action: 'deprovision', mode: null, requested_value: 'DEPROVISIONED' },
+  );
+  const orchestration = reconcileOrchestration();
+  const authorize = authorizer(['read', 'status']);
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'STS-002',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorize,
+    ),
+    (error) => error instanceof ForbiddenException && error.getStatus() === 403,
+  );
+  assert.deepEqual(authorize.checks, ['read', 'deprovision']);
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
+});
+
 test('reconcile of an update operation refuses devices:status without devices:write', async () => {
   const db = reconcileDatabase();
   const orchestration = reconcileOrchestration();
@@ -1014,6 +1184,22 @@ const commandOperationRow = (overrides = {}) => ({
   ...overrides,
 });
 
+test('each command and status operation row names its own operation word', () => {
+  for (const [action, word] of [
+    ['reboot', 'reboot'],
+    ['wipe-users', 'wipe-users'],
+    ['powerwash', 'powerwash'],
+    ['disable', 'disable'],
+    ['reenable', 'reenable'],
+    ['deprovision', 'deprovision'],
+  ])
+    assert.equal(
+      jobOperation(commandOperationRow({ action }), 'CMD-006').operation,
+      word,
+      `${action} reads ${word}.`,
+    );
+});
+
 test('an issued command exposes its last observation and keeps the command id', () => {
   const operation = jobOperation(commandOperationRow(), 'CMD-006');
   assert.equal(operation.operation, 'reboot');
@@ -1035,27 +1221,62 @@ test('a settled command hides the last observation and keeps the stored command 
   }
 });
 
-test('status action filters map the public action onto its stored action in both queries', async () => {
+test('each command and status action filter narrows its stored action in both queries', async () => {
   const selections = [
     {
       action: ['disable-devices'],
-      stored: 'disable',
+      stored: ['disable'],
       kinds: ['device-status'],
     },
     {
       action: ['reenable-devices'],
-      stored: 'reenable',
+      stored: ['reenable'],
+      kinds: ['device-status'],
+    },
+    {
+      action: ['deprovision-devices'],
+      stored: ['deprovision'],
       kinds: ['device-status'],
     },
     {
       action: ['disable-devices', 'reenable-devices'],
-      stored: null,
+      stored: ['disable', 'reenable'],
       kinds: ['device-status'],
     },
     {
+      action: ['reboot-devices'],
+      stored: ['reboot'],
+      kinds: ['device-command'],
+    },
+    {
+      action: ['powerwash-devices'],
+      stored: ['powerwash'],
+      kinds: ['device-command'],
+    },
+    {
+      action: ['wipe-user-data'],
+      stored: ['wipe-users'],
+      kinds: ['device-command'],
+    },
+    {
+      action: ['reboot-devices', 'powerwash-devices'],
+      stored: ['reboot', 'powerwash'],
+      kinds: ['device-command'],
+    },
+    {
       action: ['reboot-devices', 'disable-devices'],
-      stored: 'disable',
+      stored: ['reboot', 'disable'],
       kinds: ['device-command', 'device-status'],
+    },
+    {
+      action: ['refresh-inventory'],
+      stored: null,
+      kinds: ['inventory-refresh'],
+    },
+    {
+      action: ['refresh-inventory', 'reboot-devices'],
+      stored: ['reboot'],
+      kinds: ['inventory-refresh', 'device-command'],
     },
   ];
   for (const selection of selections) {
@@ -1079,14 +1300,49 @@ test('status action filters map the public action onto its stored action in both
         assert.equal(
           text.includes('u.action='),
           false,
-          'Both status actions need no detail predicate.',
+          'An update or refresh action needs no detail predicate.',
         );
       } else {
-        assert.ok(text.includes("j.kind<>'device-status' OR u.action=$5"));
-        assert.equal(values[4], selection.stored);
+        assert.ok(
+          text.includes(
+            "(j.kind NOT IN ('device-command','device-status') OR u.action=ANY($5::text[]))",
+          ),
+        );
+        assert.deepEqual(values[4], selection.stored);
       }
     }
   }
+});
+
+test('the filter reboot-devices excludes a Powerwash job', async () => {
+  const db = database([
+    ['AS matching', [{ matching: 1, observed_at: new Date() }]],
+    [
+      'ORDER BY j.created_at DESC',
+      [
+        jobRow({
+          kind: 'device-command',
+          action: 'reboot',
+          display_id: 'CMD-001',
+        }),
+      ],
+    ],
+  ]);
+  const page = await new Jobs(db).list(
+    session(),
+    'C0123456',
+    { action: ['reboot-devices'] },
+    undefined,
+    100,
+  );
+  assert.deepEqual(
+    page.jobs.map((job) => job.action),
+    ['reboot-devices'],
+  );
+  // The kind selects every command job, and the stored action removes the Powerwash job.
+  assert.ok(db.calls[0][0].includes('u.action=ANY($5::text[])'));
+  assert.deepEqual(db.calls[0][1][4], ['reboot']);
+  assert.deepEqual(db.calls[1][1][4], ['reboot']);
 });
 
 test('Latest activity keeps the counters from the header, not from the samples', () => {
