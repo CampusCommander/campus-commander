@@ -11,6 +11,9 @@ On 2026-10-23 the owner confirmed the [Wipe user data, Powerwash, and Deprovisio
 On 2026-10-23 the owner approved the Wipe user data, Powerwash, and Deprovision screens. Owner, in the main chat: "All the screens look good. Go ahead and execute."
 The approved mockup is [2026-10-23-wipe-powerwash-deprovision.html](ui/designs/2026-10-23-wipe-powerwash-deprovision.html). The [record](workflows/wipe-powerwash-deprovision.md#design) marks each design gap that the screens close.
 On 2026-10-23 the owner signed off the step 5 second build: Wipe user data, Powerwash, and Deprovision. The owner chose the answer "Signed off as built" to "Wipe user data, Powerwash, and Deprovision (the three destructive device actions): do you sign them off?".
+On 2026-10-23 the owner chose the next workflow. Question: "Pick the next workflow".
+Owner, in the main chat: "2", which chose the option "In-grid editing and the single-device update".
+The [in-grid editing record](workflows/in-grid-editing.md) is proposed. The owner has not confirmed it.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
