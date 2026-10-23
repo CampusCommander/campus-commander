@@ -47,8 +47,19 @@ function preview(
           ? 'PV-003'
           : 'PV-004',
     action,
-    commandType: action === 'reboot' ? 'REBOOT' : null,
-    statusAction: action === 'reboot' ? null : action,
+    commandType:
+      action === 'reboot'
+        ? 'REBOOT'
+        : action === 'wipe-users'
+          ? 'WIPE_USERS'
+          : action === 'powerwash'
+            ? 'REMOTE_POWERWASH'
+            : null,
+    statusAction:
+      action === 'disable' || action === 'reenable' || action === 'deprovision'
+        ? action
+        : null,
+    deprovisionReason: null,
     selected,
     eligible,
     excluded: selected - eligible,

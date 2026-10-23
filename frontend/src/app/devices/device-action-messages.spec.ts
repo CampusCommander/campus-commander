@@ -40,6 +40,7 @@ const preview: DeviceActionPreview = {
   action: 'reboot',
   commandType: 'REBOOT',
   statusAction: null,
+  deprovisionReason: null,
   selected: 8,
   eligible: 6,
   excluded: 2,

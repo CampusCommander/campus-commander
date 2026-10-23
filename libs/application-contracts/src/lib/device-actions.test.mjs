@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DEVICE_ACTION_PERMISSIONS,
+  DEVICE_ACTION_PHRASES,
   deviceActionConfirmRequestSchema,
   deviceActionJobReceiptSchema,
   deviceActionPreviewRequestSchema,
@@ -25,6 +27,7 @@ const preview = {
   action: 'reboot',
   commandType: 'REBOOT',
   statusAction: null,
+  deprovisionReason: null,
   selected: 3,
   eligible: 2,
   excluded: 1,
@@ -34,14 +37,38 @@ const preview = {
   expiresAt: at,
   manifestDigest: digest,
 };
+const reason = 'DEPROVISION_REASON_RETIRING_DEVICE';
 
-test('the device action vocabulary holds the three actions of this build', () => {
+test('the device action vocabulary holds the six actions of the second build', () => {
   assert.deepEqual(deviceActionSchema.options, [
     'reboot',
+    'wipe-users',
+    'powerwash',
     'disable',
     'reenable',
+    'deprovision',
   ]);
-  assert.equal(deviceActionSchema.safeParse('powerwash').success, false);
+  assert.equal(
+    deviceActionSchema.safeParse('annotated-location').success,
+    false,
+  );
+});
+
+test('each action names its permission and its typed phrase', () => {
+  assert.deepEqual(DEVICE_ACTION_PERMISSIONS, {
+    reboot: 'devices:commands',
+    'wipe-users': 'devices:wipe',
+    powerwash: 'devices:wipe',
+    disable: 'devices:status',
+    reenable: 'devices:status',
+    deprovision: 'devices:deprovision',
+  });
+  assert.deepEqual(DEVICE_ACTION_PHRASES, {
+    'wipe-users': 'WIPE',
+    powerwash: 'POWERWASH',
+    deprovision: 'DEPROVISION',
+  });
+  assert.equal(DEVICE_ACTION_PHRASES.reboot, undefined);
 });
 
 test('the preview bodies carry the selection key and one request', () => {
@@ -74,6 +101,44 @@ test('the preview bodies carry the selection key and one request', () => {
     }).success,
     false,
   );
+  assert.deepEqual(
+    deviceCommandPreviewRequestSchema.parse({
+      ...selection,
+      commandType: 'REMOTE_POWERWASH',
+    }),
+    { ...selection, commandType: 'REMOTE_POWERWASH' },
+  );
+  assert.deepEqual(
+    deviceStatusPreviewRequestSchema.parse({
+      ...selection,
+      statusAction: 'deprovision',
+      deprovisionReason: reason,
+    }),
+    { ...selection, statusAction: 'deprovision', deprovisionReason: reason },
+  );
+  assert.equal(
+    deviceStatusPreviewRequestSchema.safeParse({
+      ...selection,
+      statusAction: 'deprovision',
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceStatusPreviewRequestSchema.safeParse({
+      ...selection,
+      statusAction: 'deprovision',
+      deprovisionReason: 'DEPROVISION_REASON_OTHER',
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceStatusPreviewRequestSchema.safeParse({
+      ...selection,
+      statusAction: 'disable',
+      deprovisionReason: reason,
+    }).success,
+    false,
+  );
   assert.equal(
     deviceStatusPreviewRequestSchema.safeParse({
       ...selection,
@@ -83,7 +148,7 @@ test('the preview bodies carry the selection key and one request', () => {
   );
 });
 
-test('a preview counts eligible and excluded only', () => {
+test('a preview counts eligible and excluded only, and a Deprovision preview holds its reason', () => {
   assert.deepEqual(deviceActionPreviewSchema.parse(preview), preview);
   assert.equal(
     deviceActionPreviewSchema.safeParse({ ...preview, unchanged: 0 }).success,
@@ -109,6 +174,49 @@ test('a preview counts eligible and excluded only', () => {
       commandType: null,
     }).success,
     false,
+  );
+  assert.deepEqual(
+    deviceActionPreviewSchema.parse({
+      ...preview,
+      action: 'powerwash',
+      commandType: 'REMOTE_POWERWASH',
+    }),
+    { ...preview, action: 'powerwash', commandType: 'REMOTE_POWERWASH' },
+  );
+  assert.deepEqual(
+    deviceActionPreviewSchema.parse({
+      ...preview,
+      action: 'deprovision',
+      commandType: null,
+      statusAction: 'deprovision',
+      deprovisionReason: reason,
+    }),
+    {
+      ...preview,
+      action: 'deprovision',
+      commandType: null,
+      statusAction: 'deprovision',
+      deprovisionReason: reason,
+    },
+  );
+  assert.equal(
+    deviceActionPreviewSchema.safeParse({
+      ...preview,
+      action: 'deprovision',
+      commandType: null,
+      statusAction: 'deprovision',
+      deprovisionReason: null,
+    }).success,
+    false,
+    'A Deprovision preview carries a reason.',
+  );
+  assert.equal(
+    deviceActionPreviewSchema.safeParse({
+      ...preview,
+      deprovisionReason: reason,
+    }).success,
+    false,
+    'Another action carries none.',
   );
 });
 
@@ -164,6 +272,31 @@ test('the confirm body and the receipt reuse the step 4 shapes', () => {
       acknowledged: true,
     }),
     { manifestDigest: digest, acknowledged: true },
+  );
+  assert.deepEqual(
+    deviceActionConfirmRequestSchema.parse({
+      manifestDigest: digest,
+      acknowledged: true,
+      typedPhrase: 'DEPROVISION',
+    }),
+    { manifestDigest: digest, acknowledged: true, typedPhrase: 'DEPROVISION' },
+  );
+  assert.equal(
+    deviceActionConfirmRequestSchema.safeParse({
+      manifestDigest: digest,
+      acknowledged: true,
+      typedPhrase: 'D'.repeat(65),
+    }).success,
+    false,
+    'The phrase holds at most 64 characters.',
+  );
+  assert.equal(
+    deviceActionConfirmRequestSchema.safeParse({
+      manifestDigest: digest,
+      acknowledged: true,
+      typedPhrase: 7,
+    }).success,
+    false,
   );
   assert.equal(
     deviceActionConfirmRequestSchema.safeParse({

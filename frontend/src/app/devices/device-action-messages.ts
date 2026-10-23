@@ -111,8 +111,11 @@ export function deviceActionNote(
 
 export const ACTION_LABELS: Readonly<Record<DeviceAction, string>> = {
   reboot: 'Reboot',
+  'wipe-users': 'Wipe user data',
+  powerwash: 'Powerwash',
   disable: 'Disable',
   reenable: 'Re-enable',
+  deprovision: 'Deprovision',
 };
 
 /** The supporting sentence of one Choose option (patterns DEVICE-01). */
@@ -120,11 +123,24 @@ export function actionConsequence(action: DeviceAction): string {
   switch (action) {
     case 'reboot':
       return 'Restarts the devices and interrupts active sessions.';
+    case 'wipe-users':
+      return 'Removes local user profiles and keeps device policy and enrollment.';
+    case 'powerwash':
+      return 'Returns the devices to a factory state and removes enrollment unless forced or automatic enrollment applies.';
     case 'disable':
       return 'Blocks user access while keeping devices enrolled.';
     case 'reenable':
       return 'Restores access to disabled devices.';
+    case 'deprovision':
+      return 'Removes the devices from active management. No action reverses it.';
   }
+}
+
+/** True for the three command actions of section 1. */
+function isCommand(action: DeviceAction): boolean {
+  return (
+    action === 'reboot' || action === 'wipe-users' || action === 'powerwash'
+  );
 }
 
 /** "6 of 8 selected devices are active." The eligible status names the target. */
@@ -133,7 +149,12 @@ export function targetSummaryText(
   eligible: number,
   selected: number,
 ): string {
-  const status = action === 'reenable' ? 'disabled' : 'active';
+  const status =
+    action === 'reenable'
+      ? 'disabled'
+      : action === 'deprovision'
+        ? 'active or disabled'
+        : 'active';
   const devices = selected === 1 ? 'device' : 'devices';
   return `${eligible.toLocaleString('en-US')} of ${selected.toLocaleString(
     'en-US',
@@ -142,7 +163,7 @@ export function targetSummaryText(
 
 /** The Review and receipt noun of one action (mockup choice 6). */
 export function actionNoun(action: DeviceAction, count: number): string {
-  if (action === 'reboot') return count === 1 ? 'command' : 'commands';
+  if (isCommand(action)) return count === 1 ? 'command' : 'commands';
   return count === 1 ? 'status change' : 'status changes';
 }
 
@@ -218,10 +239,16 @@ export function confirmationHeading(
   switch (action) {
     case 'reboot':
       return 'Reboot interrupts active sessions';
+    case 'wipe-users':
+      return `Remove local user data from ${deviceCountText(eligible)}`;
+    case 'powerwash':
+      return `Powerwash ${deviceCountText(eligible)}`;
     case 'disable':
       return `Block user access on ${deviceCountText(eligible)}`;
     case 'reenable':
       return `Restore access on ${deviceCountText(eligible)}`;
+    case 'deprovision':
+      return `Deprovision ${deviceCountText(eligible)}`;
   }
 }
 
@@ -399,10 +426,16 @@ export function noEligibleTitle(action: DeviceAction): string {
   switch (action) {
     case 'reboot':
       return 'Nothing to reboot';
+    case 'wipe-users':
+      return 'Nothing to wipe';
+    case 'powerwash':
+      return 'Nothing to powerwash';
     case 'disable':
       return 'Nothing to disable';
     case 'reenable':
       return 'Nothing to re-enable';
+    case 'deprovision':
+      return 'Nothing to deprovision';
   }
 }
 
@@ -411,10 +444,16 @@ export function noEligibleHeading(action: DeviceAction): string {
   switch (action) {
     case 'reboot':
       return 'No devices can be rebooted';
+    case 'wipe-users':
+      return 'No devices can be wiped';
+    case 'powerwash':
+      return 'No devices can be powerwashed';
     case 'disable':
       return 'No devices can be disabled';
     case 'reenable':
       return 'No devices can be re-enabled';
+    case 'deprovision':
+      return 'No devices can be deprovisioned';
   }
 }
 

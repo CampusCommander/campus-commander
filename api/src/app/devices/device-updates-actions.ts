@@ -1,7 +1,9 @@
-import type {
-  Action,
-  ResourceScope,
-  SessionResponse,
+import {
+  DEVICE_ACTION_PERMISSIONS,
+  type Action,
+  type DeviceAction,
+  type ResourceScope,
+  type SessionResponse,
 } from '@campus/application-contracts';
 
 /** Every device update route requires these actions at the connected customer's district scope. */
@@ -11,18 +13,13 @@ export const DEVICE_UPDATE_ACTIONS = [
   'devices:bulk-actions',
 ] as const;
 
-/** A command route adds `devices:commands` to the read and Bulk Actions pair (section 6). */
-export const DEVICE_COMMAND_ROUTE_ACTIONS = [
+/**
+ * A command or status route checks read and Bulk Actions before any read. The permission of the
+ * requested action follows, because one menu entry now carries two permissions (section 2).
+ */
+export const DEVICE_ACTION_ROUTE_ACTIONS = [
   'devices:read',
   'devices:bulk-actions',
-  'devices:commands',
-] as const;
-
-/** A status route adds `devices:status` to the read and Bulk Actions pair (section 6). */
-export const DEVICE_STATUS_ROUTE_ACTIONS = [
-  'devices:read',
-  'devices:bulk-actions',
-  'devices:status',
 ] as const;
 
 export interface DeviceUpdateAuthorizer {
@@ -49,6 +46,22 @@ export async function requireDeviceActions(
       { kind: 'district', customerId },
       correlationId,
     );
+}
+
+/**
+ * Run the person check of the requested action at district scope, after the family guard. The
+ * permission of each action sits in `DEVICE_ACTION_PERMISSIONS`, so a route never guesses one.
+ */
+export async function requireDeviceAction(
+  auth: DeviceUpdateAuthorizer,
+  session: SessionResponse,
+  customerId: string,
+  correlationId: string,
+  action: DeviceAction,
+): Promise<void> {
+  await requireDeviceActions(auth, session, customerId, correlationId, [
+    DEVICE_ACTION_PERMISSIONS[action],
+  ]);
 }
 
 /** Run the person check of one device update request, in the order of the routes. */
