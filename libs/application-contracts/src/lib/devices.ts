@@ -547,7 +547,7 @@ export const deviceUpdateChangesSchema = z
  */
 export const deviceUpdateEditSchema = z
   .strictObject({
-    deviceId: z.string().min(1).max(128),
+    deviceId,
     ...changeShape,
     /** The observed value when the edit began, or null when the field held none. */
     baselineValue: z.string().max(4096).nullable(),
