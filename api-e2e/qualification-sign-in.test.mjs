@@ -4,6 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { EvidenceSecurity } from './evidence-security.mjs';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import {
   qualificationBrowserStep,
@@ -1726,5 +1727,51 @@ test('a failed step records the page URL, the console errors, and the failed req
       method: 'GET',
       error: 'ERR_CONNECTION_CLOSED',
     },
+  ]);
+});
+
+test('a failed step writes no registered authentication value', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const authorizationCode = 'synthetic-authorization-code-0123456789';
+  const state = 'synthetic-state-value-0123456789';
+  const callback =
+    `${publicOrigin}/api/auth/callback?code=${authorizationCode}` +
+    `&state=${state}#access_token=${authorizationCode}`;
+  page.url = () => callback;
+  const security = new EvidenceSecurity();
+  security.register('synthetic-authorization-code', authorizationCode);
+  security.register('synthetic-state', state);
+
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'redaction',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () =>
+            `Failed to load resource: ${callback} Authorization: Bearer ${authorizationCode}`,
+        });
+        throw new Error('locator.click: Timeout 30000ms exceeded.');
+      },
+    ),
+    /Timeout 30000ms exceeded/,
+  );
+
+  const record = await readFile(
+    join(directory, 'redaction-failure.json'),
+    'utf8',
+  );
+  security.assertSafe(record, 'failure record');
+  const failure = JSON.parse(record);
+  assert.equal(
+    failure.url,
+    `${publicOrigin}/api/auth/callback?code=redacted&state=redacted#redacted`,
+  );
+  assert.deepEqual(failure.consoleErrors, [
+    `Failed to load resource: ${publicOrigin}/api/auth/callback?code=redacted&state=redacted#redacted Authorization: Bearer redacted`,
   ]);
 });

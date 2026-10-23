@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
+import { redactText, redactUrl } from './evidence-redaction.mjs';
 import {
   isNetworkChangeReloadError,
   isNetworkChangeRequest,
@@ -511,9 +512,10 @@ export async function qualificationHeldSignIn(
  * network change.
  * Every other failure fails at once. A final failure writes a record with the
  * page URL, the document state, the console errors, the failed requests, and
- * the events of every attempt. A passing step reports every recovered attempt
- * with its failed request routes, the attempts of a nested reload helper
- * included.
+ * the events of every attempt. The record holds no credential: it redacts the
+ * URL values and the console content, because CI uploads the record of a
+ * failed step. A passing step reports every recovered attempt with its failed
+ * request routes, the attempts of a nested reload helper included.
  * A caller passes `retryOnNetworkChange: false` when the action must not run
  * again, or when another helper already recovers the action.
  */
@@ -613,8 +615,10 @@ export async function qualificationBrowserStep(
   const consoleError = (message) => {
     if (message.type?.() !== 'error') return;
     if (consoleErrors.length >= consoleErrorLimit) return;
+    // The record is uploaded when the step throws, so redact the message
+    // before the limit truncates it.
     consoleErrors.push(
-      (message.text?.() ?? '').slice(0, consoleErrorTextLimit),
+      redactText(message.text?.() ?? '', consoleErrorTextLimit),
     );
   };
   page.on('requestfailed', failed);
@@ -704,7 +708,7 @@ export async function qualificationBrowserStep(
       JSON.stringify(
         {
           schemaVersion: 1,
-          url: page.url(),
+          url: redactUrl(page.url()),
           finalLocation: resource(page.url()),
           documentState,
           consoleErrors,
