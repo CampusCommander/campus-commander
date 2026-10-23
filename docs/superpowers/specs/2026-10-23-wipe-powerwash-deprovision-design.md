@@ -1,6 +1,6 @@
 # Technical design addendum: Wipe user data, Powerwash, and Deprovision (step 5, second build)
 
-Status: proposed on 2026-10-23 for review. Card `t_75e7d3ed`.
+Status: built and signed off by the owner on 2026-10-23. Card `t_75e7d3ed`.
 Record: `docs/workflows/wipe-powerwash-deprovision.md` (PR #108), owner-confirmed on 2026-10-23. Owner, in the main chat: "1", which chose the option "Confirmed: build it as written" (`record:3`).
 Extends: [the step 5 design](2026-10-21-device-command-jobs-design.md). It reads [the Update device design](2026-10-21-update-device-fields-design.md).
 Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose the curtains."
