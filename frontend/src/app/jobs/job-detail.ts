@@ -37,7 +37,9 @@ import {
   operationLabel,
   operationNumber,
   operationsFooter,
+  outcomeNotes,
   pathParts,
+  reasonLine,
   requestedText,
   rowFailureText,
   scopeHeading,
@@ -102,6 +104,12 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly requestedText = requestedText;
   protected readonly pathParts = pathParts;
   protected readonly rowFailureText = rowFailureText;
+  protected readonly outcomeNotes = (
+    operation: JobOperation,
+  ): readonly string[] => {
+    const job = this.store.job();
+    return job ? outcomeNotes(job, operation) : [];
+  };
 
   protected readonly heading = computed(() => {
     const job = this.store.job();
@@ -119,6 +127,11 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly identity = computed(() => {
     const job = this.store.job();
     return job ? identityLine(job) : '';
+  });
+  /** The Deprovision reason line of the identity card (record D12). */
+  protected readonly reason = computed(() => {
+    const job = this.store.job();
+    return job ? reasonLine(job) : null;
   });
   protected readonly counters = computed<readonly JobCounter[]>(() => {
     const job = this.store.job();

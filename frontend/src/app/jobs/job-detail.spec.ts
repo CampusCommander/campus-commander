@@ -8,6 +8,7 @@ import { AuthStore } from '../auth.store';
 import { JobDetailPage } from './job-detail';
 import { latestActivityLine, formatTime } from './job-detail-fields';
 import { JobDetailStore } from './job-detail.store';
+import { formatTimestamp } from './job-fields';
 
 const person = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -694,6 +695,235 @@ it('renders the command job of state 09 with counters, chips, and no Reconcile',
   expect(button(element, 'Inspect failure')).toBeDefined();
   expect(button(element, 'Reconcile')).toBeUndefined();
   expect(button(element, 'Show 3 needing attention')).toBeDefined();
+});
+
+it('renders a Powerwash job with every command state and Google expiry', () => {
+  const expiry = '2031-10-22T14:11:00.000Z';
+  const operations = [
+    commandOperation({
+      operationId: 'CMD-008-1',
+      serialNumber: '01P0T1V',
+      operation: 'powerwash',
+      outcome: 'pending',
+      commandId: '4100000001',
+      commandState: 'acknowledged',
+      commandExpiresAt: expiry,
+    }),
+    commandOperation({
+      operationId: 'CMD-008-2',
+      serialNumber: '02A1MB6',
+      operation: 'powerwash',
+      outcome: 'failed',
+      outcomeReason: 'command-failed',
+      googleReason: 'The device failed to execute the command.',
+      commandId: '4100000002',
+    }),
+    commandOperation({
+      operationId: 'CMD-008-3',
+      serialNumber: '02QJANY',
+      operation: 'powerwash',
+      outcome: 'pending',
+      commandId: '4100000003',
+      commandState: 'pending-delivery',
+      commandExpiresAt: expiry,
+    }),
+    commandOperation({
+      operationId: 'CMD-008-4',
+      serialNumber: '04XTBHJ',
+      operation: 'powerwash',
+      outcome: 'unknown',
+      outcomeReason: 'not-observed',
+      commandId: '4100000004',
+      commandExpiresAt: expiry,
+    }),
+    commandOperation({
+      operationId: 'CMD-008-5',
+      serialNumber: '04A9BVS',
+      operation: 'powerwash',
+      outcome: 'failed',
+      outcomeReason: 'command-cancelled',
+      googleReason: null,
+      commandId: '4100000005',
+    }),
+    commandOperation({
+      operationId: 'CMD-008-6',
+      serialNumber: '08V5B5S',
+      operation: 'powerwash',
+      outcome: 'succeeded',
+      commandId: '4100000006',
+      commandExpiresAt: expiry,
+    }),
+    commandOperation({
+      operationId: 'CMD-008-7',
+      serialNumber: '05C2Z8P',
+      operation: 'powerwash',
+      outcome: 'expired',
+      commandId: '4100000007',
+      commandExpiresAt: expiry,
+    }),
+  ];
+  const { element } = setup({
+    job: commandJob({
+      displayId: 'CMD-008',
+      action: 'powerwash-devices',
+      commandType: 'REMOTE_POWERWASH',
+      progress: {
+        total: 7,
+        succeeded: 1,
+        failed: 2,
+        unknown: 1,
+        skipped: 0,
+        expired: 1,
+        pending: 2,
+      },
+    }),
+    operations,
+  });
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Powerwash devices',
+  );
+  expect(text(element)).toContain('Job CMD-008 · Awaiting devices');
+
+  const rows = [...element.querySelectorAll<HTMLElement>('tbody tr')];
+  expect(rows).toHaveLength(7);
+  for (const row of rows) {
+    expect(row.textContent).toContain('Powerwash');
+    expect(row.textContent).toContain('—');
+  }
+  const expires = `Expires ${formatTimestamp(expiry)}`;
+  expect(rows[0]?.textContent).toContain('Acknowledged');
+  expect(rows[0]?.textContent).toContain(expires);
+  expect(rows[1]?.textContent).toContain('Failed');
+  expect(rows[1]?.textContent).toContain(
+    'The device failed to execute the command.',
+  );
+  expect(rows[2]?.textContent).toContain('Pending delivery');
+  expect(rows[2]?.textContent).toContain(expires);
+  expect(rows[3]?.textContent).toContain('Unknown');
+  expect(rows[3]?.textContent).toContain('No result in 30 days');
+  expect(rows[3]?.textContent).toContain(expires);
+  expect(rows[4]?.textContent).toContain('Failed');
+  expect(rows[4]?.textContent).toContain('Google cancelled the command.');
+  expect(rows[5]?.textContent).toContain('Succeeded');
+  expect(rows[5]?.textContent).not.toContain('Expires');
+  expect(rows[6]?.textContent).toContain('Expired');
+  expect(rows[6]?.textContent).not.toContain('Expires');
+  expect(button(element, 'Reconcile')).toBeUndefined();
+});
+
+it('renders a Deprovision job with its reason and status rows', () => {
+  const deprovision = (overrides: Partial<JobOperation> = {}) =>
+    operation({
+      operationId: 'STS-003-1',
+      serialNumber: '01P0T1V',
+      field: null,
+      operation: 'deprovision',
+      baselineValue: 'ACTIVE',
+      requestedValue: 'DEPROVISIONED',
+      outcome: 'succeeded',
+      googleStatus: 200,
+      verifiedBy: 'write-response',
+      observedValue: 'DEPROVISIONED',
+      ...overrides,
+    });
+  const { element } = setup({
+    job: job({
+      displayId: 'STS-003',
+      action: 'deprovision-devices',
+      statusAction: 'deprovision',
+      status: 'completed-with-errors',
+      changes: null,
+      deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+      progress: {
+        total: 5,
+        succeeded: 4,
+        failed: 1,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        pending: 0,
+      },
+      latestActivity: {
+        at: '2026-10-22T14:16:00.000Z',
+        failed: { count: 0, operations: [] },
+        unknown: { count: 0, operations: [] },
+      },
+    }),
+    operations: [
+      deprovision(),
+      deprovision({ operationId: 'STS-003-2', serialNumber: '02A1MB6' }),
+      deprovision({ operationId: 'STS-003-3', serialNumber: '02QJANY' }),
+      deprovision({
+        operationId: 'STS-003-4',
+        serialNumber: '04QVJBY',
+        baselineValue: 'DISABLED',
+      }),
+      deprovision({
+        operationId: 'STS-003-5',
+        serialNumber: '04XTBHJ',
+        outcome: 'failed',
+        outcomeReason: 'status-conflict',
+        googleStatus: null,
+        verifiedBy: null,
+        observedValue: null,
+        googleReason:
+          'A device with status DEPROVISIONED does not allow this action.',
+      }),
+    ],
+  });
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Deprovision devices',
+  );
+  expect(text(element)).toContain('Deprovision reason: Retiring from fleet');
+  const rows = [...element.querySelectorAll<HTMLElement>('tbody tr')];
+  expect(rows).toHaveLength(5);
+  expect(rows[0]?.textContent).toContain('Deprovision');
+  expect(rows[0]?.textContent).toContain('Active');
+  expect(rows[0]?.textContent).toContain('Deprovisioned');
+  expect(rows[3]?.textContent).toContain('Disabled');
+  expect(rows[4]?.textContent).toContain('Failed');
+  expect(rows[4]?.textContent).toContain(
+    'A device with status DEPROVISIONED does not allow this action.',
+  );
+  // A status grant alone does not authorize Deprovision.
+  expect(button(element, 'Reconcile')).toBeUndefined();
+});
+
+it('offers Deprovision Reconcile only with the deprovision permission', () => {
+  const unknown = operation({
+    operationId: 'STS-003-1',
+    field: null,
+    operation: 'deprovision',
+    baselineValue: 'ACTIVE',
+    requestedValue: 'DEPROVISIONED',
+    outcome: 'unknown',
+    outcomeReason: 'invalid-response',
+    googleStatus: null,
+    verifiedBy: null,
+    observedValue: null,
+  });
+  const deprovisionJob = job({
+    displayId: 'STS-003',
+    action: 'deprovision-devices',
+    statusAction: 'deprovision',
+    status: 'needs-review',
+    changes: null,
+    deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+  });
+
+  const statusOnly = setup({
+    job: deprovisionJob,
+    operations: [unknown],
+    grants: ['jobs:read', 'devices:read', 'devices:status'],
+  });
+  expect(button(statusOnly.element, 'Reconcile')).toBeUndefined();
+
+  const allowed = setup({
+    job: deprovisionJob,
+    operations: [unknown],
+    grants: ['jobs:read', 'devices:read', 'devices:deprovision'],
+  });
+  expect(button(allowed.element, 'Reconcile')).toBeDefined();
 });
 
 it('gives a sent command its own chip', () => {
