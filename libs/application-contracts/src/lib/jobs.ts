@@ -2,7 +2,7 @@ import * as z from 'zod';
 import {
   deprovisionReasonSchema,
   deviceSyncFailureSchema,
-  deviceUpdateChangeSchema,
+  deviceUpdateChangesSchema,
 } from './devices';
 
 const timestamp = z.iso.datetime({ offset: true });
@@ -28,12 +28,13 @@ export type PreviewDisplayId = z.infer<typeof previewDisplayIdSchema>;
 export const jobOperationIdSchema = z
   .string()
   .regex(
-    /^(UPD|CMD|STS)-\d{3,}-\d+(-(annotatedLocation|annotatedUser|notes|orgUnitPath))?$/,
+    /^(UPD|CMD|STS)-\d{3,}-\d+(-(annotatedLocation|annotatedAssetId|annotatedUser|notes|orgUnitPath))?$/,
   );
 
-/** The four writable field IDs of an update operation, in contract order (addendum section 1). */
+/** The five writable field IDs of an update operation, in contract order (addendum section 1). */
 export const jobOperationFieldSchema = z.enum([
   'annotatedLocation',
+  'annotatedAssetId',
   'annotatedUser',
   'notes',
   'orgUnitPath',
@@ -241,8 +242,9 @@ export const jobDetailSchema = jobSummarySchema
   .extend({
     confirmedBy: jobPersonSchema.nullable(),
     previewDisplayId: previewDisplayIdSchema.nullable(),
-    /** The frozen changes of a write job, in contract order. Null outside an update job. */
-    changes: z.array(deviceUpdateChangeSchema).min(1).max(4).nullable(),
+    /** The frozen changes of a selection job, in contract order. Null for an edit-list job and
+     * outside an update job. */
+    changes: deviceUpdateChangesSchema.nullable(),
     /** The Google command of a command job. It stays null for another job. */
     commandType: z
       .enum(['REBOOT', 'WIPE_USERS', 'REMOTE_POWERWASH'])

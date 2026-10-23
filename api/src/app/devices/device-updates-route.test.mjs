@@ -201,6 +201,19 @@ test('the preview route refuses each 65,537-unit value with its field label and 
   }
 });
 
+test('the preview route refuses an Asset tag change in the bulk selection', async () => {
+  const before = previews.length;
+  const answer = await preview(body('annotatedAssetId', 'replace', 'AT-42'));
+  assert.equal(answer.status, 400);
+  assert.equal(answer.body.reason, 'invalid-change');
+  assert.match(answer.body.message, /annotatedLocation/);
+  assert.equal(
+    previews.length,
+    before,
+    'A refused selection change reaches no preview.',
+  );
+});
+
 test('the preview route refuses each ordinary over-limit value with its field label', async (t) => {
   const cases = [
     [

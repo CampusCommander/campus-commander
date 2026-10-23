@@ -26,6 +26,7 @@ const preview = (
   eligible: 6,
   unchanged: 0,
   excluded: 0,
+  conflicts: 0,
   oldestObservedAt: null,
   stale: false,
   preparedAt: '2026-10-19T12:00:00.000Z',
@@ -83,6 +84,16 @@ it('counts the changed fields and the eligible devices in the heading', () => {
   ).toBe('Update 1 field on 1 device');
 });
 
+it('reads an edit list without changes as no change', () => {
+  // An edit list answers null changes, because each of its rows carries its own request.
+  const editList = preview({ changes: null });
+  expect(confirmationHeading(editList)).toBe('Update 0 fields on 6 devices');
+  expect(changeSentences(editList, [])).toEqual([]);
+  expect(unchangedSentence(editList)).toBe(
+    'Annotated location, annotated user, notes, and organization unit remain unchanged.',
+  );
+});
+
 /**
  * Frozen target rows for the confirmation tests. Each entry lists its rows per device in
  * contract order, one row per device and field.
@@ -109,7 +120,9 @@ function targetRows(
         serialNumber: `S-${field}-${index + 1}`,
         field,
         observedValue: null,
+        baselineValue: null,
         approvedValue: disposition === 'excluded' ? null : approvedValue,
+        duplicateSerialNumber: null,
         disposition,
         exclusionReason,
       })),
@@ -308,7 +321,9 @@ it('groups the frozen targets by device, with the exclusion reason once', () => 
       serialNumber: '01P0T1V',
       field: 'annotatedLocation',
       observedValue: 'Science wing',
+      baselineValue: 'Science wing',
       approvedValue: 'North lab',
+      duplicateSerialNumber: null,
       disposition: 'eligible',
       exclusionReason: null,
     },
@@ -317,7 +332,9 @@ it('groups the frozen targets by device, with the exclusion reason once', () => 
       serialNumber: '01P0T1V',
       field: 'notes',
       observedValue: null,
+      baselineValue: null,
       approvedValue: 'Cart 7 loaner pool',
+      duplicateSerialNumber: null,
       disposition: 'eligible',
       exclusionReason: null,
     },
@@ -326,7 +343,9 @@ it('groups the frozen targets by device, with the exclusion reason once', () => 
       serialNumber: '02A1MB6',
       field: 'annotatedLocation',
       observedValue: null,
+      baselineValue: null,
       approvedValue: null,
+      duplicateSerialNumber: null,
       disposition: 'excluded',
       exclusionReason: 'removed',
     },
@@ -335,7 +354,9 @@ it('groups the frozen targets by device, with the exclusion reason once', () => 
       serialNumber: '02A1MB6',
       field: 'notes',
       observedValue: null,
+      baselineValue: null,
       approvedValue: null,
+      duplicateSerialNumber: null,
       disposition: 'excluded',
       exclusionReason: 'removed',
     },

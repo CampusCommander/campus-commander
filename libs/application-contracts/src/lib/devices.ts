@@ -398,16 +398,30 @@ export const deviceOrgUnitSchema = z.strictObject({
 export type DeviceOrgUnit = z.infer<typeof deviceOrgUnitSchema>;
 export const deviceOrgUnitsSchema = z.array(deviceOrgUnitSchema).max(10000);
 
-/** The four writable fields of Update device, in contract order (addendum section 1). */
+/** The five writable fields of the record, in contract order (addendum section 1). */
 export const DEVICE_UPDATE_FIELD_ORDER = [
   'annotatedLocation',
+  'annotatedAssetId',
   'annotatedUser',
   'notes',
   'orgUnitPath',
 ] as const;
 export const deviceUpdateFieldSchema = z.enum(DEVICE_UPDATE_FIELD_ORDER);
 export type DeviceUpdateField = z.infer<typeof deviceUpdateFieldSchema>;
-/** The three fields that a text value writes. Organization unit moves to a path. */
+/** The four fields of the bulk Update device selection (addendum section 9). Asset tag stays out. */
+export const DEVICE_UPDATE_SELECTION_FIELDS = [
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+] as const;
+export const deviceUpdateSelectionFieldSchema = z.enum(
+  DEVICE_UPDATE_SELECTION_FIELDS,
+);
+export type DeviceUpdateSelectionField = z.infer<
+  typeof deviceUpdateSelectionFieldSchema
+>;
+/** The three text fields of the bulk Update device sheet. Organization unit moves to a path. */
 export const DEVICE_UPDATE_TEXT_FIELDS = [
   'annotatedLocation',
   'annotatedUser',
@@ -424,6 +438,7 @@ export const DEVICE_UPDATE_FIELD_LIMITS: Readonly<
   Record<DeviceUpdateField, number>
 > = Object.freeze({
   annotatedLocation: 200,
+  annotatedAssetId: 256,
   annotatedUser: 100,
   notes: 500,
   orgUnitPath: 4096,
@@ -434,6 +449,7 @@ export const DEVICE_UPDATE_FIELD_LABELS: Readonly<
   Record<DeviceUpdateField, string>
 > = Object.freeze({
   annotatedLocation: 'Annotated location',
+  annotatedAssetId: 'Asset tag',
   annotatedUser: 'Annotated user',
   notes: 'Notes',
   orgUnitPath: 'Organization unit',
@@ -443,66 +459,131 @@ export const DEVICE_UPDATE_FIELD_LABELS: Readonly<
 export const deviceUpdateModeSchema = z.enum(['replace', 'clear', 'move']);
 export type DeviceUpdateMode = z.infer<typeof deviceUpdateModeSchema>;
 
+/** A change under its rules, before any schema refines it. */
+interface DeviceUpdateChangeShape {
+  field: DeviceUpdateField;
+  mode: DeviceUpdateMode;
+  value?: string;
+}
+
+/**
+ * Refuse the mode and the value of one change. A refusal names the field label and its limit.
+ * Clear (and only Clear) carries no value. A text value keeps the step 4 rule: 1 to its limit of
+ * code points, a visible character, and no trim. A Move carries a path that starts with `/`.
+ * Asset tag offers Replace alone, because Google keeps no empty tag.
+ */
+function refuseChange(
+  change: DeviceUpdateChangeShape,
+  context: z.RefinementCtx,
+): void {
+  const label = DEVICE_UPDATE_FIELD_LABELS[change.field];
+  const limit = DEVICE_UPDATE_FIELD_LIMITS[change.field];
+  const refuse = (message: string) =>
+    context.addIssue({ code: 'custom', message, path: ['value'] });
+  if (change.field === 'orgUnitPath') {
+    if (change.mode !== 'move') return refuse(`${label} offers Move only.`);
+    if (change.value === undefined) return refuse(`${label} needs a path.`);
+    if (
+      change.value.length < 1 ||
+      change.value.length > limit ||
+      !change.value.startsWith('/')
+    )
+      return refuse(
+        `${label} needs a path that starts with / and holds at most ${limit} characters.`,
+      );
+    return;
+  }
+  if (change.field === 'annotatedAssetId' && change.mode !== 'replace')
+    return refuse(`${label} offers Replace only.`);
+  if (change.mode === 'move')
+    return refuse(`${label} offers Replace or Clear.`);
+  if (change.mode === 'clear') {
+    if (change.value !== undefined)
+      return refuse(`A Clear change of ${label} carries no value.`);
+    return;
+  }
+  if (change.value === undefined) return refuse(`${label} needs a value.`);
+  // One code point takes at most two UTF-16 units. Refuse twice the limit before counting, so a
+  // giant body never reaches the spread and the refusal still names the field and its limit.
+  if (change.value.length > 2 * limit)
+    return refuse(`${label} holds 1 to ${limit} characters.`);
+  const length = [...change.value].length;
+  if (length < 1 || length > limit)
+    return refuse(`${label} holds 1 to ${limit} characters.`);
+  if (change.value.trim().length === 0)
+    return refuse(`${label} needs a visible character.`);
+}
+
+/** The request that a change would write. Clear writes null. */
+function changeRequest(change: DeviceUpdateChangeShape): string | null {
+  return change.mode === 'clear' ? null : (change.value ?? null);
+}
+
+/** The keys of one field change, before its rules run. */
+const changeShape = {
+  field: deviceUpdateFieldSchema,
+  mode: deviceUpdateModeSchema,
+  // The refinement names the field and its limit at every length, an absurd body included.
+  value: z.string().optional(),
+};
+
 /**
  * One field change of a preview or a job. Clear (and only Clear) carries no value. A text value
  * keeps the step 4 rule: 1 to its limit of code points, a visible character, and no trim. A Move
  * carries a path that starts with `/`.
  */
 export const deviceUpdateChangeSchema = z
-  .strictObject({
-    field: deviceUpdateFieldSchema,
-    mode: deviceUpdateModeSchema,
-    // The refinement names the field and its limit at every length, an absurd body included.
-    value: z.string().optional(),
-  })
-  .superRefine((change, context) => {
-    const label = DEVICE_UPDATE_FIELD_LABELS[change.field];
-    const limit = DEVICE_UPDATE_FIELD_LIMITS[change.field];
-    const refuse = (message: string) =>
-      context.addIssue({ code: 'custom', message, path: ['value'] });
-    if (change.field === 'orgUnitPath') {
-      if (change.mode !== 'move') return refuse(`${label} offers Move only.`);
-      if (change.value === undefined) return refuse(`${label} needs a path.`);
-      if (
-        change.value.length < 1 ||
-        change.value.length > limit ||
-        !change.value.startsWith('/')
-      )
-        return refuse(
-          `${label} needs a path that starts with / and holds at most ${limit} characters.`,
-        );
-      return;
-    }
-    if (change.mode === 'move')
-      return refuse(`${label} offers Replace or Clear.`);
-    if (change.mode === 'clear') {
-      if (change.value !== undefined)
-        return refuse(`A Clear change of ${label} carries no value.`);
-      return;
-    }
-    if (change.value === undefined) return refuse(`${label} needs a value.`);
-    // One code point takes at most two UTF-16 units. Refuse twice the limit before counting, so a
-    // giant body never reaches the spread and the refusal still names the field and its limit.
-    if (change.value.length > 2 * limit)
-      return refuse(`${label} holds 1 to ${limit} characters.`);
-    const length = [...change.value].length;
-    if (length < 1 || length > limit)
-      return refuse(`${label} holds 1 to ${limit} characters.`);
-    if (change.value.trim().length === 0)
-      return refuse(`${label} needs a visible character.`);
-  });
+  .strictObject(changeShape)
+  .superRefine(refuseChange);
 export type DeviceUpdateChange = z.infer<typeof deviceUpdateChangeSchema>;
 
-/** The changes of one draft, in contract order, with each field once. */
+/** One change of the bulk Update device selection. Asset tag stays out of that sheet. */
+export const deviceUpdateSelectionChangeSchema = z
+  .strictObject({ ...changeShape, field: deviceUpdateSelectionFieldSchema })
+  .superRefine(refuseChange);
+export type DeviceUpdateSelectionChange = z.infer<
+  typeof deviceUpdateSelectionChangeSchema
+>;
+
+/** The changes of one selection draft, in contract order, with each field once. */
 export const deviceUpdateChangesSchema = z
-  .array(deviceUpdateChangeSchema)
+  .array(deviceUpdateSelectionChangeSchema)
   .min(1)
-  .max(DEVICE_UPDATE_FIELD_ORDER.length)
+  .max(DEVICE_UPDATE_SELECTION_FIELDS.length)
   .refine(
     (changes) =>
       new Set(changes.map((change) => change.field)).size === changes.length,
     { message: 'A field occurs once.' },
   );
+
+/**
+ * One edit of an edit list (addendum section 1): a device and a field change, with the value that
+ * the person saw when the edit began. A request equal to its baseline changes nothing, so it is
+ * invalid. Paths compare without case, as every path reader does.
+ */
+export const deviceUpdateEditSchema = z
+  .strictObject({
+    deviceId,
+    ...changeShape,
+    /** The observed value when the edit began, or null when the field held none. */
+    baselineValue: z.string().max(4096).nullable(),
+  })
+  .superRefine((edit, context) => {
+    refuseChange(edit, context);
+    const request = changeRequest(edit);
+    const baseline = edit.baselineValue;
+    const equal =
+      edit.field === 'orgUnitPath'
+        ? (request ?? '').toLowerCase() === (baseline ?? '').toLowerCase()
+        : request === baseline;
+    if (!equal) return;
+    context.addIssue({
+      code: 'custom',
+      message: `${DEVICE_UPDATE_FIELD_LABELS[edit.field]} already holds this value.`,
+      path: ['baselineValue'],
+    });
+  });
+export type DeviceUpdateEdit = z.infer<typeof deviceUpdateEditSchema>;
 
 /** The four Deprovision reasons that Google accepts (record D11). The other seven fail. */
 export const DEPROVISION_REASONS = [

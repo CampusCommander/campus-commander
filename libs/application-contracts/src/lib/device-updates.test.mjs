@@ -3,14 +3,20 @@ import test from 'node:test';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
   DEVICE_UPDATE_FIELD_LIMITS,
+  DEVICE_UPDATE_FIELD_ORDER,
+  DEVICE_UPDATE_SELECTION_FIELDS,
   deviceUpdateChangeSchema,
   deviceUpdateChangesInOrder,
+  deviceUpdateEditSchema,
 } from './devices.ts';
 import {
+  DEVICE_UPDATE_EDITS_LIMIT,
   DEVICE_UPDATE_VALUE_MAX,
   DEVICE_WRITE_ACCESS_BUSY_ANSWER,
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   deviceUpdateConfirmRequestSchema,
+  deviceUpdateEditPreviewRequestSchema,
+  deviceUpdateEditsSchema,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewRequestSchema,
   deviceUpdatePreviewSchema,
@@ -30,6 +36,10 @@ const digest = 'c'.repeat(64);
 const key = { gridId: 'devices', tabId };
 const change = (field, mode, value) =>
   value === undefined ? { field, mode } : { field, mode, value };
+const edit = (deviceId, field, mode, value, baselineValue = null) =>
+  value === undefined
+    ? { deviceId, field, mode, baselineValue }
+    : { deviceId, field, mode, value, baselineValue };
 
 test('preview values hold 1 to 200 code points', () => {
   // U+1D306 is one code point and two UTF-16 units.
@@ -53,6 +63,7 @@ test('each field refuses a value over its limit and names its label', () => {
   const fourByteCharacter = '\u{1D306}';
   const cases = [
     ['annotatedLocation', 200],
+    ['annotatedAssetId', 256],
     ['annotatedUser', 100],
     ['notes', 500],
   ];
@@ -77,6 +88,13 @@ test('each field refuses a value over its limit and names its label', () => {
     assert.match(huge.error.issues[0].message, new RegExp(String(limit)));
   }
   assert.equal(DEVICE_UPDATE_FIELD_LIMITS.orgUnitPath, 4096);
+  assert.equal(
+    deviceUpdateChangeSchema.safeParse(
+      change('orgUnitPath', 'move', `/${'a'.repeat(4095)}`),
+    ).success,
+    true,
+    'A path of 4,096 UTF-16 units is accepted.',
+  );
   assert.match(
     deviceUpdateChangeSchema.safeParse(
       change('orgUnitPath', 'move', `/${'a'.repeat(4096)}`),
@@ -195,6 +213,377 @@ test('a preview holds one to four changes and each field once', () => {
   );
 });
 
+test('the record order holds five fields and the selection keeps four', () => {
+  assert.deepEqual(DEVICE_UPDATE_FIELD_ORDER, [
+    'annotatedLocation',
+    'annotatedAssetId',
+    'annotatedUser',
+    'notes',
+    'orgUnitPath',
+  ]);
+  assert.deepEqual(DEVICE_UPDATE_SELECTION_FIELDS, [
+    'annotatedLocation',
+    'annotatedUser',
+    'notes',
+    'orgUnitPath',
+  ]);
+});
+
+test('Asset tag offers Replace only and needs a visible character without a trim', () => {
+  assert.equal(DEVICE_UPDATE_FIELD_LABELS.annotatedAssetId, 'Asset tag');
+  assert.equal(DEVICE_UPDATE_FIELD_LIMITS.annotatedAssetId, 256);
+  const parse = (body) => deviceUpdateChangeSchema.safeParse(body);
+  const accepted = parse(change('annotatedAssetId', 'replace', ' AT-42 '));
+  assert.equal(accepted.success, true);
+  assert.equal(
+    accepted.data.value,
+    ' AT-42 ',
+    'The rule keeps the value exactly as the request holds it.',
+  );
+  const clear = parse(change('annotatedAssetId', 'clear'));
+  assert.equal(clear.success, false);
+  assert.equal(clear.error.issues[0].message, 'Asset tag offers Replace only.');
+  const move = parse(change('annotatedAssetId', 'move', '/School A'));
+  assert.equal(move.success, false);
+  assert.equal(move.error.issues[0].message, 'Asset tag offers Replace only.');
+  const spaces = parse(change('annotatedAssetId', 'replace', '   '));
+  assert.equal(spaces.success, false);
+  assert.equal(
+    spaces.error.issues[0].message,
+    'Asset tag needs a visible character.',
+  );
+  const missing = parse(change('annotatedAssetId', 'replace'));
+  assert.equal(missing.success, false);
+  assert.equal(missing.error.issues[0].message, 'Asset tag needs a value.');
+});
+
+test('a selection change of Asset tag fails', () => {
+  const selection = deviceUpdatePreviewRequestSchema.safeParse({
+    ...key,
+    changes: [change('annotatedAssetId', 'replace', 'AT-42')],
+  });
+  assert.equal(selection.success, false);
+  const edits = deviceUpdateEditPreviewRequestSchema.safeParse({
+    edits: [edit('device-1', 'annotatedAssetId', 'replace', 'AT-42')],
+  });
+  assert.equal(
+    edits.success,
+    true,
+    'An edit list accepts the field that the selection refuses.',
+  );
+});
+
+test('one edit carries a device, a change, and its baseline', () => {
+  const parse = (body) => deviceUpdateEditSchema.safeParse(body);
+  assert.equal(
+    parse({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'replace',
+      value: 'Room 12',
+      baselineValue: null,
+    }).success,
+    true,
+  );
+  assert.equal(
+    parse({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'clear',
+      baselineValue: 'Room 12',
+    }).success,
+    true,
+  );
+  assert.equal(
+    parse({
+      deviceId: '',
+      field: 'notes',
+      mode: 'clear',
+      baselineValue: 'Room 12',
+    }).success,
+    false,
+    'An empty device ID fails.',
+  );
+  assert.equal(
+    parse({
+      deviceId: 'd'.repeat(129),
+      field: 'notes',
+      mode: 'clear',
+      baselineValue: 'Room 12',
+    }).success,
+    false,
+    'A device ID above 128 units fails.',
+  );
+  assert.equal(
+    parse({ deviceId: 'device-1', field: 'notes', mode: 'clear' }).success,
+    false,
+    'An omitted baseline fails.',
+  );
+  assert.equal(
+    parse({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'replace',
+      value: 'Room 12',
+      baselineValue: 'a'.repeat(4096),
+    }).success,
+    true,
+    'A baseline holds 4,096 UTF-16 units.',
+  );
+  assert.equal(
+    parse({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'replace',
+      value: 'Room 12',
+      baselineValue: 'a'.repeat(4097),
+    }).success,
+    false,
+    'A baseline above 4,096 units fails.',
+  );
+  assert.equal(
+    parse({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'replace',
+      value: 'Room 12',
+      baselineValue: null,
+      extra: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    parse({
+      deviceId: 'device-1',
+      field: 'assetTag',
+      mode: 'replace',
+      value: 'AT-42',
+      baselineValue: null,
+    }).success,
+    false,
+    'The record key is not the field ID.',
+  );
+});
+
+test('an edit whose request equals its baseline fails', () => {
+  const equal = (body) => {
+    const parsed = deviceUpdateEditSchema.safeParse(body);
+    assert.equal(parsed.success, false);
+    return parsed.error.issues[0].message;
+  };
+  assert.equal(
+    equal({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'replace',
+      value: 'Room 12',
+      baselineValue: 'Room 12',
+    }),
+    'Notes already holds this value.',
+  );
+  assert.equal(
+    equal({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'clear',
+      baselineValue: null,
+    }),
+    'Notes already holds this value.',
+    'A Clear of a field that holds no value changes nothing.',
+  );
+  assert.equal(
+    equal({
+      deviceId: 'device-1',
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/School A',
+      baselineValue: '/school a',
+    }),
+    'Organization unit already holds this value.',
+    'Paths compare without case.',
+  );
+  assert.equal(
+    deviceUpdateEditSchema.safeParse({
+      deviceId: 'device-1',
+      field: 'orgUnitPath',
+      mode: 'move',
+      value: '/School B',
+      baselineValue: '/school a',
+    }).success,
+    true,
+  );
+  assert.equal(
+    deviceUpdateEditSchema.safeParse({
+      deviceId: 'device-1',
+      field: 'notes',
+      mode: 'replace',
+      value: 'Room 12',
+      baselineValue: 'Room 1',
+    }).success,
+    true,
+    'A text baseline compares exactly.',
+  );
+});
+
+test('an edit list holds 1 to 2,500 edits on at most 500 devices', () => {
+  const devices = (count) =>
+    Array.from({ length: count }, (_, index) => `device-${index + 1}`);
+  const everyField = (deviceId) =>
+    DEVICE_UPDATE_FIELD_ORDER.map((field) =>
+      field === 'orgUnitPath'
+        ? edit(deviceId, field, 'move', '/School A')
+        : edit(deviceId, field, 'replace', 'value'),
+    );
+  assert.equal(DEVICE_UPDATE_EDITS_LIMIT, 2500);
+  assert.equal(deviceUpdateEditsSchema.safeParse([]).success, false);
+  assert.equal(
+    deviceUpdateEditsSchema.safeParse([...everyField('device-1')]).success,
+    true,
+  );
+  // 500 devices with all five fields fill the edit cap exactly.
+  const full = devices(500).flatMap(everyField);
+  assert.equal(full.length, DEVICE_UPDATE_EDITS_LIMIT);
+  assert.equal(deviceUpdateEditsSchema.safeParse(full).success, true);
+  assert.equal(
+    deviceUpdateEditsSchema.safeParse([
+      ...full,
+      edit('device-1', 'notes', 'replace', 'another value'),
+    ]).success,
+    false,
+    'A 2,501st edit fails.',
+  );
+  const refusedDevices = deviceUpdateEditsSchema.safeParse(
+    devices(501).map((deviceId) => edit(deviceId, 'notes', 'replace', 'value')),
+  );
+  assert.equal(refusedDevices.success, false);
+  assert.equal(
+    refusedDevices.error.issues[0].message,
+    'An edit list holds at most 500 devices.',
+  );
+  const repeated = deviceUpdateEditsSchema.safeParse([
+    edit('device-1', 'notes', 'replace', 'value'),
+    edit('device-1', 'notes', 'replace', 'another value'),
+  ]);
+  assert.equal(repeated.success, false);
+  assert.equal(
+    repeated.error.issues[0].message,
+    'A device and field occur once.',
+  );
+  assert.equal(
+    deviceUpdateEditsSchema.safeParse([
+      edit('device-1', 'notes', 'replace', 'value'),
+      edit('device-1', 'annotatedUser', 'replace', 'value'),
+    ]).success,
+    true,
+    'One device may hold several fields.',
+  );
+});
+
+test('an edit-list request takes the edits alone', () => {
+  const request = {
+    edits: [edit('device-1', 'notes', 'replace', 'Room 12')],
+  };
+  assert.deepEqual(
+    deviceUpdateEditPreviewRequestSchema.parse(request),
+    request,
+  );
+  assert.equal(
+    deviceUpdateEditPreviewRequestSchema.safeParse({ ...request, ...key })
+      .success,
+    false,
+    'The edit list carries no selection key.',
+  );
+  assert.equal(
+    deviceUpdateEditPreviewRequestSchema.safeParse({}).success,
+    false,
+  );
+});
+
+test('a preview summary answers no changes for an edit list and counts conflicts', () => {
+  const editList = {
+    previewId,
+    displayId: 'PV-006',
+    changes: null,
+    fieldChanges: 9,
+    selected: 8,
+    eligible: 4,
+    unchanged: 1,
+    excluded: 1,
+    conflicts: 2,
+    oldestObservedAt: at,
+    stale: false,
+    preparedAt: at,
+    expiresAt: at,
+    manifestDigest: digest,
+  };
+  assert.deepEqual(deviceUpdatePreviewSchema.parse(editList), editList);
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...editList, conflicts: undefined })
+      .success,
+    false,
+    'A summary always counts its conflicts.',
+  );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({ ...editList, selected: 6 }).success,
+    false,
+    'Selected equals eligible, unchanged, excluded, and conflicts.',
+  );
+  assert.equal(
+    deviceUpdatePreviewSchema.safeParse({
+      ...editList,
+      changes: [change('notes', 'clear')],
+    }).success,
+    true,
+    'A selection preview still carries its changes.',
+  );
+});
+
+test('a target row carries its baseline, a duplicate serial number, and a conflict', () => {
+  const conflict = {
+    deviceId: 'device-1',
+    serialNumber: 'C0A1-7F2D',
+    field: 'annotatedAssetId',
+    observedValue: 'AT-02',
+    baselineValue: 'AT-01',
+    approvedValue: 'AT-02',
+    duplicateSerialNumber: 'C0A1-7F2E',
+    disposition: 'conflict',
+    exclusionReason: null,
+  };
+  assert.deepEqual(deviceUpdateTargetSchema.parse(conflict), conflict);
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({
+      ...conflict,
+      baselineValue: null,
+      duplicateSerialNumber: null,
+    }).success,
+    true,
+  );
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({
+      ...conflict,
+      baselineValue: 'a'.repeat(4097),
+    }).success,
+    false,
+  );
+  assert.equal(
+    deviceUpdateTargetSchema.safeParse({
+      ...conflict,
+      duplicateSerialNumber: 'S'.repeat(257),
+    }).success,
+    false,
+  );
+  for (const key of ['baselineValue', 'duplicateSerialNumber']) {
+    const target = { ...conflict };
+    delete target[key];
+    assert.equal(
+      deviceUpdateTargetSchema.safeParse(target).success,
+      false,
+      `${key} is required.`,
+    );
+  }
+});
+
 test('preview summaries carry the changes, fieldChanges, and the counts', () => {
   const changes = [
     change('annotatedUser', 'replace', 'A person'),
@@ -209,6 +598,7 @@ test('preview summaries carry the changes, fieldChanges, and the counts', () => 
     eligible: 6,
     unchanged: 5,
     excluded: 1,
+    conflicts: 0,
     oldestObservedAt: at,
     stale: false,
     preparedAt: at,
@@ -269,7 +659,9 @@ test('preview targets carry the frozen rows of one field', () => {
     serialNumber: 'C0A1-7F2D',
     field: 'annotatedUser',
     observedValue: 'A person',
+    baselineValue: 'A person',
     approvedValue: 'Another person',
+    duplicateSerialNumber: null,
     disposition: 'eligible',
     exclusionReason: null,
   };

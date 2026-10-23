@@ -95,6 +95,7 @@ function observedValue(
 ): string | null {
   const column = {
     annotatedLocation: 'annotated_location',
+    annotatedAssetId: 'asset_tag',
     annotatedUser: 'annotated_user',
     notes: 'notes',
     orgUnitPath: 'org_unit_path',
@@ -236,12 +237,15 @@ function summary(
   return deviceUpdatePreviewSchema.parse({
     previewId: row['preview_id'],
     displayId: row['display_id'],
-    changes: deviceUpdateChangesInOrder(changes),
+    // An edit-list preview stores one request per target row, so it answers no changes.
+    changes: changes.length === 0 ? null : deviceUpdateChangesInOrder(changes),
     fieldChanges: row['field_changes'],
     selected: row['selected'],
     eligible: row['eligible'],
     unchanged: row['unchanged'],
     excluded: row['excluded'],
+    // Until the per-row conflict of addendum section 2 lands, every preview answers zero.
+    conflicts: Number(row['conflicts'] ?? 0),
     oldestObservedAt,
     stale:
       Number(row['eligible']) > 0 &&
