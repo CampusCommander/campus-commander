@@ -460,3 +460,34 @@ test('a navigation does not start after an expired deadline', async () => {
   );
   assert.equal(page.navigations, 0);
 });
+
+test('a navigation keeps the load budget of the call it replaces', async () => {
+  let received;
+  const page = {
+    async goto(url, options) {
+      received = options.timeout;
+      return okResponse();
+    },
+  };
+  await navigateAfterNetworkChange(page, 'https://fixture.invalid/', {
+    timeoutMs: 60000,
+    loadTimeoutMs: 30000,
+  });
+  assert.equal(received, 30000);
+});
+
+test('the attempt deadline still bounds a load below the caller budget', async () => {
+  let received;
+  const page = {
+    async goto(url, options) {
+      received = options.timeout;
+      return okResponse();
+    },
+  };
+  await navigateAfterNetworkChange(page, 'https://fixture.invalid/', {
+    timeoutMs: 250,
+    loadTimeoutMs: 30000,
+  });
+  assert.ok(received >= 1);
+  assert.ok(received < 30000);
+});

@@ -43,22 +43,33 @@ const httpErrorStatus = (response) => {
  * Load a page document and recover a load that an installation network change
  * aborts.
  *
- * `load` starts one document load and takes the timeout of that load. The
- * optional `ready` function reports that the page reached the state the caller
- * needs. Without `ready`, a resolved load is ready. `name` names the action in
- * a failure, and `started` names the action in the deadline failure. The
- * helper observes every response of the page for the whole attempt, the load
- * and the ready wait included. An HTTP error status of the page, or of a
- * request of the page, ends a failed attempt at once, and that attempt never
- * retries. A passing ready decides the attempt, with or without a recorded
- * HTTP error. A load error other than a network change fails at once. A
- * request failure with another error code does not decide the attempt,
- * because a load cancels the in-flight requests of the previous page. No
- * attempt starts after the deadline `timeoutMs`, the first attempt included.
+ * `load` starts one document load and takes the timeout of that load.
+ * `loadTimeoutMs` bounds one load, so a caller keeps the load budget of the
+ * call that this helper replaces while the deadline `timeoutMs` still covers
+ * the ready wait. The optional `ready` function reports that the page reached
+ * the state the caller needs. Without `ready`, a resolved load is ready.
+ * `name` names the action in a failure, and `started` names the action in the
+ * deadline failure. The helper observes every response of the page for the
+ * whole attempt, the load and the ready wait included. An HTTP error status of
+ * the page, or of a request of the page, ends a failed attempt at once, and
+ * that attempt never retries. A passing ready decides the attempt, with or
+ * without a recorded HTTP error. A load error other than a network change
+ * fails at once. A request failure with another error code does not decide the
+ * attempt, because a load cancels the in-flight requests of the previous page.
+ * No attempt starts after the deadline `timeoutMs`, the first attempt
+ * included.
  */
 async function loadAfterNetworkChange(
   page,
-  { name, started, load, retryDelayMs = 250, timeoutMs = 15000, ready },
+  {
+    name,
+    started,
+    load,
+    retryDelayMs = 250,
+    timeoutMs = 15000,
+    loadTimeoutMs = Infinity,
+    ready,
+  },
 ) {
   const deadline = Date.now() + timeoutMs;
   let networkChanges = 0;
@@ -119,7 +130,9 @@ async function loadAfterNetworkChange(
       attempt = current;
       let response = null;
       try {
-        response = await load(Math.max(1, deadline - Date.now()));
+        response = await load(
+          Math.max(1, Math.min(loadTimeoutMs, deadline - Date.now())),
+        );
       } catch (error) {
         if (!isNetworkChangeReloadError(error)) throw error;
         current.observe({ retry: true, error });

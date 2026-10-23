@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import {
   openPlatformUsers,
@@ -33,24 +34,38 @@ const failRequest = (page, path, errorText) =>
 const fakeSettingsPage = (reload, waitFor) => {
   const page = new EventEmitter();
   page.reloads = 0;
+  page.reloadOptions = [];
+  page.readyOptions = [];
   page.reload = async (options) => {
     page.reloads++;
+    page.reloadOptions.push(options);
     return reload(page.reloads, options);
   };
   page.getByLabel = () => ({
-    waitFor: async () => waitFor(page.reloads),
+    waitFor: async (options) => {
+      page.readyOptions.push(options);
+      return waitFor(page.reloads, options);
+    },
   });
   return page;
 };
 
-/** A fake platform users page. `goto` and `click` script the action. */
-const fakePlatformUsersPage = ({ goto, click }) => {
+/** A fake platform users page. `goto`, `waitFor`, and `click` script it. */
+const fakePlatformUsersPage = ({
+  goto,
+  click,
+  waitFor = async () => undefined,
+}) => {
   const page = new EventEmitter();
   page.navigations = [];
+  page.navigationOptions = [];
+  page.readyOptions = [];
+  page.clickOptions = [];
   page.clicks = 0;
   page.url = () => `${publicOrigin}/platform-users`;
   page.goto = async (url, options) => {
     page.navigations.push(url);
+    page.navigationOptions.push(options);
     return goto(page.navigations.length, options);
   };
   page.evaluate = async () => ({
@@ -62,9 +77,13 @@ const fakePlatformUsersPage = ({ goto, click }) => {
   });
   page.locator = () => ({
     getByRole: () => ({
-      waitFor: async () => undefined,
-      click: async () => {
+      waitFor: async (options) => {
+        page.readyOptions.push(options);
+        return waitFor(options);
+      },
+      click: async (options) => {
         page.clicks++;
+        page.clickOptions.push(options);
         return click(page.clicks);
       },
     }),
@@ -189,3 +208,57 @@ test('a failed platform users click writes the page URL, the console errors, and
     },
   ]);
 });
+
+test('the platform users navigation, ready wait, and click keep the Playwright budgets', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePlatformUsersPage({
+    goto: async () => okResponse('/platform-users'),
+    click: async () => undefined,
+  });
+  await openPlatformUsers(page, {
+    publicOrigin,
+    principalId,
+    evidenceDirectory: directory,
+    label: 'access-revocation-platform-users',
+  });
+  assert.equal(page.navigationOptions[0].timeout, 30000);
+  assert.equal(page.readyOptions[0].timeout, 30000);
+  assert.equal(page.clickOptions[0].timeout, 30000);
+});
+
+test('a settings reload keeps the Playwright navigation budget', async () => {
+  const page = fakeSettingsPage(
+    async () => okResponse(),
+    async () => undefined,
+  );
+  await reloadCustomerSettings(page);
+  assert.equal(page.reloadOptions[0].timeout, 30000);
+  assert.equal(page.readyOptions[0].timeout, 15000);
+});
+
+test(
+  'a row that renders after 16 seconds still passes the ready gate',
+  { timeout: 40000 },
+  async (t) => {
+    const directory = await createEvidenceDirectory(t);
+    const renderDelayMs = 16000;
+    // The fake page enforces the timeout of the wait, as Playwright does.
+    const page = fakePlatformUsersPage({
+      goto: async () => okResponse('/platform-users'),
+      click: async () => undefined,
+      waitFor: async ({ timeout }) => {
+        await delay(renderDelayMs);
+        if (renderDelayMs > timeout)
+          throw new Error(`locator.waitFor: Timeout ${timeout}ms exceeded.`);
+      },
+    });
+    const result = await openPlatformUsers(page, {
+      publicOrigin,
+      principalId,
+      evidenceDirectory: directory,
+      label: 'access-revocation-platform-users',
+    });
+    assert.deepEqual(result, { attempts: 1, recoveries: [] });
+    assert.equal(page.clicks, 1);
+  },
+);
