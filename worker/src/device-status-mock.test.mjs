@@ -26,6 +26,7 @@ let domain;
 let credential;
 let reader;
 let activeId;
+let deprovisionActiveId;
 let disabledId;
 
 /** One claimed operation of a status job: no field rows, and its requested value is the status. */
@@ -184,7 +185,10 @@ before(async () => {
     AbortSignal.timeout(60_000),
   ))
     devices.push(...page);
-  activeId = devices.find((device) => device.status === 'ACTIVE').deviceId;
+  const active = devices.filter((device) => device.status === 'ACTIVE');
+  activeId = active[0].deviceId;
+  // The Disable scenario changes activeId. The Deprovision scenario owns a second ACTIVE target.
+  deprovisionActiveId = active[1].deviceId;
   disabledId = devices.find((device) => device.status === 'DISABLED').deviceId;
 });
 
@@ -237,12 +241,21 @@ test('a Disable job on the mock settles each device and reports a status conflic
 });
 
 test('a Deprovision job on the mock settles ACTIVE and DISABLED targets and reports a deprovisioned target', async () => {
+  const initial = await Promise.all([
+    rawDevice(deprovisionActiveId),
+    rawDevice(disabledId),
+  ]);
+  assert.deepEqual(
+    initial.map((device) => device.status),
+    ['ACTIVE', 'DISABLED'],
+    'The job starts from an ACTIVE target and a DISABLED target.',
+  );
   const first = await run(
     database({
       action: 'deprovision',
       reason: deprovisionReason,
       targets: [
-        { number: 1, deviceId: activeId, value: 'DEPROVISIONED' },
+        { number: 1, deviceId: deprovisionActiveId, value: 'DEPROVISIONED' },
         { number: 2, deviceId: disabledId, value: 'DEPROVISIONED' },
       ],
     }),
@@ -266,7 +279,7 @@ test('a Deprovision job on the mock settles ACTIVE and DISABLED targets and repo
     'An ACTIVE and a DISABLED device both accept a Deprovision.',
   );
   // The mock refuses a Deprovision without a reason, so a stored reason proves the job sent one.
-  for (const deviceId of [activeId, disabledId]) {
+  for (const deviceId of [deprovisionActiveId, disabledId]) {
     const stored = await rawDevice(deviceId);
     assert.equal(stored.status, 'DEPROVISIONED', deviceId);
     assert.equal(
@@ -280,7 +293,9 @@ test('a Deprovision job on the mock settles ACTIVE and DISABLED targets and repo
     database({
       action: 'deprovision',
       reason: deprovisionReason,
-      targets: [{ number: 1, deviceId: activeId, value: 'DEPROVISIONED' }],
+      targets: [
+        { number: 1, deviceId: deprovisionActiveId, value: 'DEPROVISIONED' },
+      ],
     }),
   );
   assert.deepEqual(
