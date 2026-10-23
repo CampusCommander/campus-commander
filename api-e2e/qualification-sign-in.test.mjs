@@ -4,6 +4,7 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { EvidenceSecurity } from './evidence-security.mjs';
 import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import {
   qualificationBrowserStep,
@@ -1677,4 +1678,174 @@ test('recovers a held sign-in whose navigation a network change aborts', async (
     recoveries: [{ attempt: 1, routes: [] }],
   });
   assert.deepEqual(await readdir(directory), []);
+});
+
+test('a failed step records the page URL, the console errors, and the failed requests', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'diagnostics',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () => 'Failed to load resource: net::ERR_CONNECTION_CLOSED',
+        });
+        // A console message that is not an error stays out of the record.
+        page.emit('console', { type: () => 'log', text: () => 'ignored' });
+        page.emit('requestfailed', {
+          url: () => `${publicOrigin}/api/platform-users?page=2`,
+          method: () => 'GET',
+          failure: () => ({ errorText: 'net::ERR_CONNECTION_CLOSED' }),
+        });
+        throw new Error('The customer settings field did not appear');
+      },
+    ),
+    /did not appear/,
+  );
+  const failure = JSON.parse(
+    await readFile(join(directory, 'diagnostics-failure.json'), 'utf8'),
+  );
+  assert.equal(failure.url, `${publicOrigin}/account`);
+  assert.deepEqual(failure.documentState, {
+    readyState: 'complete',
+    applicationChildren: 0,
+    headings: 0,
+    busyRegions: 0,
+    alerts: 0,
+  });
+  assert.deepEqual(failure.consoleErrors, [
+    'Failed to load resource: net::ERR_CONNECTION_CLOSED',
+  ]);
+  assert.deepEqual(failure.failedRequests, [
+    {
+      route: 'other',
+      path: '/api/platform-users',
+      method: 'GET',
+      error: 'ERR_CONNECTION_CLOSED',
+    },
+  ]);
+});
+
+test('a failed step writes no standalone console authentication value', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  // The marker is shorter than the opaque-value pattern of the redaction, and
+  // the console message has no delimiter around it.
+  const marker = 'synthetic-review-auth-marker-00000001';
+  page.url = () => `${publicOrigin}/api/auth/callback?code=${marker}`;
+  const security = new EvidenceSecurity();
+  security.register('authorization-code', marker);
+
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'console-redaction',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () => `callback failed for ${marker}`,
+        });
+        throw new Error('locator.click: Timeout 30000ms exceeded.');
+      },
+    ),
+    /Timeout 30000ms exceeded/,
+  );
+
+  const record = await readFile(
+    join(directory, 'console-redaction-failure.json'),
+    'utf8',
+  );
+  assert.ok(
+    !record.includes(marker),
+    'the record retained the registered value',
+  );
+  security.assertSafe(record, 'failure record');
+  const failure = JSON.parse(record);
+  assert.deepEqual(failure.consoleErrors, ['callback failed for redacted']);
+  assert.equal(failure.url, `${publicOrigin}/api/auth/callback?code=redacted`);
+});
+
+test('a value registered after its console event is redacted at write time', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const marker = 'synthetic-late-marker-0123456789';
+  const security = new EvidenceSecurity();
+
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'late-redaction',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () => `late failure for ${marker}`,
+        });
+        // The response that carries the value arrives after the console event.
+        security.register('late-secret', marker);
+        throw new Error('The heading never appeared');
+      },
+    ),
+    /never appeared/,
+  );
+
+  const record = await readFile(
+    join(directory, 'late-redaction-failure.json'),
+    'utf8',
+  );
+  security.assertSafe(record, 'failure record');
+  assert.ok(!record.includes(marker));
+});
+
+test('a failed step writes no registered authentication value', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakePage();
+  const authorizationCode = 'synthetic-authorization-code-0123456789';
+  const state = 'synthetic-state-value-0123456789';
+  const callback =
+    `${publicOrigin}/api/auth/callback?code=${authorizationCode}` +
+    `&state=${state}#access_token=${authorizationCode}`;
+  page.url = () => callback;
+  const security = new EvidenceSecurity();
+  security.register('synthetic-authorization-code', authorizationCode);
+  security.register('synthetic-state', state);
+
+  await assert.rejects(
+    qualificationBrowserStep(
+      page,
+      publicOrigin,
+      directory,
+      'redaction',
+      async () => {
+        page.emit('console', {
+          type: () => 'error',
+          text: () =>
+            `Failed to load resource: ${callback} Authorization: Bearer ${authorizationCode}`,
+        });
+        throw new Error('locator.click: Timeout 30000ms exceeded.');
+      },
+    ),
+    /Timeout 30000ms exceeded/,
+  );
+
+  const record = await readFile(
+    join(directory, 'redaction-failure.json'),
+    'utf8',
+  );
+  security.assertSafe(record, 'failure record');
+  const failure = JSON.parse(record);
+  assert.equal(
+    failure.url,
+    `${publicOrigin}/api/auth/callback?code=redacted&state=redacted#redacted`,
+  );
+  assert.deepEqual(failure.consoleErrors, [
+    `Failed to load resource: ${publicOrigin}/api/auth/callback?code=redacted&state=redacted#redacted Authorization: Bearer redacted`,
+  ]);
 });

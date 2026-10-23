@@ -1,5 +1,9 @@
 import { evidenceSecurity } from './evidence-security.mjs';
-import { qualificationSignIn } from './qualification-sign-in.mjs';
+import { reloadCustomerSettings } from './browser-recovery.mjs';
+import {
+  qualificationBrowserStep,
+  qualificationSignIn,
+} from './qualification-sign-in.mjs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -97,9 +101,17 @@ export async function qualifyCustomerSettings({
         [session.identity.id, JSON.stringify(scope)],
       );
   }
-  await page.goto(`${publicOrigin}/customer-settings`);
-  await expect(page.getByLabel('Customer display name')).toHaveValue(
-    initial.primaryDomain,
+  await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    'customer-settings-open',
+    async () => {
+      await page.goto(`${publicOrigin}/customer-settings`);
+      await expect(page.getByLabel('Customer display name')).toHaveValue(
+        initial.primaryDomain,
+      );
+    },
   );
   let receipt;
   let submitted;
@@ -127,10 +139,19 @@ export async function qualifyCustomerSettings({
     'We have not received a save confirmation',
   );
   await page.unroute('**/api/customer/settings', lostResponse);
-  await page.reload();
-  await expect(page.getByLabel('Customer display name')).toHaveValue(
-    'Confirmed fixture district',
-    { timeout: 15000 },
+  await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    'customer-settings-lost-response-reload',
+    async () => {
+      await reloadCustomerSettings(page);
+      await expect(page.getByLabel('Customer display name')).toHaveValue(
+        'Confirmed fixture district',
+        { timeout: 15000 },
+      );
+    },
+    { retryOnNetworkChange: false },
   );
   await page.getByRole('button', { name: 'Check save status' }).click();
   await expect(
@@ -311,14 +332,23 @@ export async function qualifyCustomerSettings({
     ),
     candidatesBefore,
   );
-  await page.reload();
-  await expect(page.getByLabel('Customer display name')).toHaveValue(
-    'My preserved district',
-    { timeout: 15000 },
+  await qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    'customer-settings-restart-reload',
+    async () => {
+      await reloadCustomerSettings(page);
+      await expect(page.getByLabel('Customer display name')).toHaveValue(
+        'My preserved district',
+        { timeout: 15000 },
+      );
+      await expect(
+        page.getByRole('heading', { name: 'Setup progress' }),
+      ).toBeVisible();
+    },
+    { retryOnNetworkChange: false },
   );
-  await expect(
-    page.getByRole('heading', { name: 'Setup progress' }),
-  ).toBeVisible();
   await writeFile(
     `${evidenceDirectory}/customer-settings.json`,
     JSON.stringify(
