@@ -445,6 +445,235 @@ test('a status change of 51 devices splits into parts of 50 and 1', async () => 
   );
 });
 
+/** The reason every Deprovision call of this file sends. One job holds one reason (D11). */
+const deprovisionReason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+
+/** The devices the Deprovision test moved, for the conflict test that follows it. */
+let deprovisioned = [];
+
+/** Read the live devices, so a status change of an earlier test cannot stale a choice. */
+async function currentDevices() {
+  return collect(
+    reader.devicePages(
+      credential,
+      domain.customerId,
+      AbortSignal.timeout(timeout),
+    ),
+  );
+}
+
+/**
+ * Devices of one status, confirmed by a direct read.
+ * A list read lags a write by the mock's search delay, so only a direct read is current.
+ */
+async function liveDevices(status, count, keep = () => true, pool = 60) {
+  const candidates = (await currentDevices())
+    .filter((device) => device.status === status && keep(device))
+    .slice(0, pool);
+  assert.ok(candidates.length > 0, `the list offers a ${status} candidate`);
+  const { devices } = await reader.deviceBatch(
+    credential,
+    domain.customerId,
+    candidates.map((device) => device.deviceId),
+    AbortSignal.timeout(timeout),
+  );
+  const found = devices.filter((device) => device.status === status);
+  assert.ok(
+    found.length >= count,
+    `the domain holds ${count} ${status} device(s)`,
+  );
+  return found.slice(0, count);
+}
+
+/**
+ * Read one device with an unmodified Google client, so the answer comes from the mock.
+ * The device observation drops the deprovision reason, so a raw read proves what Google stored.
+ */
+async function rawDevice(deviceId) {
+  const auth = new JWT({
+    email: credential.serviceAccount.client_email,
+    key: credential.serviceAccount.private_key,
+    keyId: credential.serviceAccount.private_key_id,
+    scopes: [readerScopes[0]],
+    subject: credential.subject,
+  });
+  const { data } = await auth.request({
+    url: `https://admin.googleapis.com/admin/directory/v1/customer/${encodeURIComponent(domain.customerId)}/devices/chromeos/${encodeURIComponent(deviceId)}`,
+    method: 'GET',
+    params: { projection: 'FULL' },
+    retry: false,
+  });
+  return data;
+}
+
+test('deprovision moves an active and a disabled device, and each device answers the reason', async () => {
+  const [active] = await liveDevices('ACTIVE', 1);
+  const [disabled] = await liveDevices('DISABLED', 1);
+  const targets = [active.deviceId, disabled.deviceId];
+  const result = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    targets.map((deviceId) => ({
+      deviceId,
+      action: 'deprovision',
+      deprovisionReason,
+    })),
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    result.parts.map((part) => [part.action, part.deprovisionReason]),
+    [['deprovision', deprovisionReason]],
+    'Both devices travel in one part under one reason.',
+  );
+  assert.deepEqual(
+    result.answers.map((answer) => [
+      answer.deviceId,
+      answer.result?.outcome,
+      answer.result?.reason,
+    ]),
+    targets.map((deviceId) => [deviceId, 'succeeded', null]),
+  );
+  const { devices: moved } = await reader.deviceBatch(
+    credential,
+    domain.customerId,
+    targets,
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    moved.map((device) => [device.deviceId, device.status]),
+    targets.map((deviceId) => [deviceId, 'DEPROVISIONED']),
+    'An active device and a disabled device both reach DEPROVISIONED.',
+  );
+  for (const deviceId of targets) {
+    const stored = await rawDevice(deviceId);
+    assert.equal(stored.status, 'DEPROVISIONED', deviceId);
+    assert.equal(
+      stored.deprovisionReason,
+      deprovisionReason,
+      `${deviceId} answers the reason the part carried`,
+    );
+  }
+  deprovisioned = targets;
+});
+
+test('a second deprovision and a re-enable of a deprovisioned device answer status-conflict', async () => {
+  assert.equal(
+    deprovisioned.length,
+    2,
+    'the Deprovision test moved two devices',
+  );
+  const [deviceId] = deprovisioned;
+  const second = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    [{ deviceId, action: 'deprovision', deprovisionReason }],
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    [second.answers[0].result.outcome, second.answers[0].result.reason],
+    ['failed', 'status-conflict'],
+  );
+  assert.match(
+    second.answers[0].result.googleReason,
+    /DEPROVISIONED does not allow this action/,
+  );
+  const reenabled = await reader.changeDeviceStatus(
+    credential,
+    domain.customerId,
+    [{ deviceId, action: 'reenable' }],
+    AbortSignal.timeout(timeout),
+  );
+  assert.deepEqual(
+    [reenabled.answers[0].result.outcome, reenabled.answers[0].result.reason],
+    ['failed', 'status-conflict'],
+  );
+  assert.match(
+    reenabled.answers[0].result.googleReason,
+    /DEPROVISIONED does not allow this action/,
+  );
+});
+
+test('wipe user data and powerwash issue and poll through their states', async () => {
+  const now = Date.now();
+  const [wipe, powerwash] = await liveDevices(
+    'ACTIVE',
+    2,
+    (device) =>
+      device.lastContact !== null &&
+      now - Date.parse(device.lastContact) <= 24 * 3_600_000,
+    400,
+  );
+  const commands = [
+    { device: wipe, commandType: 'WIPE_USERS' },
+    { device: powerwash, commandType: 'REMOTE_POWERWASH' },
+  ];
+  // The mock refuses a payload for either type, so a 2xx answer proves the part sent none.
+  await mock.control('PUT', '/clock', { scale: 20 });
+  try {
+    const issued = await reader.issueDeviceCommands(
+      credential,
+      domain.customerId,
+      commands.map(({ device, commandType }) => ({
+        deviceId: device.deviceId,
+        commandType,
+      })),
+      AbortSignal.timeout(timeout),
+    );
+    for (const { device, commandType } of commands) {
+      const [command] = issued.succeeded.get(device.deviceId) ?? [];
+      assert.ok(command, `${commandType} was issued to ${device.deviceId}`);
+      assert.match(command.commandId, /^\d{1,20}$/);
+      const order = [
+        'PENDING',
+        'SENT_TO_CLIENT',
+        'ACKED_BY_CLIENT',
+        'EXECUTED_BY_CLIENT',
+      ];
+      const states = [];
+      let observed;
+      const started = Date.now();
+      do {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const polled = await reader.deviceCommands(
+          credential,
+          domain.customerId,
+          [{ deviceId: device.deviceId, commandId: command.commandId }],
+          AbortSignal.timeout(timeout),
+        );
+        observed = polled.succeeded.get(device.deviceId)[0];
+        states.push(observed.state);
+      } while (
+        !['EXECUTED_BY_CLIENT', 'EXPIRED'].includes(observed.state) &&
+        Date.now() - started < 10_000
+      );
+      let reached = 0;
+      for (const state of states) {
+        const next = order.indexOf(state);
+        assert.ok(next >= 0, `${commandType} reports a known state: ${state}`);
+        assert.ok(
+          next >= reached,
+          `${commandType} states advance in order: ${states.join(', ')}`,
+        );
+        reached = next;
+      }
+      assert.equal(
+        observed.state,
+        'EXECUTED_BY_CLIENT',
+        `${commandType} executed after ${states.join(', ')}`,
+      );
+      assert.equal(observed.commandId, command.commandId);
+      assert.ok(
+        observed.expiresAt,
+        `${commandType} carries the provider expiry`,
+      );
+      assert.ok(observed.executedAt);
+      assert.ok(['SUCCESS', 'FAILURE'].includes(observed.result));
+    }
+  } finally {
+    await mock.control('PUT', '/clock', { scale: 1 });
+  }
+});
+
 test('one PATCH sets three annotations and moves the device', async () => {
   const device = inventory.find((entry) => entry.status === 'ACTIVE');
   assert.ok(device, 'the seed holds an active device');
