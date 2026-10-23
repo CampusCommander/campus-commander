@@ -172,6 +172,11 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly canStatus = computed(() =>
     this.authorized('devices:status'),
   );
+  /** Wipe user data and Powerwash hold one permission (record ruling 1). */
+  protected readonly canWipe = computed(() => this.authorized('devices:wipe'));
+  protected readonly canDeprovision = computed(() =>
+    this.authorized('devices:deprovision'),
+  );
   protected readonly canBulk = computed(() =>
     this.authorized('devices:bulk-actions'),
   );
@@ -206,12 +211,14 @@ export class DevicesPage implements OnInit, OnDestroy {
       command: deviceActionNote({
         ...shared,
         family: 'command',
-        canAction: this.canCommand(),
+        // D2: Send command enables with any command permission.
+        canAction: this.canCommand() || this.canWipe(),
       }),
       status: deviceActionNote({
         ...shared,
         family: 'status',
-        canAction: this.canStatus(),
+        // D2: Change status enables with devices:status or devices:deprovision.
+        canAction: this.canStatus() || this.canDeprovision(),
       }),
     };
   });
@@ -266,7 +273,13 @@ export class DevicesPage implements OnInit, OnDestroy {
       untracked(() => void this.store.loadOrgUnits());
     });
     effect(() => {
-      if (this.canWrite() || this.canCommand() || this.canStatus())
+      if (
+        this.canWrite() ||
+        this.canCommand() ||
+        this.canStatus() ||
+        this.canWipe() ||
+        this.canDeprovision()
+      )
         untracked(() => void this.writeAccess.load());
     });
   }

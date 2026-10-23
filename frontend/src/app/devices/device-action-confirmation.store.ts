@@ -17,6 +17,8 @@ const submittedActionSchema = z.strictObject({
   family: z.enum(['command', 'status']),
   previewId: z.uuid(),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  /** The trimmed phrase of an action that requires one (D7). */
+  typedPhrase: z.string().max(64).optional(),
 });
 export type SubmittedActionConfirmation = z.infer<typeof submittedActionSchema>;
 
@@ -127,6 +129,7 @@ export class DeviceActionConfirmationStore {
       submitted.family,
       submitted.previewId,
       submitted.manifestDigest,
+      submitted.typedPhrase,
     );
     if (result.ok) {
       this.release(submitted.family, submitted.previewId);

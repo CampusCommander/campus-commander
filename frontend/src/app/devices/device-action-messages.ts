@@ -1,9 +1,12 @@
-import type {
-  DeviceAction,
-  DeviceActionPreview,
-  DeviceActionTarget,
-  DeviceWriteAccess,
-  JobDetail,
+import {
+  DEPROVISION_REASON_LABELS,
+  DEVICE_ACTION_PHRASES,
+  type DeprovisionReason,
+  type DeviceAction,
+  type DeviceActionPreview,
+  type DeviceActionTarget,
+  type DeviceWriteAccess,
+  type JobDetail,
 } from '@campus/application-contracts';
 import { formatTimestamp } from '../jobs/job-fields';
 import { receiptCompletionSentence } from '../jobs/job-receipt-messages';
@@ -21,12 +24,12 @@ import {
 /** The two Bulk Actions entries of the owner mockup of 2026-10-21 (states 01, 02, and 05). */
 export type DeviceActionFamily = 'command' | 'status';
 
-/** The actions that each family prepares. Send command holds Reboot only. */
+/** The actions that each family prepares (record D1). */
 export const FAMILY_ACTIONS: Readonly<
   Record<DeviceActionFamily, readonly DeviceAction[]>
 > = {
-  command: ['reboot'],
-  status: ['disable', 'reenable'],
+  command: ['reboot', 'wipe-users', 'powerwash'],
+  status: ['disable', 'reenable', 'deprovision'],
 };
 
 export interface DeviceActionFamilyCopy {
@@ -50,6 +53,18 @@ export const SEND_COMMAND_PERMISSION_MESSAGE =
 
 export const CHANGE_STATUS_PERMISSION_MESSAGE =
   'You need the devices:read, devices:status, and devices:bulk-actions permissions to change device status. Ask your administrator for access.';
+
+/** The note of the Reboot option for a person without devices:commands (GRID-06). */
+export const REBOOT_PERMISSION_NOTE =
+  'You need the devices:read, devices:commands, and devices:bulk-actions permissions to reboot devices. Ask your administrator for access.';
+
+/** The note of the Wipe user data and Powerwash options (record ruling 1, state 11). */
+export const WIPE_PERMISSION_NOTE =
+  'You need the devices:read, devices:wipe, and devices:bulk-actions permissions to wipe user data or powerwash devices. Ask your administrator for access.';
+
+/** The note of the Deprovision option for a person without devices:deprovision. */
+export const DEPROVISION_PERMISSION_NOTE =
+  'You need the devices:read, devices:deprovision, and devices:bulk-actions permissions to deprovision devices. Ask your administrator for access.';
 
 export const FAMILY_COPY: Readonly<
   Record<DeviceActionFamily, DeviceActionFamilyCopy>
@@ -124,15 +139,31 @@ export function actionConsequence(action: DeviceAction): string {
     case 'reboot':
       return 'Restarts the devices and interrupts active sessions.';
     case 'wipe-users':
-      return 'Removes local user profiles and keeps device policy and enrollment.';
+      return 'Removes local user profiles. Device policy and enrollment remain.';
     case 'powerwash':
-      return 'Returns the devices to a factory state and removes enrollment unless forced or automatic enrollment applies.';
+      return 'Removes local data, user and device policies, and enrollment. Enrollment rules govern subsequent enrollment.';
     case 'disable':
       return 'Blocks user access while keeping devices enrolled.';
     case 'reenable':
       return 'Restores access to disabled devices.';
     case 'deprovision':
-      return 'Removes the devices from active management. No action reverses it.';
+      return 'Removes devices from active management.';
+  }
+}
+
+/** The permission note of one Choose option that the person cannot use (GRID-06). */
+export function optionPermissionNote(action: DeviceAction): string {
+  switch (action) {
+    case 'reboot':
+      return REBOOT_PERMISSION_NOTE;
+    case 'wipe-users':
+    case 'powerwash':
+      return WIPE_PERMISSION_NOTE;
+    case 'disable':
+    case 'reenable':
+      return CHANGE_STATUS_PERMISSION_MESSAGE;
+    case 'deprovision':
+      return DEPROVISION_PERMISSION_NOTE;
   }
 }
 
@@ -223,15 +254,17 @@ export function confirmationMetaLine(
   )}`;
 }
 
-/** "Reboot 6 devices". The step title and the Disable confirmation button share it. */
+/** "Reboot 6 devices" or "Wipe user data on 6 devices". The step title of the sheet. */
 export function confirmationTitle(
   action: DeviceAction,
   eligible: number,
 ): string {
-  return `${ACTION_LABELS[action]} ${deviceCountText(eligible)}`;
+  return action === 'wipe-users'
+    ? `Wipe user data on ${deviceCountText(eligible)}`
+    : `${ACTION_LABELS[action]} ${deviceCountText(eligible)}`;
 }
 
-/** The consequence heading of the Confirm step (Figma 111:442 and 114:503). */
+/** The consequence heading of the Confirm step (Figma 111:497, 97:129, and 97:93). */
 export function confirmationHeading(
   action: DeviceAction,
   eligible: number,
@@ -240,16 +273,33 @@ export function confirmationHeading(
     case 'reboot':
       return 'Reboot interrupts active sessions';
     case 'wipe-users':
-      return `Remove local user data from ${deviceCountText(eligible)}`;
+      return 'Remove local user profiles';
     case 'powerwash':
-      return `Powerwash ${deviceCountText(eligible)}`;
+      return 'Powerwash permanently removes device data';
     case 'disable':
       return `Block user access on ${deviceCountText(eligible)}`;
     case 'reenable':
       return `Restore access on ${deviceCountText(eligible)}`;
     case 'deprovision':
-      return `Deprovision ${deviceCountText(eligible)}`;
+      return `Remove ${deviceCountText(eligible)} from active management`;
   }
+}
+
+/** The sentence that separates provider acceptance from device execution. */
+export const GOOGLE_ACCEPTING =
+  'Google accepting the request does not confirm execution. Track each device in the job.';
+
+/** The drafted D10 sentence of the Deprovision Review and Confirm steps. */
+export const DEPROVISION_LOCAL_DATA =
+  'Deprovision does not erase local data. Send Powerwash first to erase a device that leaves the district.';
+
+/** "Deprovision reason: Retiring from fleet", or an empty string. */
+export function deprovisionReasonLine(
+  reason: DeprovisionReason | null,
+): string {
+  return reason
+    ? `Deprovision reason: ${DEPROVISION_REASON_LABELS[reason]}`
+    : '';
 }
 
 /** The consequence paragraphs of the Confirm step. */
@@ -257,12 +307,32 @@ export function confirmationParagraphs(
   action: DeviceAction,
   eligible: number,
   excluded: number,
+  reason: DeprovisionReason | null = null,
 ): readonly string[] {
   if (action === 'reboot')
     return [
       'The devices restart when the command executes. Users will lose their active sessions.',
-      'Google accepting the request does not confirm execution. Track each device in the job.',
+      GOOGLE_ACCEPTING,
     ];
+  if (action === 'wipe-users')
+    return [
+      'Wipe user data removes all local user profiles. Device policies and enrollment remain in place.',
+      GOOGLE_ACCEPTING,
+    ];
+  if (action === 'powerwash')
+    return [
+      'Powerwash removes local data, user policies, device policies, and enrollment. Forced or automatic enrollment rules control re-enrollment.',
+      GOOGLE_ACCEPTING,
+    ];
+  if (action === 'deprovision')
+    return [
+      'Deprovision removes these devices from active management. This workflow cannot restore their previous management state.',
+      DEPROVISION_LOCAL_DATA,
+      deprovisionReasonLine(reason),
+      `${eligible.toLocaleString(
+        'en-US',
+      )} eligible · ${excluded.toLocaleString('en-US')} excluded · The job records the reason and the targets.`,
+    ].filter((paragraph) => paragraph.length > 0);
   const scope = `${eligible.toLocaleString(
     'en-US',
   )} eligible · ${excluded.toLocaleString(
@@ -279,24 +349,67 @@ export function confirmationParagraphs(
       ];
 }
 
-/** "Send Reboot to 6 devices" (Figma 111:442) and the status confirmations. */
+/** "Send Wipe to 6 devices" (record D9) and the other final buttons. */
 export function confirmationButton(
   action: DeviceAction,
   eligible: number,
 ): string {
-  return action === 'reboot'
-    ? `Send Reboot to ${deviceCountText(eligible)}`
-    : confirmationTitle(action, eligible);
+  switch (action) {
+    case 'reboot':
+      return `Send Reboot to ${deviceCountText(eligible)}`;
+    case 'wipe-users':
+      return `Send Wipe to ${deviceCountText(eligible)}`;
+    case 'powerwash':
+      return `Send Powerwash to ${deviceCountText(eligible)}`;
+    case 'deprovision':
+      return `Deprovision ${deviceCountText(eligible)}`;
+    case 'disable':
+    case 'reenable':
+      return confirmationTitle(action, eligible);
+  }
 }
 
 /**
- * The acknowledgment of frame 111:442. Disable and Re-enable confirm with the filled
- * button, so they carry no checkbox (record design default of 2026-10-21).
+ * The acknowledgment of frame 111:497 and 97:129. Deprovision has no box (D8), and
+ * Disable and Re-enable confirm with the filled button.
  */
 export function acknowledgementLabel(action: DeviceAction): string | null {
-  return action === 'reboot'
-    ? 'I understand that restarting these devices interrupts users.'
-    : null;
+  switch (action) {
+    case 'reboot':
+      return 'I understand that restarting these devices interrupts users.';
+    case 'wipe-users':
+      return 'I understand that all local user profile data will be removed.';
+    case 'powerwash':
+      return 'I understand the data loss and enrollment consequences.';
+    case 'disable':
+    case 'reenable':
+    case 'deprovision':
+      return null;
+  }
+}
+
+/** The exact typed phrase of an action, or null (record D7). */
+export function typedPhrase(action: DeviceAction): string | null {
+  return DEVICE_ACTION_PHRASES[action] ?? null;
+}
+
+/** "Type WIPE to confirm", or an empty string. */
+export function phraseLabel(action: DeviceAction): string {
+  const phrase = typedPhrase(action);
+  return phrase ? `Type ${phrase} to confirm` : '';
+}
+
+/** The error line of a typed phrase that does not match, or an empty string. */
+export function phraseError(action: DeviceAction): string {
+  const phrase = typedPhrase(action);
+  return phrase ? `The phrase does not match. Type ${phrase}.` : '';
+}
+
+/** The offline note of Wipe user data and Powerwash Review (record D16). */
+export function offlineNote(action: DeviceAction): string {
+  return `An offline device runs ${
+    ACTION_LABELS[action]
+  } when it next connects, unless the command expires first. The job shows the expiry that Google returns.`;
 }
 
 /** "6 devices · 6 Reboot commands. Google changes have not completed." */
@@ -306,10 +419,9 @@ export function receiptActionLine(
 ): string {
   const devices = job.scope.deviceCount ?? job.progress.total ?? 0;
   const operations = job.progress.total ?? job.scope.deviceCount ?? 0;
-  const noun =
-    action === 'reboot'
-      ? `Reboot ${operations === 1 ? 'command' : 'commands'}`
-      : actionNoun(action, operations);
+  const noun = isCommand(action)
+    ? `${ACTION_LABELS[action]} ${operations === 1 ? 'command' : 'commands'}`
+    : actionNoun(action, operations);
   return `${deviceCountText(devices)} · ${operations.toLocaleString(
     'en-US',
   )} ${noun}. ${receiptCompletionSentence(job)}`;
@@ -322,12 +434,12 @@ export function jobActionLabel(action: DeviceAction): string {
 
 /** The third table column of the Review step (mockup choice 4). */
 export function targetColumnLabel(action: DeviceAction): string {
-  return action === 'reboot' ? 'Command' : 'Status change';
+  return isCommand(action) ? 'Command' : 'Status change';
 }
 
 /** The excluded cell of the Review step: "Not sent" for a command (mockup choice 4). */
 export function notSentText(action: DeviceAction): string {
-  return action === 'reboot' ? 'Not sent' : 'Not changed';
+  return isCommand(action) ? 'Not sent' : 'Not changed';
 }
 
 /** "Reboot targets". */
@@ -481,8 +593,28 @@ export function noEligibleParagraphs(
   const third =
     action === 'reenable'
       ? 'Select disabled devices to re-enable access.'
-      : `Select active devices to ${action === 'reboot' ? 'reboot them' : 'disable them'}.`;
+      : `Select ${
+          action === 'deprovision' ? 'active or disabled' : 'active'
+        } devices to ${noEligibleVerb(action)}.`;
   return [first, second, third];
+}
+
+/** The verb of the no-eligible recovery sentence. */
+function noEligibleVerb(action: DeviceAction): string {
+  switch (action) {
+    case 'reboot':
+      return 'reboot them';
+    case 'wipe-users':
+      return 'wipe them';
+    case 'powerwash':
+      return 'powerwash them';
+    case 'disable':
+      return 'disable them';
+    case 'reenable':
+      return 're-enable them';
+    case 'deprovision':
+      return 'deprovision them';
+  }
 }
 
 const NO_JOB = 'No job created';

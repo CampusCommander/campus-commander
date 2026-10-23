@@ -118,19 +118,51 @@
     <mat-radio-group
       class="action-options"
       [attr.aria-labelledby]="groupLabelId"
+      [attr.aria-describedby]="
+        choosePermissionNotes().length ? id('choose-permission') : null
+      "
       [value]="selected()"
       (change)="select($event.value)"
     >
       @for (option of options(); track option.action) {
-      <mat-radio-button class="action-option" [value]="option.action">
+      <mat-radio-button
+        class="action-option"
+        [value]="option.action"
+        [disabled]="!option.enabled"
+      >
         <span class="option-label">{{ option.label }}</span>
         <span class="option-line">{{ option.consequence }}</span>
         @if (option.summary) {
         <span class="option-line">{{ option.summary }}</span>
         }
       </mat-radio-button>
-      }
+      @if (option.action === 'deprovision' && isDeprovision()) {
+      <div class="reason-block">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>Deprovision reason</mat-label>
+          <mat-select
+            required
+            [ngModel]="reason()"
+            [ngModelOptions]="{ standalone: true }"
+            (ngModelChange)="chooseReason($event)"
+          >
+            @for (reasonOption of reasonOptions; track reasonOption.value) {
+            <mat-option [value]="reasonOption.value"
+              >{{ reasonOption.label }}</mat-option
+            >
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+      } }
     </mat-radio-group>
+    @if (choosePermissionNotes().length) {
+    <div class="action-note" [id]="id('choose-permission')">
+      @for (note of choosePermissionNotes(); track note) {
+      <p>{{ note }}</p>
+      }
+    </div>
+    }
     <p class="note">{{ excludedHelp }}</p>
     } } @else if (step() === 'review') { @if (problem(); as activeProblem) {
     <app-device-update-problem
@@ -155,13 +187,19 @@
     <p class="counts">{{ countLine() }}</p>
     <p class="mt-sm">{{ frozen }}</p>
     <p class="meta">{{ metaLine() }}</p>
-    @if (activePreview.stale) {
+    @if (reasonLine()) {
+    <p class="mt-md">{{ reasonLine() }}</p>
+    } @if (activePreview.stale) {
     <p class="stale" role="status">
       Some observed statuses are more than 24 hours old. Review them before you
       continue.
     </p>
     } @if (selectionChanged()) {
     <p class="notice" role="status">{{ selectionChangedNote }}</p>
+    } @if (localDataNotice()) {
+    <p class="notice">{{ localDataNotice() }}</p>
+    } @if (offlineNotice()) {
+    <p class="notice">{{ offlineNotice() }}</p>
     } } @if (targets().length > 0) {
     <p class="list-label" [id]="targetsLabelId">{{ targetsLabelText() }}</p>
     <div class="targets-wrap">
@@ -237,6 +275,28 @@
       >
         {{ label }}
       </mat-checkbox>
+      } @if (phraseLabelText(); as label) {
+      <div class="field-block">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>{{ label }}</mat-label>
+          <input
+            matInput
+            autocomplete="off"
+            spellcheck="false"
+            [errorStateMatcher]="phraseMatcher"
+            [ngModel]="phrase()"
+            [ngModelOptions]="{ standalone: true }"
+            (ngModelChange)="setPhrase($event)"
+            [attr.aria-invalid]="phraseInvalid() ? 'true' : null"
+            [attr.aria-describedby]="phraseInvalid() ? id('phrase-error') : null"
+          />
+        </mat-form-field>
+        @if (phraseInvalid()) {
+        <p class="error" role="alert" [id]="id('phrase-error')">
+          {{ phraseErrorMessage() }}
+        </p>
+        }
+      </div>
       }
     </section>
     } } @else if (step() === 'done') { @if (problem(); as activeProblem) {
@@ -262,6 +322,9 @@
     <section [attr.aria-labelledby]="id('receipt')">
       <h2 [id]="id('receipt')">{{ receiptHeading }}</h2>
       <p class="mt-md">{{ receiptLine() }}</p>
+      @if (receiptReasonLine()) {
+      <p class="mt-md">{{ receiptReasonLine() }}</p>
+      }
       <p class="mt-md">{{ nextStep }}</p>
     </section>
     } }

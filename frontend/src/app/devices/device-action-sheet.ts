@@ -15,12 +15,21 @@ import {
   viewChild,
 } from '@angular/core';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { ErrorStateMatcher } from '@angular/material/core';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MatRadioModule } from '@angular/material/radio';
+import { MatSelectModule } from '@angular/material/select';
 import { Router } from '@angular/router';
 import {
+  DEPROVISION_REASON_LABELS,
+  DEPROVISION_REASONS,
+  DEVICE_ACTION_PERMISSIONS,
   jobDetailSchema,
+  type DeprovisionReason,
   type DeviceAction,
   type DeviceActionJobReceipt,
   type DeviceActionPreview,
@@ -39,6 +48,7 @@ import {
   ACTION_FROZEN_TARGETS,
   ACTION_LABELS,
   ACTION_SELECTION_CHANGED_NOTE,
+  DEPROVISION_LOCAL_DATA,
   EXCLUDED_HELP,
   FAMILY_ACTIONS,
   FAMILY_COPY,
@@ -51,8 +61,13 @@ import {
   confirmationMetaLine,
   confirmationParagraphs,
   confirmationTitle,
+  deprovisionReasonLine,
   expiryLine,
   observedStatusText,
+  offlineNote,
+  optionPermissionNote,
+  phraseError,
+  phraseLabel,
   previewMetaLine,
   receiptActionLine,
   reviewCountLine,
@@ -64,6 +79,7 @@ import {
   targetSummaryText,
   targetsCaption,
   targetsLabel,
+  typedPhrase,
   type DeviceActionFamily,
 } from './device-action-messages';
 import { DeviceActionFlow } from './device-action-flow';
@@ -119,6 +135,18 @@ interface ActionOption {
   consequence: string;
   /** The count line of the prepared preview, or an empty string. */
   summary: string;
+  /** The person holds the permission of this option (D2). */
+  enabled: boolean;
+  /** The permission note of a disabled option (GRID-06). */
+  permissionNote: string;
+}
+
+/** Material asks this matcher for the error state of the typed phrase field. */
+class PhraseErrorMatcher implements ErrorStateMatcher {
+  constructor(private readonly invalid: () => boolean) {}
+  isErrorState(): boolean {
+    return this.invalid();
+  }
 }
 
 /**
@@ -130,10 +158,14 @@ interface ActionOption {
 @Component({
   selector: 'app-device-action-sheet',
   imports: [
+    FormsModule,
     CdkTrapFocus,
     MatButtonModule,
     MatCheckboxModule,
+    MatFormFieldModule,
+    MatInputModule,
     MatRadioModule,
+    MatSelectModule,
     DeviceUpdateProblem,
   ],
   templateUrl: './device-action-sheet.html',
@@ -171,6 +203,10 @@ export class DeviceActionSheet {
   protected readonly receipt = signal<DeviceActionJobReceipt | null>(null);
   protected readonly job = signal<JobDetail | null>(null);
   protected readonly acknowledged = signal(false);
+  /** The frozen reason of a Deprovision preview (D12). */
+  protected readonly reason = signal<DeprovisionReason | null>(null);
+  /** The typed phrase of the Confirm step (D7). */
+  protected readonly phrase = signal('');
   protected readonly creating = signal(false);
   protected readonly preparing = signal(false);
   protected readonly submitted = signal<SubmittedActionConfirmation | null>(
@@ -192,6 +228,14 @@ export class DeviceActionSheet {
   protected readonly copy = computed(() => FAMILY_COPY[this.family()]);
   protected readonly actions = computed(() => FAMILY_ACTIONS[this.family()]);
   protected readonly selected = signal<DeviceAction | null>(null);
+  /** True when the chosen action is Deprovision. */
+  protected readonly isDeprovision = computed(
+    () => this.selected() === 'deprovision',
+  );
+  /** The district scope of the connected customer (design 2.1). */
+  private readonly customerId = computed(
+    () => this.store.sync()?.customerId ?? null,
+  );
   protected readonly frozen = ACTION_FROZEN_TARGETS;
   protected readonly excludedHelp = EXCLUDED_HELP;
   protected readonly selectionChangedNote = ACTION_SELECTION_CHANGED_NOTE;
@@ -218,21 +262,37 @@ export class DeviceActionSheet {
   });
   protected readonly options = computed<ActionOption[]>(() =>
     this.actions().map((action) => {
-      const prepared = this.previews()[action];
+      const prepared = this.previewEntry(action);
+      const enabled = this.canAction(action);
       return {
         action,
         label: ACTION_LABELS[action],
         consequence: actionConsequence(action),
-        summary: prepared
-          ? targetSummaryText(
-              action,
-              prepared.preview.eligible,
-              prepared.preview.selected,
-            )
-          : '',
+        summary:
+          enabled && prepared
+            ? targetSummaryText(
+                action,
+                prepared.preview.eligible,
+                prepared.preview.selected,
+              )
+            : '',
+        enabled,
+        permissionNote: enabled ? '' : optionPermissionNote(action),
       };
     }),
   );
+  /** The permission notes of the disabled options, one per distinct note. */
+  protected readonly choosePermissionNotes = computed<string[]>(() => [
+    ...new Set(
+      this.options()
+        .filter((option) => !option.enabled)
+        .map((option) => option.permissionNote),
+    ),
+  ]);
+  protected readonly reasonOptions = DEPROVISION_REASONS.map((value) => ({
+    value,
+    label: DEPROVISION_REASON_LABELS[value],
+  }));
   protected readonly chooseReady = computed(
     () =>
       !this.loadingSelection() &&
@@ -242,7 +302,10 @@ export class DeviceActionSheet {
       (this.count() ?? 0) > 0,
   );
   protected readonly canReview = computed(
-    () => this.chooseReady() && this.selected() !== null,
+    () =>
+      this.chooseReady() &&
+      this.selected() !== null &&
+      (!this.isDeprovision() || this.reason() !== null),
   );
   protected readonly reviewLabel = computed(() => {
     const action = this.selected();
@@ -253,6 +316,10 @@ export class DeviceActionSheet {
     const action = this.selected();
     return action ? (this.previewEntry(action)?.preview ?? null) : null;
   });
+  /** The frozen reason of a Deprovision Review, Confirm, or receipt step. */
+  protected readonly reasonLine = computed(() =>
+    deprovisionReasonLine(this.preview()?.deprovisionReason ?? null),
+  );
   protected readonly countLine = computed(() => {
     const preview = this.preview();
     const action = this.selected();
@@ -276,7 +343,12 @@ export class DeviceActionSheet {
     const preview = this.preview();
     const action = this.selected();
     return preview && action
-      ? confirmationParagraphs(action, preview.eligible, preview.excluded)
+      ? confirmationParagraphs(
+          action,
+          preview.eligible,
+          preview.excluded,
+          preview.deprovisionReason,
+        )
       : [];
   });
   protected readonly confirmMeta = computed(() => {
@@ -288,9 +360,45 @@ export class DeviceActionSheet {
     const preview = this.preview();
     return preview ? expiryLine(preview.expiresAt) : '';
   });
+  /** The offline note of a Wipe user data or Powerwash Review (D16). */
+  protected readonly offlineNotice = computed(() => {
+    const action = this.selected();
+    return action === 'wipe-users' || action === 'powerwash'
+      ? offlineNote(action)
+      : '';
+  });
+  /** The D10 sentence of the Deprovision Review (record D10). */
+  protected readonly localDataNotice = computed(() =>
+    this.isDeprovision() ? DEPROVISION_LOCAL_DATA : '',
+  );
   protected readonly acknowledgement = computed(() => {
     const action = this.selected();
     return action ? acknowledgementLabel(action) : null;
+  });
+  /** The typed phrase label of the Confirm step, or an empty string (D7). */
+  protected readonly phraseLabelText = computed(() => {
+    const action = this.selected();
+    return action ? phraseLabel(action) : '';
+  });
+  /** A non-empty phrase that does not match the action phrase shows its error. */
+  protected readonly phraseInvalid = computed(() => {
+    const action = this.selected();
+    const phrase = action ? typedPhrase(action) : null;
+    const typed = this.phrase();
+    return !!phrase && typed.length > 0 && typed.trim() !== phrase;
+  });
+  /** The trimmed phrase matches exactly, and case counts (D7). */
+  protected readonly phraseMatches = computed(() => {
+    const action = this.selected();
+    const phrase = action ? typedPhrase(action) : null;
+    return phrase === null || this.phrase().trim() === phrase;
+  });
+  protected readonly phraseMatcher = new PhraseErrorMatcher(() =>
+    this.phraseInvalid(),
+  );
+  protected readonly phraseErrorMessage = computed(() => {
+    const action = this.selected();
+    return action ? phraseError(action) : '';
   });
   protected readonly confirmButton = computed(() => {
     const preview = this.preview();
@@ -299,15 +407,22 @@ export class DeviceActionSheet {
       ? confirmationButton(action, preview.eligible)
       : 'Send';
   });
-  /** The Disable confirmation is the filled destructive button (UI-05). */
-  protected readonly destructive = computed(
-    () => this.selected() === 'disable',
-  );
+  /** The destructive actions of the filled destructive button (UI-05). */
+  protected readonly destructive = computed(() => {
+    const action = this.selected();
+    return (
+      action === 'wipe-users' ||
+      action === 'powerwash' ||
+      action === 'deprovision' ||
+      action === 'disable'
+    );
+  });
   protected readonly canCreate = computed(
     () =>
       !this.creating() &&
       (this.preview()?.eligible ?? 0) > 0 &&
-      (this.acknowledgement() === null || this.acknowledged()),
+      (this.acknowledgement() === null || this.acknowledged()) &&
+      this.phraseMatches(),
   );
   /** The current selection, independent of the frozen preview. */
   private readonly selectionSignature = computed(() => {
@@ -344,6 +459,14 @@ export class DeviceActionSheet {
   });
   protected readonly jobDisplayId = computed(
     () => this.job()?.displayId ?? this.receipt()?.displayId ?? null,
+  );
+  /** The reason line of a Deprovision receipt (D12). */
+  protected readonly receiptReasonLine = computed(() =>
+    deprovisionReasonLine(
+      this.job()?.deprovisionReason ??
+        this.preview()?.deprovisionReason ??
+        null,
+    ),
   );
   protected readonly targetColumn = computed(() => {
     const action = this.selected();
@@ -428,9 +551,21 @@ export class DeviceActionSheet {
     });
   }
 
-  /** The element id prefix. Two mounted sheets never share an id. */
+  /** One element id prefix. Two mounted sheets never share an id. */
   protected id(name: string): string {
     return `${this.family()}-${name}`;
+  }
+
+  /** One Choose option reads its own permission at district scope (D2). */
+  protected canAction(action: DeviceAction): boolean {
+    const customerId = this.customerId();
+    return (
+      !!customerId &&
+      this.auth.can(DEVICE_ACTION_PERMISSIONS[action], {
+        kind: 'district',
+        customerId,
+      })
+    );
   }
 
   protected get titleId(): string {
@@ -461,14 +596,21 @@ export class DeviceActionSheet {
     this.creating.set(false);
     this.preparing.set(false);
     this.submitted.set(null);
+    this.reason.set(null);
+    this.phrase.set('');
     this.selectionExpired.set(false);
     this.selectionError.set('');
     this.chooseOffline.set(false);
     this.loadedCount.set(null);
     this.loadingSelection.set(true);
     this.selectionLoaded.set(false);
-    // Send command preselected Reboot, the only command (mockup choice 3).
-    this.selected.set(this.family() === 'command' ? 'reboot' : null);
+    // Send command holds three commands, so it preselects none. A person with one
+    // command keeps the first-build rule and starts on that command (state 11).
+    const enabled =
+      this.family() === 'command'
+        ? this.actions().filter((action) => this.canAction(action))
+        : [];
+    this.selected.set(enabled.length === 1 ? enabled[0] : null);
     afterNextRender(() => this.sheetTitle()?.nativeElement.focus(), {
       injector: this.injector,
     });
@@ -550,18 +692,54 @@ export class DeviceActionSheet {
   private async preparePreviews(generation: number): Promise<void> {
     this.preparing.set(true);
     await Promise.all(
-      this.actions().map(async (action) => {
-        const selection = this.selectionSignature();
-        const prepared = await this.flow.prepare(this.family(), action);
-        if (generation !== this.generation) return;
-        if (prepared.ok) this.storePreview(prepared.value, selection);
-      }),
+      this.actions()
+        // A Deprovision preview waits for its reason (D12).
+        .filter((action) => action !== 'deprovision')
+        // A disabled option never sends a preview it cannot confirm (D2).
+        .filter((action) => this.canAction(action))
+        .map(async (action) => {
+          const selection = this.selectionSignature();
+          const prepared = await this.flow.prepare(this.family(), action);
+          if (generation !== this.generation) return;
+          if (prepared.ok) this.storePreview(prepared.value, selection);
+        }),
     );
     if (generation === this.generation) this.preparing.set(false);
   }
 
+  /** Prepare the Deprovision preview after a reason is chosen. */
+  private async prepareReasonedPreview(): Promise<void> {
+    const generation = this.generation;
+    const selection = this.selectionSignature();
+    this.preparing.set(true);
+    const prepared = await this.flow.prepare(
+      this.family(),
+      'deprovision',
+      this.reason(),
+    );
+    if (generation !== this.generation) return;
+    this.preparing.set(false);
+    if (prepared.ok) this.storePreview(prepared.value, selection);
+  }
+
   protected select(action: DeviceAction): void {
     this.selected.set(action);
+  }
+
+  /**
+   * Choose the Deprovision reason. A changed reason drops its preview, because the
+   * digest binds the reason and the person must review the new preview (D12).
+   */
+  protected chooseReason(reason: DeprovisionReason): void {
+    if (this.reason() === reason) return;
+    this.reason.set(reason);
+    this.dropPreview('deprovision');
+    if (this.selected() === 'deprovision' && this.chooseReady())
+      void this.prepareReasonedPreview();
+  }
+
+  protected setPhrase(value: string): void {
+    this.phrase.set(value);
   }
 
   protected close(): void {
@@ -604,6 +782,7 @@ export class DeviceActionSheet {
     if (!action) return;
     const generation = ++this.generation;
     this.acknowledged.set(false);
+    this.phrase.set('');
     this.problem.set(null);
     this.problemDetail.set('');
     this.preparing.set(false);
@@ -622,7 +801,8 @@ export class DeviceActionSheet {
       );
       return;
     }
-    if (known) this.dropPreview(action);
+    // A preview of another selection or another reason can no longer become a job.
+    this.dropPreview(action);
     await this.prepareForReview(action, generation);
   }
 
@@ -669,7 +849,11 @@ export class DeviceActionSheet {
       return;
     }
     const selection = this.selectionSignature();
-    const prepared = await this.flow.prepare(this.family(), action);
+    const prepared = await this.flow.prepare(
+      this.family(),
+      action,
+      this.reason(),
+    );
     if (generation !== this.generation) return;
     this.preparing.set(false);
     if (!prepared.ok) {
@@ -688,6 +872,7 @@ export class DeviceActionSheet {
     if (!preview || !this.canContinue()) return;
     const generation = ++this.generation;
     this.acknowledged.set(false);
+    this.phrase.set('');
     this.problem.set(null);
     this.problemDetail.set('');
     this.step.set('confirm');
@@ -732,11 +917,15 @@ export class DeviceActionSheet {
   protected async create(): Promise<void> {
     const preview = this.preview();
     if (!preview || !this.canCreate()) return;
+    const action = this.selected();
+    const phrase = action ? typedPhrase(action) : null;
     await this.submit(
       {
         family: this.family(),
         previewId: preview.previewId,
         manifestDigest: preview.manifestDigest,
+        // The client trims the phrase; the API compares it exactly (D7).
+        ...(phrase === null ? {} : { typedPhrase: this.phrase().trim() }),
       },
       false,
     );
@@ -758,6 +947,7 @@ export class DeviceActionSheet {
       submitted.family,
       submitted.previewId,
       submitted.manifestDigest,
+      submitted.typedPhrase,
     );
     if (result.ok) {
       // The answer settles the retained record even after the sheet closed.
@@ -975,9 +1165,16 @@ export class DeviceActionSheet {
     this.status.set('ready');
   }
 
-  /** The prepared preview of one action, or null. */
+  /** The prepared preview of one action, or null. A stale reason does not count (D12). */
   private previewEntry(action: DeviceAction): PreparedPreview | null {
-    return this.previews()[action] ?? null;
+    const entry = this.previews()[action] ?? null;
+    if (!entry) return null;
+    if (
+      action === 'deprovision' &&
+      entry.preview.deprovisionReason !== this.reason()
+    )
+      return null;
+    return entry;
   }
 
   private storePreview(
@@ -1049,6 +1246,18 @@ function actionOfJob(job: JobDetail | null): DeviceAction | null {
   if (!job) return null;
   if (job.commandType === 'REBOOT' || job.action === 'reboot-devices')
     return 'reboot';
+  if (job.commandType === 'WIPE_USERS' || job.action === 'wipe-user-data')
+    return 'wipe-users';
+  if (
+    job.commandType === 'REMOTE_POWERWASH' ||
+    job.action === 'powerwash-devices'
+  )
+    return 'powerwash';
+  if (
+    job.statusAction === 'deprovision' ||
+    job.action === 'deprovision-devices'
+  )
+    return 'deprovision';
   if (job.statusAction === 'reenable' || job.action === 'reenable-devices')
     return 'reenable';
   if (job.statusAction === 'disable' || job.action === 'disable-devices')
