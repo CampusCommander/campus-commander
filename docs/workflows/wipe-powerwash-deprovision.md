@@ -1,6 +1,6 @@
 # Wipe user data, Powerwash, or Deprovision selected devices
 
-Status: proposed
+Status: owner-confirmed on 2026-10-23. Owner, in the main chat: "1", which chose the option "Confirmed: build it as written".
 Source: owner decisions of 2026-10-21 and the first build sign-off of 2026-10-22, quoted under [Owner direction](#owner-direction--2026-10-21).
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain.
 Replaces: none.
@@ -63,21 +63,21 @@ Google refuses an ineligible device per device, and the row shows Failed with Go
 A lost issue answer shows Unknown, and the job ends Needs review.
 A `CANCELLED` command settles Failed (D14). An expired command shows Expired.
 Evidence is admin-sdk-mock v0.2.0 only.
-Live Google device writes stay unverified, because the test domain has no ChromeOS device (`docs/current-work.md:81`).
+Live Google device writes stay unverified, because the test domain has no ChromeOS device (`docs/current-work.md:82`).
 
 ## Owner direction — 2026-10-21
 
 From `docs/current-work.md` (2026-10-21):
 
-- Question "What should step 5 build first?" The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" (`docs/current-work.md:11`).
-- Question "If device commands come first: which commands go in the first build?" The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" (`docs/current-work.md:12`).
+- Question "What should step 5 build first?" The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" (`docs/current-work.md:12`).
+- Question "If device commands come first: which commands go in the first build?" The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" (`docs/current-work.md:13`).
 
 From `docs/workflows/device-commands.md:150`: "Wipe, Powerwash, and Deprovision need their own record."
 
 The owner signed off the first build on 2026-10-22 ("Signed off as built", `docs/current-work.md:8`). This record covers the next build.
 
-The owner chose "That looks good" for the step 5 screens on 2026-10-21 (`docs/current-work.md:61`). That answer covers the first build's screens only. It says nothing about this record or this build.
-The owner's decision on this record comes before any design or implementation.
+The owner chose "That looks good" for the step 5 screens on 2026-10-21 (`docs/current-work.md:62`). That answer covers the first build's screens only. It says nothing about this record or this build.
+The owner confirmed this record on 2026-10-23, before any design or implementation.
 
 ## Implementation defaults — 2026-10-22
 
@@ -108,7 +108,7 @@ These defaults are engineering choices for owner review, not owner decisions. Ch
 17. D17 Target count: no new cap. The 100,000-device selection cap stays (`api/src/app/devices/device-actions.ts:39`). Review, Confirm, and the final button show the count.
 18. D18 No factory reset with Deprovision. The API has no such option [3]. Send Powerwash first for both.
 19. D19 No second approver. The 2026-09-04 instructions propose one for "mass powerwash" (`docs/reviews/2026-09-04-technical-change-instructions.md:242`), and G24 leaves approval policy unresolved (`docs/workflow-gaps.md:82`). The product has one administrator today.
-20. D20 Tests run on admin-sdk-mock only. Live device writes stay excluded (`docs/current-work.md:19`, `docs/workflows/device-commands.md:143`).
+20. D20 Tests run on admin-sdk-mock only. Live device writes stay excluded (`docs/current-work.md:20`, `docs/workflows/device-commands.md:143`).
 
 ## Design
 
@@ -157,7 +157,7 @@ Excluded from this build:
 
 Open decisions:
 
-- The owner answers the three rulings and defaults D1 to D20 with this record. Status stays proposed until he answers.
+- The owner confirmed the three rulings and defaults D1 to D20 with this record on 2026-10-23.
 - Default D10 adds one drafted consequence sentence. The owner reviews it with the record.
 - Each design gap needs a composition before its screen is built. A mockup comes before the build.
 - The DEVICE-01 row needs a later docs card for typed confirmation.
@@ -171,7 +171,7 @@ Open decisions:
 4. Deprovision is one-way and keeps local data. Recovery needs a hands-on wipe, manual enrollment, and an available upgrade [8][5][6]. A wrong reason changes license handling, and Google audits it [5]. A retired device keeps its user data unless Powerwash runs first [3][8].
 5. Blast radius. One job targets up to 100,000 devices (`api/src/app/devices/device-actions.ts:39`). The typed phrase and the count in the button are the main guards. No second approver exists (G24).
 6. A lost answer invites a repeat. An accepted Powerwash with a lost answer shows Unknown. A second request queues a second Powerwash (`docs/workflows/device-commands.md:90`). The mock also departs from Google: Powerwash keeps enrollment, every command expires in 5 days, deprecated reasons pass, and `CANCELLED` and `IGNORED` never occur. Green tests do not prove Google behavior.
-7. Live device writes stay unverified. The test domain has no ChromeOS device (`docs/current-work.md:81`). The standing authorization excludes Google mutations (`AGENTS.md:48`, `docs/portfolio/phase-3-google-credentials.md:26`). A live test needs an enrolled Chromebook that the owner accepts losing. It also needs a license, physical access, and his explicit authorization. Deprovisioning the only bundled device, with no other upgrade, removes settings and managed devices after 90 days [8]. No source states how a powerwashed device reports its result, so the live test answers that too.
+7. Live device writes stay unverified. The test domain has no ChromeOS device (`docs/current-work.md:82`). The standing authorization excludes Google mutations (`AGENTS.md:48`, `docs/portfolio/phase-3-google-credentials.md:26`). A live test needs an enrolled Chromebook that the owner accepts losing. It also needs a license, physical access, and his explicit authorization. Deprovisioning the only bundled device, with no other upgrade, removes settings and managed devices after 90 days [8]. No source states how a powerwashed device reports its result, so the live test answers that too.
 
 ## Completion
 
