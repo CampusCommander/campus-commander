@@ -11,8 +11,8 @@ import {
   statusExclusion,
 } from './device-actions.ts';
 import {
-  DEVICE_COMMAND_ROUTE_ACTIONS,
-  DEVICE_STATUS_ROUTE_ACTIONS,
+  DEVICE_ACTION_ROUTE_ACTIONS,
+  requireDeviceAction,
   requireDeviceActions,
   requireReconcileActions,
 } from './device-updates-actions.ts';
@@ -74,6 +74,7 @@ const previewRow = (extra = {}) => ({
   field: null,
   mode: null,
   value: null,
+  deprovision_reason: null,
   selected: 1,
   eligible: 0,
   unchanged: 0,
@@ -156,6 +157,56 @@ test('a Re-enable preview excludes an ACTIVE device and accepts a DISABLED one',
   );
 });
 
+test('a Powerwash preview accepts an ACTIVE device and names both refusals', () => {
+  const targets = actionTargets(
+    [
+      device('active', 'ACTIVE'),
+      device('disabled', 'DISABLED'),
+      device('deprovisioned', 'DEPROVISIONED'),
+      device('missing', null),
+    ],
+    'powerwash',
+  );
+  assert.deepEqual(
+    targets.map((target) => [
+      target.deviceId,
+      target.disposition,
+      target.exclusionReason,
+    ]),
+    [
+      ['active', 'eligible', null],
+      ['disabled', 'excluded', 'device-disabled'],
+      ['deprovisioned', 'excluded', 'device-deprovisioned'],
+      ['missing', 'excluded', 'status-unknown'],
+    ],
+  );
+});
+
+test('a Deprovision preview accepts ACTIVE and DISABLED and refuses a DEPROVISIONED device', () => {
+  const targets = actionTargets(
+    [
+      device('active', 'ACTIVE'),
+      device('disabled', 'DISABLED'),
+      device('deprovisioned', 'DEPROVISIONED'),
+      device('missing', null),
+    ],
+    'deprovision',
+  );
+  assert.deepEqual(
+    targets.map((target) => [
+      target.deviceId,
+      target.disposition,
+      target.exclusionReason,
+    ]),
+    [
+      ['active', 'eligible', null],
+      ['disabled', 'eligible', null],
+      ['deprovisioned', 'excluded', 'device-deprovisioned'],
+      ['missing', 'excluded', 'status-unknown'],
+    ],
+  );
+});
+
 test('a removed or invalid device stays excluded before its status is read', () => {
   const targets = actionTargets(
     [
@@ -229,6 +280,52 @@ test('the action digest covers the action, its version, the Google action, and e
   );
 });
 
+test('a Deprovision digest covers its reason, and the other actions keep their object', () => {
+  const rows = [device('d1', 'ACTIVE')];
+  const retiring = actionManifestDigest(
+    'deprovision',
+    actionTargets(rows, 'deprovision'),
+    'DEPROVISION_REASON_RETIRING_DEVICE',
+  );
+  assert.equal(
+    retiring,
+    createHash('sha256')
+      .update(
+        JSON.stringify({
+          action: 'deprovision',
+          actionVersion: 1,
+          googleAction: 'DEPROVISION',
+          deprovisionReason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+          targets: [['d1', 'ACTIVE']],
+        }),
+      )
+      .digest('hex'),
+  );
+  assert.notEqual(
+    retiring,
+    actionManifestDigest(
+      'deprovision',
+      actionTargets(rows, 'deprovision'),
+      'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+    ),
+    'Another reason needs another preview.',
+  );
+  assert.equal(
+    actionManifestDigest('powerwash', actionTargets(rows, 'powerwash')),
+    createHash('sha256')
+      .update(
+        JSON.stringify({
+          action: 'powerwash',
+          actionVersion: 1,
+          googleAction: 'REMOTE_POWERWASH',
+          targets: [['d1', 'ACTIVE']],
+        }),
+      )
+      .digest('hex'),
+    'A command digest holds no reason key.',
+  );
+});
+
 test('a frozen action target row carries the cached status and its reason', () => {
   assert.deepEqual(
     actionTargetRow({
@@ -289,6 +386,74 @@ test('a Re-enable preview of ACTIVE devices freezes zero eligible and confirm an
     [['d1', 'ACTIVE', 'excluded', 'device-active']],
   );
   assert.equal(create.values[8], 15, 'The preview expires in 15 minutes.');
+  assert.equal(
+    create.values[9],
+    null,
+    'A non-Deprovision preview carries no reason.',
+  );
+});
+
+test('a Deprovision preview freezes its reason, its digest, and its SQL argument', async () => {
+  const calls = [];
+  const reason = 'DEPROVISION_REASON_SAME_MODEL_REPLACEMENT';
+  const actions = actionsWith(
+    databaseOf(async (text, values) => {
+      calls.push({ text, values });
+      if (text.includes('FROM cc.device_sync_state'))
+        return { rows: [device('d1', 'ACTIVE'), device('d2', 'DISABLED')] };
+      if (text.includes('cc.create_device_update_preview'))
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'created',
+                preview: previewRow({
+                  action: 'deprovision',
+                  deprovision_reason: reason,
+                  selected: 2,
+                  eligible: 2,
+                  excluded: 0,
+                }),
+              },
+            },
+          ],
+        };
+      return { rows: [] };
+    }),
+  );
+  const preview = await actions.preview(
+    session,
+    current,
+    'deprovision',
+    key,
+    undefined,
+    reason,
+  );
+  assert.equal(preview.action, 'deprovision');
+  assert.equal(preview.commandType, null);
+  assert.equal(preview.statusAction, 'deprovision');
+  assert.equal(preview.deprovisionReason, reason);
+  const create = calls.find((call) =>
+    call.text.includes('cc.create_device_update_preview'),
+  );
+  assert.equal(
+    create.values[4],
+    'deprovision',
+    'The preview stores the action.',
+  );
+  assert.equal(create.values[9], reason, 'The preview stores the reason.');
+  assert.equal(
+    create.values[6],
+    actionManifestDigest(
+      'deprovision',
+      actionTargets(
+        [device('d1', 'ACTIVE'), device('d2', 'DISABLED')],
+        'deprovision',
+      ),
+      reason,
+    ),
+    'The digest covers the reason.',
+  );
 });
 
 test('a confirmation with no eligible target answers 422 nothing-to-update', async () => {
@@ -379,57 +544,57 @@ test('an empty selection answers 422 nothing-selected before any query', async (
   assert.equal(queried, false, 'An empty selection reaches no database.');
 });
 
-test('the command route requires devices:commands after read and Bulk Actions', async () => {
+test('the family guard checks read and Bulk Actions, then the permission of each requested action', async () => {
   const calls = [];
-  const auth = {
-    authorize: async (_session, action) => {
-      calls.push(action);
-      if (action === 'devices:commands')
-        throw new ForbiddenException(
-          'This action requires additional permission.',
-        );
-    },
-  };
-  await assert.rejects(
-    requireDeviceActions(
-      auth,
-      session,
-      customer,
-      correlationId,
-      DEVICE_COMMAND_ROUTE_ACTIONS,
-    ),
-    (error) => {
-      assert.ok(error instanceof ForbiddenException);
-      assert.equal(error.getStatus(), 403);
-      return true;
-    },
+  const auth = { authorize: async (_session, action) => calls.push(action) };
+  await requireDeviceActions(
+    auth,
+    session,
+    customer,
+    correlationId,
+    DEVICE_ACTION_ROUTE_ACTIONS,
   );
+  for (const action of [
+    'reboot',
+    'wipe-users',
+    'powerwash',
+    'disable',
+    'reenable',
+    'deprovision',
+  ])
+    await requireDeviceAction(auth, session, customer, correlationId, action);
   assert.deepEqual(calls, [
     'devices:read',
     'devices:bulk-actions',
     'devices:commands',
+    'devices:wipe',
+    'devices:wipe',
+    'devices:status',
+    'devices:status',
+    'devices:deprovision',
   ]);
 });
 
-test('the status route requires devices:status after read and Bulk Actions', async () => {
+test('an action refusal answers 403 and the read checks still run first', async () => {
   const calls = [];
   const auth = {
     authorize: async (_session, action) => {
       calls.push(action);
-      if (action === 'devices:status')
+      if (action === 'devices:wipe')
         throw new ForbiddenException(
           'This action requires additional permission.',
         );
     },
   };
+  await requireDeviceActions(
+    auth,
+    session,
+    customer,
+    correlationId,
+    DEVICE_ACTION_ROUTE_ACTIONS,
+  );
   await assert.rejects(
-    requireDeviceActions(
-      auth,
-      session,
-      customer,
-      correlationId,
-      DEVICE_STATUS_ROUTE_ACTIONS,
-    ),
+    requireDeviceAction(auth, session, customer, correlationId, 'powerwash'),
     (error) => {
       assert.ok(error instanceof ForbiddenException);
       assert.equal(error.getStatus(), 403);
@@ -439,8 +604,214 @@ test('the status route requires devices:status after read and Bulk Actions', asy
   assert.deepEqual(calls, [
     'devices:read',
     'devices:bulk-actions',
-    'devices:status',
+    'devices:wipe',
   ]);
+});
+
+test('a preview read checks the permission of the stored action', async () => {
+  const calls = [];
+  const reason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+  const actions = actionsWith(
+    databaseOf(async (text) =>
+      text.includes('FROM cc.device_update_previews')
+        ? {
+            rows: [
+              previewRow({ action: 'deprovision', deprovision_reason: reason }),
+            ],
+          }
+        : { rows: [] },
+    ),
+  );
+  const preview = await actions.previewById(
+    session,
+    previewId,
+    STATUS_PREVIEW_FAMILY,
+    async (action) => calls.push(action),
+  );
+  assert.equal(preview.action, 'deprovision');
+  assert.equal(preview.deprovisionReason, reason);
+  assert.deepEqual(calls, ['deprovision']);
+});
+
+test("another person's preview answers 404 before the action check", async () => {
+  const calls = [];
+  const actions = actionsWith(
+    databaseOf(async (text) =>
+      text.includes('FROM cc.device_update_previews')
+        ? { rows: [previewRow({ created_by: 'other-person' })] }
+        : { rows: [] },
+    ),
+  );
+  await assert.rejects(
+    actions.previewById(
+      session,
+      previewId,
+      STATUS_PREVIEW_FAMILY,
+      async (action) => calls.push(action),
+    ),
+    (error) => {
+      assert.equal(error.getStatus(), 404);
+      assert.deepEqual(error.getResponse(), { reason: 'preview-not-found' });
+      return true;
+    },
+  );
+  assert.deepEqual(calls, [], 'The refused lookup checks no action.');
+});
+
+test('a stored action that the person may not use answers 403', async () => {
+  const actions = actionsWith(
+    databaseOf(async (text) =>
+      text.includes('FROM cc.device_update_previews')
+        ? {
+            rows: [
+              previewRow({
+                action: 'deprovision',
+                deprovision_reason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+              }),
+            ],
+          }
+        : { rows: [] },
+    ),
+  );
+  await assert.rejects(
+    actions.previewById(session, previewId, STATUS_PREVIEW_FAMILY, async () => {
+      throw new ForbiddenException(
+        'This action requires additional permission.',
+      );
+    }),
+    (error) => {
+      assert.equal(error.getStatus(), 403);
+      return true;
+    },
+  );
+});
+
+test('a typed phrase mismatch answers 422 and stores no manifest', async () => {
+  let stored = 0;
+  let confirmed = 0;
+  const reason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+  const actions = new DeviceActions(
+    databaseOf(async (text) => {
+      if (text.includes('FROM cc.device_update_previews'))
+        return {
+          rows: [
+            previewRow({ action: 'deprovision', deprovision_reason: reason }),
+          ],
+        };
+      if (text.includes('cc.read_device_update_preview_manifest'))
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'manifest',
+                manifest: {
+                  preview: {
+                    previewId,
+                    action: 'deprovision',
+                    manifestDigest: 'a'.repeat(64),
+                  },
+                  targets: [],
+                },
+              },
+            },
+          ],
+        };
+      if (text.includes('cc.confirm_device_update_preview')) {
+        confirmed += 1;
+        return { rows: [] };
+      }
+      return { rows: [] };
+    }),
+    { get: async () => selectionJson },
+    {
+      storeJson: async () => {
+        stored += 1;
+        return 'artifact';
+      },
+    },
+  );
+  for (const typedPhrase of ['WIPE', 'wipe', ' DEPROVISIONX ']) {
+    await assert.rejects(
+      actions.confirm(
+        session,
+        current,
+        previewId,
+        { manifestDigest: 'a'.repeat(64), acknowledged: true, typedPhrase },
+        STATUS_PREVIEW_FAMILY,
+      ),
+      (error) => {
+        assert.equal(error.getStatus(), 422, typedPhrase);
+        assert.deepEqual(error.getResponse(), { reason: 'phrase-mismatch' });
+        return true;
+      },
+    );
+  }
+  assert.equal(stored, 0, 'A mismatch stores no manifest.');
+  assert.equal(confirmed, 0, 'A mismatch calls no confirmation function.');
+});
+
+test('the trimmed phrase reaches the confirmation function', async () => {
+  const reason = 'DEPROVISION_REASON_RETIRING_DEVICE';
+  let confirmValues;
+  const actions = new DeviceActions(
+    databaseOf(async (text, values) => {
+      if (text.includes('FROM cc.device_update_previews'))
+        return {
+          rows: [
+            previewRow({ action: 'deprovision', deprovision_reason: reason }),
+          ],
+        };
+      if (text.includes('cc.read_device_update_preview_manifest'))
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'manifest',
+                manifest: {
+                  preview: { previewId, manifestDigest: 'a'.repeat(64) },
+                  targets: [],
+                },
+              },
+            },
+          ],
+        };
+      if (text.includes('cc.confirm_device_update_preview')) {
+        confirmValues = values;
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'created',
+                receipt: {
+                  jobId: '44444444-4444-4444-8444-444444444444',
+                  displayId: 'STS-001',
+                  status: 'accepted',
+                  deviceCount: 1,
+                  updateCount: 1,
+                },
+              },
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    }),
+    { get: async () => selectionJson },
+    { storeJson: async () => 'artifact' },
+  );
+  const result = await actions.confirm(
+    session,
+    current,
+    previewId,
+    {
+      manifestDigest: 'a'.repeat(64),
+      acknowledged: true,
+      typedPhrase: ' DEPROVISION ',
+    },
+    STATUS_PREVIEW_FAMILY,
+  );
+  assert.equal(result.existing, false);
+  assert.equal(confirmValues[7], 'DEPROVISION', 'The API trims the phrase.');
 });
 
 test('each Reconcile check runs its own action at the district scope', async () => {
