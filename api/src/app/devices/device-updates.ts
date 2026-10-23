@@ -244,7 +244,7 @@ function summary(
     eligible: row['eligible'],
     unchanged: row['unchanged'],
     excluded: row['excluded'],
-    // A conflict device arrives with the per-row conflict of addendum section 2.
+    // Until the per-row conflict of addendum section 2 lands, every preview answers zero.
     conflicts: Number(row['conflicts'] ?? 0),
     oldestObservedAt,
     stale:
