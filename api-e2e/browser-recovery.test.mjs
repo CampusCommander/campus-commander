@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import {
   openPlatformUsers,
+  openSignInPage,
   reloadCustomerSettings,
 } from './browser-recovery.mjs';
 
@@ -45,6 +46,34 @@ const fakeSettingsPage = (reload, waitFor) => {
     waitFor: async (options) => {
       page.readyOptions.push(options);
       return waitFor(page.reloads, options);
+    },
+  });
+  return page;
+};
+
+/** A fake sign-in page. `goto` and `waitFor` script it. */
+const fakeSignInPage = ({ goto, waitFor = async () => undefined }) => {
+  const page = new EventEmitter();
+  page.navigations = [];
+  page.navigationOptions = [];
+  page.readyOptions = [];
+  page.url = () => `${publicOrigin}/login`;
+  page.goto = async (url, options) => {
+    page.navigations.push(url);
+    page.navigationOptions.push(options);
+    return goto(page.navigations.length, options);
+  };
+  page.evaluate = async () => ({
+    readyState: 'complete',
+    applicationChildren: 0,
+    headings: 0,
+    busyRegions: 0,
+    alerts: 0,
+  });
+  page.getByRole = () => ({
+    waitFor: async (options) => {
+      page.readyOptions.push(options);
+      return waitFor(page.navigations.length, options);
     },
   });
   return page;
@@ -234,6 +263,116 @@ test('a settings reload keeps the Playwright navigation budget', async () => {
   await reloadCustomerSettings(page);
   assert.equal(page.reloadOptions[0].timeout, 30000);
   assert.equal(page.readyOptions[0].timeout, 15000);
+});
+
+test('a network change during the sign-in ready wait navigates again', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeSignInPage({
+    goto: async (navigations) => {
+      // The document commits, the page reads the session and records 401, then
+      // the bundle request fails while the ready wait runs. The page never
+      // reaches the sign-in view.
+      if (navigations === 1)
+        setTimeout(() => {
+          page.emit('response', {
+            status: () => 401,
+            url: () => `${publicOrigin}/api/auth/session`,
+            request: () => ({ isNavigationRequest: () => false }),
+          });
+          failRequest(page, '/main.js', 'net::ERR_NETWORK_CHANGED');
+        }, 20);
+      return okResponse('/login');
+    },
+    waitFor: async (navigations) => {
+      if (navigations === 1) await delay(200);
+    },
+  });
+  const result = await openSignInPage(page, {
+    publicOrigin,
+    evidenceDirectory: directory,
+    label: 'sign-in-page',
+  });
+  // The navigation helper recovered the attempt. The step ran the action
+  // once and reports the routes of the nested recovery.
+  assert.deepEqual(result, {
+    attempts: 1,
+    recoveries: [{ attempt: 1, routes: ['script'] }],
+  });
+  assert.deepEqual(page.navigations, [publicOrigin, publicOrigin]);
+});
+
+test('a sign-in heading without a network change fails at once', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeSignInPage({
+    goto: async () => okResponse('/login'),
+    waitFor: async () => {
+      throw new Error('The sign-in heading did not appear');
+    },
+  });
+  await assert.rejects(
+    openSignInPage(page, {
+      publicOrigin,
+      evidenceDirectory: directory,
+      label: 'sign-in-page',
+    }),
+    /did not appear/,
+  );
+  assert.equal(page.navigations.length, 1);
+});
+
+test('the sign-in page navigation and ready wait keep the recovery budgets', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeSignInPage({ goto: async () => okResponse('/login') });
+  await openSignInPage(page, {
+    publicOrigin,
+    evidenceDirectory: directory,
+    label: 'sign-in-page',
+  });
+  assert.equal(page.navigationOptions[0].timeout, 30000);
+  assert.equal(page.readyOptions[0].timeout, 15000);
+});
+
+test('a failed sign-in page load writes the page URL and the failed requests', async (t) => {
+  const directory = await createEvidenceDirectory(t);
+  const page = fakeSignInPage({
+    goto: async () => {
+      page.emit('requestfailed', {
+        url: () => `${publicOrigin}/api/auth/session?ticket=synthetic-value`,
+        method: () => 'GET',
+        failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET' }),
+      });
+      return okResponse('/login');
+    },
+    waitFor: async () => {
+      throw new Error('The sign-in heading did not appear');
+    },
+  });
+  page.url = () => `${publicOrigin}/login?ticket=synthetic-value`;
+  await assert.rejects(
+    openSignInPage(page, {
+      publicOrigin,
+      evidenceDirectory: directory,
+      label: 'sign-in-page',
+    }),
+    /did not appear/,
+  );
+  const failure = JSON.parse(
+    await readFile(join(directory, 'sign-in-page-failure.json'), 'utf8'),
+  );
+  assert.equal(failure.url, `${publicOrigin}/login?ticket=redacted`);
+  assert.deepEqual(failure.failedRequests, [
+    {
+      route: 'authentication',
+      path: '/api/auth/session',
+      method: 'GET',
+      error: 'ERR_CONNECTION_RESET',
+    },
+  ]);
+  assert.equal(
+    JSON.stringify(failure).includes('synthetic-value'),
+    false,
+    'the record retains a parameter value',
+  );
 });
 
 test(

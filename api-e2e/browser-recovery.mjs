@@ -11,6 +11,11 @@ const actionTimeoutMs = 30000;
 // The settings field assertion after a reload uses 15 s. The ready check
 // stands in for the first part of that assertion.
 const settingsViewTimeoutMs = 15000;
+// The post-restart sign-in wait of the all-Docker qualification uses 15 s.
+// The sign-in heading assertion of the auth test used the Playwright default
+// of 5 s, and the run of 2026-10-23 expired that budget after the test paused
+// and resumed PostgreSQL and Redis.
+const signInViewTimeoutMs = 15000;
 
 /**
  * Reload the customer settings page and recover a reload that an installation
@@ -29,6 +34,41 @@ export function reloadCustomerSettings(page, options = {}) {
         timeout: settingsViewTimeoutMs,
       }),
   });
+}
+
+/**
+ * Open the sign-in page and recover a navigation that an installation network
+ * change aborts. The ready check waits for the sign-in heading, so a document
+ * that loads without a sign-in view fails the attempt instead of passing. The
+ * navigation keeps the Playwright navigation budget, and the ready check keeps
+ * the 15 s budget of the post-restart sign-in wait.
+ */
+export function openSignInPage(
+  page,
+  { publicOrigin, evidenceDirectory, label },
+) {
+  const heading = page.getByRole('heading', { name: 'Sign in', exact: true });
+  return qualificationBrowserStep(
+    page,
+    publicOrigin,
+    evidenceDirectory,
+    label,
+    async () => {
+      await navigateAfterNetworkChange(page, publicOrigin, {
+        timeoutMs: navigationTimeoutMs + signInViewTimeoutMs,
+        loadTimeoutMs: navigationTimeoutMs,
+        // The sign-in page reads the session and answers 401 before it renders
+        // the heading. That status is not a server failure, and it must not
+        // suppress the recovery of a network change in the same attempt.
+        ignoreHttpStatuses: [401],
+        ready: () =>
+          heading.waitFor({ state: 'visible', timeout: signInViewTimeoutMs }),
+      });
+    },
+    // The navigation helper recovers the network change. A step retry would
+    // multiply the navigation attempts and the recovery records.
+    { retryOnNetworkChange: false },
+  );
 }
 
 /**

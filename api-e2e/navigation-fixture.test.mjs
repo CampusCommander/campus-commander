@@ -296,6 +296,28 @@ test('an HTTP error status during the ready wait ends the attempt at once', asyn
   assert.equal(readyCalls, 1);
 });
 
+test('an ignored HTTP error status lets a network change retry the reload', async () => {
+  // The sign-in page answers 401 for its session read before it renders the
+  // heading. The 401 is not a server failure, so a network change in the same
+  // attempt still retries the reload.
+  const page = fakePage(async () => okResponse());
+  const ready = failFirstReady();
+  let readyCalls = 0;
+  const result = await reloadAfterNetworkChange(page, {
+    retryDelayMs: 0,
+    ignoreHttpStatuses: [401],
+    ready: async () => {
+      if (++readyCalls === 1) {
+        respond(page, 401, '/api/auth/session');
+        failRequest(page, 'net::ERR_NETWORK_CHANGED');
+      }
+      return ready();
+    },
+  });
+  assert.deepEqual(result, { attempts: 2, networkChanges: 1 });
+  assert.equal(page.reloads, 2);
+});
+
 test('a passing ready keeps the attempt after an HTTP error status', async () => {
   // The HTTP rule decides the retry only. A passing ready passes, with a
   // recorded HTTP error, as on origin/main.
