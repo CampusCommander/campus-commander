@@ -9,6 +9,7 @@ import { renderAllDocker } from '../deployment/profiles/all-docker/render.mjs';
 import { verifyBackup } from '../deployment/operations/index.mjs';
 import { createOperationsCliFixture } from '../deployment/operations/cli-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { reloadDiagnosticsPage } from './browser-recovery.mjs';
 import { prepareRestoreAdmissions } from './restore-admission-fixture.mjs';
 import {
   readApplicationPhase3,
@@ -440,10 +441,10 @@ await store.close();await pool.end();`;
     for (const name of proxies) docker(['rm', '-f', name]);
     if (sourceStopped) {
       compose('up', '-d', '--wait', '--wait-timeout', '180');
-      await page.reload();
-      await expect(
-        page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-      ).toBeVisible({ timeout: 15000 });
+      // The source services started again. The reload keeps the Playwright
+      // budget, and the ready check keeps the 15 s wait that this flow used
+      // before the recovery.
+      await reloadDiagnosticsPage(page);
       if (report && admissions)
         report.admissionRecovery.sourcePendingLoginStillValid =
           await admissions.verifySourceControl(sourcePhase3.actor);

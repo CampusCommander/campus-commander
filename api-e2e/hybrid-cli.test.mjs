@@ -31,6 +31,7 @@ import {
 } from './hybrid-replica-fixture.mjs';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { reloadDiagnosticsPage } from './browser-recovery.mjs';
 import { qualifyInstalledPhase3 } from './phase3-installed-workflows.mjs';
 import { qualifyHybridWorkerCredentials } from './phase3-hybrid-worker-fixture.mjs';
 import { loadPhase2UpgradeBaseline } from './phase3-upgrade-fixture.mjs';
@@ -1012,10 +1013,10 @@ process.exit(result.status??1);
           for (const host of workers)
             await compose(host, ['restart', 'workers']);
           await verifyReplicas(context, { waitForRestart: true });
-          await page.reload();
-          await expect(
-            page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-          ).toBeVisible({ timeout: 15000 });
+          // The API and worker restarts abort a page load. The reload keeps
+          // the Playwright budget and starts again after a network change, and
+          // the ready check keeps the 15 s heading wait.
+          await reloadDiagnosticsPage(page);
           await verifyReplicas(context);
           await installedWorkflows?.verifyAfterRestart();
           await checks({ recoverySeconds: 120 });
@@ -1031,10 +1032,11 @@ process.exit(result.status??1);
             await transfer();
             for (const host of workers) await compose(host, ['up', '-d']);
             assert.equal((await cli('resume')).status, 'ready');
-            await page.reload();
-            await expect(
-              page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-            ).toBeVisible({ timeout: 15000 });
+            // The worker stop or down and the CLI stop or uninstall plus the
+            // resume abort a page load. The reload keeps the Playwright budget
+            // and starts again after a network change, and the ready check
+            // keeps the 15 s heading wait.
+            await reloadDiagnosticsPage(page);
             await expect(page.locator('html')).toHaveAttribute(
               'data-theme',
               'dark',
@@ -1171,13 +1173,11 @@ process.exit(result.status??1);
                 config.images = updateTarget.manifest.images;
               },
               verifyAfterUpdate: async () => {
-                await page.reload();
-                await expect(
-                  page.getByRole('heading', {
-                    name: 'Diagnostics',
-                    exact: true,
-                  }),
-                ).toBeVisible({ timeout: 15000 });
+                // The update stops and resumes services before this reload.
+                // The reload keeps the Playwright budget and starts again
+                // after a network change, and the ready check keeps the 15 s
+                // heading wait.
+                await reloadDiagnosticsPage(page);
                 await expect(page.locator('html')).toHaveAttribute(
                   'data-theme',
                   'dark',

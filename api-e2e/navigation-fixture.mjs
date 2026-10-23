@@ -33,10 +33,16 @@ const createAttempt = () => {
 const httpErrorFailure = ({ status, url, name }, cause) =>
   new Error(`${name}: HTTP ${status} for ${url}`, { cause });
 
-/** Read the HTTP error status of a page response. */
-const httpErrorStatus = (response) => {
+/** Read the HTTP error status of a page response. A status that the caller
+ * lists in `ignoreStatuses` is not an error, because the page answers it by
+ * design, such as the 401 of a session read on the sign-in page. */
+const httpErrorStatus = (response, ignoreStatuses = []) => {
   const status = response?.status?.();
-  return Number.isFinite(status) && status >= 400 ? status : null;
+  return Number.isFinite(status) &&
+    status >= 400 &&
+    !ignoreStatuses.includes(status)
+    ? status
+    : null;
 };
 
 /**
@@ -52,7 +58,9 @@ const httpErrorStatus = (response) => {
  * deadline failure. The helper observes every response of the page for the
  * whole attempt, the load and the ready wait included. An HTTP error status of
  * the page, or of a request of the page, ends a failed attempt at once, and
- * that attempt never retries. A passing ready decides the attempt, with or
+ * that attempt never retries. A status that the caller lists in
+ * `ignoreHttpStatuses` is not an error, because the page answers it by design.
+ * A passing ready decides the attempt, with or
  * without a recorded HTTP error. A load error other than a network change
  * fails at once. A request failure with another error code does not decide the
  * attempt, because a load cancels the in-flight requests of the previous page.
@@ -68,6 +76,7 @@ async function loadAfterNetworkChange(
     retryDelayMs = 250,
     timeoutMs = 15000,
     loadTimeoutMs = Infinity,
+    ignoreHttpStatuses = [],
     ready,
   },
 ) {
@@ -104,7 +113,7 @@ async function loadAfterNetworkChange(
   // such a record fails at once, and that attempt never retries.
   const onResponse = (response) => {
     if (!attempt || attempt.httpError) return;
-    const status = httpErrorStatus(response);
+    const status = httpErrorStatus(response, ignoreHttpStatuses);
     if (status === null) return;
     attempt.httpError = { status, url: response.url?.() ?? 'unknown URL' };
   };
@@ -139,7 +148,7 @@ async function loadAfterNetworkChange(
       }
       // The document response of the load belongs to the attempt. An HTTP
       // error status there ends the attempt at once.
-      if (httpErrorStatus(response) !== null)
+      if (httpErrorStatus(response, ignoreHttpStatuses) !== null)
         current.override({
           retry: false,
           error: httpErrorFailure({

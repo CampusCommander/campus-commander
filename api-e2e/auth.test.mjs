@@ -13,6 +13,7 @@ import { qualifyGoogleWorker } from './google-connection-worker.mjs';
 import { qualifyGoogleConnectionApi } from './google-connection-api.mjs';
 import { qualifyAccessRevocationBrowser } from './access-revocation-browser.mjs';
 import { qualifyAccessRevocation } from './access-revocation-api.mjs';
+import { openSignInPage } from './browser-recovery.mjs';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import {
@@ -2200,10 +2201,11 @@ test(
         if (/Content Security Policy/i.test(message.text()))
           policyErrors.push(message.text());
       });
-      await page.goto(publicOrigin);
-      await expect(
-        page.getByRole('heading', { name: 'Sign in', exact: true }),
-      ).toBeVisible();
+      await openSignInPage(page, {
+        publicOrigin,
+        evidenceDirectory,
+        label: 'sign-in-page',
+      });
       await auditAccessibility(page, 'login');
       // Capture the status before navigation replaces the document. The
       // observer starts on every attempt, because a retry loads the origin

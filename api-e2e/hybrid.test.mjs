@@ -11,6 +11,7 @@ import test from 'node:test';
 import { expect } from '@playwright/test';
 import { startProvider } from './provider-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { reloadDiagnosticsPage } from './browser-recovery.mjs';
 import { qualifyHybridUpgrade } from './hybrid-upgrade-fixture.mjs';
 import { qualifyHybridApplicationRestore } from './hybrid-restore-fixture.mjs';
 
@@ -198,13 +199,10 @@ test(
                     'workers',
                   );
                 compose('up', '-d', '--wait', '--wait-timeout', '120');
-                await page.reload();
-                await expect(
-                  page.getByRole('heading', {
-                    name: 'Diagnostics',
-                    exact: true,
-                  }),
-                ).toBeVisible({ timeout: 15000 });
+                // The API and worker restarts abort a page load. The reload
+                // keeps the Playwright budget and starts again after a network
+                // change, and the ready check keeps the 15 s heading wait.
+                await reloadDiagnosticsPage(page);
                 await expect(page.locator('html')).toHaveAttribute(
                   'data-theme',
                   'dark',
