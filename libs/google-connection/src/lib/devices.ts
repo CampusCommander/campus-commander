@@ -45,7 +45,7 @@ const devicePage = z.object({
         deviceId: z.string().min(1).max(128),
         serialNumber: z.string().max(256).optional(),
         model: z.string().max(256).optional(),
-        annotatedAssetId: z.string().max(256).optional(),
+        annotatedAssetId: z.string().max(4096).optional(),
         orgUnitPath: z.string().min(1).max(4096),
         lastSync: z.string().max(64).optional(),
         annotatedLocation: z.string().max(4096).optional(),

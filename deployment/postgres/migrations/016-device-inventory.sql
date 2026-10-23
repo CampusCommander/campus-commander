@@ -36,7 +36,7 @@ CREATE TABLE cc.devices (
   device_id text NOT NULL CHECK(length(device_id) BETWEEN 1 AND 128),
   serial_number text NOT NULL CHECK(length(serial_number)<=256),
   model text CHECK(length(model)<=256),
-  asset_tag text CHECK(length(asset_tag)<=256),
+  asset_tag text CHECK(length(asset_tag)<=4096),
   org_unit_path text NOT NULL CHECK(left(org_unit_path,1)='/' AND length(org_unit_path)<=4096),
   last_contact timestamptz,
   annotated_location text CHECK(length(annotated_location)<=4096),

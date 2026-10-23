@@ -199,6 +199,41 @@ test('a device row carries the annotated user, and requires the key', () => {
   assert.equal(deviceSortFieldSchema.safeParse('annotatedUser').success, true);
 });
 
+test('a device row carries every Asset tag that Google stores', () => {
+  const battery = { status: 'no-report' };
+  const longTag = 'A'.repeat(1024);
+  // A supplementary character is one code point and two UTF-16 units.
+  const supplementaryTag = '𠮷'.repeat(300);
+  const parsed = deviceRowSchema.parse({
+    ...row,
+    assetTag: longTag,
+    battery,
+  });
+  assert.equal(parsed.assetTag, longTag);
+  assert.equal(
+    deviceRowSchema.safeParse({ ...row, assetTag: supplementaryTag, battery })
+      .success,
+    true,
+  );
+  assert.equal(
+    deviceRowSchema.safeParse({ ...row, assetTag: 'A'.repeat(4097), battery })
+      .success,
+    false,
+    'A tag above 4,096 UTF-16 units fails the contract.',
+  );
+  assert.equal(
+    deviceDetailSchema.safeParse({
+      ...row,
+      assetTag: supplementaryTag,
+      battery,
+      removedAt: null,
+      batteryReports: [],
+    }).success,
+    true,
+    'Device details carry the same tag bound.',
+  );
+});
+
 test('battery values distinguish reported, missing, and unavailable data', () => {
   const reported = {
     status: 'reported',
