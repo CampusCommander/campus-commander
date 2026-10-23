@@ -40,14 +40,15 @@ function syncTimeoutMs() {
  * The container network aliases carry the names inside the harness network. From the
  * harness, the request dials loopback and keeps the hostname for TLS and routing.
  */
-function mockGoogle({ mock, host, path, token }) {
+function mockGoogle({ mock, host, path, token, method = 'GET', body }) {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const request = https.request(
       {
         host,
         port: mock.googlePort,
         path,
-        method: 'GET',
+        method,
         ca: mock.ca,
         servername: host,
         lookup: (_name, _options, done) =>
@@ -55,6 +56,12 @@ function mockGoogle({ mock, host, path, token }) {
         headers: {
           host,
           ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(payload === undefined
+            ? {}
+            : {
+                'content-type': 'application/json',
+                'content-length': Buffer.byteLength(payload),
+              }),
         },
         timeout: 20000,
       },
@@ -70,7 +77,7 @@ function mockGoogle({ mock, host, path, token }) {
     request.on('timeout', () =>
       request.destroy(new Error('The mock Google request timed out.')),
     );
-    request.end();
+    request.end(payload);
   });
 }
 
@@ -328,6 +335,41 @@ async function runAdminSdkMockIntegration({
     false,
   );
 
+  // IB1: Google allows 1 KB for an Asset tag. One mock device carries 1,024
+  // characters before Refresh all, so the published page must hold it whole.
+  const longAssetTag = 'A'.repeat(1024);
+  const mockDevices = await readMockDevices(mock);
+  const longTagDevice = mockDevices.find((device) => device.serialNumber);
+  assert.ok(longTagDevice, 'The mock holds a device with a serial number.');
+  const tagged = await mockGoogle({
+    mock,
+    host: 'admin.googleapis.com',
+    path: `/admin/directory/v1/customer/${mock.customerId}/devices/chromeos/${encodeURIComponent(longTagDevice.deviceId)}?projection=FULL`,
+    method: 'PATCH',
+    token: await mockToken(
+      mock,
+      'https://www.googleapis.com/auth/admin.directory.device.chromeos',
+    ),
+    body: { annotatedAssetId: longAssetTag },
+  });
+  assert.equal(
+    tagged.status,
+    200,
+    `The mock Asset tag write answered ${tagged.status}: ${tagged.text}`,
+  );
+  assert.equal(JSON.parse(tagged.text).annotatedAssetId, longAssetTag);
+  // The mock hides a written device from list reads until its search index
+  // catches up. Refresh all reads the list, so settle the index first.
+  const settled = await fetch(
+    `${mock.controlUrl}/domains/${mock.customerId}/index/flush`,
+    { method: 'POST' },
+  );
+  assert.equal(
+    settled.status,
+    200,
+    `The mock index flush answered ${settled.status}.`,
+  );
+
   const startedAt = Date.now();
   const started = await call('/api/devices/sync', {
     method: 'POST',
@@ -371,6 +413,42 @@ async function runAdminSdkMockIntegration({
   ).page;
   assert.equal(page.total, counts.devices);
   assert.equal(page.matching, counts.devices);
+
+  // IB1 acceptance: Refresh all lists a device whose Asset tag holds 1,024 characters.
+  const taggedPage = JSON.parse(
+    (
+      await call('/api/devices/query', {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          predicates: [
+            {
+              field: 'serialNumber',
+              operator: 'equals',
+              value: longTagDevice.serialNumber,
+            },
+          ],
+          limit: queryLimit,
+        },
+      })
+    ).text,
+  ).page;
+  const taggedRow = taggedPage.rows.find(
+    (row) => row.deviceId === longTagDevice.deviceId,
+  );
+  assert.ok(
+    taggedRow,
+    `The grid lists the tagged device: ${JSON.stringify(taggedPage.rows)}`,
+  );
+  assert.equal(taggedRow.assetTag, longAssetTag);
+  assert.equal(taggedRow.assetTag.length, 1024);
+  const storedTag = (
+    await migrator.query(
+      'SELECT asset_tag FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+      [mock.customerId, longTagDevice.deviceId],
+    )
+  ).rows[0].asset_tag;
+  assert.equal(storedTag, longAssetTag, 'The stored row keeps the whole tag.');
 
   // U1: the sync stores the annotated user that the mock seeds.
   const seeded = await readMockDevices(mock);
@@ -1027,6 +1105,7 @@ async function runAdminSdkMockIntegration({
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
     `the published count equals the mock count and a device battery class matches the mock telemetry: pass`,
+    'Refresh all lists a device whose Asset tag holds 1,024 characters: pass',
     'the write scope check lists one device for the mock administrator and sends no write: pass',
     'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
     'removing the write scope denies access, and a delegation grant through the mock control restores granted: pass',

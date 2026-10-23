@@ -722,6 +722,68 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       },
     );
 
+    await check(
+      'an Asset tag of 1,024 characters and one of 300 supplementary characters store',
+      async () => {
+        const longTag = 'A'.repeat(1024);
+        // A supplementary character is one code point and two UTF-16 units, so
+        // length() counts 300 and the contract counts 600.
+        const supplementaryTag = '𠮷'.repeat(300);
+        const ids = ['asset-long', 'asset-wide'];
+        try {
+          assert.equal(
+            await result('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
+              customer,
+              JSON.stringify([
+                device(ids[0], { assetTag: longTag }),
+                device(ids[1], { assetTag: supplementaryTag }),
+              ]),
+              '2026-10-05T12:00:00.000Z',
+              'list',
+            ]),
+            2,
+          );
+          const stored = (
+            await migrator.query(
+              'SELECT device_id,asset_tag,length(asset_tag) AS code_points FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[]) ORDER BY device_id',
+              [customer, ids],
+            )
+          ).rows;
+          assert.deepEqual(
+            stored.map((row) => [
+              row.device_id,
+              row.asset_tag,
+              row.code_points,
+            ]),
+            [
+              [ids[0], longTag, 1024],
+              [ids[1], supplementaryTag, 300],
+            ],
+          );
+          const records = await result(
+            'SELECT cc.read_device_records($1,$2) AS result',
+            [customer, JSON.stringify(ids)],
+          );
+          assert.deepEqual(
+            records.map((entry) => [
+              entry.record.deviceId,
+              entry.record.assetTag,
+            ]),
+            [
+              [ids[0], longTag],
+              [ids[1], supplementaryTag],
+            ],
+            'The record that the API publishes carries the whole tag.',
+          );
+        } finally {
+          await migrator.query(
+            'DELETE FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[])',
+            [customer, ids],
+          );
+        }
+      },
+    );
+
     await migrator.query(
       'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',
       [reader],

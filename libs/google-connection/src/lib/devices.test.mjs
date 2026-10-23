@@ -113,6 +113,60 @@ test('device pages follow page tokens and normalize fields', async (t) => {
   });
 });
 
+test('device pages read every Asset tag that Google stores', async (t) => {
+  // Google allows 1 KB, which holds 1,024 UTF-16 units. A supplementary character
+  // takes two units, so this second tag is 600 units long.
+  const longTag = 'A'.repeat(1024);
+  const supplementaryTag = '𠮷'.repeat(300);
+  stub(t, [
+    {
+      chromeosdevices: [
+        { deviceId: 'd1', orgUnitPath: '/', annotatedAssetId: longTag },
+        {
+          deviceId: 'd2',
+          orgUnitPath: '/',
+          annotatedAssetId: supplementaryTag,
+        },
+      ],
+    },
+  ]);
+  const pages = await collect(
+    new GoogleDeviceReader().devicePages(
+      credential,
+      'C0123456',
+      AbortSignal.timeout(5000),
+    ),
+  );
+  assert.equal(pages[0][0].assetTag, longTag);
+  assert.equal(pages[0][1].assetTag, supplementaryTag);
+  assert.equal(pages[0][0].assetTag.length, 1024);
+  assert.equal(pages[0][1].assetTag.length, 600);
+});
+
+test('device pages refuse an Asset tag above 4,096 UTF-16 units', async (t) => {
+  stub(t, [
+    {
+      chromeosdevices: [
+        {
+          deviceId: 'd1',
+          orgUnitPath: '/',
+          annotatedAssetId: 'A'.repeat(4097),
+        },
+      ],
+    },
+  ]);
+  await assert.rejects(
+    collect(
+      new GoogleDeviceReader().devicePages(
+        credential,
+        'C0123456',
+        AbortSignal.timeout(5000),
+      ),
+    ),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+  );
+});
+
 test('battery pages use the latest classified report and design capacity', async (t) => {
   const reports = Array.from({ length: 32 }, (_, index) => ({
     reportTime: new Date(
