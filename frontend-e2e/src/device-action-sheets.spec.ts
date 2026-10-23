@@ -1070,7 +1070,29 @@ test('walks Wipe user data, Powerwash, and Deprovision at 1440 x 900', async ({
     command.getByRole('button', { name: 'Send Powerwash to 4 devices' }),
   ).toBeDisabled();
   await walkShot('04-powerwash-confirm-wrong-phrase.png');
-  await command.getByRole('button', { name: 'Close' }).click();
+
+  // The Powerwash receipt belongs to F1 (PNG 08).
+  await command.locator('.field-block input').fill('POWERWASH');
+  const sendPowerwash = command.getByRole('button', {
+    name: 'Send Powerwash to 4 devices',
+  });
+  await expect(sendPowerwash).toBeEnabled();
+  await sendPowerwash.click();
+  await expect(
+    command.getByRole('heading', { level: 1, name: 'Command job created' }),
+  ).toBeVisible();
+  await expect(command.getByText('Job CMD-003 · Running')).toBeVisible();
+  await expect(
+    command.getByText(
+      '4 devices · 4 Powerwash commands. Google changes have not completed.',
+    ),
+  ).toBeVisible();
+  await expect(
+    command.getByText('You can close this panel and follow progress in Jobs.'),
+  ).toBeVisible();
+  await walkShot('08-powerwash-receipt.png');
+  await expect(command.getByRole('button', { name: 'View job' })).toBeVisible();
+  await command.getByRole('button', { name: 'Done' }).click();
   await expect(command).not.toHaveClass(/is-open/);
 
   const status = await openAction(page, 'status', 'Change status');
