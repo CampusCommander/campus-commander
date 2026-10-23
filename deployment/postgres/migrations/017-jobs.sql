@@ -74,8 +74,14 @@ CREATE TABLE cc.device_update_previews (
   created_by uuid NOT NULL REFERENCES cc.application_principals(id),
   permission_version integer NOT NULL,
   generation integer NOT NULL,
-  action text NOT NULL CHECK(action IN ('annotated-location','reboot','disable','reenable')),
+  action text NOT NULL CHECK(action IN ('annotated-location','reboot','wipe-users','powerwash',
+    'disable','reenable','deprovision')),
   action_version integer NOT NULL DEFAULT 1 CHECK(action_version>=1),
+  -- The frozen Deprovision reason (D11, D12). Google offers four admin labels, so the column takes
+  -- those four and no other value. Every other action leaves the column null.
+  deprovision_reason text CHECK(deprovision_reason IN ('DEPROVISION_REASON_RETIRING_DEVICE',
+    'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT','DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+    'DEPROVISION_REASON_UPGRADE_TRANSFER')),
   selected integer NOT NULL CHECK(selected>=0),
   eligible integer NOT NULL CHECK(eligible>=0),
   unchanged integer NOT NULL CHECK(unchanged>=0),
@@ -87,7 +93,9 @@ CREATE TABLE cc.device_update_previews (
   prepared_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL,
   job_id uuid UNIQUE REFERENCES cc.jobs(job_id),
-  CHECK(selected=eligible+unchanged+excluded)
+  CHECK(selected=eligible+unchanged+excluded),
+  -- Only a Deprovision preview carries a reason, and it always carries one (D12).
+  CHECK((action='deprovision')=(deprovision_reason IS NOT NULL))
 );
 
 -- One field change of one preview. The four field IDs and their modes follow section 1. A text
@@ -141,7 +149,8 @@ CREATE TABLE cc.device_update_target_fields (
 CREATE TABLE cc.device_update_jobs (
   job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
   preview_id uuid NOT NULL UNIQUE REFERENCES cc.device_update_previews(preview_id),
-  action text NOT NULL CHECK(action IN ('annotated-location','reboot','disable','reenable')),
+  action text NOT NULL CHECK(action IN ('annotated-location','reboot','wipe-users','powerwash',
+    'disable','reenable','deprovision')),
   confirmed_by uuid NOT NULL REFERENCES cc.application_principals(id),
   confirmer_permission_version integer NOT NULL,
   delegated_subject text NOT NULL,
@@ -472,16 +481,20 @@ END;
 $$;
 
 -- The confirmer of a write job still holds both write actions at the connection scope. The job action
--- names the action permission: an update needs devices:write, a command devices:commands, and a status
--- change devices:status. An unknown action holds no pair, so the answer is false.
+-- names the action permission: an update needs devices:write, Reboot devices:commands, Wipe user data
+-- and Powerwash devices:wipe, Disable and Reenable devices:status, and Deprovision devices:deprovision.
+-- An unknown action holds no pair, so the answer is false.
 CREATE FUNCTION cc.write_capable(p_actor uuid,p_customer text,p_action text) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT count(DISTINCT g.action)=2 FROM cc.application_grants g
   WHERE g.principal_id=p_actor AND g.action IN ('devices:bulk-actions',
       CASE p_action WHEN 'annotated-location' THEN 'devices:write'
         WHEN 'reboot' THEN 'devices:commands'
+        WHEN 'wipe-users' THEN 'devices:wipe'
+        WHEN 'powerwash' THEN 'devices:wipe'
         WHEN 'disable' THEN 'devices:status'
-        WHEN 'reenable' THEN 'devices:status' END)
+        WHEN 'reenable' THEN 'devices:status'
+        WHEN 'deprovision' THEN 'devices:deprovision' END)
     AND (g.scope='{"kind":"platform"}'::jsonb OR
     (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer));
 $$;
@@ -882,7 +895,12 @@ BEGIN
   RETURN jsonb_build_object('outcome','claimed','generation',connection.generation,
     'credentialId',connection.credential_id,
     'envelope',(SELECT envelope FROM cc.google_credentials WHERE id=connection.credential_id),
-    'batchCount',detail.batch_count,'action',detail.action,'operations',claim,'readBack',readback);
+    'batchCount',detail.batch_count,'action',detail.action,
+    -- The batch claim carries the frozen reason of a Deprovision job (section 5). The preview holds it,
+    -- and the purge keeps a preview that holds a job.
+    'deprovisionReason',(SELECT p.deprovision_reason FROM cc.device_update_previews p
+      WHERE p.preview_id=detail.preview_id),
+    'operations',claim,'readBack',readback);
 END;
 $$;
 
@@ -1138,9 +1156,11 @@ BEGIN
   IF candidates IS NULL THEN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
   END IF;
-  -- The action names the observation column of a command or status job. An update action publishes
-  -- each field row into its own column instead, so `write_field` stays null for it (section 4).
-  write_field:=CASE detail.action WHEN 'disable' THEN 'status' WHEN 'reenable' THEN 'status' END;
+  -- The action names the observation column of a command or status job. A Deprovision is a status
+  -- change, so it publishes its requested `DEPROVISIONED`. An update action publishes each field row
+  -- into its own column instead, so `write_field` stays null for it (section 4).
+  write_field:=CASE detail.action WHEN 'disable' THEN 'status' WHEN 'reenable' THEN 'status'
+    WHEN 'deprovision' THEN 'status' END;
   -- S1 (round 3): the overlay and publication rows reference the connection row, so their insert checks
   -- take a key-share lock on it. That lock comes here, before the device rows: a full-sync finish takes the
   -- connection row first and its device rows second (016, cc.finish_device_sync), so the two calls never
@@ -1215,11 +1235,15 @@ BEGIN
         ELSE o.observed_at END,
       verified_by=e.r->>'verifiedBy',outcome_reason=e.r->>'outcomeReason',updated_at=now_at,
       -- An accepted issue stores Google's command and its first poll (section 4 step 3). The poll waits
-      -- 15 s from this settlement, and the 7-day cap counts from the issue answer.
+      -- 15 s from this settlement. The watch window ends 30 days after the issue answer for Wipe user
+      -- data and Powerwash (ruling 2), and 7 days after it for Reboot.
       command_id=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN e.r->>'commandId' ELSE o.command_id END,
       command_state=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN 'pending-delivery' ELSE o.command_state END,
       poll_after=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN now_at+interval '15 seconds' ELSE o.poll_after END,
-      poll_deadline_at=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued' THEN p_observed_at+interval '7 days' ELSE o.poll_deadline_at END,
+      poll_deadline_at=CASE WHEN p_kind='issue' AND e.r->>'outcome'='issued'
+        THEN p_observed_at+CASE WHEN detail.action IN ('wipe-users','powerwash') THEN interval '30 days'
+          ELSE interval '7 days' END
+        ELSE o.poll_deadline_at END,
       -- An open request keeps the read-back of this attempt and its delay (section 5.7, review F5).
       verify_attempt=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown' THEN p_attempt END,
       verify_lease_expires_at=CASE WHEN p_kind='write' AND e.r->>'outcome'='unknown'
@@ -1973,10 +1997,11 @@ BEGIN
   IF numbers IS NULL THEN
     RETURN jsonb_build_object('outcome','settled','settled',settled,'publication',NULL);
   END IF;
-  -- The first successful poll stores Google's expiry, and the deadline becomes that expiry plus 24
-  -- hours (section 4 step 8). A JSON null or a missing expiry names no provider expiry, so the
-  -- stored deadline keeps its value. A terminal answer settles with its evidence; a non-terminal
-  -- answer keeps the operation issued with the observed command state.
+  -- The first successful poll stores Google's expiry (section 4 step 8). Reboot then waits until that
+  -- expiry plus 24 hours. Wipe user data and Powerwash wait until the earlier of that same point and
+  -- the 30-day deadline of the issue settlement (ruling 2). A JSON null or a missing expiry names no
+  -- provider expiry, so the stored deadline keeps its value. A terminal answer settles with its
+  -- evidence; a non-terminal answer keeps the operation issued with the observed command state.
   WITH results AS (
     SELECT (r->>'operationNumber')::integer AS operation_number,
       CASE WHEN jsonb_typeof(r->'commandExpiresAt')='string'
@@ -1997,7 +2022,10 @@ BEGIN
       command_executed_at=CASE WHEN res.r->>'outcome'='succeeded'
         THEN COALESCE((res.r->>'commandExecutedAt')::timestamptz,p_observed_at) ELSE o.command_executed_at END,
       poll_deadline_at=CASE WHEN o.command_expires_at IS NULL AND res.expires_at IS NOT NULL
-        THEN res.expires_at+interval '24 hours' ELSE o.poll_deadline_at END,
+        THEN CASE WHEN detail.action IN ('wipe-users','powerwash')
+          THEN LEAST(o.poll_deadline_at,res.expires_at+interval '24 hours')
+          ELSE res.expires_at+interval '24 hours' END
+        ELSE o.poll_deadline_at END,
       poll_attempt=NULL,poll_lease_expires_at=NULL,updated_at=now_at
     FROM results res
     WHERE o.job_id=p_job AND o.operation_number=res.operation_number AND o.operation_number=ANY(numbers)
@@ -2168,8 +2196,10 @@ $$;
 -- One prepared preview and its frozen targets, in one transaction. The caller resolves the stored
 -- selection and computes the changes, the dispositions, and the digest. This function freezes that
 -- result. An annotated-location update carries its changes. A command or status preview carries none.
+-- A Deprovision preview carries its one reason, and no other action carries one (D12).
 CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p_customer text,
-  p_generation integer,p_action text,p_changes jsonb,p_digest text,p_targets jsonb,p_expires_minutes integer)
+  p_generation integer,p_action text,p_changes jsonb,p_digest text,p_targets jsonb,p_expires_minutes integer,
+  p_reason text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer; eligible integer;
@@ -2178,11 +2208,20 @@ DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_generation IS NULL OR
-    p_action IS NULL OR p_action NOT IN ('annotated-location','reboot','disable','reenable') OR
+    p_action IS NULL OR p_action NOT IN ('annotated-location','reboot','wipe-users','powerwash',
+      'disable','reenable','deprovision') OR
     p_digest IS NULL OR
     p_digest !~ '^[a-f0-9]{64}$' OR p_targets IS NULL OR jsonb_typeof(p_targets)<>'array' OR
     p_expires_minutes IS NULL OR p_expires_minutes NOT BETWEEN 1 AND 1440 THEN
     RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- S2: the frozen reason of a Deprovision preview. A reason outside Deprovision, a Deprovision
+  -- without a reason, and a fifth value all reject before any lock.
+  IF (p_reason IS NOT NULL AND p_reason NOT IN ('DEPROVISION_REASON_RETIRING_DEVICE',
+      'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT','DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+      'DEPROVISION_REASON_UPGRADE_TRANSFER')) OR
+    (p_action='deprovision')<>(p_reason IS NOT NULL) THEN
+    RAISE EXCEPTION 'The preview reason is invalid.' USING ERRCODE='22023';
   END IF;
   IF p_action='annotated-location' THEN
     -- One to four changes, each field once, in the field-mode pairs of section 1.
@@ -2306,11 +2345,11 @@ BEGIN
   now_at:=clock_timestamp();
   number:=nextval('cc.preview_number_pv');
   INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-    generation,action,action_version,selected,eligible,unchanged,excluded,field_changes,
+    generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,field_changes,
     oldest_observed_at,manifest_digest,prepared_at,expires_at)
   VALUES(gen_random_uuid(),cc.job_display_id('PV',number),p_customer,p_actor,p_version,p_generation,
     p_action,CASE WHEN p_action='annotated-location' THEN 2 ELSE 1 END,
-    selected,eligible,unchanged,excluded,field_changes,oldest,p_digest,now_at,
+    p_reason,selected,eligible,unchanged,excluded,field_changes,oldest,p_digest,now_at,
     now_at+make_interval(mins=>p_expires_minutes))
   RETURNING * INTO preview;
   IF p_action='annotated-location' THEN
@@ -2377,6 +2416,8 @@ BEGIN
       'customerId',preview.customer_id,'createdBy',preview.created_by,
       'permissionVersion',preview.permission_version,'generation',preview.generation,
       'action',preview.action,
+      -- The frozen reason of a Deprovision preview (D12). Every other action answers null.
+      'deprovisionReason',preview.deprovision_reason,
       'changes',(SELECT COALESCE(jsonb_agg(
           jsonb_strip_nulls(jsonb_build_object('field',c.field,'mode',c.mode,'value',c.value))
           ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],c.field)),
@@ -2390,19 +2431,21 @@ BEGIN
 END;
 $$;
 
--- The confirmation of section 2.4. It revalidates the person, the grants, the expiry, the digest, and
--- the connection, then creates one accepted job with its operations. A repeated call returns the job.
+-- The confirmation of section 2.4. It revalidates the person, the grants, the expiry, the digest, the
+-- typed phrase, and the connection, then creates one accepted job with its operations. A repeated call
+-- returns the job.
 CREATE FUNCTION cc.confirm_device_update_preview(p_actor uuid,p_version integer,p_customer text,
-  p_preview uuid,p_digest text,p_artifact text,p_correlation uuid) RETURNS jsonb
+  p_preview uuid,p_digest text,p_artifact text,p_correlation uuid,p_phrase text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE preview cc.device_update_previews; connection cc.google_connection; job cc.jobs;
   subject text; eligible integer; now_at timestamptz; number bigint; artifact cc.artifacts;
-  job_kind text; prefix text;
+  job_kind text; prefix text; expected_phrase text;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
     p_digest IS NULL OR p_digest !~ '^[a-f0-9]{64}$' OR p_artifact IS NULL OR
-    char_length(p_artifact) NOT BETWEEN 1 AND 256 OR p_correlation IS NULL THEN
+    char_length(p_artifact) NOT BETWEEN 1 AND 256 OR p_correlation IS NULL OR
+    char_length(p_phrase)>64 THEN
     RAISE EXCEPTION 'The confirmation request is invalid.' USING ERRCODE='22023';
   END IF;
   -- Rule G: the connection read below reaches the global access lock. This function takes that lock
@@ -2438,6 +2481,16 @@ BEGIN
   IF p_digest<>preview.manifest_digest THEN
     RETURN jsonb_build_object('outcome','preview-changed');
   END IF;
+  -- The typed phrase of the action (D7, ruling 3). The action fixes the phrase, so no column stores
+  -- it. An action without a phrase expects an absent phrase. The caller trims its input, so this
+  -- comparison is exact. A mismatch creates no job.
+  expected_phrase:=CASE preview.action
+    WHEN 'wipe-users' THEN 'WIPE'
+    WHEN 'powerwash' THEN 'POWERWASH'
+    WHEN 'deprovision' THEN 'DEPROVISION' END;
+  IF p_phrase IS DISTINCT FROM expected_phrase THEN
+    RETURN jsonb_build_object('outcome','phrase-mismatch');
+  END IF;
   -- The connection row locks after the preview row, before the job rows. The subject stays inside
   -- this function, so no principal needs connection:read.
   SELECT * INTO connection FROM cc.google_connection c WHERE c.singleton FOR KEY SHARE;
@@ -2471,9 +2524,12 @@ BEGIN
   END IF;
   -- The action names the header kind, the display prefix, and the number sequence (section 1).
   job_kind:=CASE preview.action WHEN 'annotated-location' THEN 'device-update'
+    WHEN 'wipe-users' THEN 'device-command' WHEN 'powerwash' THEN 'device-command'
     WHEN 'reboot' THEN 'device-command' ELSE 'device-status' END;
-  prefix:=CASE preview.action WHEN 'annotated-location' THEN 'UPD' WHEN 'reboot' THEN 'CMD' ELSE 'STS' END;
+  prefix:=CASE preview.action WHEN 'annotated-location' THEN 'UPD'
+    WHEN 'wipe-users' THEN 'CMD' WHEN 'powerwash' THEN 'CMD' WHEN 'reboot' THEN 'CMD' ELSE 'STS' END;
   number:=CASE preview.action WHEN 'annotated-location' THEN nextval('cc.job_number_upd')
+    WHEN 'wipe-users' THEN nextval('cc.job_number_cmd') WHEN 'powerwash' THEN nextval('cc.job_number_cmd')
     WHEN 'reboot' THEN nextval('cc.job_number_cmd') ELSE nextval('cc.job_number_sts') END;
   INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
     target_count,target_org_unit_paths,correlation_id)
@@ -2497,7 +2553,8 @@ BEGIN
     CASE WHEN preview.action='annotated-location' THEN NULL ELSE t.observed_value END,
     CASE preview.action
       WHEN 'disable' THEN 'DISABLED'
-      WHEN 'reenable' THEN 'ACTIVE' END,
+      WHEN 'reenable' THEN 'ACTIVE'
+      WHEN 'deprovision' THEN 'DEPROVISIONED' END,
     ((row_number() OVER (ORDER BY t.ordinal)-1)/250)::integer,'pending'
   FROM cc.device_update_preview_targets t
   WHERE t.preview_id=p_preview AND t.disposition='eligible' ORDER BY t.ordinal;
@@ -2667,9 +2724,9 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.report_device_update_backoff(text,uuid,uuid,integer,uuid,integer),cc.accept_device_update_hold(text),
   cc.clean_device_update_hold(text,uuid),
   cc.purge_jobs(text,integer),cc.device_update_receipt(uuid),
-  cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer),
+  cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer,text),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
-  cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid),
+  cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid,text),
   cc.device_command_poll_delay(integer),cc.complete_device_command_job(uuid,timestamptz),
   cc.due_device_command_polls(text),cc.record_device_command_poll_start(text,uuid,uuid,text),
   cc.release_device_command_poll(text,uuid,uuid),
