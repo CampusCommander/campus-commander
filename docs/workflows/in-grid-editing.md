@@ -1,8 +1,8 @@
 # Edit device fields in the grid, or update one device
 
-Status: owner-confirmed on 2026-10-23. The owner chose the answer "Confirmed: build it as written".
+Status: owner-confirmed on 2026-10-23. The owner chose the answer "Confirmed: build it as written". The owner approved the mockup on 2026-10-23: "Yea go ahead with this visual design."
 Source: owner direction of 2026-10-21 and 2026-10-23, quoted under [Owner direction](#owner-direction).
-Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain.
+Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table and the approved mockup under [Design](#design). Some design gaps remain.
 Replaces: none. This record extends [Update device fields](update-device-fields.md).
 
 ## User and outcome
@@ -210,19 +210,39 @@ Figma values are examples (`docs/ui/rules.md:91`).
 | `119:396`  | Screen / Devices / detail-updated            | Device details after the job                 |
 | `104:389`  | State / draft-conflict                       | Keep the current value or keep the draft     |
 
+The owner approved the mockup on 2026-10-23. Owner, in the main chat: "Yea go ahead with this visual design."
+The approved mockup is [2026-10-23-in-grid-editing.html](../ui/designs/2026-10-23-in-grid-editing.html), stored with its [notes](../ui/designs/2026-10-23-in-grid-editing-notes.md) and 14 PNG states.
+The owner approved it as drawn, including the two product questions in the notes' Issues section. The "Select one or more devices to update." note keeps its place above the draft panel. A conflict blocks Save changes until the person resolves it.
+
+| State | PNG                              | What it shows                                                                                                                   | Gap it closes                                                            |
+| ----- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 01    | `01-no-pending-changes.png`      | The grid with no pending change. Serial and the five editable columns.                                                          | None. Baseline for the other states.                                     |
+| 02    | `02-asset-tag-in-edit.png`       | The Asset tag editor in one cell. The count includes the changed input.                                                         | None. Shows composition choices 5 and 6.                                 |
+| 03    | `03-pending-changes.png`         | Five pending cells on four devices, each with its revert icon.                                                                  | None. Shows composition choice 7.                                        |
+| 04    | `04-pending-view.png`            | The pending view. The toggle reads "Show all devices".                                                                          | None. Shows composition choice 4.                                        |
+| 05    | `05-invalid-cell.png`            | An invalid Notes cell of 512 characters. The reason is in the panel, and Save changes is disabled.                              | None. Gap 6 stays open: the editor and a Clear value cell are not drawn. |
+| 06    | `06-conflict-cell.png`           | A conflict cell with the Figma 104:389 card. Save changes is disabled.                                                          | Gap 1.                                                                   |
+| 07    | `07-org-unit-picker.png`         | The built picker dialog for one cell.                                                                                           | None. Shows composition choice 12.                                       |
+| 08    | `08-revert-all-question.png`     | The revert question, asked once. It names five changes on four devices.                                                         | Gap 4.                                                                   |
+| 09    | `09-one-change-saved.png`        | One-change save. The job exists at once, the sheet shows the receipt, and the cell shows the accepted value while the job runs. | Gaps 2 and 8.                                                            |
+| 10    | `10-several-changes-review.png`  | The sheet at Review, with one row per device and field.                                                                         | Gap 8.                                                                   |
+| 11    | `11-several-changes-confirm.png` | Confirm, with one sentence per device and field.                                                                                | Gap 8.                                                                   |
+| 12    | `12-update-job.png`              | The job page, with one row per device and field. 04QVJBY failed on Google quota.                                                | Gaps 3 and 5.                                                            |
+| 13    | `13-device-details.png`          | "Update device" on device details.                                                                                              | None. Gap 10 stays open for the button without permission.               |
+| 14    | `14-single-device-sheet.png`     | The single-device sheet with five fields. Asset tag is set to Update.                                                           | Gaps 7 and 8.                                                            |
+
 Design gaps:
 
-1. No frame shows a conflict cell.
-2. No frame shows a cell while its job runs.
-3. No frame shows a failed write.
-4. No frame shows the "Revert all changes" question.
-5. No frame shows a partial failure of a grid job.
-6. No frame shows an in-cell editor for Annotated location, Annotated user, or Notes. No frame shows Clear value in a cell.
-7. No frame shows Asset tag in the single-device draft. `114:278` says "Asset tag and notes remain unchanged."
-8. No frame shows either flow inside the Update device sheet or a duplicate Asset tag warning.
-   No frame shows the "Update device" button without permission.
-
-A mockup for owner approval comes after the record confirmation and before the build.
+1. No frame shows a conflict cell. **Closed by state 06.** The cell shows the Figma 104:389 card and disables Save changes.
+2. No frame shows a cell while its job runs. **Closed by state 09.** The cell shows the accepted value, a clock icon, and the job in its tooltip.
+3. No frame shows a failed write. **Closed by state 12.** The 04QVJBY row shows the Google quota failure and keeps its old value.
+4. No frame shows the "Revert all changes" question. **Closed by state 08.** The question names five changes on four devices.
+5. No frame shows a partial failure of a grid job. **Closed by state 12.** One job shows four succeeded rows and one failed row.
+6. No frame shows an in-cell editor for Annotated location, Annotated user, or Notes. No frame shows Clear value in a cell. **Open.** State 02 draws the Asset tag editor only. State 05 shows a Notes value pasted over its limit, not the Notes editor. Composition choice 9 records that an emptied Notes cell stages Clear value, and no state draws such a cell.
+7. No frame shows Asset tag in the single-device draft. `114:278` says "Asset tag and notes remain unchanged." **Closed by state 14.** The sheet holds five fields in record order, with Asset tag set to Update.
+8. No frame shows either flow inside the Update device sheet. **Closed by states 09, 10, 11, and 14.** States 09 to 11 show the grid flow at Receipt, Review, and Confirm. State 14 shows the single-device flow.
+9. No frame shows a duplicate Asset tag warning. **Open.** No state draws it. It will show on Review.
+10. No frame shows the "Update device" button without permission. **Open.** State 13 shows the button with permission only.
 
 ## Exclusions and open decisions
 
@@ -238,7 +258,7 @@ Open decisions:
 
 - The owner confirmed this record on 2026-10-23, before any design or implementation. He chose the answer "Confirmed: build it as written".
 - The design addendum decides the one-change path, the request size cap, and the per-device contract.
-- Each design gap needs a composition before its screen is built.
+- These design gaps need a composition before their screens are built: the in-cell editors for Annotated location, Annotated user, and Notes, Clear value in a cell, the duplicate Asset tag warning on Review, and the "Update device" button without permission.
 - Live device writes need explicit owner authorization and an enrolled test device.
 
 ## Risks
