@@ -104,7 +104,12 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly requestedText = requestedText;
   protected readonly pathParts = pathParts;
   protected readonly rowFailureText = rowFailureText;
-  protected readonly outcomeNotes = outcomeNotes;
+  protected readonly outcomeNotes = (
+    operation: JobOperation,
+  ): readonly string[] => {
+    const job = this.store.job();
+    return job ? outcomeNotes(job, operation) : [];
+  };
 
   protected readonly heading = computed(() => {
     const job = this.store.job();

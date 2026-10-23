@@ -70,10 +70,11 @@ export function operationChip(operation: JobOperation): {
 /**
  * The notes under an outcome chip (mockup state 09, DEVICE-02).
  * A command that still waits, or settled unknown, keeps Google's expiry, because the
- * command stays armed at Google. An unknown row that closed the watch window names the
- * window (record ruling 2).
+ * command stays armed at Google. An unknown Wipe user data or Powerwash row names the
+ * 30-day watch window (record ruling 2). Reboot keeps its own window, so it names none.
  */
 export function outcomeNotes(
+  job: Pick<JobDetail, 'action'>,
   operation: JobOperation,
   now = new Date(),
 ): readonly string[] {
@@ -81,7 +82,8 @@ export function outcomeNotes(
   const notes: string[] = [];
   if (
     operation.outcome === 'unknown' &&
-    operation.outcomeReason === 'not-observed'
+    operation.outcomeReason === 'not-observed' &&
+    job.action !== 'reboot-devices'
   )
     notes.push('No result in 30 days');
   if (

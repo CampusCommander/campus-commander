@@ -881,6 +881,7 @@ describe('job detail fields', () => {
 
   it('keeps Google expiry under a waiting or unknown command', () => {
     const now = new Date('2026-10-22T14:11:00.000Z');
+    const powerwash = { action: 'powerwash-devices' as const };
     const expires = `Expires ${formatTimestamp(
       '2031-10-22T14:11:00.000Z',
       now,
@@ -892,7 +893,7 @@ describe('job detail fields', () => {
       commandState: 'acknowledged',
       commandExpiresAt: '2031-10-22T14:11:00.000Z',
     });
-    expect(outcomeNotes(acknowledged, now)).toEqual([expires]);
+    expect(outcomeNotes(powerwash, acknowledged, now)).toEqual([expires]);
 
     const missed = operation({
       field: null,
@@ -901,10 +902,22 @@ describe('job detail fields', () => {
       outcomeReason: 'not-observed',
       commandExpiresAt: '2031-10-22T14:11:00.000Z',
     });
-    expect(outcomeNotes(missed, now)).toEqual([
+    expect(outcomeNotes(powerwash, missed, now)).toEqual([
       'No result in 30 days',
       expires,
     ]);
+
+    // Reboot keeps the first build's window, so it names no 30-day window.
+    const rebootMissed = operation({
+      field: null,
+      operation: 'reboot',
+      outcome: 'unknown',
+      outcomeReason: 'not-observed',
+      commandExpiresAt: '2031-10-22T14:11:00.000Z',
+    });
+    expect(
+      outcomeNotes({ action: 'reboot-devices' }, rebootMissed, now),
+    ).toEqual([expires]);
 
     const cancelled = operation({
       field: null,
@@ -913,11 +926,12 @@ describe('job detail fields', () => {
       outcomeReason: 'command-cancelled',
       commandExpiresAt: '2031-10-22T14:11:00.000Z',
     });
-    expect(outcomeNotes(cancelled, now)).toEqual([]);
+    expect(outcomeNotes(powerwash, cancelled, now)).toEqual([]);
 
     // A status row carries no command note.
     expect(
       outcomeNotes(
+        { action: 'deprovision-devices' },
         operation({
           field: null,
           operation: 'deprovision',
