@@ -5,7 +5,23 @@ import {
 } from './google-connection';
 import { googleHealthFailureSchema } from './google-health';
 
-const timestamp = z.iso.datetime({ offset: true });
+/**
+ * The minute form of a timestamp: `YYYY-MM-DDTHH:MM` with `Z` or an `±HH:MM` offset.
+ * zod 4.6.6 narrowed `z.iso.datetime()` to RFC 3339, so seconds became mandatory.
+ * The status contract keeps the minute form (F1 review round 2), so this branch restores it.
+ * `z.regexes.date` checks the calendar, including leap years.
+ */
+const minuteTimestamp = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/,
+    'Expected YYYY-MM-DDTHH:MM with Z or a ±HH:MM offset.',
+  )
+  .refine((value) => z.regexes.date.test(value.slice(0, 10)), {
+    message: 'Expected a calendar date.',
+  });
+
+const timestamp = z.union([z.iso.datetime({ offset: true }), minuteTimestamp]);
 const deviceId = z.string().min(1).max(128);
 const orgUnitPath = z.string().min(1).max(4096).startsWith('/');
 const percent = z.number().int().min(0).max(200);
