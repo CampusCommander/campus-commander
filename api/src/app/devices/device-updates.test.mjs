@@ -179,9 +179,10 @@ test('a display number keeps at least three digits without truncating 1000', () 
 test('a targets cursor names the ordinal and the one-based field position', () => {
   // The query compares against array_position, which counts the first field as 1.
   assert.equal(targetCursor(0, 'annotatedLocation'), '0:1');
-  assert.equal(targetCursor(4, 'annotatedUser'), '4:2');
-  assert.equal(targetCursor(4, 'notes'), '4:3');
-  assert.equal(targetCursor(4, 'orgUnitPath'), '4:4');
+  assert.equal(targetCursor(4, 'annotatedAssetId'), '4:2');
+  assert.equal(targetCursor(4, 'annotatedUser'), '4:3');
+  assert.equal(targetCursor(4, 'notes'), '4:4');
+  assert.equal(targetCursor(4, 'orgUnitPath'), '4:5');
   assert.equal(targetCursor(4, 'status'), null);
   assert.equal(targetCursor('4', 'notes'), null);
   assert.deepEqual(parseIntCursor('4:2'), { ordinal: 4, position: 2 });
@@ -211,7 +212,9 @@ test('a target row reports the approved value and its exclusion reason', () => {
       serialNumber: 'SN-1',
       field: 'annotatedLocation',
       observedValue: 'Room 1',
+      baselineValue: 'Room 1',
       approvedValue: 'Room 12',
+      duplicateSerialNumber: null,
       disposition: 'eligible',
       exclusionReason: null,
     },
@@ -522,6 +525,42 @@ test('an unknown preview answers 404 preview-not-found', async () => {
 
 const previewId = '33333333-3333-4333-8333-333333333333';
 const jobId = '44444444-4444-4444-8444-444444444444';
+test('a preview without change rows answers no changes and its conflict count', async () => {
+  let reads = 0;
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) => {
+          reads += 1;
+          if (text.includes('cc.device_update_previews'))
+            return {
+              rows: [
+                previewRow({
+                  field_changes: 3,
+                  selected: 3,
+                  eligible: 1,
+                  conflicts: 2,
+                }),
+              ],
+            };
+          // An edit-list preview stores one request per row, so this join finds no change.
+          return { rows: [] };
+        },
+      },
+      transaction: async () => {
+        throw new Error('No write is allowed.');
+      },
+    },
+    { get: async () => null },
+    { storeJson: async () => 'unused' },
+  );
+  const preview = await updates.previewById(session, previewId);
+  assert.equal(reads, 2, 'The answer reads the preview and its change rows.');
+  assert.equal(preview.changes, null);
+  assert.equal(preview.conflicts, 2);
+  assert.equal(preview.fieldChanges, 3);
+});
+
 const previewRow = (extra = {}) => ({
   preview_id: previewId,
   display_id: 'PV-001',

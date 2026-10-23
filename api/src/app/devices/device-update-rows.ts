@@ -43,13 +43,18 @@ export function previewTargetRow(
   row: Record<string, unknown>,
   change: DeviceUpdateChange,
 ): DeviceUpdateTarget {
+  const observedValue =
+    typeof row['observed_value'] === 'string' ? row['observed_value'] : null;
   return {
     deviceId: String(row['device_id']),
     serialNumber: String(row['serial_number'] ?? ''),
     field: change.field,
-    observedValue:
-      typeof row['observed_value'] === 'string' ? row['observed_value'] : null,
+    observedValue,
+    // Each row stores its own baseline with the per-row values of addendum section 2.
+    baselineValue: observedValue,
     approvedValue: change.mode === 'clear' ? null : (change.value ?? null),
+    // The duplicate lookup of addendum section 6 fills this later.
+    duplicateSerialNumber: null,
     disposition: row['disposition'] as DeviceUpdateTarget['disposition'],
     exclusionReason:
       typeof row['exclusion_reason'] === 'string'
