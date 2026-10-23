@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
-import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
+import {
+  navigateAfterNetworkChange,
+  reloadAfterNetworkChange,
+} from './navigation-fixture.mjs';
 
 const okResponse = () => ({
   status: () => 200,
@@ -383,4 +386,108 @@ test('the helper removes its listeners when it returns or throws', async () => {
     /ERR_CERT_AUTHORITY_INVALID/,
   );
   assert.equal(failed.listenerCount('requestfailed'), 0);
+});
+
+/** A fake page that scripts each navigation result and emits page events. */
+const fakeNavigationPage = (goto) => {
+  const page = new EventEmitter();
+  page.navigations = 0;
+  page.goto = async (url, options) => {
+    page.navigations++;
+    return goto(page.navigations, url, options);
+  };
+  return page;
+};
+
+test('a network change retries only the interrupted navigation', async () => {
+  let attempts = 0;
+  const page = {
+    async goto() {
+      if (++attempts === 1) throw Error('page.goto: net::ERR_NETWORK_CHANGED');
+      return okResponse();
+    },
+  };
+  assert.deepEqual(
+    await navigateAfterNetworkChange(
+      page,
+      'https://fixture.invalid/platform-users',
+      { retryDelayMs: 0 },
+    ),
+    { attempts: 2, networkChanges: 1 },
+  );
+  assert.equal(attempts, 2);
+});
+
+test('a navigation HTTP error status fails at once', async () => {
+  let attempts = 0;
+  const page = {
+    async goto() {
+      attempts++;
+      return { status: () => 502, url: () => 'https://fixture.invalid/' };
+    },
+  };
+  await assert.rejects(
+    navigateAfterNetworkChange(page, 'https://fixture.invalid/', {
+      retryDelayMs: 0,
+    }),
+    /page\.goto: HTTP 502/,
+  );
+  assert.equal(attempts, 1);
+});
+
+test('a network change during the navigation ready wait navigates again', async () => {
+  const page = fakeNavigationPage(async (navigations) => {
+    if (navigations === 1)
+      setImmediate(() => failRequest(page, 'net::ERR_NETWORK_CHANGED'));
+    return okResponse();
+  });
+  const result = await navigateAfterNetworkChange(
+    page,
+    'https://fixture.invalid/platform-users',
+    { retryDelayMs: 0, ready: failFirstReady() },
+  );
+  assert.deepEqual(result, { attempts: 2, networkChanges: 1 });
+  assert.equal(page.navigations, 2);
+});
+
+test('a navigation does not start after an expired deadline', async () => {
+  const page = fakeNavigationPage(async () => okResponse());
+  await assert.rejects(
+    navigateAfterNetworkChange(page, 'https://fixture.invalid/', {
+      timeoutMs: 0,
+    }),
+    /expired before a navigation started/,
+  );
+  assert.equal(page.navigations, 0);
+});
+
+test('a navigation keeps the load budget of the call it replaces', async () => {
+  let received;
+  const page = {
+    async goto(url, options) {
+      received = options.timeout;
+      return okResponse();
+    },
+  };
+  await navigateAfterNetworkChange(page, 'https://fixture.invalid/', {
+    timeoutMs: 60000,
+    loadTimeoutMs: 30000,
+  });
+  assert.equal(received, 30000);
+});
+
+test('the attempt deadline still bounds a load below the caller budget', async () => {
+  let received;
+  const page = {
+    async goto(url, options) {
+      received = options.timeout;
+      return okResponse();
+    },
+  };
+  await navigateAfterNetworkChange(page, 'https://fixture.invalid/', {
+    timeoutMs: 250,
+    loadTimeoutMs: 30000,
+  });
+  assert.ok(received >= 1);
+  assert.ok(received < 30000);
 });
