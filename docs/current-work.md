@@ -7,6 +7,7 @@ Updated: 2026-10-21.
 On 2026-10-20 the owner signed off development order step 4 after a walkthrough of the review build.
 On 2026-10-22 the owner signed off the step 5 first build: Reboot, Disable, and Re-enable. The owner chose the answer "Signed off as built" to "Step 5 (Reboot, Disable, Re-enable from Bulk Actions): do you sign it off?".
 On 2026-10-22 the owner signed off the Update device fields workflow after he tried the review build at `c92e0ba`. Owner: "Signed off".
+On 2026-10-23 the owner confirmed the [Wipe user data, Powerwash, and Deprovision record](workflows/wipe-powerwash-deprovision.md). Owner, in the main chat: "1", which chose the option "Confirmed: build it as written".
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
