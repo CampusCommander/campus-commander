@@ -56,6 +56,9 @@
       </span>
     </div>
     <p class="identity-meta">{{ identity() }}</p>
+    @if (reason(); as reason) {
+    <p class="identity-meta">{{ reason }}</p>
+    }
   </section>
 
   <section class="counters-section" aria-labelledby="job-counts-title">
@@ -233,6 +236,8 @@
                 >
                 @if (rowFailureText(job, operation); as failureText) {
                 <span class="outcome-reason">{{ failureText }}</span>
+                } @for (note of outcomeNotes(operation); track note) {
+                <span class="outcome-note">{{ note }}</span>
                 } }
               </td>
               <td>

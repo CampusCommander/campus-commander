@@ -1,4 +1,5 @@
 import {
+  DEPROVISION_REASON_LABELS,
   DEVICE_UPDATE_FIELD_LABELS,
   jobOperationFieldSchema,
   type JobCommandState,
@@ -64,6 +65,31 @@ export function operationChip(operation: JobOperation): {
     label: OUTCOME_LABELS[operation.outcome],
     tone: outcomeTone(operation.outcome),
   };
+}
+
+/**
+ * The notes under an outcome chip (mockup state 09, DEVICE-02).
+ * A command that still waits, or settled unknown, keeps Google's expiry, because the
+ * command stays armed at Google. An unknown row that closed the watch window names the
+ * window (record ruling 2).
+ */
+export function outcomeNotes(
+  operation: JobOperation,
+  now = new Date(),
+): readonly string[] {
+  if (!isCommandOperation(operation)) return [];
+  const notes: string[] = [];
+  if (
+    operation.outcome === 'unknown' &&
+    operation.outcomeReason === 'not-observed'
+  )
+    notes.push('No result in 30 days');
+  if (
+    operation.commandExpiresAt &&
+    (operation.outcome === 'pending' || operation.outcome === 'unknown')
+  )
+    notes.push(`Expires ${formatTimestamp(operation.commandExpiresAt, now)}`);
+  return notes;
 }
 
 /** One counter of the outcome row. Order follows the frame. */
@@ -155,10 +181,16 @@ export function operationLabel(operation: JobOperation): string {
   switch (operation.operation) {
     case 'reboot':
       return 'Reboot';
+    case 'wipe-users':
+      return 'Wipe user data';
+    case 'powerwash':
+      return 'Powerwash';
     case 'disable':
       return 'Disable';
     case 'reenable':
       return 'Re-enable';
+    case 'deprovision':
+      return 'Deprovision';
     default:
       return fieldLabel(operation.field);
   }
@@ -166,16 +198,32 @@ export function operationLabel(operation: JobOperation): string {
 
 /** A command row has no Reconcile action (record default 4). */
 export function isCommandOperation(operation: JobOperation): boolean {
-  return operation.operation === 'reboot';
+  return (
+    operation.operation === 'reboot' ||
+    operation.operation === 'wipe-users' ||
+    operation.operation === 'powerwash'
+  );
+}
+
+/** A command job offers no Reconcile for any operation (record default 4, D13). */
+export function isCommandJob(job: Pick<JobDetail, 'action'>): boolean {
+  return (
+    job.action === 'reboot-devices' ||
+    job.action === 'wipe-user-data' ||
+    job.action === 'powerwash-devices'
+  );
 }
 
 /** A before value. A command reads "—", as in Figma 99:73. */
 export function beforeText(operation: JobOperation): string {
   switch (operation.operation) {
     case 'reboot':
+    case 'wipe-users':
+    case 'powerwash':
       return '—';
     case 'disable':
     case 'reenable':
+    case 'deprovision':
       return operation.baselineValue
         ? statusText(operation.baselineValue)
         : '—';
@@ -189,6 +237,10 @@ export function requestedText(operation: JobOperation): string {
   switch (operation.operation) {
     case 'reboot':
       return 'Reboot';
+    case 'wipe-users':
+      return 'Wipe user data';
+    case 'powerwash':
+      return 'Powerwash';
     case 'disable':
       return operation.requestedValue
         ? statusText(operation.requestedValue)
@@ -197,6 +249,10 @@ export function requestedText(operation: JobOperation): string {
       return operation.requestedValue
         ? statusText(operation.requestedValue)
         : 'Active';
+    case 'deprovision':
+      return operation.requestedValue
+        ? statusText(operation.requestedValue)
+        : 'Deprovisioned';
     case 'move':
       // A Move always carries its destination path (addendum section 1).
       return operation.requestedValue ?? '—';
@@ -230,21 +286,36 @@ export function operationNumber(operationId: string): string | null {
 /**
  * Reconcile of an update operation needs jobs:read and devices:write
  * (2026-10-16-device-write-jobs-design.md:469, OQ6). Reconcile of a status
- * operation needs jobs:read and devices:status
- * (2026-10-21-device-command-jobs-design.md:241). A command row offers none,
- * because the operations grid excludes it (record default 4).
+ * operation needs jobs:read and devices:status (2026-10-21-device-command-jobs-design.md:241).
+ * A Deprovision operation needs jobs:read and devices:deprovision (record ruling 1).
+ * A command row offers none, because the operations grid excludes it (record default 4, D13).
  */
 export function canReconcile(
   auth: InstanceType<typeof AuthStore>,
-  job: Pick<JobDetail, 'statusAction'>,
+  job: Pick<JobDetail, 'action' | 'statusAction'>,
 ): boolean {
   if (auth.metadata()?.phase !== 3) return false;
+  if (isCommandJob(job)) return false;
   const grants = auth.session()?.identity.grants ?? [];
-  const action = job.statusAction ? 'devices:status' : 'devices:write';
+  const action =
+    job.statusAction === 'deprovision'
+      ? 'devices:deprovision'
+      : job.statusAction
+        ? 'devices:status'
+        : 'devices:write';
   return (
     grants.some((grant) => grant.action === 'jobs:read') &&
     grants.some((grant) => grant.action === action)
   );
+}
+
+/** The Deprovision reason of the identity card (record D12, Figma 106:203). */
+export function reasonLine(
+  job: Pick<JobDetail, 'deprovisionReason'>,
+): string | null {
+  return job.deprovisionReason
+    ? `Deprovision reason: ${DEPROVISION_REASON_LABELS[job.deprovisionReason]}`
+    : null;
 }
 
 const NUMBER_WORDS = [
@@ -330,26 +401,34 @@ export function failureSentence(
 /**
  * One failure sentence of a command job. It names no retry and no reconciliation.
  * A `command-failed` settlement is the only evidence that a device executed the
- * command and failed. An issue refusal keeps its own reason.
+ * command and failed. A `command-cancelled` settlement names Google's cancellation.
+ * An issue refusal keeps its own reason.
  */
 export function commandFailureSentence(
   operation: JobFailedActivityOperation,
 ): string {
   if (operation.outcomeReason === 'command-failed')
     return `${operation.serialNumber || operation.deviceId} reported an execution failure.`;
+  if (operation.outcomeReason === 'command-cancelled')
+    return `Google cancelled the command for ${operation.serialNumber || operation.deviceId}.`;
   return failureSentence(operation, 'command');
 }
 
 /**
  * The sentence under a failed row (mockup note 22). An update row names the app outcome, because a
  * read-back failure has no Google reason. A command or status row keeps the step 5 line, which
- * names the Google reason.
+ * names the Google reason. A cancelled command carries no Google reason of its own.
  */
 export function rowFailureText(
   job: Pick<JobDetail, 'changes'>,
   operation: JobOperation,
 ): string | null {
   if (operation.outcome !== 'failed') return null;
+  if (
+    isCommandOperation(operation) &&
+    operation.outcomeReason === 'command-cancelled'
+  )
+    return 'Google cancelled the command.';
   if (job.changes === null) return operation.googleReason;
   return failureSentence(operation, 'update');
 }
@@ -418,9 +497,23 @@ function sampleDevices<T extends { deviceId: string }>(
 
 /** The noun of the confirmed operations in a write job. */
 function writeSubject(job: JobDetail): { one: string; many: string } {
-  return job.action === 'disable-devices' || job.action === 'reenable-devices'
+  return job.action === 'disable-devices' ||
+    job.action === 'reenable-devices' ||
+    job.action === 'deprovision-devices'
     ? { one: 'status change', many: 'status changes' }
     : { one: 'update', many: 'updates' };
+}
+
+/** The action name of a command job. The expiry sentence names its command. */
+function commandName(action: JobDetail['action']): string {
+  switch (action) {
+    case 'wipe-user-data':
+      return 'Wipe user data';
+    case 'powerwash-devices':
+      return 'Powerwash';
+    default:
+      return 'Reboot';
+  }
 }
 
 /** The counter line of a write job of frame 228:4524. */
@@ -450,9 +543,9 @@ function commandCounterLine(job: JobDetail): string {
   const parts: string[] = [];
   if (expired > 0)
     parts.push(
-      `${expired.toLocaleString('en-US')} ${
-        expired === 1 ? 'Reboot command expired' : 'Reboot commands expired'
-      } before execution.`,
+      `${expired.toLocaleString('en-US')} ${commandName(job.action)} ${
+        expired === 1 ? 'command' : 'commands'
+      } expired before execution.`,
     );
   parts.push(...failed.operations.map(commandFailureSentence));
   const unshownFailed = failed.count - failed.operations.length;
@@ -533,9 +626,11 @@ function refreshCounterLine(job: JobDetail): string {
  */
 export function latestActivityLine(job: JobDetail): string {
   if (job.action === 'refresh-inventory') return refreshCounterLine(job);
-  if (job.action === 'reboot-devices') return commandCounterLine(job);
+  if (isCommandJob(job)) return commandCounterLine(job);
   const subject =
-    job.action === 'disable-devices' || job.action === 'reenable-devices'
+    job.action === 'disable-devices' ||
+    job.action === 'reenable-devices' ||
+    job.action === 'deprovision-devices'
       ? 'status change'
       : 'update';
   const { failed, unknown } = job.latestActivity;

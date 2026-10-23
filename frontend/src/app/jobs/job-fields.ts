@@ -65,12 +65,19 @@ export const JOB_STATUSES: readonly JobStatus[] = Object.keys(
   JOB_STATUS_LABELS,
 ) as JobStatus[];
 
+/**
+ * The Actions filter lists every job action (record D1, D3).
+ * Wipe user data and Powerwash follow Reboot. Deprovision follows Re-enable.
+ */
 export const JOB_ACTIONS: readonly JobAction[] = [
   'update-device-annotations',
   'refresh-inventory',
   'reboot-devices',
+  'wipe-user-data',
+  'powerwash-devices',
   'disable-devices',
   'reenable-devices',
+  'deprovision-devices',
 ];
 
 /** One tone per status for the chip dot and label (UI-04). */

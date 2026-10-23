@@ -122,6 +122,13 @@
   font-size: 12px;
   line-height: 16px;
 }
+.outcome-note {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
 .counters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
