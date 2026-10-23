@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
+import { navigateAfterNetworkChange } from './navigation-fixture.mjs';
 
 async function navigate(page, url) {
   try {
-    await page.goto(url);
+    // A source or target service start can abort the load. The navigation
+    // keeps the Playwright budget and starts again when a network change
+    // aborts it.
+    await navigateAfterNetworkChange(page, url, {
+      timeoutMs: 30000,
+      loadTimeoutMs: 30000,
+    });
   } catch {
     throw new Error('Restore admission navigation failed.');
   }
