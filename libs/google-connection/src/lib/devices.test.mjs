@@ -839,6 +839,9 @@ const patchedDevice = (part) => ({
     ...(typeof part.body.annotatedLocation === 'string'
       ? { annotatedLocation: part.body.annotatedLocation }
       : {}),
+    ...(typeof part.body.annotatedAssetId === 'string'
+      ? { annotatedAssetId: part.body.annotatedAssetId }
+      : {}),
     ...(typeof part.body.annotatedUser === 'string'
       ? { annotatedUser: part.body.annotatedUser }
       : {}),
@@ -917,6 +920,34 @@ test('patchDevices sends one PATCH part with every changed field', async (t) => 
   );
 });
 
+test('patchDevices sends annotatedAssetId and reads the answer as assetTag', async (t) => {
+  const { google } = stubBatch(t, patchedDevice);
+  const result = await new GoogleDeviceReader({
+    batch: fastBatch(),
+  }).patchDevices(
+    credential,
+    'C0123456',
+    [
+      {
+        deviceId: 'd1',
+        fields: { annotatedLocation: 'Room 1', annotatedAssetId: 'HS-0417' },
+      },
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    google.sent[0][0].body,
+    { annotatedLocation: 'Room 1', annotatedAssetId: 'HS-0417' },
+    'The Asset tag PATCH key is annotatedAssetId.',
+  );
+  const [answer] = result.succeeded.get('d1');
+  assert.equal(
+    answer.assetTag,
+    'HS-0417',
+    'The answer maps annotatedAssetId to the assetTag of the device observation.',
+  );
+});
+
 test('patchDevices rejects a write without a contract field', async (t) => {
   stubBatch(t, patchedDevice);
   const reader = new GoogleDeviceReader({ batch: fastBatch() });
@@ -933,11 +964,11 @@ test('patchDevices rejects a write without a contract field', async (t) => {
     reader.patchDevices(
       credential,
       'C0123456',
-      [{ deviceId: 'd1', fields: { annotatedAssetId: 'HS-0417' } }],
+      [{ deviceId: 'd1', fields: { serialNumber: 'SN-1' } }],
       signal(),
     ),
     { name: 'GoogleConnectionError', code: 'invalid-response' },
-    'Asset tag is not a bulk update field.',
+    'Serial number is not a bulk update field.',
   );
 });
 

@@ -444,6 +444,7 @@ test('the operations page filters attention and pages by operation and field', a
   assert.equal(values[7], 0);
   assert.deepEqual(values[6], [
     'annotatedLocation',
+    'annotatedAssetId',
     'annotatedUser',
     'notes',
     'orgUnitPath',

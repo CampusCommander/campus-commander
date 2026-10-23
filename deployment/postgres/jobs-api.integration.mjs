@@ -1420,7 +1420,8 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           first.operations.map((operation) => operation.operationId),
           [`${job.display_id}-1-annotatedLocation`],
         );
-        // The route answers a cursor within operation 1, and accepts it back.
+        // The route answers a cursor within operation 1, and accepts it back. The position is
+        // the contract order, so the second field of the operation sits at position 3.
         assert.equal(first.nextCursor, '1:1');
         const second = await controller.operations(request, job.display_id, {
           cursor: first.nextCursor,
@@ -1430,7 +1431,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           second.operations.map((operation) => operation.operationId),
           [`${job.display_id}-1-annotatedUser`],
         );
-        assert.equal(second.nextCursor, '1:2');
+        assert.equal(second.nextCursor, '1:3');
         const third = await controller.operations(request, job.display_id, {
           cursor: second.nextCursor,
           limit: '1',

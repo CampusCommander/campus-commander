@@ -999,6 +999,125 @@ test('a clear sends a null value', async () => {
   ]);
 });
 
+test('an Asset tag write sends annotatedAssetId and records the answer assetTag', async () => {
+  const db = database({
+    claim: () =>
+      claimed([
+        op(1, 'd1', 'HS-0417', [
+          {
+            field: 'annotatedAssetId',
+            baselineValue: 'HS-0001',
+            requestedValue: 'HS-0417',
+          },
+        ]),
+      ]),
+  });
+  const source = reader([
+    { parts: { d1: { kind: 'success', fields: { assetTag: 'HS-0417' } } } },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.outcome, 'settled');
+  assert.deepEqual(
+    source.calls[0].writes,
+    [{ deviceId: 'd1', fields: { annotatedAssetId: 'HS-0417' } }],
+    'The write names the field by its Google property.',
+  );
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'succeeded',
+      verifiedBy: 'write-response',
+      googleStatus: 200,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+      values: { annotatedAssetId: 'HS-0417' },
+    },
+  ]);
+});
+
+test('an Asset tag answer compares exactly', async () => {
+  const db = database({
+    claim: () =>
+      claimed([
+        op(1, 'd1', 'HS-0417', [
+          {
+            field: 'annotatedAssetId',
+            baselineValue: 'HS-0001',
+            requestedValue: 'HS-0417',
+          },
+        ]),
+      ]),
+  });
+  const source = reader([
+    { parts: { d1: { kind: 'success', fields: { assetTag: 'hs-0417' } } } },
+  ]);
+  const { create } = jobs({ db, reader: source });
+  await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.deepEqual(JSON.parse(settlements(db)[0].values[5]), [
+    {
+      operationNumber: 1,
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      verifiedBy: 'write-response',
+      googleStatus: 200,
+      googleReason: null,
+      quotaRetries: 0,
+      transientRetries: 0,
+      values: { annotatedAssetId: 'hs-0417' },
+    },
+  ]);
+});
+
+test('an Asset tag read-back compares the answer assetTag', async () => {
+  const db = database({
+    claim: () =>
+      claimed([
+        op(1, 'd1', 'HS-0417', [
+          {
+            field: 'annotatedAssetId',
+            baselineValue: 'HS-0001',
+            requestedValue: 'HS-0417',
+          },
+        ]),
+      ]),
+  });
+  const source = reader(
+    [
+      {
+        parts: {
+          d1: { kind: 'retry', status: 0, reason: 'timeout', transient: 1 },
+        },
+      },
+      {
+        reuse: true,
+        parts: {
+          d1: { kind: 'auth', status: 403, reason: 'forbidden', transient: 1 },
+        },
+      },
+    ],
+    [
+      [
+        {
+          deviceId: 'd1',
+          status: 'found',
+          device: { deviceId: 'd1', assetTag: 'HS-0417' },
+        },
+      ],
+    ],
+  );
+  const { create } = jobs({ db, reader: source, cache: cache() });
+  const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  assert.equal(answer.failure, 'permission-denied');
+  const results = JSON.parse(settlements(db).at(-1).values[5]);
+  assert.deepEqual(
+    results.map((result) => [result.outcome, result.verifiedBy, result.values]),
+    [['succeeded', 'read-back', { annotatedAssetId: 'HS-0417' }]],
+    'The read-back reads the assetTag of the device answer under the field ID.',
+  );
+});
+
 test('first-attempt refusals fail without a read-back', async () => {
   for (const answer of [
     { kind: 'auth', status: 403, reason: 'forbidden' },
