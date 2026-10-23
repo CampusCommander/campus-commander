@@ -491,6 +491,7 @@ export async function qualifyDeviceWritesOnMock({
     return JSON.parse(response.text).rows;
   };
   const runSync = async () => {
+    await keepSession();
     const started = await call('/api/devices/sync', {
       method: 'POST',
       headers: headers(),
@@ -499,6 +500,7 @@ export async function qualifyDeviceWritesOnMock({
     assert.ok([200, 201].includes(started.status), started.text);
     const deadline = Date.now() + totalMs;
     for (;;) {
+      await keepSession();
       const response = await call('/api/devices/sync');
       assert.equal(response.status, 200, response.text);
       const state = JSON.parse(response.text).sync;
