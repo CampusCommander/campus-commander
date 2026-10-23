@@ -1199,4 +1199,17 @@ test('keeps Wipe and Powerwash visible without the wipe permission (state 11)', 
     path: path.join(walkEvidenceDir, '11-choose-without-wipe-permission.png'),
   });
   await expectNoAxeViolations(page);
+
+  // The status sheet keeps Deprovision visible and disabled too (state 11).
+  await command.getByRole('button', { name: 'Close' }).click();
+  const status = await openAction(page, 'status', 'Change status');
+  await expect(status.getByRole('radio')).toHaveCount(3);
+  await expect(
+    status.getByRole('radio', { name: /Deprovision/ }),
+  ).toBeDisabled();
+  await expect(
+    status.getByText(
+      'You need the devices:read, devices:deprovision, and devices:bulk-actions permissions to deprovision devices. Ask your administrator for access.',
+    ),
+  ).toBeVisible();
 });
