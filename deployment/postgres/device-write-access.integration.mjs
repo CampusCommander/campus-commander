@@ -239,6 +239,35 @@ export async function qualifyDeviceWriteAccess({
     );
 
     await check(
+      'B1 a devices:wipe or devices:deprovision principal alone opens the write access',
+      async () => {
+        for (const action of ['devices:wipe', 'devices:deprovision']) {
+          const solo = await createPrincipal(action.replace(':', '-'), [
+            district(action),
+          ]);
+          const opened = await settle(read(solo));
+          assert.equal(
+            opened.error,
+            undefined,
+            `cc.device_write_credential answers a ${action} caller: ${opened.error}`,
+          );
+          assert.deepEqual(
+            opened.value,
+            claim,
+            `A ${action} caller receives the active credential.`,
+          );
+          const row = await settle(writerRow(solo));
+          assert.equal(
+            row.error,
+            undefined,
+            `cc.device_writer answers a ${action} caller: ${row.error}`,
+          );
+          assert.deepEqual(row.value, { customer_id: customer, generation });
+        }
+      },
+    );
+
+    await check(
       'B6 both write-access routes pass a devices:write-only principal through the real SQL chain',
       async () => {
         const routes = await import(

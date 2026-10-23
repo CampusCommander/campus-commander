@@ -442,6 +442,27 @@ try {
     ).rows[0].n,
   );
   assert.ok(grants.every(({ scope }) => scope.kind === 'platform'));
+  assert.deepEqual(
+    (
+      await runtime.query(
+        "SELECT action,scope_kinds FROM cc.application_actions WHERE action IN ('devices:wipe','devices:deprovision') ORDER BY action",
+      )
+    ).rows,
+    [
+      {
+        action: 'devices:deprovision',
+        scope_kinds: ['platform', 'district'],
+      },
+      { action: 'devices:wipe', scope_kinds: ['platform', 'district'] },
+    ],
+  );
+  for (const action of ['devices:wipe', 'devices:deprovision'])
+    assert.ok(
+      grants.some(
+        (grant) => grant.action === action && grant.scope.kind === 'platform',
+      ),
+      `A fresh install grants ${action} to the platform administrator.`,
+    );
   const afterConfirmation = (
     await runtime.query('SELECT * FROM cc.application_principals WHERE id=$1', [
       principalId,

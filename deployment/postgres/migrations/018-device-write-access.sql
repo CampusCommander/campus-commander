@@ -9,7 +9,7 @@ BEGIN
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
     NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
-      g.action IN ('devices:write','devices:commands','devices:status') AND (
+      g.action IN ('devices:write','devices:commands','devices:wipe','devices:status','devices:deprovision') AND (
       g.scope='{"kind":"platform"}'::jsonb OR
       (g.scope->>'kind'='district' AND g.scope->>'customerId'=connection.customer_id))) THEN
     RAISE EXCEPTION 'Update devices requires permission.' USING ERRCODE='42501';
@@ -31,7 +31,7 @@ BEGIN
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
     NOT EXISTS(SELECT 1 FROM cc.application_grants g
-      WHERE g.principal_id=p_actor AND g.action IN ('devices:write','devices:commands','devices:status') AND
+      WHERE g.principal_id=p_actor AND g.action IN ('devices:write','devices:commands','devices:wipe','devices:status','devices:deprovision') AND
       (g.scope='{"kind":"platform"}'::jsonb OR
       (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) THEN
     RAISE EXCEPTION 'Update devices requires permission.' USING ERRCODE='42501';

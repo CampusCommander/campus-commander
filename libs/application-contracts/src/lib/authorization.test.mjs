@@ -98,6 +98,39 @@ test('the device write actions take platform and district scopes', () => {
   }
 });
 
+test('wipe and deprovision take platform and district scopes but not the district preset', () => {
+  for (const action of ['devices:wipe', 'devices:deprovision']) {
+    assert.ok(
+      actionSchema.options.includes(action),
+      `${action} is a declared action`,
+    );
+    for (const scope of [platform, district])
+      assert.equal(grantSchema.safeParse({ action, scope }).success, true);
+    assert.equal(
+      grantSchema.safeParse({ action, scope: school }).success,
+      false,
+    );
+    assert.equal(
+      isAuthorized(
+        grantsForPreset('platform-administrator', platform),
+        action,
+        platform,
+      ),
+      true,
+      `The platform preset holds ${action}.`,
+    );
+    assert.equal(
+      isAuthorized(
+        grantsForPreset('district-administrator', district),
+        action,
+        district,
+      ),
+      false,
+      `The district preset holds no ${action}.`,
+    );
+  }
+});
+
 test('viewers have only explicit read grants and presets reject broader scopes', () => {
   for (const scope of [district, school]) {
     const grants = grantsForPreset('viewer', scope);
