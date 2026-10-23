@@ -5,8 +5,11 @@ import type {
 import {
   ACTION_FROZEN_TARGETS,
   CHANGE_STATUS_PERMISSION_MESSAGE,
+  DEPROVISION_PERMISSION_NOTE,
   FAMILY_COPY,
+  REBOOT_PERMISSION_NOTE,
   SEND_COMMAND_PERMISSION_MESSAGE,
+  WIPE_PERMISSION_NOTE,
   acknowledgementLabel,
   actionConsequence,
   actionProblem,
@@ -15,6 +18,7 @@ import {
   confirmationMetaLine,
   confirmationParagraphs,
   confirmationTitle,
+  deprovisionReasonLine,
   deviceActionNote,
   exclusionReasonText,
   noEligibleHeading,
@@ -22,6 +26,10 @@ import {
   noEligibleTitle,
   notSentText,
   observedStatusText,
+  offlineNote,
+  optionPermissionNote,
+  phraseError,
+  phraseLabel,
   receiptActionLine,
   reviewCountLine,
   reviewTitle,
@@ -31,6 +39,7 @@ import {
   targetColumnLabel,
   targetsCaption,
   targetsLabel,
+  typedPhrase,
 } from './device-action-messages';
 import { deviceCountText } from './device-update-messages';
 
@@ -311,5 +320,104 @@ it('words each command consequence from the record', () => {
   );
   expect(actionConsequence('reenable')).toBe(
     'Restores access to disabled devices.',
+  );
+});
+
+it('words the Wipe, Powerwash, and Deprovision options (DEVICE-01)', () => {
+  expect(actionConsequence('wipe-users')).toBe(
+    'Removes local user profiles. Device policy and enrollment remain.',
+  );
+  expect(actionConsequence('powerwash')).toBe(
+    'Removes local data, user and device policies, and enrollment. Enrollment rules govern subsequent enrollment.',
+  );
+  expect(actionConsequence('deprovision')).toBe(
+    'Removes devices from active management.',
+  );
+});
+
+it('titles and heads each destructive confirmation as the approved screens', () => {
+  expect(confirmationTitle('wipe-users', 4)).toBe(
+    'Wipe user data on 4 devices',
+  );
+  expect(confirmationTitle('powerwash', 4)).toBe('Powerwash 4 devices');
+  expect(confirmationTitle('deprovision', 5)).toBe('Deprovision 5 devices');
+  expect(confirmationHeading('wipe-users', 4)).toBe(
+    'Remove local user profiles',
+  );
+  expect(confirmationHeading('powerwash', 4)).toBe(
+    'Powerwash permanently removes device data',
+  );
+  expect(confirmationHeading('deprovision', 5)).toBe(
+    'Remove 5 devices from active management',
+  );
+  expect(confirmationButton('wipe-users', 4)).toBe('Send Wipe to 4 devices');
+  expect(confirmationButton('powerwash', 4)).toBe(
+    'Send Powerwash to 4 devices',
+  );
+  expect(confirmationButton('deprovision', 5)).toBe('Deprovision 5 devices');
+});
+
+it('states the consequence and acknowledgment of each destructive action', () => {
+  expect(confirmationParagraphs('wipe-users', 4, 2)).toEqual([
+    'Wipe user data removes all local user profiles. Device policies and enrollment remain in place.',
+    'Google accepting the request does not confirm execution. Track each device in the job.',
+  ]);
+  expect(confirmationParagraphs('powerwash', 4, 2)).toEqual([
+    'Powerwash removes local data, user policies, device policies, and enrollment. Forced or automatic enrollment rules control re-enrollment.',
+    'Google accepting the request does not confirm execution. Track each device in the job.',
+  ]);
+  expect(
+    confirmationParagraphs(
+      'deprovision',
+      5,
+      1,
+      'DEPROVISION_REASON_RETIRING_DEVICE',
+    ),
+  ).toEqual([
+    'Deprovision removes these devices from active management. This workflow cannot restore their previous management state.',
+    'Deprovision does not erase local data. Send Powerwash first to erase a device that leaves the district.',
+    'Deprovision reason: Retiring from fleet',
+    '5 eligible · 1 excluded · The job records the reason and the targets.',
+  ]);
+  expect(acknowledgementLabel('wipe-users')).toBe(
+    'I understand that all local user profile data will be removed.',
+  );
+  expect(acknowledgementLabel('powerwash')).toBe(
+    'I understand the data loss and enrollment consequences.',
+  );
+  expect(acknowledgementLabel('deprovision')).toBeNull();
+});
+
+it('carries the exact typed phrase of each destructive action', () => {
+  expect(typedPhrase('wipe-users')).toBe('WIPE');
+  expect(typedPhrase('powerwash')).toBe('POWERWASH');
+  expect(typedPhrase('deprovision')).toBe('DEPROVISION');
+  expect(typedPhrase('reboot')).toBeNull();
+  expect(phraseLabel('wipe-users')).toBe('Type WIPE to confirm');
+  expect(phraseError('powerwash')).toBe(
+    'The phrase does not match. Type POWERWASH.',
+  );
+  expect(phraseLabel('disable')).toBe('');
+});
+
+it('names the offline note and the permission note of each option', () => {
+  expect(offlineNote('wipe-users')).toBe(
+    'An offline device runs Wipe user data when it next connects, unless the command expires first. The job shows the expiry that Google returns.',
+  );
+  expect(offlineNote('powerwash')).toContain(
+    'An offline device runs Powerwash when it next connects',
+  );
+  expect(optionPermissionNote('wipe-users')).toBe(WIPE_PERMISSION_NOTE);
+  expect(optionPermissionNote('powerwash')).toBe(WIPE_PERMISSION_NOTE);
+  expect(optionPermissionNote('reboot')).toBe(REBOOT_PERMISSION_NOTE);
+  expect(optionPermissionNote('disable')).toBe(
+    CHANGE_STATUS_PERMISSION_MESSAGE,
+  );
+  expect(optionPermissionNote('deprovision')).toBe(DEPROVISION_PERMISSION_NOTE);
+  expect(WIPE_PERMISSION_NOTE).toBe(
+    'You need the devices:read, devices:wipe, and devices:bulk-actions permissions to wipe user data or powerwash devices. Ask your administrator for access.',
+  );
+  expect(deprovisionReasonLine('DEPROVISION_REASON_UPGRADE_TRANSFER')).toBe(
+    'Deprovision reason: ChromeOS Flex upgrade transfer',
   );
 });

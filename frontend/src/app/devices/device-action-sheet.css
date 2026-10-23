@@ -16,6 +16,21 @@
   align-items: flex-start;
 }
 
+/* An option without its permission stays visible and disabled (GRID-06). */
+.action-option.mat-mdc-radio-disabled .option-label,
+.action-option.mat-mdc-radio-disabled .option-line {
+  color: var(--cc-text-disabled);
+}
+
+/* The Deprovision reason sits under its option, aligned with the option text. */
+.reason-block {
+  margin-inline-start: 44px;
+}
+
+.reason-block > mat-form-field {
+  margin-block-start: 0;
+}
+
 .option-label {
   display: block;
   color: var(--cc-text-primary);

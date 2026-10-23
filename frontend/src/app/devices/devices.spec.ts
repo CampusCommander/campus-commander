@@ -856,6 +856,28 @@ describe('Bulk Actions', () => {
     expect(button('Bulk Actions')).toMatchObject({ disabled: true });
   });
 
+  it('enables Send command with devices:wipe alone (D2)', async () => {
+    const { openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      actions: ['devices:read', 'devices:wipe', 'devices:bulk-actions'],
+    });
+    await openBulk();
+    expect(menuItem('Send command')?.disabled).toBe(false);
+    expect(menuItem('Change status')?.disabled).toBe(true);
+  });
+
+  it('enables Change status with devices:deprovision alone (D2)', async () => {
+    const { openBulk, menuItem } = setup({
+      sync: ready(),
+      page: counted,
+      actions: ['devices:read', 'devices:deprovision', 'devices:bulk-actions'],
+    });
+    await openBulk();
+    expect(menuItem('Change status')?.disabled).toBe(false);
+    expect(menuItem('Send command')?.disabled).toBe(true);
+  });
+
   it('reads the write access state when only devices:commands is held', () => {
     const { writeAccess } = setup({
       sync: ready(),
