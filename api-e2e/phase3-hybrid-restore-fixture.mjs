@@ -11,6 +11,7 @@ import { createHybridRestoreTarget } from './phase3-hybrid-restore-target.mjs';
 import { prepareRestoreAdmissions } from './restore-admission-fixture.mjs';
 import { readApplicationPhase3 } from './phase3-restore-fixture.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const json = (path, value) =>
@@ -396,10 +397,17 @@ export async function qualifyHybridRestore(input) {
     sourceStopped = false;
     stage('source callback control');
     assert.equal(await admissions.verifySourceControl(principalId), true);
-    await page.reload();
-    await expect(
-      page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    // The source database, Redis, and workers started again. The reload keeps
+    // the Playwright budget, and the ready check keeps the 15 s wait that this
+    // flow used before the recovery.
+    await reloadAfterNetworkChange(page, {
+      timeoutMs: 45000,
+      loadTimeoutMs: 30000,
+      ready: () =>
+        expect(
+          page.getByRole('heading', { name: 'Diagnostics', exact: true }),
+        ).toBeVisible({ timeout: 15000 }),
+    });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     report = {
       status: 'passed',

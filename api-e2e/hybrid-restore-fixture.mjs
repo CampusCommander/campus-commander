@@ -8,6 +8,7 @@ import { qualifyHybridRestore } from '../deployment/profiles/hybrid/restore-inte
 import { prepareHybrid } from '../deployment/profiles/hybrid/prepare.mjs';
 import { renderFiles } from '../deployment/profiles/hybrid/render.mjs';
 import { applicationBrowser } from './profile-browser.mjs';
+import { navigateAfterNetworkChange } from './navigation-fixture.mjs';
 import { qualificationLinkSignIn } from './qualification-sign-in.mjs';
 
 const execute = promisify(execFile);
@@ -243,7 +244,6 @@ export async function qualifyHybridApplicationRestore({
       '180',
     );
     if (restorePassed) {
-      await page.goto(publicOrigin);
       const login = page.getByRole('link', {
         name: 'Sign in to Campus Commander',
       });
@@ -251,7 +251,14 @@ export async function qualifyHybridApplicationRestore({
         name: 'Your account',
         exact: true,
       });
-      await expect(login.or(account)).toBeVisible({ timeout: 15000 });
+      // The restore starts the source services again. The navigation keeps the
+      // Playwright budget, and the ready check keeps the 15 s wait that this
+      // flow used before the recovery.
+      await navigateAfterNetworkChange(page, publicOrigin, {
+        timeoutMs: 45000,
+        loadTimeoutMs: 30000,
+        ready: () => expect(login.or(account)).toBeVisible({ timeout: 15000 }),
+      });
       // The sign-in link flow of a restore runs inside the step, so the step
       // recovers a navigation that the restore leaves pending. A settled
       // session skips the flow.

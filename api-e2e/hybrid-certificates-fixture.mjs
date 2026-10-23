@@ -12,6 +12,7 @@ import {
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect } from '@playwright/test';
+import { reloadAfterNetworkChange } from './navigation-fixture.mjs';
 import { assertHybridFaultOwnership } from './phase3-hybrid-fault-state.mjs';
 import { outerDocker } from './hybrid-hosts-fixture.mjs';
 import { faultRecoveryTimeoutSeconds } from '../deployment/qualification/faults.mjs';
@@ -223,10 +224,17 @@ await store.close();await pool.end();console.log(JSON.stringify({principals,even
     };
   };
   const recoverApplication = async (deadline) => {
-    await page.reload();
-    await expect(
-      page.getByRole('heading', { name: 'Diagnostics', exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+    // The certificate replacement restarts the edge service. The reload keeps
+    // the Playwright budget, and the ready check keeps the 15 s wait that this
+    // flow used before the recovery.
+    await reloadAfterNetworkChange(page, {
+      timeoutMs: 45000,
+      loadTimeoutMs: 30000,
+      ready: () =>
+        expect(
+          page.getByRole('heading', { name: 'Diagnostics', exact: true }),
+        ).toBeVisible({ timeout: 15000 }),
+    });
     await checks({
       recoverySeconds: faultRecoveryTimeoutSeconds,
       recoveryDeadline: deadline,
