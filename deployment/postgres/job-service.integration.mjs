@@ -116,6 +116,16 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
     ['devices:read', district],
     ['jobs:read', district],
   ]);
+  const deprovisioner = await principal(`b5-deprovision-${randomUUID()}`, [
+    ['devices:read', district],
+    ['jobs:read', district],
+    ['devices:deprovision', district],
+  ]);
+  const statusOnly = await principal(`b5-status-${randomUUID()}`, [
+    ['devices:read', district],
+    ['jobs:read', district],
+    ['devices:status', district],
+  ]);
   const ownerSession = session(owner, [
     { action: 'devices:read', scope: district },
     { action: 'devices:write', scope: district },
@@ -129,6 +139,16 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
   const readOnlySession = session(readOnly, [
     { action: 'devices:read', scope: district },
     { action: 'jobs:read', scope: district },
+  ]);
+  const deprovisionSession = session(deprovisioner, [
+    { action: 'devices:read', scope: district },
+    { action: 'jobs:read', scope: district },
+    { action: 'devices:deprovision', scope: district },
+  ]);
+  const statusOnlySession = session(statusOnly, [
+    { action: 'devices:read', scope: district },
+    { action: 'jobs:read', scope: district },
+    { action: 'devices:status', scope: district },
   ]);
 
   // The real Redis of this check, with the application user's commands.
@@ -432,6 +452,86 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         [jobId, index + 1, deviceId, `SN-${deviceId}`, `41000000${index + 1}`],
       );
     return { jobId, displayId };
+  };
+  /**
+   * One command or status job whose first operation is `unknown`, so the Reconcile route can claim
+   * its read-back. A Deprovision preview carries the reason that the job reads through it.
+   */
+  const makeUnknownActionJob = async ({ devices, action, reason = null }) => {
+    const command = ['reboot', 'wipe-users', 'powerwash'].includes(action);
+    const jobId = randomUUID();
+    const previewId = randomUUID();
+    const version = (
+      await adminRow(
+        'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+        [owner],
+      )
+    ).permission_version;
+    await admin(
+      `INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+        generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,
+        manifest_digest,expires_at)
+      VALUES($1,cc.job_display_id('PV',nextval('cc.preview_number_pv')),$2,$3,$4,$5,$6,1,$7,$8,$8,0,0,
+        'manifest-digest',clock_timestamp()+interval '1 hour')`,
+      [
+        previewId,
+        customer,
+        owner,
+        version,
+        generation,
+        action,
+        reason,
+        devices.length,
+      ],
+    );
+    const displayId = (
+      await adminRow(
+        `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+          target_count,correlation_id,created_at)
+        VALUES($1,cc.job_display_id($7,nextval($8::regclass)),$2,$3,'devices','accepted',$4,$5,$6,
+          $9,clock_timestamp()) RETURNING display_id`,
+        [
+          jobId,
+          customer,
+          command ? 'device-command' : 'device-status',
+          owner,
+          generation,
+          devices.length,
+          command ? 'CMD' : 'STS',
+          command ? 'cc.job_number_cmd' : 'cc.job_number_sts',
+          randomUUID(),
+        ],
+      )
+    ).display_id;
+    await admin(
+      `INSERT INTO cc.device_update_jobs(job_id,preview_id,action,confirmed_by,confirmer_permission_version,
+        delegated_subject,batch_size,batch_count)
+      VALUES($1,$2,$3,$4,$5,'admin@example.org',250,1)`,
+      [jobId, previewId, action, owner, version],
+    );
+    for (const [index, deviceId] of devices.entries())
+      await admin(
+        `INSERT INTO cc.device_update_operations(job_id,operation_number,device_id,serial_number,
+          org_unit_path,baseline_value,requested_value,batch,status,outcome_reason,updated_at)
+        VALUES($1,$2,$3,$4,'/School A','ACTIVE',$5,0,'unknown','ambiguous',clock_timestamp())`,
+        [
+          jobId,
+          index + 1,
+          deviceId,
+          `SN-${deviceId}`,
+          action === 'deprovision' ? 'DEPROVISIONED' : null,
+        ],
+      );
+    return { jobId, displayId, previewId };
+  };
+  /** Remove one fixture job and its preview, so the hold and admission checks see no extra job. */
+  const discard = async (...jobs) => {
+    for (const job of jobs) {
+      await admin('DELETE FROM cc.jobs WHERE job_id=$1', [job.jobId]);
+      await admin('DELETE FROM cc.device_update_previews WHERE preview_id=$1', [
+        job.previewId,
+      ]);
+    }
   };
   const refreshJob = async ({ status = 'running', progress = false } = {}) => {
     const jobId = randomUUID();
@@ -1188,6 +1288,85 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
           },
         );
         assert.equal(reconciles.length, before);
+      },
+    );
+
+    await check(
+      'Reconcile of a Deprovision operation takes devices:deprovision and refuses devices:status',
+      async () => {
+        await settle();
+        const created = [];
+        try {
+          const granted = await makeUnknownActionJob({
+            devices: ['b5-d1'],
+            action: 'deprovision',
+            reason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+          });
+          created.push(granted);
+          const before = reconciles.length;
+          const answer = await controller.reconcile(
+            request(deprovisionSession),
+            granted.displayId,
+            '1',
+          );
+          assert.equal(answer.operation, 'deprovision');
+          assert.equal(answer.outcome, 'unknown');
+          assert.equal(reconciles.length, before + 1);
+          assert.equal(reconciles.at(-1).jobId, granted.jobId);
+          // Another person holds devices:write or devices:status, but not devices:deprovision.
+          const other = await makeUnknownActionJob({
+            devices: ['b5-d2'],
+            action: 'deprovision',
+            reason: 'DEPROVISION_REASON_RETIRING_DEVICE',
+          });
+          created.push(other);
+          const started = reconciles.length;
+          for (const current of [ownerSession, statusOnlySession])
+            await assert.rejects(
+              () =>
+                controller.reconcile(request(current), other.displayId, '1'),
+              (error) => {
+                assert.equal(statusOf(error), 403);
+                return true;
+              },
+            );
+          assert.equal(reconciles.length, started);
+        } finally {
+          await discard(...created);
+        }
+      },
+    );
+
+    await check(
+      'Reconcile answers 409 reconcile-unsupported for Wipe user data and Powerwash',
+      async () => {
+        await settle();
+        const created = [];
+        try {
+          for (const action of ['wipe-users', 'powerwash']) {
+            const job = await makeUnknownActionJob({
+              devices: [`b5-${action}`],
+              action,
+            });
+            created.push(job);
+            const started = reconciles.length;
+            await assert.rejects(
+              () =>
+                controller.reconcile(request(ownerSession), job.displayId, '1'),
+              (error) => {
+                assert.equal(statusOf(error), 409);
+                assert.equal(
+                  error.getResponse().reason,
+                  'reconcile-unsupported',
+                );
+                return true;
+              },
+            );
+            assert.equal(reconciles.length, started);
+          }
+        } finally {
+          await discard(...created);
+        }
       },
     );
 
