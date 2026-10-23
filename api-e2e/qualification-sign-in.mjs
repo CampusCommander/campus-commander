@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect } from '@playwright/test';
 import {
+  isNetworkChangeReloadError,
   isNetworkChangeRequest,
   requestFailureErrorText,
 } from './network-change.mjs';
@@ -499,8 +500,11 @@ export async function qualificationHeldSignIn(
  * of an earlier failed navigation interrupts is recoverable in the same way.
  * An attempt that a sign-in navigation without a commit ends is recoverable in
  * the same way, and the next attempt starts after the pending navigation
- * settles. The step runs the action at most three times. An HTTP error status
- * fails the attempt at once, even when the same attempt saw a network change.
+ * settles. So is an attempt that a navigation error with ERR_NETWORK_CHANGED
+ * ends, because Playwright does not always report a failed request for a
+ * document it aborts. The step runs the action at most three times. An HTTP
+ * error status fails the attempt at once, even when the same attempt saw a
+ * network change.
  * Every other failure fails at once. A final failure writes a record with the
  * events of every attempt. A passing step reports every recovered attempt with
  * its failed request routes, the attempts of a nested reload helper included.
@@ -629,9 +633,17 @@ export async function qualificationBrowserStep(
         const interruption =
           error?.message?.includes(errorPageInterruption) === true;
         const unfinished = isUnfinishedSignInNavigation(error);
+        // Playwright reports a navigation that a network change aborts as
+        // net::ERR_NETWORK_CHANGED in the error of the goto, the reload, or
+        // the waitForNavigation. The page does not always report a failed
+        // request for the document, so the error text is the only evidence.
+        const navigationNetworkChange = isNetworkChangeReloadError(error);
         if (
           !retryOnNetworkChange ||
-          (!attemptNetworkChange && !interruption && !unfinished) ||
+          (!attemptNetworkChange &&
+            !interruption &&
+            !unfinished &&
+            !navigationNetworkChange) ||
           attempt === stepAttemptLimit
         )
           break;
