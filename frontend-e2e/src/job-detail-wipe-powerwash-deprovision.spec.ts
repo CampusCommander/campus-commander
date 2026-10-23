@@ -8,6 +8,10 @@ import { expect, test, type Page } from '@playwright/test';
  * job shows its reason (approved state 10). No command row offers Reconcile.
  */
 
+// The approved screens show US Eastern times. Pin the browser clock so a CI
+// machine in UTC renders the same text as the approved PNGs 09 and 10.
+test.use({ timezoneId: 'America/New_York' });
+
 const customerId = 'C0123456';
 const person = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
