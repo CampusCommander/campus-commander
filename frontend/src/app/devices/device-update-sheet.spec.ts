@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
+  DeviceRow,
   DeviceSelectionSpec,
   DeviceUpdateField,
   DeviceUpdatePreview,
@@ -12,7 +13,9 @@ import type {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
+import { DeviceUpdateConfirmationStore } from './device-update-confirmation.store';
 import { DeviceUpdateDraftStore } from './device-update-draft.store';
+import { DeviceGridDraftStore } from './device-grid-draft.store';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import {
   DeviceUpdateSheet,
@@ -256,6 +259,10 @@ interface SetupOptions {
   spec?: DeviceSelectionSpec | null;
   request?: RequestHandler;
   open?: boolean;
+  /** The draft that the sheet prepares. The grid source opens at its edit-list preview. */
+  source?: 'selection' | 'grid';
+  /** Stage grid entries after the test bed exists and before the sheet opens. */
+  stage?: (grid: DeviceGridDraftStore) => void;
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -332,6 +339,8 @@ async function setup(options: SetupOptions = {}) {
     .spyOn(TestBed.inject(Router), 'navigate')
     .mockResolvedValue(true);
   const fixture = TestBed.createComponent(DeviceUpdateSheet);
+  if (options.stage) options.stage(TestBed.inject(DeviceGridDraftStore));
+  fixture.componentRef.setInput('source', options.source ?? 'selection');
   fixture.componentRef.setInput('open', options.open ?? true);
   fixture.detectChanges();
   const closed = vi.fn();
@@ -1301,6 +1310,7 @@ it('replays the same preview and digest after a closure and opens the later rece
   expect(JSON.parse(sessionStorage.getItem(retainedKey) ?? '{}')).toEqual({
     previewId,
     manifestDigest: 'a'.repeat(64),
+    submittedBy: principal,
   });
 
   // The transaction lives in this tab, so a closure keeps the record.
@@ -2538,4 +2548,719 @@ it('replays a retained confirmation after the blocked move returns to the draft'
     'The update job may exist',
   );
   expect(sessionStorage.getItem(earlierKey)).not.toBeNull();
+});
+
+/**
+ * The grid draft of a save. Each row names one device and one field, and the baseline is the
+ * value that the person saw when the edit began.
+ */
+const gridRow = (deviceId: string, serialNumber: string): DeviceRow =>
+  ({
+    deviceId,
+    serialNumber,
+    assetTag: null,
+    orgUnitPath: '/Chrome Devices',
+    annotatedLocation: null,
+    annotatedUser: null,
+    notes: null,
+  }) as unknown as DeviceRow;
+
+/** An edit-list preview: the route keeps every request on its own target row. */
+const editPreview = (
+  overrides: Partial<DeviceUpdatePreview> = {},
+): DeviceUpdatePreview => ({
+  ...preview,
+  changes: null,
+  fieldChanges: 1,
+  selected: 1,
+  eligible: 1,
+  unchanged: 0,
+  excluded: 0,
+  conflicts: 0,
+  ...overrides,
+});
+
+/** One frozen target of an edit list. */
+const editTarget = (
+  deviceId: string,
+  serialNumber: string,
+  field: DeviceUpdateField,
+  disposition: 'eligible' | 'conflict' | 'excluded',
+  approvedValue: string | null,
+  observedValue: string | null = null,
+): DeviceUpdateTarget => ({
+  deviceId,
+  serialNumber,
+  field,
+  observedValue,
+  baselineValue: observedValue,
+  approvedValue,
+  duplicateSerialNumber: null,
+  disposition,
+  exclusionReason: disposition === 'excluded' ? 'removed' : null,
+});
+
+/** The answers of the edit route, the frozen targets, the confirmation, and the job. */
+function gridAnswers(answers: {
+  preview?: DeviceUpdatePreview | (() => Response);
+  targets?: DeviceUpdateTarget[];
+  body?: (body: unknown) => void;
+}): RequestHandler {
+  return (path, body) => {
+    if (path === '/api/devices/updates/edit-previews') {
+      answers.body?.(body);
+      const answer = answers.preview ?? editPreview();
+      return typeof answer === 'function'
+        ? answer()
+        : Response.json(answer, { status: 201 });
+    }
+    if (path === `/api/devices/updates/previews/${previewId}`)
+      return Response.json(
+        typeof answers.preview === 'function' ? editPreview() : answers.preview,
+      );
+    if (path.includes('/targets'))
+      return Response.json({
+        targets: answers.targets ?? [],
+        nextCursor: null,
+      });
+    if (path.endsWith('/confirm'))
+      return Response.json(receipt, { status: 201 });
+    if (path === '/api/jobs/UPD-006') return Response.json(job);
+    return Response.json({}, { status: 404 });
+  };
+}
+
+it('saves one pending grid change without a Review or Confirm screen', async () => {
+  const sent: unknown[] = [];
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired'),
+    request: gridAnswers({
+      preview: editPreview(),
+      targets: [
+        editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+      ],
+      body: (body) => sent.push(body),
+    }),
+  });
+  const { element, request, settle } = ui;
+  expect(sent).toEqual([
+    {
+      edits: [
+        {
+          deviceId: 'd1',
+          field: 'notes',
+          mode: 'replace',
+          value: 'Hinge repaired',
+          baselineValue: null,
+        },
+      ],
+    },
+  ]);
+  // The press of Save changes acknowledged the one change, so the receipt opens at once.
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  expect(element.textContent).toContain('Your job is saved');
+  expect(element.textContent).toContain('Google changes have not completed');
+  expect(element.querySelector('.stepper')).toBeNull();
+  expect(ui.button('Continue to confirmation')).toBeUndefined();
+  expect(
+    request.mock.calls.some(([path]) =>
+      String(path).includes(`/previews/${previewId}/confirm`),
+    ),
+  ).toBe(true);
+
+  // The confirmed row settles into an accepted cell, and the draft no longer holds it.
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entries()).toEqual([]);
+  expect(grid.acceptedFor('d1', 'notes')).toEqual({
+    deviceId: 'd1',
+    field: 'notes',
+    mode: 'replace',
+    value: 'Hinge repaired',
+    displayId: 'UPD-006',
+  });
+  await settle();
+});
+
+it('blocks Continue while the edit list holds a conflict and marks both cells', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(
+        gridRow('d2', 'C0A1-0002'),
+        'annotatedLocation',
+        'Library',
+      );
+      grid.stageText(gridRow('d3', 'C0A1-0003'), 'notes', 'Door fixed');
+    },
+    request: gridAnswers({
+      preview: editPreview({
+        fieldChanges: 1,
+        selected: 3,
+        eligible: 1,
+        excluded: 1,
+        conflicts: 1,
+      }),
+      targets: [
+        editTarget(
+          'd1',
+          'C0A1-0001',
+          'notes',
+          'conflict',
+          'Hinge repaired',
+          'Door fixed',
+        ),
+        editTarget('d2', 'C0A1-0002', 'annotatedLocation', 'excluded', null),
+        editTarget('d3', 'C0A1-0003', 'notes', 'eligible', 'Door fixed'),
+      ],
+    }),
+  });
+  const { element, button } = ui;
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 3 device updates',
+  );
+  expect(element.textContent).toContain('1 conflict');
+  expect(element.textContent).toContain(
+    'Resolve the marked cells in the grid, then save the changes again.',
+  );
+  expect(button('Continue to confirmation')?.disabled).toBe(true);
+
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entryFor('d1', 'notes')).toMatchObject({
+    state: 'conflict',
+    currentValue: 'Door fixed',
+  });
+  expect(grid.entryFor('d2', 'annotatedLocation')).toMatchObject({
+    state: 'excluded',
+    exclusionReason: 'removed',
+  });
+});
+
+it('keeps the draft when the edge refuses the save above its request cap', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired'),
+    // The edge answers a body above the cap with plain text, so no reason field arrives.
+    request: gridAnswers({
+      preview: () => new Response('Payload Too Large', { status: 413 }),
+    }),
+  });
+  const { element } = ui;
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The save is too large',
+  );
+  expect(element.textContent).toContain(
+    'The save is above the request limit of 98,304 bytes.',
+  );
+  expect(element.textContent).toContain('Draft preserved · No job created');
+  expect(TestBed.inject(DeviceGridDraftStore).entries()).toHaveLength(1);
+});
+
+it('names the Google failure when the edited devices cannot be read', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired'),
+    request: gridAnswers({
+      preview: () =>
+        Response.json(
+          { reason: 'device-read-failed', failure: 'quota' },
+          { status: 503 },
+        ),
+    }),
+  });
+  const { element } = ui;
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'The devices could not be read from Google',
+  );
+  expect(element.textContent).toContain('Prepare a new preview to try again');
+  expect(element.textContent).toContain('quota');
+  expect(TestBed.inject(DeviceGridDraftStore).entries()).toHaveLength(1);
+});
+
+it('shows the pending devices when the grid review asks for them', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: gridAnswers({
+      preview: editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+      targets: [
+        editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+        editTarget('d2', 'C0A1-0002', 'notes', 'eligible', 'Door fixed'),
+      ],
+    }),
+  });
+  const { fixture, element, button, closed, settle } = ui;
+  const pending = vi.fn();
+  fixture.componentInstance.pendingViewRequested.subscribe(pending);
+  // Two changes reach Review, where a grid save offers the marked cells instead of a
+  // draft step that does not exist.
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 2 device updates',
+  );
+  expect(button('Edit draft')).toBeUndefined();
+  button('Review pending devices')?.click();
+  await settle();
+  expect(pending).toHaveBeenCalledTimes(1);
+  expect(closed).toHaveBeenCalledTimes(1);
+});
+
+it('recovers a grid confirmation from the selection sheet (B6)', async () => {
+  const ui = await setup({
+    source: 'selection',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: (path) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(orgUnitTree);
+      if (path.endsWith('/confirm'))
+        return Response.json(receipt, { status: 201 });
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  // A grid save retains its submission in this tab before the page closes.
+  TestBed.inject(DeviceUpdateConfirmationStore).retain({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+    entries: [
+      {
+        deviceId: 'd1',
+        field: 'notes',
+        mode: 'replace',
+        value: 'Hinge repaired',
+        baselineValue: null,
+      },
+      {
+        deviceId: 'd2',
+        field: 'notes',
+        mode: 'replace',
+        value: 'Door fixed',
+        baselineValue: null,
+      },
+    ],
+  });
+  await ui.type('North lab');
+  ui.button('Save and preview')?.click();
+  await ui.settle();
+  await ui.settle();
+
+  // The selection sheet recovered the grid job, and the grid rows settled under it.
+  expect(ui.element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entries()).toEqual([]);
+  expect(grid.accepted()).toHaveLength(2);
+});
+
+it('settles the confirmed rows when the sheet closes before its answer (B6)', async () => {
+  let release: (value: Response) => void = () => undefined;
+  const held = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: (path) => {
+      if (path === '/api/devices/updates/edit-previews')
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+          { status: 201 },
+        );
+      if (path === `/api/devices/updates/previews/${previewId}`)
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+        );
+      if (path.includes('/targets'))
+        return Response.json({
+          targets: [
+            editTarget(
+              'd1',
+              'C0A1-0001',
+              'notes',
+              'eligible',
+              'Hinge repaired',
+            ),
+            editTarget('d2', 'C0A1-0002', 'notes', 'eligible', 'Door fixed'),
+          ],
+          nextCursor: null,
+        });
+      if (path.endsWith('/confirm')) return held;
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  const { element, button, close, settle } = ui;
+  button('Continue to confirmation')?.click();
+  await settle();
+  element
+    .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')
+    ?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  // The person dismisses the sheet while the answer is still on its way.
+  await close();
+  release(Response.json(receipt, { status: 201 }));
+  await settle();
+  await settle();
+
+  // The job exists, so the submitted rows settle even though no receipt shows.
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entries()).toEqual([]);
+  expect(grid.accepted()).toHaveLength(2);
+  expect(grid.acceptedFor('d2', 'notes')?.value).toBe('Door fixed');
+});
+
+it('creates one job with a row per device and field after Review', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(
+        gridRow('d1', 'C0A1-0001'),
+        'annotatedUser',
+        'maya@example.org',
+      );
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: gridAnswers({
+      preview: editPreview({
+        fieldChanges: 3,
+        selected: 3,
+        eligible: 3,
+      }),
+      targets: [
+        editTarget(
+          'd1',
+          'C0A1-0001',
+          'annotatedUser',
+          'eligible',
+          'maya@example.org',
+        ),
+        editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+        editTarget('d2', 'C0A1-0002', 'notes', 'eligible', 'Door fixed'),
+      ],
+    }),
+  });
+  const { element, button, settle } = ui;
+  // The Review table lists one group per device and one row per field.
+  expect(
+    [...element.querySelectorAll('.device-row')].map((row) =>
+      row.textContent?.trim(),
+    ),
+  ).toEqual(['C0A1-0001', 'C0A1-0002']);
+  expect(button('Continue to confirmation')?.disabled).toBe(false);
+  expect(button('Review pending devices')).toBeDefined();
+  expect(button('Edit draft')).toBeUndefined();
+
+  button('Continue to confirmation')?.click();
+  await settle();
+  // Confirm names one sentence per frozen row.
+  const sentences = [...element.querySelectorAll('.change-list li')].map(
+    (row) => row.textContent?.replace(/\s+/g, ' ').trim(),
+  );
+  expect(sentences).toEqual([
+    'Set the annotated user to maya@example.org on C0A1-0001.',
+    'Set the notes to Hinge repaired on C0A1-0001.',
+    'Set the notes to Door fixed on C0A1-0002.',
+  ]);
+  expect(element.querySelector('h2')?.textContent?.trim()).toBe(
+    'Update 2 fields on 3 devices',
+  );
+
+  const box = element.querySelector<HTMLInputElement>(
+    'mat-checkbox input[type="checkbox"]',
+  );
+  box?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entries()).toEqual([]);
+  expect(grid.accepted()).toHaveLength(3);
+  expect(grid.acceptedFor('d1', 'annotatedUser')?.value).toBe(
+    'maya@example.org',
+  );
+});
+
+it('settles the frozen edit list when a grid cell changes during Review (B8)', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'FIRST-FROZEN-VALUE');
+      grid.stageText(
+        gridRow('d2', 'C0A1-0002'),
+        'notes',
+        'SECOND-FROZEN-VALUE',
+      );
+    },
+    request: (path) => {
+      if (path === '/api/devices/updates/edit-previews')
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+          { status: 201 },
+        );
+      if (path === `/api/devices/updates/previews/${previewId}`)
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+        );
+      if (path.includes('/targets'))
+        return Response.json({
+          targets: [
+            editTarget(
+              'd1',
+              'C0A1-0001',
+              'notes',
+              'eligible',
+              'FIRST-FROZEN-VALUE',
+            ),
+            editTarget(
+              'd2',
+              'C0A1-0002',
+              'notes',
+              'eligible',
+              'SECOND-FROZEN-VALUE',
+            ),
+          ],
+          nextCursor: null,
+        });
+      if (path.endsWith('/confirm'))
+        return Response.json(receipt, { status: 201 });
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  const { element, button, settle } = ui;
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 2 device updates',
+  );
+
+  // The side sheet leaves the grid usable. This edit is later than the frozen preview.
+  grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'LATER-KEEP-ME');
+  expect(grid.counts()).toEqual({ changes: 2, devices: 2 });
+
+  button('Continue to confirmation')?.click();
+  await settle();
+  element
+    .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')
+    ?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  // The accepted cells describe the frozen requests that the job owns, not the later edits.
+  expect(grid.acceptedFor('d1', 'notes')?.value).toBe('FIRST-FROZEN-VALUE');
+  expect(grid.acceptedFor('d2', 'notes')?.value).toBe('SECOND-FROZEN-VALUE');
+  // The later edit keeps its own draft, and the untouched frozen row left the draft.
+  expect(grid.entryFor('d1', 'notes')).toMatchObject({
+    value: 'LATER-KEEP-ME',
+  });
+  expect(grid.valueFor('d1', 'notes', 'HS-0001')).toBe('LATER-KEEP-ME');
+  expect(grid.entryFor('d2', 'notes')).toBeNull();
+  expect(grid.counts()).toEqual({ changes: 1, devices: 1 });
+});
+
+it('names the duplicate Asset tag on a one-change receipt (B3)', async () => {
+  const target = {
+    ...editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+    duplicateSerialNumber: 'OTHER-SERIAL-1',
+  };
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired'),
+    request: gridAnswers({
+      preview: editPreview(),
+      targets: [target],
+    }),
+  });
+  const { element } = ui;
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  expect(element.textContent).toContain(
+    'C0A1-0001 · OTHER-SERIAL-1 already holds Hinge repaired. The asset tag repeats.',
+  );
+});
+
+it('names the duplicate Asset tag at Review and on the receipt (B3)', async () => {
+  const duplicate = {
+    ...editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+    duplicateSerialNumber: 'OTHER-SERIAL-2',
+  };
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: gridAnswers({
+      preview: editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+      targets: [
+        duplicate,
+        editTarget('d2', 'C0A1-0002', 'notes', 'eligible', 'Door fixed'),
+      ],
+    }),
+  });
+  const { element, button, settle } = ui;
+  expect(element.textContent).toContain(
+    'C0A1-0001 · OTHER-SERIAL-2 already holds Hinge repaired. The asset tag repeats.',
+  );
+  button('Continue to confirmation')?.click();
+  await settle();
+  element
+    .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')
+    ?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  expect(element.textContent).toContain(
+    'C0A1-0001 · OTHER-SERIAL-2 already holds Hinge repaired. The asset tag repeats.',
+  );
+});
+
+it('retains and replays duplicate evidence across the supported 500-device bound (B3)', async () => {
+  const ui = await setup({
+    open: false,
+    request: gridAnswers({ preview: editPreview() }),
+  });
+  const confirmations = TestBed.inject(DeviceUpdateConfirmationStore);
+  const entries = Array.from({ length: 101 }, (_, index) => ({
+    deviceId: `d${index}`,
+    field: 'annotatedAssetId' as const,
+    mode: 'replace' as const,
+    value: 'SHARED-TAG',
+    baselineValue: null,
+  }));
+  confirmations.retain({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+    entries,
+    duplicates: entries.map((entry, index) => ({
+      serialNumber: `SERIAL-${index}`,
+      duplicateSerialNumber: 'OTHER-SERIAL',
+      approvedValue: entry.value,
+    })),
+  });
+  const answer = await confirmations.prepareEdits(entries);
+  expect(answer.kind).toBe('receipt');
+  expect(
+    ui.request.mock.calls.some(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    ),
+  ).toBe(false);
+});
+
+it('keeps a 101-warning confirmation unresolved instead of preparing a second preview (B3)', async () => {
+  const ui = await setup({
+    open: false,
+    request: (path) => {
+      if (path.endsWith('/confirm'))
+        return Promise.reject(new TypeError('The connection closed.'));
+      return gridAnswers({ preview: editPreview() })(path, undefined);
+    },
+  });
+  const confirmations = TestBed.inject(DeviceUpdateConfirmationStore);
+  const entries = Array.from({ length: 101 }, (_, index) => ({
+    deviceId: `d${index}`,
+    field: 'annotatedAssetId' as const,
+    mode: 'replace' as const,
+    value: 'SHARED-TAG',
+    baselineValue: null,
+  }));
+  confirmations.retain({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+    entries,
+    duplicates: entries.map((entry, index) => ({
+      serialNumber: `SERIAL-${index}`,
+      duplicateSerialNumber: 'OTHER-SERIAL',
+      approvedValue: entry.value,
+    })),
+  });
+  const answer = await confirmations.prepareEdits(entries);
+  expect(answer.kind).toBe('uncertain');
+  expect(
+    ui.request.mock.calls.some(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    ),
+  ).toBe(false);
+});
+
+it('a late accepted answer cannot install the previous principal values (B5)', async () => {
+  let release: (value: Response) => void = () => undefined;
+  let sent: () => void = () => undefined;
+  const held = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    sent = resolve;
+  });
+  const base = gridAnswers({ preview: editPreview() });
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(
+        gridRow('d1', 'SERIAL-1'),
+        'notes',
+        'PERSON-A-PRIVATE-VALUE',
+      ),
+    request: (path, body) => {
+      if (path.endsWith('/confirm')) {
+        sent();
+        return held;
+      }
+      return base(path, body);
+    },
+  });
+  await started;
+  ui.element
+    .querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+    ?.click();
+  ui.fixture.componentRef.setInput('open', false);
+  const auth = TestBed.inject(AuthStore);
+  (auth.session as unknown as ReturnType<typeof signal>).set({
+    identity: {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      grants: [],
+    },
+  });
+  await ui.settle();
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.accepted()).toEqual([]);
+  expect(grid.entries()).toEqual([]);
+
+  release(Response.json(receipt, { status: 201 }));
+  await ui.settle();
+  await ui.settle();
+  expect(grid.valueFor('d1', 'notes', 'PERSON-B-GOOGLE-VALUE')).toBe(
+    'PERSON-B-GOOGLE-VALUE',
+  );
+  expect(grid.accepted()).toEqual([]);
 });

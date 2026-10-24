@@ -27,7 +27,7 @@ import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
 import { DeviceUpdateSheet } from './device-update-sheet';
 import { DeviceActionSheet } from './device-action-sheet';
-import { DeviceGridDraftStore } from './device-grid-draft.store';
+import { DeviceGridDraftStore, rowPatchFor } from './device-grid-draft.store';
 import { DeviceGridRevertDialog } from './device-grid-revert-dialog';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { deviceActionNote } from './device-action-messages';
@@ -107,11 +107,15 @@ export class DevicesPage implements OnInit, OnDestroy {
     ElementRef<HTMLButtonElement>,
     ElementRef<HTMLButtonElement>
   >('bulkButton', { read: ElementRef });
+  /** The grid owns the active editor that Save changes stops (addendum section 5). */
+  private readonly grid = viewChild(DeviceGrid);
   protected readonly sync = this.store.sync;
   protected readonly editingIndex = signal<number | null>(null);
   protected readonly refreshMenuOpen = signal(false);
   protected readonly bulkMenuOpen = signal(false);
   protected readonly updateOpen = signal(false);
+  /** The draft that the open sheet prepares: the browsing selection or the grid draft. */
+  protected readonly sheetSource = signal<'selection' | 'grid'>('selection');
   protected readonly revertOpen = signal(false);
   /** The grid shows the draft's devices instead of the person's query (addendum 5). */
   protected readonly pendingView = signal(false);
@@ -337,6 +341,16 @@ export class DevicesPage implements OnInit, OnDestroy {
   }
 
   constructor() {
+    // Settlement reads authoritative rows and unchanged preview values. The grid cache
+    // takes them before an overlay leaves (B4).
+    this.gridDraft.applyRows = (rows) => this.store.gridRows.apply(rows);
+    this.gridDraft.applyValues = (values) =>
+      this.store.gridRows.patch(
+        values.map((value) => ({
+          deviceId: value.deviceId,
+          values: rowPatchFor(value.field, value.value),
+        })),
+      );
     effect(() => {
       this.store.revision();
       untracked(() => void this.store.loadOrgUnits());
@@ -389,7 +403,31 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   /** Update device opens the bulk action sheet over the grid (owner, 2026-10-20). */
   protected startUpdate(): void {
+    // The Bulk Actions entry prepares the browsing selection, not the grid draft.
+    this.sheetSource.set('selection');
     this.updateOpen.set(true);
+  }
+
+  /**
+   * Save changes stages the active editor's input, stops that editor, and opens the sheet at
+   * the edit-list preview (IF3, addendum section 5). The whole set is checked after staging,
+   * so a valid live value joins the save and an invalid one blocks all of it (B1).
+   */
+  protected saveGridDraft(): void {
+    if (!this.gridDraft.visible() || this.gridDraft.blocked()) return;
+    // Stage the live input before the editor closes: a stopped editor clears its value.
+    this.gridDraft.commitLive();
+    this.grid()?.endEdit();
+    // The staging callback may have added an invalid entry, so recheck the whole set.
+    if (this.gridDraft.blocked() || this.gridDraft.refusal() !== '') return;
+    if (!this.gridDraft.edits().length) return;
+    this.sheetSource.set('grid');
+    this.updateOpen.set(true);
+  }
+
+  /** The grid source asks for the devices with pending changes (mockup state 04). */
+  protected showPendingDevices(): void {
+    this.pendingView.set(true);
   }
 
   /** Send command opens the command sheet over the grid. */

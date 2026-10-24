@@ -31,6 +31,7 @@
     </button>
   </header>
 
+  @if (showStepper()) {
   <ol class="stepper" aria-label="Update device steps">
     @for (item of steps(); track item.id) {
     <li
@@ -57,9 +58,29 @@
     <li class="connector" aria-hidden="true"></li>
     } }
   </ol>
+  }
 
   <div class="sheet-body" tabindex="0">
-    @if (step() === 'edit') { @if (editOffline()) {
+    @if (step() === 'prepare') { @if (problem(); as activeProblem) {
+    <app-device-update-problem
+      [problem]="activeProblem"
+      [busy]="busy()"
+      [busyLabel]="busyLabel()"
+      [detail]="problemDetail()"
+      (action)="act($event)"
+    />
+    } @else {
+    <section
+      aria-label="Preparing the preview"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <p role="status">Preparing the preview…</p>
+      <p class="meta">Campus Commander reads the edited devices from Google.</p>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </section>
+    } } @else if (step() === 'edit') { @if (editOffline()) {
     <section class="banner" aria-labelledby="update-offline-title">
       <h2 id="update-offline-title">Cannot reach Campus Commander</h2>
       <p>
@@ -307,6 +328,12 @@
     <p class="stale" role="status">{{ staleNote() }}</p>
     } @if (selectionChanged()) {
     <p class="notice" role="status">{{ SELECTION_CHANGED_NOTE }}</p>
+    } @if (gridNote()) {
+    <p class="stale" role="status">{{ gridNote() }}</p>
+    } @if (unchangedGridNote()) {
+    <p class="note" role="status">{{ unchangedGridNote() }}</p>
+    } @for (line of duplicates(); track $index) {
+    <p class="note" role="status">{{ line }}</p>
     }
 
     <p class="list-label" id="targets-field">Field changes</p>
@@ -335,6 +362,8 @@
             <th scope="rowgroup" colspan="4">
               {{ group.serialNumber }} @if (group.excluded) {
               <span class="line">{{ group.excluded }}</span>
+              } @if (group.conflict) {
+              <span class="line">{{ group.conflict }}</span>
               }
             </th>
           </tr>
@@ -368,7 +397,7 @@
     <p class="empty" role="status">
       No frozen targets were returned for this preview.
     </p>
-    } @if (activePreview.eligible === 0) {
+    } @if (activePreview.eligible === 0 && source() !== 'grid') {
     <p class="note">
       No device needs this change. Edit the draft to choose a different value.
     </p>
@@ -441,6 +470,9 @@
     <section aria-labelledby="receipt-heading">
       <h2 id="receipt-heading">{{ receiptHeading }}</h2>
       <p class="mt-md">{{ receiptLine() }}</p>
+      @for (line of receiptDuplicates(); track $index) {
+      <p class="note" role="status">{{ line }}</p>
+      }
       <p class="mt-md">{{ nextStep }}</p>
     </section>
     } }
@@ -484,7 +516,13 @@
     >
       Continue to confirmation
     </button>
+    @if (source() === 'grid') {
+    <button mat-button type="button" (click)="reviewPending()">
+      Review pending devices
+    </button>
+    } @else {
     <button mat-button type="button" (click)="goEdit()">Edit draft</button>
+    }
   </div>
   } @else if (step() === 'confirm' && status() === 'ready' && !problem()) {
   <div class="sheet-foot">

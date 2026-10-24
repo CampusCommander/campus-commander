@@ -1,18 +1,24 @@
 import { Injectable, inject } from '@angular/core';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
+  DEVICE_UPDATE_FIELD_ORDER,
   DEVICE_UPDATE_SELECTION_FIELDS,
   ENTITY_FRESHNESS_HOURS,
+  GOOGLE_HEALTH_RECOVERY,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewSchema,
   deviceUpdateTargetsPageSchema,
+  googleFailureSchema,
   type DeviceUpdateChange,
   type DeviceUpdateConfirmRequest,
+  type DeviceUpdateEdit,
+  type DeviceUpdateEditPreviewRequest,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
   type DeviceUpdatePreview,
   type DeviceUpdatePreviewRequest,
   type DeviceUpdateTarget,
+  type GoogleFailure,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from '../google-connection/connection.store';
@@ -37,7 +43,13 @@ export type FlowAnswerKind =
   | 'preview-not-found'
   | 'selection-expired'
   | 'selection-too-large'
-  | 'nothing-selected';
+  | 'nothing-selected'
+  /** The request body is above the edit route's 98,304-byte cap (addendum section 7). */
+  | 'save-too-large'
+  /** The edit route could not read the edited devices from Google (addendum section 4). */
+  | 'device-read-failed'
+  /** The frozen preview holds a conflict device, so it never confirms (section 2). */
+  | 'preview-conflict';
 
 /** A page-level state. `offline` and the unreadable answers add the read failures. */
 export type FlowProblemKind =
@@ -80,6 +92,8 @@ export interface FlowProblemContext {
   displayId?: string | null;
   /** The expiry of a `410 preview-expired` answer. */
   expiresAt?: string | null;
+  /** The Google failure code of a `503 device-read-failed` answer. */
+  failure?: GoogleFailure | null;
   /** The person may open the Google connection page. */
   canOpenConnection?: boolean;
 }
@@ -120,11 +134,17 @@ export function flowAnswer(
   body: unknown,
 ): FlowAnswerKind | null {
   const reason = (body as { reason?: unknown } | null)?.reason;
+  // The edge answers a body above the edit route's cap as plain text (addendum section 7).
+  if (status === 413) return 'save-too-large';
+  if (status === 503 && reason === 'device-read-failed')
+    return 'device-read-failed';
   if (status === 410 && reason === 'preview-expired') return 'preview-expired';
   if (status === 404 && reason === 'preview-not-found')
     return 'preview-not-found';
   if (status === 403) return 'forbidden';
   if (status === 409 && reason === 'preview-changed') return 'preview-changed';
+  if (status === 409 && reason === 'preview-conflict')
+    return 'preview-conflict';
   if (status === 409 && reason === 'permission-changed')
     return 'permission-changed';
   if (status === 409 && reason === 'connection-changed')
@@ -140,6 +160,20 @@ export function flowAnswer(
   if (status === 422 && reason === 'nothing-selected')
     return 'nothing-selected';
   return null;
+}
+
+/** The Google failure code of a `503 device-read-failed` answer, or null. */
+export function flowFailure(body: unknown): GoogleFailure | null {
+  const failure = (body as { failure?: unknown } | null)?.failure;
+  const parsed = googleFailureSchema.safeParse(failure);
+  return parsed.success ? parsed.data : null;
+}
+
+/** The plain sentence of one Google failure, in the recovery copy of the product. */
+export function googleFailureText(failure: GoogleFailure | null): string {
+  if (!failure) return '';
+  const entry = GOOGLE_HEALTH_RECOVERY[failure];
+  return entry ? `${entry.label}. ${entry.recovery}` : '';
 }
 
 /** The expiry of a `410 preview-expired` answer. */
@@ -289,6 +323,45 @@ export function flowProblem(
         ],
         actions: [backToDevices(), returnToDraft(true)],
       };
+    case 'save-too-large':
+      return {
+        kind,
+        title: 'The save is too large',
+        subtitle: PRESERVED,
+        heading: 'Save fewer changes at a time',
+        paragraphs: [
+          'The save is above the request limit of 98,304 bytes. Your draft remains available.',
+          'Save some changes, then save the rest.',
+        ],
+        actions: [backToDevices(true)],
+      };
+    case 'device-read-failed': {
+      const failure = googleFailureText(context.failure ?? null);
+      return {
+        kind,
+        title: 'The devices could not be read from Google',
+        subtitle: PRESERVED,
+        heading: 'Prepare a new preview to try again',
+        paragraphs: [
+          failure ||
+            'Google did not answer the read of the edited devices, or the read took longer than 25 seconds.',
+          'Your draft remains available. A new save reads the devices again.',
+        ],
+        actions: [backToDevices(), prepareNewPreview],
+      };
+    }
+    case 'preview-conflict':
+      return {
+        kind,
+        title: 'The preview has a conflict',
+        subtitle: PRESERVED,
+        heading: 'Resolve the conflict in the grid',
+        paragraphs: [
+          'A value changed in Google after you began editing, so this preview cannot become a job.',
+          'Resolve the conflicting cells in the grid, then save the changes again.',
+        ],
+        actions: [backToDevices(true)],
+      };
     case 'nothing-selected':
       return {
         kind,
@@ -389,9 +462,10 @@ export function problemSummary(kind: FlowProblemKind): string {
   return `${problem.title}. ${problem.heading}.`;
 }
 
-/** "Review 6 device updates". The device noun stays singular before `update`. */
+/** "Review 6 device updates". The device noun stays singular before `update`. An edit list
+ * counts every edited device, including the ones that a row excludes (mockup state 10). */
 export function previewTitle(preview: DeviceUpdatePreview): string {
-  const count = preview.eligible;
+  const count = preview.changes === null ? preview.selected : preview.eligible;
   return `Review ${count.toLocaleString('en-US')} device update${count === 1 ? '' : 's'}`;
 }
 
@@ -401,12 +475,28 @@ export function confirmTitle(preview: DeviceUpdatePreview): string {
   return `Confirm ${count.toLocaleString('en-US')} device update${count === 1 ? '' : 's'}`;
 }
 
-/** "6 devices · 6 field changes · 0 excluded". */
-export function previewCountLine(preview: DeviceUpdatePreview): string {
-  const changes = preview.fieldChanges.toLocaleString('en-US');
+/**
+ * "6 devices · 6 field changes · 0 excluded". An edit list counts its frozen rows, so a
+ * conflict row still counts as a change that the person made (mockup state 10).
+ */
+export function previewCountLine(
+  preview: DeviceUpdatePreview,
+  targets: readonly DeviceUpdateTarget[] = [],
+): string {
+  const rows =
+    preview.changes === null && targets.length
+      ? targets.length
+      : preview.fieldChanges;
+  const changes = rows.toLocaleString('en-US');
+  const conflicts =
+    preview.conflicts > 0
+      ? ` · ${preview.conflicts.toLocaleString('en-US')} ${
+          preview.conflicts === 1 ? 'conflict' : 'conflicts'
+        }`
+      : '';
   return `${deviceCountText(preview.selected)} · ${changes} ${
-    preview.fieldChanges === 1 ? 'field change' : 'field changes'
-  } · ${preview.excluded.toLocaleString('en-US')} excluded`;
+    rows === 1 ? 'field change' : 'field changes'
+  } · ${preview.excluded.toLocaleString('en-US')} excluded${conflicts}`;
 }
 
 /** "Prepared Sep 5, 10:30 AM · Expires Sep 5, 10:45 AM · Preview PV-006". */
@@ -430,12 +520,21 @@ export function staleWarning(): string {
 }
 
 /**
- * The confirmation card heading of frame 97:57 for several fields. The first count is the
- * changed fields, and the second is the eligible devices of the frozen preview.
+ * The confirmation card heading of frame 97:57 for several fields, and of mockup state 11.
+ * The first count is the changed fields, and the second is the eligible devices of the frozen
+ * preview. An edit list counts the distinct fields that its rows change, so one device that
+ * changes two fields adds one to its row count and nothing to the field count.
  */
-export function confirmationHeading(preview: DeviceUpdatePreview): string {
-  // An edit list answers no changes, so its heading counts no changed fields.
-  const fields = preview.changes?.length ?? 0;
+export function confirmationHeading(
+  preview: DeviceUpdatePreview,
+  targets: readonly DeviceUpdateTarget[] = [],
+): string {
+  const fields =
+    preview.changes === null
+      ? targets.length
+        ? new Set(targets.map((target) => target.field)).size
+        : preview.fieldChanges
+      : preview.changes.length;
   return `Update ${fields.toLocaleString('en-US')} ${
     fields === 1 ? 'field' : 'fields'
   } on ${deviceCountText(preview.eligible)}`;
@@ -515,16 +614,57 @@ export function changeSentences(
 }
 
 /**
- * The fields that keep their value, as the step 4 sentence names them. The four writable
- * fields of the draft appear, because the sheet offers no other change.
+ * One confirmation sentence per frozen row of an edit list (mockup state 11): the built
+ * sentence templates with the serial number in place of the device count.
  */
-export function unchangedSentence(preview: DeviceUpdatePreview): string {
+export function targetSentences(
+  targets: readonly DeviceUpdateTarget[],
+): ChangeSentence[] {
+  return targets
+    .filter((target) => target.disposition === 'eligible')
+    .map((target) => {
+      const label = DEVICE_UPDATE_FIELD_LABELS[target.field].toLowerCase();
+      const serial = targetDeviceText(target);
+      if (target.field === 'orgUnitPath')
+        return {
+          before: `Move ${serial} into `,
+          path: target.approvedValue ?? '',
+          after: '. Destination policies apply.',
+        };
+      if (target.approvedValue === null)
+        return {
+          before: `Clear the ${label} on ${serial}.`,
+          path: null,
+          after: '',
+        };
+      return {
+        before: `Set the ${label} to ${target.approvedValue} on ${serial}.`,
+        path: null,
+        after: '',
+      };
+    });
+}
+
+/**
+ * The fields that keep their value, as the step 4 sentence names them. A selection preview
+ * offers the four fields of its own draft. An edit list names the record fields that no
+ * frozen row changes (mockup state 11).
+ */
+export function unchangedSentence(
+  preview: DeviceUpdatePreview,
+  targets: readonly DeviceUpdateTarget[] = [],
+): string {
   const changed = new Set(
-    (preview.changes ?? []).map((change) => change.field),
+    preview.changes
+      ? preview.changes.map((change) => change.field)
+      : targets.map((target) => target.field),
   );
-  const labels = DEVICE_UPDATE_SELECTION_FIELDS.filter(
-    (field) => !changed.has(field),
-  ).map((field) => DEVICE_UPDATE_FIELD_LABELS[field].toLowerCase());
+  const offered = preview.changes
+    ? DEVICE_UPDATE_SELECTION_FIELDS
+    : DEVICE_UPDATE_FIELD_ORDER;
+  const labels = offered
+    .filter((field) => !changed.has(field))
+    .map((field) => DEVICE_UPDATE_FIELD_LABELS[field].toLowerCase());
   if (labels.length === 0) return '';
   const joined =
     labels.length === 1
@@ -592,6 +732,7 @@ export function exclusionReasonText(reason: string | null): string {
 export function targetNote(target: DeviceUpdateTarget): string {
   // The device group row carries the exclusion reason (design note 16).
   if (target.disposition === 'unchanged') return 'No change';
+  if (target.disposition === 'conflict') return 'Changed in Google';
   return '';
 }
 
@@ -607,12 +748,15 @@ export interface TargetGroup {
   serialNumber: string;
   /** "Excluded · Removed from inventory", or null for a device that the job covers. */
   excluded: string | null;
+  /** "Conflict · The value changed in Google", or null. */
+  conflict: string | null;
   rows: DeviceUpdateTarget[];
 }
 
 /**
  * The frozen targets as one group per device, in the order that the route returns them. A
- * device of an excluded target shows its reason once, in the group row (design note 16).
+ * device of an excluded target shows its reason once, in the group row (design note 16). A
+ * conflict device shows its own line, because Continue stays disabled until it is resolved.
  */
 export function targetGroups(
   targets: readonly DeviceUpdateTarget[],
@@ -625,6 +769,7 @@ export function targetGroups(
         deviceId: target.deviceId,
         serialNumber: targetDeviceText(target),
         excluded: null,
+        conflict: null,
         rows: [],
       };
       groups.set(target.deviceId, group);
@@ -634,14 +779,85 @@ export function targetGroups(
       group.excluded = `Excluded · ${exclusionReasonText(
         target.exclusionReason,
       )}`;
+    if (target.disposition === 'conflict')
+      group.conflict = 'Conflict · The value changed in Google';
   }
   return [...groups.values()];
+}
+
+/** One duplicate Asset tag warning: the device, the other serial, and the repeated value. */
+export interface DuplicateTagEvidence {
+  /** The device that the job writes. */
+  serialNumber: string;
+  /** The device that already holds the requested tag. */
+  duplicateSerialNumber: string;
+  approvedValue: string;
+}
+
+/**
+ * The duplicate Asset tag warnings of the frozen targets. A duplicate never blocks the save
+ * (addendum section 6); the Review step and both receipts name the other serial number.
+ */
+export function duplicateTagEvidence(
+  targets: readonly DeviceUpdateTarget[],
+): DuplicateTagEvidence[] {
+  return targets
+    .filter(
+      (target) =>
+        target.duplicateSerialNumber !== null &&
+        target.disposition === 'eligible',
+    )
+    .map((target) => ({
+      serialNumber: targetDeviceText(target),
+      duplicateSerialNumber: target.duplicateSerialNumber as string,
+      approvedValue: target.approvedValue ?? '',
+    }));
+}
+
+/** One warning line: "SERIAL · OTHER already holds VALUE. The asset tag repeats." */
+export function duplicateTagLine(evidence: DuplicateTagEvidence): string {
+  return `${evidence.serialNumber} · ${evidence.duplicateSerialNumber} already holds ${evidence.approvedValue}. The asset tag repeats.`;
+}
+
+/** The duplicate Asset tag warnings of the Review step and a receipt. */
+export function duplicateTagNotes(
+  targets: readonly DeviceUpdateTarget[],
+): string[] {
+  return duplicateTagEvidence(targets).map(duplicateTagLine);
+}
+
+/**
+ * Why Continue stays disabled on the Review step of a grid save (addendum section 5). The
+ * bulk selection Review keeps its own rule, so only the grid source reads this.
+ */
+export function gridReviewNote(preview: DeviceUpdatePreview): string {
+  const parts: string[] = [];
+  if (preview.conflicts > 0)
+    parts.push(
+      `${preview.conflicts.toLocaleString('en-US')} ${
+        preview.conflicts === 1 ? 'conflict' : 'conflicts'
+      }. A value changed in Google after your edit.`,
+    );
+  if (preview.excluded > 0)
+    parts.push(
+      `${preview.excluded.toLocaleString('en-US')} excluded ${
+        preview.excluded === 1 ? 'device' : 'devices'
+      } cannot be updated.`,
+    );
+  if (!parts.length) return '';
+  return `${parts.join(' ')} Resolve the marked cells in the grid, then save the changes again.`;
 }
 
 /** One page of targets, or the answer that stopped the read. */
 export type FlowRead<T> =
   | { ok: true; value: T }
-  | { ok: false; answer: FlowProblemKind; expiresAt: string | null };
+  | {
+      ok: false;
+      answer: FlowProblemKind;
+      expiresAt: string | null;
+      /** The Google failure code of a `503 device-read-failed` answer. */
+      failure?: GoogleFailure | null;
+    };
 
 export interface PreviewData {
   preview: DeviceUpdatePreview;
@@ -741,11 +957,27 @@ export class DeviceUpdateFlow {
       ...key,
       changes: this.draft.changes(),
     };
+    return this.postPreview('/api/devices/updates/previews', request);
+  }
+
+  /**
+   * A new preview from one edit list (addendum sections 1 and 4). The route reads every
+   * edited device from Google before it compares, so a failed read answers 503 and creates
+   * no preview.
+   */
+  async prepareFromEdits(
+    edits: readonly DeviceUpdateEdit[],
+  ): Promise<FlowRead<DeviceUpdatePreview>> {
+    const request: DeviceUpdateEditPreviewRequest = { edits: [...edits] };
+    return this.postPreview('/api/devices/updates/edit-previews', request);
+  }
+
+  private async postPreview(
+    path: string,
+    request: DeviceUpdatePreviewRequest | DeviceUpdateEditPreviewRequest,
+  ): Promise<FlowRead<DeviceUpdatePreview>> {
     try {
-      const response = await this.auth.request(
-        '/api/devices/updates/previews',
-        request,
-      );
+      const response = await this.auth.request(path, request);
       const body: unknown = await response.json().catch(() => null);
       if (response.ok) {
         const preview = deviceUpdatePreviewSchema.safeParse(body);
@@ -803,6 +1035,7 @@ export class DeviceUpdateFlow {
       ok: false,
       answer: flowAnswer(status, body) ?? fallback,
       expiresAt: flowExpiry(body),
+      failure: flowFailure(body),
     };
   }
 }

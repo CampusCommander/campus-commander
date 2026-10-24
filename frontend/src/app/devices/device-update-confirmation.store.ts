@@ -1,7 +1,11 @@
 import { Injectable, inject } from '@angular/core';
-import type {
-  DeviceUpdateJobReceipt,
-  DeviceUpdatePreview,
+import {
+  deviceUpdateFieldSchema,
+  deviceUpdateModeSchema,
+  type DeviceUpdateEdit,
+  type DeviceUpdateJobReceipt,
+  type DeviceUpdatePreview,
+  type GoogleFailure,
 } from '@campus/application-contracts';
 import { z } from 'zod';
 import { AuthStore } from '../auth.store';
@@ -9,15 +13,47 @@ import {
   DeviceUpdateFlow,
   confirmationMayExist,
   type FlowProblemKind,
+  type FlowRead,
 } from './device-update-flow';
 
 /** The storage prefix of one person's uncertain confirmations in this tab. */
 export const CONFIRMATION_PREFIX = 'cc.device-update-confirmation.';
 
-/** The confirmation that a page submitted, kept until its acceptance is known. */
+/**
+ * The confirmation that a page submitted, kept until its acceptance is known. `entries`
+ * carries the submitted grid rows, so a replay that recovers the receipt can settle them
+ * (mockup state 09). `duplicates` keeps the duplicate Asset tag evidence, so a recovered
+ * receipt still names the other serial number (B3).
+ */
 const submittedConfirmationSchema = z.strictObject({
   previewId: z.uuid(),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  /** The person who confirmed. A late answer settles only under this principal (B5). */
+  submittedBy: z.uuid().optional(),
+  entries: z
+    .array(
+      z.strictObject({
+        deviceId: z.string().min(1).max(128),
+        field: deviceUpdateFieldSchema,
+        mode: deviceUpdateModeSchema,
+        value: z.string().max(4096).optional(),
+        baselineValue: z.string().max(4096).nullable(),
+      }),
+    )
+    .max(2500)
+    .optional(),
+  duplicates: z
+    .array(
+      z.strictObject({
+        serialNumber: z.string().max(256),
+        duplicateSerialNumber: z.string().max(256),
+        approvedValue: z.string().max(4096),
+      }),
+    )
+    // A warning never discards the identity that prevents a second job. The bound follows
+    // the 500-device, five-field draft bound (B3).
+    .max(2500)
+    .optional(),
 });
 export type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
 
@@ -29,7 +65,12 @@ export type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
  */
 export type ConfirmationReplay =
   | { kind: 'none' }
-  | { kind: 'receipt'; receipt: DeviceUpdateJobReceipt }
+  | {
+      kind: 'receipt';
+      receipt: DeviceUpdateJobReceipt;
+      /** The record whose replay answered, so a grid save can settle its rows. */
+      submitted?: SubmittedConfirmation;
+    }
   | { kind: 'expired' }
   | {
       kind: 'unresolved';
@@ -37,20 +78,39 @@ export type ConfirmationReplay =
       answer: FlowProblemKind;
       expiresAt: string | null;
     }
-  | { kind: 'problem'; answer: FlowProblemKind; expiresAt: string | null }
+  | {
+      kind: 'problem';
+      answer: FlowProblemKind;
+      expiresAt: string | null;
+      /** The Google failure code of a `503 device-read-failed` answer. */
+      failure?: GoogleFailure | null;
+    }
   | { kind: 'uncertain'; submitted: SubmittedConfirmation };
 
 /** The answer to a request that creates a preview after the replay. */
 export type PreviewPreparation =
-  | { kind: 'preview'; preview: DeviceUpdatePreview }
-  | { kind: 'receipt'; receipt: DeviceUpdateJobReceipt }
+  | {
+      kind: 'preview';
+      preview: DeviceUpdatePreview;
+    }
+  | {
+      kind: 'receipt';
+      receipt: DeviceUpdateJobReceipt;
+      submitted?: SubmittedConfirmation;
+    }
   | {
       kind: 'unresolved';
       submitted: SubmittedConfirmation;
       answer: FlowProblemKind;
       expiresAt: string | null;
     }
-  | { kind: 'problem'; answer: FlowProblemKind; expiresAt: string | null }
+  | {
+      kind: 'problem';
+      answer: FlowProblemKind;
+      expiresAt: string | null;
+      /** The Google failure code of a `503 device-read-failed` answer. */
+      failure?: GoogleFailure | null;
+    }
   | { kind: 'uncertain'; submitted: SubmittedConfirmation };
 
 /**
@@ -69,6 +129,15 @@ export class DeviceUpdateConfirmationStore {
   retain(submitted: SubmittedConfirmation): void {
     const key = this.key(submitted.previewId);
     if (!key) return;
+    // Never store one person's confirmation under another person's prefix, and never
+    // replace a record that another person bound (B5).
+    const principal = this.auth.session()?.identity.id;
+    if (
+      submitted.submittedBy !== undefined &&
+      principal !== undefined &&
+      submitted.submittedBy !== principal
+    )
+      return;
     try {
       sessionStorage.setItem(key, JSON.stringify(submitted));
     } catch {
@@ -138,12 +207,36 @@ export class DeviceUpdateConfirmationStore {
     if (replay.kind === 'unresolved') return replay;
     if (replay.kind === 'uncertain') return replay;
     const prepared = await this.flow.prepareFromDraft();
+    return this.preparation(prepared);
+  }
+
+  /**
+   * Create an edit-list preview for the grid draft, but only after every uncertain
+   * confirmation has an answer. The edit route reads the devices from Google first, so its
+   * 413 and 503 answers keep the draft.
+   */
+  async prepareEdits(
+    edits: readonly DeviceUpdateEdit[],
+  ): Promise<PreviewPreparation> {
+    const replay = await this.resolvePending();
+    if (replay.kind === 'receipt') return replay;
+    if (replay.kind === 'problem') return replay;
+    if (replay.kind === 'unresolved') return replay;
+    if (replay.kind === 'uncertain') return replay;
+    const prepared = await this.flow.prepareFromEdits(edits);
+    return this.preparation(prepared);
+  }
+
+  private preparation(
+    prepared: FlowRead<DeviceUpdatePreview>,
+  ): PreviewPreparation {
     return prepared.ok
       ? { kind: 'preview', preview: prepared.value }
       : {
           kind: 'problem',
           answer: prepared.answer,
           expiresAt: prepared.expiresAt,
+          failure: prepared.failure ?? null,
         };
   }
 
@@ -156,7 +249,7 @@ export class DeviceUpdateConfirmationStore {
     );
     if (result.ok) {
       this.release(submitted.previewId);
-      return { kind: 'receipt', receipt: result.value };
+      return { kind: 'receipt', receipt: result.value, submitted };
     }
     if (result.answer === 'preview-expired') {
       this.release(submitted.previewId);

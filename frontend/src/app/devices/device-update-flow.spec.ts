@@ -51,6 +51,26 @@ it('counts the eligible device-field rows, not the eligible devices', () => {
   ).toBe('6 devices · 11 field changes · 2 excluded');
 });
 
+it('counts the frozen rows of an edit list, including a conflict row', () => {
+  const target: DeviceUpdateTarget = {
+    deviceId: 'd0',
+    serialNumber: 'S1',
+    field: 'annotatedAssetId',
+    observedValue: 'B',
+    baselineValue: 'A',
+    approvedValue: 'B',
+    duplicateSerialNumber: null,
+    disposition: 'conflict',
+    exclusionReason: null,
+  };
+  expect(
+    previewCountLine(
+      preview({ changes: null, fieldChanges: 0, conflicts: 1, selected: 1 }),
+      [target],
+    ),
+  ).toBe('1 device · 1 field change · 0 excluded · 1 conflict');
+});
+
 it('keeps one field change singular', () => {
   expect(previewCountLine(preview({ fieldChanges: 1 }))).toBe(
     '6 devices · 1 field change · 0 excluded',
@@ -84,13 +104,27 @@ it('counts the changed fields and the eligible devices in the heading', () => {
   ).toBe('Update 1 field on 1 device');
 });
 
-it('reads an edit list without changes as no change', () => {
-  // An edit list answers null changes, because each of its rows carries its own request.
-  const editList = preview({ changes: null });
-  expect(confirmationHeading(editList)).toBe('Update 0 fields on 6 devices');
+it('counts the distinct fields of an edit list', () => {
+  // An edit list answers null changes, because each of its rows carries its own request. Its
+  // heading counts the distinct fields across devices (mockup state 11: 5 rows, 4 fields).
+  const rows = targetRows([
+    { field: 'annotatedAssetId', devices: 2, approvedValue: 'CB415508' },
+    { field: 'orgUnitPath', devices: 1, approvedValue: '/Cart' },
+    { field: 'annotatedLocation', devices: 1, approvedValue: 'Library' },
+    { field: 'notes', devices: 1, approvedValue: 'Hinge repaired' },
+  ]);
+  const editList = preview({ changes: null, fieldChanges: 5, eligible: 5 });
+  expect(confirmationHeading(editList, rows)).toBe(
+    'Update 4 fields on 5 devices',
+  );
+  expect(confirmationHeading(editList)).toBe('Update 5 fields on 5 devices');
   expect(changeSentences(editList, [])).toEqual([]);
+  // Every field that the rows leave alone keeps its value.
+  expect(unchangedSentence(editList, rows)).toBe(
+    'Annotated user remains unchanged.',
+  );
   expect(unchangedSentence(editList)).toBe(
-    'Annotated location, annotated user, notes, and organization unit remain unchanged.',
+    'Annotated location, asset tag, annotated user, notes, and organization unit remain unchanged.',
   );
 });
 

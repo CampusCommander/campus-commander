@@ -46,4 +46,20 @@ export class DeviceRowRefresh {
     // A cached read reuses its first answer, so it needs the same observation.
     for (const listener of this.listeners) listener(rows);
   }
+
+  /** Replace named fields of loaded rows with authoritative values (B4). */
+  patch(
+    updates: readonly { deviceId: string; values: Partial<DeviceRow> }[],
+  ): void {
+    const changed: DeviceRow[] = [];
+    for (const update of updates) {
+      const node = this.api?.getRowNode(update.deviceId);
+      if (!node || node.group || !node.data) continue;
+      const next = { ...node.data, ...update.values };
+      node.updateData(next);
+      changed.push(next);
+    }
+    if (changed.length)
+      for (const listener of this.listeners) listener(changed);
+  }
 }

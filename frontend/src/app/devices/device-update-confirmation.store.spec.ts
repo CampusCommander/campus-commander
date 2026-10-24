@@ -84,9 +84,11 @@ it('keeps a lost confirmation under the person, preview, and digest', () => {
 it('replays the retained preview and digest', async () => {
   const { store, confirm, prepareFromDraft } = setup();
   store.retain(submitted);
+  // The record travels with the receipt, so a grid save can settle its rows (DRAFT-02).
   await expect(store.preparePreview()).resolves.toEqual({
     kind: 'receipt',
     receipt,
+    submitted,
   });
   expect(confirm).toHaveBeenCalledWith(previewId, manifestDigest);
   expect(prepareFromDraft).not.toHaveBeenCalled();
@@ -195,6 +197,7 @@ it('replays the retained identity until a receipt settles it', async () => {
   await expect(store.resolvePending()).resolves.toEqual({
     kind: 'receipt',
     receipt,
+    submitted,
   });
   expect(confirm).toHaveBeenNthCalledWith(1, previewId, manifestDigest);
   expect(confirm).toHaveBeenNthCalledWith(2, previewId, manifestDigest);

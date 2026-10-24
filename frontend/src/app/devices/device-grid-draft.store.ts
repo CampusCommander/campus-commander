@@ -11,13 +11,22 @@ import {
   DEVICE_BY_IDS_LIMIT,
   DEVICE_UPDATE_FIELD_LABELS,
   DEVICE_UPDATE_FIELD_LIMITS,
+  DEVICE_UPDATE_FIELD_ORDER,
+  deviceRowsSchema,
   deviceUpdateFieldSchema,
   deviceUpdateModeSchema,
+  jobDetailSchema,
+  jobEventSchema,
   type DeviceRow,
+  type DeviceUpdateEdit,
   type DeviceUpdateField,
   type DeviceUpdateMode,
+  type DeviceUpdateTarget,
+  type JobDetail,
+  type JobStatus,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
+import { JobStream, type JobEventSource } from '../jobs/job-stream';
 import type { OrgUnitTreeRow } from './device-org-unit-tree.store';
 import { readDraftPart, writeDraftPart } from './device-draft-storage';
 import {
@@ -26,7 +35,11 @@ import {
 } from './device-update-messages';
 
 /** The grid draft holds at most one entry per device and field (addendum section 5). */
-export type DeviceGridDraftState = 'pending' | 'invalid' | 'conflict';
+export type DeviceGridDraftState =
+  | 'pending'
+  | 'invalid'
+  | 'conflict'
+  | 'excluded';
 
 export interface DeviceGridDraftEntry {
   deviceId: string;
@@ -43,11 +56,29 @@ export interface DeviceGridDraftEntry {
   state: DeviceGridDraftState;
   /** The current Google value of a conflict entry. */
   currentValue?: string | null;
+  /** Why Google cannot write an excluded entry, such as `removed`. */
+  exclusionReason?: string;
+}
+
+/**
+ * The value of one accepted cell (mockup state 09, design gap 2). The job holds the row, so
+ * the cell shows the accepted value with a clock until the job's own record arrives. An
+ * accepted cell is not a draft entry: rollback never reverses a provider effect (DRAFT-02).
+ */
+export interface DeviceGridAcceptedEntry {
+  deviceId: string;
+  field: DeviceUpdateField;
+  mode: DeviceUpdateMode;
+  /** The approved value that the job will write. A Clear carries an empty string. */
+  value: string;
+  /** The job that accepted the row. */
+  displayId: string;
 }
 
 /** One open editor. Its changed input counts as a pending change (mockup choice 5). */
 export interface DeviceGridLiveEdit {
   deviceId: string;
+  serialNumber: string;
   field: DeviceUpdateField;
   baseline: string | null;
   value: string;
@@ -75,8 +106,9 @@ const entrySchema = z.strictObject({
   value: z.string(),
   baseline: z.string().nullable(),
   orgUnitId: z.string().min(1).max(128).nullable(),
-  state: z.enum(['pending', 'invalid', 'conflict']),
+  state: z.enum(['pending', 'invalid', 'conflict', 'excluded']),
   currentValue: z.string().nullable().optional(),
+  exclusionReason: z.string().max(64).optional(),
 });
 
 /** The outer shape only. Each entry validates alone, so one bad entry keeps the rest. */
@@ -114,6 +146,41 @@ function sameRequest(
   return request === seen;
 }
 
+/** The job statuses that no longer change a device row. */
+const TERMINAL_JOB_STATUSES: ReadonlySet<JobStatus> = new Set<JobStatus>([
+  'completed',
+  'completed-with-errors',
+  'failed',
+  'needs-review',
+]);
+
+/**
+ * True when the authoritative row holds the accepted request. A matching row is success
+ * evidence: the worker publishes inventory IDs only after a value reaches Google (B4). A
+ * row without the field proves nothing and never settles the cell. The Asset tag edit field
+ * maps to the `assetTag` row property.
+ */
+export function rowHoldsRequest(
+  entry: Pick<DeviceGridAcceptedEntry, 'field' | 'mode' | 'value'>,
+  row: Partial<DeviceValueRow>,
+): boolean {
+  if (!(rowFieldFor(entry.field) in row)) return false;
+  return sameRequest(
+    entry.field,
+    requestOf(entry.mode, entry.value),
+    rowValueFor(row as DeviceValueRow, entry.field),
+  );
+}
+
+/** A refresh row that the grid applies. A partial row settles nothing it does not carry. */
+export type DeviceSettledRow = Pick<DeviceRow, 'deviceId'> &
+  Partial<DeviceValueRow>;
+
+/** The key that identifies one accepted operation, so a late answer removes only its row. */
+function acceptedKey(entry: DeviceGridAcceptedEntry): string {
+  return `${keyOf(entry)}\u0000${entry.displayId}\u0000${entry.mode}\u0000${entry.value}`;
+}
+
 /** The mode that an emptied in-cell editor stages (addendum section 5). */
 export function modeForText(
   field: DeviceUpdateField,
@@ -128,6 +195,11 @@ export type DeviceValueRow = Pick<
   DeviceRow,
   'assetTag' | 'orgUnitPath' | 'annotatedLocation' | 'annotatedUser' | 'notes'
 >;
+
+/** The row property that holds the value of an editable field. */
+export function rowFieldFor(field: DeviceUpdateField): keyof DeviceValueRow {
+  return field === 'annotatedAssetId' ? 'assetTag' : field;
+}
 
 /** The value of this field in the row, as the person saw it. */
 export function rowValueFor(
@@ -145,6 +217,32 @@ export function rowValueFor(
       return row.annotatedUser;
     case 'notes':
       return row.notes;
+  }
+}
+
+/** One authoritative field value that a preview or a reconciliation read supplied. */
+export interface DeviceGridObservedValue {
+  deviceId: string;
+  field: DeviceUpdateField;
+  value: string | null;
+}
+
+/** The row change of one authoritative field value. */
+export function rowPatchFor(
+  field: DeviceUpdateField,
+  value: string | null,
+): Partial<DeviceRow> {
+  switch (field) {
+    case 'annotatedAssetId':
+      return { assetTag: value };
+    case 'orgUnitPath':
+      return { orgUnitPath: value ?? '' };
+    case 'annotatedLocation':
+      return { annotatedLocation: value };
+    case 'annotatedUser':
+      return { annotatedUser: value };
+    case 'notes':
+      return { notes: value };
   }
 }
 
@@ -190,7 +288,9 @@ function restoredEntry(
     ? 'invalid'
     : entry.currentValue !== undefined
       ? 'conflict'
-      : 'pending';
+      : entry.exclusionReason !== undefined
+        ? 'excluded'
+        : 'pending';
   return {
     deviceId: entry.deviceId,
     serialNumber: entry.serialNumber,
@@ -202,6 +302,9 @@ function restoredEntry(
     state,
     ...(entry.currentValue !== undefined
       ? { currentValue: entry.currentValue }
+      : {}),
+    ...(entry.exclusionReason !== undefined
+      ? { exclusionReason: entry.exclusionReason }
       : {}),
   };
 }
@@ -217,17 +320,49 @@ function restoredEntry(
 export class DeviceGridDraftStore {
   private readonly auth = inject(AuthStore);
   private readonly entriesSignal = signal<DeviceGridDraftEntry[]>([]);
+  private readonly acceptedSignal = signal<DeviceGridAcceptedEntry[]>([]);
   private readonly liveSignal = signal<DeviceGridLiveEdit | null>(null);
   private readonly refusalSignal = signal('');
   private readonly restoreErrorSignal = signal('');
   private readonly writeErrorSignal = signal('');
+  /** The unchanged rows that a pending accepted operation keeps in the draft (B7). */
+  private readonly keptUnchangedSignal = signal(0);
+  /**
+   * Receives authoritative rows that settlement read, so the grid shows the written value
+   * before the accepted mark clears (B4). The Devices page wires the grid cache.
+   */
+  applyRows: (rows: readonly DeviceRow[]) => void = () => undefined;
+  /** Receives the observed values of unchanged preview rows (B4). The page wires the grid. */
+  applyValues: (values: readonly DeviceGridObservedValue[]) => void = () =>
+    undefined;
+  /**
+   * Opens the jobs event stream while an accepted cell waits. A job event carries no device
+   * row, so settlement follows the owning job its own way (B4). Tests replace it.
+   */
+  jobEventSource: ((url: string) => JobEventSource) | null =
+    typeof EventSource === 'undefined' ? null : (url) => new EventSource(url);
+  private readonly jobEvents = new JobStream({
+    open: () => this.jobEventSource!('/api/jobs/events'),
+    reopenDelay: () => 5000,
+    timeout: () => 60_000,
+    opened: () => void this.reconcileAccepted(),
+    changed: (data) => this.onJobEvent(data),
+  });
   /** A restore warning stays until the next restore, so one write never hides lost entries. */
   readonly storageError = computed(
     () => this.restoreErrorSignal() || this.writeErrorSignal(),
   );
   private principal = this.auth.session()?.identity.id ?? null;
+  /** One reconcile runs at a time; a row event during it asks for one more pass. */
+  private reconciling = false;
+  private reconciled = false;
+  /** Reconciliation applies rows now. A settle from that apply must not start another pass. */
+  private applying = false;
+  /** A restore or principal change invalidates an answer that is still in flight. */
+  private acceptedEpoch = 0;
 
   readonly entries = computed(() => this.entriesSignal());
+  readonly accepted = computed(() => this.acceptedSignal());
   readonly live = computed(() => this.liveSignal());
   readonly refusal = computed(() => this.refusalSignal());
 
@@ -251,15 +386,206 @@ export class DeviceGridDraftStore {
     );
   }
 
-  /** The cell value: the pending value over the row value. */
+  /**
+   * The cell value: the pending value over the row value. An accepted value covers the row
+   * until the job's own record arrives.
+   */
   valueFor(
     deviceId: string,
     field: DeviceUpdateField,
     rowValue: string,
   ): string {
     const entry = this.entryFor(deviceId, field);
-    if (!entry) return rowValue;
-    return entry.mode === 'clear' ? '' : entry.value;
+    if (entry) return entry.mode === 'clear' ? '' : entry.value;
+    const accepted = this.acceptedFor(deviceId, field);
+    if (accepted) return accepted.mode === 'clear' ? '' : accepted.value;
+    return rowValue;
+  }
+
+  /** The accepted value of one cell, or null. */
+  acceptedFor(
+    deviceId: string,
+    field: DeviceUpdateField,
+  ): DeviceGridAcceptedEntry | null {
+    return (
+      this.acceptedSignal().find(
+        (entry) => entry.deviceId === deviceId && entry.field === field,
+      ) ?? null
+    );
+  }
+
+  /** Drop the accepted values that authoritative rows prove settled (B4). */
+  settleAccepted(rows: readonly DeviceSettledRow[]): void {
+    if (!this.acceptedSignal().length || !rows.length) return;
+    const held = new Map(rows.map((row) => [row.deviceId, row]));
+    const remaining = this.acceptedSignal().filter((entry) => {
+      const row = held.get(entry.deviceId);
+      return !row || !rowHoldsRequest(entry, row);
+    });
+    if (remaining.length !== this.acceptedSignal().length) {
+      this.acceptedSignal.set(remaining);
+      this.syncJobStream();
+    }
+    // A row can arrive before the owning job finishes. The job read decides the rest. A
+    // reconciliation's own row apply settles here, so it must not start another pass.
+    if (remaining.length && !this.applying) void this.reconcileAccepted();
+  }
+
+  /** Follow the jobs channel while an accepted cell waits for its owning job (B4). */
+  private syncJobStream(): void {
+    if (this.acceptedSignal().length && this.jobEventSource)
+      this.jobEvents.start();
+    else this.jobEvents.stop();
+  }
+
+  /** One job event names the job that owns the next settlement pass. */
+  private onJobEvent(data: string): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return;
+    }
+    const result = jobEventSchema.safeParse(parsed);
+    if (!result.success) return;
+    if (
+      !this.acceptedSignal().some(
+        (entry) => entry.displayId === result.data.displayId,
+      )
+    )
+      return;
+    void this.reconcileAccepted();
+  }
+
+  /**
+   * Reconcile accepted cells with the owning job and the authoritative device rows (B4).
+   *
+   * A row that holds the request settles the cell. A terminal job settles a cell only when
+   * an authoritative row proves the outcome: a missing row never proves that no value
+   * reached Google, because one failed operation can hold some of its requested values. A
+   * job that still runs keeps the mark, so an unrelated refresh never erases it. Reads every
+   * accepted device, so a cell outside the refreshed page settles as well.
+   */
+  async reconcileAccepted(job?: JobDetail): Promise<void> {
+    if (!this.acceptedSignal().length) return;
+    if (this.reconciling) {
+      this.reconciled = true;
+      return;
+    }
+    this.reconciling = true;
+    const principal = this.auth.session()?.identity.id ?? null;
+    const epoch = this.acceptedEpoch;
+    const current = () =>
+      epoch === this.acceptedEpoch &&
+      (this.auth.session()?.identity.id ?? null) === principal;
+    try {
+      const ids = [
+        ...new Set(this.acceptedSignal().map((entry) => entry.displayId)),
+      ];
+      const jobs = new Map<string, JobDetail | null>();
+      if (job && ids.includes(job.displayId)) jobs.set(job.displayId, job);
+      for (const displayId of ids) {
+        if (jobs.has(displayId)) continue;
+        jobs.set(displayId, await this.readJob(displayId));
+        if (!current()) return;
+      }
+      const deviceIds = [
+        ...new Set(this.acceptedSignal().map((entry) => entry.deviceId)),
+      ].slice(0, DEVICE_BY_IDS_LIMIT);
+      const rows = await this.readRows(deviceIds);
+      if (!current()) return;
+      // Show the written value before the accepted mark leaves. An all-failed job keeps the
+      // old row, and a successful read that beat its event still reaches the grid (B4).
+      if (rows) {
+        this.applying = true;
+        try {
+          this.applyRows(rows);
+        } finally {
+          this.applying = false;
+        }
+      }
+      const byId = new Map((rows ?? []).map((row) => [row.deviceId, row]));
+      const settled = new Set<string>();
+      for (const entry of this.acceptedSignal()) {
+        const row = byId.get(entry.deviceId);
+        if (row && rowHoldsRequest(entry, row)) {
+          settled.add(acceptedKey(entry));
+          continue;
+        }
+        const detail = jobs.get(entry.displayId);
+        // A failed read of the job keeps the mark: it proves nothing about the write.
+        if (!detail || !TERMINAL_JOB_STATUSES.has(detail.status)) continue;
+        if (row) {
+          // A fresh authoritative row that does not hold the request settles the cell: a
+          // terminal job means the operation is over (B4).
+          settled.add(acceptedKey(entry));
+          continue;
+        }
+        // No row reached the grid. A missing row proves nothing about the write: the job
+        // counters count device operations, not field effects, and a failed operation can
+        // hold some of its requested values after a partial application (B4). Keep the
+        // accepted mark until an authoritative row arrives, even when the job failed.
+      }
+      if (settled.size)
+        this.acceptedSignal.set(
+          this.acceptedSignal().filter(
+            (entry) => !settled.has(acceptedKey(entry)),
+          ),
+        );
+      this.syncJobStream();
+    } finally {
+      this.reconciling = false;
+      if (this.reconciled) {
+        this.reconciled = false;
+        void this.reconcileAccepted();
+      }
+    }
+  }
+
+  private async readJob(displayId: string): Promise<JobDetail | null> {
+    try {
+      const response = await this.auth.request(
+        `/api/jobs/${encodeURIComponent(displayId)}`,
+      );
+      if (!response.ok) return null;
+      const parsed = jobDetailSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async readRows(ids: readonly string[]): Promise<DeviceRow[] | null> {
+    if (!ids.length) return [];
+    try {
+      const response = await this.auth.request('/api/devices/by-ids', {
+        deviceIds: [...ids],
+      });
+      if (!response.ok) return null;
+      const body: unknown = await response.json().catch(() => null);
+      if (!body || typeof body !== 'object' || !('rows' in body)) return null;
+      const parsed = deviceRowsSchema.safeParse(
+        (body as { rows: unknown }).rows,
+      );
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The baseline of an edit of a row. A draft entry keeps its stored baseline. An accepted
+   * value is what the person sees, so a later edit stages against it and never loses input
+   * (B7).
+   */
+  baselineForRow(row: DeviceRow, field: DeviceUpdateField): string | null {
+    const entry = this.entryFor(row.deviceId, field);
+    if (entry) return entry.baseline;
+    const accepted = this.acceptedFor(row.deviceId, field);
+    if (accepted) return accepted.mode === 'clear' ? '' : accepted.value;
+    return rowValueFor(row, field);
   }
 
   /** The reason that the entry cannot be saved, or an empty string. */
@@ -353,6 +679,9 @@ export class DeviceGridDraftStore {
   updateLive(value: string): void {
     const live = this.liveSignal();
     if (!live) return;
+    // Only the open editor changes here. Returning to the baseline hides the older entry
+    // from the count, and Escape cancels the input without touching the staged entry.
+    // Enter, Tab, and Save stage the value, and `stage()` removes the entry there (B1).
     this.liveSignal.set({ ...live, value });
   }
 
@@ -366,14 +695,13 @@ export class DeviceGridDraftStore {
     field: DeviceUpdateField,
     value: string,
   ): DeviceGridStageResult {
-    const existing = this.entryFor(row.deviceId, field);
     return this.stage({
       deviceId: row.deviceId,
       serialNumber: row.serialNumber,
       field,
       mode: modeForText(field, value),
       value,
-      baseline: baselineFor(existing, row, field),
+      baseline: this.baselineForRow(row, field),
       orgUnitId: null,
     });
   }
@@ -383,14 +711,13 @@ export class DeviceGridDraftStore {
     row: DeviceRow,
     unit: Pick<OrgUnitTreeRow, 'id' | 'path'>,
   ): DeviceGridStageResult {
-    const existing = this.entryFor(row.deviceId, 'orgUnitPath');
     return this.stage({
       deviceId: row.deviceId,
       serialNumber: row.serialNumber,
       field: 'orgUnitPath',
       mode: 'move',
       value: unit.path,
-      baseline: baselineFor(existing, row, 'orgUnitPath'),
+      baseline: this.baselineForRow(row, 'orgUnitPath'),
       orgUnitId: unit.id,
     });
   }
@@ -471,6 +798,268 @@ export class DeviceGridDraftStore {
     this.upsert({ ...entry, state: 'conflict', currentValue });
   }
 
+  /** Mark an entry whose device Google cannot write (addendum section 5). */
+  markExcluded(
+    deviceId: string,
+    field: DeviceUpdateField,
+    reason: string | null,
+  ): void {
+    const entry = this.entryFor(deviceId, field);
+    if (!entry) return;
+    const next: DeviceGridDraftEntry = {
+      ...entry,
+      state: 'excluded',
+      ...(reason ? { exclusionReason: reason } : {}),
+    };
+    delete next.currentValue;
+    this.upsert(next);
+  }
+
+  /**
+   * Mark the cells of a frozen preview: a conflict row carries the current value, an
+   * excluded row names why Google cannot write it. An unchanged row leaves the draft,
+   * because Google already holds the value (addendum section 3), unless a later edit
+   * replaced the submitted request.
+   */
+  applyPreview(
+    targets: readonly DeviceUpdateTarget[],
+    submitted: readonly DeviceUpdateEdit[] = [],
+  ): void {
+    const edits = new Map(
+      submitted.map((edit) => [keyOf(edit), edit] as const),
+    );
+    const unchanged: DeviceUpdateTarget[] = [];
+    for (const target of targets) {
+      if (target.disposition === 'conflict')
+        this.markConflict(target.deviceId, target.field, target.observedValue);
+      else if (target.disposition === 'excluded')
+        this.markExcluded(
+          target.deviceId,
+          target.field,
+          target.exclusionReason,
+        );
+      else if (target.disposition === 'unchanged') unchanged.push(target);
+    }
+    if (unchanged.length) {
+      // The preview names the value that Google holds now. Show it before the draft leaves,
+      // so the cell does not wait for a device event that may never come (B4).
+      this.applyValues(
+        unchanged.map((target) => ({
+          deviceId: target.deviceId,
+          field: target.field,
+          value: target.observedValue,
+        })),
+      );
+      this.dropUnchanged(unchanged, edits);
+    }
+    this.keptUnchangedSignal.set(
+      unchanged.filter((target) => {
+        const entry = this.entryFor(target.deviceId, target.field);
+        return entry ? this.heldByAccepted(entry) : false;
+      }).length,
+    );
+  }
+
+  /** The unchanged rows that a pending accepted operation keeps in the draft (B7). */
+  readonly keptUnchanged = computed(() => this.keptUnchangedSignal());
+
+  /**
+   * Remove the submitted entries that an unchanged answer settles. Only an entry that still
+   * holds the submitted request leaves, so a later edit stays (B2).
+   */
+  dropSubmitted(edits: readonly DeviceUpdateEdit[]): void {
+    const submitted = new Map(
+      edits.map((edit) => [keyOf(edit), edit] as const),
+    );
+    this.removeSubmitted(
+      submitted,
+      edits.map((edit) => keyOf(edit)),
+    );
+  }
+
+  private dropUnchanged(
+    targets: readonly DeviceUpdateTarget[],
+    edits: ReadonlyMap<string, DeviceUpdateEdit>,
+  ): void {
+    this.removeSubmitted(
+      edits,
+      targets.map((target) => keyOf(target)),
+    );
+  }
+
+  private removeSubmitted(
+    edits: ReadonlyMap<string, DeviceUpdateEdit>,
+    keys: readonly string[],
+  ): void {
+    const settled = new Set(keys);
+    const remaining = this.entriesSignal().filter((entry) => {
+      const key = keyOf(entry);
+      if (!settled.has(key)) return true;
+      const edit = edits.get(key);
+      if (!edit) return false;
+      if (entry.mode === edit.mode && entry.value === (edit.value ?? ''))
+        // Google can hold the old value while an earlier accepted job is still pending.
+        // The later change waits for that job, so it keeps its intent (B7).
+        return this.heldByAccepted(entry);
+      return true;
+    });
+    if (remaining.length !== this.entriesSignal().length) {
+      this.entriesSignal.set(remaining);
+      this.persist();
+    }
+  }
+
+  /** True when this entry stages against the value of an accepted operation that still runs. */
+  private heldByAccepted(entry: DeviceGridDraftEntry): boolean {
+    const accepted = this.acceptedFor(entry.deviceId, entry.field);
+    return (
+      !!accepted &&
+      sameRequest(
+        entry.field,
+        requestOf(accepted.mode, accepted.value),
+        entry.baseline,
+      )
+    );
+  }
+
+  /** The edit list of one save: every pending entry, one edit per device and field. */
+  edits(): DeviceUpdateEdit[] {
+    return this.entriesSignal()
+      .filter((entry) => entry.state === 'pending')
+      .slice()
+      .sort((left, right) => {
+        if (left.deviceId !== right.deviceId)
+          return left.deviceId < right.deviceId ? -1 : 1;
+        return (
+          DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
+          DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field)
+        );
+      })
+      .map((entry) => ({
+        deviceId: entry.deviceId,
+        field: entry.field,
+        mode: entry.mode,
+        ...(entry.mode === 'clear' ? {} : { value: entry.value }),
+        baselineValue: entry.baseline,
+      }));
+  }
+
+  /**
+   * Stage the input of the open editor, so Save changes keeps the value the person typed
+   * without pressing Enter (addendum section 5). Returns true when the value joined the draft.
+   */
+  commitLive(): boolean {
+    const live = this.liveSignal();
+    if (!live) return false;
+    const mode = modeForText(live.field, live.value);
+    const changed = !sameRequest(
+      live.field,
+      requestOf(mode, live.value),
+      live.baseline,
+    );
+    if (!changed) {
+      // A cell that returns to its baseline leaves the draft. The older entry must go
+      // before Save snapshots the set, or its stale value joins the preview (B1).
+      const existing = this.entryFor(live.deviceId, live.field);
+      if (existing) this.removeEntry(existing);
+      this.endLive();
+      return false;
+    }
+    const result = this.stage({
+      deviceId: live.deviceId,
+      serialNumber: live.serialNumber,
+      field: live.field,
+      mode,
+      value: live.value,
+      baseline: live.baseline,
+      orgUnitId: null,
+    });
+    this.endLive();
+    return result.ok && !result.removed;
+  }
+
+  /**
+   * Settle a confirmed save (DRAFT-02): an eligible row becomes an accepted cell, an
+   * unchanged row leaves the draft, and an excluded or conflict row keeps its mark. Only
+   * the entries that still hold the submitted request leave; a later edit stays.
+   */
+  accept(
+    submitted: readonly DeviceUpdateEdit[],
+    targets: readonly DeviceUpdateTarget[],
+    displayId: string,
+  ): void {
+    const edits = new Map(
+      submitted.map((edit) => [keyOf(edit), edit] as const),
+    );
+    const settled = new Set<string>();
+    const accepted: DeviceGridAcceptedEntry[] = [];
+    for (const target of targets) {
+      const key = keyOf(target);
+      if (target.disposition === 'conflict') {
+        this.markConflict(target.deviceId, target.field, target.observedValue);
+        continue;
+      }
+      if (target.disposition === 'excluded') {
+        this.markExcluded(
+          target.deviceId,
+          target.field,
+          target.exclusionReason,
+        );
+        continue;
+      }
+      settled.add(key);
+      if (target.disposition !== 'eligible') continue;
+      accepted.push(this.acceptedEntry(edits.get(key), target, displayId));
+    }
+    // A receipt that this tab recovered by replay has no frozen preview. Every submitted
+    // edit settled, because the confirmation covered exactly those rows.
+    if (!targets.length) {
+      for (const edit of submitted) {
+        settled.add(keyOf(edit));
+        accepted.push(this.acceptedEntry(edit, null, displayId));
+      }
+    }
+    if (accepted.length) {
+      const next = this.acceptedSignal().filter(
+        (entry) => !accepted.some((row) => keyOf(row) === keyOf(entry)),
+      );
+      this.acceptedSignal.set([...next, ...accepted]);
+      this.syncJobStream();
+    }
+    // Remove settled entries whose value still equals the submitted value (patterns 160-161).
+    const remaining = this.entriesSignal().filter((entry) => {
+      const key = keyOf(entry);
+      if (!settled.has(key)) return true;
+      const edit = edits.get(key);
+      if (!edit) return false;
+      return !(entry.mode === edit.mode && entry.value === (edit.value ?? ''));
+    });
+    if (remaining.length !== this.entriesSignal().length) {
+      this.entriesSignal.set(remaining);
+      this.persist();
+    }
+    // A row may already hold the approved value, and a job may already be terminal. The
+    // reconcile settles those cells without waiting for an event that already passed (B4).
+    if (accepted.length) void this.reconcileAccepted();
+  }
+
+  private acceptedEntry(
+    edit: DeviceUpdateEdit | undefined,
+    target: DeviceUpdateTarget | null,
+    displayId: string,
+  ): DeviceGridAcceptedEntry {
+    const mode = edit?.mode ?? 'replace';
+    const value =
+      mode === 'clear' ? '' : (edit?.value ?? target?.approvedValue ?? '');
+    return {
+      deviceId: target?.deviceId ?? edit!.deviceId,
+      field: target?.field ?? edit!.field,
+      mode,
+      value,
+      displayId,
+    };
+  }
+
   /** Keep current value removes the pending change. */
   keepCurrent(deviceId: string, field: DeviceUpdateField): void {
     this.revert(deviceId, field);
@@ -496,6 +1085,13 @@ export class DeviceGridDraftStore {
     const id = this.auth.session()?.identity.id ?? null;
     this.principal = id;
     this.entriesSignal.set([]);
+    // Accepted values belong to the person who confirmed them. Another principal must
+    // never see them over their own rows (B5).
+    this.acceptedEpoch++;
+    this.jobEvents.stop();
+    this.acceptedSignal.set([]);
+    this.reconciling = false;
+    this.reconciled = false;
     this.liveSignal.set(null);
     this.refusalSignal.set('');
     this.restoreErrorSignal.set('');

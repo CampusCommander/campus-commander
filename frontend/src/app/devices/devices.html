@@ -313,15 +313,19 @@
       <button
         mat-flat-button
         type="button"
-        disabled
+        [disabled]="!gridDraft.visible() || gridDraft.blocked()"
         aria-describedby="draft-save-note"
+        (click)="saveGridDraft()"
       >
         Save changes
       </button>
     </div>
   </section>
   <p id="draft-save-note" class="visually-hidden">
-    Save changes is unavailable until the batch update is connected.
+    @if (gridDraft.blocked()) { Save changes stays unavailable while a cell
+    holds an invalid, conflict, or excluded change. The panel names the change
+    to resolve. } @else { Save changes prepares a preview of the changed cells.
+    }
   </p>
   }
 
@@ -387,7 +391,12 @@
     />
   </div>
 
-  <app-device-update-sheet [open]="updateOpen()" (closed)="updateClosed()" />
+  <app-device-update-sheet
+    [open]="updateOpen()"
+    [source]="sheetSource()"
+    (closed)="updateClosed()"
+    (pendingViewRequested)="showPendingDevices()"
+  />
   <app-device-grid-revert-dialog
     [open]="revertOpen()"
     [changes]="gridDraft.counts().changes"
