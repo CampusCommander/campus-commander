@@ -305,6 +305,7 @@ Coalesce background announcements and keep safe work available during synchroniz
 - Link each eye icon to the correct entity. Give each operation a stable identity independent of its row index.
 - Filter operation results by qualified fields. Show needs-attention shortcuts and a clear return to all operations.
 - Keep overall job counts unchanged when filtering operation results. Label the filtered result count separately.
+- State the shown row range alone when one device holds several field rows. A header that counts devices cannot count rows.
 - Place Inspect failure beside a failed operation and Reconcile beside an unknown outcome.
 - Show the next valid recovery action after inspecting evidence. Gate retries through the existing preview and capability rules.
 - Show command acceptance and verified command execution separately. An accepted request does not prove the command completed.
