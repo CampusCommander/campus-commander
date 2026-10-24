@@ -738,6 +738,7 @@ test('keeps an unresolved update confirmation across a reload and opens its rece
   expect(JSON.parse((await stored()) ?? '{}')).toEqual({
     previewId,
     manifestDigest: 'a'.repeat(64),
+    submittedBy: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   });
   expect(previewPosts()).toBe(1);
 
@@ -756,6 +757,7 @@ test('keeps an unresolved update confirmation across a reload and opens its rece
   expect(JSON.parse((await stored()) ?? '{}')).toEqual({
     previewId,
     manifestDigest: 'a'.repeat(64),
+    submittedBy: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   });
   // The unresolved replay prepared no replacement preview.
   expect(previewPosts()).toBe(1);

@@ -27,7 +27,7 @@ import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
 import { DeviceUpdateSheet } from './device-update-sheet';
 import { DeviceActionSheet } from './device-action-sheet';
-import { DeviceGridDraftStore } from './device-grid-draft.store';
+import { DeviceGridDraftStore, rowPatchFor } from './device-grid-draft.store';
 import { DeviceGridRevertDialog } from './device-grid-revert-dialog';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { deviceActionNote } from './device-action-messages';
@@ -341,6 +341,16 @@ export class DevicesPage implements OnInit, OnDestroy {
   }
 
   constructor() {
+    // Settlement reads authoritative rows and unchanged preview values. The grid cache
+    // takes them before an overlay leaves (B4).
+    this.gridDraft.applyRows = (rows) => this.store.gridRows.apply(rows);
+    this.gridDraft.applyValues = (values) =>
+      this.store.gridRows.patch(
+        values.map((value) => ({
+          deviceId: value.deviceId,
+          values: rowPatchFor(value.field, value.value),
+        })),
+      );
     effect(() => {
       this.store.revision();
       untracked(() => void this.store.loadOrgUnits());

@@ -286,9 +286,11 @@ export class DeviceUpdateSheet {
   protected readonly unchangedGridNote = computed(() => {
     const preview = this.preview();
     if (!preview || this.source() !== 'grid' || preview.eligible > 0) return '';
-    return preview.unchanged > 0
-      ? 'Google already holds the value. The change left the draft.'
-      : '';
+    if (preview.unchanged < 1) return '';
+    // A row that stages against a pending accepted value keeps its later change (B7).
+    return this.gridDraft.keptUnchanged() > 0
+      ? 'Google still holds the value. The change stays in the draft until the earlier update finishes.'
+      : 'Google already holds the value. The change left the draft.';
   });
   /**
    * The mode of one target's field change. Each row reads the change of its own field, so a
@@ -1068,24 +1070,36 @@ export class DeviceUpdateSheet {
     const generation = this.generation;
     // The frozen targets belong to this submission, so a late answer settles its own rows.
     const targets = this.targets();
-    this.submitted.set(submitted);
-    this.confirmations.retain(submitted);
+    // Bind the confirmation to the person who sends it. A late answer after a principal
+    // change must not install these values for the next person (B5).
+    const principal = this.auth.session()?.identity.id ?? null;
+    const record: SubmittedConfirmation =
+      submitted.submittedBy === undefined && principal !== null
+        ? { ...submitted, submittedBy: principal }
+        : submitted;
+    this.submitted.set(record);
+    this.confirmations.retain(record);
     this.creating.set(true);
     const result = await this.flow.confirm(
-      submitted.previewId,
-      submitted.manifestDigest,
+      record.previewId,
+      record.manifestDigest,
     );
     if (result.ok) {
+      // The previous person's record stays under that person's prefix (B5).
+      if (!this.owns(record)) {
+        if (generation === this.generation) this.close();
+        return;
+      }
       // The answer settles the retained record even after the sheet closed.
-      this.confirmations.release(submitted.previewId);
+      this.confirmations.release(record.previewId);
       // A closed sheet still settles its submitted rows: the job exists (B6). The grid
       // draft is a root store, so settlement does not depend on the current sheet opening.
       if (generation !== this.generation) {
-        this.settleGrid(submitted, result.value.displayId, targets);
+        this.settleGrid(record, result.value.displayId, targets);
         return;
       }
       this.creating.set(false);
-      this.openReceipt(result.value, submitted);
+      this.openReceipt(result.value, record);
       return;
     }
     if (result.answer === 'confirm-uncertain') {
@@ -1118,6 +1132,8 @@ export class DeviceUpdateSheet {
     receipt: DeviceUpdateJobReceipt,
     submitted: SubmittedConfirmation | null,
   ): void {
+    // A receipt of another person's confirmation never opens for this person (B5).
+    if (submitted && !this.owns(submitted)) return;
     this.generation++;
     this.receipt.set(receipt);
     this.job.set(null);
@@ -1145,9 +1161,18 @@ export class DeviceUpdateSheet {
     displayId: string,
     targets: readonly DeviceUpdateTarget[] = this.targets(),
   ): void {
+    // A late answer for another person's confirmation settles nothing here (B5).
+    if (submitted && !this.owns(submitted)) return;
     const edits = (submitted?.entries ?? []) as DeviceUpdateEdit[];
     if (!edits.length) return;
     this.gridDraft.accept(edits, targets, displayId);
+  }
+
+  /** True when this person sent the confirmation, or the record carries no principal. */
+  private owns(submitted: SubmittedConfirmation): boolean {
+    const owner = submitted.submittedBy ?? null;
+    const current = this.auth.session()?.identity.id ?? null;
+    return owner === null || current === owner;
   }
 
   /** Read the durable job. A reload and the first view follow the same read. */

@@ -28,6 +28,8 @@ export const CONFIRMATION_PREFIX = 'cc.device-update-confirmation.';
 const submittedConfirmationSchema = z.strictObject({
   previewId: z.uuid(),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  /** The person who confirmed. A late answer settles only under this principal (B5). */
+  submittedBy: z.uuid().optional(),
   entries: z
     .array(
       z.strictObject({
@@ -48,7 +50,9 @@ const submittedConfirmationSchema = z.strictObject({
         approvedValue: z.string().max(4096),
       }),
     )
-    .max(100)
+    // A warning never discards the identity that prevents a second job. The bound follows
+    // the 500-device, five-field draft bound (B3).
+    .max(2500)
     .optional(),
 });
 export type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;
@@ -125,6 +129,15 @@ export class DeviceUpdateConfirmationStore {
   retain(submitted: SubmittedConfirmation): void {
     const key = this.key(submitted.previewId);
     if (!key) return;
+    // Never store one person's confirmation under another person's prefix, and never
+    // replace a record that another person bound (B5).
+    const principal = this.auth.session()?.identity.id;
+    if (
+      submitted.submittedBy !== undefined &&
+      principal !== undefined &&
+      submitted.submittedBy !== principal
+    )
+      return;
     try {
       sessionStorage.setItem(key, JSON.stringify(submitted));
     } catch {

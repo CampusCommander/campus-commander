@@ -464,6 +464,12 @@ async function mockApi(
         headers: { 'content-type': 'text/event-stream' },
         body: '',
       });
+    if (pathname === '/api/jobs/events')
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+        body: '',
+      });
     if (pathname === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     if (pathname === '/api/google-connection')
@@ -541,6 +547,8 @@ async function stageMove(page: Page, serial: string): Promise<void> {
 
 async function screenshot(page: Page, name: string): Promise<void> {
   mkdirSync(evidenceDir, { recursive: true });
+  // Let a sheet finish its open movement: evidence must show the resting layout.
+  await page.waitForTimeout(350);
   await page.screenshot({
     path: path.join(evidenceDir, name),
     fullPage: false,
@@ -1217,4 +1225,187 @@ test('an answer after the sheet closes settles the submitted drafts', async ({
     cell(page, 'C0A1-0002', 'assetTag').locator('.cell-state.accepted'),
   ).toBeVisible();
   await screenshot(page, 'save-changes-09-closed-before-answer.png');
+});
+
+test('a live return to baseline leaves the preview before Save snapshots it', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'STALE-DRAFT');
+  await editText(page, 'C0A1-0002', 'assetTag', 'KEEP-THIS');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '2 pending changes · 2 devices',
+  );
+  await openEditor(page, 'C0A1-0001', 'assetTag', 'HS-0001');
+  // Type once more after the editor is fully open, so the live listener is attached.
+  const input = cell(page, 'C0A1-0001', 'assetTag').locator('input, textarea');
+  await input.press('End');
+  await input.type('X');
+  await input.press('Backspace');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  expect(sim.targets()).toHaveLength(1);
+  expect(sim.targets()[0]?.deviceId).toBe('d1');
+  expect(confirms).toHaveLength(1);
+  await screenshot(page, 'save-changes-09-live-baseline-omitted.png');
+});
+
+test('a successful read before a delayed receipt updates the displayed row', async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
+  await openDevices(page, sim, { holdConfirm: held });
+  await editText(page, 'C0A1-0001', 'assetTag', 'WRITTEN-BEFORE-RECEIPT');
+  const confirming = page.waitForRequest((request) =>
+    request.url().endsWith('/confirm'),
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirming;
+  // The write lands, but no device event reaches the grid before the answer.
+  sim.settle();
+  release();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+
+  const tag = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(tag.locator('.cell-state.accepted')).toHaveCount(0);
+  await expect(tag.locator('.device-cell-value')).toHaveText(
+    'WRITTEN-BEFORE-RECEIPT',
+    { timeout: 2000 },
+  );
+  await screenshot(page, 'save-changes-12-read-before-receipt.png');
+});
+
+test('an unchanged answer shows the Google value without a prior grid refresh', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'ALREADY-WRITTEN');
+  sim.change('d0', 'assetTag', 'ALREADY-WRITTEN');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByText(
+      'Google already holds the value. The change left the draft.',
+    ),
+  ).toBeVisible();
+  expect(confirms).toHaveLength(0);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.draft-bar')).toHaveCount(0);
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('ALREADY-WRITTEN', { timeout: 2000 });
+  await screenshot(page, 'save-changes-10-unchanged-google-value.png');
+});
+
+test('an all-failed job settles after its job event without a device publication', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
+  await openDevices(page, sim);
+  let jobReads = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === `/api/jobs/${jobDisplayId}`)
+      jobReads++;
+  });
+  await editText(page, 'C0A1-0001', 'assetTag', 'FAILED-WRITE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForTimeout(200);
+  sim.settle([]);
+  const before = jobReads;
+
+  // The worker publishes no device row for a failed write. The jobs channel carries it.
+  await page.evaluate(
+    ({ jobId, displayId, requestedBy }) => {
+      const streams = (
+        window as unknown as {
+          __reviewStreams: {
+            url: string;
+            dispatchEvent(event: Event): boolean;
+          }[];
+        }
+      ).__reviewStreams.filter((stream) => stream.url === '/api/jobs/events');
+      if (!streams.length) throw new Error('No jobs stream subscribed');
+      for (const stream of streams)
+        stream.dispatchEvent(
+          new MessageEvent('job-changed', {
+            data: JSON.stringify({
+              type: 'job-changed',
+              jobId,
+              displayId,
+              revision: 2,
+              requestedBy,
+            }),
+          }),
+        );
+    },
+    {
+      jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      displayId: jobDisplayId,
+      requestedBy: principal,
+    },
+  );
+  await page.waitForTimeout(500);
+  expect(jobReads).toBeGreaterThan(before);
+  const tag = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(tag.locator('.device-cell-value')).toHaveText('HS-0001', {
+    timeout: 2000,
+  });
+  await expect(tag.locator('.cell-state.accepted')).toHaveCount(0);
+  await screenshot(page, 'save-changes-12-all-failed-settled.png');
+});
+
+test('a later save cannot discard a revert while its earlier job remains pending', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'FIRST-JOB-WILL-WRITE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await editText(page, 'C0A1-0001', 'assetTag', 'HS-0001');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 1 device update' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Google still holds the value. The change stays in the draft until the earlier update finishes.',
+    ),
+  ).toBeVisible();
+  expect(confirms).toHaveLength(1);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  const tag = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(tag.locator('.device-cell-value')).toHaveText('HS-0001', {
+    timeout: 2000,
+  });
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+  await screenshot(page, 'save-changes-09-revert-waits-for-job.png');
 });

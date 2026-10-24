@@ -1310,6 +1310,7 @@ it('replays the same preview and digest after a closure and opens the later rece
   expect(JSON.parse(sessionStorage.getItem(retainedKey) ?? '{}')).toEqual({
     previewId,
     manifestDigest: 'a'.repeat(64),
+    submittedBy: principal,
   });
 
   // The transaction lives in this tab, so a closure keeps the record.
@@ -3060,4 +3061,124 @@ it('names the duplicate Asset tag at Review and on the receipt (B3)', async () =
   expect(element.textContent).toContain(
     'C0A1-0001 · OTHER-SERIAL-2 already holds Hinge repaired. The asset tag repeats.',
   );
+});
+
+it('retains and replays duplicate evidence across the supported 500-device bound (B3)', async () => {
+  const ui = await setup({
+    open: false,
+    request: gridAnswers({ preview: editPreview() }),
+  });
+  const confirmations = TestBed.inject(DeviceUpdateConfirmationStore);
+  const entries = Array.from({ length: 101 }, (_, index) => ({
+    deviceId: `d${index}`,
+    field: 'annotatedAssetId' as const,
+    mode: 'replace' as const,
+    value: 'SHARED-TAG',
+    baselineValue: null,
+  }));
+  confirmations.retain({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+    entries,
+    duplicates: entries.map((entry, index) => ({
+      serialNumber: `SERIAL-${index}`,
+      duplicateSerialNumber: 'OTHER-SERIAL',
+      approvedValue: entry.value,
+    })),
+  });
+  const answer = await confirmations.prepareEdits(entries);
+  expect(answer.kind).toBe('receipt');
+  expect(
+    ui.request.mock.calls.some(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    ),
+  ).toBe(false);
+});
+
+it('keeps a 101-warning confirmation unresolved instead of preparing a second preview (B3)', async () => {
+  const ui = await setup({
+    open: false,
+    request: (path) => {
+      if (path.endsWith('/confirm'))
+        return Promise.reject(new TypeError('The connection closed.'));
+      return gridAnswers({ preview: editPreview() })(path, undefined);
+    },
+  });
+  const confirmations = TestBed.inject(DeviceUpdateConfirmationStore);
+  const entries = Array.from({ length: 101 }, (_, index) => ({
+    deviceId: `d${index}`,
+    field: 'annotatedAssetId' as const,
+    mode: 'replace' as const,
+    value: 'SHARED-TAG',
+    baselineValue: null,
+  }));
+  confirmations.retain({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+    entries,
+    duplicates: entries.map((entry, index) => ({
+      serialNumber: `SERIAL-${index}`,
+      duplicateSerialNumber: 'OTHER-SERIAL',
+      approvedValue: entry.value,
+    })),
+  });
+  const answer = await confirmations.prepareEdits(entries);
+  expect(answer.kind).toBe('uncertain');
+  expect(
+    ui.request.mock.calls.some(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    ),
+  ).toBe(false);
+});
+
+it('a late accepted answer cannot install the previous principal values (B5)', async () => {
+  let release: (value: Response) => void = () => undefined;
+  let sent: () => void = () => undefined;
+  const held = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    sent = resolve;
+  });
+  const base = gridAnswers({ preview: editPreview() });
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(
+        gridRow('d1', 'SERIAL-1'),
+        'notes',
+        'PERSON-A-PRIVATE-VALUE',
+      ),
+    request: (path, body) => {
+      if (path.endsWith('/confirm')) {
+        sent();
+        return held;
+      }
+      return base(path, body);
+    },
+  });
+  await started;
+  ui.element
+    .querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+    ?.click();
+  ui.fixture.componentRef.setInput('open', false);
+  const auth = TestBed.inject(AuthStore);
+  (auth.session as unknown as ReturnType<typeof signal>).set({
+    identity: {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      grants: [],
+    },
+  });
+  await ui.settle();
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.accepted()).toEqual([]);
+  expect(grid.entries()).toEqual([]);
+
+  release(Response.json(receipt, { status: 201 }));
+  await ui.settle();
+  await ui.settle();
+  expect(grid.valueFor('d1', 'notes', 'PERSON-B-GOOGLE-VALUE')).toBe(
+    'PERSON-B-GOOGLE-VALUE',
+  );
+  expect(grid.accepted()).toEqual([]);
 });

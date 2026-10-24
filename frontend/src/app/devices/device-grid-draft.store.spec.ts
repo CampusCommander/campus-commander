@@ -16,7 +16,9 @@ import {
   baselineFor,
   gridDraftRestoreError,
   rowValueFor,
+  type DeviceGridObservedValue,
 } from './device-grid-draft.store';
+import type { JobEventSource } from '../jobs/job-stream';
 
 const principal = '4f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
 const storageKey = `cc.device-update-draft.${principal}`;
@@ -980,4 +982,270 @@ it('keeps a later edit when an unchanged answer settles the submitted row (B2)',
   draft.stageText(row({ notes: 'OLD' }), 'notes', 'LATER-VALUE');
   draft.dropSubmitted(submitted);
   expect(draft.entryFor('d1', 'notes')?.value).toBe('LATER-VALUE');
+});
+
+it('settles an Asset tag from its authoritative row property (B4)', async () => {
+  const running = jobOf('UPD-006', 'running', {
+    total: 2,
+    succeeded: 1,
+    failed: 0,
+  });
+  const { draft } = configureWith((path) =>
+    path === '/api/jobs/UPD-006'
+      ? Response.json(running)
+      : Response.json({ rows: [row({ assetTag: 'APPROVED-TAG' })] }),
+  );
+  draft.stageText(
+    row({ assetTag: 'OLD-TAG' }),
+    'annotatedAssetId',
+    'APPROVED-TAG',
+  );
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'annotatedAssetId', 'eligible', 'APPROVED-TAG', 'OLD-TAG')],
+    'UPD-006',
+  );
+  draft.settleAccepted([row({ assetTag: 'APPROVED-TAG' })]);
+  await flush();
+  await flush();
+  expect(draft.accepted()).toEqual([]);
+});
+
+it('removes an older draft when the live input returns to its baseline (B1)', () => {
+  const draft = configure();
+  const device = row({ assetTag: 'ORIGINAL' });
+  draft.stageText(device, 'annotatedAssetId', 'STALE-DRAFT');
+  draft.beginLive({
+    deviceId: device.deviceId,
+    serialNumber: device.serialNumber,
+    field: 'annotatedAssetId',
+    baseline: 'ORIGINAL',
+    value: 'ORIGINAL',
+  });
+  draft.commitLive();
+  expect(draft.edits()).toEqual([]);
+});
+
+it('removes the older draft as soon as the live input matches the baseline (B1)', () => {
+  const draft = configure();
+  const device = row({ assetTag: 'ORIGINAL' });
+  draft.stageText(device, 'annotatedAssetId', 'STALE-DRAFT');
+  draft.beginLive({
+    deviceId: device.deviceId,
+    serialNumber: device.serialNumber,
+    field: 'annotatedAssetId',
+    baseline: 'ORIGINAL',
+    value: 'STALE-DRAFT',
+  });
+  draft.updateLive('ORIGINAL');
+  expect(draft.edits()).toEqual([]);
+  expect(draft.counts()).toEqual({ changes: 0, devices: 0 });
+});
+
+/** A jobs event source that a test drives directly. */
+class FakeJobEvents {
+  readonly listeners = new Map<string, ((event: Event) => void)[]>();
+  readyState = 1;
+  readonly source = this as unknown as JobEventSource;
+
+  addEventListener(name: string, listener: (event: Event) => void): void {
+    const list = this.listeners.get(name) ?? [];
+    list.push(listener);
+    this.listeners.set(name, list);
+  }
+
+  close(): void {
+    this.readyState = 2;
+  }
+
+  emit(name: string, data?: unknown): void {
+    const event =
+      data === undefined
+        ? new Event(name)
+        : new MessageEvent(name, { data: JSON.stringify(data) });
+    for (const listener of this.listeners.get(name) ?? []) listener(event);
+  }
+}
+
+it('settles through the jobs channel when no device event publishes the failure (B4)', async () => {
+  let status: JobStatus = 'running';
+  let jobReads = 0;
+  const { draft } = configureWith((path) => {
+    if (path === '/api/jobs/UPD-006') {
+      jobReads += 1;
+      return Response.json(
+        jobOf('UPD-006', status, {
+          total: 1,
+          succeeded: 0,
+          failed: status === 'failed' ? 1 : 0,
+        }),
+      );
+    }
+    return Response.json({ rows: [row({ notes: 'OLD-VALUE' })] });
+  });
+  const stream = new FakeJobEvents();
+  draft.jobEventSource = () => stream.source;
+  draft.stageText(row({ notes: 'OLD-VALUE' }), 'notes', 'FAILED-WRITE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'FAILED-WRITE', 'OLD-VALUE')],
+    'UPD-006',
+  );
+  await flush();
+  await flush();
+  expect(draft.acceptedFor('d1', 'notes')).not.toBeNull();
+  const before = jobReads;
+
+  // The worker publishes no device row for a failed write. The job event is the evidence.
+  status = 'failed';
+  stream.emit('job-changed', {
+    type: 'job-changed',
+    jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    displayId: 'UPD-006',
+    revision: 2,
+    requestedBy: principal,
+  });
+  await flush();
+  await flush();
+  expect(jobReads).toBeGreaterThan(before);
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.valueFor('d1', 'notes', 'OLD-VALUE')).toBe('OLD-VALUE');
+});
+
+it('applies the authoritative row before the accepted mark clears (B4)', async () => {
+  const done = jobOf('UPD-006', 'completed', {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+  });
+  const { draft } = configureWith((path) =>
+    path === '/api/jobs/UPD-006'
+      ? Response.json(done)
+      : Response.json({ rows: [row({ notes: 'WRITTEN-BEFORE-RECEIPT' })] }),
+  );
+  const applied: DeviceRow[][] = [];
+  draft.applyRows = (rows) => applied.push([...rows]);
+  draft.stageText(
+    row({ notes: 'OLD-VALUE' }),
+    'notes',
+    'WRITTEN-BEFORE-RECEIPT',
+  );
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'WRITTEN-BEFORE-RECEIPT', 'OLD-VALUE')],
+    'UPD-006',
+  );
+  await draft.reconcileAccepted();
+  await flush();
+  expect(applied).toEqual([[row({ notes: 'WRITTEN-BEFORE-RECEIPT' })]]);
+  expect(draft.accepted()).toEqual([]);
+});
+
+it('applies the Google value of an unchanged answer to the grid (B4)', () => {
+  const draft = configure();
+  const applied: DeviceGridObservedValue[] = [];
+  draft.applyValues = (values) => applied.push(...values);
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'ALREADY-WRITTEN');
+  const submitted = draft.edits();
+  draft.applyPreview(
+    [target('d1', 'notes', 'unchanged', 'ALREADY-WRITTEN', 'ALREADY-WRITTEN')],
+    submitted,
+  );
+  expect(applied).toEqual([
+    { deviceId: 'd1', field: 'notes', value: 'ALREADY-WRITTEN' },
+  ]);
+  expect(draft.entries()).toEqual([]);
+});
+
+it('keeps a later text change through an unchanged answer while its job runs (B7)', () => {
+  const draft = configure();
+  const device = row({ notes: 'HS-0001' });
+  draft.stageText(device, 'notes', 'FIRST-JOB-WILL-WRITE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'FIRST-JOB-WILL-WRITE', 'HS-0001')],
+    'UPD-006',
+  );
+  draft.stageText(device, 'notes', 'HS-0001');
+  const submitted = draft.edits();
+  draft.applyPreview(
+    [target('d1', 'notes', 'unchanged', 'HS-0001', 'HS-0001')],
+    submitted,
+  );
+  expect(draft.entryFor('d1', 'notes')).toMatchObject({
+    value: 'HS-0001',
+    baseline: 'FIRST-JOB-WILL-WRITE',
+    state: 'pending',
+  });
+  expect(draft.keptUnchanged()).toBe(1);
+  expect(draft.counts()).toEqual({ changes: 1, devices: 1 });
+});
+
+it('keeps a later Move through an unchanged answer while its job runs (B7)', () => {
+  const draft = configure();
+  const device = row({ orgUnitPath: '/Chrome Devices/Old' });
+  draft.stageMove(device, { id: 'ou-new', path: '/Chrome Devices/New' });
+  draft.accept(
+    draft.edits(),
+    [
+      target(
+        'd1',
+        'orgUnitPath',
+        'eligible',
+        '/Chrome Devices/New',
+        '/Chrome Devices/Old',
+      ),
+    ],
+    'UPD-006',
+  );
+  draft.stageMove(device, { id: 'ou-old', path: '/Chrome Devices/Old' });
+  const submitted = draft.edits();
+  draft.applyPreview(
+    [
+      target(
+        'd1',
+        'orgUnitPath',
+        'unchanged',
+        '/Chrome Devices/Old',
+        '/Chrome Devices/Old',
+      ),
+    ],
+    submitted,
+  );
+  expect(draft.entryFor('d1', 'orgUnitPath')).toMatchObject({
+    mode: 'move',
+    value: '/Chrome Devices/Old',
+    baseline: '/Chrome Devices/New',
+  });
+  expect(draft.keptUnchanged()).toBe(1);
+});
+
+it('keeps a later live edit through an unchanged answer while its job runs (B7)', () => {
+  const draft = configure();
+  const device = row({ notes: 'HS-0001' });
+  draft.stageText(device, 'notes', 'FIRST-JOB-WILL-WRITE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'FIRST-JOB-WILL-WRITE', 'HS-0001')],
+    'UPD-006',
+  );
+  draft.beginLive({
+    deviceId: 'd1',
+    serialNumber: 'C0A1-0000',
+    field: 'notes',
+    baseline: draft.baselineForRow(device, 'notes'),
+    value: 'FIRST-JOB-WILL-WRITE',
+  });
+  draft.updateLive('HS-0001');
+  expect(draft.commitLive()).toBe(true);
+  const submitted = draft.edits();
+  draft.applyPreview(
+    [target('d1', 'notes', 'unchanged', 'HS-0001', 'HS-0001')],
+    submitted,
+  );
+  expect(draft.entryFor('d1', 'notes')).toMatchObject({
+    value: 'HS-0001',
+    baseline: 'FIRST-JOB-WILL-WRITE',
+  });
+  expect(draft.keptUnchanged()).toBe(1);
 });

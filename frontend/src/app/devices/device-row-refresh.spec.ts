@@ -69,3 +69,21 @@ it('forgets a grid that detached', () => {
   refresh.detach(second.api);
   expect(refresh.held()).toEqual([]);
 });
+
+it('patches named fields of held rows and reports the full record (B4)', () => {
+  const refresh = new DeviceRowRefresh();
+  const { nodes, group, api } = grid([rowFor('d1', true)]);
+  const seen: DeviceRow[][] = [];
+  refresh.onApply((rows) => seen.push([...rows]));
+  refresh.attach(api);
+  refresh.patch([
+    { deviceId: 'd1', values: { assetTag: 'WRITTEN-TAG' } },
+    { deviceId: 'd9', values: { assetTag: 'NOT-LOADED' } },
+  ]);
+  expect(nodes[0].updateData).toHaveBeenCalledWith({
+    ...rowFor('d1', true),
+    assetTag: 'WRITTEN-TAG',
+  });
+  expect(group.updateData).not.toHaveBeenCalled();
+  expect(seen).toEqual([[{ ...rowFor('d1', true), assetTag: 'WRITTEN-TAG' }]]);
+});
