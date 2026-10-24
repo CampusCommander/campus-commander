@@ -93,7 +93,7 @@
     "zod": "4.6.7"
   },
   "overrides": {
-    "multer": "2.4.0",
+    "multer": "2.5.0",
     "qs": "6.16.0",
     "axios": "$axios",
     "follow-redirects": "1.16.1",
