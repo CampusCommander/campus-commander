@@ -526,7 +526,7 @@ suite('Update device against the U6 API', () => {
       `Set the notes to ${notes} on 6 devices.`,
     ]);
     await expect(
-      sheet.getByText('Annotated user remains unchanged.'),
+      sheet.getByText('Annotated user and organization unit remain unchanged.'),
     ).toBeVisible();
     await expect(
       sheet.getByText(/^Preview PV-\d+ · 6 devices · 12 field changes$/),
@@ -592,7 +592,9 @@ suite('Update device against the U6 API', () => {
       `Set the annotated user to ${user} on 6 devices.`,
     ]);
     await expect(
-      sheet.getByText('Annotated location and notes remain unchanged.'),
+      sheet.getByText(
+        'Annotated location, notes, and organization unit remain unchanged.',
+      ),
     ).toBeVisible();
     const secondJob = await createJob(page, sheet);
     expect((await waitForJob(page, secondJob)).succeeded).toBe(6);

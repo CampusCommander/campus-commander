@@ -27,7 +27,9 @@ import { DevicesService } from './devices.service';
 
 const previewIdSchema = z.uuid();
 const targetsQuerySchema = z.strictObject({
-  disposition: z.enum(['eligible', 'unchanged', 'excluded']).optional(),
+  disposition: z
+    .enum(['eligible', 'unchanged', 'excluded', 'conflict'])
+    .optional(),
   // The cursor names the previous target: its device ordinal and its field position.
   cursor: z
     .string()

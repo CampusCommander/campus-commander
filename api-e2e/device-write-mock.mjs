@@ -283,16 +283,16 @@ export async function qualifyDeviceWritesOnMock({
           principal.permission_version,
           connection.generation,
           action,
-          // The first build's update action carries the second action version.
-          update ? 2 : 1,
+          // An update preview carries the third action version (addendum section 2).
+          update ? 3 : 1,
           deprovisionReason,
           devices.length,
           update ? devices.length * (fields?.length ?? 1) : 0,
         ],
       );
-      // The frozen changes of the preview. Only an update carries them.
-      // An edit preview holds no selection change row, and cc.device_update_changes keeps the four
-      // selection fields until IB4 stores the edit rows. An Asset tag job seeds its field rows alone.
+      // The frozen changes of the preview. Only a selection preview carries them. An Asset tag row
+      // never enters cc.device_update_changes, which keeps the four selection fields; the job's
+      // operation field rows carry every request and baseline (addendum section 2).
       if (update)
         for (const [field, fieldValue] of fields ?? [
           ['annotatedLocation', mode === 'clear' ? null : value],

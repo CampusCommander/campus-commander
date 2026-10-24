@@ -139,6 +139,12 @@
           <dt>Google reason</dt>
           <dd><code>{{ failure.googleReason ?? 'Not reported' }}</code></dd>
         </div>
+        @if (failure.observedValue !== null) {
+        <div>
+          <dt>Observed value</dt>
+          <dd>{{ failure.observedValue }}</dd>
+        </div>
+        }
         <div>
           <dt>Updated</dt>
           <dd>
@@ -222,7 +228,13 @@
               </td>
               <td>
                 @for (part of pathParts(requestedText(operation)); track $index)
-                {<span>{{ part }}</span>@if (!$last) {<wbr />}}
+                {<span>{{ part }}</span>@if (!$last) {<wbr />}} @if
+                (observedText(operation); as observed) {
+                <span class="observed-value"
+                  ><span class="observed-label">Observed:</span> {{ observed
+                  }}</span
+                >
+                }
               </td>
               <td class="outcome-cell">
                 @if (isReconciling(operation)) {

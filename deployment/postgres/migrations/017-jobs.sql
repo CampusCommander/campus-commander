@@ -86,6 +86,10 @@ CREATE TABLE cc.device_update_previews (
   eligible integer NOT NULL CHECK(eligible>=0),
   unchanged integer NOT NULL CHECK(unchanged>=0),
   excluded integer NOT NULL CHECK(excluded>=0),
+  -- The devices whose current value differs from their baseline and their request (section 2).
+  -- A selection preview answers zero, because each of its rows stores its observation as its
+  -- baseline. Only a command or a status preview leaves the column at zero without field rows.
+  conflicts integer NOT NULL DEFAULT 0 CHECK(conflicts>=0),
   -- The number of eligible device-field rows. A command or status preview holds zero.
   field_changes integer NOT NULL DEFAULT 0 CHECK(field_changes>=0),
   oldest_observed_at timestamptz,
@@ -93,7 +97,7 @@ CREATE TABLE cc.device_update_previews (
   prepared_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL,
   job_id uuid UNIQUE REFERENCES cc.jobs(job_id),
-  CHECK(selected=eligible+unchanged+excluded),
+  CHECK(selected=eligible+unchanged+excluded+conflicts),
   -- Only a Deprovision preview carries a reason, and it always carries one (D12).
   CHECK((action='deprovision')=(deprovision_reason IS NOT NULL))
 );
@@ -125,7 +129,7 @@ CREATE TABLE cc.device_update_preview_targets (
   org_unit_path text NOT NULL,
   observed_value text,
   observed_at timestamptz,
-  disposition text NOT NULL CHECK(disposition IN ('eligible','unchanged','excluded')),
+  disposition text NOT NULL CHECK(disposition IN ('eligible','unchanged','excluded','conflict')),
   exclusion_reason text,
   PRIMARY KEY(preview_id,ordinal),
   UNIQUE(preview_id,device_id),
@@ -133,16 +137,27 @@ CREATE TABLE cc.device_update_preview_targets (
 );
 
 -- One field row of one frozen target (section 2). A device is eligible when one of its rows is
--- eligible, and unchanged when every row is unchanged. Every row of an excluded device is excluded.
+-- eligible, conflict when one of its rows is a conflict, and unchanged when every row is unchanged.
+-- Every row of an excluded device is excluded. Each row stores the request that confirmation writes
+-- and the baseline that the edit began from. A text request keeps the length of its change, and an
+-- Asset tag request holds 1 to 256 code points.
 CREATE TABLE cc.device_update_target_fields (
   preview_id uuid NOT NULL,
   ordinal integer NOT NULL CHECK(ordinal>=0),
-  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedUser','notes','orgUnitPath')),
+  field text NOT NULL CHECK(field IN ('annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath')),
+  requested_value text CHECK(requested_value IS NULL OR length(requested_value)<=4096),
+  baseline_value text CHECK(baseline_value IS NULL OR length(baseline_value)<=4096),
   observed_value text CHECK(observed_value IS NULL OR length(observed_value)<=4096),
-  disposition text NOT NULL CHECK(disposition IN ('eligible','unchanged','excluded')),
+  disposition text NOT NULL CHECK(disposition IN ('eligible','unchanged','excluded','conflict')),
   PRIMARY KEY(preview_id,ordinal,field),
   FOREIGN KEY(preview_id,ordinal)
-    REFERENCES cc.device_update_preview_targets(preview_id,ordinal) ON DELETE CASCADE
+    REFERENCES cc.device_update_preview_targets(preview_id,ordinal) ON DELETE CASCADE,
+  CHECK(field<>'annotatedLocation' OR requested_value IS NULL OR length(requested_value)<=200),
+  CHECK(field<>'annotatedUser' OR requested_value IS NULL OR length(requested_value)<=100),
+  CHECK(field<>'notes' OR requested_value IS NULL OR length(requested_value)<=500),
+  CHECK(field<>'annotatedAssetId' OR
+    (requested_value IS NOT NULL AND length(requested_value) BETWEEN 1 AND 256)),
+  CHECK(field<>'orgUnitPath' OR (requested_value IS NOT NULL AND left(requested_value,1)='/'))
 );
 
 -- One write job, with its dispatch state, its retry registry, and its evidence files.
@@ -2203,8 +2218,10 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 $$;
 
 -- One prepared preview and its frozen targets, in one transaction. The caller resolves the stored
--- selection and computes the changes, the dispositions, and the digest. This function freezes that
--- result. An annotated-location update carries its changes. A command or status preview carries none.
+-- selection or the edit list and computes the requests, the baselines, the dispositions, and the
+-- digest. This function freezes that result. An annotated-location update carries a change list for
+-- a selection preview and a null one for an edit list; every field row stores its own request and
+-- baseline either way. A command or status preview carries no change list and no field rows.
 -- A Deprovision preview carries its one reason, and no other action carries one (D12).
 CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p_customer text,
   p_generation integer,p_action text,p_changes jsonb,p_digest text,p_targets jsonb,p_expires_minutes integer,
@@ -2212,8 +2229,8 @@ CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer; eligible integer;
-  unchanged integer; excluded integer; field_changes integer; oldest timestamptz; bad integer;
-  number bigint;
+  unchanged integer; excluded integer; conflicts integer; field_changes integer; oldest timestamptz;
+  bad integer; number bigint;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_generation IS NULL OR
@@ -2232,36 +2249,42 @@ BEGIN
     (p_action='deprovision')<>(p_reason IS NOT NULL) THEN
     RAISE EXCEPTION 'The preview reason is invalid.' USING ERRCODE='22023';
   END IF;
+  -- A JSON null and an absent change list both mark an edit list (addendum section 2).
+  IF p_changes='null'::jsonb THEN p_changes:=NULL; END IF;
   IF p_action='annotated-location' THEN
-    -- One to four changes, each field once, in the field-mode pairs of section 1.
-    IF p_changes IS NULL OR jsonb_typeof(p_changes)<>'array' OR
-      jsonb_array_length(p_changes) NOT BETWEEN 1 AND 4 THEN
-      RAISE EXCEPTION 'The preview changes are invalid.' USING ERRCODE='22023';
+    -- A change list is a selection preview: one to four changes, each field once, in the
+    -- field-mode pairs of section 1. A null change list is an edit list: each target carries its
+    -- own requests and baselines, so the preview stores no change row.
+    IF p_changes IS NOT NULL THEN
+      IF jsonb_typeof(p_changes)<>'array' OR
+        jsonb_array_length(p_changes) NOT BETWEEN 1 AND 4 THEN
+        RAISE EXCEPTION 'The preview changes are invalid.' USING ERRCODE='22023';
+      END IF;
+      SELECT count(*) INTO bad FROM jsonb_array_elements(p_changes) c
+        WHERE jsonb_typeof(c) IS DISTINCT FROM 'object' OR
+          COALESCE(c->>'field','') NOT IN ('annotatedLocation','annotatedUser','notes','orgUnitPath') OR
+          COALESCE(c->>'mode','') NOT IN ('replace','clear','move') OR
+          (c->'value' IS NOT NULL AND c->'value'<>'null'::jsonb AND
+            jsonb_typeof(c->'value')<>'string') OR
+          char_length(c->>'value')>4096 OR
+          (c->>'field'='orgUnitPath')<>(c->>'mode'='move') OR
+          (c->>'mode'='clear')<>(c->'value' IS NULL OR c->'value'='null'::jsonb) OR
+          (c->>'field'='annotatedLocation' AND c->>'mode'<>'clear' AND
+            (char_length(c->>'value') NOT BETWEEN 1 AND 200 OR btrim(c->>'value')='')) OR
+          (c->>'field'='annotatedUser' AND c->>'mode'<>'clear' AND
+            (char_length(c->>'value') NOT BETWEEN 1 AND 100 OR btrim(c->>'value')='')) OR
+          (c->>'field'='notes' AND c->>'mode'<>'clear' AND
+            (char_length(c->>'value') NOT BETWEEN 1 AND 500 OR btrim(c->>'value')='')) OR
+          (c->>'field'='orgUnitPath' AND left(c->>'value',1)<>'/');
+      IF bad>0 THEN
+        RAISE EXCEPTION 'The preview changes are invalid.' USING ERRCODE='22023';
+      END IF;
+      IF (SELECT count(DISTINCT c->>'field') FROM jsonb_array_elements(p_changes) c)
+        <>jsonb_array_length(p_changes) THEN
+        RAISE EXCEPTION 'The preview changes repeat a field.' USING ERRCODE='22023';
+      END IF;
     END IF;
-    SELECT count(*) INTO bad FROM jsonb_array_elements(p_changes) c
-      WHERE jsonb_typeof(c) IS DISTINCT FROM 'object' OR
-        COALESCE(c->>'field','') NOT IN ('annotatedLocation','annotatedUser','notes','orgUnitPath') OR
-        COALESCE(c->>'mode','') NOT IN ('replace','clear','move') OR
-        (c->'value' IS NOT NULL AND c->'value'<>'null'::jsonb AND
-          jsonb_typeof(c->'value')<>'string') OR
-        char_length(c->>'value')>4096 OR
-        (c->>'field'='orgUnitPath')<>(c->>'mode'='move') OR
-        (c->>'mode'='clear')<>(c->'value' IS NULL OR c->'value'='null'::jsonb) OR
-        (c->>'field'='annotatedLocation' AND c->>'mode'<>'clear' AND
-          (char_length(c->>'value') NOT BETWEEN 1 AND 200 OR btrim(c->>'value')='')) OR
-        (c->>'field'='annotatedUser' AND c->>'mode'<>'clear' AND
-          (char_length(c->>'value') NOT BETWEEN 1 AND 100 OR btrim(c->>'value')='')) OR
-        (c->>'field'='notes' AND c->>'mode'<>'clear' AND
-          (char_length(c->>'value') NOT BETWEEN 1 AND 500 OR btrim(c->>'value')='')) OR
-        (c->>'field'='orgUnitPath' AND left(c->>'value',1)<>'/');
-    IF bad>0 THEN
-      RAISE EXCEPTION 'The preview changes are invalid.' USING ERRCODE='22023';
-    END IF;
-    IF (SELECT count(DISTINCT c->>'field') FROM jsonb_array_elements(p_changes) c)
-      <>jsonb_array_length(p_changes) THEN
-      RAISE EXCEPTION 'The preview changes repeat a field.' USING ERRCODE='22023';
-    END IF;
-  ELSIF p_changes IS NOT NULL AND p_changes<>'null'::jsonb AND
+  ELSIF p_changes IS NOT NULL AND
     (jsonb_typeof(p_changes)<>'array' OR jsonb_array_length(p_changes)>0) THEN
     RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
   END IF;
@@ -2283,7 +2306,7 @@ BEGIN
         (jsonb_typeof(e->'observed_at')<>'string' OR
         NOT pg_input_is_valid(e->>'observed_at','timestamptz'))) OR
       jsonb_typeof(e->'disposition') IS DISTINCT FROM 'string' OR
-      e->>'disposition' NOT IN ('eligible','unchanged','excluded') OR
+      e->>'disposition' NOT IN ('eligible','unchanged','excluded','conflict') OR
       (e->'exclusion_reason' IS NOT NULL AND e->'exclusion_reason'<>'null'::jsonb AND
         jsonb_typeof(e->'exclusion_reason')<>'string') OR
       char_length(e->>'exclusion_reason')>64 OR
@@ -2292,33 +2315,81 @@ BEGIN
   IF bad>0 THEN
     RAISE EXCEPTION 'The preview targets are invalid.' USING ERRCODE='22023';
   END IF;
-  -- An update freezes one field row per change on every target. A command or status preview holds
-  -- none, and its device row keeps the value that statusExclusion read.
+  -- An update freezes one field row per change on every target of a selection preview, and one to
+  -- five rows on every target of an edit list. A command or status preview holds none, and its
+  -- device row keeps the value that statusExclusion read.
   IF p_action='annotated-location' THEN
-    SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
-      WHERE jsonb_typeof(e->'fields') IS DISTINCT FROM 'array' OR
-        jsonb_array_length(e->'fields')<>jsonb_array_length(p_changes);
-    IF bad>0 THEN
-      RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
+    IF p_changes IS NOT NULL THEN
+      -- A selection target holds exactly one row per change.
+      SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
+        WHERE jsonb_typeof(e->'fields') IS DISTINCT FROM 'array' OR
+          jsonb_array_length(e->'fields')<>jsonb_array_length(p_changes);
+      IF bad>0 THEN
+        RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
+      END IF;
+      -- Every row names a change, and each request equals its change. A selection row stores its
+      -- observed value as its baseline, so the conflict rule never fires for it (section 2).
+      SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e,
+          jsonb_array_elements(e->'fields') f
+        WHERE jsonb_typeof(f) IS DISTINCT FROM 'object' OR
+          COALESCE(f->>'field','') NOT IN
+            (SELECT c->>'field' FROM jsonb_array_elements(p_changes) c) OR
+          (f->>'requested_value') IS DISTINCT FROM
+            (SELECT c->>'value' FROM jsonb_array_elements(p_changes) c
+              WHERE c->>'field'=f->>'field') OR
+          (f->>'baseline_value') IS DISTINCT FROM (f->>'observed_value');
+      IF bad>0 THEN
+        RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
+      END IF;
+    ELSE
+      -- An edit-list target holds one to five rows, and each field occurs once.
+      SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
+        WHERE jsonb_typeof(e->'fields') IS DISTINCT FROM 'array' OR
+          jsonb_array_length(e->'fields') NOT BETWEEN 1 AND 5 OR
+          (SELECT count(DISTINCT f->>'field') FROM jsonb_array_elements(e->'fields') f)
+            <>jsonb_array_length(e->'fields');
+      IF bad>0 THEN
+        RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
+      END IF;
     END IF;
+    -- Every row of either variant names a known field, a known disposition, and a request inside
+    -- the bound of its field. An Asset tag request is not null and holds 1 to 256 code points.
     SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e,
         jsonb_array_elements(e->'fields') f
       WHERE jsonb_typeof(f) IS DISTINCT FROM 'object' OR
         COALESCE(f->>'field','') NOT IN
-          (SELECT c->>'field' FROM jsonb_array_elements(p_changes) c) OR
-        COALESCE(f->>'disposition','') NOT IN ('eligible','unchanged','excluded') OR
+          ('annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath') OR
+        COALESCE(f->>'disposition','') NOT IN ('eligible','unchanged','excluded','conflict') OR
+        (f->'requested_value' IS NOT NULL AND f->'requested_value'<>'null'::jsonb AND
+          jsonb_typeof(f->'requested_value')<>'string') OR
+        char_length(f->>'requested_value')>4096 OR
+        (f->'baseline_value' IS NOT NULL AND f->'baseline_value'<>'null'::jsonb AND
+          jsonb_typeof(f->'baseline_value')<>'string') OR
+        char_length(f->>'baseline_value')>4096 OR
         (f->'observed_value' IS NOT NULL AND f->'observed_value'<>'null'::jsonb AND
           jsonb_typeof(f->'observed_value')<>'string') OR
-        char_length(f->>'observed_value')>4096;
+        char_length(f->>'observed_value')>4096 OR
+        (f->>'field'='annotatedLocation' AND char_length(f->>'requested_value')>200) OR
+        (f->>'field'='annotatedUser' AND char_length(f->>'requested_value')>100) OR
+        (f->>'field'='notes' AND char_length(f->>'requested_value')>500) OR
+        (f->>'field'='annotatedAssetId' AND
+          (f->'requested_value' IS NULL OR f->'requested_value'='null'::jsonb OR
+            char_length(f->>'requested_value') NOT BETWEEN 1 AND 256)) OR
+        (f->>'field'='orgUnitPath' AND
+          (f->'requested_value' IS NULL OR f->'requested_value'='null'::jsonb OR
+            left(f->>'requested_value',1)<>'/'));
     IF bad>0 THEN
       RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
     END IF;
-    -- The device disposition follows its field rows: excluded when every row is excluded, eligible
-    -- when one row is, and unchanged otherwise (section 2).
+    -- The device disposition follows its field rows: excluded when every row is excluded,
+    -- conflict when one row is a conflict, eligible when one row is, and unchanged otherwise
+    -- (addendum section 1).
     SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
       WHERE e->>'disposition' IS DISTINCT FROM (
         CASE WHEN NOT EXISTS(SELECT 1 FROM jsonb_array_elements(e->'fields') f
             WHERE f->>'disposition'<>'excluded') THEN 'excluded'
+          WHEN EXISTS(SELECT 1 FROM jsonb_array_elements(e->'fields') f
+            WHERE f->>'disposition'='conflict') THEN 'conflict'
           WHEN EXISTS(SELECT 1 FROM jsonb_array_elements(e->'fields') f
             WHERE f->>'disposition'='eligible') THEN 'eligible'
           ELSE 'unchanged' END);
@@ -2346,22 +2417,24 @@ BEGIN
   SELECT count(*),count(*) FILTER (WHERE e->>'disposition'='eligible'),
       count(*) FILTER (WHERE e->>'disposition'='unchanged'),
       count(*) FILTER (WHERE e->>'disposition'='excluded'),
+      count(*) FILTER (WHERE e->>'disposition'='conflict'),
       min(CASE WHEN e->>'disposition'='eligible' AND e->>'observed_at' IS NOT NULL
         THEN (e->>'observed_at')::timestamptz END)
-  INTO selected,eligible,unchanged,excluded,oldest FROM jsonb_array_elements(p_targets) e;
+  INTO selected,eligible,unchanged,excluded,conflicts,oldest FROM jsonb_array_elements(p_targets) e;
   SELECT count(*) INTO field_changes FROM jsonb_array_elements(p_targets) e,
       jsonb_array_elements(e->'fields') f WHERE f->>'disposition'='eligible';
   now_at:=clock_timestamp();
   number:=nextval('cc.preview_number_pv');
   INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-    generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,field_changes,
-    oldest_observed_at,manifest_digest,prepared_at,expires_at)
+    generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,conflicts,
+    field_changes,oldest_observed_at,manifest_digest,prepared_at,expires_at)
   VALUES(gen_random_uuid(),cc.job_display_id('PV',number),p_customer,p_actor,p_version,p_generation,
-    p_action,CASE WHEN p_action='annotated-location' THEN 2 ELSE 1 END,
-    p_reason,selected,eligible,unchanged,excluded,field_changes,oldest,p_digest,now_at,
+    p_action,CASE WHEN p_action='annotated-location' THEN 3 ELSE 1 END,
+    p_reason,selected,eligible,unchanged,excluded,conflicts,field_changes,oldest,p_digest,now_at,
     now_at+make_interval(mins=>p_expires_minutes))
   RETURNING * INTO preview;
-  IF p_action='annotated-location' THEN
+  -- Only a selection preview stores change rows. An edit list keeps every request on its own row.
+  IF p_action='annotated-location' AND p_changes IS NOT NULL THEN
     INSERT INTO cc.device_update_changes(preview_id,field,mode,value)
     SELECT preview.preview_id,c.field,c.mode,c.value
     FROM jsonb_to_recordset(p_changes) AS c(field text,mode text,value text);
@@ -2374,10 +2447,13 @@ BEGIN
     org_unit_path text,observed_value text,observed_at timestamptz,disposition text,exclusion_reason text)
   ORDER BY t.ordinal;
   IF p_action='annotated-location' THEN
-    INSERT INTO cc.device_update_target_fields(preview_id,ordinal,field,observed_value,disposition)
-    SELECT preview.preview_id,t.ordinal,f.field,f.observed_value,f.disposition
+    INSERT INTO cc.device_update_target_fields(preview_id,ordinal,field,requested_value,baseline_value,
+      observed_value,disposition)
+    SELECT preview.preview_id,t.ordinal,f.field,f.requested_value,f.baseline_value,f.observed_value,
+      f.disposition
     FROM jsonb_to_recordset(p_targets) AS t(ordinal integer,fields jsonb)
-    CROSS JOIN LATERAL jsonb_to_recordset(t.fields) AS f(field text,observed_value text,disposition text)
+    CROSS JOIN LATERAL jsonb_to_recordset(t.fields) AS f(field text,requested_value text,
+      baseline_value text,observed_value text,disposition text)
     ORDER BY t.ordinal;
   END IF;
   RETURN jsonb_build_object('outcome','created','preview',to_jsonb(preview));
@@ -2407,10 +2483,15 @@ BEGIN
     RETURN jsonb_build_object('outcome','permission-changed');
   END IF;
   -- The current action version of this slice. A preview prepared under other semantics never
-  -- confirms (section 2.4). Annotated-location runs version 2; a command and a status change stay
+  -- confirms (section 2.4). Annotated-location runs version 3; a command and a status change stay
   -- at version 1.
-  IF (preview.action_version<>CASE WHEN preview.action='annotated-location' THEN 2 ELSE 1 END) THEN
+  IF (preview.action_version<>CASE WHEN preview.action='annotated-location' THEN 3 ELSE 1 END) THEN
     RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  -- A preview that froze a conflict device never confirms, so its manifest is never stored
+  -- (addendum section 2).
+  IF preview.conflicts>0 THEN
+    RETURN jsonb_build_object('outcome','preview-conflict');
   END IF;
   IF preview.job_id IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
@@ -2418,7 +2499,14 @@ BEGIN
   IF preview.expires_at<=clock_timestamp() THEN
     RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
   END IF;
-  SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.ordinal),'[]'::jsonb) INTO targets
+  SELECT COALESCE(jsonb_agg(jsonb_set(to_jsonb(t),'{fields}',COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('field',f.field,'requestedValue',f.requested_value,
+          'observedValue',f.observed_value,'baselineValue',f.baseline_value,
+          'disposition',f.disposition)
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes',
+          'orgUnitPath']::text[],f.field))
+      FROM cc.device_update_target_fields f WHERE f.preview_id=t.preview_id AND f.ordinal=t.ordinal),
+      '[]'::jsonb)) ORDER BY t.ordinal),'[]'::jsonb) INTO targets
   FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview;
   RETURN jsonb_build_object('outcome','manifest','manifest',jsonb_build_object('preview',
     jsonb_build_object('previewId',preview.preview_id,'displayId',preview.display_id,
@@ -2432,7 +2520,8 @@ BEGIN
           ORDER BY array_position(ARRAY['annotatedLocation','annotatedUser','notes','orgUnitPath']::text[],c.field)),
           '[]'::jsonb) FROM cc.device_update_changes c WHERE c.preview_id=p_preview),
       'selected',preview.selected,'eligible',preview.eligible,'unchanged',preview.unchanged,
-      'excluded',preview.excluded,'fieldChanges',preview.field_changes,
+      'excluded',preview.excluded,'conflicts',preview.conflicts,
+      'fieldChanges',preview.field_changes,
       'oldestObservedAt',preview.oldest_observed_at,
       'preparedAt',preview.prepared_at,'expiresAt',preview.expires_at,
       'manifestDigest',preview.manifest_digest),
@@ -2475,9 +2564,14 @@ BEGIN
     RETURN jsonb_build_object('outcome','permission-changed');
   END IF;
   -- R1-F1 (round 3): the preview's frozen action version must still be current. Annotated-location
-  -- runs version 2; a command and a status change stay at version 1.
-  IF (preview.action_version<>CASE WHEN preview.action='annotated-location' THEN 2 ELSE 1 END) THEN
+  -- runs version 3; a command and a status change stay at version 1.
+  IF (preview.action_version<>CASE WHEN preview.action='annotated-location' THEN 3 ELSE 1 END) THEN
     RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  -- A preview that froze a conflict device never confirms, and it creates no job (addendum
+  -- section 2).
+  IF preview.conflicts>0 THEN
+    RETURN jsonb_build_object('outcome','preview-conflict');
   END IF;
   IF preview.job_id IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','existing','receipt',cc.device_update_receipt(preview.job_id));
@@ -2568,13 +2662,13 @@ BEGIN
   FROM cc.device_update_preview_targets t
   WHERE t.preview_id=p_preview AND t.disposition='eligible' ORDER BY t.ordinal;
   -- An update writes one operation field row per eligible device-field row (addendum sections 1
-  -- and 2). The preview froze those rows, so confirmation copies each baseline and request.
+  -- and 2). The preview froze each row's own request and baseline, so confirmation copies them and
+  -- joins no change list.
   INSERT INTO cc.device_update_operation_fields(job_id,operation_number,field,baseline_value,requested_value)
-  SELECT o.job_id,o.operation_number,f.field,f.observed_value,c.value
+  SELECT o.job_id,o.operation_number,f.field,f.baseline_value,f.requested_value
   FROM cc.device_update_operations o
   JOIN cc.device_update_preview_targets t ON t.preview_id=p_preview AND t.device_id=o.device_id
   JOIN cc.device_update_target_fields f ON f.preview_id=t.preview_id AND f.ordinal=t.ordinal
-  JOIN cc.device_update_changes c ON c.preview_id=p_preview AND c.field=f.field
   WHERE o.job_id=job.job_id AND preview.action='annotated-location'
     AND f.disposition='eligible';
   UPDATE cc.device_update_previews SET job_id=job.job_id WHERE preview_id=p_preview;

@@ -72,8 +72,13 @@ export interface UpdatesStorage {
 
 export interface PreviewField {
   field: DeviceUpdateField;
+  /** The value that confirmation writes. A Clear row holds null. */
+  requestedValue: string | null;
+  /** The value that the preview observed on the device. */
   observedValue: string | null;
-  disposition: 'eligible' | 'unchanged' | 'excluded';
+  /** The value that the row held when the edit began. */
+  baselineValue: string | null;
+  disposition: 'eligible' | 'unchanged' | 'excluded' | 'conflict';
 }
 
 export interface PreviewTarget {
@@ -82,7 +87,7 @@ export interface PreviewTarget {
   serialNumber: string;
   orgUnitPath: string;
   observedAt: string | null;
-  disposition: 'eligible' | 'unchanged' | 'excluded';
+  disposition: 'eligible' | 'unchanged' | 'excluded' | 'conflict';
   exclusionReason: string | null;
   /** One row per change, in contract order. */
   fields: PreviewField[];
@@ -125,7 +130,9 @@ function sameValue(
 
 /**
  * Freeze one selected device for every change. Removed devices and non-plain IDs stay as
- * exclusions, and every field row of an excluded device is excluded.
+ * exclusions, and every field row of an excluded device is excluded. A selection row stores its
+ * request, its observation, and its observation as its baseline, so the conflict rule of the edit
+ * list never fires for it (addendum section 2).
  */
 export function previewTargets(
   rows: readonly Record<string, unknown>[],
@@ -142,7 +149,9 @@ export function previewTargets(
       const observed = observedValue(row, change.field);
       return {
         field: change.field,
+        requestedValue: changeValue(change),
         observedValue: observed,
+        baselineValue: observed,
         disposition: exclusionReason
           ? ('excluded' as const)
           : sameValue(change, observed)
@@ -150,6 +159,8 @@ export function previewTargets(
             : ('eligible' as const),
       };
     });
+    // A selection row never answers conflict: its baseline equals its observation, so the conflict
+    // rule of the edit list cannot fire (addendum section 2).
     const disposition = exclusionReason
       ? ('excluded' as const)
       : fields.some((field) => field.disposition === 'eligible')
@@ -168,36 +179,49 @@ export function previewTargets(
   });
 }
 
+/** Sort targets by device ID. The digest sorts its device list the same way. */
+function byDeviceId(left: PreviewTarget, right: PreviewTarget): number {
+  return left.deviceId < right.deviceId
+    ? -1
+    : left.deviceId > right.deviceId
+      ? 1
+      : 0;
+}
+
 /**
- * SHA-256 over the action version, the ordered changes, and the ordered eligible device IDs with
- * the baselines of their eligible fields (section 3).
+ * SHA-256 over the action version and, for each eligible device, its eligible rows as
+ * `[field, requestedValue, observedValue, baselineValue]` in contract order (addendum section 2).
+ * The selection builder and the edit builder both call this one function, and the digest drops the
+ * change list because each row carries its own request.
  */
-export function manifestDigest(
-  changes: readonly DeviceUpdateChange[],
-  targets: readonly PreviewTarget[],
-): string {
+export function manifestDigest(targets: readonly PreviewTarget[]): string {
   const eligible = targets
     .filter((target) => target.disposition === 'eligible')
-    .sort((left, right) => left.deviceId.localeCompare(right.deviceId));
+    .sort(byDeviceId);
   const canonical = JSON.stringify({
-    actionVersion: 2,
-    changes: deviceUpdateChangesInOrder(changes).map((change) => [
-      change.field,
-      change.mode,
-      changeValue(change),
-    ]),
+    actionVersion: 3,
     targets: eligible.map((target) => [
       target.deviceId,
       target.fields
         .filter((field) => field.disposition === 'eligible')
-        .map((field) => [field.field, field.observedValue]),
+        .sort(
+          (left, right) =>
+            DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
+            DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field),
+        )
+        .map((field) => [
+          field.field,
+          field.requestedValue,
+          field.observedValue,
+          field.baselineValue,
+        ]),
     ]),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
 
 /** The frozen targets, as the preview function freezes them. */
-function targetDocument(targets: readonly PreviewTarget[]) {
+export function targetDocument(targets: readonly PreviewTarget[]) {
   return targets.map((target) => ({
     ordinal: target.ordinal,
     device_id: target.deviceId,
@@ -208,7 +232,9 @@ function targetDocument(targets: readonly PreviewTarget[]) {
     exclusion_reason: target.exclusionReason,
     fields: target.fields.map((field) => ({
       field: field.field,
+      requested_value: field.requestedValue,
       observed_value: field.observedValue,
+      baseline_value: field.baselineValue,
       disposition: field.disposition,
     })),
   }));
@@ -244,8 +270,8 @@ function summary(
     eligible: row['eligible'],
     unchanged: row['unchanged'],
     excluded: row['excluded'],
-    // Until the per-row conflict of addendum section 2 lands, every preview answers zero.
-    conflicts: Number(row['conflicts'] ?? 0),
+    // The devices whose current value differs from their baseline and their request.
+    conflicts: row['conflicts'],
     oldestObservedAt,
     stale:
       Number(row['eligible']) > 0 &&
@@ -287,6 +313,9 @@ export function deviceWriteFunctionError(
     });
   if (outcome === 'nothing-to-update' || outcome === 'phrase-mismatch')
     throw new UnprocessableEntityException({ reason: outcome });
+  // A preview that froze a conflict device never confirms (addendum section 2).
+  if (outcome === 'preview-conflict')
+    throw new ConflictException({ reason: 'preview-conflict' });
   if (outcome === 'artifact-missing')
     throw new InternalServerErrorException(
       'The manifest artifact is unavailable.',
@@ -349,7 +378,7 @@ export class DeviceUpdates {
       });
     const changes = deviceUpdateChangesInOrder(input.changes);
     const targets = previewTargets(rows, changes);
-    const digest = manifestDigest(changes, targets);
+    const digest = manifestDigest(targets);
     const result = await this.call<Record<string, unknown>>(
       this.database.connection,
       `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
@@ -422,13 +451,11 @@ export class DeviceUpdates {
   ): Promise<{ targets: DeviceUpdateTarget[]; nextCursor: string | null }> {
     const row = await this.load(session, previewId);
     if (Date.parse(String(row['expires_at'])) <= Date.now()) this.expired(row);
-    const changes = await this.changes(previewId);
-    const byField = new Map(changes.map((change) => [change.field, change]));
     const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
     const after = parseIntCursor(cursor);
     const sql: SqlStatement = {
       text: `SELECT t.ordinal,t.device_id,t.serial_number,t.org_unit_path,f.field,
-        f.observed_value,f.disposition,t.exclusion_reason
+        f.requested_value,f.observed_value,f.baseline_value,f.disposition,t.exclusion_reason
         FROM cc.device_update_preview_targets t
         JOIN cc.device_update_target_fields f
           ON f.preview_id=t.preview_id AND f.ordinal=t.ordinal
@@ -449,15 +476,7 @@ export class DeviceUpdates {
     const page = rows.slice(0, pageSize);
     return {
       targets: page.map((target) =>
-        deviceUpdateTargetSchema.parse(
-          previewTargetRow(
-            target,
-            byField.get(target['field'] as DeviceUpdateField) ?? {
-              field: target['field'] as DeviceUpdateField,
-              mode: 'clear',
-            },
-          ),
-        ),
+        deviceUpdateTargetSchema.parse(previewTargetRow(target)),
       ),
       nextCursor:
         rows.length > pageSize

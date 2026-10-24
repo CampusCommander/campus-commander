@@ -157,6 +157,120 @@ const multiFieldJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
     ...overrides,
   });
 
+/** Three devices with their own fields: the edit-list shape of state 12, with no shared changes. */
+const editListOperations = (): JobOperation[] => [
+  operation({
+    operationId: 'UPD-008-1-annotatedAssetId',
+    deviceId: 'synthetic-device-1',
+    serialNumber: '01P0T1V',
+    field: 'annotatedAssetId',
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: 'CB415508',
+    observedValue: 'CB415508',
+    verifiedBy: 'write-response',
+  }),
+  operation({
+    operationId: 'UPD-008-1-orgUnitPath',
+    deviceId: 'synthetic-device-1',
+    serialNumber: '01P0T1V',
+    field: 'orgUnitPath',
+    operation: 'move',
+    baselineValue: '/Chrome Devices/Lowell Academy/One to One',
+    requestedValue:
+      '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
+    observedValue: '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
+    verifiedBy: 'write-response',
+  }),
+  operation({
+    operationId: 'UPD-008-2-annotatedAssetId',
+    deviceId: 'synthetic-device-2',
+    serialNumber: '04QVJBY',
+    field: 'annotatedAssetId',
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: 'CB415509',
+    outcome: 'failed',
+    outcomeReason: 'quota',
+    googleStatus: 429,
+    googleReason: 'Google quota stopped the update for 04QVJBY.',
+    observedValue: null,
+    verifiedBy: null,
+  }),
+  operation({
+    operationId: 'UPD-008-3-notes',
+    deviceId: 'synthetic-device-3',
+    serialNumber: '0727D2E',
+    field: 'notes',
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: 'Hinge repaired',
+    observedValue: 'Hinge repaired',
+    verifiedBy: 'write-response',
+  }),
+];
+
+/** The edit-list job with one read-back that holds a third value (review B1). */
+const divergentEditListOperations = (): JobOperation[] =>
+  editListOperations().map((row) =>
+    row.operationId === 'UPD-008-2-annotatedAssetId'
+      ? operation({
+          operationId: row.operationId,
+          deviceId: row.deviceId,
+          serialNumber: row.serialNumber,
+          field: 'annotatedAssetId',
+          operation: 'replace',
+          baselineValue: 'tag-before',
+          requestedValue: 'tag-requested',
+          observedValue: 'tag-observed',
+          outcome: 'failed',
+          outcomeReason: 'value-differs',
+          googleStatus: 200,
+          googleReason: null,
+          verifiedBy: 'read-back',
+          updatedAt: row.updatedAt,
+        })
+      : row,
+  );
+
+/** The edit-list job of state 12: four rows, one failed, and no frozen change list. */
+const editListJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'UPD-008',
+    status: 'completed-with-errors',
+    scope: { kind: 'devices', deviceCount: 3 },
+    previewDisplayId: 'PV-008',
+    changes: null,
+    progress: {
+      total: 3,
+      succeeded: 2,
+      failed: 1,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      pending: 0,
+    },
+    latestActivity: {
+      at: '2026-10-23T19:23:00.000Z',
+      failed: {
+        count: 1,
+        operations: [
+          {
+            operationId: 'UPD-008-2-annotatedAssetId',
+            deviceId: 'synthetic-device-2',
+            serialNumber: '04QVJBY',
+            outcomeReason: 'quota',
+            googleStatus: 429,
+            googleReason: 'Google quota stopped the update for 04QVJBY.',
+            updatedAt: '2026-10-23T19:23:00.000Z',
+          },
+        ],
+      },
+      unknown: { count: 0, operations: [] },
+    },
+    ...overrides,
+  });
+
 const commandOperation = (
   overrides: Partial<JobOperation> = {},
 ): JobOperation =>
@@ -552,6 +666,128 @@ it('renders one row per device and field with the before and requested values', 
   // Latest activity names the device once, though both field rows carry its sample.
   const activity = element.querySelector('.activity p')?.textContent ?? '';
   expect(activity.match(/02QJANY/g)).toHaveLength(1);
+});
+
+it('renders an edit-list job without shared changes and without a row total', () => {
+  const { element } = setup({
+    job: editListJob(),
+    operations: editListOperations(),
+  });
+  const rows = [...element.querySelectorAll('tbody tr')];
+  expect(rows).toHaveLength(4);
+  const cells = (index: number) =>
+    [...rows[index].querySelectorAll('td')].map(
+      (cell) => cell.textContent?.trim() ?? '',
+    );
+  // One row per device and field, each with its own field, baseline, and requested value.
+  expect(cells(0)[1]).toBe('Asset tag');
+  expect(cells(0)[2]).toBe('Not set');
+  expect(cells(0)[3]).toBe('CB415508');
+  expect(cells(1)[1]).toBe('Organization unit');
+  expect(cells(1)[2]).toBe('/Chrome Devices/Lowell Academy/One to One');
+  expect(cells(1)[3]).toBe(
+    '/Chrome Devices/Pine Valley Elementary School/Cart Devices',
+  );
+  expect(cells(2)[1]).toBe('Asset tag');
+  expect(cells(2)[3]).toBe('CB415509');
+  expect(cells(3)[1]).toBe('Notes');
+  expect(cells(3)[3]).toBe('Hinge repaired');
+  // One device holds two rows, so the header counts devices and the footer states no total.
+  const heading = element.querySelector('#job-identity-title')?.textContent;
+  expect(heading?.trim()).toBe('UPD-008 · 3 devices');
+  expect(element.querySelector('.footer-count')?.textContent?.trim()).toBe(
+    'Rows 1–4',
+  );
+  // A failed asset tag row names the built update sentence, not the stored Google reason.
+  expect(cells(2)[4]).toContain('Failed');
+  expect(cells(2)[4]).toContain('Google quota stopped the update for 04QVJBY.');
+});
+
+it('renders the observed value of a divergent edit-list row', () => {
+  // Review B1: baseline, requested, and observed values all differ, and each stays distinct.
+  const { element } = setup({
+    job: editListJob(),
+    operations: divergentEditListOperations(),
+  });
+  const rows = [...element.querySelectorAll('tbody tr')];
+  const cells = (index: number) =>
+    [...rows[index].querySelectorAll('td')].map(
+      (cell) => cell.textContent?.trim() ?? '',
+    );
+  expect(cells(2)[2]).toBe('tag-before');
+  expect(cells(2)[3]).toContain('tag-requested');
+  expect(cells(2)[3]).toContain('Observed: tag-observed');
+  // The row keeps the app failure sentence of the action, not the stored Google reason.
+  expect(cells(2)[4]).toContain('04QVJBY does not hold the requested value.');
+  // The edit-list footer still states the shown range alone.
+  expect(element.querySelector('.footer-count')?.textContent?.trim()).toBe(
+    'Rows 1–4',
+  );
+  // A row whose read-back matches its request adds no observed line.
+  expect(cells(0)[3]).toBe('CB415508');
+});
+
+it('shows the observed value when the observation repeats the Clear label', () => {
+  // Review B2: a Clear request renders "Clear value", which is also valid field content.
+  const clearJob = job({
+    displayId: 'UPD-009',
+    status: 'completed-with-errors',
+    scope: { kind: 'devices', deviceCount: 1 },
+    previewDisplayId: 'PV-009',
+    changes: null,
+    progress: {
+      total: 1,
+      succeeded: 0,
+      failed: 1,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      pending: 0,
+    },
+  });
+  const { element } = setup({
+    job: clearJob,
+    operations: [
+      operation({
+        operationId: 'UPD-009-1-notes',
+        serialNumber: '0727D2E',
+        field: 'notes',
+        operation: 'clear',
+        baselineValue: 'notes-before',
+        requestedValue: null,
+        observedValue: 'Clear value',
+        outcome: 'failed',
+        outcomeReason: 'value-differs',
+        googleStatus: 200,
+        googleReason: null,
+        verifiedBy: 'read-back',
+      }),
+    ],
+  });
+  const row = element.querySelector('tbody tr') as HTMLTableRowElement;
+  const cells = [...row.querySelectorAll('td')].map(
+    (cell) => cell.textContent?.trim() ?? '',
+  );
+  expect(cells[1]).toBe('Notes');
+  expect(cells[2]).toBe('notes-before');
+  expect(cells[3]).toContain('Clear value');
+  expect(cells[3]).toContain('Observed: Clear value');
+  expect(row.querySelectorAll('.observed-value')).toHaveLength(1);
+  // The row keeps the built update sentence of the action.
+  expect(cells[4]).toContain('0727D2E does not hold the requested value.');
+});
+
+it('shows the observed value in the failure evidence', async () => {
+  const { element, fixture } = setup({
+    job: editListJob(),
+    operations: divergentEditListOperations(),
+  });
+  button(element, 'Inspect failure')?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(text(element)).toContain('Failure details · 04QVJBY');
+  expect(text(element)).toContain('Observed value');
+  expect(text(element)).toContain('tag-observed');
 });
 
 it('offers no Reconcile for any field row without devices:write', () => {

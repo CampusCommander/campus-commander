@@ -37,6 +37,7 @@ import {
   operationLabel,
   operationNumber,
   operationsFooter,
+  observedText,
   outcomeNotes,
   pathParts,
   reasonLine,
@@ -102,6 +103,7 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly isCommandOperation = isCommandOperation;
   protected readonly beforeText = beforeText;
   protected readonly requestedText = requestedText;
+  protected readonly observedText = observedText;
   protected readonly pathParts = pathParts;
   protected readonly rowFailureText = rowFailureText;
   protected readonly outcomeNotes = (

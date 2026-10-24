@@ -5,6 +5,13 @@
   "sourceRoot": "frontend-e2e/src",
   "implicitDependencies": ["frontend", "api"],
   "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "options": {
+        "command": "node --import ./libs/application-contracts/test-register.mjs --test frontend-e2e/test/*.test.mjs"
+      }
+    },
     "client-review-update": {
       "executor": "nx:run-commands",
       "cache": false,
