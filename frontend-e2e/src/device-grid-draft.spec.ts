@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { DeviceRow } from '@campus/application-contracts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { orgUnitTree } from './device-update-u6-simulator';
+import { deniedOrgUnitTree, orgUnitTree } from './device-update-u6-simulator';
 
 /**
  * IF1 completion steps 1 and 3 of `docs/workflows/in-grid-editing.md`: in-grid editors,
@@ -52,6 +52,7 @@ async function mockApi(
   page: Page,
   rows: DeviceRow[],
   grantList = grants,
+  tree: unknown = orgUnitTree,
 ): Promise<void> {
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -137,7 +138,7 @@ async function mockApi(
     if (pathname === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
     if (pathname === '/api/devices/updates/org-units')
-      return route.fulfill({ json: orgUnitTree });
+      return route.fulfill({ json: tree });
     if (pathname === '/api/devices/updates/access')
       return route.fulfill({
         json: {
@@ -170,8 +171,9 @@ async function openDevices(
   page: Page,
   rows = seedRows(),
   grantList = grants,
+  tree: unknown = orgUnitTree,
 ): Promise<void> {
-  await mockApi(page, rows, grantList);
+  await mockApi(page, rows, grantList, tree);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/devices');
   await page.evaluate(() => document.fonts.ready);
@@ -204,6 +206,9 @@ async function editText(
   await expect(input).toBeVisible();
   await input.fill(value);
   await input.press(key);
+  // Enter, Tab, and Escape all end this cell's edit cycle. Wait for it before reading
+  // the draft, so an assertion never samples the editor's in-progress value.
+  await expect(target.locator('input')).toHaveCount(0);
 }
 
 async function axe(page: Page): Promise<void> {
@@ -552,4 +557,207 @@ test('refuses a 501st device and names the 500-device limit', async ({
   );
   await axe(page);
   await screenshot(page, 'grid-draft-device-limit.png');
+});
+
+/** The grid part of this tab's draft document, as the browser stored it. */
+async function storedEntries(
+  page: Page,
+): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate((key) => {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return [];
+    const document = JSON.parse(raw) as {
+      grid?: { entries?: unknown };
+    };
+    const entries = document.grid?.entries;
+    return Array.isArray(entries)
+      ? (entries as Array<Record<string, unknown>>)
+      : [];
+  }, storageKey);
+}
+
+test('restores an invalid value beside a valid entry after a reload', async ({
+  page,
+}) => {
+  await openDevices(page);
+  await editText(page, 'C0A1-0002', 'assetTag', 'CB-VALID');
+  const long = 'x'.repeat(4097);
+  await editText(page, 'C0A1-0001', 'assetTag', long);
+  const first = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(first).toHaveClass(/device-draft-invalid/);
+  await expect(page.locator('#draft-count')).toHaveText(
+    '2 pending changes · 2 devices',
+  );
+
+  await page.reload();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('#draft-count')).toHaveText(
+    '2 pending changes · 2 devices',
+  );
+  await expect(first.locator('.device-cell-value')).toHaveText(long);
+  await expect(first).toHaveClass(/device-draft-invalid/);
+  await expect(
+    cell(page, 'C0A1-0002', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('CB-VALID');
+  await expect(page.locator('.draft-line')).toHaveText(
+    '1 change cannot be saved. C0A1-0001 · Asset tag holds 1 to 256 characters.',
+  );
+  // The value itself round-trips, so no restore warning appears.
+  await expect(page.getByText('did not restore from this tab')).toHaveCount(0);
+  const entries = await storedEntries(page);
+  expect(entries.find((entry) => entry['deviceId'] === 'd0')).toMatchObject({
+    field: 'annotatedAssetId',
+    value: long,
+    state: 'invalid',
+  });
+});
+
+test('keeps a null baseline when the row changes before a later edit', async ({
+  page,
+}) => {
+  const rows = seedRows();
+  rows[0]!.assetTag = null;
+  await openDevices(page, rows);
+  await editText(page, 'C0A1-0001', 'assetTag', 'FIRST');
+  const target = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(target.locator('.device-cell-value')).toHaveText('FIRST');
+
+  // The inventory reports a value after the first edit. Reload keeps the draft.
+  rows[0]!.assetTag = 'REMOTE';
+  await page.reload();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect(target.locator('.device-cell-value')).toHaveText('FIRST');
+
+  await editText(page, 'C0A1-0001', 'assetTag', 'SECOND');
+  await expect(target.locator('.device-cell-value')).toHaveText('SECOND');
+  const entries = await storedEntries(page);
+  expect(entries.find((entry) => entry['deviceId'] === 'd0')).toMatchObject({
+    field: 'annotatedAssetId',
+    value: 'SECOND',
+    baseline: null,
+  });
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+});
+
+test('keeps a conflict through an invalid value, correction, and reload', async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ({ key, document }) => {
+      try {
+        // Seed once. A reload must read the draft that the page stored, not reseed it.
+        if (!sessionStorage.getItem(key))
+          sessionStorage.setItem(key, JSON.stringify(document));
+      } catch {
+        // about:blank has no storage; the app document does.
+      }
+    },
+    {
+      key: storageKey,
+      document: {
+        grid: {
+          entries: [
+            {
+              deviceId: 'd0',
+              serialNumber: 'C0A1-0001',
+              field: 'annotatedAssetId',
+              mode: 'replace',
+              value: 'DRAFT',
+              baseline: 'HS-0001',
+              orgUnitId: null,
+              state: 'conflict',
+              currentValue: 'HS-CHANGED',
+            },
+          ],
+        },
+      },
+    },
+  );
+  await openDevices(page);
+  const target = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(target).toHaveClass(/device-draft-conflict/);
+
+  await editText(page, 'C0A1-0001', 'assetTag', '');
+  await expect(target).toHaveClass(/device-draft-invalid/);
+  await expect(page.locator('.draft-line')).toHaveText(
+    '1 change cannot be saved. C0A1-0001 · Asset tag holds 1 to 256 characters.',
+  );
+
+  await editText(page, 'C0A1-0001', 'assetTag', 'HS-NEW');
+  await expect(target).toHaveClass(/device-draft-conflict/);
+  await expect(
+    target.getByRole('button', {
+      name: 'Resolve conflict on asset tag of C0A1-0001',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Save changes', exact: true }),
+  ).toBeDisabled();
+  await expect(page.locator('.draft-line')).toHaveText(
+    '1 conflict. Asset tag of C0A1-0001 changed in Google after your edit. Resolve it to save.',
+  );
+  expect((await storedEntries(page))[0]).toMatchObject({
+    value: 'HS-NEW',
+    state: 'conflict',
+    currentValue: 'HS-CHANGED',
+  });
+
+  await page.reload();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect(target).toHaveClass(/device-draft-conflict/);
+  await expect(target.locator('.device-cell-value')).toHaveText('HS-NEW');
+  await target
+    .getByRole('button', {
+      name: 'Resolve conflict on asset tag of C0A1-0001',
+      exact: true,
+    })
+    .click();
+  const card = page.getByRole('dialog', {
+    name: 'The asset tag changed after you began editing',
+  });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('HS-CHANGED');
+});
+
+test('keeps the organization unit hint off when the unit read is denied', async ({
+  page,
+}) => {
+  await openDevices(page, seedRows(), grants, deniedOrgUnitTree);
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.edit-hint'),
+  ).toHaveCount(1);
+  const unit = cell(page, 'C0A1-0001', 'orgUnitPath');
+  // The first picker attempt reads the tree and receives the denied answer.
+  await unit.dblclick();
+  await expect(page.locator('#grid-org-unit-note')).toBeVisible();
+  await expect(page.locator('#grid-org-unit-note')).toContainText(
+    'Google denied organization unit reads.',
+  );
+  await expect(unit.locator('.edit-hint')).toHaveCount(0);
+  await expect(
+    page.getByRole('dialog', { name: 'Choose organization unit' }),
+  ).toHaveCount(0);
+});
+
+test('reverts a pending cell with Shift+Enter without opening an editor', async ({
+  page,
+}) => {
+  await openDevices(page);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-SHORTCUT');
+  const target = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(target).toHaveClass(/device-draft-pending/);
+  await target.click();
+  await page.keyboard.press('Shift+Enter');
+  await expect(target.locator('input')).toHaveCount(0);
+  await expect(target.locator('.device-cell-value')).toHaveText('HS-0001');
+  await expect(page.locator('.draft-bar')).toHaveCount(0);
 });

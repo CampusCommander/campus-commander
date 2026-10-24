@@ -28,6 +28,12 @@
   visibility: hidden;
 }
 
+/* The pencil is decorative. A pseudo-element keeps its ligature out of the cell text, so a
+   whole-cell text assertion still reads only the field value (B4). */
+.edit-hint::before {
+  content: 'edit';
+}
+
 :host-context(.ag-row:hover) .edit-hint,
 :host-context(.ag-cell-focus) .edit-hint {
   visibility: visible;

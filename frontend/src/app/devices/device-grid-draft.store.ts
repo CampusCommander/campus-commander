@@ -9,7 +9,6 @@ import {
 import { z } from 'zod';
 import {
   DEVICE_BY_IDS_LIMIT,
-  DEVICE_UPDATE_EDITS_LIMIT,
   DEVICE_UPDATE_FIELD_LABELS,
   DEVICE_UPDATE_FIELD_LIMITS,
   deviceUpdateFieldSchema,
@@ -63,41 +62,34 @@ export type DeviceGridStageResult =
   | { ok: true; removed: boolean }
   | { ok: false; reason: 'device-limit' };
 
+/**
+ * One stored entry. The text values carry no length cap: an invalid edit still has to
+ * round-trip through storage so the person can correct it (B2). `gridDraftReason` applies
+ * the field limit when the value restores.
+ */
 const entrySchema = z.strictObject({
   deviceId: z.string().min(1).max(128),
   serialNumber: z.string().max(256),
   field: deviceUpdateFieldSchema,
   mode: deviceUpdateModeSchema,
-  value: z.string().max(4096),
-  baseline: z.string().max(4096).nullable(),
+  value: z.string(),
+  baseline: z.string().nullable(),
   orgUnitId: z.string().min(1).max(128).nullable(),
   state: z.enum(['pending', 'invalid', 'conflict']),
-  currentValue: z.string().max(4096).nullable().optional(),
+  currentValue: z.string().nullable().optional(),
 });
 
-const gridPartSchema = z
-  .strictObject({
-    entries: z.array(entrySchema).max(DEVICE_UPDATE_EDITS_LIMIT),
-  })
-  .superRefine((part, context) => {
-    const devices = new Set(part.entries.map((entry) => entry.deviceId));
-    if (devices.size > DEVICE_BY_IDS_LIMIT)
-      context.addIssue({
-        code: 'custom',
-        message: `A grid draft holds at most ${DEVICE_BY_IDS_LIMIT} devices.`,
-      });
-    const pairs = new Set(
-      part.entries.map((entry) => `${entry.deviceId}\u0000${entry.field}`),
-    );
-    if (pairs.size !== part.entries.length)
-      context.addIssue({
-        code: 'custom',
-        message: 'A device and field occur once.',
-      });
-  });
+/** The outer shape only. Each entry validates alone, so one bad entry keeps the rest. */
+const gridPartSchema = z.object({ entries: z.array(z.unknown()) });
 
 export const DEVICE_GRID_DRAFT_STORAGE_ERROR =
   'This tab cannot restore the grid draft. Check each changed cell before you save.';
+
+/** The restore line for entries that failed validation. Zero answers an empty string. */
+export function gridDraftRestoreError(skipped: number): string {
+  if (skipped < 1) return '';
+  return `${skipped} ${skipped === 1 ? 'change' : 'changes'} did not restore from this tab. Check each changed cell before you save.`;
+}
 export const DEVICE_GRID_DRAFT_WRITE_ERROR =
   'Tab storage is unavailable. Keep this page open until you save the grid draft.';
 export const DEVICE_GRID_DRAFT_DEVICE_LIMIT_MESSAGE = `The draft holds at most ${DEVICE_BY_IDS_LIMIT} devices. Revert a change before you edit another device.`;
@@ -131,12 +123,15 @@ export function modeForText(
   return field !== 'annotatedAssetId' && value === '' ? 'clear' : 'replace';
 }
 
+/** The row fields that an editable cell shows. */
+export type DeviceValueRow = Pick<
+  DeviceRow,
+  'assetTag' | 'orgUnitPath' | 'annotatedLocation' | 'annotatedUser' | 'notes'
+>;
+
 /** The value of this field in the row, as the person saw it. */
 export function rowValueFor(
-  row: Pick<
-    DeviceRow,
-    'assetTag' | 'orgUnitPath' | 'annotatedLocation' | 'annotatedUser' | 'notes'
-  >,
+  row: DeviceValueRow,
   field: DeviceUpdateField,
 ): string | null {
   switch (field) {
@@ -151,6 +146,18 @@ export function rowValueFor(
     case 'notes':
       return row.notes;
   }
+}
+
+/**
+ * The baseline of an edit. A missing entry takes the row value. An entry keeps its stored
+ * baseline, including a valid null (B1).
+ */
+export function baselineFor(
+  entry: Pick<DeviceGridDraftEntry, 'baseline'> | null,
+  row: DeviceValueRow,
+  field: DeviceUpdateField,
+): string | null {
+  return entry ? entry.baseline : rowValueFor(row, field);
 }
 
 /** Why an entry cannot be saved, or null when it can. */
@@ -177,9 +184,11 @@ function restoredEntry(
   entry: z.infer<typeof entrySchema>,
 ): DeviceGridDraftEntry {
   const reason = gridDraftReason(entry);
+  // A stored current value is unresolved conflict evidence. Keep it through invalid input
+  // so a correction returns the entry to conflict (B3).
   const state: DeviceGridDraftState = reason
     ? 'invalid'
-    : entry.state === 'conflict' && entry.currentValue !== undefined
+    : entry.currentValue !== undefined
       ? 'conflict'
       : 'pending';
   return {
@@ -191,8 +200,8 @@ function restoredEntry(
     baseline: entry.baseline,
     orgUnitId: entry.orgUnitId,
     state,
-    ...(state === 'conflict'
-      ? { currentValue: entry.currentValue ?? null }
+    ...(entry.currentValue !== undefined
+      ? { currentValue: entry.currentValue }
       : {}),
   };
 }
@@ -210,7 +219,12 @@ export class DeviceGridDraftStore {
   private readonly entriesSignal = signal<DeviceGridDraftEntry[]>([]);
   private readonly liveSignal = signal<DeviceGridLiveEdit | null>(null);
   private readonly refusalSignal = signal('');
-  readonly storageError = signal('');
+  private readonly restoreErrorSignal = signal('');
+  private readonly writeErrorSignal = signal('');
+  /** A restore warning stays until the next restore, so one write never hides lost entries. */
+  readonly storageError = computed(
+    () => this.restoreErrorSignal() || this.writeErrorSignal(),
+  );
   private principal = this.auth.session()?.identity.id ?? null;
 
   readonly entries = computed(() => this.entriesSignal());
@@ -291,6 +305,11 @@ export class DeviceGridDraftStore {
 
   readonly visible = computed(() => this.counts().changes > 0);
 
+  /** The panel shows its count or a restore error, so zero restored entries still report. */
+  readonly panelVisible = computed(
+    () => this.counts().changes > 0 || this.storageError() !== '',
+  );
+
   /** The panel's second line: the reason or the active editing hint. */
   readonly line = computed<{ text: string; tone: 'error' | 'warning' | '' }>(
     () => {
@@ -354,7 +373,7 @@ export class DeviceGridDraftStore {
       field,
       mode: modeForText(field, value),
       value,
-      baseline: existing?.baseline ?? rowValueFor(row, field),
+      baseline: baselineFor(existing, row, field),
       orgUnitId: null,
     });
   }
@@ -371,7 +390,7 @@ export class DeviceGridDraftStore {
       field: 'orgUnitPath',
       mode: 'move',
       value: unit.path,
-      baseline: existing?.baseline ?? rowValueFor(row, 'orgUnitPath'),
+      baseline: baselineFor(existing, row, 'orgUnitPath'),
       orgUnitId: unit.id,
     });
   }
@@ -412,10 +431,11 @@ export class DeviceGridDraftStore {
       value,
       baseline,
       orgUnitId: input.mode === 'move' ? input.orgUnitId : null,
-      // A new value never clears a conflict without the person's answer.
-      state: existing?.state === 'conflict' ? 'conflict' : 'pending',
-      ...(existing?.state === 'conflict'
-        ? { currentValue: existing.currentValue ?? null }
+      // A new value never clears a conflict without the person's answer. The stored
+      // current value keeps that evidence through invalid input (B3).
+      state: existing?.currentValue !== undefined ? 'conflict' : 'pending',
+      ...(existing?.currentValue !== undefined
+        ? { currentValue: existing.currentValue }
         : {}),
     };
     if (gridDraftReason(entry)) entry.state = 'invalid';
@@ -433,6 +453,8 @@ export class DeviceGridDraftStore {
   /** Revert all changes. The panel asks once before it calls this. */
   revertAll(): void {
     this.refusalSignal.set('');
+    // The part is about to be removed, so an earlier restore warning no longer applies.
+    this.restoreErrorSignal.set('');
     this.liveSignal.set(null);
     this.entriesSignal.set([]);
     this.persist();
@@ -476,19 +498,56 @@ export class DeviceGridDraftStore {
     this.entriesSignal.set([]);
     this.liveSignal.set(null);
     this.refusalSignal.set('');
+    this.restoreErrorSignal.set('');
+    this.writeErrorSignal.set('');
     if (!id) return;
     try {
       const raw = readDraftPart(id, 'grid');
-      if (raw === null) {
-        this.storageError.set('');
+      if (raw === null) return;
+      const part = gridPartSchema.safeParse(raw);
+      if (!part.success) {
+        this.restoreErrorSignal.set(DEVICE_GRID_DRAFT_STORAGE_ERROR);
         return;
       }
-      const parsed = gridPartSchema.parse(raw);
-      this.entriesSignal.set(parsed.entries.map(restoredEntry));
-      this.storageError.set('');
+      const { entries, skipped } = this.readEntries(part.data.entries);
+      this.entriesSignal.set(entries);
+      // One unreadable entry never hides the entries that do restore (B2).
+      if (skipped) this.restoreErrorSignal.set(gridDraftRestoreError(skipped));
     } catch {
-      this.storageError.set(DEVICE_GRID_DRAFT_STORAGE_ERROR);
+      this.restoreErrorSignal.set(DEVICE_GRID_DRAFT_STORAGE_ERROR);
     }
+  }
+
+  /** Validate one entry at a time and keep the first entry of each device and field. */
+  private readEntries(items: readonly unknown[]): {
+    entries: DeviceGridDraftEntry[];
+    skipped: number;
+  } {
+    const entries: DeviceGridDraftEntry[] = [];
+    const pairs = new Set<string>();
+    const devices = new Set<string>();
+    let skipped = 0;
+    for (const item of items) {
+      const parsed = entrySchema.safeParse(item);
+      if (!parsed.success) {
+        skipped += 1;
+        continue;
+      }
+      const entry = restoredEntry(parsed.data);
+      const key = keyOf(entry);
+      if (pairs.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      if (!devices.has(entry.deviceId) && devices.size >= DEVICE_BY_IDS_LIMIT) {
+        skipped += 1;
+        continue;
+      }
+      pairs.add(key);
+      devices.add(entry.deviceId);
+      entries.push(entry);
+    }
+    return { entries, skipped };
   }
 
   private upsert(entry: DeviceGridDraftEntry): void {
@@ -517,9 +576,9 @@ export class DeviceGridDraftStore {
     try {
       const entries = this.entriesSignal();
       writeDraftPart(id, 'grid', entries.length ? { entries } : null);
-      this.storageError.set('');
+      this.writeErrorSignal.set('');
     } catch {
-      this.storageError.set(DEVICE_GRID_DRAFT_WRITE_ERROR);
+      this.writeErrorSignal.set(DEVICE_GRID_DRAFT_WRITE_ERROR);
     }
   }
 }

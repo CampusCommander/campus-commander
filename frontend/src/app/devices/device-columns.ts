@@ -232,6 +232,8 @@ export function gridColumnFor(field: DeviceUpdateField): DeviceSortField {
 /** The draft state that the grid reads for one cell. The store owns the data. */
 export interface DeviceDraftColumnOptions {
   editable: () => boolean;
+  /** The Organization unit read is granted, so the unit column hint matches its state. */
+  orgUnitEditable: () => boolean;
   value: (
     deviceId: string,
     field: DeviceUpdateField,
@@ -262,6 +264,7 @@ function editableColumn(
   | 'editable'
   | 'cellEditor'
   | 'cellEditorParams'
+  | 'suppressKeyboardEvent'
 > {
   const entryOf = (params: {
     data?: DeviceRow | null;
@@ -277,7 +280,10 @@ function editableColumn(
       label: DEVICE_UPDATE_FIELD_LABELS[field],
       entryFor: (deviceId: string) => draft.entry(deviceId, field),
       reasonFor: (entry: DeviceGridDraftEntry) => draft.reason(entry),
-      editable: () => draft.editable(),
+      // The unit hint follows the read state, not only the page permissions (B4 note).
+      editable: () =>
+        draft.editable() &&
+        (field !== 'orgUnitPath' || draft.orgUnitEditable()),
       onRevert: (deviceId: string) => draft.onRevert(deviceId, field),
       onConflict: (deviceId: string, anchor: HTMLElement) =>
         draft.onConflict(deviceId, field, anchor),
@@ -294,6 +300,16 @@ function editableColumn(
       !params.node?.group &&
       !!params.data &&
       draft.editable(),
+    // Shift+Enter reverts a pending cell while the cell rests. Suppress AG Grid's
+    // default Enter edit, so the shortcut never opens an editor (review note).
+    suppressKeyboardEvent: (params) =>
+      field !== 'orgUnitPath' &&
+      !params.editing &&
+      params.event.key === 'Enter' &&
+      params.event.shiftKey &&
+      !!params.data &&
+      !params.node?.group &&
+      draft.entry(params.data.deviceId, field) !== null,
     ...(field === 'notes'
       ? {
           cellEditor: 'agLargeTextCellEditor',

@@ -276,9 +276,10 @@
       }
     </div>
   </div>
-  } @if (gridDraft.visible()) {
+  } @if (gridDraft.panelVisible()) {
   <section class="draft-bar" aria-labelledby="draft-count">
     <div class="draft-copy" aria-live="polite">
+      @if (gridDraft.visible()) {
       <p id="draft-count" class="draft-count">{{ gridDraft.countLine() }}</p>
       @if (gridDraft.line().text; as text) {
       <p
@@ -288,12 +289,19 @@
       >
         {{ text }}
       </p>
+      } } @else {
+      <!-- A restore error shows even when no entry restored. -->
+      <p id="draft-count" class="draft-line error">
+        {{ gridDraft.line().text }}
+      </p>
       }
     </div>
     <div class="draft-actions">
+      @if (gridDraft.visible()) {
       <button mat-stroked-button type="button" (click)="revertOpen.set(true)">
         Revert all changes
       </button>
+      }
       <button
         mat-flat-button
         type="button"

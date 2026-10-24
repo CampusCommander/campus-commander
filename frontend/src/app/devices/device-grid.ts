@@ -73,7 +73,7 @@ import {
 } from './device-filter-model';
 import {
   DeviceGridDraftStore,
-  rowValueFor,
+  baselineFor,
   type DeviceGridDraftEntry,
 } from './device-grid-draft.store';
 import { DeviceGridConflict } from './device-grid-conflict';
@@ -309,6 +309,11 @@ export class DeviceGrid implements OnInit {
       this.editable();
       untracked(() => this.refreshDraftCells());
     });
+    // The unit read decides whether its column shows the edit hint.
+    effect(() => {
+      this.orgUnitTree.state();
+      untracked(() => this.refreshDraftCells());
+    });
   }
 
   ngOnInit(): void {
@@ -391,6 +396,7 @@ export class DeviceGrid implements OnInit {
   private draftOptions(): DeviceDraftColumnOptions {
     return {
       editable: () => this.editable(),
+      orgUnitEditable: () => this.orgUnitTree.state() === 'granted',
       value: (deviceId, field, text) =>
         this.draft.valueFor(deviceId, field, text),
       entry: (deviceId, field) => this.draft.entryFor(deviceId, field),
@@ -428,7 +434,7 @@ export class DeviceGrid implements OnInit {
     this.draft.beginLive({
       deviceId: event.data.deviceId,
       field,
-      baseline: entry?.baseline ?? rowValueFor(event.data, field),
+      baseline: baselineFor(entry, event.data, field),
       value:
         event.value === null || event.value === undefined
           ? ''
@@ -487,9 +493,11 @@ export class DeviceGrid implements OnInit {
     if (
       keyboard.key === 'Enter' &&
       keyboard.shiftKey &&
+      !this.draft.live() &&
       this.draft.entryFor(event.data.deviceId, field)
     ) {
       keyboard.preventDefault();
+      keyboard.stopPropagation();
       this.draft.revert(event.data.deviceId, field);
     }
   }

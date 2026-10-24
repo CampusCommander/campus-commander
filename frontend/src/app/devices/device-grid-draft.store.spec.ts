@@ -7,6 +7,8 @@ import {
   DEVICE_GRID_DRAFT_STORAGE_ERROR,
   DEVICE_GRID_DRAFT_WRITE_ERROR,
   DeviceGridDraftStore,
+  baselineFor,
+  gridDraftRestoreError,
   rowValueFor,
 } from './device-grid-draft.store';
 
@@ -332,7 +334,7 @@ it('does not read another person or another grid document', () => {
   expect(draft.storageError()).toBe('');
 });
 
-it('reports a grid part that this tab cannot read and keeps the sheet part', () => {
+it('reports a stored entry that this tab cannot read and keeps the sheet part', () => {
   sessionStorage.setItem(
     storageKey,
     JSON.stringify({
@@ -342,7 +344,27 @@ it('reports a grid part that this tab cannot read and keeps the sheet part', () 
   );
   const draft = configure();
   expect(draft.entries()).toEqual([]);
+  expect(draft.storageError()).toBe(gridDraftRestoreError(1));
+  expect(draft.line()).toEqual({
+    text: gridDraftRestoreError(1),
+    tone: 'error',
+  });
+  expect(draft.panelVisible()).toBe(true);
+  expect(document()).toEqual({
+    sheet: { fields: [] },
+    grid: { entries: [{ deviceId: 'd1' }] },
+  });
+});
+
+it('reports a grid part that has no entry list', () => {
+  sessionStorage.setItem(
+    storageKey,
+    JSON.stringify({ grid: { entries: 'not a list' } }),
+  );
+  const draft = configure();
+  expect(draft.entries()).toEqual([]);
   expect(draft.storageError()).toBe(DEVICE_GRID_DRAFT_STORAGE_ERROR);
+  expect(draft.panelVisible()).toBe(true);
 });
 
 it('keeps the entries in memory when tab storage refuses the write', () => {
@@ -411,4 +433,162 @@ it('reads the row value of each editable field', () => {
   expect(rowValueFor(device, 'annotatedLocation')).toBe('Library');
   expect(rowValueFor(device, 'annotatedUser')).toBe('maya@example.org');
   expect(rowValueFor(device, 'notes')).toBe('Cart 7');
+});
+
+it('keeps a null baseline through a changed row and a later edit', () => {
+  const draft = configure();
+  draft.stageText(row(), 'annotatedAssetId', 'FIRST');
+  // The inventory reports a value after the first edit. The entry keeps what the person saw.
+  draft.stageText(row({ assetTag: 'REMOTE' }), 'annotatedAssetId', 'SECOND');
+  expect(draft.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    value: 'SECOND',
+    baseline: null,
+  });
+
+  // The non-null control keeps the first value the person saw.
+  draft.stageText(
+    row({ deviceId: 'd2', assetTag: 'HS-0001' }),
+    'annotatedAssetId',
+    'FIRST',
+  );
+  draft.stageText(
+    row({ deviceId: 'd2', assetTag: 'HS-0002' }),
+    'annotatedAssetId',
+    'SECOND',
+  );
+  expect(draft.entryFor('d2', 'annotatedAssetId')).toMatchObject({
+    value: 'SECOND',
+    baseline: 'HS-0001',
+  });
+});
+
+it('distinguishes a missing entry from an entry with a null baseline', () => {
+  const changed = row({ notes: 'Remote value' });
+  expect(baselineFor(null, changed, 'notes')).toBe('Remote value');
+  expect(baselineFor({ baseline: null }, changed, 'notes')).toBeNull();
+  expect(baselineFor({ baseline: 'First value' }, changed, 'notes')).toBe(
+    'First value',
+  );
+});
+
+it('round-trips an invalid value beside a valid entry', () => {
+  const draft = configure();
+  const long = 'x'.repeat(4097);
+  draft.stageText(row(), 'annotatedAssetId', long);
+  draft.stageText(row({ deviceId: 'd2' }), 'annotatedAssetId', 'CB-VALID');
+  expect(draft.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    value: long,
+    state: 'invalid',
+  });
+
+  TestBed.resetTestingModule();
+  const restored = configure();
+  expect(restored.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    value: long,
+    state: 'invalid',
+  });
+  expect(restored.entryFor('d2', 'annotatedAssetId')).toMatchObject({
+    value: 'CB-VALID',
+    state: 'pending',
+  });
+  expect(restored.countLine()).toBe('2 pending changes · 2 devices');
+  expect(restored.storageError()).toBe('');
+});
+
+it('keeps the valid entries when one stored entry is malformed', () => {
+  sessionStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      grid: {
+        entries: [
+          { deviceId: 'd1' },
+          {
+            deviceId: 'd2',
+            serialNumber: 'C0A1-0002',
+            field: 'notes',
+            mode: 'replace',
+            value: 'Still here',
+            baseline: null,
+            orgUnitId: null,
+            state: 'pending',
+          },
+        ],
+      },
+    }),
+  );
+  const draft = configure();
+  expect(draft.entries()).toHaveLength(1);
+  expect(draft.entryFor('d2', 'notes')).toMatchObject({
+    value: 'Still here',
+    state: 'pending',
+  });
+  expect(draft.storageError()).toBe(gridDraftRestoreError(1));
+  expect(draft.panelVisible()).toBe(true);
+});
+
+it('keeps the current value of a conflict through invalid input and correction', () => {
+  const draft = configure();
+  draft.stageText(row({ assetTag: 'HS-0001' }), 'annotatedAssetId', 'DRAFT');
+  draft.markConflict('d1', 'annotatedAssetId', 'REMOTE');
+
+  draft.stageText(row({ assetTag: 'HS-0001' }), 'annotatedAssetId', '');
+  expect(draft.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    state: 'invalid',
+    value: '',
+    currentValue: 'REMOTE',
+  });
+  expect(draft.blocked()).toBe(true);
+  expect(draft.line().tone).toBe('error');
+
+  draft.stageText(
+    row({ assetTag: 'HS-0001' }),
+    'annotatedAssetId',
+    'NEW-DRAFT',
+  );
+  expect(draft.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    state: 'conflict',
+    value: 'NEW-DRAFT',
+    baseline: 'HS-0001',
+    currentValue: 'REMOTE',
+  });
+  expect(draft.blocked()).toBe(true);
+  expect(draft.line().text).toContain('1 conflict.');
+});
+
+it('restores a conflict that is stored with an invalid value', () => {
+  sessionStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      grid: {
+        entries: [
+          {
+            deviceId: 'd1',
+            serialNumber: 'C0A1-0000',
+            field: 'annotatedAssetId',
+            mode: 'replace',
+            value: '',
+            baseline: 'HS-0001',
+            orgUnitId: null,
+            state: 'invalid',
+            currentValue: 'REMOTE',
+          },
+        ],
+      },
+    }),
+  );
+  const draft = configure();
+  expect(draft.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    state: 'invalid',
+    currentValue: 'REMOTE',
+  });
+  draft.stageText(
+    row({ assetTag: 'HS-0001' }),
+    'annotatedAssetId',
+    'NEW-DRAFT',
+  );
+  expect(draft.entryFor('d1', 'annotatedAssetId')).toMatchObject({
+    state: 'conflict',
+    currentValue: 'REMOTE',
+  });
+  expect(draft.blocked()).toBe(true);
 });

@@ -129,6 +129,7 @@ it('keeps every column read-only without the draft options', () => {
 it('gives the five draft columns their editors, renderer, and state rules', () => {
   const draft = {
     editable: () => true,
+    orgUnitEditable: () => true,
     value: (deviceId: string, field: string, fallback: string) =>
       field === 'annotatedAssetId' && deviceId === 'd1' ? 'CB-DRAFT' : fallback,
     entry: (_deviceId: string, field: string) =>
@@ -168,6 +169,56 @@ it('gives the five draft columns their editors, renderer, and state rules', () =
   const getter = column('assetTag').valueGetter as (params: unknown) => string;
   expect(getter({ data: row(false), node: { group: false } })).toBe('CB-DRAFT');
   expect(getter({ data: row(false), node: { group: true } })).toBe('');
+
+  // The cell hint follows the unit read, and Shift+Enter never opens AG Grid's editor.
+  const hint = (id: string) =>
+    (
+      column(id).cellRendererParams as {
+        editable: () => boolean;
+      }
+    ).editable();
+  expect(hint('assetTag')).toBe(true);
+  expect(hint('orgUnitPath')).toBe(true);
+  const gated = deviceColumnDefs(() => undefined, {
+    draft: { ...draft, orgUnitEditable: () => false },
+  });
+  expect(
+    (
+      gated.find((item) => item.colId === 'orgUnitPath')!
+        .cellRendererParams as { editable: () => boolean }
+    ).editable(),
+  ).toBe(false);
+  const suppress = column('assetTag').suppressKeyboardEvent as (
+    params: unknown,
+  ) => boolean;
+  const shiftEnter = new KeyboardEvent('keydown', {
+    key: 'Enter',
+    shiftKey: true,
+  });
+  expect(
+    suppress({
+      event: shiftEnter,
+      editing: false,
+      data: row(false),
+      node: { group: false },
+    }),
+  ).toBe(true);
+  expect(
+    suppress({
+      event: shiftEnter,
+      editing: true,
+      data: row(false),
+      node: { group: false },
+    }),
+  ).toBe(false);
+  expect(
+    suppress({
+      event: new KeyboardEvent('keydown', { key: 'Enter' }),
+      editing: false,
+      data: row(false),
+      node: { group: false },
+    }),
+  ).toBe(false);
 
   const rules = column('notes').cellClassRules as Record<
     string,
