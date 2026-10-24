@@ -582,6 +582,11 @@ async function openEditor(
   const input = target.locator('input, textarea');
   await expect(input).toBeVisible();
   await input.fill(value);
+  // Playwright can set the value before the app attaches its live listener. One harmless
+  // key round trip makes the live input deterministic without changing the value.
+  await input.press('End');
+  await input.type('X');
+  await input.press('Backspace');
 }
 
 /**
@@ -1408,4 +1413,201 @@ test('a later save cannot discard a revert while its earlier job remains pending
     '1 pending change · 1 device',
   );
   await screenshot(page, 'save-changes-09-revert-waits-for-job.png');
+});
+
+test('Escape after a live baseline visit keeps the staged value (B1)', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'KEEP-STAGED-VALUE');
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('KEEP-STAGED-VALUE');
+
+  // Reopen the cell and type its baseline without Enter, then cancel with Escape.
+  await openEditor(page, 'C0A1-0001', 'assetTag', 'HS-0001');
+  // The draft bar hides while the open editor shows the baseline.
+  await expect(page.locator('.draft-bar')).toHaveCount(0);
+  const input = cell(page, 'C0A1-0001', 'assetTag').locator('input, textarea');
+  await input.press('Escape');
+
+  // The cancellation restores the staged value and leaves the draft untouched.
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('KEEP-STAGED-VALUE', { timeout: 2000 });
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+  expect(confirms).toHaveLength(0);
+  await screenshot(page, 'save-changes-04-escape-keeps-staged.png');
+});
+
+test('a grid edit during Review keeps its draft after the frozen confirm (B8)', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'FIRST-FROZEN-VALUE');
+  await editText(page, 'C0A1-0002', 'assetTag', 'SECOND-FROZEN-VALUE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 2 device updates' }),
+  ).toBeVisible();
+
+  // The side sheet leaves the grid usable. This edit is later than the frozen preview.
+  await editText(page, 'C0A1-0001', 'assetTag', 'LATER-KEEP-ME');
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('LATER-KEEP-ME');
+
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page
+    .getByRole('checkbox', { name: /I reviewed all 2 devices/ })
+    .check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+
+  // The job owns the frozen requests. The later edit keeps its own draft.
+  expect(confirms).toHaveLength(1);
+  expect(
+    sim.targets().find((row) => row.deviceId === 'd0')?.approvedValue,
+  ).toBe('FIRST-FROZEN-VALUE');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+    { timeout: 2000 },
+  );
+  const first = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(first.locator('.device-cell-value')).toHaveText('LATER-KEEP-ME');
+  // The untouched frozen row is accepted, and the cell shows the request that ran.
+  const second = cell(page, 'C0A1-0002', 'assetTag');
+  await expect(second.locator('.device-cell-value')).toHaveText(
+    'SECOND-FROZEN-VALUE',
+  );
+  await expect(second.locator('.cell-state.accepted')).toBeVisible();
+  await screenshot(page, 'save-changes-10-later-draft-after-confirm.png');
+});
+
+test('a grid edit during Review survives the confirm replay (B8)', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim, {
+    loseConfirm: (attempt) => attempt === 1,
+  });
+  await editText(page, 'C0A1-0001', 'assetTag', 'FIRST-FROZEN-VALUE');
+  await editText(page, 'C0A1-0002', 'assetTag', 'SECOND-FROZEN-VALUE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 2 device updates' }),
+  ).toBeVisible();
+  await editText(page, 'C0A1-0001', 'assetTag', 'LATER-KEEP-ME');
+
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page
+    .getByRole('checkbox', { name: /I reviewed all 2 devices/ })
+    .check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  // The first answer is lost, so the retained record replays the same identity.
+  await expect(
+    page.getByRole('heading', { name: 'Retry the confirmation' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+
+  // The replay settles the frozen list, never the later value.
+  expect(confirms).toHaveLength(2);
+  expect(confirms[0]?.previewId).toBe(confirms[1]?.previewId);
+  expect(confirms[0]?.manifestDigest).toBe(confirms[1]?.manifestDigest);
+  expect(sim.jobCount).toBe(1);
+  expect(
+    sim.targets().find((row) => row.deviceId === 'd0')?.approvedValue,
+  ).toBe('FIRST-FROZEN-VALUE');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+    { timeout: 2000 },
+  );
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('LATER-KEEP-ME');
+  await screenshot(page, 'save-changes-09-replayed-later-draft.png');
+});
+
+test('a successful terminal job keeps its value until its row read recovers (B4)', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
+  await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'WRITTEN-BUT-READ-UNAVAILABLE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForTimeout(300);
+
+  // The worker wrote the value, but the next authoritative read fails.
+  sim.settle();
+  await page.route('**/api/devices/by-ids', (route) =>
+    route.fulfill({ status: 503, json: { code: 'network-failure' } }),
+  );
+  const changed = () =>
+    page.evaluate(
+      ({ jobId, displayId, requestedBy }) => {
+        const streams = (
+          window as unknown as {
+            __reviewStreams: {
+              url: string;
+              dispatchEvent(event: Event): boolean;
+            }[];
+          }
+        ).__reviewStreams.filter((stream) => stream.url === '/api/jobs/events');
+        for (const stream of streams)
+          stream.dispatchEvent(
+            new MessageEvent('job-changed', {
+              data: JSON.stringify({
+                type: 'job-changed',
+                jobId,
+                displayId,
+                revision: 2,
+                requestedBy,
+              }),
+            }),
+          );
+      },
+      {
+        jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        displayId: jobDisplayId,
+        requestedBy: principal,
+      },
+    );
+  await changed();
+  await page.waitForTimeout(500);
+
+  // A failed read proves nothing, so the written value stays with its clock.
+  const tag = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(tag.locator('.device-cell-value')).toHaveText(
+    'WRITTEN-BUT-READ-UNAVAILABLE',
+    { timeout: 2000 },
+  );
+  await expect(tag.locator('.cell-state.accepted')).toBeVisible();
+  await screenshot(page, 'save-changes-12-read-unavailable-keeps-value.png');
+
+  // The next read answers, and the authoritative value settles the accepted cell.
+  await page.unroute('**/api/devices/by-ids');
+  await changed();
+  await expect(tag.locator('.cell-state.accepted')).toHaveCount(0, {
+    timeout: 2000,
+  });
+  await expect(tag.locator('.device-cell-value')).toHaveText(
+    'WRITTEN-BUT-READ-UNAVAILABLE',
+  );
+  await screenshot(page, 'save-changes-12-read-recovered.png');
 });

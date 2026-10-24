@@ -200,6 +200,12 @@ export class DeviceUpdateSheet {
   protected readonly creating = signal(false);
   protected readonly preparing = signal(false);
   protected readonly submitted = signal<SubmittedConfirmation | null>(null);
+  /**
+   * The immutable edit list that the active preview froze. Confirm, a replay, and a
+   * recovered receipt settle exactly this list, so a later grid edit keeps its own draft
+   * and an accepted cell describes the request that the job owns (B8).
+   */
+  private readonly frozenEdits = signal<DeviceUpdateEdit[]>([]);
   /** The Edit step reads the stored selection at open. */
   protected readonly loadingSelection = signal(true);
   protected readonly selectionExpired = signal(false);
@@ -672,6 +678,7 @@ export class DeviceUpdateSheet {
     this.creating.set(false);
     this.preparing.set(false);
     this.submitted.set(null);
+    this.frozenEdits.set([]);
     this.selectionExpired.set(false);
     this.selectionError.set('');
     this.editOffline.set(false);
@@ -709,10 +716,13 @@ export class DeviceUpdateSheet {
         return;
       case 'preview': {
         const preview = preparation.preview;
+        // Freeze the edit list that this preview answered. A grid edit during Review must
+        // not replace the requests that the job will own (B8).
+        this.frozenEdits.set([...edits]);
         this.preview.set(preview);
         this.frozenSelection.set(null);
         if (this.oneChangeSave(edits, preview)) {
-          await this.confirmOneChange(preview, edits, generation);
+          await this.confirmOneChange(preview, this.frozenEdits(), generation);
           return;
         }
         // A one-cell answer that Google already holds creates no job, and its row leaves
@@ -723,7 +733,7 @@ export class DeviceUpdateSheet {
           preview.unchanged === 1
         )
           this.gridDraft.dropSubmitted(edits);
-        await this.showPreview(preview, null, generation, edits);
+        await this.showPreview(preview, null, generation, this.frozenEdits());
         return;
       }
       case 'uncertain':
@@ -1045,14 +1055,14 @@ export class DeviceUpdateSheet {
     // The receipt names the other serial number of a duplicate Asset tag (B3).
     const duplicates = duplicateTagEvidence(this.targets());
     this.retainedDuplicates.set(duplicates);
+    // Confirm sends and settles exactly the edit list that the preview answered. A cell
+    // edited while Review stays open keeps its own later draft (B8).
+    const entries = this.frozenEdits();
     await this.submit(
       {
         previewId: preview.previewId,
         manifestDigest: preview.manifestDigest,
-        // The confirmed grid rows settle into accepted cells after the receipt (DRAFT-02).
-        ...(this.source() === 'grid'
-          ? { entries: this.gridDraft.edits() }
-          : {}),
+        ...(this.source() === 'grid' && entries.length ? { entries } : {}),
         ...(duplicates.length ? { duplicates } : {}),
       },
       false,

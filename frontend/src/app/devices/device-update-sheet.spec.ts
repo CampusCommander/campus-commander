@@ -3001,6 +3001,88 @@ it('creates one job with a row per device and field after Review', async () => {
   );
 });
 
+it('settles the frozen edit list when a grid cell changes during Review (B8)', async () => {
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'FIRST-FROZEN-VALUE');
+      grid.stageText(
+        gridRow('d2', 'C0A1-0002'),
+        'notes',
+        'SECOND-FROZEN-VALUE',
+      );
+    },
+    request: (path) => {
+      if (path === '/api/devices/updates/edit-previews')
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+          { status: 201 },
+        );
+      if (path === `/api/devices/updates/previews/${previewId}`)
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+        );
+      if (path.includes('/targets'))
+        return Response.json({
+          targets: [
+            editTarget(
+              'd1',
+              'C0A1-0001',
+              'notes',
+              'eligible',
+              'FIRST-FROZEN-VALUE',
+            ),
+            editTarget(
+              'd2',
+              'C0A1-0002',
+              'notes',
+              'eligible',
+              'SECOND-FROZEN-VALUE',
+            ),
+          ],
+          nextCursor: null,
+        });
+      if (path.endsWith('/confirm'))
+        return Response.json(receipt, { status: 201 });
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  const { element, button, settle } = ui;
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Review 2 device updates',
+  );
+
+  // The side sheet leaves the grid usable. This edit is later than the frozen preview.
+  grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'LATER-KEEP-ME');
+  expect(grid.counts()).toEqual({ changes: 2, devices: 2 });
+
+  button('Continue to confirmation')?.click();
+  await settle();
+  element
+    .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')
+    ?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  await settle();
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  // The accepted cells describe the frozen requests that the job owns, not the later edits.
+  expect(grid.acceptedFor('d1', 'notes')?.value).toBe('FIRST-FROZEN-VALUE');
+  expect(grid.acceptedFor('d2', 'notes')?.value).toBe('SECOND-FROZEN-VALUE');
+  // The later edit keeps its own draft, and the untouched frozen row left the draft.
+  expect(grid.entryFor('d1', 'notes')).toMatchObject({
+    value: 'LATER-KEEP-ME',
+  });
+  expect(grid.valueFor('d1', 'notes', 'HS-0001')).toBe('LATER-KEEP-ME');
+  expect(grid.entryFor('d2', 'notes')).toBeNull();
+  expect(grid.counts()).toEqual({ changes: 1, devices: 1 });
+});
+
 it('names the duplicate Asset tag on a one-change receipt (B3)', async () => {
   const target = {
     ...editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),

@@ -155,6 +155,16 @@ const TERMINAL_JOB_STATUSES: ReadonlySet<JobStatus> = new Set<JobStatus>([
 ]);
 
 /**
+ * True when a terminal job proves that no value reached Google. An all-failed job keeps the
+ * old row, so the accepted mark settles. A job that succeeded, ended unknown, or expired
+ * may have written a value, so a missing row proves nothing about it (B4).
+ */
+export function jobProvesNoWrite(job: JobDetail): boolean {
+  const { succeeded, unknown, expired } = job.progress;
+  return succeeded === 0 && unknown === 0 && expired === 0;
+}
+
+/**
  * True when the authoritative row holds the accepted request. A matching row is success
  * evidence: the worker publishes inventory IDs only after a value reaches Google (B4). A
  * row without the field proves nothing and never settles the cell. The Asset tag edit field
@@ -513,8 +523,18 @@ export class DeviceGridDraftStore {
         }
         const detail = jobs.get(entry.displayId);
         // A failed read of the job keeps the mark: it proves nothing about the write.
-        if (detail && TERMINAL_JOB_STATUSES.has(detail.status))
+        if (!detail || !TERMINAL_JOB_STATUSES.has(detail.status)) continue;
+        if (row) {
+          // A fresh authoritative row that does not hold the request settles the cell: a
+          // terminal job means the operation is over (B4).
           settled.add(acceptedKey(entry));
+          continue;
+        }
+        // No row reached the grid. An all-failed job proves that nothing was written, so
+        // the old value is the settled value. A job with a successful, unknown, or expired
+        // operation may hold this value, so a failed or missing read must not expose the
+        // old value as settled. Keep the accepted mark until a row arrives (B4).
+        if (jobProvesNoWrite(detail)) settled.add(acceptedKey(entry));
       }
       if (settled.size)
         this.acceptedSignal.set(
@@ -669,14 +689,10 @@ export class DeviceGridDraftStore {
   updateLive(value: string): void {
     const live = this.liveSignal();
     if (!live) return;
+    // Only the open editor changes here. Returning to the baseline hides the older entry
+    // from the count, and Escape cancels the input without touching the staged entry.
+    // Enter, Tab, and Save stage the value, and `stage()` removes the entry there (B1).
     this.liveSignal.set({ ...live, value });
-    // The input returned to its baseline, so an older entry for this cell must leave now.
-    // A later Save must not freeze that older value (B1).
-    const mode = modeForText(live.field, value);
-    if (sameRequest(live.field, requestOf(mode, value), live.baseline)) {
-      const existing = this.entryFor(live.deviceId, live.field);
-      if (existing) this.removeEntry(existing);
-    }
   }
 
   endLive(): void {

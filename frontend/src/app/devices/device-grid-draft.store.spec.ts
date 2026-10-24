@@ -1026,7 +1026,28 @@ it('removes an older draft when the live input returns to its baseline (B1)', ()
   expect(draft.edits()).toEqual([]);
 });
 
-it('removes the older draft as soon as the live input matches the baseline (B1)', () => {
+it('keeps the staged entry when a canceled edit returns to its baseline (B1)', () => {
+  const draft = configure();
+  const device = row({ assetTag: 'ORIGINAL' });
+  draft.stageText(device, 'annotatedAssetId', 'KEEP-STAGED');
+  const before = draft.edits();
+  draft.beginLive({
+    deviceId: device.deviceId,
+    serialNumber: device.serialNumber,
+    field: 'annotatedAssetId',
+    baseline: 'ORIGINAL',
+    value: 'KEEP-STAGED',
+  });
+  draft.updateLive('ORIGINAL');
+  // The count hides the cell while the editor shows its baseline, so Save is disabled.
+  expect(draft.counts()).toEqual({ changes: 0, devices: 0 });
+  // Escape ends the live edit without a cell edit request. The staged entry returns.
+  draft.endLive();
+  expect(draft.edits()).toEqual(before);
+  expect(draft.counts()).toEqual({ changes: 1, devices: 1 });
+});
+
+it('removes the older draft when the live input commits at its baseline (B1)', () => {
   const draft = configure();
   const device = row({ assetTag: 'ORIGINAL' });
   draft.stageText(device, 'annotatedAssetId', 'STALE-DRAFT');
@@ -1037,7 +1058,10 @@ it('removes the older draft as soon as the live input matches the baseline (B1)'
     baseline: 'ORIGINAL',
     value: 'STALE-DRAFT',
   });
+  // Enter or Tab commits the input; Save changes commits it too.
   draft.updateLive('ORIGINAL');
+  expect(draft.edits()).toHaveLength(1);
+  draft.commitLive();
   expect(draft.edits()).toEqual([]);
   expect(draft.counts()).toEqual({ changes: 0, devices: 0 });
 });
@@ -1248,4 +1272,63 @@ it('keeps a later live edit through an unchanged answer while its job runs (B7)'
     baseline: 'FIRST-JOB-WILL-WRITE',
   });
   expect(draft.keptUnchanged()).toBe(1);
+});
+
+it('keeps a successful accepted value when its row read fails or omits the device (B4)', async () => {
+  const done = jobOf('UPD-006', 'completed', {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+  });
+  let read: 'fail' | 'missing' | 'written' = 'fail';
+  const { draft } = configureWith((path) => {
+    if (path === '/api/jobs/UPD-006') return Response.json(done);
+    if (read === 'fail')
+      return Response.json({ code: 'network-failure' }, { status: 503 });
+    if (read === 'missing') return Response.json({ rows: [] });
+    return Response.json({ rows: [row({ assetTag: 'GOOGLE-WRITTEN' })] });
+  });
+  draft.stageText(
+    row({ assetTag: 'GOOGLE-OLD' }),
+    'annotatedAssetId',
+    'GOOGLE-WRITTEN',
+  );
+  draft.accept(
+    draft.edits(),
+    [
+      target(
+        'd1',
+        'annotatedAssetId',
+        'eligible',
+        'GOOGLE-WRITTEN',
+        'GOOGLE-OLD',
+      ),
+    ],
+    'UPD-006',
+  );
+  await flush();
+  await flush();
+
+  // A successful terminal job may hold the value. A failed read proves nothing, so the
+  // grid must not expose the old row as the settled value (B4).
+  expect(draft.acceptedFor('d1', 'annotatedAssetId')).not.toBeNull();
+  expect(draft.valueFor('d1', 'annotatedAssetId', 'GOOGLE-OLD')).toBe(
+    'GOOGLE-WRITTEN',
+  );
+
+  // A read that omits the device is no evidence either.
+  read = 'missing';
+  await draft.reconcileAccepted();
+  expect(draft.acceptedFor('d1', 'annotatedAssetId')).not.toBeNull();
+  expect(draft.valueFor('d1', 'annotatedAssetId', 'GOOGLE-OLD')).toBe(
+    'GOOGLE-WRITTEN',
+  );
+
+  // The authoritative value recovers the observation and settles the mark.
+  read = 'written';
+  await draft.reconcileAccepted();
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.valueFor('d1', 'annotatedAssetId', 'GOOGLE-WRITTEN')).toBe(
+    'GOOGLE-WRITTEN',
+  );
 });
