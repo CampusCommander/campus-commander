@@ -7,6 +7,7 @@ import { JobServiceModule } from '../jobs/job-service.module';
 import { OrchestrationModule } from '../orchestration/orchestration.module';
 import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
+import { DeviceFreshReadService } from './device-fresh-read.service';
 import {
   DeviceCommandsController,
   DeviceStatusChangesController,
@@ -40,6 +41,7 @@ import { DevicesService } from './devices.service';
     DeviceUpdatesService,
     DeviceActionsService,
     DeviceWriteAccessService,
+    DeviceFreshReadService,
   ],
   // One subscriber connection serves the devices stream and the jobs stream.
   exports: [DeviceEventsService],

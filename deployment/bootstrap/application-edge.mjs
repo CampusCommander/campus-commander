@@ -87,6 +87,8 @@ const deviceUpdateRead = new RegExp(
 const deviceUpdateWrite = new RegExp(
   `^/api/devices/updates/(?:access/check|previews|previews/${previewIdPath}/confirm)$`,
 );
+// One edit list carries up to 2,500 edits, so it alone takes the larger device-write body.
+const deviceUpdateEdit = /^\/api\/devices\/updates\/edit-previews$/;
 // The two action families of design section 7. Each family keeps one permission and one menu entry.
 const deviceActionRead = new RegExp(
   `^/api/devices/(?:commands|status-changes)/previews/${previewIdPath}(?:/targets)?$`,
@@ -156,6 +158,7 @@ export async function proxyApplication(
         schoolWrite.test(pathname) ||
         jobWrite.test(pathname) ||
         deviceUpdateWrite.test(pathname) ||
+        deviceUpdateEdit.test(pathname) ||
         deviceActionWrite.test(pathname)));
   const api = readable || writable;
   const page =
@@ -180,8 +183,11 @@ export async function proxyApplication(
         size += chunk.length;
         const limit =
           phase === 3 &&
-          (principalWrite.test(pathname) || deviceWrite.test(pathname))
-            ? // Device bodies carry ID batches, group routes, and set filters.
+          (principalWrite.test(pathname) ||
+            deviceWrite.test(pathname) ||
+            deviceUpdateEdit.test(pathname))
+            ? // Device bodies carry ID batches, group routes, and set filters. An edit list
+              // carries up to 2,500 edits.
               98304
             : phase === 3 &&
                 [

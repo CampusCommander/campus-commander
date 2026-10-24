@@ -71,6 +71,44 @@ function mockGoogleGet({ mock, host, path, token }) {
   });
 }
 
+/** Write one Google path through the mock's published Google port. */
+function mockGoogleWrite({ mock, host, path, token, method, body }) {
+  const payload = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        host,
+        port: mock.googlePort,
+        path,
+        method,
+        ca: mock.ca,
+        servername: host,
+        lookup: (_name, _options, done) =>
+          done(null, [{ address: '127.0.0.1', family: 4 }]),
+        headers: {
+          host,
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(payload),
+        },
+        timeout: 20_000,
+      },
+      (response) => {
+        let text = '';
+        response.on('data', (chunk) => (text += chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode, text }),
+        );
+      },
+    );
+    request.on('error', reject);
+    request.on('timeout', () =>
+      request.destroy(new Error('The mock Google request timed out.')),
+    );
+    request.end(payload);
+  });
+}
+
 /** The command IDs of the mock's first directory rows. */
 const COMMAND_ID_BASE = 4_100_000_001;
 
@@ -482,6 +520,9 @@ export async function qualifyDeviceWritesOnMock({
     }
   };
   const byIds = async (deviceIds) => {
+    // A long battery can cross the session's hard lifetime. Renew it before this read, as
+    // runSync does before every poll, so the read never races the expiry (review flake).
+    await session();
     const response = await call('/api/devices/by-ids', {
       method: 'POST',
       headers: headers(),
@@ -1361,6 +1402,251 @@ export async function qualifyDeviceWritesOnMock({
     );
     results.push(
       'a seeded Asset tag job sets two tags on two mock devices, ends completed, and keeps both through a Refresh all inside 300 s: pass',
+    );
+  }
+
+  // IB5 of the in-grid editing design (addendum sections 4 and 10): the edit route reads every
+  // edited device from Google before it compares. A direct mock PATCH after the grid read makes the
+  // row a conflict: the lagged list hides the change and the single-device GET returns it.
+  {
+    const target = deviceIds[0];
+    const serialNumber = (await byIds([target]))[0].serialNumber;
+    const token = await mockToken(mock, writeScope);
+    const devicePath = `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(target)}`;
+    const listPath = `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos?query=${encodeURIComponent(`id:${serialNumber}`)}`;
+    const stored = JSON.parse(
+      (
+        await mockGoogleGet({
+          mock,
+          host: 'admin.googleapis.com',
+          path: devicePath,
+          token,
+        })
+      ).text,
+    );
+    const baseline = stored.notes ?? null;
+    const outside = `Set outside the app ${randomUUID().slice(0, 8)}`;
+    const patched = await mockGoogleWrite({
+      mock,
+      host: 'admin.googleapis.com',
+      path: devicePath,
+      token,
+      method: 'PATCH',
+      body: { notes: outside },
+    });
+    assert.equal(patched.status, 200, patched.text);
+    const listed = JSON.parse(
+      (
+        await mockGoogleGet({
+          mock,
+          host: 'admin.googleapis.com',
+          path: listPath,
+          token,
+        })
+      ).text,
+    );
+    assert.equal(
+      listed.chromeosdevices?.[0]?.notes ?? null,
+      baseline,
+      'The lagged list still shows the value of the grid read.',
+    );
+    const read = JSON.parse(
+      (
+        await mockGoogleGet({
+          mock,
+          host: 'admin.googleapis.com',
+          path: devicePath,
+          token,
+        })
+      ).text,
+    );
+    assert.equal(read.notes, outside, 'The GET returns the direct write.');
+    await session();
+    const drafted = `Set in the grid ${randomUUID().slice(0, 8)}`;
+    const answer = await call('/api/devices/updates/edit-previews', {
+      method: 'POST',
+      headers: headers(),
+      body: {
+        edits: [
+          {
+            deviceId: target,
+            field: 'notes',
+            mode: 'replace',
+            value: drafted,
+            baselineValue: baseline,
+          },
+        ],
+      },
+    });
+    assert.equal(answer.status, 201, answer.text);
+    const preview = JSON.parse(answer.text);
+    assert.equal(preview.conflicts, 1, answer.text);
+    assert.equal(preview.eligible, 0, answer.text);
+    const page = await call(
+      `/api/devices/updates/previews/${preview.previewId}/targets`,
+    );
+    assert.equal(page.status, 200, page.text);
+    const [row] = JSON.parse(page.text).targets;
+    assert.deepEqual(
+      [
+        row.deviceId,
+        row.field,
+        row.disposition,
+        row.observedValue,
+        row.baselineValue,
+      ],
+      [target, 'notes', 'conflict', outside, baseline],
+      'The fresh read makes the edited row a conflict.',
+    );
+    results.push(
+      'a direct Google PATCH after the grid read makes the edit row a conflict, while the lagged list still shows the grid value: pass',
+    );
+  }
+
+  // IB5 (addendum section 10, Partial failure): one edit list writes two Asset tags and one Notes
+  // value on two devices. One device keeps its old values and the job ends completed-with-errors.
+  {
+    const token = await mockToken(mock, writeScope);
+    const current = new Map();
+    for (const deviceId of deviceIds)
+      current.set(
+        deviceId,
+        JSON.parse(
+          (
+            await mockGoogleGet({
+              mock,
+              host: 'admin.googleapis.com',
+              path: `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(deviceId)}`,
+              token,
+            })
+          ).text,
+        ),
+      );
+    const stamp = randomUUID().slice(0, 8);
+    const edits = [
+      {
+        deviceId: deviceIds[0],
+        field: 'annotatedAssetId',
+        mode: 'replace',
+        value: `IB5-A-${stamp}`,
+        baselineValue: current.get(deviceIds[0]).annotatedAssetId ?? null,
+      },
+      {
+        deviceId: deviceIds[1],
+        field: 'annotatedAssetId',
+        mode: 'replace',
+        value: `IB5-B-${stamp}`,
+        baselineValue: current.get(deviceIds[1]).annotatedAssetId ?? null,
+      },
+      {
+        deviceId: deviceIds[0],
+        field: 'notes',
+        mode: 'replace',
+        value: `IB5 note ${stamp}`,
+        baselineValue: current.get(deviceIds[0]).notes ?? null,
+      },
+    ];
+    await session();
+    const answer = await call('/api/devices/updates/edit-previews', {
+      method: 'POST',
+      headers: headers(),
+      body: { edits },
+    });
+    assert.equal(answer.status, 201, answer.text);
+    const preview = JSON.parse(answer.text);
+    assert.deepEqual(
+      [
+        preview.selected,
+        preview.eligible,
+        preview.conflicts,
+        preview.fieldChanges,
+      ],
+      [2, 2, 0, 3],
+      answer.text,
+    );
+    // The first PATCH of the job is refused. That device keeps its old values.
+    await addFault({
+      kind: 'status',
+      method: 'directory.chromeosdevices.patch',
+      status: 400,
+      reason: 'invalid',
+      count: 1,
+    });
+    const confirmed = await call(
+      `/api/devices/updates/previews/${preview.previewId}/confirm`,
+      {
+        method: 'POST',
+        headers: headers(),
+        body: { manifestDigest: preview.manifestDigest, acknowledged: true },
+      },
+    );
+    assert.ok([200, 201].includes(confirmed.status), confirmed.text);
+    const receipt = JSON.parse(confirmed.text);
+    const state = await waitJob(
+      receipt.jobId,
+      ['completed', 'completed-with-errors'],
+      'The edit list job',
+    );
+    assert.equal(
+      state.status,
+      'completed-with-errors',
+      `One device is refused. ${JSON.stringify(state)}`,
+    );
+    assert.equal(
+      (await fieldRows(receipt.jobId)).length,
+      3,
+      'The edit list writes three field rows.',
+    );
+    const operations = (
+      await migrator.query(
+        `SELECT operation_number,device_id,status,outcome_reason
+           FROM cc.device_update_operations WHERE job_id=$1 ORDER BY operation_number`,
+        [receipt.jobId],
+      )
+    ).rows;
+    const refused = operations.filter((row) => row.status === 'failed');
+    assert.equal(
+      refused.length,
+      1,
+      `One operation fails. ${JSON.stringify(operations)}`,
+    );
+    const written = operations.filter((row) => row.status === 'succeeded');
+    assert.equal(written.length, 1, JSON.stringify(operations));
+    const readDevice = async (deviceId) =>
+      JSON.parse(
+        (
+          await mockGoogleGet({
+            mock,
+            host: 'admin.googleapis.com',
+            path: `/admin/directory/v1/customer/${encodeURIComponent(customer)}/devices/chromeos/${encodeURIComponent(deviceId)}`,
+            token,
+          })
+        ).text,
+      );
+    const kept = await readDevice(refused[0].device_id);
+    assert.equal(
+      kept.annotatedAssetId ?? null,
+      current.get(refused[0].device_id).annotatedAssetId ?? null,
+      'The refused device keeps its old Asset tag.',
+    );
+    assert.equal(
+      kept.notes ?? null,
+      current.get(refused[0].device_id).notes ?? null,
+      'The refused device keeps its old Notes.',
+    );
+    const done = await readDevice(written[0].device_id);
+    const requested = edits.find(
+      (edit) =>
+        edit.deviceId === written[0].device_id &&
+        edit.field === 'annotatedAssetId',
+    );
+    assert.equal(
+      done.annotatedAssetId,
+      requested.value,
+      'The other device holds its new Asset tag.',
+    );
+    results.push(
+      'one edit list writes two Asset tags and one Notes value on two devices, a refused device keeps its old values, and the job ends completed-with-errors with three field rows: pass',
     );
   }
 

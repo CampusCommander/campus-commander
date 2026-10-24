@@ -179,6 +179,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/devices/updates/org-units', 'api'],
       ['POST', '/api/devices/updates/access/check', 'api'],
       ['POST', '/api/devices/updates/previews', 'api'],
+      ['POST', '/api/devices/updates/edit-previews', 'api'],
       ['GET', `/api/devices/updates/previews/${id}`, 'api'],
       ['GET', `/api/devices/updates/previews/${id}/targets`, 'api'],
       ['POST', `/api/devices/updates/previews/${id}/confirm`, 'api'],
@@ -254,6 +255,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/devices/updates/access/check', 405],
       ['POST', '/api/devices/updates/access', 405],
       ['GET', '/api/devices/updates/previews', 405],
+      ['GET', '/api/devices/updates/edit-previews', 405],
       ['POST', `/api/devices/updates/previews/${id}`, 405],
       ['GET', `/api/devices/updates/previews/${id}/confirm`, 405],
       ['POST', `/api/devices/updates/previews/${id}/targets`, 405],
@@ -313,6 +315,36 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         ).status,
         status,
         `by-ids ${size} bytes`,
+      );
+    // The edit route accepts an edit list of 98,304 bytes and refuses one byte more.
+    for (const [size, status] of [
+      [98304, 200],
+      [98305, 413],
+    ])
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/devices/updates/edit-previews`, {
+            method: 'POST',
+            body: 'x'.repeat(size),
+          })
+        ).status,
+        status,
+        `edit-previews ${size} bytes`,
+      );
+    // The selection preview and its confirm keep the 4,096-byte cap.
+    for (const path of [
+      '/api/devices/updates/previews',
+      `/api/devices/updates/previews/${id}/confirm`,
+    ])
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}${path}`, {
+            method: 'POST',
+            body: 'x'.repeat(4097),
+          })
+        ).status,
+        413,
+        `${path} 4097 bytes`,
       );
     phase = 2;
     for (const [method, path] of routes) {

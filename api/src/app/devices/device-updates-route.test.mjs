@@ -63,6 +63,12 @@ let app;
 let origin;
 /** The preview inputs that reached the service double. A refusal must leave this empty. */
 let previews;
+/** The edit previews that reached the service double. A refused read must leave this empty. */
+let editPreviews;
+/** The read that the route asks for before it builds an edit preview. */
+let freshRead;
+/** The answers of the fresh-read double, in call order. */
+let reads;
 
 before(async () => {
   const [
@@ -74,6 +80,7 @@ before(async () => {
     authModule,
     accessModule,
     jobsModule,
+    freshReadModule,
   ] = await Promise.all([
     import('./device-updates.controller.ts'),
     import('../security.ts'),
@@ -83,6 +90,7 @@ before(async () => {
     import('../auth/auth.service.ts'),
     import('./device-write-access.service.ts'),
     import('../jobs/job-service.ts'),
+    import('./device-fresh-read.service.ts'),
   ]);
   const { DeviceUpdatesController } = controllerModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
@@ -92,6 +100,7 @@ before(async () => {
   const { AuthService } = authModule;
   const { DeviceWriteAccessService } = accessModule;
   const { JobService } = jobsModule;
+  const { DeviceFreshReadService } = freshReadModule;
 
   // esbuild does not emit decorator metadata, so the harness names the constructor tokens.
   Reflect.defineMetadata(
@@ -102,11 +111,15 @@ before(async () => {
       AuthService,
       DeviceWriteAccessService,
       JobService,
+      DeviceFreshReadService,
     ],
     DeviceUpdatesController,
   );
 
   previews = [];
+  editPreviews = [];
+  freshRead = [];
+  reads = [];
   class PreviewRouteModule {}
   Module({
     controllers: [DeviceUpdatesController],
@@ -119,11 +132,35 @@ before(async () => {
             previews.push(input);
             return { changes: input.changes };
           },
+          editPreview: async (_session, _connected, input, rows) => {
+            editPreviews.push({ input, rows });
+            return {
+              previewId: '11111111-1111-4111-8111-111111111111',
+              changes: null,
+              rows: rows.length,
+            };
+          },
         },
       },
       { provide: AuthService, useValue: { authorize: async () => undefined } },
       { provide: DeviceWriteAccessService, useValue: {} },
       { provide: JobService, useValue: {} },
+      {
+        provide: DeviceFreshReadService,
+        useValue: {
+          read: async (_session, _connected, ids) => {
+            freshRead.push(ids);
+            const next = reads.shift();
+            // A queued real read runs the production fresh read, not the double.
+            if (next?.real) return next.real.read(_session, _connected, ids);
+            if (next?.failure) throw next.failure;
+            return {
+              rows: next?.rows ?? [],
+              syncedAt: '2026-10-23T12:00:01.000Z',
+            };
+          },
+        },
+      },
     ],
   })(PreviewRouteModule);
 
@@ -282,5 +319,232 @@ test('the preview route counts supplementary characters as code points', async (
     previews.length,
     before + 1,
     'The 101-character value reaches no preview.',
+  );
+});
+
+/** One edit of the wire body: a device, a field change, and the baseline that the person saw. */
+const editBody = (edits) => ({ edits });
+
+async function editPreview(payload) {
+  const response = await fetch(`${origin}/api/devices/updates/edit-previews`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+test('the edit route reads every edited device and builds the preview from the rows', async () => {
+  reads.push({
+    rows: [
+      {
+        device_id: 'd1',
+        serial_number: 'SN-d1',
+        org_unit_path: '/School A',
+        notes: 'Old',
+        removed_at: null,
+        last_entity_sync: '2026-10-23T12:00:01.000Z',
+      },
+    ],
+  });
+  const before = editPreviews.length;
+  const answer = await editPreview(
+    editBody([
+      {
+        deviceId: 'd1',
+        field: 'notes',
+        mode: 'replace',
+        value: 'New',
+        baselineValue: 'Old',
+      },
+    ]),
+  );
+  assert.equal(answer.status, 201);
+  assert.equal(answer.body.changes, null);
+  assert.deepEqual(
+    freshRead.at(-1),
+    ['d1'],
+    'The route reads the edited device.',
+  );
+  assert.equal(editPreviews.length, before + 1);
+  assert.deepEqual(
+    editPreviews.at(-1).rows.map((row) => row.device_id),
+    ['d1'],
+  );
+});
+
+test('an unknown device answers 422 unknown-device and creates no preview', async () => {
+  const { UnprocessableEntityException } = await import('@nestjs/common');
+  reads.push({
+    failure: new UnprocessableEntityException({
+      reason: 'unknown-device',
+      deviceIds: ['d9'],
+    }),
+  });
+  const before = editPreviews.length;
+  const answer = await editPreview(
+    editBody([
+      {
+        deviceId: 'd9',
+        field: 'notes',
+        mode: 'replace',
+        value: 'New',
+        baselineValue: 'Old',
+      },
+    ]),
+  );
+  assert.deepEqual(answer, {
+    status: 422,
+    body: { reason: 'unknown-device', deviceIds: ['d9'] },
+  });
+  assert.equal(
+    editPreviews.length,
+    before,
+    'An unknown device creates no preview.',
+  );
+});
+
+test('a failed read answers 503 device-read-failed and creates no preview', async () => {
+  const { ServiceUnavailableException } = await import('@nestjs/common');
+  reads.push({
+    failure: new ServiceUnavailableException({
+      reason: 'device-read-failed',
+      failure: 'quota',
+    }),
+  });
+  const before = editPreviews.length;
+  const answer = await editPreview(
+    editBody([
+      {
+        deviceId: 'd1',
+        field: 'annotatedAssetId',
+        mode: 'replace',
+        value: 'AT-9',
+        baselineValue: null,
+      },
+    ]),
+  );
+  assert.deepEqual(answer, {
+    status: 503,
+    body: { reason: 'device-read-failed', failure: 'quota' },
+  });
+  assert.equal(editPreviews.length, before, 'A failed read keeps the draft.');
+});
+
+test('the edit route refuses a body outside the edit list contract', async () => {
+  const before = editPreviews.length;
+  const readsBefore = freshRead.length;
+  const answer = await editPreview({
+    edits: [
+      {
+        deviceId: 'd1',
+        field: 'annotatedAssetId',
+        mode: 'clear',
+        baselineValue: 'AT-1',
+      },
+    ],
+  });
+  assert.deepEqual(answer, {
+    status: 400,
+    body: {
+      reason: 'invalid-change',
+      message: 'Asset tag offers Replace only.',
+    },
+  });
+  assert.equal(editPreviews.length, before);
+  assert.equal(
+    freshRead.length,
+    readsBefore,
+    'A refused body reads no device.',
+  );
+});
+
+test('a credential refusal after the route check answers 403 and reads nothing', async () => {
+  const { ForbiddenException } = await import('@nestjs/common');
+  const { DeviceFreshRead } = await import('./device-fresh-read.ts');
+  const { createDeviceWriteAccessStore } = await import(
+    './device-write-access-store.ts'
+  );
+
+  // The locked permission check of the real adapter refuses with SQL 42501, as it does when
+  // access changes between the controller's authorization and the credential read.
+  const credentialStore = createDeviceWriteAccessStore(
+    {
+      connection: {
+        query: async () => {
+          throw Object.assign(new Error('permission denied'), {
+            code: '42501',
+          });
+        },
+      },
+    },
+    {},
+    {},
+  );
+  let direct;
+  try {
+    await credentialStore.credential(session, connected);
+  } catch (error) {
+    direct = error;
+  }
+  assert.ok(direct instanceof ForbiddenException);
+  assert.equal(
+    direct.getStatus(),
+    403,
+    'The credential adapter answers the SQL refusal with 403.',
+  );
+
+  let providerCalls = 0;
+  let storeTransactions = 0;
+  const real = new DeviceFreshRead(
+    {
+      connection: {
+        query: async (sql) => ({
+          rows: sql.includes('clock_timestamp')
+            ? [{ stamp: new Date('2026-10-23T12:00:01.000Z') }]
+            : [{ device_id: 'd1' }],
+        }),
+      },
+      async transaction() {
+        storeTransactions += 1;
+        throw new Error('A refused credential stores nothing.');
+      },
+    },
+    {
+      credential: (openSession, context) =>
+        credentialStore.credential(openSession, context),
+      read: async () => {
+        providerCalls += 1;
+        throw new Error('A refused credential reads no device.');
+      },
+    },
+  );
+  reads.push({ real });
+  const before = editPreviews.length;
+  const answer = await editPreview(
+    editBody([
+      {
+        deviceId: 'd1',
+        field: 'notes',
+        mode: 'replace',
+        value: 'New',
+        baselineValue: 'Old',
+      },
+    ]),
+  );
+
+  assert.deepEqual(answer, {
+    status: 403,
+    body: { reason: 'forbidden' },
+  });
+  assert.deepEqual(
+    [providerCalls, storeTransactions],
+    [0, 0],
+    'A permission refusal calls no Google device and opens no store transaction.',
+  );
+  assert.equal(
+    editPreviews.length,
+    before,
+    'A permission refusal creates no preview.',
   );
 });

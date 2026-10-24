@@ -41,6 +41,7 @@ export function targetCursor(ordinal: unknown, field: unknown): string | null {
 /** One frozen target page row of one field, with the value that confirmation would write. */
 export function previewTargetRow(
   row: Record<string, unknown>,
+  duplicateSerialNumber: string | null = null,
 ): DeviceUpdateTarget {
   const text = (value: unknown) => (typeof value === 'string' ? value : null);
   return {
@@ -51,8 +52,8 @@ export function previewTargetRow(
     // Every row stores its own baseline, so the answer reads the row, not a change list.
     baselineValue: text(row['baseline_value']),
     approvedValue: text(row['requested_value']),
-    // The duplicate lookup of addendum section 6 fills this later.
-    duplicateSerialNumber: null,
+    // The duplicate lookup of addendum section 6 answers this; it never blocks.
+    duplicateSerialNumber,
     disposition: row['disposition'] as DeviceUpdateTarget['disposition'],
     exclusionReason:
       typeof row['exclusion_reason'] === 'string'
