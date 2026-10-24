@@ -66,6 +66,7 @@ import {
   deviceDatasource,
   pendingDatasource,
   savedGridState,
+  sortModelFromColumnState,
   type DeviceGroupLoader,
   type DeviceLoader,
   type DevicePendingDatasource,
@@ -786,12 +787,8 @@ export class DeviceGrid implements OnInit {
     const groups = this.pendingGroups;
     if (groups?.length) next.rowGroup = { groupColIds: [...groups] };
     const sort = this.pendingSort;
-    if (sort?.length)
-      next.sort = {
-        sortModel: sort
-          .filter((item) => item.sort !== null && item.sort !== undefined)
-          .map((item) => ({ colId: item.colId, sort: item.sort! })),
-      };
+    // The sort model's order is its priority, which column state keeps in sortIndex (B5).
+    if (sort?.length) next.sort = { sortModel: sortModelFromColumnState(sort) };
     return next;
   }
 

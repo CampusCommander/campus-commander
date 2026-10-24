@@ -1,4 +1,5 @@
 import type {
+  ColumnState,
   FilterModel,
   GridState,
   IServerSideDatasource,
@@ -69,6 +70,26 @@ export function savedGridState(state: GridState): GridState {
   const rest = { ...state };
   delete rest.rowSelection;
   return rest;
+}
+
+/**
+ * A saved sort model orders its entries by priority. Column state arrives in column
+ * order, so sortIndex decides which sort comes first (B5).
+ */
+export function sortModelFromColumnState(
+  state: readonly ColumnState[],
+): { colId: string; sort: 'asc' | 'desc' }[] {
+  return state
+    .filter(
+      (item): item is ColumnState & { sort: 'asc' | 'desc' } =>
+        item.sort === 'asc' || item.sort === 'desc',
+    )
+    .sort(
+      (left, right) =>
+        (left.sortIndex ?? Number.MAX_SAFE_INTEGER) -
+        (right.sortIndex ?? Number.MAX_SAFE_INTEGER),
+    )
+    .map((item) => ({ colId: item.colId, sort: item.sort }));
 }
 
 /** Adapt LibreGrid block requests to the device query endpoint (GRID-01). */

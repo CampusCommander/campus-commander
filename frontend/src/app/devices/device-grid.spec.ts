@@ -689,6 +689,39 @@ it('puts the person sort back when the pending view closes', () => {
   });
 });
 
+it('saves the person sort priority, not the column order, while pending', () => {
+  const { fixture, api, options, saveState } = mounted();
+  // The person sorted by Model, then added Serial as the second sort. Column state
+  // arrives in column order (Serial before Model), so only sortIndex holds the priority.
+  api.setSort([
+    { colId: 'serialNumber', sort: 'asc', sortIndex: 1 },
+    { colId: 'model', sort: 'asc', sortIndex: 0 },
+  ]);
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+  // The pending view takes its own sort; the person's captured sort stays intact.
+  api.setSort([{ colId: 'assetTag', sort: 'desc', sortIndex: 0 }]);
+
+  options.onGridPreDestroyed({
+    state: { filter: { model: {} } },
+    api: { getGridOption: () => false },
+  });
+
+  expect(saveState).toHaveBeenCalledWith(
+    {
+      sort: {
+        sortModel: [
+          { colId: 'model', sort: 'asc' },
+          { colId: 'serialNumber', sort: 'asc' },
+        ],
+      },
+      filter: { model: {} },
+      rowGroup: { groupColIds: ['orgUnitPath'] },
+    },
+    false,
+  );
+});
+
 it('saves the person sort and grouping while the pending view is on', () => {
   const { fixture, api, options, saveState } = mounted();
   fixture.componentRef.setInput('pendingIds', ['d1']);

@@ -876,6 +876,62 @@ test('restores the person sort after a pending view sort', async ({ page }) => {
   ).toHaveAttribute('aria-sort', 'ascending');
 });
 
+// B5: a navigation round trip keeps the person's sort priority, not the column order.
+test('keeps the original sort priority across navigation from the pending view', async ({
+  page,
+}) => {
+  const log = await openDevices(page);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-NAV');
+
+  // The person sorts by Model, then adds Serial as the second sort. Serial sits before
+  // Model in column order, so the saved sort model needs the priority, not column order.
+  await page.locator('.ag-header-cell[col-id="model"]').click();
+  await expect(page.locator('.ag-header-cell[col-id="model"]')).toHaveAttribute(
+    'aria-sort',
+    'ascending',
+  );
+  await page
+    .locator('.ag-header-cell[col-id="serialNumber"]')
+    .click({ modifiers: ['Shift'] });
+  await expect(
+    page.locator('.ag-header-cell[col-id="serialNumber"]'),
+  ).toHaveAttribute('aria-sort', 'ascending');
+  await expect
+    .poll(() => log.sorts.at(-1))
+    .toEqual({ field: 'model', direction: 'asc' });
+
+  // The pending view takes its own sort, then the person navigates away.
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  await page.locator('.ag-header-cell[col-id="assetTag"]').click();
+  await expect(
+    page.locator('.ag-header-cell[col-id="assetTag"]'),
+  ).toHaveAttribute('aria-sort', 'ascending');
+
+  await page.getByRole('link', { name: 'Jobs' }).click();
+  await expect(page.getByRole('link', { name: 'Devices' })).toBeVisible();
+  await page.getByRole('link', { name: 'Devices' }).click();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+
+  // The restored query keeps Model first before the pending view reopens.
+  await expect
+    .poll(() => log.sorts.at(-1))
+    .toEqual({ field: 'model', direction: 'asc' });
+
+  // The restored query and the pending exit both keep Model as the first sort.
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  await page.getByRole('button', { name: 'Show all devices' }).click();
+  await expect
+    .poll(() => log.sorts.at(-1))
+    .toEqual({ field: 'model', direction: 'asc' });
+  await expect(page.locator('.ag-header-cell[col-id="model"]')).toHaveAttribute(
+    'aria-sort',
+    'ascending',
+  );
+  await screenshot(page, 'grid-pending-view-navigation-sort.png');
+});
+
 // B6: a live refresh updates the pending view's cached rows.
 test('keeps a refreshed device value when the pending view sorts', async ({
   page,
