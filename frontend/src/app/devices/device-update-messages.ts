@@ -6,6 +6,7 @@ import {
   GOOGLE_HEALTH_RECOVERY,
   deviceOrgUnitTreeMessage,
   type DeviceOrgUnitTree,
+  type DeviceUpdateField,
   type DeviceUpdateTextField,
   type DeviceWriteAccess,
   type GoogleFailure,
@@ -31,7 +32,7 @@ export const DEVICE_UPDATE_PERMISSION_MESSAGE =
 
 /** The validation message for one field value, or null when it passes. */
 export function deviceUpdateValueError(
-  field: DeviceUpdateTextField,
+  field: DeviceUpdateField,
   value: string,
 ): string | null {
   const limit = DEVICE_UPDATE_FIELD_LIMITS[field];

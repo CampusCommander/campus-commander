@@ -17,6 +17,7 @@ import {
   type DeviceUpdateTextField,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
+import { readDraftPart, writeDraftPart } from './device-draft-storage';
 
 /** A draft field starts at Leave unchanged. Organization unit offers Move (record line 25). */
 export type DeviceUpdateDraftMode = 'unchanged' | 'replace' | 'clear' | 'move';
@@ -108,7 +109,8 @@ function emptyFields(): DraftFieldRecord {
  * field keeps its own mode and value (DRAFT-01), and the Organization unit field keeps the
  * path and the identity of its destination. It lives outside the grid, so filtering,
  * scrolling, and row updates never touch it. Each browser tab restores the draft of the
- * signed-in person after a refresh.
+ * signed-in person after a refresh. The tab document holds this sheet part beside the grid
+ * and single-device parts; this store reads and writes only its own part.
  */
 @Injectable({ providedIn: 'root' })
 export class DeviceUpdateDraftStore {
@@ -220,12 +222,12 @@ export class DeviceUpdateDraftStore {
     this.fields.set(emptyFields());
     if (!id) return;
     try {
-      const raw = sessionStorage.getItem(this.storageKey(id));
-      if (!raw) {
+      const raw = readDraftPart(id, 'sheet');
+      if (raw === null) {
         this.storageError.set('');
         return;
       }
-      const saved = savedDraftSchema.parse(JSON.parse(raw));
+      const saved = savedDraftSchema.parse(raw);
       const restored = emptyFields();
       for (const field of saved.fields)
         restored[field.field] = {
@@ -242,17 +244,13 @@ export class DeviceUpdateDraftStore {
     }
   }
 
-  private storageKey(principal: string): string {
-    return `cc.device-update-draft.${principal}`;
-  }
-
   private persist(): void {
     const id = this.principal ?? this.auth.session()?.identity.id ?? null;
     if (!id) return;
     const changed = this.changes();
     try {
       if (changed.length === 0) {
-        sessionStorage.removeItem(this.storageKey(id));
+        writeDraftPart(id, 'sheet', null);
       } else {
         const fields = changed.map((change) => ({
           field: change.field,
@@ -262,10 +260,7 @@ export class DeviceUpdateDraftStore {
             ? { orgUnitId: this.orgUnitId() }
             : {}),
         }));
-        sessionStorage.setItem(
-          this.storageKey(id),
-          JSON.stringify(savedDraftSchema.parse({ fields })),
-        );
+        writeDraftPart(id, 'sheet', savedDraftSchema.parse({ fields }));
       }
       this.storageError.set('');
     } catch {

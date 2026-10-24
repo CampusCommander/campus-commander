@@ -6,9 +6,11 @@ import type {
   IFilterOptionDef,
   IRowNode,
 } from 'ag-grid-community';
-import type {
-  DeviceGroupField,
-  DeviceRow,
+import {
+  DEVICE_UPDATE_FIELD_LABELS,
+  type DeviceGroupField,
+  type DeviceRow,
+  type DeviceUpdateField,
 } from '@campus/application-contracts';
 import {
   BATTERY_LABELS,
@@ -25,6 +27,8 @@ import {
 } from './device-fields';
 import { GroupCellRenderer } from '@libregrid/row-grouping';
 import { DeviceDetailsCell } from './device-details-cell';
+import { DeviceDraftCell } from './device-draft-cell';
+import type { DeviceGridDraftEntry } from './device-grid-draft.store';
 import { orgUnitTreePath } from './device-filter-model';
 
 function value(row: DeviceRow, field: DeviceSortField, now: number): string {
@@ -198,12 +202,116 @@ const staleContact: Pick<
     data && !node?.group && data.stale ? 'Refreshing from Google' : undefined,
 };
 
-/** Every data column is read-only in this slice (GRID-05). */
+/** The five editable grid columns and their update field (addendum section 5). */
+export const GRID_UPDATE_FIELDS: Partial<
+  Record<DeviceSortField, DeviceUpdateField>
+> = {
+  assetTag: 'annotatedAssetId',
+  annotatedLocation: 'annotatedLocation',
+  annotatedUser: 'annotatedUser',
+  notes: 'notes',
+  orgUnitPath: 'orgUnitPath',
+};
+
+/** The grid column that shows an update field. */
+export function gridColumnFor(field: DeviceUpdateField): DeviceSortField {
+  switch (field) {
+    case 'annotatedAssetId':
+      return 'assetTag';
+    case 'annotatedLocation':
+      return 'annotatedLocation';
+    case 'annotatedUser':
+      return 'annotatedUser';
+    case 'notes':
+      return 'notes';
+    case 'orgUnitPath':
+      return 'orgUnitPath';
+  }
+}
+
+/** The draft state that the grid reads for one cell. The store owns the data. */
+export interface DeviceDraftColumnOptions {
+  editable: () => boolean;
+  value: (
+    deviceId: string,
+    field: DeviceUpdateField,
+    rowValue: string,
+  ) => string;
+  entry: (
+    deviceId: string,
+    field: DeviceUpdateField,
+  ) => DeviceGridDraftEntry | null;
+  reason: (entry: DeviceGridDraftEntry) => string;
+  onRevert: (deviceId: string, field: DeviceUpdateField) => void;
+  onConflict: (
+    deviceId: string,
+    field: DeviceUpdateField,
+    anchor: HTMLElement,
+  ) => void;
+}
+
+/** The cell renderer, state rules, and editors of one editable column. */
+function editableColumn(
+  field: DeviceUpdateField,
+  draft: DeviceDraftColumnOptions,
+): Pick<
+  ColDef<DeviceRow>,
+  | 'cellRenderer'
+  | 'cellRendererParams'
+  | 'cellClassRules'
+  | 'editable'
+  | 'cellEditor'
+  | 'cellEditorParams'
+> {
+  const entryOf = (params: {
+    data?: DeviceRow | null;
+    node?: IRowNode<DeviceRow>;
+  }): DeviceGridDraftEntry | null =>
+    !params.data || params.node?.group
+      ? null
+      : draft.entry(params.data.deviceId, field);
+  return {
+    cellRenderer: DeviceDraftCell,
+    cellRendererParams: {
+      updateField: field,
+      label: DEVICE_UPDATE_FIELD_LABELS[field],
+      entryFor: (deviceId: string) => draft.entry(deviceId, field),
+      reasonFor: (entry: DeviceGridDraftEntry) => draft.reason(entry),
+      editable: () => draft.editable(),
+      onRevert: (deviceId: string) => draft.onRevert(deviceId, field),
+      onConflict: (deviceId: string, anchor: HTMLElement) =>
+        draft.onConflict(deviceId, field, anchor),
+    },
+    cellClassRules: {
+      'device-draft-pending': (params) => entryOf(params)?.state === 'pending',
+      'device-draft-invalid': (params) => entryOf(params)?.state === 'invalid',
+      'device-draft-conflict': (params) =>
+        entryOf(params)?.state === 'conflict',
+    },
+    // The picker opens on Enter, F2, or a double-click, so the unit column has no editor.
+    editable: (params) =>
+      field !== 'orgUnitPath' &&
+      !params.node?.group &&
+      !!params.data &&
+      draft.editable(),
+    ...(field === 'notes'
+      ? {
+          cellEditor: 'agLargeTextCellEditor',
+          cellEditorParams: { maxLength: 1000, rows: 8, cols: 60 },
+        }
+      : field === 'orgUnitPath'
+        ? {}
+        : { cellEditor: 'agTextCellEditor' }),
+  };
+}
+
+/** Every data column is read-only until the draft options make a column editable (GRID-05). */
 export function deviceColumnDefs(
   onDetails: (row: DeviceRow, node: IRowNode<DeviceRow>) => void,
   options: {
     orgUnits?: () => readonly string[];
     now?: () => number;
+    draft?: DeviceDraftColumnOptions;
   } = {},
 ): ColDef<DeviceRow>[] {
   const now = options.now ?? Date.now;
@@ -230,20 +338,29 @@ export function deviceColumnDefs(
       suppressColumnsToolPanel: true,
       suppressFiltersToolPanel: true,
     },
-    ...DEVICE_FIELDS.map(
-      (field): ColDef<DeviceRow> => ({
+    ...DEVICE_FIELDS.map((field): ColDef<DeviceRow> => {
+      const updateField = GRID_UPDATE_FIELDS[field.id];
+      return {
         colId: field.id,
         headerName: field.label,
-        valueGetter: ({ data, node }) =>
-          data && !node?.group ? value(data, field.id, now()) : '',
+        valueGetter: ({ data, node }) => {
+          if (!data || node?.group) return '';
+          const text = value(data, field.id, now());
+          return updateField && options.draft
+            ? options.draft.value(data.deviceId, updateField, text)
+            : text;
+        },
         enableRowGroup: groupable.has(field.id),
         sortable: true,
         ...columnFilter(field, orgUnits),
         hide: field.optional,
         cellClass: field.id === 'serialNumber' ? 'device-code' : undefined,
+        ...(updateField && options.draft
+          ? editableColumn(updateField, options.draft)
+          : {}),
         ...(field.id === 'lastContact' ? staleContact : {}),
-      }),
-    ),
+      };
+    }),
   ];
 }
 

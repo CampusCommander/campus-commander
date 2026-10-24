@@ -1,0 +1,41 @@
+<div class="conflict-scrim" aria-hidden="true" (click)="close($event)"></div>
+<section
+  class="conflict-card"
+  role="dialog"
+  aria-labelledby="device-conflict-title"
+  cdkTrapFocus
+  [cdkTrapFocusAutoCapture]="true"
+  [style.left.px]="left()"
+  [style.top.px]="top()"
+  (keydown)="keydown($event)"
+>
+  <h2 id="device-conflict-title">{{ title() }}</h2>
+  <p class="conflict-context">{{ entry().serialNumber }} · {{ label() }}</p>
+  <dl class="conflict-values">
+    <div>
+      <dt>Baseline</dt>
+      <dd>{{ value(entry().baseline) }}</dd>
+    </div>
+    <div>
+      <dt>Your draft</dt>
+      <dd>{{ value(entry().value) }}</dd>
+    </div>
+    <div>
+      <dt>Current value</dt>
+      <dd>{{ value(entry().currentValue) }}</dd>
+    </div>
+  </dl>
+  <div class="conflict-actions">
+    <button
+      #firstAction
+      mat-stroked-button
+      type="button"
+      (click)="keepCurrent.emit()"
+    >
+      Keep current value
+    </button>
+    <button mat-stroked-button type="button" (click)="keepDraft.emit()">
+      Keep my draft
+    </button>
+  </div>
+</section>

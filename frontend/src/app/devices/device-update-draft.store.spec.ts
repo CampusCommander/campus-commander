@@ -74,13 +74,15 @@ it('keeps the draft in this tab', () => {
       sessionStorage.getItem(`cc.device-update-draft.${principal}`) ?? 'null',
     ),
   ).toEqual({
-    fields: [
-      {
-        field: 'annotatedUser',
-        mode: 'replace',
-        value: 'maya.chen@example.org',
-      },
-    ],
+    sheet: {
+      fields: [
+        {
+          field: 'annotatedUser',
+          mode: 'replace',
+          value: 'maya.chen@example.org',
+        },
+      ],
+    },
   });
 });
 
@@ -184,7 +186,9 @@ it('refuses a stored move without a path', () => {
   sessionStorage.setItem(
     `cc.device-update-draft.${principal}`,
     JSON.stringify({
-      fields: [{ field: 'orgUnitPath', mode: 'move', value: 'Cart Devices' }],
+      sheet: {
+        fields: [{ field: 'orgUnitPath', mode: 'move', value: 'Cart Devices' }],
+      },
     }),
   );
   const draft = configure();
@@ -223,7 +227,7 @@ it('keeps the draft in memory when tab storage fails', () => {
 it('reports a draft that this tab cannot read', () => {
   sessionStorage.setItem(
     `cc.device-update-draft.${principal}`,
-    JSON.stringify({ value: 'North lab', mode: 'replace' }),
+    JSON.stringify({ sheet: { value: 'North lab', mode: 'replace' } }),
   );
   const draft = configure();
   expect(draft.changed()).toBe(false);

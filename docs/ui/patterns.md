@@ -132,7 +132,7 @@ Keep drafts outside the loaded grid row cache.
 - Compute final approved values during preview. Retries must not apply Append or Prepend again.
 - Stage large paste operations through the qualified draft contract.
 
-**DRAFT-02 — In-grid batch editing.** Use `@libregrid/batch-edit` for staged editing in all entity grids.
+**DRAFT-02 — In-grid batch editing.** Use the AG Grid community editors with the shared draft store for staged editing in all entity grids.
 
 - Begin editing with Enter, F2, or the supported pointer gesture on an editable cell.
 - Stage valid values without writing to Google. Escape cancels the active editor's uncommitted input.

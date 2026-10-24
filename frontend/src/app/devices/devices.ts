@@ -27,6 +27,9 @@ import { DeviceGrid } from './device-grid';
 import { DeviceFilter } from './device-filter';
 import { DeviceUpdateSheet } from './device-update-sheet';
 import { DeviceActionSheet } from './device-action-sheet';
+import { DeviceGridDraftStore } from './device-grid-draft.store';
+import { DeviceGridRevertDialog } from './device-grid-revert-dialog';
+import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { deviceActionNote } from './device-action-messages';
 import { freshnessBanner } from './device-freshness';
 import type { DeviceView } from './device-datasource';
@@ -37,8 +40,10 @@ import {
   telemetryFailureText,
 } from './device-fields';
 import {
+  DEVICE_ORG_UNIT_SCOPE,
   DEVICE_WRITE_SCOPE,
   updateDeviceNote,
+  updateDeviceOrgUnitNote,
   type UpdateDeviceNote,
   type UpdateDeviceNoteAction,
 } from './device-update-messages';
@@ -76,6 +81,7 @@ interface BulkActionNoteGroup {
     DeviceFilter,
     DeviceUpdateSheet,
     DeviceActionSheet,
+    DeviceGridRevertDialog,
   ],
   templateUrl: './devices.html',
   styleUrl: './devices.css',
@@ -83,6 +89,10 @@ interface BulkActionNoteGroup {
 export class DevicesPage implements OnInit, OnDestroy {
   protected readonly store = inject(DevicesStore);
   protected readonly writeAccess = inject(DeviceWriteAccessStore);
+  /** The grid draft of this tab and person (DRAFT-01, DRAFT-02). */
+  protected readonly gridDraft = inject(DeviceGridDraftStore);
+  /** The shared tree that the grid's Organization unit picker reads. */
+  protected readonly orgUnitTree = inject(DeviceOrgUnitTreeStore);
   /** The one pre-filled delegation link that Diagnostics also shows. */
   protected readonly google = inject(GoogleHealthStore);
   private readonly auth = inject(AuthStore);
@@ -98,6 +108,7 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly refreshMenuOpen = signal(false);
   protected readonly bulkMenuOpen = signal(false);
   protected readonly updateOpen = signal(false);
+  protected readonly revertOpen = signal(false);
   protected readonly commandOpen = signal(false);
   protected readonly statusOpen = signal(false);
   protected readonly copied = signal('');
@@ -179,6 +190,19 @@ export class DevicesPage implements OnInit, OnDestroy {
   );
   protected readonly canBulk = computed(() =>
     this.authorized('devices:bulk-actions'),
+  );
+  /** The three actions of Update device. Without them every grid cell stays read-only. */
+  protected readonly gridEditable = computed(
+    () => this.canRead() && this.canWrite() && this.canBulk(),
+  );
+  /** The route's note while the Organization unit read is not granted. */
+  protected readonly orgUnitNote = computed(() =>
+    this.gridEditable()
+      ? updateDeviceOrgUnitNote(
+          this.orgUnitTree.tree(),
+          this.orgUnitTree.message(),
+        )
+      : null,
   );
   protected readonly canDiagnose = computed(() =>
     this.authorized('connection:diagnose'),
@@ -361,6 +385,29 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   protected recheck(): void {
     void this.writeAccess.check();
+  }
+
+  /** Copy the scope that the Organization unit note names. */
+  protected copyOrgUnitScope(): void {
+    if (!DEVICE_ORG_UNIT_SCOPE) return;
+    void navigator.clipboard.writeText(DEVICE_ORG_UNIT_SCOPE).then(
+      () => this.copied.set('Copied the Google organization unit read scope.'),
+      () =>
+        this.copied.set(
+          'Clipboard access is unavailable. Select and copy the scope text.',
+        ),
+    );
+  }
+
+  protected recheckOrgUnits(): void {
+    void this.orgUnitTree.load();
+  }
+
+  /** Revert all changes clears the grid draft after the one question names the count. */
+  protected confirmRevertAll(): void {
+    this.gridDraft.revertAll();
+    this.revertOpen.set(false);
+    this.focusBulkActions();
   }
 
   /** One filter per field. A chip for a filtered field replaces that filter. */

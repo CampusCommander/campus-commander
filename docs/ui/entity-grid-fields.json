@@ -29,12 +29,17 @@
     "cellNavigation": false
   },
   "editing": {
-    "module": "@libregrid/batch-edit",
+    "module": "ag-grid-community",
     "readOnlyEditor": null,
     "capabilityGate": "field-writable-and-row-authorized-and-online",
     "draftKey": ["stableEntityId", "fieldId"],
     "draftOutsideRowCache": true,
-    "toolbar": ["Save", "Clear", "Filter Changed", "Show All"],
+    "toolbar": [
+      "Show pending changes",
+      "Show all devices",
+      "Revert all changes",
+      "Save changes"
+    ],
     "changedCellIndicators": ["tint", "border", "rollback-icon"],
     "rollbackScope": "one-unsubmitted-field",
     "clearScope": "all-unsubmitted-grid-fields",
@@ -146,7 +151,7 @@
       "fieldId": "annotatedUser",
       "label": "Annotated user",
       "dataType": "text",
-      "inGridEditor": null,
+      "inGridEditor": "text",
       "filterable": true,
       "defaultVisible": false
     },

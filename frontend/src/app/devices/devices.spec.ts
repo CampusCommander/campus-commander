@@ -49,6 +49,7 @@ class GridStub {
   readonly rowRefresh = input<unknown>();
   readonly selectedView = input(false);
   readonly resumeRevision = input(0);
+  readonly editable = input(false);
   readonly details = output<{
     row: DeviceRow;
     index: number;

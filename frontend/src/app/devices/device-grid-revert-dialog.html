@@ -1,0 +1,30 @@
+@if (open()) {
+<div class="picker-scrim" aria-hidden="true" (click)="cancelled.emit()"></div>
+<div class="picker-wrap">
+  <section
+    class="picker"
+    role="alertdialog"
+    aria-modal="true"
+    aria-labelledby="revert-all-title"
+    aria-describedby="revert-all-question"
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown)="keydown($event)"
+  >
+    <h2 id="revert-all-title">Revert all changes?</h2>
+    <div class="picker-content">
+      <p id="revert-all-question">
+        This clears {{ countLine() }}. You can edit the cells again.
+      </p>
+    </div>
+    <div class="picker-actions">
+      <button mat-button type="button" (click)="cancelled.emit()">
+        Cancel
+      </button>
+      <button mat-flat-button type="button" (click)="confirmed.emit()">
+        Revert all changes
+      </button>
+    </div>
+  </section>
+</div>
+}

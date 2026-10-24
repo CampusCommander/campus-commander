@@ -72,6 +72,46 @@
 .action-note button {
   flex: none;
 }
+.draft-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-md);
+  padding: var(--cc-space-sm) var(--cc-card-padding);
+  border-inline-start: 4px solid var(--cc-accent);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-selected);
+}
+.draft-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.draft-count {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.draft-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--cc-text-secondary);
+}
+.draft-line.error {
+  color: var(--cc-status-error-text);
+}
+.draft-line.warning {
+  color: var(--cc-status-warning-text);
+}
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-space-sm);
+}
 /* Material 3 dropdown buttons: the expand icon follows the label and rotates while open. */
 .dropdown-icon {
   margin-inline-start: var(--cc-space-xs);

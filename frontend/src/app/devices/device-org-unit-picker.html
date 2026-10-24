@@ -11,7 +11,7 @@
   >
     <h2 id="ou-picker-title">Choose organization unit</h2>
     <div class="picker-content">
-      <p class="current">{{ countLine() }}</p>
+      <p class="current">{{ contextLine() ?? countLine() }}</p>
       <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Find an organization unit</mat-label>
         <input
@@ -42,7 +42,7 @@
         [disabled]="!highlighted()"
         (click)="choose()"
       >
-        Choose
+        {{ confirmLabel() }}
       </button>
     </div>
   </section>

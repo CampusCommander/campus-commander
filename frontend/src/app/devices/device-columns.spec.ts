@@ -1,6 +1,7 @@
 import type { ColDef } from 'ag-grid-community';
 import type { DeviceRow } from '@campus/application-contracts';
 import { deviceColumnDefs } from './device-columns';
+import { DeviceDraftCell } from './device-draft-cell';
 
 const row = (stale: boolean): DeviceRow => ({
   deviceId: 'd1',
@@ -115,5 +116,67 @@ it('filters status with the three contract values in the record order', () => {
   expect(params.suppressSorting).toBe(true);
   expect(params.valueFormatter({ value: 'DEPROVISIONED' })).toBe(
     'Deprovisioned',
+  );
+});
+
+it('keeps every column read-only without the draft options', () => {
+  expect(columns().some((column) => column.cellEditor)).toBe(false);
+  expect(
+    columns().find((column) => column.colId === 'assetTag')!.cellRenderer,
+  ).toBeUndefined();
+});
+
+it('gives the five draft columns their editors, renderer, and state rules', () => {
+  const draft = {
+    editable: () => true,
+    value: (deviceId: string, field: string, fallback: string) =>
+      field === 'annotatedAssetId' && deviceId === 'd1' ? 'CB-DRAFT' : fallback,
+    entry: (_deviceId: string, field: string) =>
+      ({ state: field === 'notes' ? 'invalid' : 'pending' }) as never,
+    reason: () => 'Notes holds 1 to 500 characters.',
+    onRevert: () => undefined,
+    onConflict: () => undefined,
+  };
+  const list = deviceColumnDefs(() => undefined, { draft });
+  const column = (id: string) => list.find((item) => item.colId === id)!;
+  expect(column('assetTag').cellEditor).toBe('agTextCellEditor');
+  expect(column('annotatedLocation').cellEditor).toBe('agTextCellEditor');
+  expect(column('annotatedUser').cellEditor).toBe('agTextCellEditor');
+  expect(column('notes').cellEditor).toBe('agLargeTextCellEditor');
+  for (const id of [
+    'assetTag',
+    'annotatedLocation',
+    'annotatedUser',
+    'notes',
+    'orgUnitPath',
+  ])
+    expect(column(id).cellRenderer).toBe(DeviceDraftCell);
+  expect(column('orgUnitPath').cellEditor).toBeUndefined();
+  expect(column('serialNumber').cellEditor).toBeUndefined();
+  expect(column('serialNumber').cellRenderer).toBeUndefined();
+
+  const editable = column('assetTag').editable as (params: unknown) => boolean;
+  expect(editable({ data: row(false), node: { group: false } })).toBe(true);
+  expect(editable({ data: row(false), node: { group: true } })).toBe(false);
+  expect(
+    (column('orgUnitPath').editable as (params: unknown) => boolean)({
+      data: row(false),
+      node: { group: false },
+    }),
+  ).toBe(false);
+
+  const getter = column('assetTag').valueGetter as (params: unknown) => string;
+  expect(getter({ data: row(false), node: { group: false } })).toBe('CB-DRAFT');
+  expect(getter({ data: row(false), node: { group: true } })).toBe('');
+
+  const rules = column('notes').cellClassRules as Record<
+    string,
+    (params: unknown) => boolean
+  >;
+  expect(rules['device-draft-invalid']({ data: row(false), node: {} })).toBe(
+    true,
+  );
+  expect(rules['device-draft-pending']({ data: row(false), node: {} })).toBe(
+    false,
   );
 });
