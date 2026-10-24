@@ -88,9 +88,16 @@ const flat = (): SelectionContext => ({ predicates: [], by: [] });
 function deviceOps(
   op: SelectionOp,
   context: SelectionContext,
+  pending: readonly string[] | null = null,
 ): DeviceSelectionOp[] {
   switch (op.op) {
     case 'selectAll':
+      // The pending view lists rows outside the person's filters, so an unrestricted
+      // Select All would capture the whole inventory. It selects exactly its rows (SELECT-01).
+      if (pending)
+        return sized(pending, listBudget, idBatch).map(
+          (ids): DeviceSelectionOp => ({ op: 'select', ids }),
+        );
       return [
         { op: 'selectAll', predicates: predicatesFromFilterModel(op.filter) },
       ];
@@ -118,6 +125,11 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
    * row replacement leaves it unchanged. This count tells those changes apart.
    */
   readonly revision = signal(0);
+  /**
+   * The pending view's device IDs while that view is on, or null for the person's query.
+   * Select All then selects exactly the rows on screen (SELECT-01).
+   */
+  readonly pendingScope = signal<readonly string[] | null>(null);
 
   constructor(
     private readonly call: (
@@ -167,7 +179,9 @@ export class DeviceSelectionProvider implements ServerSideSelectionProvider {
     ops: SelectionOp[];
   }): Promise<void> {
     const context = this.context();
-    const ops = params.ops.flatMap((op) => deviceOps(op, context));
+    const ops = params.ops.flatMap((op) =>
+      deviceOps(op, context, this.pendingScope()),
+    );
     if (!ops.length) return;
     for (const part of sized(ops, opsBudget, opBatch))
       this.keep(await this.post('/ops', { ...key(params), ops: part }));

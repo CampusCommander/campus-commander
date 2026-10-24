@@ -50,6 +50,44 @@ it('sends Select All with the grid filters as device predicates', async () => {
   expect(provider.spec()?.selectedCount).toBe(95);
 });
 
+it('selects exactly the pending rows while the pending view is on', async () => {
+  const call = vi.fn().mockResolvedValue(Response.json({ selection: spec }));
+  const provider = new DeviceSelectionProvider(call);
+  // The pending view lists rows outside the person's filters, so an unrestricted
+  // Select All would capture the whole inventory (SELECT-01).
+  provider.pendingScope.set(['d1', 'd4']);
+  await provider.applyOps({
+    gridId: 'devices',
+    tabId,
+    ops: [{ op: 'selectAll', filter: {} }],
+  });
+  expect(call.mock.calls[0][1].ops).toEqual([
+    { op: 'select', ids: ['d1', 'd4'] },
+  ]);
+});
+
+it('returns Select All to the person filters after the pending view', async () => {
+  const call = vi.fn().mockResolvedValue(Response.json({ selection: spec }));
+  const provider = new DeviceSelectionProvider(call);
+  provider.pendingScope.set(['d1', 'd4']);
+  provider.pendingScope.set(null);
+  await provider.applyOps({
+    gridId: 'devices',
+    tabId,
+    ops: [
+      {
+        op: 'selectAll',
+        filter: {
+          assetTag: { filterType: 'text', type: 'startsWith', filter: 'HS-04' },
+        },
+      },
+    ],
+  });
+  expect(call.mock.calls[0][1].ops).toEqual([
+    { op: 'selectAll', predicates: spec.terms[0].predicates },
+  ]);
+});
+
 it('counts applied selection changes, not reads', async () => {
   const call = vi
     .fn()

@@ -32,6 +32,7 @@ import {
   type GridReadyEvent,
   type GridState,
   type IRowNode,
+  type ColumnState,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
 import {
@@ -63,9 +64,13 @@ import {
 import {
   defaultGridState,
   deviceDatasource,
+  pendingDatasource,
   savedGridState,
+  sortModelFromColumnState,
   type DeviceGroupLoader,
   type DeviceLoader,
+  type DevicePendingDatasource,
+  type DevicePendingLoader,
 } from './device-datasource';
 import {
   filterModelUpdate,
@@ -226,6 +231,15 @@ export class DeviceGrid implements OnInit {
   readonly selectedView = input(false);
   /** The chips. The grid shows them as column filters. */
   readonly predicates = input<DevicePredicate[]>([]);
+  /**
+   * The changed devices of the grid draft. A non-null list switches the grid to the
+   * pending view: flat rows outside the person's filters and grouping (addendum 5).
+   */
+  readonly pendingIds = input<readonly string[] | null>(null);
+  /** Reads the pending view's rows by device ID. */
+  readonly loadPending = input<DevicePendingLoader | null>(null);
+  /** Increments when the person asks for a failed pending read again. */
+  readonly pendingRevision = input(0);
   /** Organization units for the OrgUnit set filter. */
   readonly orgUnits = input<readonly DeviceOrgUnit[]>([]);
   /**
@@ -237,6 +251,8 @@ export class DeviceGrid implements OnInit {
   readonly selection = input.required<{
     provider: ServerSideSelectionProvider;
     tabId: string;
+    /** The pending view's device IDs while that view is on (SELECT-01). */
+    pendingScope?: (ids: readonly string[] | null) => void;
   }>();
   /** Refresh signals update the rows this grid holds. */
   readonly rowRefresh = input<DeviceRowRefresh | null>(null);
@@ -275,6 +291,20 @@ export class DeviceGrid implements OnInit {
     viewChild<ElementRef<HTMLElement>>('conflictCard');
 
   private api: GridApi<DeviceRow> | null = null;
+  /** The grid shows the pending view: flat rows of the draft's devices. */
+  private pending = false;
+  /** The person's row grouping, put back when the pending view closes. */
+  private pendingGroups: string[] | null = null;
+  /** The person's sort, put back when the pending view closes. */
+  private pendingSort: ColumnState[] | null = null;
+  /** The rows of the pending view, so refreshed records reach its cache (D7). */
+  private pendingSource: DevicePendingDatasource | null = null;
+  /** The device IDs of the pending view on screen. */
+  private pendingViewIds: readonly string[] | null = null;
+  /** A view switch is moving the grid, so its reloads wait for the switch to finish. */
+  private switching = false;
+  /** The last retry request that the grid answered. */
+  private pendingRetried = 0;
   private focused = false;
   /** The remembered row while the status bar may still change height. */
   private pendingRow: number | null = null;
@@ -285,7 +315,9 @@ export class DeviceGrid implements OnInit {
   constructor() {
     effect(() => {
       this.revision();
-      untracked(() => this.reload());
+      // A revision arrives from a reconnect or a completed full sync. It reloads the
+      // view on screen, which is the pending view while that view is on (B2).
+      untracked(() => this.reloadActiveView());
     });
     effect(() => {
       this.resumeRevision();
@@ -293,7 +325,25 @@ export class DeviceGrid implements OnInit {
     });
     effect(() => {
       const predicates = this.predicates();
-      untracked(() => this.applyPredicates(predicates));
+      untracked(() => {
+        // The pending view hides the person's filters. They return with Show all devices.
+        if (!this.pending) this.applyPredicates(predicates);
+      });
+    });
+    // "Show pending changes" swaps the datasource for the draft's devices (addendum 5).
+    effect(() => {
+      const ids = this.pendingIds();
+      untracked(() => this.applyPendingView(ids));
+    });
+    // A failed pending read retries on request. The first run is not a retry.
+    effect(() => {
+      const revision = this.pendingRevision();
+      untracked(() => {
+        if (revision === this.pendingRetried) return;
+        this.pendingRetried = revision;
+        const ids = this.pendingIds();
+        if (this.pending && ids?.length) this.applyPendingView(ids);
+      });
     });
     // "Review pending devices" switches the open grid to its selected view.
     effect(() => {
@@ -355,13 +405,15 @@ export class DeviceGrid implements OnInit {
       onFilterChanged: () => this.filtersChanged(),
       // LibreGrid refreshes only existing group stores when grouping changes.
       // A new datasource makes it switch between paged rows and groups.
-      onColumnRowGroupChanged: () => this.reload(),
+      onColumnRowGroupChanged: () => this.rowGroupingChanged(),
       onGridPreDestroyed: ({ state, api }) => {
         this.endLiveEdit();
         this.picker.set(null);
         this.conflict.set(null);
+        // The selection provider belongs to the page. A closed pending view leaves no scope.
+        this.pendingScope(null);
         this.saveState()(
-          savedGridState(state),
+          this.stateForSave(state),
           api.getGridOption('ssrmSelectionViewActive') === true,
         );
       },
@@ -377,6 +429,7 @@ export class DeviceGrid implements OnInit {
         tabId: this.selection().tabId,
         footer: this.footer,
         status: this.status,
+        pending: () => this.pending,
         onSelectionReady: (service) => this.selectionReady(service),
       }),
     };
@@ -386,9 +439,19 @@ export class DeviceGrid implements OnInit {
     this.api = event.api;
     const refresh = this.rowRefresh();
     refresh?.attach(event.api);
-    this.destroyRef.onDestroy(() => refresh?.detach(event.api));
-    this.applyPredicates(this.predicates());
-    this.reload();
+    // A refreshed record reaches the pending view's cached rows, so sorting keeps it (D7).
+    const stop = refresh?.onApply((rows) => this.pendingSource?.update(rows));
+    this.destroyRef.onDestroy(() => {
+      refresh?.detach(event.api);
+      stop?.();
+    });
+    // A saved pending view opens before the person's own query runs.
+    const pending = this.pendingIds();
+    if (pending?.length) this.applyPendingView(pending);
+    else {
+      this.applyPredicates(this.predicates());
+      this.reload();
+    }
     this.refreshDraftCells();
   }
 
@@ -610,6 +673,125 @@ export class DeviceGrid implements OnInit {
     this.api?.refreshCells?.({ force: true, suppressFlash: true });
   }
 
+  /**
+   * Switch between the person's query and the pending view. The pending view is flat:
+   * its rows ignore the person's filters and grouping (addendum section 5). Neither
+   * switch touches the draft.
+   */
+  private applyPendingView(ids: readonly string[] | null): void {
+    const api = this.api;
+    if (!api) return;
+    if (!ids?.length) {
+      if (this.pending) this.leavePendingView();
+      return;
+    }
+    if (!this.pending) {
+      this.switching = true;
+      this.pending = true;
+      // The person's grouping and sort return with Show all devices.
+      this.pendingGroups = api
+        .getRowGroupColumns()
+        .map((column) => column.getColId());
+      this.pendingSort = api.getColumnState();
+      api.setRowGroupColumns([]);
+      api.setFilterModel(null);
+      this.switching = false;
+    }
+    this.reloadPending(ids);
+  }
+
+  /** Put the person's query back: grouping, sort, filters, and the query datasource. */
+  private leavePendingView(): void {
+    const groups = this.pendingGroups ?? [];
+    const sort = this.pendingSort;
+    this.switching = true;
+    this.pending = false;
+    this.pendingGroups = null;
+    this.pendingSort = null;
+    this.pendingViewIds = null;
+    this.pendingSource = null;
+    this.pendingScope(null);
+    this.api?.setRowGroupColumns(groups);
+    // The pending view may have sorted its own rows. The person's sort comes back.
+    if (sort) this.restoreSort(sort);
+    // The chips are the person's query. They rebuild the column filters.
+    this.applyPredicates(this.predicates());
+    this.switching = false;
+    this.reload();
+  }
+
+  /** Every column's sort is replaced, so no pending order stays behind. */
+  private restoreSort(sort: readonly ColumnState[]): void {
+    this.api?.applyColumnState({
+      defaultState: { sort: null },
+      state: sort.map((item) => ({
+        colId: item.colId,
+        sort: item.sort,
+        sortIndex: item.sortIndex,
+      })),
+    });
+  }
+
+  /** One read answers the pending view. Paging and sorting reuse that answer. */
+  private reloadPending(ids: readonly string[]): void {
+    const load = this.loadPending();
+    if (!load) return;
+    this.pendingViewIds = ids;
+    this.pendingScope(ids);
+    const source = pendingDatasource(() => load(ids));
+    this.pendingSource = source;
+    this.api?.setGridOption('serverSideDatasource', source);
+  }
+
+  /** A revision reloads the view on screen, which is the pending view while it is on (B2). */
+  private reloadActiveView(): void {
+    const ids = this.pendingViewIds;
+    if (this.pending && ids?.length) this.reloadPending(ids);
+    else this.reload();
+  }
+
+  /** The pending view is flat. A grouping control returns it to flat rows (addendum 5). */
+  private rowGroupingChanged(): void {
+    // A view switch moves the grouping itself. Its own reload follows the switch.
+    if (this.switching) return;
+    if (this.pending) {
+      // The Columns panel and API callers can group past the column menu.
+      if (this.api?.getRowGroupColumns().length)
+        queueMicrotask(() => this.keepPendingFlat());
+      return;
+    }
+    this.reload();
+  }
+
+  private keepPendingFlat(): void {
+    const api = this.api;
+    if (!this.pending || !api?.getRowGroupColumns().length) return;
+    this.switching = true;
+    api.setRowGroupColumns([]);
+    this.switching = false;
+  }
+
+  /** The pending view's selection scope is its device IDs, not the person's filter. */
+  private pendingScope(ids: readonly string[] | null): void {
+    this.selection().pendingScope?.(ids);
+  }
+
+  /**
+   * The state that Back to devices restores. The pending view is temporary, so its save
+   * keeps the person's grouping and sort rather than the flat layout on screen.
+   */
+  private stateForSave(state: GridState): GridState {
+    const saved = savedGridState(state);
+    if (!this.pending) return saved;
+    const next: GridState = { ...saved };
+    const groups = this.pendingGroups;
+    if (groups?.length) next.rowGroup = { groupColIds: [...groups] };
+    const sort = this.pendingSort;
+    // The sort model's order is its priority, which column state keeps in sortIndex (B5).
+    if (sort?.length) next.sort = { sortModel: sortModelFromColumnState(sort) };
+    return next;
+  }
+
   /** Setting a new datasource resets the server-side row model to its first block. */
   private reload(): void {
     this.api?.setGridOption(
@@ -636,7 +818,8 @@ export class DeviceGrid implements OnInit {
 
   private filtersChanged(): void {
     const api = this.api;
-    if (!api) return;
+    // The pending view sets its own model. A column filter there is not the person's query.
+    if (!api || this.pending || this.switching) return;
     try {
       this.filtersChange.emit(predicatesFromFilterModel(api.getFilterModel()));
     } catch {
