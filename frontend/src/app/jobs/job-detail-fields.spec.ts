@@ -22,6 +22,7 @@ import {
   operationNumber,
   operationTotal,
   operationsFooter,
+  observedText,
   outcomeNotes,
   outcomeTone,
   pathParts,
@@ -722,10 +723,111 @@ describe('job detail fields', () => {
 
   it('labels every writable field and a row without one', () => {
     expect(fieldLabel('annotatedLocation')).toBe('Annotated location');
+    expect(fieldLabel('annotatedAssetId')).toBe('Asset tag');
     expect(fieldLabel('annotatedUser')).toBe('Annotated user');
     expect(fieldLabel('notes')).toBe('Notes');
     expect(fieldLabel('orgUnitPath')).toBe('Organization unit');
     expect(fieldLabel(null)).toBe('—');
+  });
+
+  it('names the observed value only when it differs from the requested value', () => {
+    // A read-back can settle `value-differs` with a third value (IF5, B1).
+    const divergent = operation({
+      operationId: 'UPD-008-2-annotatedAssetId',
+      field: 'annotatedAssetId',
+      operation: 'replace',
+      baselineValue: 'tag-before',
+      requestedValue: 'tag-requested',
+      observedValue: 'tag-observed',
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      googleStatus: 200,
+      googleReason: null,
+      verifiedBy: 'read-back',
+    });
+    expect(observedText(divergent)).toBe('tag-observed');
+
+    // The requested cell already states an equal observed value, so the row adds no line.
+    expect(observedText(operation({ observedValue: 'North lab' }))).toBeNull();
+    expect(observedText(operation({ observedValue: null }))).toBeNull();
+
+    // A command row holds no field value.
+    expect(
+      observedText(
+        operation({
+          field: null,
+          operation: 'reboot',
+          baselineValue: null,
+          requestedValue: null,
+          observedValue: 'REBOOT',
+        }),
+      ),
+    ).toBeNull();
+
+    // A status row names its stored status, and repeats nothing when the status did change.
+    const disable = {
+      field: null,
+      operation: 'disable' as const,
+      baselineValue: 'ACTIVE',
+      requestedValue: 'DISABLED',
+    };
+    expect(
+      observedText(operation({ ...disable, observedValue: 'ACTIVE' })),
+    ).toBe('Active');
+    expect(
+      observedText(operation({ ...disable, observedValue: 'DISABLED' })),
+    ).toBeNull();
+
+    // A failed Clear keeps a value, and the row names it.
+    expect(
+      observedText(
+        operation({
+          operation: 'clear',
+          baselineValue: 'Science wing',
+          requestedValue: null,
+          observedValue: 'Science wing',
+        }),
+      ),
+    ).toBe('Science wing');
+
+    // A Clear request displays the label "Clear value", and that label is also valid
+    // field content. Equality uses the stored request, so a real observation still shows.
+    expect(
+      observedText(
+        operation({
+          operation: 'clear',
+          baselineValue: 'notes-before',
+          requestedValue: null,
+          observedValue: 'Clear value',
+        }),
+      ),
+    ).toBe('Clear value');
+
+    // A request that literally reads "Clear value" adds no line when the read-back repeats it.
+    expect(
+      observedText(
+        operation({
+          operation: 'replace',
+          baselineValue: null,
+          requestedValue: 'Clear value',
+          observedValue: 'Clear value',
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('names an Asset tag row under the Operation cell', () => {
+    // The addendum adds annotatedAssetId, and a row names the field label (IF5).
+    const assetTag = operation({
+      operationId: 'UPD-008-1-annotatedAssetId',
+      field: 'annotatedAssetId',
+      operation: 'replace',
+      baselineValue: null,
+      requestedValue: 'CB415508',
+    });
+    expect(operationLabel(assetTag)).toBe('Asset tag');
+    expect(beforeText(assetTag)).toBe('Not set');
+    expect(requestedText(assetTag)).toBe('CB415508');
   });
 
   it('names Organization unit and shows both paths of a Move row', () => {
@@ -942,6 +1044,23 @@ describe('job detail fields', () => {
     ).toEqual([]);
   });
 
+  it('names the update failure for an edit-list job without shared changes', () => {
+    // An edit-list job answers `changes: null`, and its rows still hold the requested and
+    // observed values per device and field. The row names the app outcome (IF5).
+    const editList = job({ changes: null });
+    expect(
+      rowFailureText(
+        editList,
+        operation({
+          outcome: 'failed',
+          outcomeReason: 'value-differs',
+          googleStatus: 200,
+          googleReason: 'Google text',
+        }),
+      ),
+    ).toBe('C0A1-7F84 does not hold the requested value.');
+  });
+
   it('names a cancelled command under its failed row', () => {
     const cancelled = operation({
       field: null,
@@ -950,7 +1069,7 @@ describe('job detail fields', () => {
       outcomeReason: 'command-cancelled',
       googleReason: null,
     });
-    expect(rowFailureText({ changes: null }, cancelled)).toBe(
+    expect(rowFailureText({ action: 'powerwash-devices' }, cancelled)).toBe(
       'Google cancelled the command.',
     );
   });
@@ -1231,5 +1350,46 @@ describe('job detail fields', () => {
         hasNext: false,
       }),
     ).toBe('Rows 1–6 of 6 operations');
+  });
+
+  it('omits the row total of an edit-list update job', () => {
+    // An edit list holds its own fields per device, so the header cannot count the rows.
+    const editList = job({ changes: null });
+    expect(
+      operationsFooter(editList, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 3,
+        hasNext: false,
+      }),
+    ).toBe('Rows 1–3');
+    expect(
+      operationsFooter(editList, {
+        attention: true,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 2,
+        hasNext: false,
+      }),
+    ).toBe('Rows 1–2 matching operations');
+    expect(
+      operationsFooter(editList, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 0,
+        hasNext: false,
+      }),
+    ).toBe('0 operations');
+    expect(
+      operationsFooter(editList, {
+        attention: true,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 0,
+        hasNext: false,
+      }),
+    ).toBe('0 matching operations');
   });
 });

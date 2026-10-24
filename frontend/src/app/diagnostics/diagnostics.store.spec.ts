@@ -30,6 +30,16 @@ const flush = async () => {
   for (let index = 0; index < 10; index++) await Promise.resolve();
 };
 
+/**
+ * Drains microtasks until the condition holds. Node 22 resolves a Response body
+ * through more microtasks than Node 24, so a fixed tick count is not portable.
+ */
+const settle = async (condition: () => boolean) => {
+  for (let index = 0; index < 100 && !condition(); index++) {
+    await Promise.resolve();
+  }
+};
+
 function setup(
   request: (path: string) => Promise<Response>,
   permissions = ['diagnostics:read'],
@@ -149,7 +159,7 @@ it('runs a queued manual read after the active read for the same person', async 
   expect(request).toHaveBeenCalledTimes(1);
 
   answers[0](Response.json(serviceHealth('ready')));
-  await flush();
+  await settle(() => request.mock.calls.length === 2);
   expect(request).toHaveBeenCalledTimes(2);
 
   answers[1](Response.json(serviceHealth('not-ready')));
