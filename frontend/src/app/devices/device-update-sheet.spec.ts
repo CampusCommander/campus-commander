@@ -2,6 +2,7 @@ import { ErrorHandler, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
+import { DEVICE_UPDATE_FIELD_LABELS } from '@campus/application-contracts';
 import type {
   DeviceDetail,
   DeviceRow,
@@ -1378,6 +1379,7 @@ it('replays the same preview and digest after a closure and opens the later rece
   expect(JSON.parse(sessionStorage.getItem(retainedKey) ?? '{}')).toEqual({
     previewId,
     manifestDigest: 'a'.repeat(64),
+    source: 'selection',
     submittedBy: principal,
   });
 
@@ -3474,6 +3476,308 @@ describe('device details source', () => {
     expect(ui.single.deviceId()).toBe('synthetic-device-2');
     expect(ui.single.changed()).toBe(false);
     expect(ui.single.modeOf('notes')).toBe('unchanged');
+  });
+
+  for (const field of [
+    'annotatedLocation',
+    'annotatedUser',
+    'notes',
+  ] as const) {
+    it(`omits a Clear of an empty ${field} and names the omission`, async () => {
+      const ui = await setup({
+        source: 'device',
+        device: deviceDetail({ [field]: null }),
+      });
+      ui.single.setMode(field, 'clear');
+      await ui.settle();
+      // The request would equal its baseline, so it never joins the edit list.
+      expect(ui.single.edits()).toEqual([]);
+      expect(ui.button('Save and preview')!.disabled).toBe(true);
+      expect(ui.block(field)?.textContent).toContain(
+        `${DEVICE_UPDATE_FIELD_LABELS[field]} is already empty. Clear changes nothing.`,
+      );
+      ui.button('Save and preview')!.click();
+      await ui.settle();
+      expect(
+        ui.request.mock.calls.filter(
+          ([path]) => path === '/api/devices/updates/edit-previews',
+        ),
+      ).toHaveLength(0);
+    });
+  }
+
+  it('keeps a valid Asset tag change beside a Clear that changes nothing', async () => {
+    const ui = await setup({
+      source: 'device',
+      device: deviceDetail({ notes: null }),
+    });
+    ui.single.setMode('notes', 'clear');
+    await ui.settle();
+    await typeDevice(ui, 'annotatedAssetId', 'HS-0402');
+    expect(ui.button('Save and preview')!.disabled).toBe(false);
+    expect(ui.element.textContent).toContain(
+      'Notes is already empty. Clear changes nothing.',
+    );
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    const call = ui.request.mock.calls.find(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    );
+    expect(call?.[1]).toEqual({
+      edits: [
+        {
+          deviceId: 'synthetic-device-1',
+          field: 'annotatedAssetId',
+          mode: 'replace',
+          value: 'HS-0402',
+          baselineValue: 'HS-0401',
+        },
+      ],
+    });
+  });
+
+  it('keeps a Clear of a value that the device holds', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    ui.single.setMode('notes', 'clear');
+    await ui.settle();
+    expect(ui.button('Save and preview')!.disabled).toBe(false);
+    expect(ui.element.textContent).not.toContain('Notes is already empty');
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    const call = ui.request.mock.calls.find(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    );
+    expect(call?.[1]).toEqual({
+      edits: [
+        {
+          deviceId: 'synthetic-device-1',
+          field: 'notes',
+          mode: 'clear',
+          baselineValue: 'Cart 7 loaner pool',
+        },
+      ],
+    });
+  });
+
+  it('keeps the single-device draft when a grid receipt is recovered', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    // An uncertain grid confirmation for another device answers the next save.
+    TestBed.inject(DeviceUpdateConfirmationStore).retain({
+      previewId,
+      manifestDigest: preview.manifestDigest,
+      source: 'grid',
+      submittedBy: principal,
+      entries: [
+        {
+          deviceId: 'old-grid-device',
+          field: 'notes',
+          mode: 'replace',
+          value: 'old grid value',
+          baselineValue: 'old grid baseline',
+        },
+      ],
+    });
+    ui.single.setMode('notes', 'replace');
+    ui.single.setValue('notes', 'NEW-UNSUBMITTED-SINGLE-DRAFT');
+    await ui.settle();
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    await ui.settle();
+    // The replay answered the retained receipt, so no preview carried the new value.
+    expect(
+      ui.request.mock.calls.filter(
+        ([path]) => path === '/api/devices/updates/edit-previews',
+      ),
+    ).toHaveLength(0);
+    expect(ui.element.textContent).toContain('Update job created');
+    // The unrelated receipt leaves the new draft alone, through display and Back to device.
+    expect(ui.single.modeOf('notes')).toBe('replace');
+    expect(ui.single.valueOf('notes')).toBe('NEW-UNSUBMITTED-SINGLE-DRAFT');
+    ui.button('Back to device')!.click();
+    await ui.settle();
+    expect(ui.deviceReload).toHaveBeenCalledTimes(1);
+    expect(ui.single.modeOf('notes')).toBe('replace');
+    expect(ui.single.valueOf('notes')).toBe('NEW-UNSUBMITTED-SINGLE-DRAFT');
+  });
+
+  it('settles an accepted single-device edit after the sheet closed', async () => {
+    let releaseAnswer!: (response: Response) => void;
+    let confirms = 0;
+    const ui = await setup({
+      source: 'device',
+      device: deviceDetail(),
+      // The grid draft is independent, so single-device settlement never touches it.
+      stage: (grid) =>
+        grid.stageText(gridRow('d-grid', 'C0A1-0009'), 'notes', 'Grid change'),
+      request: async (path) => {
+        if (path === '/api/devices/updates/org-units')
+          return Response.json(orgUnitTree);
+        if (path === '/api/devices/updates/edit-previews')
+          return Response.json(devicePreview, { status: 201 });
+        if (path === previewReadPath) return Response.json(devicePreview);
+        if (path.includes('/targets'))
+          return Response.json({
+            targets: deviceTargets,
+            nextCursor: null,
+          });
+        if (path.endsWith('/confirm')) {
+          confirms += 1;
+          return new Promise<Response>((resolve) => {
+            releaseAnswer = resolve;
+          });
+        }
+        if (path === '/api/jobs/UPD-006') return Response.json(job);
+        return Response.json({}, { status: 404 });
+      },
+    });
+    await typeDevice(ui, 'annotatedAssetId', 'HS-0402');
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    ui.button('Continue to confirmation')!.click();
+    await ui.settle();
+    await ui.acknowledge();
+    ui.button('Create update job')!.click();
+    await vi.waitFor(() => expect(confirms).toBe(1));
+
+    // Close the sheet, then deliver the acceptance while the provider effect is pending.
+    ui.element
+      .querySelector<HTMLButtonElement>(
+        '.sheet-head button[aria-label="Close"]',
+      )!
+      .click();
+    await ui.settle();
+    await ui.close();
+    releaseAnswer(Response.json(receipt, { status: 201 }));
+    await ui.settle();
+
+    // The accepted field left the draft, and the retained identity is spent.
+    expect(ui.single.deviceId()).toBe('synthetic-device-1');
+    expect(ui.single.changed()).toBe(false);
+    expect(ui.single.modeOf('annotatedAssetId')).toBe('unchanged');
+    expect(TestBed.inject(DeviceUpdateConfirmationStore).pending()).toEqual([]);
+    expect(TestBed.inject(DeviceGridDraftStore).edits()).toEqual([
+      {
+        deviceId: 'd-grid',
+        field: 'notes',
+        mode: 'replace',
+        value: 'Grid change',
+        baselineValue: null,
+      },
+    ]);
+
+    // A later opening cannot send the accepted edit again.
+    await ui.open();
+    expect(ui.button('Save and preview')!.disabled).toBe(true);
+  });
+
+  it('keeps a later value when the accepted answer arrives', async () => {
+    let releaseAnswer!: (response: Response) => void;
+    let confirms = 0;
+    const ui = await setup({
+      source: 'device',
+      device: deviceDetail(),
+      request: async (path) => {
+        if (path === '/api/devices/updates/org-units')
+          return Response.json(orgUnitTree);
+        if (path === '/api/devices/updates/edit-previews')
+          return Response.json(devicePreview, { status: 201 });
+        if (path === previewReadPath) return Response.json(devicePreview);
+        if (path.includes('/targets'))
+          return Response.json({
+            targets: deviceTargets,
+            nextCursor: null,
+          });
+        if (path.endsWith('/confirm')) {
+          confirms += 1;
+          return new Promise<Response>((resolve) => {
+            releaseAnswer = resolve;
+          });
+        }
+        if (path === '/api/jobs/UPD-006') return Response.json(job);
+        return Response.json({}, { status: 404 });
+      },
+    });
+    ui.single.setMode('notes', 'replace');
+    ui.single.setValue('notes', 'First note');
+    await ui.settle();
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    ui.button('Continue to confirmation')!.click();
+    await ui.settle();
+    await ui.acknowledge();
+    ui.button('Create update job')!.click();
+    await vi.waitFor(() => expect(confirms).toBe(1));
+
+    // The person reopens the same device and types another value before the answer.
+    await ui.close();
+    await ui.open();
+    ui.single.setValue('notes', 'Later note');
+    await ui.settle();
+    releaseAnswer(Response.json(receipt, { status: 201 }));
+    await ui.settle();
+
+    // The submission settled nothing, because the draft no longer holds its request.
+    expect(ui.single.modeOf('notes')).toBe('replace');
+    expect(ui.single.valueOf('notes')).toBe('Later note');
+  });
+
+  it('keeps a replacement device draft when the accepted answer arrives', async () => {
+    let releaseAnswer!: (response: Response) => void;
+    let confirms = 0;
+    const ui = await setup({
+      source: 'device',
+      device: deviceDetail(),
+      request: async (path) => {
+        if (path === '/api/devices/updates/org-units')
+          return Response.json(orgUnitTree);
+        if (path === '/api/devices/updates/edit-previews')
+          return Response.json(devicePreview, { status: 201 });
+        if (path === previewReadPath) return Response.json(devicePreview);
+        if (path.includes('/targets'))
+          return Response.json({
+            targets: deviceTargets,
+            nextCursor: null,
+          });
+        if (path.endsWith('/confirm')) {
+          confirms += 1;
+          return new Promise<Response>((resolve) => {
+            releaseAnswer = resolve;
+          });
+        }
+        if (path === '/api/jobs/UPD-006') return Response.json(job);
+        return Response.json({}, { status: 404 });
+      },
+    });
+    await typeDevice(ui, 'annotatedAssetId', 'HS-0402');
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    ui.button('Continue to confirmation')!.click();
+    await ui.settle();
+    await ui.acknowledge();
+    ui.button('Create update job')!.click();
+    await vi.waitFor(() => expect(confirms).toBe(1));
+
+    // The sheet moves to another device before the first answer arrives.
+    await ui.close();
+    ui.fixture.componentRef.setInput(
+      'device',
+      deviceDetail({
+        deviceId: 'synthetic-device-2',
+        serialNumber: 'C0A1-0002',
+        assetTag: 'HS-0402',
+        notes: 'Device two note',
+      }),
+    );
+    await ui.open();
+    ui.single.setMode('notes', 'replace');
+    ui.single.setValue('notes', 'DEVICE-TWO-DRAFT');
+    await ui.settle();
+    releaseAnswer(Response.json(receipt, { status: 201 }));
+    await ui.settle();
+
+    expect(ui.single.deviceId()).toBe('synthetic-device-2');
+    expect(ui.single.modeOf('notes')).toBe('replace');
+    expect(ui.single.valueOf('notes')).toBe('DEVICE-TWO-DRAFT');
   });
 });
 

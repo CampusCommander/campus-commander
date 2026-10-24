@@ -66,6 +66,13 @@ export class DeviceDetailPage {
       canBulk: this.canBulk(),
     }),
   );
+  /**
+   * The note beside the Update device button. A route read keeps the previous device
+   * visible, so the button waits for the device that the page will show (UI-05, UI-06, B1).
+   */
+  protected readonly updateBlockedNote = computed<string | null>(() =>
+    this.busy() ? 'Loading device details…' : (this.updateNote()?.text ?? null),
+  );
   protected readonly hasNext = computed(() => {
     const position = this.store.position();
     const page = this.store.page();
@@ -89,14 +96,18 @@ export class DeviceDetailPage {
 
   /** Device details opens the sheet for the device that the page shows. */
   protected openSheet(): void {
-    if (this.updateNote()) return;
+    if (this.updateBlockedNote()) return;
+    const shown = this.device();
+    // A sheet opens only for the device whose values the page shows. A route read in flight
+    // still shows the previous device, and its draft must not outlive that device (UI-06, B1).
+    if (!shown || shown.deviceId !== this.deviceId()) return;
     this.sheetOpen.set(true);
   }
 
   /** Closing returns focus to the button that opened the sheet. */
   protected closeSheet(): void {
     this.sheetOpen.set(false);
-    afterNextRender(() => this.updateButton()?.nativeElement.focus(), {
+    afterNextRender(() => this.updateButton()?.nativeElement?.focus(), {
       injector: this.injector,
     });
   }
@@ -107,8 +118,9 @@ export class DeviceDetailPage {
   }
 
   private async load(id: string): Promise<void> {
-    // The sheet belongs to the device that opened it (addendum section 8).
-    this.sheetOpen.set(false);
+    // A sheet belongs to the device that opened it. A route change closes it before the
+    // page can show another device, so a draft never outlives its device (UI-06).
+    if (this.sheetOpen() && this.device()?.deviceId !== id) this.closeSheet();
     // A direct link opens without the Devices page, so the permission scope reads here.
     if (!this.store.sync()) void this.store.loadSync();
     // Keep the current device visible while the next one loads, so focus stays on Next device.
@@ -116,6 +128,9 @@ export class DeviceDetailPage {
     this.busy.set(true);
     const device = await this.store.device(id);
     if (this.deviceId() !== id) return;
+    // The displayed device changed, including a receipt-triggered read of another device.
+    if (this.sheetOpen() && this.device()?.deviceId !== device?.deviceId)
+      this.closeSheet();
     this.busy.set(false);
     this.device.set(device);
     this.status.set(

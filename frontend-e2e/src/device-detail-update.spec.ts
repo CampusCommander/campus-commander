@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import type {
   DeviceDetail,
+  DeviceRow,
   DeviceUpdateEdit,
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
@@ -109,6 +110,25 @@ class SingleDeviceSimulator {
       removedAt: null,
       batteryReports: [],
     };
+  }
+
+  /** The same devices as grid rows, so device details opens from the Devices page. */
+  rows(): DeviceRow[] {
+    return this.devices.map((device) => ({
+      deviceId: device.deviceId,
+      serialNumber: device.serialNumber,
+      model: 'Lenovo 100e Gen 4',
+      assetTag: device.assetTag,
+      orgUnitPath: device.orgUnitPath,
+      lastContact: '2026-10-21T11:58:00Z',
+      annotatedLocation: device.annotatedLocation,
+      annotatedUser: device.annotatedUser,
+      notes: device.notes,
+      status: 'ACTIVE',
+      battery: { status: 'no-report' },
+      lastEntitySync: observedAt,
+      stale: false,
+    }));
   }
 
   prepare(edits: readonly DeviceUpdateEdit[]) {
@@ -341,6 +361,48 @@ async function mockApi(
           },
         },
       });
+    // The Devices page reads the browsing selection and the grid page.
+    if (pathname === '/api/devices/selection')
+      return route.fulfill({
+        json: {
+          selection: {
+            terms: [],
+            groups: [],
+            added: 0,
+            excluded: 0,
+            selectedCount: 0,
+            expiredAt: null,
+          },
+        },
+      });
+    if (pathname === '/api/devices/selection/resolve')
+      return route.fulfill({ json: { selected: {} } });
+    if (pathname === '/api/devices/query') {
+      const query = request.postDataJSON() as {
+        offset?: number;
+        limit?: number;
+      };
+      const rows = sim.rows();
+      const offset = query.offset ?? 0;
+      const limit = query.limit ?? 100;
+      return route.fulfill({
+        json: {
+          page: {
+            rows: rows.slice(offset, offset + limit),
+            matching: rows.length,
+            total: rows.length,
+            observedAt,
+            refreshJobId: null,
+          },
+        },
+      });
+    }
+    if (pathname === '/api/devices/freshness')
+      return route.fulfill({
+        json: { freshness: { stale: 0, refreshing: false } },
+      });
+    if (pathname === '/api/devices/org-units')
+      return route.fulfill({ json: { orgUnits: [] } });
     if (pathname === '/api/devices/updates/org-units')
       return route.fulfill({ json: orgUnitTree });
     if (pathname === '/api/devices/updates/access')
@@ -413,13 +475,34 @@ async function openDetails(
   page: Page,
   sim: SingleDeviceSimulator,
   grants: unknown[] = fullGrants,
+  deviceId = 'd0',
 ): Promise<void> {
   await mockApi(page, sim, grants);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/devices/d0');
+  await page.goto(`/devices/${deviceId}`);
   await page.evaluate(() => document.fonts.ready);
   await expect(
-    page.getByRole('heading', { name: 'C0A1-0001', exact: true }),
+    page.getByRole('heading', {
+      name: sim.detail(deviceId)?.serialNumber ?? deviceId,
+      exact: true,
+    }),
+  ).toBeVisible();
+}
+
+/** Open the Devices page and follow the details action, so Next device has a position. */
+async function openDevicesFromGrid(
+  page: Page,
+  sim: SingleDeviceSimulator,
+): Promise<void> {
+  await mockApi(page, sim, fullGrants);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/devices');
+  await page.evaluate(() => document.fonts.ready);
+  await expect(
+    page.getByRole('heading', { name: 'Devices', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
   ).toBeVisible();
 }
 
@@ -552,4 +635,133 @@ test('keeps Update device disabled with the permission note', async ({
       .analyze()
       .then((result) => result.violations),
   ).toEqual([]);
+});
+
+test('keeps the sheet closed while the next device loads', async ({ page }) => {
+  const sim = new SingleDeviceSimulator(seedDevices());
+  await openDevicesFromGrid(page, sim);
+  await page
+    .getByRole('button', { name: 'Open details for C0A1-0001' })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Next device' })).toBeEnabled();
+
+  // Hold the next device's details answer while the previous device stays visible.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/devices/d1', async (route) => {
+    await held;
+    await route.fallback();
+  });
+
+  await page.getByRole('button', { name: 'Next device' }).click();
+  const update = page.getByRole('button', { name: 'Update device' });
+  await expect(page).toHaveURL(/\/devices\/d1$/);
+  await expect(
+    page.getByRole('heading', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect(update).toBeDisabled();
+  await expect(page.locator('#update-device-note')).toHaveText(
+    'Loading device details…',
+  );
+  expect(
+    await new AxeBuilder({ page })
+      .analyze()
+      .then((result) => result.violations),
+  ).toEqual([]);
+  await screenshot(page, '08-device-details-loading-update-disabled.png');
+
+  release();
+  await expect(
+    page.getByRole('heading', { name: 'C0A1-0002', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('.bulk-sheet')).not.toHaveClass(/is-open/);
+  await expect(update).toBeEnabled();
+
+  // The sheet and the submitted edit name the device that the page shows.
+  await update.click();
+  const sheet = page.getByRole('dialog');
+  await expect(
+    sheet.getByRole('heading', { name: 'Update 1 device' }),
+  ).toBeVisible();
+  const assetBlock = sheet.locator(
+    '.field-block[data-field="annotatedAssetId"]',
+  );
+  await assetBlock.locator('.mat-mdc-select-trigger').click();
+  await page
+    .getByRole('option', { name: 'Update · Replace the existing value' })
+    .click();
+  await assetBlock.locator('input').fill('HS-9002');
+  await sheet.getByRole('button', { name: 'Save and preview' }).click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Review 1 device update' }),
+  ).toBeVisible();
+  expect(sim.edits.at(-1)).toEqual([
+    {
+      deviceId: 'd1',
+      field: 'annotatedAssetId',
+      mode: 'replace',
+      value: 'HS-9002',
+      baselineValue: 'HS-0402',
+    },
+  ]);
+  await screenshot(page, '09-device-details-after-navigation.png');
+});
+
+test('keeps a Clear of an empty annotation out of the edit list', async ({
+  page,
+}) => {
+  const sim = new SingleDeviceSimulator(seedDevices());
+  // The second device has no Notes and no Annotated user.
+  await openDetails(page, sim, fullGrants, 'd1');
+  await page.getByRole('button', { name: 'Update device' }).click();
+  const sheet = page.getByRole('dialog');
+  await expect(
+    sheet.getByRole('heading', { name: 'Update 1 device' }),
+  ).toBeVisible();
+
+  const notes = sheet.locator('.field-block[data-field="notes"]');
+  await notes.locator('.mat-mdc-select-trigger').click();
+  await page.getByRole('option', { name: 'Clear value' }).click();
+  await expect(page.locator('.mat-mdc-select-panel')).toBeHidden();
+  await expect(notes).toContainText(
+    'Notes is already empty. Clear changes nothing.',
+  );
+  await expect(
+    sheet.getByRole('button', { name: 'Save and preview' }),
+  ).toBeDisabled();
+  expect(
+    await new AxeBuilder({ page })
+      .analyze()
+      .then((result) => result.violations),
+  ).toEqual([]);
+  await screenshot(page, '10-device-details-noop-clear.png');
+
+  // A valid sibling change stays usable, and the Clear never reaches the request.
+  const assetBlock = sheet.locator(
+    '.field-block[data-field="annotatedAssetId"]',
+  );
+  await assetBlock.locator('.mat-mdc-select-trigger').click();
+  await page
+    .getByRole('option', { name: 'Update · Replace the existing value' })
+    .click();
+  await assetBlock.locator('input').fill('HS-9003');
+  const save = sheet.getByRole('button', { name: 'Save and preview' });
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(
+    sheet.getByRole('heading', { name: 'Review 1 device update' }),
+  ).toBeVisible();
+  expect(sim.edits.at(-1)).toEqual([
+    {
+      deviceId: 'd1',
+      field: 'annotatedAssetId',
+      mode: 'replace',
+      value: 'HS-9003',
+      baselineValue: 'HS-0402',
+    },
+  ]);
+  await screenshot(page, '11-device-details-noop-clear-review.png');
 });

@@ -391,6 +391,10 @@ export class DeviceSingleUpdateDraftStore {
       if (state.mode === 'unchanged') return [];
       if (state.mode === 'move')
         return state.value ? [{ field, mode: 'move', value: state.value }] : [];
+      // A Clear of a value that device details did not show changes nothing, and the edit
+      // list refuses a request equal to its baseline. The sheet names the omission beside
+      // the field, so a valid sibling change stays usable.
+      if (state.mode === 'clear' && this.clearsNothing(field)) return [];
       return [
         state.mode === 'clear'
           ? { field, mode: 'clear' }
@@ -427,6 +431,19 @@ export class DeviceSingleUpdateDraftStore {
   /** The value that device details showed for this field, or null before a device opens. */
   baselineOf(field: DeviceUpdateField): string | null {
     return this.baselines()?.[field] ?? null;
+  }
+
+  /**
+   * A chosen Clear whose request equals the value that device details showed changes
+   * nothing. The edit list refuses such a request, so the draft omits it (B4).
+   */
+  clearsNothing(field: DeviceUpdateField): boolean {
+    const baselines = this.baselines();
+    return (
+      baselines !== null &&
+      this.fields()[field].mode === 'clear' &&
+      sameUpdateRequest(field, null, baselines[field])
+    );
   }
 
   /** The identity of the chosen organization unit, or null. */
@@ -535,6 +552,39 @@ export class DeviceSingleUpdateDraftStore {
       ...(change.mode === 'clear' ? {} : { value: change.value }),
       baselineValue: baselines[change.field],
     }));
+  }
+
+  /**
+   * Settle the fields that one accepted confirmation submitted for this device. A field
+   * leaves the draft only when its current request still equals the submitted request, so a
+   * later value and another device's draft stay (B3). A receipt of another source never
+   * calls this method, so it cannot clear this draft (B2).
+   */
+  settle(submitted: readonly DeviceUpdateEdit[]): void {
+    const target = this.target();
+    if (!target || !submitted.length) return;
+    const fields = { ...this.fields() };
+    let cleared = false;
+    for (const edit of submitted) {
+      if (edit.deviceId !== target.deviceId) continue;
+      const state = fields[edit.field];
+      if (state.mode === 'unchanged') continue;
+      const request = deviceUpdateRequest(edit.mode, edit.value ?? '');
+      if (state.mode !== edit.mode) continue;
+      if (
+        !sameUpdateRequest(
+          edit.field,
+          request,
+          deviceUpdateRequest(state.mode, state.value),
+        )
+      )
+        continue;
+      fields[edit.field] = emptySingleField();
+      cleared = true;
+    }
+    if (!cleared) return;
+    this.fields.set(fields);
+    this.persist();
   }
 
   /** Restore the draft of the signed-in person. Another person starts clean. */

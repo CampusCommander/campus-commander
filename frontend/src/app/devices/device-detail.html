@@ -27,8 +27,10 @@
       #updateDevice
       mat-flat-button
       type="button"
-      [disabled]="!!updateNote()"
-      [attr.aria-describedby]="updateNote() ? 'update-device-note' : null"
+      [disabled]="!!updateBlockedNote()"
+      [attr.aria-describedby]="
+        updateBlockedNote() ? 'update-device-note' : null
+      "
       (click)="openSheet()"
     >
       Update device
@@ -42,8 +44,8 @@
       Next device
     </button>
   </div>
-  @if (updateNote(); as note) {
-  <p id="update-device-note" class="update-note">{{ note.text }}</p>
+  @if (updateBlockedNote(); as note) {
+  <p id="update-device-note" class="update-note">{{ note }}</p>
   }
   <div class="detail-layout">
     <section class="card" aria-labelledby="device-identity-title">

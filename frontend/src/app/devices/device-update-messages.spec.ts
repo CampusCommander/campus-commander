@@ -1,6 +1,7 @@
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
+  DEVICE_UPDATE_FIELD_LABELS,
   type DeviceOrgUnitTree,
   type DeviceWriteAccess,
 } from '@campus/application-contracts';
@@ -10,6 +11,7 @@ import {
   DEVICE_WRITE_ACCESS_BUSY_MESSAGE,
   changedFieldsText,
   deviceCountText,
+  deviceUpdateClearNote,
   deviceUpdateValueCounter,
   deviceUpdateValueError,
   deviceUpdateValueHint,
@@ -190,6 +192,19 @@ describe('draft copy', () => {
     expect(deviceUpdateValueCounter('annotatedUser', '😀')).toBe(
       '1 of 100 characters',
     );
+  });
+
+  it('names a Clear that changes nothing and accepts a real Clear', () => {
+    for (const field of [
+      'annotatedLocation',
+      'annotatedUser',
+      'notes',
+    ] as const) {
+      const note = `${DEVICE_UPDATE_FIELD_LABELS[field]} is already empty. Clear changes nothing.`;
+      expect(deviceUpdateClearNote(field, null)).toBe(note);
+      expect(deviceUpdateClearNote(field, '')).toBe(note);
+      expect(deviceUpdateClearNote(field, 'Science wing')).toBeNull();
+    }
   });
 
   it('pins the busy answer of the write-access check', () => {

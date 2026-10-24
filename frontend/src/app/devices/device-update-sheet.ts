@@ -95,6 +95,7 @@ import { DeviceUpdateFlow } from './device-update-flow';
 import {
   changedFieldsText,
   deviceCountText,
+  deviceUpdateClearNote,
   deviceUpdateValueCounter,
   deviceUpdateValueError,
   deviceUpdateValueHint,
@@ -520,6 +521,15 @@ export class DeviceUpdateSheet {
         )
       : deviceUpdateValueError(field, this.draftValue(field));
   }
+  /**
+   * The note beside a Clear that changes nothing. The draft omits that Clear, so the note
+   * explains why the field contributes no change (UI-05, B4).
+   */
+  protected clearNote(field: DeviceUpdateField): string | null {
+    if (!this.deviceSource() || !this.singleDraft.clearsNothing(field))
+      return null;
+    return deviceUpdateClearNote(field, this.singleBaseline(field));
+  }
   /** An empty value shows its error once the operator leaves the field or tries to save. */
   protected showValueError(field: DeviceUpdateField): boolean {
     const error = this.valueError(field);
@@ -919,6 +929,7 @@ export class DeviceUpdateSheet {
     this.submitted.set({
       previewId: preview.previewId,
       manifestDigest: preview.manifestDigest,
+      source: 'grid',
       entries: [...edits],
       ...(this.retainedDuplicates().length
         ? { duplicates: this.retainedDuplicates() }
@@ -997,10 +1008,10 @@ export class DeviceUpdateSheet {
 
   /**
    * The receipt's "Back to device" reloads device details and returns the focus path to its
-   * source (Figma 116:299).
+   * source (Figma 116:299). The accepted fields already settled when their answer arrived,
+   * and a later draft keeps its value.
    */
   protected backToDevice(): void {
-    this.singleDraft.reset();
     this.deviceReload.emit();
     this.close();
   }
@@ -1240,11 +1251,16 @@ export class DeviceUpdateSheet {
     // Confirm sends and settles exactly the edit list that the preview answered. A cell
     // edited while Review stays open keeps its own later draft (B8).
     const entries = this.frozenEdits();
+    // An edit-list save carries its entries, so a late accepted answer can settle the rows
+    // or fields that the job covers, even after the sheet closed (B3).
+    const carriesEntries =
+      this.source() === 'grid' || this.source() === 'device';
     await this.submit(
       {
         previewId: preview.previewId,
         manifestDigest: preview.manifestDigest,
-        ...(this.source() === 'grid' && entries.length ? { entries } : {}),
+        source: this.source(),
+        ...(carriesEntries && entries.length ? { entries } : {}),
         ...(duplicates.length ? { duplicates } : {}),
       },
       false,
@@ -1284,10 +1300,10 @@ export class DeviceUpdateSheet {
       }
       // The answer settles the retained record even after the sheet closed.
       this.confirmations.release(record.previewId);
-      // A closed sheet still settles its submitted rows: the job exists (B6). The grid
-      // draft is a root store, so settlement does not depend on the current sheet opening.
+      // A closed sheet still settles its submitted draft: the job exists (B6). Both
+      // drafts are root stores, so settlement does not depend on the sheet opening.
       if (generation !== this.generation) {
-        this.settleGrid(record, result.value.displayId, targets);
+        this.settleAccepted(record, result.value.displayId, targets);
         return;
       }
       this.creating.set(false);
@@ -1336,12 +1352,28 @@ export class DeviceUpdateSheet {
     this.step.set('done');
     // A recovered receipt keeps the duplicate evidence that the submission recorded (B3).
     this.retainedDuplicates.set(submitted?.duplicates ?? []);
-    // The one-device draft has no later use once its job exists (addendum section 8).
-    if (this.source() === 'device') this.singleDraft.reset();
-    // A recovered receipt settles its rows even when another sheet source recovered it:
-    // the submitted entries prove that the grid rows are the ones the job covers (B6).
-    this.settleGrid(submitted, receipt.displayId);
+    // A recovered receipt settles the draft that its own submission covers. A grid or
+    // selection receipt never clears the single-device draft (B2), and a single-device
+    // receipt never clears the grid draft (B3).
+    this.settleAccepted(submitted, receipt.displayId);
     void this.loadJob(receipt.displayId);
+  }
+
+  /**
+   * Settle the draft that sent the confirmation. The submitted record carries its source,
+   * so a receipt that another source recovered never touches this draft (B2, B3).
+   */
+  private settleAccepted(
+    submitted: SubmittedConfirmation | null,
+    displayId: string,
+    targets: readonly DeviceUpdateTarget[] = this.targets(),
+  ): void {
+    if (submitted && !this.owns(submitted)) return;
+    if (submitted?.source === 'device') {
+      this.singleDraft.settle(submitted.entries ?? []);
+      return;
+    }
+    this.settleGrid(submitted, displayId, targets);
   }
 
   /**

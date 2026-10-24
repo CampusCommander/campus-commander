@@ -5,6 +5,7 @@ import { vi } from 'vitest';
 import type { DeviceDetail } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { DeviceDetailPage } from './device-detail';
+import { DeviceSingleUpdateDraftStore } from './device-update-draft.store';
 import { DEVICE_UPDATE_PERMISSION_MESSAGE } from './device-update-messages';
 import { DevicesStore } from './devices.store';
 
@@ -257,7 +258,11 @@ it('keeps the details and Next device in place while the next device loads', asy
   fixture.detectChanges();
   await Promise.resolve();
   fixture.detectChanges();
-  expect(element.textContent).not.toContain('Loading device details');
+  // The previous device stays readable during the read, so focus keeps its target.
+  expect(element.querySelector('.page-header h1')?.textContent?.trim()).toBe(
+    'C0A1-0001',
+  );
+  expect(element.querySelector('.device-detail > p[role="status"]')).toBeNull();
   expect(button('Next device')).toBeDefined();
   expect(
     element.querySelector('.device-detail')?.getAttribute('aria-busy'),
@@ -367,4 +372,115 @@ it('waits for the customer scope before it explains the restriction', async () =
   expect(element.querySelector('#update-device-note')?.textContent).toContain(
     'Checking your device permissions…',
   );
+});
+
+it('keeps Update device disabled while another device details load', async () => {
+  sessionStorage.clear();
+  const { element, button, fixture, store } = await setup({
+    detail: device(),
+    allowed: true,
+    position: 0,
+    matching: 3,
+  });
+  let release!: (value: DeviceDetail) => void;
+  store.device.mockReturnValueOnce(
+    new Promise<DeviceDetail>((resolve) => (release = resolve)),
+  );
+  fixture.componentRef.setInput('deviceId', 'synthetic-device-2');
+  fixture.detectChanges();
+  await vi.waitFor(() =>
+    expect(
+      element.querySelector('.device-detail')?.getAttribute('aria-busy'),
+    ).toBe('true'),
+  );
+  // The previous device stays visible, and the note names why the button waits.
+  expect(element.querySelector('.page-header h1')?.textContent?.trim()).toBe(
+    'C0A1-0001',
+  );
+  expect(button('Update device')!.disabled).toBe(true);
+  expect(
+    element.querySelector('#update-device-note')?.textContent?.trim(),
+  ).toBe('Loading device details…');
+
+  // A press during the read opens nothing for the page that is leaving.
+  button('Update device')!.click();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(
+    element.querySelector('.bulk-sheet')?.classList.contains('is-open'),
+  ).toBe(false);
+  expect(TestBed.inject(DeviceSingleUpdateDraftStore).deviceId()).toBeNull();
+
+  release(
+    device({
+      deviceId: 'synthetic-device-2',
+      serialNumber: 'C0A1-0002',
+      assetTag: 'HS-0402',
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(element.querySelector('.page-header h1')?.textContent?.trim()).toBe(
+      'C0A1-0002',
+    ),
+  );
+  expect(button('Update device')!.disabled).toBe(false);
+  expect(element.querySelector('#update-device-note')).toBeNull();
+
+  // The sheet that opens now holds the displayed device and its values.
+  button('Update device')!.click();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(
+    element.querySelector('.bulk-sheet')?.classList.contains('is-open'),
+  ).toBe(true);
+  expect(TestBed.inject(DeviceSingleUpdateDraftStore).deviceId()).toBe(
+    'synthetic-device-2',
+  );
+});
+
+it('closes the open sheet when the route moves to another device', async () => {
+  sessionStorage.clear();
+  const { element, button, fixture, store } = await setup({
+    detail: device(),
+    allowed: true,
+    position: 0,
+    matching: 3,
+  });
+  button('Update device')!.click();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(
+    element.querySelector('.bulk-sheet')?.classList.contains('is-open'),
+  ).toBe(true);
+
+  let release!: (value: DeviceDetail) => void;
+  store.device.mockReturnValueOnce(
+    new Promise<DeviceDetail>((resolve) => (release = resolve)),
+  );
+  fixture.componentRef.setInput('deviceId', 'synthetic-device-2');
+  fixture.detectChanges();
+  // The sheet belongs to the device that opened it, so the route change closes it.
+  expect(
+    element.querySelector('.bulk-sheet')?.classList.contains('is-open'),
+  ).toBe(false);
+
+  release(
+    device({
+      deviceId: 'synthetic-device-2',
+      serialNumber: 'C0A1-0002',
+      assetTag: 'HS-0402',
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(element.querySelector('.page-header h1')?.textContent?.trim()).toBe(
+      'C0A1-0002',
+    ),
+  );
+  button('Update device')!.click();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  expect(TestBed.inject(DeviceSingleUpdateDraftStore).deviceId()).toBe(
+    'synthetic-device-2',
+  );
+  expect(TestBed.inject(DeviceSingleUpdateDraftStore).changed()).toBe(false);
 });

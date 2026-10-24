@@ -80,6 +80,19 @@ export function deviceUpdateValueHint(field: DeviceUpdateField): string {
   return `Use ${DEVICE_UPDATE_FIELD_LIMITS[field]} characters or fewer. Spaces alone do not count.`;
 }
 
+/**
+ * The note beside a Clear that changes nothing, or null when the Clear removes a value.
+ * The single-device draft omits that Clear, so the note explains the omission (B4).
+ */
+export function deviceUpdateClearNote(
+  field: DeviceUpdateField,
+  baseline: string | null,
+): string | null {
+  return sameUpdateRequest(field, null, baseline)
+    ? `${DEVICE_UPDATE_FIELD_LABELS[field]} is already empty. Clear changes nothing.`
+    : null;
+}
+
 /** The end counter under a value field, in code points. */
 export function deviceUpdateValueCounter(
   field: DeviceUpdateField,

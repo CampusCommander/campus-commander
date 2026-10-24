@@ -28,6 +28,11 @@ export const CONFIRMATION_PREFIX = 'cc.device-update-confirmation.';
 const submittedConfirmationSchema = z.strictObject({
   previewId: z.uuid(),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  /**
+   * The sheet source that sent the confirmation. Settlement returns to that source's draft,
+   * so a recovered grid receipt never clears the single-device draft (B2).
+   */
+  source: z.enum(['selection', 'grid', 'device']).optional(),
   /** The person who confirmed. A late answer settles only under this principal (B5). */
   submittedBy: z.uuid().optional(),
   entries: z

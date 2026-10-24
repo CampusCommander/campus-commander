@@ -170,6 +170,9 @@
             <mat-label>{{ field.label }}</mat-label>
             <mat-select
               [value]="draftMode(field.id)"
+              [attr.aria-describedby]="
+                clearNote(field.id) ? field.id + '-clear-note' : null
+              "
               (selectionChange)="setMode(field.id, $event.value)"
             >
               <mat-option value="unchanged">Leave unchanged</mat-option>
@@ -221,7 +224,11 @@
           <p class="error" role="alert" [id]="field.id + '-error'">
             {{ valueError(field.id) }}
           </p>
-          } }
+          } } @if (clearNote(field.id); as note) {
+          <p class="note" role="status" [id]="field.id + '-clear-note'">
+            {{ note }}
+          </p>
+          }
         </div>
         }
 
