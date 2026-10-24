@@ -1,6 +1,6 @@
 import {
   DEVICE_UPDATE_FIELD_ORDER,
-  type DeviceUpdateChange,
+  type DeviceUpdateField,
   type DeviceUpdateTarget,
 } from '@campus/application-contracts';
 
@@ -41,18 +41,16 @@ export function targetCursor(ordinal: unknown, field: unknown): string | null {
 /** One frozen target page row of one field, with the value that confirmation would write. */
 export function previewTargetRow(
   row: Record<string, unknown>,
-  change: DeviceUpdateChange,
 ): DeviceUpdateTarget {
-  const observedValue =
-    typeof row['observed_value'] === 'string' ? row['observed_value'] : null;
+  const text = (value: unknown) => (typeof value === 'string' ? value : null);
   return {
     deviceId: String(row['device_id']),
     serialNumber: String(row['serial_number'] ?? ''),
-    field: change.field,
-    observedValue,
-    // Each row stores its own baseline with the per-row values of addendum section 2.
-    baselineValue: observedValue,
-    approvedValue: change.mode === 'clear' ? null : (change.value ?? null),
+    field: row['field'] as DeviceUpdateField,
+    observedValue: text(row['observed_value']),
+    // Every row stores its own baseline, so the answer reads the row, not a change list.
+    baselineValue: text(row['baseline_value']),
+    approvedValue: text(row['requested_value']),
     // The duplicate lookup of addendum section 6 fills this later.
     duplicateSerialNumber: null,
     disposition: row['disposition'] as DeviceUpdateTarget['disposition'],

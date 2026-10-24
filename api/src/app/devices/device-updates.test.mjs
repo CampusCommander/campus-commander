@@ -92,11 +92,24 @@ test('the preview freezes eligible, unchanged, and excluded targets', () => {
     [
       {
         field: 'annotatedLocation',
+        requestedValue: 'Room 12',
         observedValue: null,
+        baselineValue: null,
         disposition: 'eligible',
       },
     ],
-    'A target holds one field row per change.',
+    'A target holds one field row per change, with its request and its baseline.',
+  );
+  assert.deepEqual(
+    targets[1].fields[0],
+    {
+      field: 'annotatedLocation',
+      requestedValue: 'Room 12',
+      observedValue: 'Room 12',
+      baselineValue: 'Room 12',
+      disposition: 'unchanged',
+    },
+    'A selection row stores its observed value as its baseline.',
   );
 });
 
@@ -139,34 +152,174 @@ test('Clear makes an empty observed value unchanged and writes a null value', ()
   assert.equal(targets[0].fields[0].observedValue, null);
 });
 
-test('the manifest digest covers the changes and every eligible baseline', () => {
+test('the version 3 digest covers each eligible row request, observation, and baseline', () => {
+  // A fixed selection input: two text changes on two devices.
   const changes = [
     { field: 'notes', mode: 'replace', value: 'Room 12' },
     { field: 'annotatedUser', mode: 'clear' },
   ];
   const targets = previewTargets(
     [
-      device('d1', { annotated_user: 'A person' }),
       device('d2', { notes: 'Room 12', annotated_user: 'A person' }),
+      device('d1', { annotated_user: 'A person' }),
     ],
     changes,
   );
-  const digest = manifestDigest(changes, targets);
+  const digest = manifestDigest(targets);
   assert.match(digest, /^[a-f0-9]{64}$/);
-  assert.equal(digest, manifestDigest(changes, targets));
-  assert.notEqual(
-    digest,
-    manifestDigest([{ ...changes[0], value: 'Room 13' }, changes[1]], targets),
-  );
-  const changed = previewTargets(
-    [device('d2', { notes: 'Room 12', annotated_user: 'A person' })],
-    changes,
-  );
-  assert.notEqual(digest, manifestDigest(changes, changed));
+  assert.equal(digest, manifestDigest(targets));
   assert.equal(
     digest,
-    manifestDigest([changes[1], changes[0]], targets),
-    'The digest sorts the changes into contract order.',
+    createHash('sha256')
+      .update(
+        '{"actionVersion":3,"targets":[' +
+          '["d1",[["annotatedUser",null,"A person","A person"],["notes","Room 12",null,null]]],' +
+          '["d2",[["annotatedUser",null,"A person","A person"]]]]}',
+      )
+      .digest('hex'),
+    'The canonical form holds the action version and each eligible row in contract order.',
+  );
+  assert.equal(
+    digest,
+    'e2b78bfe48e45d7663b2df6365f4ce49adcb0e353534d23ebd057bc97580418c',
+    'A fixed selection input keeps its version 3 digest.',
+  );
+  // The digest drops the change list, because each row carries its own request.
+  assert.notEqual(
+    digest,
+    manifestDigest(
+      previewTargets([device('d1', { annotated_user: 'A person' })], changes),
+    ),
+  );
+  // A different baseline changes the digest, even when the request and the observation stay.
+  const rebound = previewTargets(
+    [device('d1', { annotated_user: 'A person' })],
+    changes,
+  );
+  rebound[0].fields[0].baselineValue = 'Someone else';
+  assert.notEqual(digest, manifestDigest(rebound));
+});
+
+test('the version 3 digest of a fixed edit list covers a value per device', () => {
+  const targets = [
+    {
+      ordinal: 0,
+      deviceId: 'd2',
+      serialNumber: 'SN-d2',
+      orgUnitPath: '/School A',
+      observedAt: null,
+      disposition: 'eligible',
+      exclusionReason: null,
+      fields: [
+        {
+          field: 'notes',
+          requestedValue: 'Room 12',
+          observedValue: 'Room 12',
+          baselineValue: 'Room 11',
+          disposition: 'eligible',
+        },
+      ],
+    },
+    {
+      ordinal: 1,
+      deviceId: 'd1',
+      serialNumber: 'SN-d1',
+      orgUnitPath: '/School A',
+      observedAt: null,
+      disposition: 'eligible',
+      exclusionReason: null,
+      fields: [
+        {
+          field: 'annotatedAssetId',
+          requestedValue: 'AT-42',
+          observedValue: 'AT-41',
+          baselineValue: null,
+          disposition: 'eligible',
+        },
+      ],
+    },
+  ];
+  assert.equal(
+    manifestDigest(targets),
+    createHash('sha256')
+      .update(
+        '{"actionVersion":3,"targets":[' +
+          '["d1",[["annotatedAssetId","AT-42","AT-41",null]]],' +
+          '["d2",[["notes","Room 12","Room 12","Room 11"]]]]}',
+      )
+      .digest('hex'),
+    'The digest sorts the devices and keeps each row request, observation, and baseline.',
+  );
+  assert.equal(
+    manifestDigest(targets),
+    'df65f8b4fcf5d22f150f8252d5e71f59160f8b9a1486bb237b96805f46d9e3bf',
+    'A fixed edit list keeps its version 3 digest.',
+  );
+});
+
+test('the targets page reads each request and baseline from its frozen row', async () => {
+  const reads = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text, values) => {
+          reads.push({ text, values });
+          if (text.includes('FROM cc.device_update_previews'))
+            return { rows: [previewRow()] };
+          if (text.includes('FROM cc.device_update_preview_targets'))
+            return {
+              rows: [
+                {
+                  ordinal: 0,
+                  device_id: 'd1',
+                  serial_number: 'SN-1',
+                  org_unit_path: '/School A',
+                  field: 'annotatedAssetId',
+                  requested_value: 'AT-42',
+                  observed_value: 'AT-41',
+                  baseline_value: null,
+                  disposition: 'conflict',
+                  exclusion_reason: null,
+                },
+              ],
+            };
+          return { rows: [] };
+        },
+      },
+      transaction: async () => {
+        throw new Error('No write is allowed.');
+      },
+    },
+    { get: async () => null },
+    { storeJson: async () => 'unused' },
+  );
+  const page = await updates.targets(session, previewId, 'conflict');
+  assert.deepEqual(page, {
+    targets: [
+      {
+        deviceId: 'd1',
+        serialNumber: 'SN-1',
+        field: 'annotatedAssetId',
+        observedValue: 'AT-41',
+        baselineValue: null,
+        approvedValue: 'AT-42',
+        duplicateSerialNumber: null,
+        disposition: 'conflict',
+        exclusionReason: null,
+      },
+    ],
+    nextCursor: null,
+  });
+  assert.equal(
+    reads.some((read) => read.text.includes('cc.device_update_changes')),
+    false,
+    'Each row carries its own request, so the page reads no change list.',
+  );
+  assert.equal(
+    reads.find((read) => read.text.includes('cc.device_update_preview_targets'))
+      .values[1],
+    'conflict',
+    'The page filters on the frozen conflict disposition.',
   );
 });
 
@@ -195,18 +348,18 @@ test('a targets cursor names the ordinal and the one-based field position', () =
     );
 });
 
-test('a target row reports the approved value and its exclusion reason', () => {
+test('a target row reports its own request, observation, and baseline', () => {
   assert.deepEqual(
-    previewTargetRow(
-      {
-        device_id: 'd1',
-        serial_number: 'SN-1',
-        observed_value: 'Room 1',
-        disposition: 'eligible',
-        exclusion_reason: null,
-      },
-      { field: 'annotatedLocation', mode: 'replace', value: 'Room 12' },
-    ),
+    previewTargetRow({
+      device_id: 'd1',
+      serial_number: 'SN-1',
+      field: 'annotatedLocation',
+      requested_value: 'Room 12',
+      observed_value: 'Room 1',
+      baseline_value: 'Room 1',
+      disposition: 'eligible',
+      exclusion_reason: null,
+    }),
     {
       deviceId: 'd1',
       serialNumber: 'SN-1',
@@ -218,21 +371,21 @@ test('a target row reports the approved value and its exclusion reason', () => {
       disposition: 'eligible',
       exclusionReason: null,
     },
+    'The approved value comes from the frozen row, not from a change list.',
   );
-  assert.equal(
-    previewTargetRow(
-      {
-        device_id: 'd1',
-        serial_number: 'SN-1',
-        observed_value: 'Room 1',
-        disposition: 'eligible',
-        exclusion_reason: null,
-      },
-      { field: 'notes', mode: 'clear' },
-    ).approvedValue,
-    null,
-    'A clear change approves no value.',
-  );
+  const cleared = previewTargetRow({
+    device_id: 'd1',
+    serial_number: 'SN-1',
+    field: 'notes',
+    requested_value: null,
+    observed_value: 'Room 1',
+    baseline_value: 'Room 1',
+    disposition: 'conflict',
+    exclusion_reason: null,
+  });
+  assert.equal(cleared.approvedValue, null, 'A Clear row approves no value.');
+  assert.equal(cleared.disposition, 'conflict');
+  assert.equal(cleared.baselineValue, 'Room 1');
 });
 
 test('the selection contract requires expiredAt as a timestamp or null', () => {
@@ -573,6 +726,7 @@ const previewRow = (extra = {}) => ({
   eligible: 1,
   unchanged: 0,
   excluded: 0,
+  conflicts: 0,
   oldest_observed_at: new Date(),
   manifest_digest: 'a'.repeat(64),
   prepared_at: new Date(),
@@ -630,6 +784,22 @@ test('the preview create function freezes every target', async () => {
   assert.ok(
     calls.some((call) => call.text.includes('cc.create_device_update_preview')),
     'The preview is created by the SECURITY DEFINER function.',
+  );
+  const create = calls.find((call) =>
+    call.text.includes('cc.create_device_update_preview'),
+  );
+  assert.deepEqual(
+    JSON.parse(create.values[7])[0].fields,
+    [
+      {
+        field: 'annotatedLocation',
+        requested_value: 'Room 12',
+        observed_value: null,
+        baseline_value: null,
+        disposition: 'eligible',
+      },
+    ],
+    'The frozen target row carries its request and its baseline.',
   );
   assert.equal(result.displayId, 'PV-001');
   assert.equal(result.eligible, 1);
@@ -715,6 +885,57 @@ test('a lost grant stores no manifest artifact', async () => {
   assert.equal(stored.length, 0);
 });
 
+test('a preview with a conflict stores no manifest artifact and answers preview-conflict', async () => {
+  const calls = [];
+  const stored = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text) => {
+          calls.push(text);
+          if (text.includes('cc.read_device_update_preview_manifest'))
+            return { rows: [{ result: { outcome: 'preview-conflict' } }] };
+          if (text.includes('FROM cc.device_update_previews'))
+            return { rows: [previewRow({ conflicts: 1 })] };
+          return { rows: [] };
+        },
+      },
+      transaction: async () => {
+        throw new Error('A conflict preview writes nothing.');
+      },
+    },
+    { get: async () => null },
+    {
+      storeJson: async (document) => {
+        stored.push(document);
+        return 'artifact';
+      },
+    },
+  );
+  await assert.rejects(
+    updates.confirm(session, current, previewId, {
+      manifestDigest: 'a'.repeat(64),
+      acknowledged: true,
+    }),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.equal(error.getResponse()?.reason, 'preview-conflict');
+      return true;
+    },
+  );
+  assert.match(
+    calls[0],
+    /cc\.read_device_update_preview_manifest/,
+    'The conflict answers before the confirm function runs.',
+  );
+  assert.equal(
+    calls.some((text) => text.includes('cc.confirm_device_update_preview')),
+    false,
+    'A conflict preview creates no job.',
+  );
+  assert.equal(stored.length, 0, 'A conflict preview stores no artifact.');
+});
+
 test('every confirmation outcome maps to its status and code', async () => {
   const cases = [
     [
@@ -723,6 +944,7 @@ test('every confirmation outcome maps to its status and code', async () => {
       'preview-expired',
     ],
     [{ outcome: 'preview-changed' }, 409, 'preview-changed'],
+    [{ outcome: 'preview-conflict' }, 409, 'preview-conflict'],
     [{ outcome: 'connection-changed' }, 409, 'connection-changed'],
     [{ outcome: 'nothing-to-update' }, 422, 'nothing-to-update'],
     [{ outcome: 'not-found' }, 404, 'preview-not-found'],
