@@ -263,6 +263,34 @@ export function requestedText(operation: JobOperation): string {
   }
 }
 
+/**
+ * The value that Google returned for one row, or null when Requested already states it.
+ * A command row holds no field value. A status row names its status. An update row names the
+ * observed value only when it differs from the request, because a read-back can settle
+ * `value-differs` with a third value (design addendum section 1, mockup note 17).
+ */
+export function observedText(operation: JobOperation): string | null {
+  const observed = operation.observedValue;
+  if (observed === null) return null;
+  switch (operation.operation) {
+    case 'reboot':
+    case 'wipe-users':
+    case 'powerwash':
+      return null;
+    case 'disable':
+    case 'reenable':
+    case 'deprovision': {
+      // A status is an enum, and Google can return it in another case. Compare the labels.
+      const status = statusText(observed);
+      return status === requestedText(operation) ? null : status;
+    }
+    default:
+      // A field value is arbitrary text, and the Requested cell can show a label that is
+      // also valid content ("Clear value"). Compare the stored strings, then display.
+      return observed === operation.requestedValue ? null : observed;
+  }
+}
+
 /** The time of one operation, as in the frame. The full time stays on the element. */
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', {
@@ -420,9 +448,10 @@ export function commandFailureSentence(
  * The sentence under a failed row (mockup note 22). An update row names the app outcome, because a
  * read-back failure has no Google reason. A command or status row keeps the step 5 line, which
  * names the Google reason. A cancelled command carries no Google reason of its own.
+ * The job action decides the row kind: an edit-list update job answers `changes: null`.
  */
 export function rowFailureText(
-  job: Pick<JobDetail, 'changes'>,
+  job: Pick<JobDetail, 'action'>,
   operation: JobOperation,
 ): string | null {
   if (operation.outcome !== 'failed') return null;
@@ -431,7 +460,7 @@ export function rowFailureText(
     operation.outcomeReason === 'command-cancelled'
   )
     return 'Google cancelled the command.';
-  if (job.changes === null) return operation.googleReason;
+  if (job.action !== 'update-device-annotations') return operation.googleReason;
   return failureSentence(operation, 'update');
 }
 
@@ -671,12 +700,14 @@ export function latestActivityLine(job: JobDetail): string {
 }
 
 /**
- * The row total of a job, or null when the client cannot know it. An update job with more than one
- * change answers one row per device and field, and its header counts devices. One change keeps one
- * row per device, so its device total is exact.
+ * The row total of a job, or null when the client cannot know it. The job action names the row
+ * shape. A selection update job with one frozen change answers one row per device, so its device
+ * total is exact. Every other update job answers one row per device and field: an edit list holds
+ * its own fields per device, so the header counts devices and the row count stays unknown.
  */
 function rowTotal(job: JobDetail): string | null {
-  if (job.changes !== null && job.changes.length > 1) return null;
+  if (job.action === 'update-device-annotations' && job.changes?.length !== 1)
+    return null;
   return operationTotal(job).toLocaleString('en-US');
 }
 
