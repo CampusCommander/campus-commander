@@ -218,6 +218,19 @@ async function screenshot(page: Page, name: string): Promise<void> {
   });
 }
 
+/** A focus scheduled after a view closes must not throw inside afterNextRender. */
+function watchFocusErrors(page: Page): string[] {
+  const errors: string[] = [];
+  const check = (text: string) => {
+    if (text.includes("reading 'focus'")) errors.push(text);
+  };
+  page.on('console', (message) => {
+    if (message.type() === 'error') check(message.text());
+  });
+  page.on('pageerror', (error) => check(error.message));
+  return errors;
+}
+
 test('stages two cells on two devices, reverts one, then reverts all', async ({
   page,
 }) => {
@@ -381,6 +394,7 @@ test('keeps an emptied asset tag in its cell as invalid and disables Save', asyn
 test('shows a conflict, blocks Save, and resolves to the current value', async ({
   page,
 }) => {
+  const focusErrors = watchFocusErrors(page);
   await page.addInitScript(
     ({ key, document }) => {
       try {
@@ -443,11 +457,13 @@ test('shows a conflict, blocks Save, and resolves to the current value', async (
   await expect(target.locator('.device-cell-value')).toHaveText('HS-0001');
   await expect(target).not.toHaveClass(/device-draft-conflict/);
   await expect(page.locator('.draft-bar')).toHaveCount(0);
+  expect(focusErrors).toEqual([]);
 });
 
 test('opens the organization unit picker from the grid and stages a Move', async ({
   page,
 }) => {
+  const focusErrors = watchFocusErrors(page);
   await openDevices(page);
   const unit = cell(page, 'C0A1-0001', 'orgUnitPath');
   await unit.click();
@@ -491,6 +507,7 @@ test('opens the organization unit picker from the grid and stages a Move', async
   await expect(picker).toBeVisible();
   await picker.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(picker).toBeHidden();
+  expect(focusErrors).toEqual([]);
 });
 
 test('refuses a 501st device and names the 500-device limit', async ({

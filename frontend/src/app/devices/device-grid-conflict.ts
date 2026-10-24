@@ -52,7 +52,10 @@ export class DeviceGridConflict {
   );
 
   constructor() {
-    afterNextRender(() => this.firstAction()?.nativeElement.focus());
+    afterNextRender(() => {
+      const action = this.firstAction()?.nativeElement;
+      action?.focus();
+    });
   }
 
   protected value(value: string | null | undefined): string {

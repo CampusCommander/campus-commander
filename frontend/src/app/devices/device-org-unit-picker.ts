@@ -72,7 +72,10 @@ export class DeviceOrgUnitPicker {
         this.query.set('');
         this.highlightedId.set(this.selectedId());
         afterNextRender(
-          () => this.search()?.nativeElement.focus({ preventScroll: true }),
+          () => {
+            const search = this.search()?.nativeElement;
+            search?.focus({ preventScroll: true });
+          },
           { injector: this.injector },
         );
       });
