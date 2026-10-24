@@ -129,6 +129,18 @@
   font-size: 12px;
   line-height: 16px;
 }
+.observed-value {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-primary);
+  font-size: 12px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.observed-label {
+  color: var(--cc-text-secondary);
+  font-weight: 500;
+}
 .counters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

@@ -306,6 +306,8 @@ Coalesce background announcements and keep safe work available during synchroniz
 - Filter operation results by qualified fields. Show needs-attention shortcuts and a clear return to all operations.
 - Keep overall job counts unchanged when filtering operation results. Label the filtered result count separately.
 - State the shown row range alone when one device holds several field rows. A header that counts devices cannot count rows.
+- Show the observed value under Requested when it differs from the requested value. A read-back can hold a third value.
+- Do not claim that a failed device keeps its old value. A value-differs failure can hold a third value.
 - Place Inspect failure beside a failed operation and Reconcile beside an unknown outcome.
 - Show the next valid recovery action after inspecting evidence. Gate retries through the existing preview and capability rules.
 - Show command acceptance and verified command execution separately. An accepted request does not prove the command completed.

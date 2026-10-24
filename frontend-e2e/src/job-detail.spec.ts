@@ -963,7 +963,12 @@ test('renders one row per device and field for the job of PNG 09', async ({
   await expect(cell(1, 3)).toHaveText('Cart 7 loaner pool');
   await expect(cell(2, 1)).toHaveText('Organization unit');
   await expect(cell(2, 2)).toHaveText(lowell);
-  await expect(cell(2, 3)).toHaveText(cart);
+  await expect(cell(2, 3)).toContainText(cart);
+  // The failed move still holds the baseline path, so the row names what Google returned.
+  await expect(cell(2, 3)).toContainText(`Observed: ${lowell}`);
+  // A row whose read-back matched its request adds no observed line.
+  await expect(rows.nth(0).locator('.observed-value')).toHaveCount(0);
+  await expect(rows.nth(2).locator('.observed-value')).toHaveCount(1);
 
   // Every field row of 01P0T1V carries the outcome of the device's one PATCH.
   for (const index of [0, 1, 2]) {

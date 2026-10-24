@@ -263,6 +263,32 @@ export function requestedText(operation: JobOperation): string {
   }
 }
 
+/**
+ * The value that Google returned for one row, or null when Requested already states it.
+ * A command row holds no field value. A status row names its status. An update row names the
+ * observed value only when it differs from the request, because a read-back can settle
+ * `value-differs` with a third value (design addendum section 1, mockup note 17).
+ */
+export function observedText(operation: JobOperation): string | null {
+  const observed = operation.observedValue;
+  if (observed === null) return null;
+  const requested = requestedText(operation);
+  switch (operation.operation) {
+    case 'reboot':
+    case 'wipe-users':
+    case 'powerwash':
+      return null;
+    case 'disable':
+    case 'reenable':
+    case 'deprovision': {
+      const status = statusText(observed);
+      return status === requested ? null : status;
+    }
+    default:
+      return observed === requested ? null : observed;
+  }
+}
+
 /** The time of one operation, as in the frame. The full time stays on the element. */
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', {

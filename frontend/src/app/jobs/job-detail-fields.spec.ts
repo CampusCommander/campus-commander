@@ -22,6 +22,7 @@ import {
   operationNumber,
   operationTotal,
   operationsFooter,
+  observedText,
   outcomeNotes,
   outcomeTone,
   pathParts,
@@ -727,6 +728,67 @@ describe('job detail fields', () => {
     expect(fieldLabel('notes')).toBe('Notes');
     expect(fieldLabel('orgUnitPath')).toBe('Organization unit');
     expect(fieldLabel(null)).toBe('—');
+  });
+
+  it('names the observed value only when it differs from the requested value', () => {
+    // A read-back can settle `value-differs` with a third value (IF5, B1).
+    const divergent = operation({
+      operationId: 'UPD-008-2-annotatedAssetId',
+      field: 'annotatedAssetId',
+      operation: 'replace',
+      baselineValue: 'tag-before',
+      requestedValue: 'tag-requested',
+      observedValue: 'tag-observed',
+      outcome: 'failed',
+      outcomeReason: 'value-differs',
+      googleStatus: 200,
+      googleReason: null,
+      verifiedBy: 'read-back',
+    });
+    expect(observedText(divergent)).toBe('tag-observed');
+
+    // The requested cell already states an equal observed value, so the row adds no line.
+    expect(observedText(operation({ observedValue: 'North lab' }))).toBeNull();
+    expect(observedText(operation({ observedValue: null }))).toBeNull();
+
+    // A command row holds no field value.
+    expect(
+      observedText(
+        operation({
+          field: null,
+          operation: 'reboot',
+          baselineValue: null,
+          requestedValue: null,
+          observedValue: 'REBOOT',
+        }),
+      ),
+    ).toBeNull();
+
+    // A status row names its stored status, and repeats nothing when the status did change.
+    const disable = {
+      field: null,
+      operation: 'disable' as const,
+      baselineValue: 'ACTIVE',
+      requestedValue: 'DISABLED',
+    };
+    expect(
+      observedText(operation({ ...disable, observedValue: 'ACTIVE' })),
+    ).toBe('Active');
+    expect(
+      observedText(operation({ ...disable, observedValue: 'DISABLED' })),
+    ).toBeNull();
+
+    // A failed Clear keeps a value, and the row names it.
+    expect(
+      observedText(
+        operation({
+          operation: 'clear',
+          baselineValue: 'Science wing',
+          requestedValue: null,
+          observedValue: 'Science wing',
+        }),
+      ),
+    ).toBe('Science wing');
   });
 
   it('names an Asset tag row under the Operation cell', () => {

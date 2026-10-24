@@ -210,6 +210,29 @@ const editListOperations = (): JobOperation[] => [
   }),
 ];
 
+/** The edit-list job with one read-back that holds a third value (review B1). */
+const divergentEditListOperations = (): JobOperation[] =>
+  editListOperations().map((row) =>
+    row.operationId === 'UPD-008-2-annotatedAssetId'
+      ? operation({
+          operationId: row.operationId,
+          deviceId: row.deviceId,
+          serialNumber: row.serialNumber,
+          field: 'annotatedAssetId',
+          operation: 'replace',
+          baselineValue: 'tag-before',
+          requestedValue: 'tag-requested',
+          observedValue: 'tag-observed',
+          outcome: 'failed',
+          outcomeReason: 'value-differs',
+          googleStatus: 200,
+          googleReason: null,
+          verifiedBy: 'read-back',
+          updatedAt: row.updatedAt,
+        })
+      : row,
+  );
+
 /** The edit-list job of state 12: four rows, one failed, and no frozen change list. */
 const editListJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
   job({
@@ -678,6 +701,43 @@ it('renders an edit-list job without shared changes and without a row total', ()
   // A failed asset tag row names the built update sentence, not the stored Google reason.
   expect(cells(2)[4]).toContain('Failed');
   expect(cells(2)[4]).toContain('Google quota stopped the update for 04QVJBY.');
+});
+
+it('renders the observed value of a divergent edit-list row', () => {
+  // Review B1: baseline, requested, and observed values all differ, and each stays distinct.
+  const { element } = setup({
+    job: editListJob(),
+    operations: divergentEditListOperations(),
+  });
+  const rows = [...element.querySelectorAll('tbody tr')];
+  const cells = (index: number) =>
+    [...rows[index].querySelectorAll('td')].map(
+      (cell) => cell.textContent?.trim() ?? '',
+    );
+  expect(cells(2)[2]).toBe('tag-before');
+  expect(cells(2)[3]).toContain('tag-requested');
+  expect(cells(2)[3]).toContain('Observed: tag-observed');
+  // The row keeps the app failure sentence of the action, not the stored Google reason.
+  expect(cells(2)[4]).toContain('04QVJBY does not hold the requested value.');
+  // The edit-list footer still states the shown range alone.
+  expect(element.querySelector('.footer-count')?.textContent?.trim()).toBe(
+    'Rows 1–4',
+  );
+  // A row whose read-back matches its request adds no observed line.
+  expect(cells(0)[3]).toBe('CB415508');
+});
+
+it('shows the observed value in the failure evidence', async () => {
+  const { element, fixture } = setup({
+    job: editListJob(),
+    operations: divergentEditListOperations(),
+  });
+  button(element, 'Inspect failure')?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(text(element)).toContain('Failure details · 04QVJBY');
+  expect(text(element)).toContain('Observed value');
+  expect(text(element)).toContain('tag-observed');
 });
 
 it('offers no Reconcile for any field row without devices:write', () => {
