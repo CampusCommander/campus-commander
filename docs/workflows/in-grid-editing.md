@@ -1,6 +1,6 @@
 # Edit device fields in the grid, or update one device
 
-Status: owner-confirmed on 2026-10-23. The owner chose the answer "Confirmed: build it as written". The owner approved the mockup on 2026-10-23: "Yea go ahead with this visual design."
+Status: owner-confirmed on 2026-10-23. The owner chose the answer "Confirmed: build it as written". The owner approved the mockup on 2026-10-23: "Yea go ahead with this visual design." The owner signed off the build on 2026-10-24: "I sign off." The build merged at `1e5f9d3`.
 Source: owner direction of 2026-10-21 and 2026-10-23, quoted under [Owner direction](#owner-direction).
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table and the approved mockup under [Design](#design). Some design gaps remain.
 Replaces: none. This record extends [Update device fields](update-device-fields.md).
@@ -284,6 +284,11 @@ Demonstrate on admin-sdk-mock:
 7. Update one device from device details with Asset tag. Edit, Review, and Confirm create one job.
 
 Run lint, tests, and builds for the affected Nx projects. Keep live write behavior marked "not verified".
+
+The owner signed off the build on 2026-10-24. Owner: "I sign off."
+The build merged at `1e5f9d3` in PRs #126 to #141.
+IQ1 rehearsed all seven steps on admin-sdk-mock 0.2.0 in 45.0 seconds with 44 screenshots.
+Live device writes stay not verified.
 
 ## Sources
 

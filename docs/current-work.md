@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-21.
+Updated: 2026-10-24.
 
 ## Authorized now
 
@@ -15,6 +15,7 @@ On 2026-10-23 the owner chose the next workflow. Question: "Pick the next workfl
 Owner, in the main chat: "2", which chose the option "In-grid editing and the single-device update". On 2026-10-23 the owner confirmed the [in-grid editing record](workflows/in-grid-editing.md). He chose the answer "Confirmed: build it as written".
 The [in-grid editing record](workflows/in-grid-editing.md) is owner-confirmed. Its [design addendum](superpowers/specs/2026-10-23-in-grid-editing-design.md) comes before the build.
 On 2026-10-23 the owner approved the in-grid editing mockup. Owner: "Yea go ahead with this visual design." The approved mockup is [2026-10-23-in-grid-editing.html](ui/designs/2026-10-23-in-grid-editing.html).
+On 2026-10-24 the owner signed off the in-grid editing build. Owner, in the main chat: "I sign off." The build merged at `1e5f9d3`.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -63,6 +64,39 @@ The update leaves these follow-ups. None is scheduled:
 - An organization unit tree above 10,000 units answers unavailable.
 
 Live device writes stay unverified. The test domain has no ChromeOS device (read-only check on 2026-10-22).
+
+### In-grid editing and the single-device update (signed off 2026-10-24)
+
+The [in-grid editing record](workflows/in-grid-editing.md) defines this build.
+The owner confirmed the record on 2026-10-23 with "Confirmed: build it as written".
+The owner approved the mockup the same day with "Yea go ahead with this visual design".
+
+The build merged at `1e5f9d3` in PRs #126 to #141.
+On 2026-10-24 the owner signed off the build. Owner: "I sign off."
+
+The sign-off accepts these defaults as built:
+
+- Asset tag is set in the grid and on device details. It stays out of the bulk Update device sheet.
+- "Save changes" with one pending change creates the job directly, with no Review and Confirm step. This is the owner's exception to UI-07.
+- A conflict blocks Save changes until the person keeps the current value or keeps the draft.
+- A duplicate Asset tag warns and does not block.
+- The edit route accepts 98,304 bytes. The selection preview and confirm routes keep 4,096 bytes.
+
+IQ1 rehearsed the seven completion steps on admin-sdk-mock 0.2.0 in 45.0 seconds with 44 screenshots.
+Live device writes stay unverified. They need explicit authorization and an enrolled test device.
+
+Three design gaps stay recorded in the workflow record:
+
+- No drawn in-cell editor for Annotated location, Annotated user, or Notes, and no drawn Clear value cell. The editors are built.
+- No drawn duplicate Asset tag warning. The warning appears on Review.
+- No drawn "Update device" button without permission. The build uses the disabled-with-a-note pattern from `docs/ui/rules.md:73`.
+
+Four follow-ups from review sit in the `swe` board triage. None blocks this build:
+
+- Classify a missed S13.refresh interleaving as Not verified.
+- Preserve focused regression coverage for the review session configuration.
+- Check bulk sheet focus when reduced motion is enabled.
+- Isolate the U6 test runner and align its unchanged-row fixture.
 
 ### Step 5 device commands (first build signed off 2026-10-22)
 
