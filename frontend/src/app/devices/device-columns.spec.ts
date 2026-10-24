@@ -182,11 +182,10 @@ it('gives the five draft columns their editors, renderer, and state rules', () =
   const gated = deviceColumnDefs(() => undefined, {
     draft: { ...draft, orgUnitEditable: () => false },
   });
+  const gatedUnit = gated.find((item) => item.colId === 'orgUnitPath');
+  expect(gatedUnit).toBeDefined();
   expect(
-    (
-      gated.find((item) => item.colId === 'orgUnitPath')!
-        .cellRendererParams as { editable: () => boolean }
-    ).editable(),
+    (gatedUnit?.cellRendererParams as { editable: () => boolean }).editable(),
   ).toBe(false);
   const suppress = column('assetTag').suppressKeyboardEvent as (
     params: unknown,
