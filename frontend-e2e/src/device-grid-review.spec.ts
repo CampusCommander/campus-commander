@@ -67,7 +67,10 @@ function runtime(): ReviewRuntime {
 
 async function screenshot(page: Page, name: string): Promise<void> {
   mkdirSync(evidenceDir, { recursive: true });
-  await page.screenshot({ path: path.join(evidenceDir, name), fullPage: false });
+  await page.screenshot({
+    path: path.join(evidenceDir, name),
+    fullPage: false,
+  });
 }
 
 async function signIn(page: Page): Promise<void> {
@@ -355,7 +358,10 @@ async function operationRows(page: Page): Promise<OperationRow[]> {
 }
 
 /** The mock container that serves the review runtime, found by its control port. */
-function mockContainer(controlUrl: string): { name: string; googlePort: number } {
+function mockContainer(controlUrl: string): {
+  name: string;
+  googlePort: number;
+} {
   const controlPort = new URL(controlUrl).port;
   const listing = execFileSync(
     'docker',
@@ -493,9 +499,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
     await expect(page.locator('#draft-count')).toHaveText(
       '1 pending change · 1 device',
     );
-    await expect(
-      cell(page, first!.serial, 'annotatedLocation'),
-    ).toHaveClass(/device-draft-pending/);
+    await expect(cell(page, first!.serial, 'annotatedLocation')).toHaveClass(
+      /device-draft-pending/,
+    );
     await editText(page, second!.serial, 'notes', notes);
     await expect(page.locator('#draft-count')).toHaveText(
       '2 pending changes · 2 devices',
@@ -537,7 +543,12 @@ suite('In-grid editing against the Admin SDK mock', () => {
 
     const [first, second] = await firstRows(page, 2);
     const stamp = Date.now().toString(36);
-    await editText(page, first!.serial, 'annotatedLocation', `In filter ${stamp}`);
+    await editText(
+      page,
+      first!.serial,
+      'annotatedLocation',
+      `In filter ${stamp}`,
+    );
     await editText(page, second!.serial, 'notes', `Out of filter ${stamp}`);
     await expect(page.locator('#draft-count')).toHaveText(
       '2 pending changes · 2 devices',
@@ -615,7 +626,12 @@ suite('In-grid editing against the Admin SDK mock', () => {
       first!.serial,
       'annotatedLocation',
     );
-    await editText(page, first!.serial, 'annotatedLocation', `Revert me ${stamp}`);
+    await editText(
+      page,
+      first!.serial,
+      'annotatedLocation',
+      `Revert me ${stamp}`,
+    );
     await editText(page, second!.serial, 'notes', `Revert all ${stamp}`);
     await expect(page.locator('#draft-count')).toHaveText(
       '2 pending changes · 2 devices',
@@ -648,9 +664,7 @@ suite('In-grid editing against the Admin SDK mock', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText('1 pending change · 1 device');
     await screenshot(page, 'step3-revert-all-question.png');
-    await dialog
-      .getByRole('button', { name: 'Revert all changes' })
-      .click();
+    await dialog.getByRole('button', { name: 'Revert all changes' }).click();
     await expect(dialog).toBeHidden();
     await expect(page.locator('.draft-bar')).toHaveCount(0);
     await expect(cell(page, second!.serial, 'notes')).not.toHaveClass(
@@ -680,7 +694,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
     );
     await screenshot(page, 'step4-before-save.png');
 
-    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Save changes', exact: true })
+      .click();
     // The receipt opens at once: no stepper, no Review, and no Confirm.
     await expect(
       page.getByRole('heading', { name: 'Update job created' }),
@@ -730,7 +746,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
       '3 pending changes · 2 devices',
     );
 
-    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Save changes', exact: true })
+      .click();
     await expect(
       page.getByRole('heading', { name: 'Review 2 device updates' }),
     ).toBeVisible({ timeout: 180_000 });
@@ -790,7 +808,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
     expect(
       rows.find((row) => row.operation === 'Annotated location')?.requested,
     ).toBe(location);
-    expect(rows.find((row) => row.operation === 'Notes')?.requested).toBe(notes);
+    expect(rows.find((row) => row.operation === 'Notes')?.requested).toBe(
+      notes,
+    );
     expect(rows.find((row) => row.operation === 'Asset tag')?.device).toBe(
       second!.serial,
     );
@@ -844,7 +864,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
       count: 1,
     });
 
-    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Save changes', exact: true })
+      .click();
     const displayId = await reviewConfirmCreate(page);
     await page.getByRole('button', { name: 'View job' }).click();
     const job = await waitForJob(page, displayId);
@@ -915,7 +937,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
     expect(patched.status).toBe(200);
     // The direct write changes the value away from the baseline that the grid holds.
     expect(outside).not.toBe(conflictBaseline);
-    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Save changes', exact: true })
+      .click();
     await expect(
       page.getByRole('heading', { name: 'Review 1 device update' }),
     ).toBeVisible({ timeout: 180_000 });
@@ -927,9 +951,7 @@ suite('In-grid editing against the Admin SDK mock', () => {
     ).toBeDisabled();
     await screenshot(page, 'step6-conflict-review.png');
 
-    await page
-      .getByRole('button', { name: 'Review pending devices' })
-      .click();
+    await page.getByRole('button', { name: 'Review pending devices' }).click();
     const sheet = page.locator('app-device-update-sheet .bulk-sheet');
     await expect(sheet).not.toHaveClass(/is-open/, { timeout: 30_000 });
     // Let the 200 ms close transition finish before the screenshot.
@@ -968,10 +990,12 @@ suite('In-grid editing against the Admin SDK mock', () => {
     const [row] = await firstRows(page, 1, 6);
     const serial = row!.serial;
     // Open device details from the grid row.
-    await page.getByRole('button', {
-      name: `Open details for ${serial}`,
-      exact: true,
-    }).click();
+    await page
+      .getByRole('button', {
+        name: `Open details for ${serial}`,
+        exact: true,
+      })
+      .click();
     await expect(
       page.getByRole('heading', { name: serial, exact: true }),
     ).toBeVisible({ timeout: 60_000 });
@@ -998,7 +1022,9 @@ suite('In-grid editing against the Admin SDK mock', () => {
       'notes',
       'orgUnitPath',
     ]);
-    const assetBlock = sheet.locator('.field-block[data-field="annotatedAssetId"]');
+    const assetBlock = sheet.locator(
+      '.field-block[data-field="annotatedAssetId"]',
+    );
     await assetBlock.locator('.mat-mdc-select-trigger').click();
     await expect(page.getByRole('option')).toHaveText([
       'Leave unchanged',
