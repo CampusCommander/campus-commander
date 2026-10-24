@@ -159,7 +159,7 @@ export class U6Simulator {
       preparedAt: '2026-10-21T18:02:00.000Z',
       // The checks run well inside the 15-minute window.
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      manifestDigest: manifestDigest(this.changes, this.frozen),
+      manifestDigest: manifestDigest(this.frozen),
     });
     return this.preview;
   }

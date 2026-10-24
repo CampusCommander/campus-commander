@@ -22,7 +22,8 @@ registerHooks({
         specifier.startsWith('.') &&
         (context.parentURL?.includes('/libs/') ||
           context.parentURL?.includes('/worker/src/') ||
-          context.parentURL?.includes('/api/src/'))
+          context.parentURL?.includes('/api/src/') ||
+          context.parentURL?.includes('/frontend-e2e/src/'))
       ) {
         return nextResolve(`${specifier}.ts`, context);
       }

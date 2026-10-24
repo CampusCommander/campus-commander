@@ -9,4 +9,12 @@ export default [
     // Override or add rules here
     rules: {},
   },
+  {
+    // These files run under the Node test runner, not Playwright.
+    files: ['test/**/*.mjs'],
+    rules: {
+      'playwright/expect-expect': 'off',
+      'playwright/no-conditional-in-test': 'off',
+    },
+  },
 ];
