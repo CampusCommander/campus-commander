@@ -15,6 +15,7 @@ import {
 import { DeviceGrid } from './device-grid';
 import { detailsTarget } from './device-grid-options';
 import { DevicesStore } from './devices.store';
+import { AuthStore } from '../auth.store';
 import {
   GROUP_LIMIT,
   defaultGridState,
@@ -409,6 +410,10 @@ it('finds a grouped device by its index inside the group', () => {
 function mounted() {
   TestBed.configureTestingModule({
     providers: [
+      {
+        provide: AuthStore,
+        useValue: { session: signal(null) },
+      },
       {
         provide: DevicesStore,
         useValue: {

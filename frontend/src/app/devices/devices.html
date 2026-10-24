@@ -256,6 +256,65 @@
   </div>
   } @if (store.refreshing()) {
   <p class="visually-hidden" role="status">Refreshing device inventory.</p>
+  } @if (gridEditable() && orgUnitNote(); as note) {
+  <div class="action-note" [class.error]="note.error">
+    <div class="action-note-group" [class.error]="note.error">
+      <p id="grid-org-unit-note">{{ note.text }}</p>
+      @if (note.actions.includes('copy-scope')) {
+      <button mat-button type="button" (click)="copyOrgUnitScope()">
+        Copy scope
+      </button>
+      } @if (note.actions.includes('recheck')) {
+      <button
+        mat-button
+        type="button"
+        (click)="recheckOrgUnits()"
+        [disabled]="orgUnitTree.loading()"
+      >
+        {{ orgUnitTree.loading() ? 'Checking…' : 'Recheck' }}
+      </button>
+      }
+    </div>
+  </div>
+  } @if (gridDraft.panelVisible()) {
+  <section class="draft-bar" aria-labelledby="draft-count">
+    <div class="draft-copy" aria-live="polite">
+      @if (gridDraft.visible()) {
+      <p id="draft-count" class="draft-count">{{ gridDraft.countLine() }}</p>
+      @if (gridDraft.line().text; as text) {
+      <p
+        class="draft-line"
+        [class.error]="gridDraft.line().tone === 'error'"
+        [class.warning]="gridDraft.line().tone === 'warning'"
+      >
+        {{ text }}
+      </p>
+      } } @else {
+      <!-- A restore error shows even when no entry restored. -->
+      <p id="draft-count" class="draft-line error">
+        {{ gridDraft.line().text }}
+      </p>
+      }
+    </div>
+    <div class="draft-actions">
+      @if (gridDraft.visible()) {
+      <button mat-stroked-button type="button" (click)="revertOpen.set(true)">
+        Revert all changes
+      </button>
+      }
+      <button
+        mat-flat-button
+        type="button"
+        disabled
+        aria-describedby="draft-save-note"
+      >
+        Save changes
+      </button>
+    </div>
+  </section>
+  <p id="draft-save-note" class="visually-hidden">
+    Save changes is unavailable until the batch update is connected.
+  </p>
   }
 
   <div class="grid-region">
@@ -289,10 +348,18 @@
       (details)="open($event)"
       [selection]="selection"
       [rowRefresh]="store.gridRows"
+      [editable]="gridEditable()"
     />
   </div>
 
   <app-device-update-sheet [open]="updateOpen()" (closed)="updateClosed()" />
+  <app-device-grid-revert-dialog
+    [open]="revertOpen()"
+    [changes]="gridDraft.counts().changes"
+    [devices]="gridDraft.counts().devices"
+    (confirmed)="confirmRevertAll()"
+    (cancelled)="revertOpen.set(false)"
+  />
   <app-device-action-sheet
     family="command"
     [open]="commandOpen()"

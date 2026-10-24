@@ -1,0 +1,53 @@
+@if (entry(); as current) {
+<span class="device-cell">
+  <span class="device-cell-value" [attr.title]="text()">{{ text() }}</span>
+  <span class="visually-hidden">{{ stateText() }}</span>
+  @if (editable()) {
+  <span
+    class="edit-hint material-symbols-outlined"
+    aria-hidden="true"
+    title="Edit this cell"
+  ></span>
+  } @if (current.state === 'invalid') {
+  <span
+    class="cell-state error material-symbols-outlined"
+    aria-hidden="true"
+    [attr.title]="errorTitle()"
+    >error</span
+  >
+  } @if (current.state === 'conflict') {
+  <button
+    type="button"
+    class="cell-action conflict"
+    [attr.aria-label]="conflictLabel()"
+    [attr.title]="conflictLabel()"
+    aria-haspopup="dialog"
+    (click)="openConflict($event)"
+  >
+    <span class="material-symbols-outlined" aria-hidden="true"
+      >sync_problem</span
+    >
+  </button>
+  }
+  <button
+    type="button"
+    class="cell-action"
+    [attr.aria-label]="revertLabel()"
+    [attr.title]="revertLabel() + ' (Shift+Enter)'"
+    (click)="revert($event)"
+  >
+    <span class="material-symbols-outlined" aria-hidden="true">undo</span>
+  </button>
+</span>
+} @else {
+<span class="device-cell">
+  <span class="device-cell-value" [attr.title]="text()">{{ text() }}</span>
+  @if (editable()) {
+  <span
+    class="edit-hint material-symbols-outlined"
+    aria-hidden="true"
+    title="Edit this cell"
+  ></span>
+  }
+</span>
+}

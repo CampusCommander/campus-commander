@@ -37,7 +37,7 @@ import { deviceCountText } from './device-update-messages';
     OuReferencePicker,
   ],
   templateUrl: './device-org-unit-picker.html',
-  styleUrl: './device-org-unit-picker.css',
+  styleUrls: ['./device-dialog.css', './device-org-unit-picker.css'],
 })
 export class DeviceOrgUnitPicker {
   readonly open = input.required<boolean>();
@@ -47,6 +47,10 @@ export class DeviceOrgUnitPicker {
   readonly deviceCount = input.required<number>();
   /** The unit to highlight when the dialog opens again. */
   readonly selectedId = input<string | null>(null);
+  /** Replaces the count line, so the grid can name the cell that opened the dialog. */
+  readonly contextLine = input<string | null>(null);
+  /** The confirm action. The sheet chooses, and the grid stages a change. */
+  readonly confirmLabel = input('Choose');
   readonly cancelled = output<void>();
   readonly chosen = output<OrgUnitTreeRow>();
 
@@ -68,7 +72,10 @@ export class DeviceOrgUnitPicker {
         this.query.set('');
         this.highlightedId.set(this.selectedId());
         afterNextRender(
-          () => this.search()?.nativeElement.focus({ preventScroll: true }),
+          () => {
+            const search = this.search()?.nativeElement;
+            search?.focus({ preventScroll: true });
+          },
           { injector: this.injector },
         );
       });

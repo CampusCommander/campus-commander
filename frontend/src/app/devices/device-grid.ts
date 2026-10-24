@@ -2,21 +2,31 @@ import {
   ApplicationRef,
   Component,
   DestroyRef,
+  ElementRef,
   EnvironmentInjector,
   Injector,
   OnInit,
+  afterNextRender,
+  computed,
   createComponent,
   effect,
   inject,
   input,
   output,
+  signal,
   untracked,
+  viewChild,
 } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
 import {
   AllCommunityModule,
   ModuleRegistry,
   themeQuartz,
+  type CellDoubleClickedEvent,
+  type CellEditRequestEvent,
+  type CellEditingStartedEvent,
+  type CellKeyDownEvent,
+  type FullWidthCellKeyDownEvent,
   type GridApi,
   type GridOptions,
   type GridReadyEvent,
@@ -41,8 +51,15 @@ import type {
   DevicePage,
   DevicePredicate,
   DeviceRow,
+  DeviceUpdateField,
 } from '@campus/application-contracts';
-import { detailsKeyHandler, deviceColumnDefs } from './device-columns';
+import {
+  GRID_UPDATE_FIELDS,
+  detailsKeyHandler,
+  deviceColumnDefs,
+  gridColumnFor,
+  type DeviceDraftColumnOptions,
+} from './device-columns';
 import {
   defaultGridState,
   deviceDatasource,
@@ -55,13 +72,25 @@ import {
   predicatesFromFilterModel,
 } from './device-filter-model';
 import {
+  DeviceGridDraftStore,
+  baselineFor,
+  type DeviceGridDraftEntry,
+} from './device-grid-draft.store';
+import { DeviceGridConflict } from './device-grid-conflict';
+import {
   detailsTarget,
   deviceGridFeatures,
   showRow,
 } from './device-grid-options';
+import { DeviceOrgUnitPicker } from './device-org-unit-picker';
+import {
+  DeviceOrgUnitTreeStore,
+  type OrgUnitTreeRow,
+} from './device-org-unit-tree.store';
 import type { DeviceRowRefresh } from './device-row-refresh';
 import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceStatusPanel } from './device-status-panel';
+import type { DeviceSortField } from './device-fields';
 
 ModuleRegistry.registerModules([
   AllCommunityModule,
@@ -76,18 +105,55 @@ ModuleRegistry.registerModules([
   StatusBarModule,
 ]);
 
+interface DeviceGridPicker {
+  row: DeviceRow;
+  node: IRowNode<DeviceRow>;
+}
+
+interface DeviceGridConflictView {
+  entry: DeviceGridDraftEntry;
+  trigger: HTMLElement;
+  left: number;
+  top: number;
+}
+
 @Component({
   selector: 'app-device-grid',
-  imports: [AgGridAngular],
+  imports: [AgGridAngular, DeviceGridConflict, DeviceOrgUnitPicker],
   template: `
     <ag-grid-angular
       class="device-grid"
       [gridOptions]="options"
       (gridReady)="ready($event)"
     />
+    @if (picker(); as edit) {
+      <app-device-org-unit-picker
+        [open]="true"
+        [units]="pickerUnits()"
+        [deviceCount]="1"
+        [selectedId]="pickerSelectedId()"
+        [contextLine]="edit.row.serialNumber + ' · Organization unit'"
+        confirmLabel="Stage change"
+        (chosen)="chooseUnit($event)"
+        (cancelled)="cancelPicker()"
+      />
+    }
+    @if (conflict(); as view) {
+      <div #conflictCard class="conflict-anchor">
+        <app-device-grid-conflict
+          [entry]="view.entry"
+          [left]="view.left"
+          [top]="view.top"
+          (keepCurrent)="resolveConflict('current')"
+          (keepDraft)="resolveConflict('draft')"
+          (closed)="closeConflict()"
+        />
+      </div>
+    }
   `,
   styles: `
     :host {
+      position: relative;
       display: block;
       height: 100%;
       min-height: calc(var(--cc-row-height-grid) * 8);
@@ -101,6 +167,22 @@ ModuleRegistry.registerModules([
     }
     :host ::ng-deep .device-stale {
       color: var(--cc-text-secondary);
+    }
+    /* DRAFT-02: the pending, invalid, and conflict cells of the grid draft. */
+    :host ::ng-deep .ag-cell.device-draft-pending {
+      border-radius: 2px;
+      background: var(--cc-surface-selected);
+      box-shadow: inset 0 0 0 2px var(--cc-accent);
+    }
+    :host ::ng-deep .ag-cell.device-draft-invalid {
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--cc-status-error) 8%, transparent);
+      box-shadow: inset 0 0 0 2px var(--cc-status-error);
+    }
+    :host ::ng-deep .ag-cell.device-draft-conflict {
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--cc-status-warning) 14%, transparent);
+      box-shadow: inset 0 0 0 2px var(--cc-status-warning);
     }
     :host ::ng-deep .lgr-ssrm-selection-footer {
       display: flex;
@@ -120,6 +202,9 @@ ModuleRegistry.registerModules([
       overflow: hidden;
       clip: rect(0 0 0 0);
       white-space: nowrap;
+    }
+    .conflict-anchor {
+      display: contents;
     }
   `,
 })
@@ -143,6 +228,11 @@ export class DeviceGrid implements OnInit {
   readonly predicates = input<DevicePredicate[]>([]);
   /** Organization units for the OrgUnit set filter. */
   readonly orgUnits = input<readonly DeviceOrgUnit[]>([]);
+  /**
+   * True when the route grants the three Update device actions. Without them every cell
+   * stays read-only (rules UI-04 and 108:303).
+   */
+  readonly editable = input(false);
   readonly filtersChange = output<DevicePredicate[]>();
   readonly selection = input.required<{
     provider: ServerSideSelectionProvider;
@@ -158,6 +248,9 @@ export class DeviceGrid implements OnInit {
   private readonly environment = inject(EnvironmentInjector);
   private readonly application = inject(ApplicationRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly draft = inject(DeviceGridDraftStore);
+  private readonly orgUnitTree = inject(DeviceOrgUnitTreeStore);
   readonly details = output<{
     row: DeviceRow;
     index: number;
@@ -165,12 +258,29 @@ export class DeviceGrid implements OnInit {
     count: number | null;
   }>();
 
+  protected readonly picker = signal<DeviceGridPicker | null>(null);
+  protected readonly conflict = signal<DeviceGridConflictView | null>(null);
+  protected readonly pickerUnits = computed(
+    () => this.orgUnitTree.units() ?? [],
+  );
+  protected readonly pickerSelectedId = computed<string | null>(() => {
+    const picker = this.picker();
+    if (!picker) return null;
+    const entry = this.draft.entryFor(picker.row.deviceId, 'orgUnitPath');
+    if (entry?.orgUnitId) return entry.orgUnitId;
+    const path = entry?.value ?? picker.row.orgUnitPath;
+    return this.pickerUnits().find((unit) => unit.path === path)?.id ?? null;
+  });
+  private readonly conflictCard =
+    viewChild<ElementRef<HTMLElement>>('conflictCard');
+
   private api: GridApi<DeviceRow> | null = null;
   private focused = false;
   /** The remembered row while the status bar may still change height. */
   private pendingRow: number | null = null;
   protected options!: GridOptions<DeviceRow>;
   private selectionService: SsrmSelectionService | null = null;
+  private liveListener: ((event: Event) => void) | null = null;
 
   constructor() {
     effect(() => {
@@ -190,6 +300,20 @@ export class DeviceGrid implements OnInit {
       const wanted = this.selectedView();
       untracked(() => this.applySelectionView(wanted));
     });
+    // A restored or changed draft repaints the cells that show its values.
+    effect(() => {
+      this.draft.entries();
+      untracked(() => this.refreshDraftCells());
+    });
+    effect(() => {
+      this.editable();
+      untracked(() => this.refreshDraftCells());
+    });
+    // The unit read decides whether its column shows the edit hint.
+    effect(() => {
+      this.orgUnitTree.state();
+      untracked(() => this.refreshDraftCells());
+    });
   }
 
   ngOnInit(): void {
@@ -204,6 +328,7 @@ export class DeviceGrid implements OnInit {
       const target = detailsTarget(node);
       if (target) this.details.emit({ row, ...target });
     };
+    const keys = detailsKeyHandler(open);
     this.options = {
       theme: themeQuartz.withParams({
         accentColor: 'var(--cc-accent)',
@@ -214,18 +339,32 @@ export class DeviceGrid implements OnInit {
       }),
       columnDefs: deviceColumnDefs(open, {
         orgUnits: () => this.orgUnits().map((unit) => unit.path),
+        draft: this.draftOptions(),
       }),
-      onCellKeyDown: detailsKeyHandler(open),
+      // An edit never writes the row data. The draft holds the value (addendum section 5).
+      readOnlyEdit: true,
+      onCellEditRequest: (event) => this.stageEdit(event),
+      onCellEditingStarted: (event) => this.beginLiveEdit(event),
+      onCellEditingStopped: () => this.endLiveEdit(),
+      onCellDoubleClicked: (event) => this.openUnitFromDoubleClick(event),
+      onCellKeyDown: (event) => {
+        keys(event);
+        this.draftKey(event);
+      },
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
       // LibreGrid refreshes only existing group stores when grouping changes.
       // A new datasource makes it switch between paged rows and groups.
       onColumnRowGroupChanged: () => this.reload(),
-      onGridPreDestroyed: ({ state, api }) =>
+      onGridPreDestroyed: ({ state, api }) => {
+        this.endLiveEdit();
+        this.picker.set(null);
+        this.conflict.set(null);
         this.saveState()(
           savedGridState(state),
           api.getGridOption('ssrmSelectionViewActive') === true,
-        ),
+        );
+      },
       // The first load already shows the selection, so the opened row keeps its place.
       ssrmSelectionViewActive: this.selectedView(),
       getRowId: ({ data }) => data.deviceId,
@@ -250,6 +389,225 @@ export class DeviceGrid implements OnInit {
     this.destroyRef.onDestroy(() => refresh?.detach(event.api));
     this.applyPredicates(this.predicates());
     this.reload();
+    this.refreshDraftCells();
+  }
+
+  /** The draft reads and writes that the editable columns call. */
+  private draftOptions(): DeviceDraftColumnOptions {
+    return {
+      editable: () => this.editable(),
+      orgUnitEditable: () => this.orgUnitTree.state() === 'granted',
+      value: (deviceId, field, text) =>
+        this.draft.valueFor(deviceId, field, text),
+      entry: (deviceId, field) => this.draft.entryFor(deviceId, field),
+      reason: (entry) => this.draft.reasonFor(entry),
+      onRevert: (deviceId, field) => this.draft.revert(deviceId, field),
+      onConflict: (deviceId, field, anchor) =>
+        this.openConflict(deviceId, field, anchor),
+    };
+  }
+
+  /**
+   * Validate and stage the edit request. With readOnlyEdit the row data keeps its value,
+   * and the cell renderer shows the draft value instead.
+   */
+  private stageEdit(event: CellEditRequestEvent<DeviceRow>): void {
+    if (!this.editable() || !event.data || event.node.group) return;
+    const field =
+      GRID_UPDATE_FIELDS[event.column.getColId() as DeviceSortField];
+    if (!field || field === 'orgUnitPath') return;
+    const value =
+      event.newValue === null || event.newValue === undefined
+        ? ''
+        : String(event.newValue);
+    this.draft.stageText(event.data, field, value);
+    // The draft effect repaints the cell from the store once the edit cycle ends.
+  }
+
+  /** Count the changed input of an open editor before it stages (mockup choice 5). */
+  private beginLiveEdit(event: CellEditingStartedEvent<DeviceRow>): void {
+    if (!this.editable() || !event.data || event.node.group) return;
+    const field =
+      GRID_UPDATE_FIELDS[event.column.getColId() as DeviceSortField];
+    if (!field || field === 'orgUnitPath') return;
+    const entry = this.draft.entryFor(event.data.deviceId, field);
+    this.draft.beginLive({
+      deviceId: event.data.deviceId,
+      field,
+      baseline: baselineFor(entry, event.data, field),
+      value:
+        event.value === null || event.value === undefined
+          ? ''
+          : String(event.value),
+    });
+    this.attachLiveInput();
+  }
+
+  private endLiveEdit(): void {
+    this.draft.endLive();
+    this.detachLiveInput();
+  }
+
+  /** The open editor's input bubbles from the cell or the large text popup. */
+  private attachLiveInput(): void {
+    this.detachLiveInput();
+    const listener = (event: Event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      )
+        this.draft.updateLive(target.value);
+    };
+    this.host.nativeElement.addEventListener('input', listener, true);
+    this.liveListener = listener;
+  }
+
+  private detachLiveInput(): void {
+    if (!this.liveListener) return;
+    this.host.nativeElement.removeEventListener(
+      'input',
+      this.liveListener,
+      true,
+    );
+    this.liveListener = null;
+  }
+
+  /** Enter and F2 open the picker on the unit column. Shift+Enter reverts a pending cell. */
+  private draftKey(
+    event: CellKeyDownEvent<DeviceRow> | FullWidthCellKeyDownEvent<DeviceRow>,
+  ): void {
+    const keyboard = event.event as KeyboardEvent | null;
+    if (!keyboard || !('column' in event) || !event.data || event.node.group)
+      return;
+    const field =
+      GRID_UPDATE_FIELDS[event.column.getColId() as DeviceSortField];
+    if (!field) return;
+    if (field === 'orgUnitPath') {
+      if (keyboard.key === 'Enter' || keyboard.key === 'F2') {
+        keyboard.preventDefault();
+        this.openPicker(event.data, event.node);
+      }
+      return;
+    }
+    if (
+      keyboard.key === 'Enter' &&
+      keyboard.shiftKey &&
+      !this.draft.live() &&
+      this.draft.entryFor(event.data.deviceId, field)
+    ) {
+      keyboard.preventDefault();
+      keyboard.stopPropagation();
+      this.draft.revert(event.data.deviceId, field);
+    }
+  }
+
+  private openUnitFromDoubleClick(
+    event: CellDoubleClickedEvent<DeviceRow>,
+  ): void {
+    if (
+      event.column.getColId() !== 'orgUnitPath' ||
+      !event.data ||
+      event.node.group
+    )
+      return;
+    event.event?.preventDefault();
+    this.openPicker(event.data, event.node);
+  }
+
+  private openPicker(row: DeviceRow, node: IRowNode<DeviceRow>): void {
+    if (!this.editable()) return;
+    const tree = this.orgUnitTree.tree();
+    if (!tree) {
+      void this.orgUnitTree.load().then(() => {
+        if (this.orgUnitTree.state() === 'granted')
+          this.picker.set({ row, node });
+      });
+      return;
+    }
+    if (tree.state !== 'granted') return;
+    this.endLiveEdit();
+    this.picker.set({ row, node });
+  }
+
+  protected chooseUnit(unit: OrgUnitTreeRow): void {
+    const picker = this.picker();
+    if (!picker) return;
+    this.draft.stageMove(picker.row, unit);
+    this.picker.set(null);
+    this.refocusCell(picker.row.deviceId, 'orgUnitPath');
+  }
+
+  protected cancelPicker(): void {
+    const picker = this.picker();
+    this.picker.set(null);
+    if (picker) this.refocusCell(picker.row.deviceId, 'orgUnitPath');
+  }
+
+  private openConflict(
+    deviceId: string,
+    field: DeviceUpdateField,
+    trigger: HTMLElement,
+  ): void {
+    const entry = this.draft.entryFor(deviceId, field);
+    if (!entry) return;
+    this.conflict.set({ entry, trigger, left: 0, top: 0 });
+    afterNextRender(() => this.placeConflict(), { injector: this.injector });
+  }
+
+  /** Place the card above the cell, or below it when the grid has no room above. */
+  private placeConflict(): void {
+    const view = this.conflict();
+    const card = this.conflictCard()?.nativeElement;
+    if (!view || !card) return;
+    const host = this.host.nativeElement.getBoundingClientRect();
+    const anchor = view.trigger.getBoundingClientRect();
+    const width = card.offsetWidth || 360;
+    const height = card.offsetHeight || 220;
+    const left = Math.max(
+      8,
+      Math.min(anchor.right - host.left - width, host.width - width - 8),
+    );
+    const above = anchor.top - host.top - height - 6;
+    const below = anchor.bottom - host.top + 6;
+    const top = Math.max(
+      8,
+      Math.min(above >= 8 ? above : below, host.height - height - 8),
+    );
+    this.conflict.set({ ...view, left, top });
+  }
+
+  /** Keep current value removes the entry; keep my draft rebases it on the current value. */
+  protected resolveConflict(choice: 'current' | 'draft'): void {
+    const view = this.conflict();
+    if (!view) return;
+    if (choice === 'current')
+      this.draft.keepCurrent(view.entry.deviceId, view.entry.field);
+    else this.draft.keepDraft(view.entry.deviceId, view.entry.field);
+    this.conflict.set(null);
+    this.refocusCell(view.entry.deviceId, view.entry.field);
+  }
+
+  protected closeConflict(): void {
+    const view = this.conflict();
+    if (!view) return;
+    this.conflict.set(null);
+    if (view.trigger.isConnected) view.trigger.focus();
+  }
+
+  private refocusCell(deviceId: string, field: DeviceUpdateField): void {
+    afterNextRender(
+      () => {
+        const node = this.api?.getRowNode(deviceId);
+        if (node?.rowIndex === null || node?.rowIndex === undefined) return;
+        this.api?.setFocusedCell(node.rowIndex, gridColumnFor(field));
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private refreshDraftCells(): void {
+    this.api?.refreshCells?.({ force: true, suppressFlash: true });
   }
 
   /** Setting a new datasource resets the server-side row model to its first block. */
