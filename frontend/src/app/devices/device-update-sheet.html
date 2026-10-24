@@ -330,6 +330,8 @@
     <p class="notice" role="status">{{ SELECTION_CHANGED_NOTE }}</p>
     } @if (gridNote()) {
     <p class="stale" role="status">{{ gridNote() }}</p>
+    } @if (unchangedGridNote()) {
+    <p class="note" role="status">{{ unchangedGridNote() }}</p>
     } @for (line of duplicates(); track $index) {
     <p class="note" role="status">{{ line }}</p>
     }
@@ -468,6 +470,9 @@
     <section aria-labelledby="receipt-heading">
       <h2 id="receipt-heading">{{ receiptHeading }}</h2>
       <p class="mt-md">{{ receiptLine() }}</p>
+      @for (line of receiptDuplicates(); track $index) {
+      <p class="note" role="status">{{ line }}</p>
+      }
       <p class="mt-md">{{ nextStep }}</p>
     </section>
     } }

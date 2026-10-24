@@ -87,6 +87,8 @@ class SaveChangesSimulator {
   private settled = false;
   /** How many jobs the confirm route created. */
   private jobs = 0;
+  /** Another device that already holds an Asset tag, per device. */
+  private readonly duplicateSerials = new Map<string, string>();
 
   constructor(devices: SimulatedDevice[]) {
     this.devices = devices.map((device) => ({ ...device }));
@@ -164,11 +166,17 @@ class SaveChangesSimulator {
         baselineValue: field.baselineValue,
         approvedValue:
           field.disposition === 'excluded' ? null : field.requestedValue,
-        duplicateSerialNumber: null,
+        duplicateSerialNumber:
+          this.duplicateSerials.get(target.deviceId) ?? null,
         disposition: field.disposition,
         exclusionReason: target.exclusionReason,
       })),
     );
+  }
+
+  /** Another device already holds the requested Asset tag of this device. */
+  duplicate(deviceId: string, serialNumber: string): void {
+    this.duplicateSerials.set(deviceId, serialNumber);
   }
 
   /**
@@ -241,12 +249,19 @@ class SaveChangesSimulator {
     // The receipt opens while the worker still runs, as mockup state 09 shows.
     const done = this.confirmed && this.settled;
     const total = this.count('eligible');
+    // The worker publishes only the devices that its write reached.
+    const written = new Set(this.written).size;
+    const failed = done ? total - written : 0;
     return {
       jobId,
       displayId: jobDisplayId,
       revision: done ? 2 : 1,
       action: 'update-device-annotations',
-      status: done ? 'completed' : 'accepted',
+      status: !done
+        ? 'accepted'
+        : failed > 0
+          ? 'completed-with-errors'
+          : 'completed',
       scope: { kind: 'devices', deviceCount: total },
       requestedBy: { id: principal, displayName: 'District operator' },
       createdAt: '2026-10-21T18:03:00.000Z',
@@ -254,8 +269,8 @@ class SaveChangesSimulator {
       finishedAt: done ? '2026-10-21T18:03:02.000Z' : null,
       progress: {
         total,
-        succeeded: done ? total : 0,
-        failed: 0,
+        succeeded: done ? written : 0,
+        failed,
         unknown: 0,
         skipped: 0,
         expired: 0,
@@ -294,6 +309,8 @@ async function mockApi(
     confirm?: () => unknown;
     /** True for the confirm request whose answer never reaches the client. */
     loseConfirm?: (attempt: number) => boolean;
+    /** Held before the first confirm answer, as a slow server does. */
+    holdConfirm?: Promise<void>;
   } = {},
 ): Promise<ConfirmedRequest[]> {
   /** The preview that the route froze, so a later read answers the same one. */
@@ -433,6 +450,7 @@ async function mockApi(
       if (answers.loseConfirm?.(confirms.length)) {
         return route.abort('failed');
       }
+      if (answers.holdConfirm) await answers.holdConfirm;
       return route.fulfill({
         json: answers.confirm ? answers.confirm() : sim.accept(),
         status: 201,
@@ -544,6 +562,72 @@ async function reloadDevices(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Open a text cell editor and type without Enter, as a click on Save changes interrupts it. */
+async function openEditor(
+  page: Page,
+  serial: string,
+  colId: string,
+  value: string,
+): Promise<void> {
+  const target = cell(page, serial, colId);
+  await target.dblclick();
+  const input = target.locator('input, textarea');
+  await expect(input).toBeVisible();
+  await input.fill(value);
+}
+
+/**
+ * Replace the device event stream with a fake, so a test dispatches production-shaped
+ * `entity-batch` events through the real page handler. Every API answer stays mocked.
+ */
+async function fakeDeviceEvents(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const root = window as unknown as {
+      __reviewStreams: { url: string; dispatchEvent(event: Event): boolean }[];
+      EventSource: unknown;
+    };
+    root.__reviewStreams = [];
+    root.EventSource = class extends EventTarget {
+      readyState = 1;
+      constructor(readonly url: string) {
+        super();
+        root.__reviewStreams.push(this);
+        setTimeout(() => this.dispatchEvent(new Event('open')), 0);
+      }
+      close() {
+        this.readyState = 2;
+      }
+    };
+  });
+}
+
+/** Dispatch one device refresh through the page's own stream handler. */
+async function emitDevices(page: Page, ids: string[]): Promise<void> {
+  await page.evaluate((deviceIds) => {
+    const root = window as unknown as {
+      __reviewStreams: {
+        url: string;
+        dispatchEvent(event: Event): boolean;
+      }[];
+    };
+    const streams = root.__reviewStreams.filter(
+      (candidate) => candidate.url === '/api/devices/events',
+    );
+    const stream = streams[streams.length - 1];
+    if (!stream) throw new Error('Devices did not subscribe');
+    stream.dispatchEvent(
+      new MessageEvent('entity-batch', {
+        data: JSON.stringify({
+          type: 'entity-batch',
+          entityType: 'device',
+          deviceIds,
+          removedIds: [],
+        }),
+      }),
+    );
+  }, ids);
+}
+
 test('step 4: one pending change saves without Review or Confirm', async ({
   page,
 }) => {
@@ -602,10 +686,12 @@ test('step 5: several changes pass Review and Confirm into one job', async ({
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
   await openDevices(page, sim);
+  // One device carries two fields, so the job holds one row per device and field.
   await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
-  await stageMove(page, 'C0A1-0002');
+  await stageMove(page, 'C0A1-0001');
+  await editText(page, 'C0A1-0002', 'assetTag', 'CB-NEW-2');
   await expect(page.locator('#draft-count')).toHaveText(
-    '2 pending changes · 2 devices',
+    '3 pending changes · 2 devices',
   );
 
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -613,27 +699,31 @@ test('step 5: several changes pass Review and Confirm into one job', async ({
     page.getByRole('heading', { name: 'Review 2 device updates' }),
   ).toBeVisible();
   await expect(
-    page.getByText('2 devices · 2 field changes · 0 excluded'),
+    page.getByText('2 devices · 3 field changes · 0 excluded'),
   ).toBeVisible();
   // One row group per device, one row per changed field.
   await expect(page.locator('.targets tbody')).toHaveCount(2);
   await expect(
     page.locator('.targets tbody').first().locator('tr'),
-  ).toHaveCount(2);
+  ).toHaveCount(3);
   await axe(page);
   await screenshot(page, 'save-changes-10-review.png');
 
   await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  // The heading counts the distinct fields that the rows carry.
   await expect(
     page.getByRole('heading', { name: 'Update 2 fields on 2 devices' }),
   ).toBeVisible();
   const sentences = page.locator('.change-list li');
-  await expect(sentences).toHaveCount(2);
+  await expect(sentences).toHaveCount(3);
   await expect(sentences.nth(0)).toHaveText(
     'Set the asset tag to CB-NEW-1 on C0A1-0001.',
   );
   await expect(sentences.nth(1)).toHaveText(
-    'Move C0A1-0002 into /Chrome Devices/Cart Devices. Destination policies apply.',
+    'Move C0A1-0001 into /Chrome Devices/Cart Devices. Destination policies apply.',
+  );
+  await expect(sentences.nth(2)).toHaveText(
+    'Set the asset tag to CB-NEW-2 on C0A1-0002.',
   );
   await page
     .getByRole('checkbox', { name: /I reviewed all 2 devices/ })
@@ -645,13 +735,13 @@ test('step 5: several changes pass Review and Confirm into one job', async ({
   await expect(
     page.getByRole('heading', { name: 'Update job created' }),
   ).toBeVisible();
-  await expect(page.getByText('2 devices · 2 field changes')).toBeVisible();
+  await expect(page.getByText('2 devices · 3 field changes')).toBeVisible();
   await screenshot(page, 'save-changes-12-job.png');
 
   // One job holds one row per device and field.
   expect(
     sim.targets().filter((target) => target.disposition === 'eligible'),
-  ).toHaveLength(2);
+  ).toHaveLength(3);
 
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   // Every confirmed cell shows its accepted value, and the draft is empty.
@@ -659,15 +749,19 @@ test('step 5: several changes pass Review and Confirm into one job', async ({
     cell(page, 'C0A1-0001', 'assetTag').locator('.cell-state.accepted'),
   ).toBeVisible();
   await expect(
-    cell(page, 'C0A1-0002', 'orgUnitPath').locator('.cell-state.accepted'),
+    cell(page, 'C0A1-0001', 'orgUnitPath').locator('.cell-state.accepted'),
+  ).toBeVisible();
+  await expect(
+    cell(page, 'C0A1-0002', 'assetTag').locator('.cell-state.accepted'),
   ).toBeVisible();
   await expect(page.locator('.draft-bar')).toHaveCount(0);
 });
 
-test('step 6: a device that the job does not write keeps its old value', async ({
+test('step 6: a failed device returns to its old value without a reload', async ({
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
   await editText(page, 'C0A1-0002', 'assetTag', 'CB-NEW-2');
@@ -682,18 +776,23 @@ test('step 6: a device that the job does not write keeps its old value', async (
   ).toBeVisible();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
 
-  // The worker writes the first device only, so the second keeps its old value.
+  // The worker writes the first device only. Its publication reaches the grid as the
+  // production `entity-batch` event; the job records the failure of the second.
   sim.settle(['d0']);
-  await reloadDevices(page);
-  await expect(
-    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
-  ).toHaveText('CB-NEW-1');
-  await expect(
-    cell(page, 'C0A1-0002', 'assetTag').locator('.device-cell-value'),
-  ).toHaveText('HS-0002');
-  await expect(
-    cell(page, 'C0A1-0002', 'assetTag').locator('.cell-state.accepted'),
-  ).toHaveCount(0);
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith('/api/devices/by-ids'),
+  );
+  await emitDevices(page, ['d0']);
+  await refreshed;
+
+  const first = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(first.locator('.cell-state.accepted')).toHaveCount(0);
+  await expect(first.locator('.device-cell-value')).toHaveText('CB-NEW-1');
+  const second = cell(page, 'C0A1-0002', 'assetTag');
+  await expect(second.locator('.device-cell-value')).toHaveText('HS-0002', {
+    timeout: 3000,
+  });
+  await expect(second.locator('.cell-state.accepted')).toHaveCount(0);
   await screenshot(page, 'save-changes-12-failed-device.png');
 });
 
@@ -798,4 +897,324 @@ test('a lost confirm answer replays the same preview and digest, one job', async
   expect(confirms.every((body) => body.acknowledged)).toBe(true);
   expect(sim.jobCount).toBe(1);
   await screenshot(page, 'save-changes-09-replayed-confirm.png');
+});
+
+test('one-click Save includes the live value without Enter', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await openEditor(page, 'C0A1-0001', 'assetTag', 'LIVE-VALID');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  expect(confirms).toHaveLength(1);
+  expect(sim.targets()).toHaveLength(1);
+  expect(sim.targets()[0]?.approvedValue).toBe('LIVE-VALID');
+  await screenshot(page, 'save-changes-09-live-one-click.png');
+});
+
+test('a live second value joins the same two-change preview', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'STAGED-FIRST');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+  await openEditor(page, 'C0A1-0002', 'assetTag', 'LIVE-SECOND');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '2 pending changes · 2 devices',
+  );
+
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 2 device updates' }),
+  ).toBeVisible();
+  // The live value is in the frozen edit list, so no one-change job starts.
+  expect(confirms).toHaveLength(0);
+  expect(sim.targets()).toHaveLength(2);
+  expect(
+    sim
+      .targets()
+      .map((target) => target.approvedValue)
+      .sort(),
+  ).toEqual(['LIVE-SECOND', 'STAGED-FIRST']);
+  await screenshot(page, 'save-changes-10-live-second-review.png');
+});
+
+test('an invalid live value blocks the whole save', async ({ page }) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'VALID-PENDING');
+  await openEditor(page, 'C0A1-0002', 'assetTag', ' ');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '2 pending changes · 2 devices',
+  );
+
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.waitForTimeout(300);
+  expect(confirms).toHaveLength(0);
+  expect(sim.jobCount).toBe(0);
+  await expect(
+    page.getByRole('heading', { name: 'Review 2 device updates' }),
+  ).toHaveCount(0);
+  const second = cell(page, 'C0A1-0002', 'assetTag');
+  await expect(second).toHaveClass(/device-draft-invalid/);
+  await expect(page.locator('#draft-count')).toHaveText(
+    '2 pending changes · 2 devices',
+  );
+  await screenshot(page, 'save-changes-10-live-invalid-blocked.png');
+});
+
+test('an accepted cell keeps a later edit', async ({ page }) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'APPROVED-VALUE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  const target = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(target.locator('.cell-state.accepted')).toBeVisible();
+
+  // The person edits back to the value that Google still holds. The edit stages against
+  // the accepted value that the cell shows, so it is a new pending change, not a removal.
+  await editText(page, 'C0A1-0001', 'assetTag', 'HS-0001');
+  await expect(target.locator('.device-cell-value')).toHaveText('HS-0001');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+  await expect(target.locator('.cell-state.accepted')).toHaveCount(0);
+  await screenshot(page, 'save-changes-09-accepted-reedit.png');
+});
+
+test('an unrelated refresh keeps the accepted mark while the job runs', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
+  await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'PENDING-WRITE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+
+  // Refresh Selected can publish this ID before the held update writes.
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith('/api/devices/by-ids'),
+  );
+  await emitDevices(page, ['d0']);
+  await refreshed;
+  const target = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(target.locator('.cell-state.accepted')).toBeVisible({
+    timeout: 3000,
+  });
+  await expect(target.locator('.device-cell-value')).toHaveText(
+    'PENDING-WRITE',
+  );
+  await screenshot(page, 'save-changes-09-unrelated-refresh.png');
+});
+
+test('a record that arrives before the receipt settles the accepted cell', async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
+  await openDevices(page, sim, { holdConfirm: held });
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
+  const confirming = page.waitForRequest((request) =>
+    request.url().endsWith('/confirm'),
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirming;
+
+  // The worker publishes the row while the confirmation answer is still in flight.
+  sim.settle();
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith('/api/devices/by-ids'),
+  );
+  await emitDevices(page, ['d0']);
+  await refreshed;
+  release();
+
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  const target = cell(page, 'C0A1-0001', 'assetTag');
+  await expect(target.locator('.device-cell-value')).toHaveText('CB-NEW-1');
+  await expect(target.locator('.cell-state.accepted')).toHaveCount(0, {
+    timeout: 3000,
+  });
+  await expect(page.locator('.draft-bar')).toHaveCount(0);
+  await screenshot(page, 'save-changes-09-record-before-receipt.png');
+});
+
+test('a one-cell unchanged answer leaves the draft and creates no job', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  await fakeDeviceEvents(page);
+  const confirms = await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'GOOGLE-ALREADY-HOLDS');
+  // Google already holds the value when the edit route reads the device, and the grid
+  // receives that record before the save.
+  sim.change('d0', 'assetTag', 'GOOGLE-ALREADY-HOLDS');
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith('/api/devices/by-ids'),
+  );
+  await emitDevices(page, ['d0']);
+  await refreshed;
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('GOOGLE-ALREADY-HOLDS');
+
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 1 device update' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Google already holds the value. The change left the draft.',
+    ),
+  ).toBeVisible();
+  expect(confirms).toHaveLength(0);
+  expect(sim.jobCount).toBe(0);
+  await expect(
+    page.getByRole('button', { name: 'Continue to confirmation' }),
+  ).toBeDisabled();
+  await page.getByRole('button', { name: 'Close' }).click();
+  await expect(page.locator('.draft-bar')).toHaveCount(0);
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.device-cell-value'),
+  ).toHaveText('GOOGLE-ALREADY-HOLDS');
+  await screenshot(page, 'save-changes-10-unchanged-one-cell.png');
+});
+
+test('one confirm accepted before its lost answer replays without a second job', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  // The route accepts the first request, then its answer is lost on the way back.
+  const confirms = await openDevices(page, sim, {
+    loseConfirm: (attempt) => {
+      if (attempt === 1) {
+        sim.accept();
+        return true;
+      }
+      return false;
+    },
+    confirm: () => sim.receipt(),
+  });
+  await editText(page, 'C0A1-0001', 'assetTag', 'FIRST-WRITE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Retry the confirmation' }),
+  ).toBeVisible();
+  expect(sim.jobCount).toBe(1);
+
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  expect(confirms).toHaveLength(2);
+  expect(confirms[1]).toEqual(confirms[0]);
+  expect(sim.jobCount).toBe(1);
+  await screenshot(page, 'save-changes-09-accepted-before-lost.png');
+});
+
+test('both receipts name the duplicate Asset tag serial', async ({ page }) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  sim.duplicate('d0', 'OTHER-SERIAL-2');
+  await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'DUPLICATE-TAG');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'C0A1-0001 · OTHER-SERIAL-2 already holds DUPLICATE-TAG. The asset tag repeats.',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Continue to confirmation' }),
+  ).toHaveCount(0);
+  await screenshot(page, 'save-changes-09-duplicate-receipt.png');
+});
+
+test('a several-change receipt names the duplicate after Confirm', async ({
+  page,
+}) => {
+  const sim = new SaveChangesSimulator(seedDevices());
+  sim.duplicate('d0', 'OTHER-SERIAL-3');
+  await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'DUPLICATE-TAG');
+  await editText(page, 'C0A1-0002', 'assetTag', 'SECOND-CHANGE');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  const line =
+    'C0A1-0001 · OTHER-SERIAL-3 already holds DUPLICATE-TAG. The asset tag repeats.';
+  await expect(page.getByText(line)).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Continue to confirmation' }),
+  ).toBeEnabled();
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page
+    .getByRole('checkbox', { name: /I reviewed all 2 devices/ })
+    .check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await expect(page.getByText(line)).toBeVisible();
+  await screenshot(page, 'save-changes-12-duplicate-receipt.png');
+});
+
+test('an answer after the sheet closes settles the submitted drafts', async ({
+  page,
+}) => {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sim = new SaveChangesSimulator(seedDevices());
+  await openDevices(page, sim, { holdConfirm: held });
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
+  await editText(page, 'C0A1-0002', 'assetTag', 'CB-NEW-2');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page
+    .getByRole('checkbox', { name: /I reviewed all 2 devices/ })
+    .check();
+  const confirming = page.waitForRequest((request) =>
+    request.url().endsWith('/confirm'),
+  );
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  await confirming;
+
+  // The sheet closes while the answer is in flight. The job exists, so its rows settle.
+  await page.getByRole('button', { name: 'Close' }).click();
+  release();
+  await expect(page.locator('.draft-bar')).toHaveCount(0, { timeout: 3000 });
+  await expect(
+    cell(page, 'C0A1-0001', 'assetTag').locator('.cell-state.accepted'),
+  ).toBeVisible();
+  await expect(
+    cell(page, 'C0A1-0002', 'assetTag').locator('.cell-state.accepted'),
+  ).toBeVisible();
+  await screenshot(page, 'save-changes-09-closed-before-answer.png');
 });

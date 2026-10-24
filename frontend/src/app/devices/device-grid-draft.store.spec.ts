@@ -1,6 +1,12 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import type { DeviceRow } from '@campus/application-contracts';
+import type {
+  DeviceRow,
+  DeviceUpdateField,
+  DeviceUpdateTarget,
+  JobDetail,
+  JobStatus,
+} from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import {
   DEVICE_GRID_DRAFT_DEVICE_LIMIT_MESSAGE,
@@ -50,6 +56,92 @@ function configure(id = principal) {
     ],
   });
   return TestBed.inject(DeviceGridDraftStore);
+}
+
+/** A store whose person answers the job and device reads that settlement makes. */
+function configureWith(
+  request: (path: string) => Promise<Response> | Response,
+  id = principal,
+) {
+  const session = signal({
+    identity: { id },
+    expiresAt: '2026-10-20T12:00:00.000Z',
+    csrfToken: 'a'.repeat(64),
+  });
+  TestBed.configureTestingModule({
+    providers: [
+      {
+        provide: AuthStore,
+        useValue: { session, request },
+      },
+    ],
+  });
+  const draft = TestBed.inject(DeviceGridDraftStore);
+  return { draft, session };
+}
+
+/** One frozen target row of an edit list. */
+function target(
+  deviceId: string,
+  field: DeviceUpdateField,
+  disposition: 'eligible' | 'unchanged' | 'conflict' | 'excluded',
+  approvedValue: string | null,
+  observedValue: string | null = null,
+): DeviceUpdateTarget {
+  return {
+    deviceId,
+    serialNumber: deviceId,
+    field,
+    observedValue,
+    baselineValue: observedValue,
+    approvedValue,
+    duplicateSerialNumber: null,
+    disposition,
+    exclusionReason: disposition === 'excluded' ? 'removed' : null,
+  };
+}
+
+/** A job detail with the written outcome that settlement reads. */
+function jobOf(
+  displayId: string,
+  status: JobStatus,
+  counts: { total: number; succeeded: number; failed: number },
+): JobDetail {
+  return {
+    jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    displayId,
+    revision: 1,
+    action: 'update-device-annotations',
+    status,
+    scope: { kind: 'devices', deviceCount: counts.total },
+    requestedBy: { id: principal, displayName: 'District operator' },
+    createdAt: '2026-10-21T18:03:00.000Z',
+    startedAt: '2026-10-21T18:03:01.000Z',
+    finishedAt: '2026-10-21T18:03:02.000Z',
+    progress: {
+      total: counts.total,
+      succeeded: counts.succeeded,
+      failed: counts.failed,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      pending: 0,
+    },
+    failure: null,
+    confirmedBy: { id: principal, displayName: 'District operator' },
+    previewDisplayId: 'PV-006',
+    changes: null,
+    commandType: null,
+    statusAction: null,
+    deprovisionReason: null,
+    targetOrgUnitPaths: [],
+    correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    latestActivity: {
+      at: '2026-10-21T18:03:00.000Z',
+      failed: { count: 0, operations: [] },
+      unknown: { count: 0, operations: [] },
+    },
+  };
 }
 
 function document(): unknown {
@@ -592,4 +684,300 @@ it('restores a conflict that is stored with an invalid value', () => {
     currentValue: 'REMOTE',
   });
   expect(draft.blocked()).toBe(true);
+});
+
+it('settles an accepted cell only on authoritative evidence (B4)', () => {
+  const draft = configure();
+  draft.stageText(row({ notes: 'OLD-VALUE' }), 'notes', 'APPROVED-VALUE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'APPROVED-VALUE', 'OLD-VALUE')],
+    'UPD-006',
+  );
+  expect(draft.acceptedFor('d1', 'notes')).not.toBeNull();
+
+  // A partial row proves nothing, and an unrelated refresh still holds the old value.
+  draft.settleAccepted([{ deviceId: 'd1' }]);
+  expect(draft.acceptedFor('d1', 'notes')).not.toBeNull();
+  draft.settleAccepted([row({ notes: 'OLD-VALUE' })]);
+  expect(draft.acceptedFor('d1', 'notes')).not.toBeNull();
+  expect(draft.valueFor('d1', 'notes', 'OLD-VALUE')).toBe('APPROVED-VALUE');
+
+  // The row that holds the request is success evidence, so the mark settles.
+  draft.settleAccepted([row({ notes: 'APPROVED-VALUE' })]);
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.valueFor('d1', 'notes', 'APPROVED-VALUE')).toBe(
+    'APPROVED-VALUE',
+  );
+});
+
+/** Let the settlement reads that accept() starts finish. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+it('settles a failed job without a later row event (B4)', async () => {
+  const failed = jobOf('UPD-006', 'failed', {
+    total: 1,
+    succeeded: 0,
+    failed: 1,
+  });
+  const { draft } = configureWith((path) =>
+    path === '/api/jobs/UPD-006'
+      ? Response.json(failed)
+      : Response.json({ rows: [row({ notes: 'OLD-VALUE' })] }),
+  );
+  draft.stageText(row({ notes: 'OLD-VALUE' }), 'notes', 'FAILED-VALUE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'FAILED-VALUE', 'OLD-VALUE')],
+    'UPD-006',
+  );
+  await draft.reconcileAccepted();
+  await flush();
+
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.valueFor('d1', 'notes', 'OLD-VALUE')).toBe('OLD-VALUE');
+});
+
+it('keeps an accepted mark while the job runs, and reads a row outside the event', async () => {
+  const running = jobOf('UPD-006', 'running', {
+    total: 1,
+    succeeded: 0,
+    failed: 0,
+  });
+  const { draft } = configureWith((path) =>
+    path === '/api/jobs/UPD-006'
+      ? Response.json(running)
+      : Response.json({ rows: [row({ notes: 'OLD-VALUE' })] }),
+  );
+  draft.stageText(row({ notes: 'OLD-VALUE' }), 'notes', 'PENDING-VALUE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'PENDING-VALUE', 'OLD-VALUE')],
+    'UPD-006',
+  );
+  await draft.reconcileAccepted();
+  await flush();
+  expect(draft.acceptedFor('d1', 'notes')).not.toBeNull();
+});
+
+it('settles a row that the event did not name once the job is terminal (B4)', async () => {
+  const done = jobOf('UPD-006', 'completed-with-errors', {
+    total: 2,
+    succeeded: 1,
+    failed: 1,
+  });
+  const { draft } = configureWith((path) =>
+    path === '/api/jobs/UPD-006'
+      ? Response.json(done)
+      : Response.json({
+          rows: [
+            row({ deviceId: 'd1', notes: 'APPROVED-1' }),
+            row({ deviceId: 'd2', notes: 'OLD-2' }),
+          ],
+        }),
+  );
+  draft.stageText(
+    row({ deviceId: 'd1', notes: 'OLD-1' }),
+    'notes',
+    'APPROVED-1',
+  );
+  draft.stageText(
+    row({ deviceId: 'd2', notes: 'OLD-2' }),
+    'notes',
+    'APPROVED-2',
+  );
+  draft.accept(
+    draft.edits(),
+    [
+      target('d1', 'notes', 'eligible', 'APPROVED-1', 'OLD-1'),
+      target('d2', 'notes', 'eligible', 'APPROVED-2', 'OLD-2'),
+    ],
+    'UPD-006',
+  );
+  // The event names one device only.
+  draft.settleAccepted([row({ deviceId: 'd1', notes: 'APPROVED-1' })]);
+  await draft.reconcileAccepted();
+  await flush();
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.valueFor('d2', 'notes', 'OLD-2')).toBe('OLD-2');
+});
+
+it('keeps a later draft when a settled accepted value leaves (B4, B7)', async () => {
+  const done = jobOf('UPD-006', 'completed', {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+  });
+  const { draft } = configureWith((path) =>
+    path === '/api/jobs/UPD-006'
+      ? Response.json(done)
+      : Response.json({ rows: [row({ notes: 'APPROVED' })] }),
+  );
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'APPROVED');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'APPROVED', 'OLD')],
+    'UPD-006',
+  );
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'LATER-EDIT');
+  await draft.reconcileAccepted();
+  await flush();
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.entries()).toHaveLength(1);
+  expect(draft.entryFor('d1', 'notes')?.value).toBe('LATER-EDIT');
+});
+
+it('clears accepted values on a principal switch (B5)', () => {
+  const ids = [
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+  ];
+  let identity = ids[0];
+  const session = signal({
+    identity: { id: identity },
+    expiresAt: '2026-10-20T12:00:00.000Z',
+    csrfToken: 'a'.repeat(64),
+  });
+  TestBed.configureTestingModule({
+    providers: [{ provide: AuthStore, useValue: { session } }],
+  });
+  const draft = TestBed.inject(DeviceGridDraftStore);
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'PERSON-A-PRIVATE-VALUE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'PERSON-A-PRIVATE-VALUE', 'OLD')],
+    'UPD-006',
+  );
+  expect(draft.acceptedFor('d1', 'notes')).not.toBeNull();
+
+  identity = ids[1];
+  session.set({
+    identity: { id: identity },
+    expiresAt: '2026-10-20T12:00:00.000Z',
+    csrfToken: 'a'.repeat(64),
+  });
+  TestBed.tick();
+  expect(draft.entries()).toEqual([]);
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.valueFor('d1', 'notes', 'GOOGLE-OLD-VALUE')).toBe(
+    'GOOGLE-OLD-VALUE',
+  );
+});
+
+it('stages a later edit against the accepted value, so input is not lost (B7)', () => {
+  const draft = configure();
+  const device = row({ notes: 'HS-0001' });
+  draft.stageText(device, 'notes', 'APPROVED-VALUE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'APPROVED-VALUE', 'HS-0001')],
+    'UPD-006',
+  );
+  expect(draft.acceptedFor('d1', 'notes')?.value).toBe('APPROVED-VALUE');
+
+  // The person types the value that Google still holds. It differs from the accepted
+  // value that the cell shows, so it becomes a pending change.
+  draft.stageText(device, 'notes', 'HS-0001');
+  expect(draft.entryFor('d1', 'notes')).toMatchObject({
+    value: 'HS-0001',
+    baseline: 'APPROVED-VALUE',
+    state: 'pending',
+  });
+  expect(draft.valueFor('d1', 'notes', 'HS-0001')).toBe('HS-0001');
+  expect(draft.counts()).toEqual({ changes: 1, devices: 1 });
+});
+
+it('stages a later Move against the accepted value, so input is not lost (B7)', () => {
+  const draft = configure();
+  const device = row({ orgUnitPath: '/Chrome Devices/Old' });
+  draft.stageMove(device, { id: 'ou-new', path: '/Chrome Devices/New' });
+  draft.accept(
+    draft.edits(),
+    [
+      target(
+        'd1',
+        'orgUnitPath',
+        'eligible',
+        '/Chrome Devices/New',
+        '/Chrome Devices/Old',
+      ),
+    ],
+    'UPD-006',
+  );
+  draft.stageMove(device, { id: 'ou-old', path: '/Chrome Devices/Old' });
+  expect(draft.entryFor('d1', 'orgUnitPath')).toMatchObject({
+    mode: 'move',
+    value: '/Chrome Devices/Old',
+    baseline: '/Chrome Devices/New',
+    state: 'pending',
+  });
+});
+
+it('commits a live edit against the accepted value (B7)', () => {
+  const draft = configure();
+  const device = row({ notes: 'HS-0001' });
+  draft.stageText(device, 'notes', 'APPROVED-VALUE');
+  draft.accept(
+    draft.edits(),
+    [target('d1', 'notes', 'eligible', 'APPROVED-VALUE', 'HS-0001')],
+    'UPD-006',
+  );
+  // The grid opens the editor with the baseline of the cell, which is the accepted value.
+  draft.beginLive({
+    deviceId: 'd1',
+    serialNumber: 'C0A1-0000',
+    field: 'notes',
+    baseline: draft.baselineForRow(device, 'notes'),
+    value: 'APPROVED-VALUE',
+  });
+  draft.updateLive('HS-0001');
+  expect(draft.commitLive()).toBe(true);
+  expect(draft.entryFor('d1', 'notes')).toMatchObject({
+    value: 'HS-0001',
+    baseline: 'APPROVED-VALUE',
+    state: 'pending',
+  });
+});
+
+it('drops every unchanged row when no row needs a job (B2)', () => {
+  const draft = configure();
+  draft.stageText(row({ deviceId: 'd1', notes: 'A' }), 'notes', 'GOOGLE-1');
+  draft.stageText(row({ deviceId: 'd2', notes: 'B' }), 'notes', 'GOOGLE-2');
+  const submitted = draft.edits();
+  draft.applyPreview(
+    [
+      target('d1', 'notes', 'unchanged', 'GOOGLE-1', 'GOOGLE-1'),
+      target('d2', 'notes', 'unchanged', 'GOOGLE-2', 'GOOGLE-2'),
+    ],
+    submitted,
+  );
+  expect(draft.entries()).toEqual([]);
+});
+
+it('drops a submitted unchanged row and keeps a later edit (B2)', () => {
+  const draft = configure();
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'GOOGLE-ALREADY-HOLDS');
+  const submitted = draft.edits();
+  draft.applyPreview(
+    [
+      target(
+        'd1',
+        'notes',
+        'unchanged',
+        'GOOGLE-ALREADY-HOLDS',
+        'GOOGLE-ALREADY-HOLDS',
+      ),
+    ],
+    submitted,
+  );
+  expect(draft.entries()).toEqual([]);
+});
+
+it('keeps a later edit when an unchanged answer settles the submitted row (B2)', () => {
+  const draft = configure();
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'GOOGLE-ALREADY-HOLDS');
+  const submitted = draft.edits();
+  draft.stageText(row({ notes: 'OLD' }), 'notes', 'LATER-VALUE');
+  draft.dropSubmitted(submitted);
+  expect(draft.entryFor('d1', 'notes')?.value).toBe('LATER-VALUE');
 });

@@ -785,23 +785,45 @@ export function targetGroups(
   return [...groups.values()];
 }
 
+/** One duplicate Asset tag warning: the device, the other serial, and the repeated value. */
+export interface DuplicateTagEvidence {
+  /** The device that the job writes. */
+  serialNumber: string;
+  /** The device that already holds the requested tag. */
+  duplicateSerialNumber: string;
+  approvedValue: string;
+}
+
 /**
- * The duplicate Asset tag warning of addendum section 6. It never blocks the save, so the
- * Review names the other serial number and Continue stays available.
+ * The duplicate Asset tag warnings of the frozen targets. A duplicate never blocks the save
+ * (addendum section 6); the Review step and both receipts name the other serial number.
  */
-export function duplicateTagNotes(
+export function duplicateTagEvidence(
   targets: readonly DeviceUpdateTarget[],
-): string[] {
+): DuplicateTagEvidence[] {
   return targets
     .filter(
       (target) =>
         target.duplicateSerialNumber !== null &&
         target.disposition === 'eligible',
     )
-    .map(
-      (target) =>
-        `${targetDeviceText(target)} · ${target.duplicateSerialNumber} already holds ${target.approvedValue ?? ''}. The asset tag repeats.`,
-    );
+    .map((target) => ({
+      serialNumber: targetDeviceText(target),
+      duplicateSerialNumber: target.duplicateSerialNumber as string,
+      approvedValue: target.approvedValue ?? '',
+    }));
+}
+
+/** One warning line: "SERIAL · OTHER already holds VALUE. The asset tag repeats." */
+export function duplicateTagLine(evidence: DuplicateTagEvidence): string {
+  return `${evidence.serialNumber} · ${evidence.duplicateSerialNumber} already holds ${evidence.approvedValue}. The asset tag repeats.`;
+}
+
+/** The duplicate Asset tag warnings of the Review step and a receipt. */
+export function duplicateTagNotes(
+  targets: readonly DeviceUpdateTarget[],
+): string[] {
+  return duplicateTagEvidence(targets).map(duplicateTagLine);
 }
 
 /**

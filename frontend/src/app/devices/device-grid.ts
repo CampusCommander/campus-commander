@@ -78,7 +78,6 @@ import {
 } from './device-filter-model';
 import {
   DeviceGridDraftStore,
-  baselineFor,
   type DeviceGridDraftEntry,
 } from './device-grid-draft.store';
 import { DeviceGridConflict } from './device-grid-conflict';
@@ -520,12 +519,11 @@ export class DeviceGrid implements OnInit {
     const field =
       GRID_UPDATE_FIELDS[event.column.getColId() as DeviceSortField];
     if (!field || field === 'orgUnitPath') return;
-    const entry = this.draft.entryFor(event.data.deviceId, field);
     this.draft.beginLive({
       deviceId: event.data.deviceId,
       serialNumber: event.data.serialNumber,
       field,
-      baseline: baselineFor(entry, event.data, field),
+      baseline: this.draft.baselineForRow(event.data, field),
       value:
         event.value === null || event.value === undefined
           ? ''

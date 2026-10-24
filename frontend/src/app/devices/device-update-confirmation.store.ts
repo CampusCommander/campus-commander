@@ -22,7 +22,8 @@ export const CONFIRMATION_PREFIX = 'cc.device-update-confirmation.';
 /**
  * The confirmation that a page submitted, kept until its acceptance is known. `entries`
  * carries the submitted grid rows, so a replay that recovers the receipt can settle them
- * (mockup state 09).
+ * (mockup state 09). `duplicates` keeps the duplicate Asset tag evidence, so a recovered
+ * receipt still names the other serial number (B3).
  */
 const submittedConfirmationSchema = z.strictObject({
   previewId: z.uuid(),
@@ -38,6 +39,16 @@ const submittedConfirmationSchema = z.strictObject({
       }),
     )
     .max(2500)
+    .optional(),
+  duplicates: z
+    .array(
+      z.strictObject({
+        serialNumber: z.string().max(256),
+        duplicateSerialNumber: z.string().max(256),
+        approvedValue: z.string().max(4096),
+      }),
+    )
+    .max(100)
     .optional(),
 });
 export type SubmittedConfirmation = z.infer<typeof submittedConfirmationSchema>;

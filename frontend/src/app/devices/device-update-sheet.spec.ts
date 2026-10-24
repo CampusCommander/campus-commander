@@ -13,6 +13,7 @@ import type {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
+import { DeviceUpdateConfirmationStore } from './device-update-confirmation.store';
 import { DeviceUpdateDraftStore } from './device-update-draft.store';
 import { DeviceGridDraftStore } from './device-grid-draft.store';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
@@ -2811,6 +2812,119 @@ it('shows the pending devices when the grid review asks for them', async () => {
   expect(closed).toHaveBeenCalledTimes(1);
 });
 
+it('recovers a grid confirmation from the selection sheet (B6)', async () => {
+  const ui = await setup({
+    source: 'selection',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: (path) => {
+      if (path === '/api/devices/updates/org-units')
+        return Response.json(orgUnitTree);
+      if (path.endsWith('/confirm'))
+        return Response.json(receipt, { status: 201 });
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  // A grid save retains its submission in this tab before the page closes.
+  TestBed.inject(DeviceUpdateConfirmationStore).retain({
+    previewId,
+    manifestDigest: 'a'.repeat(64),
+    entries: [
+      {
+        deviceId: 'd1',
+        field: 'notes',
+        mode: 'replace',
+        value: 'Hinge repaired',
+        baselineValue: null,
+      },
+      {
+        deviceId: 'd2',
+        field: 'notes',
+        mode: 'replace',
+        value: 'Door fixed',
+        baselineValue: null,
+      },
+    ],
+  });
+  await ui.type('North lab');
+  ui.button('Save and preview')?.click();
+  await ui.settle();
+  await ui.settle();
+
+  // The selection sheet recovered the grid job, and the grid rows settled under it.
+  expect(ui.element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entries()).toEqual([]);
+  expect(grid.accepted()).toHaveLength(2);
+});
+
+it('settles the confirmed rows when the sheet closes before its answer (B6)', async () => {
+  let release: (value: Response) => void = () => undefined;
+  const held = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: (path) => {
+      if (path === '/api/devices/updates/edit-previews')
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+          { status: 201 },
+        );
+      if (path === `/api/devices/updates/previews/${previewId}`)
+        return Response.json(
+          editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+        );
+      if (path.includes('/targets'))
+        return Response.json({
+          targets: [
+            editTarget(
+              'd1',
+              'C0A1-0001',
+              'notes',
+              'eligible',
+              'Hinge repaired',
+            ),
+            editTarget('d2', 'C0A1-0002', 'notes', 'eligible', 'Door fixed'),
+          ],
+          nextCursor: null,
+        });
+      if (path.endsWith('/confirm')) return held;
+      if (path === '/api/jobs/UPD-006') return Response.json(job);
+      return Response.json({}, { status: 404 });
+    },
+  });
+  const { element, button, close, settle } = ui;
+  button('Continue to confirmation')?.click();
+  await settle();
+  element
+    .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')
+    ?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  // The person dismisses the sheet while the answer is still on its way.
+  await close();
+  release(Response.json(receipt, { status: 201 }));
+  await settle();
+  await settle();
+
+  // The job exists, so the submitted rows settle even though no receipt shows.
+  const grid = TestBed.inject(DeviceGridDraftStore);
+  expect(grid.entries()).toEqual([]);
+  expect(grid.accepted()).toHaveLength(2);
+  expect(grid.acceptedFor('d2', 'notes')?.value).toBe('Door fixed');
+});
+
 it('creates one job with a row per device and field after Review', async () => {
   const ui = await setup({
     source: 'grid',
@@ -2883,5 +2997,67 @@ it('creates one job with a row per device and field after Review', async () => {
   expect(grid.accepted()).toHaveLength(3);
   expect(grid.acceptedFor('d1', 'annotatedUser')?.value).toBe(
     'maya@example.org',
+  );
+});
+
+it('names the duplicate Asset tag on a one-change receipt (B3)', async () => {
+  const target = {
+    ...editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+    duplicateSerialNumber: 'OTHER-SERIAL-1',
+  };
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) =>
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired'),
+    request: gridAnswers({
+      preview: editPreview(),
+      targets: [target],
+    }),
+  });
+  const { element } = ui;
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  expect(element.textContent).toContain(
+    'C0A1-0001 · OTHER-SERIAL-1 already holds Hinge repaired. The asset tag repeats.',
+  );
+});
+
+it('names the duplicate Asset tag at Review and on the receipt (B3)', async () => {
+  const duplicate = {
+    ...editTarget('d1', 'C0A1-0001', 'notes', 'eligible', 'Hinge repaired'),
+    duplicateSerialNumber: 'OTHER-SERIAL-2',
+  };
+  const ui = await setup({
+    source: 'grid',
+    stage: (grid) => {
+      grid.stageText(gridRow('d1', 'C0A1-0001'), 'notes', 'Hinge repaired');
+      grid.stageText(gridRow('d2', 'C0A1-0002'), 'notes', 'Door fixed');
+    },
+    request: gridAnswers({
+      preview: editPreview({ fieldChanges: 2, selected: 2, eligible: 2 }),
+      targets: [
+        duplicate,
+        editTarget('d2', 'C0A1-0002', 'notes', 'eligible', 'Door fixed'),
+      ],
+    }),
+  });
+  const { element, button, settle } = ui;
+  expect(element.textContent).toContain(
+    'C0A1-0001 · OTHER-SERIAL-2 already holds Hinge repaired. The asset tag repeats.',
+  );
+  button('Continue to confirmation')?.click();
+  await settle();
+  element
+    .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')
+    ?.click();
+  await settle();
+  button('Create update job')?.click();
+  await settle();
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Update job created',
+  );
+  expect(element.textContent).toContain(
+    'C0A1-0001 · OTHER-SERIAL-2 already holds Hinge repaired. The asset tag repeats.',
   );
 });

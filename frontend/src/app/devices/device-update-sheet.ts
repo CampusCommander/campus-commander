@@ -65,6 +65,8 @@ import {
   confirmationMayExist,
   confirmationMetaLine,
   confirmTitle,
+  duplicateTagEvidence,
+  duplicateTagLine,
   duplicateTagNotes,
   expiryLine,
   flowExpiry,
@@ -82,6 +84,7 @@ import {
   type FlowActionId,
   type FlowProblem,
   type FlowProblemKind,
+  type DuplicateTagEvidence,
   type TargetGroup,
 } from './device-update-flow';
 import { DeviceUpdateFlow } from './device-update-flow';
@@ -263,10 +266,29 @@ export class DeviceUpdateSheet {
   protected readonly duplicates = computed(() =>
     duplicateTagNotes(this.targets()),
   );
+  /** The duplicate evidence that a submission retains for its receipt (B3). */
+  private readonly retainedDuplicates = signal<DuplicateTagEvidence[]>([]);
+  /** The duplicate lines of the receipt, including a recovered or replayed one. */
+  protected readonly receiptDuplicates = computed(() => {
+    const lines = this.duplicates();
+    if (lines.length) return lines;
+    return this.retainedDuplicates().map(duplicateTagLine);
+  });
   /** Why Continue is blocked on a grid save, or an empty string. */
   protected readonly gridNote = computed(() => {
     const preview = this.preview();
     return preview && this.source() === 'grid' ? gridReviewNote(preview) : '';
+  });
+  /**
+   * The one-cell answer that Google already holds. The row leaves the draft and no job
+   * exists, so Review names the outcome instead of a count of zero (B2).
+   */
+  protected readonly unchangedGridNote = computed(() => {
+    const preview = this.preview();
+    if (!preview || this.source() !== 'grid' || preview.eligible > 0) return '';
+    return preview.unchanged > 0
+      ? 'Google already holds the value. The change left the draft.'
+      : '';
   });
   /**
    * The mode of one target's field change. Each row reads the change of its own field, so a
@@ -640,6 +662,7 @@ export class DeviceUpdateSheet {
     this.problemDetail.set('');
     this.preview.set(null);
     this.targets.set([]);
+    this.retainedDuplicates.set([]);
     this.frozenSelection.set(null);
     this.receipt.set(null);
     this.job.set(null);
@@ -690,7 +713,15 @@ export class DeviceUpdateSheet {
           await this.confirmOneChange(preview, edits, generation);
           return;
         }
-        await this.showPreview(preview, null, generation);
+        // A one-cell answer that Google already holds creates no job, and its row leaves
+        // the draft before the Review shows the outcome (B2).
+        if (
+          edits.length === 1 &&
+          preview.eligible === 0 &&
+          preview.unchanged === 1
+        )
+          this.gridDraft.dropSubmitted(edits);
+        await this.showPreview(preview, null, generation, edits);
         return;
       }
       case 'uncertain':
@@ -741,10 +772,21 @@ export class DeviceUpdateSheet {
   ): Promise<void> {
     this.step.set('prepare');
     this.status.set('loading');
+    // A duplicate Asset tag never blocks a one-cell save, and its receipt must name the
+    // other serial number (addendum section 6, B3). The digest stays the answer's.
+    const targets = await this.flow.readTargets(preview.previewId);
+    if (generation !== this.generation) return;
+    if (targets.ok) {
+      this.targets.set(targets.value);
+      this.retainedDuplicates.set(duplicateTagEvidence(targets.value));
+    }
     this.submitted.set({
       previewId: preview.previewId,
       manifestDigest: preview.manifestDigest,
       entries: [...edits],
+      ...(this.retainedDuplicates().length
+        ? { duplicates: this.retainedDuplicates() }
+        : {}),
     });
     await this.submit(this.submitted()!, false);
     if (generation !== this.generation) return;
@@ -956,6 +998,7 @@ export class DeviceUpdateSheet {
     preview: DeviceUpdatePreview,
     selection: string | null,
     generation: number,
+    submittedEdits: readonly DeviceUpdateEdit[] = [],
   ): Promise<void> {
     this.preview.set(preview);
     this.frozenSelection.set(selection);
@@ -964,12 +1007,13 @@ export class DeviceUpdateSheet {
     this.problemDetail.set('');
     this.step.set('review');
     this.status.set('loading');
-    await this.readTargets(preview, generation);
+    await this.readTargets(preview, generation, submittedEdits);
   }
 
   private async readTargets(
     preview: DeviceUpdatePreview,
     generation: number,
+    submittedEdits: readonly DeviceUpdateEdit[] = [],
   ): Promise<void> {
     this.status.set('loading');
     this.problem.set(null);
@@ -986,8 +1030,9 @@ export class DeviceUpdateSheet {
     }
     this.targets.set(targets.value);
     // The grid marks the frozen answer: a conflict cell shows the current Google value, an
-    // excluded cell shows its reason (addendum section 5).
-    if (this.source() === 'grid') this.gridDraft.applyPreview(targets.value);
+    // excluded cell shows its reason, and an unchanged row leaves the draft (section 5).
+    if (this.source() === 'grid')
+      this.gridDraft.applyPreview(targets.value, submittedEdits);
     this.status.set('ready');
   }
 
@@ -995,6 +1040,9 @@ export class DeviceUpdateSheet {
   protected async create(): Promise<void> {
     const preview = this.preview();
     if (!preview || !this.canCreate()) return;
+    // The receipt names the other serial number of a duplicate Asset tag (B3).
+    const duplicates = duplicateTagEvidence(this.targets());
+    this.retainedDuplicates.set(duplicates);
     await this.submit(
       {
         previewId: preview.previewId,
@@ -1003,6 +1051,7 @@ export class DeviceUpdateSheet {
         ...(this.source() === 'grid'
           ? { entries: this.gridDraft.edits() }
           : {}),
+        ...(duplicates.length ? { duplicates } : {}),
       },
       false,
     );
@@ -1017,6 +1066,8 @@ export class DeviceUpdateSheet {
     replay: boolean,
   ): Promise<void> {
     const generation = this.generation;
+    // The frozen targets belong to this submission, so a late answer settles its own rows.
+    const targets = this.targets();
     this.submitted.set(submitted);
     this.confirmations.retain(submitted);
     this.creating.set(true);
@@ -1027,7 +1078,12 @@ export class DeviceUpdateSheet {
     if (result.ok) {
       // The answer settles the retained record even after the sheet closed.
       this.confirmations.release(submitted.previewId);
-      if (generation !== this.generation) return;
+      // A closed sheet still settles its submitted rows: the job exists (B6). The grid
+      // draft is a root store, so settlement does not depend on the current sheet opening.
+      if (generation !== this.generation) {
+        this.settleGrid(submitted, result.value.displayId, targets);
+        return;
+      }
       this.creating.set(false);
       this.openReceipt(result.value, submitted);
       return;
@@ -1070,22 +1126,28 @@ export class DeviceUpdateSheet {
     this.problem.set(null);
     this.problemDetail.set('');
     this.step.set('done');
-    if (this.source() === 'grid') this.settleGrid(submitted, receipt.displayId);
+    // A recovered receipt keeps the duplicate evidence that the submission recorded (B3).
+    this.retainedDuplicates.set(submitted?.duplicates ?? []);
+    // A recovered receipt settles its rows even when another sheet source recovered it:
+    // the submitted entries prove that the grid rows are the ones the job covers (B6).
+    this.settleGrid(submitted, receipt.displayId);
     void this.loadJob(receipt.displayId);
   }
 
   /**
    * Settle the confirmed rows (DRAFT-02): the eligible rows become accepted cells, unchanged
    * rows leave the draft, and a conflict or excluded row keeps its mark. A recovered receipt
-   * carries the submitted rows, so it settles them without a frozen preview.
+   * carries the submitted rows, so it settles them without a frozen preview. A closed sheet
+   * passes the targets of its own submission (B6).
    */
   private settleGrid(
     submitted: SubmittedConfirmation | null,
     displayId: string,
+    targets: readonly DeviceUpdateTarget[] = this.targets(),
   ): void {
     const edits = (submitted?.entries ?? []) as DeviceUpdateEdit[];
     if (!edits.length) return;
-    this.gridDraft.accept(edits, this.targets(), displayId);
+    this.gridDraft.accept(edits, targets, displayId);
   }
 
   /** Read the durable job. A reload and the first view follow the same read. */
@@ -1108,6 +1170,9 @@ export class DeviceUpdateSheet {
         if (job.success) {
           this.job.set(job.data);
           this.status.set('ready');
+          // A terminal job settles its accepted cells; a running one keeps them (B4).
+          if (this.source() === 'grid')
+            void this.gridDraft.reconcileAccepted(job.data);
           return;
         }
         this.showProblem('job-unavailable');
@@ -1206,7 +1271,11 @@ export class DeviceUpdateSheet {
     }
     this.preview.set(summary.value);
     this.targets.set(targets.value);
-    if (summary.value.eligible === 0) {
+    // A grid answer that Google already holds keeps its Review; it has no job, and its
+    // row already left the draft (B2).
+    const unchangedOnly =
+      this.source() === 'grid' && summary.value.unchanged > 0;
+    if (summary.value.eligible === 0 && !unchangedOnly) {
       this.showProblem('nothing-to-update', null, summary.value.displayId);
       return;
     }

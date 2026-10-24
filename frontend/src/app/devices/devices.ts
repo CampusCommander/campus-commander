@@ -399,16 +399,17 @@ export class DevicesPage implements OnInit, OnDestroy {
   }
 
   /**
-   * Save changes stops the active editor, stages its input, and opens the sheet at the
-   * edit-list preview (IF3, addendum section 5). An entry that cannot be saved stays in the
-   * grid, so the panel line names it and this action does nothing.
+   * Save changes stages the active editor's input, stops that editor, and opens the sheet at
+   * the edit-list preview (IF3, addendum section 5). The whole set is checked after staging,
+   * so a valid live value joins the save and an invalid one blocks all of it (B1).
    */
   protected saveGridDraft(): void {
     if (!this.gridDraft.visible() || this.gridDraft.blocked()) return;
-    this.grid()?.endEdit();
-    // The live input reached the draft through its own edit handler; commit covers the
-    // value that the person typed without pressing Enter.
+    // Stage the live input before the editor closes: a stopped editor clears its value.
     this.gridDraft.commitLive();
+    this.grid()?.endEdit();
+    // The staging callback may have added an invalid entry, so recheck the whole set.
+    if (this.gridDraft.blocked() || this.gridDraft.refusal() !== '') return;
     if (!this.gridDraft.edits().length) return;
     this.sheetSource.set('grid');
     this.updateOpen.set(true);
