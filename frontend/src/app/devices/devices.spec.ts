@@ -179,6 +179,7 @@ function setup(options: {
     pendingRows: vi.fn().mockResolvedValue([]),
     pendingMatching: signal<number | null>(null),
     pendingFailure: signal(false),
+    clearPending: vi.fn(),
     loadOrgUnits: vi.fn().mockResolvedValue(undefined),
   };
   TestBed.configureTestingModule({
@@ -1193,6 +1194,8 @@ describe('pending view', () => {
     expect(button('Show pending changes')?.getAttribute('aria-pressed')).toBe(
       'false',
     );
+    // The view boundary clears the pending count, whatever row model returns.
+    expect(store.clearPending).toHaveBeenCalledTimes(1);
     // Neither switch changes the draft.
     expect(draft.counts().changes).toBe(1);
     expect(element.querySelector('#draft-count')?.textContent?.trim()).toBe(

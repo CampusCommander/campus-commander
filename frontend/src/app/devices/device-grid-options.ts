@@ -47,6 +47,8 @@ export interface DeviceGridFeatures {
   footer: HTMLElement;
   /** Holds the counts and freshness (GRID-01). */
   status: HTMLElement;
+  /** The pending view is on, so its flat rows leave grouping out (addendum 5). */
+  pending?: () => boolean;
   /** Runs after the selection footer joins the status bar. */
   onSelectionReady?: (service: SsrmSelectionService) => void;
 }
@@ -107,13 +109,12 @@ export function deviceGridFeatures(
       ...({ suppressColumnsToolPanel: true } as object),
     },
     autoGroupColumnDef: deviceGroupColumn,
-    // LibreGrid offers grouping items only to menus that ask for them.
-    getColumnMenuItems: (params) => [
-      ...params.defaultItems,
-      'separator',
-      'rowGroup',
-      'rowUnGroup',
-    ],
+    // LibreGrid offers grouping items only to menus that ask for them. The pending
+    // view is flat, so its column menu leaves grouping out.
+    getColumnMenuItems: (params) =>
+      features.pending?.()
+        ? [...params.defaultItems]
+        : [...params.defaultItems, 'separator', 'rowGroup', 'rowUnGroup'],
     ssrmSelection: {
       provider: features.provider,
       gridId: DEVICE_GRID_ID,

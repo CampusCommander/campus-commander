@@ -562,9 +562,7 @@ export class DevicesStore {
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
     // The person's own query replaces the pending view, so the status bar counts it again.
-    this.pendingSequence += 1;
-    this.pendingMatching.set(null);
-    this.pendingFailure.set(false);
+    this.clearPending();
     const view = this.view();
     const revision = this.revision();
     const response = await this.call('/api/devices/query', {
@@ -588,6 +586,16 @@ export class DevicesStore {
       this.groupLimit.set(true);
     this.keepCounts(view, revision, page);
     return page;
+  }
+
+  /**
+   * The view boundary. The person's own query is back, so the pending count leaves the
+   * status bar and a late pending answer changes no count (addendum section 5).
+   */
+  clearPending(): void {
+    this.pendingSequence += 1;
+    this.pendingMatching.set(null);
+    this.pendingFailure.set(false);
   }
 
   /**
@@ -625,6 +633,8 @@ export class DevicesStore {
   }
 
   async groups(view: DeviceView): Promise<DeviceGroupPage | null> {
+    // A grouped root is the person's query too. Its count replaces the pending view's.
+    this.clearPending();
     const revision = this.revision();
     const response = await this.call('/api/devices/groups', {
       ...view,

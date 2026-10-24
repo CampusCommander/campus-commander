@@ -135,6 +135,9 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly selection = {
     provider: this.store.selection,
     tabId: this.store.selectionTab,
+    // Select All in the pending view names the rows on screen, not the whole inventory.
+    pendingScope: (ids: readonly string[] | null) =>
+      this.store.selection.pendingScope.set(ids),
   };
   protected readonly emptyInventory = computed(
     () =>
@@ -352,7 +355,10 @@ export class DevicesPage implements OnInit, OnDestroy {
     effect(() => {
       if (this.gridDraft.counts().changes > 0) return;
       untracked(() => {
-        if (this.pendingView()) this.pendingView.set(false);
+        if (!this.pendingView()) return;
+        this.pendingView.set(false);
+        // The view boundary clears the pending count, whatever row model loads next.
+        this.store.clearPending();
       });
     });
   }
@@ -456,6 +462,7 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected confirmRevertAll(): void {
     this.gridDraft.revertAll();
     this.pendingView.set(false);
+    this.store.clearPending();
     this.revertOpen.set(false);
     this.focusBulkActions();
   }
@@ -463,6 +470,8 @@ export class DevicesPage implements OnInit, OnDestroy {
   /** One toggle switches between the draft's devices and the person's own query. */
   protected togglePendingView(): void {
     this.pendingView.update((active) => !active);
+    // Returning to the query is the view boundary: the pending count leaves the footer.
+    if (!this.pendingView()) this.store.clearPending();
   }
 
   /** Try again reads the pending devices once more, without touching the draft. */

@@ -430,7 +430,8 @@ function mounted() {
   });
   TestBed.overrideComponent(DeviceGrid, { set: { template: '' } });
   const fixture = TestBed.createComponent(DeviceGrid);
-  fixture.componentRef.setInput('load', vi.fn());
+  const load = vi.fn();
+  fixture.componentRef.setInput('load', load);
   fixture.componentRef.setInput('loadGroups', vi.fn());
   const loadPending = vi.fn().mockResolvedValue([]);
   fixture.componentRef.setInput('loadPending', loadPending);
@@ -438,31 +439,74 @@ function mounted() {
     provider: {} as never,
     tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
   });
+  const saveState = vi.fn();
+  fixture.componentRef.setInput('saveState', saveState);
   const retryServerSideLoads = vi.fn();
   const setGridOption = vi.fn();
   const setFilterModel = vi.fn();
-  const setRowGroupColumns = vi.fn();
+  let rowGroups = ['orgUnitPath'];
+  const setRowGroupColumns = vi.fn((ids: string[]) => {
+    rowGroups = [...ids];
+  });
+  let columnState: Array<{
+    colId: string;
+    sort: 'asc' | 'desc' | null;
+    sortIndex: number | null;
+  }> = [{ colId: 'serialNumber', sort: 'asc', sortIndex: 0 }];
+  const applyColumnState = vi.fn();
+  const refreshServerSide = vi.fn();
   const api = {
     setGridOption,
     setFilterModel,
     setRowGroupColumns,
     getFilterModel: () => ({}),
-    getRowGroupColumns: () => [{ getColId: () => 'orgUnitPath' }],
+    getRowGroupColumns: () => rowGroups.map((id) => ({ getColId: () => id })),
+    getColumnState: () => columnState,
+    setSort: (model: typeof columnState) => {
+      columnState = model;
+    },
+    applyColumnState,
+    refreshServerSide,
     retryServerSideLoads,
+    getGridOption: () => false,
   };
   (fixture.componentInstance as unknown as { api: unknown }).api = api;
   fixture.detectChanges();
   // The mount's first effect run is not a resume.
   retryServerSideLoads.mockClear();
+  /** The grid options, for the handlers that the grid itself would call. */
+  const options = (
+    fixture.componentInstance as unknown as {
+      options: {
+        onColumnRowGroupChanged: () => void;
+        onGridPreDestroyed: (event: unknown) => void;
+        getColumnMenuItems: (params: { defaultItems: string[] }) => string[];
+      };
+    }
+  ).options;
   return {
     fixture,
     retryServerSideLoads,
     api,
+    options,
+    load,
     loadPending,
+    saveState,
     setGridOption,
     setFilterModel,
     setRowGroupColumns,
+    applyColumnState,
+    refreshServerSide,
   };
+}
+
+/** The datasource installs, in order. A view switch shows up as a new one. */
+function datasources(setGridOption: ReturnType<typeof vi.fn>) {
+  return setGridOption.mock.calls
+    .filter(([name]) => name === 'serverSideDatasource')
+    .map(([, datasource]) => datasource) as Array<{
+    getRows: (params: unknown) => void;
+  }>;
 }
 
 // S5: the blocks whose loads failed retry, and the rows that loaded stay in place.
@@ -543,4 +587,128 @@ it('ignores a column filter while the pending view is on', () => {
   options.onFilterChanged();
   expect(filtersChange).toHaveBeenCalled();
   expect(api.setFilterModel).toHaveBeenCalledWith(null);
+});
+
+// B2: a revision reload keeps the pending datasource while the pending view is on.
+it('reloads the pending view when a reconnect changes the revision', async () => {
+  const { fixture, api, load, loadPending, setGridOption } = mounted();
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+  const before = datasources(setGridOption).length;
+
+  fixture.componentRef.setInput('revision', 1);
+  fixture.detectChanges();
+
+  const installed = datasources(setGridOption);
+  expect(installed).toHaveLength(before + 1);
+  const datasource = installed.at(-1)!;
+  const success = vi.fn();
+  datasource.getRows({
+    request: { startRow: 0, endRow: 100, sortModel: [], filterModel: null },
+    success,
+    fail: vi.fn(),
+  });
+  await vi.waitFor(() => expect(loadPending).toHaveBeenCalledWith(['d1']));
+  expect(success).toHaveBeenCalled();
+  // The revision did not put the person's query datasource back on screen.
+  expect(load).not.toHaveBeenCalled();
+  expect(api.getRowGroupColumns()).toEqual([]);
+});
+
+it('keeps the pending datasource through a completed full sync revision', async () => {
+  const { fixture, load, loadPending, setGridOption } = mounted();
+  fixture.componentRef.setInput('pendingIds', ['d1', 'd4']);
+  fixture.detectChanges();
+  fixture.componentRef.setInput('revision', 2);
+  fixture.detectChanges();
+
+  const datasource = datasources(setGridOption).at(-1)!;
+  datasource.getRows({
+    request: { startRow: 0, endRow: 100, sortModel: [], filterModel: null },
+    success: vi.fn(),
+    fail: vi.fn(),
+  });
+  await vi.waitFor(() =>
+    expect(loadPending).toHaveBeenCalledWith(['d1', 'd4']),
+  );
+  expect(load).not.toHaveBeenCalled();
+});
+
+// B3: grouping controls cannot break the flat pending view.
+it('keeps the pending view flat when a grouping control changes the grouping', async () => {
+  const { fixture, api, options, setRowGroupColumns } = mounted();
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+  expect(setRowGroupColumns).toHaveBeenCalledWith([]);
+
+  // The Columns panel or an API caller groups the rows while the view is pending.
+  api.setRowGroupColumns(['orgUnitPath']);
+  options.onColumnRowGroupChanged();
+
+  await vi.waitFor(() =>
+    expect(setRowGroupColumns).toHaveBeenLastCalledWith([]),
+  );
+  expect(api.getRowGroupColumns()).toEqual([]);
+});
+
+it('leaves grouping out of the pending view column menu', () => {
+  const { fixture, options } = mounted();
+  const items = () =>
+    options.getColumnMenuItems({ defaultItems: ['sortAsc', 'sortDesc'] });
+  expect(items()).toEqual([
+    'sortAsc',
+    'sortDesc',
+    'separator',
+    'rowGroup',
+    'rowUnGroup',
+  ]);
+
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+  expect(items()).toEqual(['sortAsc', 'sortDesc']);
+
+  fixture.componentRef.setInput('pendingIds', null);
+  fixture.detectChanges();
+  expect(items()).toContain('rowGroup');
+});
+
+// B5: the person's sort returns with Show all devices.
+it('puts the person sort back when the pending view closes', () => {
+  const { fixture, api, applyColumnState } = mounted();
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+
+  // The person changes the sort inside the pending view.
+  api.setSort([{ colId: 'model', sort: 'desc', sortIndex: 0 }]);
+  fixture.componentRef.setInput('pendingIds', null);
+  fixture.detectChanges();
+
+  expect(applyColumnState).toHaveBeenCalledWith({
+    defaultState: { sort: null },
+    state: [{ colId: 'serialNumber', sort: 'asc', sortIndex: 0 }],
+  });
+});
+
+it('saves the person sort and grouping while the pending view is on', () => {
+  const { fixture, api, options, saveState } = mounted();
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+  api.setSort([{ colId: 'model', sort: 'desc', sortIndex: 0 }]);
+
+  options.onGridPreDestroyed({
+    state: {
+      sort: { sortModel: [{ colId: 'model', sort: 'desc' }] },
+      filter: { model: {} },
+    },
+    api: { getGridOption: () => false },
+  });
+
+  expect(saveState).toHaveBeenCalledWith(
+    {
+      sort: { sortModel: [{ colId: 'serialNumber', sort: 'asc' }] },
+      filter: { model: {} },
+      rowGroup: { groupColIds: ['orgUnitPath'] },
+    },
+    false,
+  );
 });

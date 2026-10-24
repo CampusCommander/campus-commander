@@ -2049,3 +2049,66 @@ it('stops counting the pending view when the person returns to the query', async
   expect(store.pendingMatching()).toBeNull();
   expect(store.page()?.matching).toBe(96);
 });
+
+it('stops counting the pending view when a grouped query returns', async () => {
+  const groups = {
+    groups: [
+      { key: '/Chrome Devices/A', devices: 3 },
+      { key: '/Chrome Devices/B', devices: 3 },
+    ],
+    groupCount: 2,
+    matching: 6,
+    total: 6,
+    observedAt: '2026-10-05T12:00:00.000Z',
+  };
+  const request = routes({
+    '/api/devices/by-ids': () => Response.json({ rows: [rowFor('d1', false)] }),
+    '/api/devices/groups': () => Response.json({ groups }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale: 0, refreshing: false } }),
+  });
+  const store = setup(request);
+  store.recountDelay = 0;
+  await store.pendingRows(['d1']);
+  expect(store.pendingMatching()).toBe(1);
+
+  // The restored grouped root loads through groups(), not rows().
+  await store.groups({
+    predicates: [],
+    sort: { field: 'serialNumber', direction: 'asc' },
+    selection: null,
+    group: { by: ['orgUnitPath'], keys: [] },
+  });
+  expect(store.pendingMatching()).toBeNull();
+  expect(store.pendingFailure()).toBe(false);
+});
+
+it('ignores a pending read that answers after the person returns to the query', async () => {
+  let finish: (rows: DeviceRow[]) => void = () => undefined;
+  const request = vi.fn((path: string) => {
+    if (path === '/api/devices/by-ids')
+      return new Promise<Response>((resolve) => {
+        finish = (rows) => resolve(Response.json({ rows }));
+      });
+    throw new TypeError('Failed to fetch');
+  });
+  const store = setup(request);
+  const read = store.pendingRows(['d1']);
+  store.clearPending();
+  finish([rowFor('d1', false)]);
+  expect(await read).toHaveLength(1);
+  // The answer belongs to a view that closed, so it changes no count.
+  expect(store.pendingMatching()).toBeNull();
+});
+
+it('clears a pending failure at the view boundary', async () => {
+  const request = routes({
+    '/api/devices/by-ids': () => new Response('{}', { status: 503 }),
+  });
+  const store = setup(request);
+  expect(await store.pendingRows(['d1'])).toBeNull();
+  expect(store.pendingFailure()).toBe(true);
+  store.clearPending();
+  expect(store.pendingFailure()).toBe(false);
+  expect(store.pendingMatching()).toBeNull();
+});

@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import type { DeviceRow } from '@campus/application-contracts';
@@ -28,6 +29,10 @@ const evidenceDir =
 interface ApiLog {
   /** The device IDs of each pending view read, in request order. */
   byIds: string[][];
+  /** Each selection change the browser sent, in request order. */
+  ops: unknown[][];
+  /** The sort of each device query, in request order. */
+  sorts: Array<{ field: string; direction: string }>;
 }
 
 function seedRows(count = 6): DeviceRow[] {
@@ -69,11 +74,64 @@ function matches(row: DeviceRow, predicate: Predicate): boolean {
   return serial.includes(value);
 }
 
+/**
+ * A contract-valid selection store. The footer's "Total Selected" reads its count, so a
+ * Select All that expands beyond the pending rows shows up as the wrong number.
+ */
+class MockSelection {
+  private terms: Predicate[][] = [];
+  private additions = new Set<string>();
+  private exceptions = new Set<string>();
+
+  constructor(private readonly rows: readonly DeviceRow[]) {}
+
+  apply(ops: readonly Record<string, unknown>[]): void {
+    for (const op of ops) {
+      if (op['op'] === 'selectAll')
+        this.terms.push(op['predicates'] as Predicate[]);
+      else if (op['op'] === 'deselectAll') {
+        this.terms = [];
+        this.additions.clear();
+        this.exceptions.clear();
+      } else if (op['op'] === 'select') {
+        for (const id of op['ids'] as string[]) {
+          this.additions.add(id);
+          this.exceptions.delete(id);
+        }
+      } else if (op['op'] === 'deselect') {
+        for (const id of op['ids'] as string[]) {
+          this.additions.delete(id);
+          this.exceptions.add(id);
+        }
+      } else if (op['op'] === 'selectGroup')
+        this.terms.push(op['predicates'] as Predicate[]);
+    }
+  }
+
+  spec() {
+    const selected = new Set(this.additions);
+    for (const term of this.terms)
+      for (const row of this.rows)
+        if (term.every((predicate) => matches(row, predicate)))
+          selected.add(row.deviceId);
+    for (const id of this.exceptions) selected.delete(id);
+    return {
+      terms: this.terms.map((predicates) => ({ type: 'all', predicates })),
+      groups: [],
+      added: this.additions.size,
+      excluded: this.exceptions.size,
+      selectedCount: selected.size,
+      expiredAt: null,
+    };
+  }
+}
+
 async function mockApi(
   page: Page,
   rows: DeviceRow[],
   log: ApiLog,
 ): Promise<void> {
+  const selection = new MockSelection(rows);
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === '/api/application')
@@ -101,18 +159,15 @@ async function mockApi(
         },
       });
     if (pathname === '/api/devices/selection')
-      return route.fulfill({
-        json: {
-          selection: {
-            terms: [],
-            groups: [],
-            added: 0,
-            excluded: 0,
-            selectedCount: 0,
-            expiredAt: null,
-          },
-        },
-      });
+      return route.fulfill({ json: { selection: selection.spec() } });
+    if (pathname === '/api/devices/selection/ops') {
+      const body = route.request().postDataJSON() as {
+        ops: Array<Record<string, unknown>>;
+      };
+      log.ops.push(body.ops);
+      selection.apply(body.ops);
+      return route.fulfill({ json: { selection: selection.spec() } });
+    }
     if (pathname === '/api/devices/selection/resolve')
       return route.fulfill({ json: { selected: {} } });
     if (pathname === '/api/devices/sync')
@@ -137,7 +192,9 @@ async function mockApi(
         offset?: number;
         limit?: number;
         predicates?: Predicate[];
+        sort?: { field: string; direction: string };
       };
+      if (query.sort) log.sorts.push(query.sort);
       const matching = rows.filter((row) =>
         (query.predicates ?? []).every((predicate) => matches(row, predicate)),
       );
@@ -231,7 +288,7 @@ async function mockApi(
 async function openDevices(
   page: Page,
   rows = seedRows(),
-  log: ApiLog = { byIds: [] },
+  log: ApiLog = { byIds: [], ops: [], sorts: [] },
 ): Promise<ApiLog> {
   await mockApi(page, rows, log);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -290,6 +347,80 @@ async function screenshot(page: Page, name: string): Promise<void> {
 
 async function axe(page: Page): Promise<void> {
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+}
+
+/** Group the grid by Organization unit through the header menu. */
+async function groupByOrgUnit(page: Page): Promise<void> {
+  const menu = page.locator('.ag-header-cell[col-id="orgUnitPath"]');
+  await menu.locator('.ag-header-cell-menu-button').dispatchEvent('click');
+  await page
+    .getByRole('menuitem', { name: /Group by Organization unit/ })
+    .click();
+}
+
+/** The page component and store, through the development build's Angular hooks. */
+async function productionStore(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      !!(window as { ng?: unknown }).ng &&
+      !!document.querySelector('app-devices'),
+  );
+}
+
+/** Invoke the production Reconnect handler. */
+async function reconnect(page: Page): Promise<void> {
+  await productionStore(page);
+  await page.evaluate(async () => {
+    const component = (
+      window as unknown as { ng: { getComponent: (el: Element) => any } }
+    ).ng.getComponent(document.querySelector('app-devices')!);
+    await component.store.reconnect();
+  });
+}
+
+/** Deliver a completed full-sync stream event through the production store handler. */
+async function fullSync(page: Page, observedAt: string): Promise<void> {
+  await productionStore(page);
+  await page.evaluate((at) => {
+    const component = (
+      window as unknown as { ng: { getComponent: (el: Element) => any } }
+    ).ng.getComponent(document.querySelector('app-devices')!);
+    component.store.onEvent(
+      JSON.stringify({
+        type: 'full-sync',
+        sync: {
+          customerId: 'C0123456',
+          generation: 1,
+          status: 'ready',
+          observedAt: at,
+          deviceCount: 6,
+          failure: null,
+          telemetryFailure: null,
+          startedAt: null,
+          checkedAt: null,
+          stale: false,
+        },
+      }),
+    );
+  }, observedAt);
+}
+
+/** Deliver an entity-batch stream event through the production store handler. */
+async function entityBatch(page: Page, deviceIds: string[]): Promise<void> {
+  await productionStore(page);
+  await page.evaluate((ids) => {
+    const component = (
+      window as unknown as { ng: { getComponent: (el: Element) => any } }
+    ).ng.getComponent(document.querySelector('app-devices')!);
+    component.store.onEvent(
+      JSON.stringify({
+        type: 'entity-batch',
+        entityType: 'device',
+        deviceIds: ids,
+        removedIds: [],
+      }),
+    );
+  }, deviceIds);
 }
 
 test('step 2: the pending view lists changed rows outside the filter and returns to the query', async ({
@@ -580,4 +711,189 @@ test('names an empty pending read and returns to the query', async ({
   await expect(
     page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
   ).toBeVisible();
+});
+
+// B1: Select All in the pending view captures the pending rows, not the inventory.
+test('Select All in the pending view selects only the changed devices', async ({
+  page,
+}) => {
+  const rows = seedRows();
+  const log = await openDevices(page, rows);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-ONE');
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  await expect(
+    page.getByText('1 matching devices · 6 in district'),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Select All (1)' }).click();
+  await expect(page.getByText('Total Selected: 1')).toBeVisible();
+  expect(log.ops).toEqual([[{ op: 'select', ids: ['d0'] }]]);
+  await screenshot(page, 'grid-pending-view-select-all.png');
+});
+
+// B1: the person's own query keeps the query-wide Select All.
+test('Select All in the query selects the query, not the draft', async ({
+  page,
+}) => {
+  const log = await openDevices(page);
+  await page.getByRole('button', { name: 'Select All (6)' }).click();
+  await expect(page.getByText('Total Selected: 6')).toBeVisible();
+  expect(log.ops).toEqual([[{ op: 'selectAll', predicates: [] }]]);
+});
+
+// B2: a reconnect and a completed full sync reload the view on screen.
+test('keeps the pending view through a reconnect and a completed full sync', async ({
+  page,
+}) => {
+  const rows = seedRows();
+  const log = await openDevices(page, rows);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-KEEP');
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  const pendingCell = page.getByRole('gridcell', {
+    name: 'C0A1-0001',
+    exact: true,
+  });
+  await expect(pendingCell).toBeVisible();
+  const queries = log.sorts.length;
+
+  await reconnect(page);
+  await expect(
+    page.getByRole('button', { name: 'Show all devices' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(pendingCell).toBeVisible();
+  await expect(
+    page.getByText('1 matching devices · 6 in district'),
+  ).toBeVisible();
+  expect(log.sorts).toHaveLength(queries);
+  expect(log.byIds).toHaveLength(2);
+
+  await fullSync(page, '2026-10-23T12:00:00.000Z');
+  await expect(pendingCell).toBeVisible();
+  await expect(
+    page.getByText('1 matching devices · 6 in district'),
+  ).toBeVisible();
+  expect(log.sorts).toHaveLength(queries);
+  expect(log.byIds).toHaveLength(3);
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 device',
+  );
+  await axe(page);
+  await screenshot(page, 'grid-pending-view-reconnect.png');
+});
+
+// B3: grouping controls cannot turn the flat pending view into a grouped one.
+test('keeps the pending rows flat through the grouping controls', async ({
+  page,
+}) => {
+  await openDevices(page);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-FLAT');
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  const pendingCell = page.getByRole('gridcell', {
+    name: 'C0A1-0001',
+    exact: true,
+  });
+  await expect(pendingCell).toBeVisible();
+
+  // The pending view's column menu offers no grouping.
+  await page
+    .locator(
+      '.ag-header-cell[col-id="orgUnitPath"] .ag-header-cell-menu-button',
+    )
+    .dispatchEvent('click');
+  await expect(
+    page.getByRole('menuitem', { name: /Group by Organization unit/ }),
+  ).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // The Columns panel and API callers can still group. The grid returns to flat rows.
+  await page.evaluate(() => {
+    const grid = (
+      window as unknown as { ng: { getComponent: (el: Element) => any } }
+    ).ng.getComponent(document.querySelector('app-device-grid')!);
+    grid.api.setRowGroupColumns(['orgUnitPath']);
+  });
+  await expect(
+    page.getByRole('columnheader', { name: 'Group', exact: true }),
+  ).toHaveCount(0);
+  await expect(pendingCell).toBeVisible();
+  await expect(
+    page.getByText('1 matching devices · 6 in district'),
+  ).toBeVisible();
+  await screenshot(page, 'grid-pending-view-flat.png');
+});
+
+// B4: a restored grouped query counts the query, not the pending view.
+test('restores the grouped query count after the pending view', async ({
+  page,
+}) => {
+  await openDevices(page);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-GROUP');
+  await groupByOrgUnit(page);
+  await expect(
+    page.getByText('6 matching devices · 6 in district'),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  await expect(
+    page.getByText('1 matching devices · 6 in district'),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Show all devices' }).click();
+  // Two three-device groups return, and the footer counts the restored query.
+  await expect(
+    page.getByText('6 matching devices · 6 in district'),
+  ).toBeVisible();
+  await screenshot(page, 'grid-pending-view-grouped-count.png');
+});
+
+// B5: the person's sort returns with Show all devices.
+test('restores the person sort after a pending view sort', async ({ page }) => {
+  const log = await openDevices(page);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-SORT');
+  expect(log.sorts.at(-1)).toEqual({
+    field: 'serialNumber',
+    direction: 'asc',
+  });
+
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await page.locator('.ag-header-cell[col-id="serialNumber"]').click();
+  await expect(
+    page.locator('.ag-header-cell[col-id="serialNumber"]'),
+  ).toHaveAttribute('aria-sort', 'descending');
+
+  await page.getByRole('button', { name: 'Show all devices' }).click();
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() => log.sorts.at(-1))
+    .toEqual({ field: 'serialNumber', direction: 'asc' });
+  await expect(
+    page.locator('.ag-header-cell[col-id="serialNumber"]'),
+  ).toHaveAttribute('aria-sort', 'ascending');
+});
+
+// B6: a live refresh updates the pending view's cached rows.
+test('keeps a refreshed device value when the pending view sorts', async ({
+  page,
+}) => {
+  const rows = seedRows();
+  await openDevices(page, rows);
+  await editText(page, 'C0A1-0001', 'assetTag', 'CB-REFRESH');
+  await page.getByRole('button', { name: 'Show pending changes' }).click();
+  const model = cell(page, 'C0A1-0001', 'model');
+  await expect(model).toContainText('Dell Chromebook 3100');
+
+  // A live entity-batch refresh changes the model without a new pending read.
+  rows[0]!.model = 'CURRENT-MODEL';
+  await entityBatch(page, ['d0']);
+  await expect(model).toContainText('CURRENT-MODEL');
+
+  // Sorting the pending view keeps the refreshed observation.
+  await page.locator('.ag-header-cell[col-id="model"]').click();
+  await expect(model).toContainText('CURRENT-MODEL');
+  await screenshot(page, 'grid-pending-view-refreshed-sort.png');
 });

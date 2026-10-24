@@ -112,6 +112,43 @@ it('fails the block when the read fails', async () => {
   await vi.waitFor(() => expect(failed.fail).toHaveBeenCalled());
 });
 
+it('keeps a refreshed row when the pending view sorts again', async () => {
+  const rows = [row({ deviceId: 'd1', model: 'Dell Chromebook 3100' })];
+  const load = vi.fn().mockResolvedValue(rows);
+  const datasource = pendingDatasource(load);
+
+  const first = block(0, 1);
+  datasource.getRows(first.params);
+  await vi.waitFor(() => expect(first.success).toHaveBeenCalled());
+
+  // A live entity-batch refresh changes the row without a new pending read.
+  datasource.update([row({ deviceId: 'd1', model: 'CURRENT-MODEL' })]);
+  const sorted = block(0, 1, [{ colId: 'model', sort: 'asc' }]);
+  datasource.getRows(sorted.params);
+  await vi.waitFor(() => expect(sorted.success).toHaveBeenCalled());
+
+  // The cache holds the refreshed observation, and sorting adds no read.
+  expect(rowDataOf(sorted.success)[0].model).toBe('CURRENT-MODEL');
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('applies a refresh that answers before the pending read', async () => {
+  let finish: (rows: DeviceRow[]) => void = () => undefined;
+  const load = vi.fn(
+    () =>
+      new Promise<DeviceRow[]>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const datasource = pendingDatasource(load);
+  const first = block(0, 1);
+  datasource.getRows(first.params);
+  datasource.update([row({ deviceId: 'd1', model: 'CURRENT-MODEL' })]);
+  finish([row({ deviceId: 'd1', model: 'Dell Chromebook 3100' })]);
+  await vi.waitFor(() => expect(first.success).toHaveBeenCalled());
+  expect(rowDataOf(first.success)[0].model).toBe('CURRENT-MODEL');
+});
+
 it('sorts a missing value last in both directions and breaks ties by device ID', () => {
   const rows = [
     row({ deviceId: 'd2', serialNumber: 'C0A1-0002', assetTag: null }),

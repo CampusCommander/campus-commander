@@ -214,18 +214,34 @@ export function sortPendingRows(
  * because a draft holds at most 500 devices. Paging and a new sort reuse that answer,
  * and the browser sorts the rows by the grid's active sort model.
  */
+export interface DevicePendingDatasource
+  extends IServerSideDatasource<DeviceRow> {
+  /**
+   * Replace cached records with newer observations. A live refresh updates the grid
+   * nodes; this keeps the next sort or page from restoring the old row (D7).
+   */
+  update(rows: readonly DeviceRow[]): void;
+}
+
 export function pendingDatasource(
   load: () => Promise<DeviceRow[] | null>,
-): IServerSideDatasource<DeviceRow> {
+): DevicePendingDatasource {
   let read: Promise<DeviceRow[] | null> | null = null;
+  /** The rows of the one read, with every later observation applied. */
+  let cached: DeviceRow[] | null = null;
+  /** Observations that arrived before the read answered, by device ID. */
+  const observed = new Map<string, DeviceRow>();
+  const merge = (rows: readonly DeviceRow[]): DeviceRow[] =>
+    rows.map((row) => observed.get(row.deviceId) ?? row);
   return {
     getRows(params: IServerSideGetRowsParams<DeviceRow>) {
       read ??= load();
       read.then(
         (rows) => {
           if (!rows) return params.fail();
+          cached = merge(rows);
           const sorted = sortPendingRows(
-            rows,
+            cached,
             sortFromModel(params.request.sortModel),
           );
           const start = params.request.startRow ?? 0;
@@ -240,6 +256,10 @@ export function pendingDatasource(
         },
         () => params.fail(),
       );
+    },
+    update(rows) {
+      for (const row of rows) observed.set(row.deviceId, row);
+      if (cached) cached = merge(cached);
     },
   };
 }
