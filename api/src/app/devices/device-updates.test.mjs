@@ -11,6 +11,8 @@ import { authorizeAction } from '../auth/authorize-action.ts';
 import {
   DeviceUpdates,
   displayNumber,
+  editPreviewInput,
+  editPreviewTargets,
   manifestDigest,
   previewInput,
   previewTargets,
@@ -1172,4 +1174,468 @@ test('the preview route names the field and its limit for every over-limit value
     refusedSupplementary.message,
     'Annotated user holds 1 to 100 characters.',
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// The edit list: fresh rows, the compare of section 4, and the duplicate warning of section 6.
+// ---------------------------------------------------------------------------------------------
+
+/** One stored row, as the fresh read leaves it in Postgres. */
+const freshRow = (deviceId, extra = {}) => ({
+  device_id: deviceId,
+  serial_number: `SN-${deviceId}`,
+  org_unit_path: '/School A',
+  asset_tag: null,
+  annotated_location: null,
+  annotated_user: null,
+  notes: null,
+  removed_at: null,
+  last_entity_sync: '2026-10-23T12:00:01.000Z',
+  ...extra,
+});
+const edit = (deviceId, field, mode, value, baselineValue) =>
+  value === undefined
+    ? { deviceId, field, mode, baselineValue: baselineValue ?? null }
+    : { deviceId, field, mode, value, baselineValue: baselineValue ?? null };
+
+test('the edit compare takes the first match of the table: removed, invalid, unchanged, conflict, eligible', () => {
+  const rows = [
+    freshRow('d1', {
+      removed_at: new Date('2026-10-23T11:00:00.000Z'),
+      notes: 'Room 12',
+    }),
+    freshRow('bad id!'),
+    freshRow('d2', { notes: 'Room 12' }),
+    freshRow('d3', { notes: 'Room 12' }),
+    freshRow('d4', { notes: 'Room 12' }),
+    freshRow('d5'),
+    freshRow('d6', { notes: 'Room 12' }),
+  ];
+  const targets = editPreviewTargets(rows, [
+    edit('d1', 'notes', 'replace', 'Room 9', 'Room 12'),
+    edit('bad id!', 'notes', 'replace', 'Room 9', null),
+    // C equals R: Google already holds the request.
+    edit('d2', 'notes', 'replace', 'Room 12', null),
+    // C differs from B: the value changed since the edit began.
+    edit('d3', 'notes', 'replace', 'Room 9', 'Room 9'),
+    // C equals B: the edit is eligible.
+    edit('d4', 'notes', 'replace', 'Room 9', 'Room 12'),
+    // A null baseline and a null current value are equal.
+    edit('d5', 'notes', 'replace', 'Room 9', null),
+    // A current value against a null baseline is a conflict.
+    edit('d6', 'notes', 'replace', 'Room 9', null),
+  ]);
+
+  assert.deepEqual(
+    targets.map((target) => [
+      target.deviceId,
+      target.disposition,
+      target.exclusionReason,
+      target.fields[0].disposition,
+    ]),
+    [
+      ['bad id!', 'excluded', 'invalid-device-id', 'excluded'],
+      ['d1', 'excluded', 'removed', 'excluded'],
+      ['d2', 'unchanged', null, 'unchanged'],
+      ['d3', 'conflict', null, 'conflict'],
+      ['d4', 'eligible', null, 'eligible'],
+      ['d5', 'eligible', null, 'eligible'],
+      ['d6', 'conflict', null, 'conflict'],
+    ],
+  );
+  assert.equal(
+    targets[0].fields[0].baselineValue,
+    null,
+    'The row keeps the baseline that the edit carried.',
+  );
+  assert.equal(
+    targets[1].fields[0].observedValue,
+    'Room 12',
+    'The row keeps the value that the fresh read observed.',
+  );
+  assert.deepEqual(
+    targets[1].fields[0],
+    {
+      field: 'notes',
+      requestedValue: 'Room 9',
+      observedValue: 'Room 12',
+      baselineValue: 'Room 12',
+      disposition: 'excluded',
+    },
+    'An excluded device excludes every field row.',
+  );
+});
+
+test('a device follows the first row match: excluded, then conflict, then eligible, else unchanged', () => {
+  const rows = [freshRow('d1', { notes: 'N', annotated_user: 'U' })];
+  const disposition = (edits) => editPreviewTargets(rows, edits)[0].disposition;
+
+  assert.equal(
+    disposition([
+      edit('d1', 'annotatedUser', 'replace', 'U', null),
+      edit('d1', 'notes', 'replace', 'N', null),
+    ]),
+    'unchanged',
+  );
+  assert.equal(
+    disposition([
+      edit('d1', 'annotatedUser', 'replace', 'U', null),
+      edit('d1', 'notes', 'replace', 'Next', 'N'),
+    ]),
+    'eligible',
+  );
+  assert.equal(
+    disposition([
+      edit('d1', 'annotatedUser', 'replace', 'U', null),
+      edit('d1', 'notes', 'replace', 'Next', 'Room 12'),
+    ]),
+    'conflict',
+  );
+});
+
+test('the edit compare keeps text exact and compares paths without case', () => {
+  const rows = [freshRow('d1', { org_unit_path: '/School A' })];
+  const [target] = editPreviewTargets(rows, [
+    edit('d1', 'orgUnitPath', 'move', '/school a', '/SCHOOL A'),
+  ]);
+  assert.equal(
+    target.fields[0].disposition,
+    'unchanged',
+    'A path that differs only by case already holds the request.',
+  );
+
+  const [eligible] = editPreviewTargets(rows, [
+    edit('d1', 'orgUnitPath', 'move', '/School B', '/school a'),
+  ]);
+  assert.equal(
+    eligible.fields[0].disposition,
+    'eligible',
+    'A baseline that differs by case from the current path still equals it.',
+  );
+
+  const [text] = editPreviewTargets(
+    [freshRow('d1', { notes: 'Room 12' })],
+    [edit('d1', 'notes', 'replace', 'room 12', 'Room 12')],
+  );
+  assert.equal(
+    text.fields[0].disposition,
+    'eligible',
+    'Text compares exactly, so a different case is a change.',
+  );
+});
+
+test('a target lists one row per edit, in contract order, sorted by device ID', () => {
+  const targets = editPreviewTargets(
+    [freshRow('d2'), freshRow('d1')],
+    [
+      edit('d2', 'notes', 'replace', 'N', null),
+      edit('d1', 'annotatedAssetId', 'replace', 'AT-1', null),
+      edit('d2', 'annotatedLocation', 'replace', 'L', null),
+      edit('d1', 'annotatedLocation', 'replace', 'L', null),
+    ],
+  );
+  assert.deepEqual(
+    targets.map((target) => target.deviceId),
+    ['d1', 'd2'],
+  );
+  assert.deepEqual(
+    targets.map((target) => target.fields.map((field) => field.field)),
+    [
+      ['annotatedLocation', 'annotatedAssetId'],
+      ['annotatedLocation', 'notes'],
+    ],
+  );
+  assert.deepEqual(
+    targets.map((target) => target.ordinal),
+    [0, 1],
+  );
+  assert.equal(targets[0].observedAt, '2026-10-23T12:00:01.000Z');
+});
+
+test('the edit preview freezes no change list and stores every row value', async () => {
+  const calls = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text, values) => {
+          calls.push({ text, values });
+          return {
+            rows: [
+              {
+                result: {
+                  outcome: 'created',
+                  preview: previewRow({
+                    field_changes: 2,
+                    selected: 1,
+                    eligible: 1,
+                  }),
+                },
+              },
+            ],
+          };
+        },
+      },
+      transaction: async () => {
+        throw new Error('No write is allowed.');
+      },
+    },
+    { get: async () => null },
+    { storeJson: async () => 'unused' },
+  );
+  const rows = [freshRow('d1', { notes: 'Old note' })];
+  const edits = [
+    edit('d1', 'notes', 'replace', 'New note', 'Old note'),
+    edit('d1', 'annotatedAssetId', 'replace', 'AT-9', null),
+  ];
+  const preview = await updates.editPreview(session, current, { edits }, rows);
+
+  assert.equal(
+    preview.changes,
+    null,
+    'An edit preview answers no change list.',
+  );
+  const [create] = calls;
+  assert.match(create.text, /cc\.create_device_update_preview/);
+  assert.equal(
+    create.values[5],
+    null,
+    'A null change list marks an edit list.',
+  );
+  assert.deepEqual(
+    JSON.parse(create.values[7]),
+    [
+      {
+        ordinal: 0,
+        device_id: 'd1',
+        serial_number: 'SN-d1',
+        org_unit_path: '/School A',
+        observed_at: '2026-10-23T12:00:01.000Z',
+        disposition: 'eligible',
+        exclusion_reason: null,
+        fields: [
+          {
+            field: 'annotatedAssetId',
+            requested_value: 'AT-9',
+            observed_value: null,
+            baseline_value: null,
+            disposition: 'eligible',
+          },
+          {
+            field: 'notes',
+            requested_value: 'New note',
+            observed_value: 'Old note',
+            baseline_value: 'Old note',
+            disposition: 'eligible',
+          },
+        ],
+      },
+    ],
+    'Every row stores its request, its observation, and its baseline.',
+  );
+  assert.equal(
+    create.values[6],
+    manifestDigest(editPreviewTargets(rows, edits)),
+    'The digest covers the edit-list targets.',
+  );
+});
+
+test('a conflict preview is created, and only confirmation refuses it', async () => {
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async () => ({
+          rows: [
+            {
+              result: {
+                outcome: 'created',
+                preview: previewRow({
+                  conflicts: 1,
+                  eligible: 0,
+                  field_changes: 0,
+                }),
+              },
+            },
+          ],
+        }),
+      },
+      transaction: async () => ({}),
+    },
+    { get: async () => null },
+    { storeJson: async () => 'unused' },
+  );
+  const preview = await updates.editPreview(
+    session,
+    current,
+    { edits: [edit('d1', 'notes', 'replace', 'New', 'Stale')] },
+    [freshRow('d1', { notes: 'Someone else' })],
+  );
+  assert.equal(preview.conflicts, 1);
+});
+
+test('the edit preview input answers the first refusal with its field label', () => {
+  assert.throws(
+    () =>
+      editPreviewInput({
+        edits: [edit('d1', 'annotatedAssetId', 'clear')],
+      }),
+    (error) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'invalid-change',
+        message: 'Asset tag offers Replace only.',
+      });
+      return true;
+    },
+  );
+  // An edit whose request equals its baseline changes nothing.
+  assert.throws(
+    () =>
+      editPreviewInput({ edits: [edit('d1', 'notes', 'replace', 'N', 'N')] }),
+    (error) => {
+      assert.deepEqual(error.getResponse(), {
+        reason: 'invalid-change',
+        message: 'Notes already holds this value.',
+      });
+      return true;
+    },
+  );
+  assert.deepEqual(
+    editPreviewInput({
+      edits: [edit('d1', 'notes', 'replace', 'N', 'Old')],
+    }).edits,
+    [
+      {
+        deviceId: 'd1',
+        field: 'notes',
+        mode: 'replace',
+        value: 'N',
+        baselineValue: 'Old',
+      },
+    ],
+  );
+});
+
+/** One frozen Asset tag row of the targets page. */
+const assetPageRow = (deviceId, requested, extra = {}) => ({
+  ordinal: Number(deviceId.slice(1)) - 1,
+  device_id: deviceId,
+  serial_number: `SN-${deviceId}`,
+  org_unit_path: '/School A',
+  field: 'annotatedAssetId',
+  requested_value: requested,
+  observed_value: null,
+  baseline_value: null,
+  disposition: 'eligible',
+  exclusion_reason: null,
+  ...extra,
+});
+
+/** The targets read with the duplicate lookup of addendum section 6. */
+function duplicateUpdates({ page, previewTags, holders }) {
+  const calls = [];
+  const updates = new DeviceUpdates(
+    {
+      connection: {
+        query: async (text, values) => {
+          calls.push({ text, values });
+          if (text.includes('FROM cc.device_update_previews'))
+            return { rows: [previewRow()] };
+          if (text.includes("AND f.field='annotatedAssetId'"))
+            return { rows: previewTags };
+          if (text.includes('d.asset_tag=ANY')) return { rows: holders };
+          return { rows: page };
+        },
+      },
+      transaction: async () => ({}),
+    },
+    { get: async () => null },
+    { storeJson: async () => 'unused' },
+  );
+  return { updates, calls };
+}
+
+const duplicatesOf = async (harness) =>
+  (
+    await harness.updates.targets(session, previewId, undefined, undefined, 100)
+  ).targets.map((target) => [target.deviceId, target.duplicateSerialNumber]);
+
+test('a request equal to another device Asset tag names that serial number', async () => {
+  const harness = duplicateUpdates({
+    page: [assetPageRow('d1', 'AT-2')],
+    previewTags: [
+      { device_id: 'd1', serial_number: 'SN-d1', requested_value: 'AT-2' },
+    ],
+    holders: [{ asset_tag: 'AT-2', device_id: 'd3', serial_number: 'SN-d3' }],
+  });
+  assert.deepEqual(await duplicatesOf(harness), [['d1', 'SN-d3']]);
+  assert.deepEqual(
+    harness.calls.find((call) => call.text.includes('d.asset_tag=ANY')).values,
+    [customer, ['AT-2']],
+    'The lookup asks the index for the requested tag alone.',
+  );
+});
+
+test('a swap of two Asset tags names no device', async () => {
+  const harness = duplicateUpdates({
+    page: [assetPageRow('d1', 'AT-2'), assetPageRow('d2', 'AT-1')],
+    previewTags: [
+      { device_id: 'd1', serial_number: 'SN-d1', requested_value: 'AT-2' },
+      { device_id: 'd2', serial_number: 'SN-d2', requested_value: 'AT-1' },
+    ],
+    holders: [
+      { asset_tag: 'AT-1', device_id: 'd1', serial_number: 'SN-d1' },
+      { asset_tag: 'AT-2', device_id: 'd2', serial_number: 'SN-d2' },
+    ],
+  });
+  assert.deepEqual(await duplicatesOf(harness), [
+    ['d1', null],
+    ['d2', null],
+  ]);
+});
+
+test('a device that this preview moves to another tag holds no duplicate', async () => {
+  const harness = duplicateUpdates({
+    page: [assetPageRow('d1', 'AT-2')],
+    previewTags: [
+      { device_id: 'd1', serial_number: 'SN-d1', requested_value: 'AT-2' },
+      { device_id: 'd2', serial_number: 'SN-d2', requested_value: 'AT-9' },
+    ],
+    holders: [{ asset_tag: 'AT-2', device_id: 'd2', serial_number: 'SN-d2' }],
+  });
+  assert.deepEqual(await duplicatesOf(harness), [['d1', null]]);
+});
+
+test('another row of the preview with the same request counts as a duplicate', async () => {
+  const harness = duplicateUpdates({
+    page: [assetPageRow('d1', 'AT-2'), assetPageRow('d2', 'AT-2')],
+    previewTags: [
+      { device_id: 'd1', serial_number: 'SN-d1', requested_value: 'AT-2' },
+      { device_id: 'd2', serial_number: 'SN-d2', requested_value: 'AT-2' },
+    ],
+    holders: [],
+  });
+  assert.deepEqual(await duplicatesOf(harness), [
+    ['d1', 'SN-d2'],
+    ['d2', 'SN-d1'],
+  ]);
+});
+
+test('the duplicate warning never fills a non-Asset row or a blocked row', async () => {
+  const harness = duplicateUpdates({
+    page: [
+      {
+        ...assetPageRow('d1', null),
+        field: 'notes',
+        requested_value: 'Room 9',
+        disposition: 'conflict',
+      },
+      assetPageRow('d2', 'AT-2', { disposition: 'unchanged' }),
+    ],
+    previewTags: [],
+    holders: [{ asset_tag: 'AT-2', device_id: 'd3', serial_number: 'SN-d3' }],
+  });
+  assert.deepEqual(await duplicatesOf(harness), [
+    ['d1', null],
+    ['d2', null],
+  ]);
 });

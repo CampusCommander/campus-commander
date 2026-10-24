@@ -18,8 +18,9 @@ import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { JobService } from '../jobs/job-service';
 import { requireDeviceUpdateActions } from './device-updates-actions';
+import { DeviceFreshReadService } from './device-fresh-read.service';
 import { DeviceOrgUnitTreeRoute } from './device-org-unit-tree';
-import { previewInput } from './device-updates';
+import { editPreviewInput, previewInput } from './device-updates';
 import { DeviceUpdatesService } from './device-updates.service';
 import { DeviceWriteAccessRoutes } from './device-write-access-routes';
 import { DeviceWriteAccessService } from './device-write-access.service';
@@ -47,6 +48,7 @@ export class DeviceUpdatesController {
   private readonly writeAccess: DeviceWriteAccessRoutes;
   private readonly orgUnits: DeviceOrgUnitTreeRoute;
   private readonly jobs: JobService;
+  private readonly freshRead: DeviceFreshReadService;
 
   constructor(
     devices: DevicesService,
@@ -54,6 +56,7 @@ export class DeviceUpdatesController {
     auth: AuthService,
     access: DeviceWriteAccessService,
     jobs: JobService,
+    freshRead: DeviceFreshReadService,
   ) {
     this.devices = devices;
     this.updates = updates;
@@ -74,6 +77,7 @@ export class DeviceUpdatesController {
         reader.readOrgUnitTree(credential, customerId, signal),
     });
     this.jobs = jobs;
+    this.freshRead = freshRead;
   }
 
   /** Resolve the connected customer, then require the read and both write actions for it. */
@@ -116,6 +120,28 @@ export class DeviceUpdatesController {
     if (!current)
       throw new ConflictException({ reason: 'connection-required' });
     return this.updates.preview(request.session, current, input);
+  }
+
+  /**
+   * One edit list, read fresh from Google first (addendum section 4). The read stores its rows in
+   * Postgres, and the compare reads them back. A failed read creates no preview, so the draft stays
+   * with the client.
+   */
+  @Post('edit-previews')
+  async editPreview(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const input = editPreviewInput(body);
+    const current = await this.current(request);
+    if (!current)
+      throw new ConflictException({ reason: 'connection-required' });
+    const read = await this.freshRead.read(
+      request.session,
+      current,
+      input.edits.map((edit) => edit.deviceId),
+    );
+    return this.updates.editPreview(request.session, current, input, read.rows);
   }
 
   @Get('previews/:previewId')

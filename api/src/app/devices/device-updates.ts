@@ -5,12 +5,14 @@ import {
   GoneException,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   DEVICE_UPDATE_FIELD_ORDER,
   deviceUpdateChangesInOrder,
+  deviceUpdateEditPreviewRequestSchema,
   deviceUpdateJobReceiptSchema,
   deviceUpdatePreviewRequestSchema,
   deviceUpdatePreviewSchema,
@@ -20,6 +22,8 @@ import {
   type DeviceSyncState,
   type DeviceUpdateChange,
   type DeviceUpdateConfirmRequest,
+  type DeviceUpdateEdit,
+  type DeviceUpdateEditPreviewRequest,
   type DeviceUpdateField,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
@@ -109,8 +113,13 @@ function observedValue(
   return typeof value === 'string' ? value : null;
 }
 
+/** The field, mode, and value of one change or edit. */
+type FieldChange = Pick<DeviceUpdateChange, 'field' | 'mode'> & {
+  value?: string;
+};
+
 /** The value that a change would write. Clear writes null. */
-function changeValue(change: DeviceUpdateChange): string | null {
+function changeValue(change: FieldChange): string | null {
   return change.mode === 'clear' ? null : (change.value ?? null);
 }
 
@@ -118,14 +127,22 @@ function changeValue(change: DeviceUpdateChange): string | null {
  * A path compares without case, because Google OU paths are case-insensitive (section 2). A text
  * field compares exactly.
  */
-function sameValue(
-  change: DeviceUpdateChange,
-  observed: string | null,
-): boolean {
+function sameValue(change: FieldChange, observed: string | null): boolean {
   const approved = changeValue(change);
   if (change.field === 'orgUnitPath')
     return (observed ?? '').toLowerCase() === (approved ?? '').toLowerCase();
   return observed === approved;
+}
+
+/** The baseline compare of the edit list: a path ignores case, and every text field is exact. */
+function sameBaseline(
+  field: DeviceUpdateField,
+  current: string | null,
+  baseline: string | null,
+): boolean {
+  return field === 'orgUnitPath'
+    ? (current ?? '').toLowerCase() === (baseline ?? '').toLowerCase()
+    : current === baseline;
 }
 
 /**
@@ -186,6 +203,84 @@ function byDeviceId(left: PreviewTarget, right: PreviewTarget): number {
     : left.deviceId > right.deviceId
       ? 1
       : 0;
+}
+
+/** Sort one device's edits into contract order. The rows and the digest use that order. */
+function byField(left: DeviceUpdateEdit, right: DeviceUpdateEdit): number {
+  return (
+    DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
+    DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field)
+  );
+}
+
+/**
+ * Freeze one device of an edit list (addendum section 4). C is the current value of the fresh read,
+ * B the baseline that the edit carried, and R the request. The first match wins: a removed device
+ * or a non-plain ID is excluded, a current value that equals the request is unchanged, a current
+ * value that differs from the baseline is a conflict, and every other row is eligible.
+ */
+export function editPreviewTargets(
+  rows: readonly Record<string, unknown>[],
+  edits: readonly DeviceUpdateEdit[],
+): PreviewTarget[] {
+  const byDevice = new Map<string, DeviceUpdateEdit[]>();
+  for (const edit of edits) {
+    const device = byDevice.get(edit.deviceId);
+    if (device) device.push(edit);
+    else byDevice.set(edit.deviceId, [edit]);
+  }
+  const rowById = new Map(
+    rows.map((row) => [String(row['device_id']), row] as const),
+  );
+  return [...byDevice.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([deviceId, deviceEdits], index) => {
+      const row = rowById.get(deviceId);
+      // The inventory check of the fresh read refuses an unknown device before this point.
+      if (!row)
+        throw new ServiceUnavailableException({
+          reason: 'device-store-unavailable',
+        });
+      const exclusionReason = row['removed_at']
+        ? 'removed'
+        : plainDeviceId.test(deviceId)
+          ? null
+          : 'invalid-device-id';
+      const fields = [...deviceEdits].sort(byField).map((edit) => {
+        const current = observedValue(row, edit.field);
+        return {
+          field: edit.field,
+          requestedValue: changeValue(edit),
+          observedValue: current,
+          baselineValue: edit.baselineValue,
+          disposition: exclusionReason
+            ? ('excluded' as const)
+            : sameValue(edit, current)
+              ? ('unchanged' as const)
+              : sameBaseline(edit.field, current, edit.baselineValue)
+                ? ('eligible' as const)
+                : ('conflict' as const),
+        };
+      });
+      // One conflict row makes the device a conflict, and one eligible row makes it eligible.
+      const disposition = exclusionReason
+        ? ('excluded' as const)
+        : fields.some((field) => field.disposition === 'conflict')
+          ? ('conflict' as const)
+          : fields.some((field) => field.disposition === 'eligible')
+            ? ('eligible' as const)
+            : ('unchanged' as const);
+      return {
+        ordinal: index,
+        deviceId,
+        serialNumber: String(row['serial_number'] ?? ''),
+        orgUnitPath: String(row['org_unit_path'] ?? ''),
+        observedAt: measuredAt(row['last_entity_sync']),
+        disposition,
+        exclusionReason,
+        fields,
+      };
+    });
 }
 
 /**
@@ -249,6 +344,40 @@ export function storedChange(row: Record<string, unknown>): DeviceUpdateChange {
     : { field, mode, value: String(row['value'] ?? '') };
 }
 
+/** One frozen Asset tag row of a preview: its device, its serial number, and its request. */
+export function previewAssetTagsSql(previewId: string): SqlStatement {
+  return {
+    text: `SELECT t.device_id,t.serial_number,f.requested_value
+      FROM cc.device_update_preview_targets t
+      JOIN cc.device_update_target_fields f
+        ON f.preview_id=t.preview_id AND f.ordinal=t.ordinal
+      WHERE t.preview_id=$1 AND f.field='annotatedAssetId' AND f.disposition='eligible'
+      ORDER BY t.device_id`,
+    values: [previewId],
+  };
+}
+
+/**
+ * The inventory devices that hold one of the requested tags (addendum section 6). A removed device
+ * keeps no tag that a save could duplicate, so it stays out. The index devices_asset serves it.
+ */
+export function assetTagHoldersSql(
+  customerId: string,
+  tags: readonly string[],
+): SqlStatement {
+  return {
+    text: `SELECT d.asset_tag,d.device_id,d.serial_number FROM cc.devices d
+      WHERE d.customer_id=$1 AND d.asset_tag=ANY($2::text[]) AND d.removed_at IS NULL
+      ORDER BY d.asset_tag,d.device_id`,
+    values: [customerId, tags],
+  };
+}
+
+/** The answer of one target row in the duplicate map. */
+function assetRowKey(deviceId: unknown, field: unknown): string {
+  return `${String(deviceId)}\u0000${String(field)}`;
+}
+
 /** A display number with at least three digits. `lpad` would truncate 1000 to 100. */
 export function displayNumber(prefix: 'PV' | 'UPD', number: number): string {
   return `${prefix}-${number < 1000 ? String(number).padStart(3, '0') : number}`;
@@ -290,6 +419,18 @@ function summary(
  */
 export function previewInput(body: unknown): DeviceUpdatePreviewRequest {
   const parsed = deviceUpdatePreviewRequestSchema.safeParse(body);
+  if (parsed.success) return parsed.data;
+  throw new BadRequestException({
+    reason: 'invalid-change',
+    message: parsed.error.issues[0]?.message ?? 'The request is invalid.',
+  });
+}
+
+/** Parse an edit-list body, with the same named refusal as a selection preview. */
+export function editPreviewInput(
+  body: unknown,
+): DeviceUpdateEditPreviewRequest {
+  const parsed = deviceUpdateEditPreviewRequestSchema.safeParse(body);
   if (parsed.success) return parsed.data;
   throw new BadRequestException({
     reason: 'invalid-change',
@@ -399,6 +540,39 @@ export class DeviceUpdates {
     return summary(result['preview'] as PreviewRow, changes);
   }
 
+  /**
+   * Freeze one edit list (addendum sections 1 and 4). The fresh read already stored the rows, so
+   * every target carries its own request, its observation, and its baseline. A null change list
+   * marks the preview as an edit list.
+   */
+  async editPreview(
+    session: SessionResponse,
+    current: DeviceSyncState,
+    input: DeviceUpdateEditPreviewRequest,
+    rows: readonly Record<string, unknown>[],
+  ): Promise<DeviceUpdatePreview> {
+    const targets = editPreviewTargets(rows, input.edits);
+    const digest = manifestDigest(targets);
+    const result = await this.call<Record<string, unknown>>(
+      this.database.connection,
+      `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
+        $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
+      [
+        session.identity.id,
+        session.identity.permissionVersion,
+        current.customerId,
+        current.generation,
+        'annotated-location',
+        null,
+        digest,
+        JSON.stringify(targetDocument(targets)),
+        PREVIEW_MINUTES,
+      ],
+    );
+    if (result['outcome'] !== 'created') this.functionError(result);
+    return summary(result['preview'] as PreviewRow, []);
+  }
+
   private async load(
     session: SessionResponse,
     previewId: string,
@@ -442,6 +616,70 @@ export class DeviceUpdates {
     return summary(row, await this.changes(previewId));
   }
 
+  /**
+   * The duplicate Asset tag warning of addendum section 6. It names a device that holds the request
+   * after the save: an inventory device whose tag this preview leaves alone, or another row of this
+   * preview with the same request. A swap of two tags therefore names no device. The warning never
+   * blocks.
+   */
+  private async duplicates(
+    previewId: string,
+    customerId: string,
+    page: readonly Record<string, unknown>[],
+  ): Promise<Map<string, string | null>> {
+    const answer = new Map<string, string | null>();
+    const wanted = page.filter(
+      (row) =>
+        row['field'] === 'annotatedAssetId' &&
+        row['disposition'] === 'eligible' &&
+        typeof row['requested_value'] === 'string',
+    );
+    if (wanted.length === 0) return answer;
+    const frozen = previewAssetTagsSql(previewId);
+    const written = new Map<string, string>();
+    const byRequest = new Map<
+      string,
+      { deviceId: string; serialNumber: string }[]
+    >();
+    for (const row of (
+      await this.database.connection.query(frozen.text, frozen.values)
+    ).rows) {
+      const deviceId = String(row['device_id']);
+      const request = String(row['requested_value']);
+      written.set(deviceId, request);
+      const list = byRequest.get(request) ?? [];
+      list.push({ deviceId, serialNumber: String(row['serial_number'] ?? '') });
+      byRequest.set(request, list);
+    }
+    const tags = [
+      ...new Set(wanted.map((row) => String(row['requested_value']))),
+    ];
+    const inventory = assetTagHoldersSql(customerId, tags);
+    const holders = (
+      await this.database.connection.query(inventory.text, inventory.values)
+    ).rows;
+    for (const row of wanted) {
+      const deviceId = String(row['device_id']);
+      const request = String(row['requested_value']);
+      // A device that this preview moves to another tag no longer holds the request.
+      let duplicate = holders.find(
+        (holder) =>
+          holder['asset_tag'] === request &&
+          String(holder['device_id']) !== deviceId &&
+          (written.get(String(holder['device_id'])) ?? request) === request,
+      )?.['serial_number'];
+      if (typeof duplicate !== 'string')
+        duplicate = byRequest
+          .get(request)
+          ?.find((one) => one.deviceId !== deviceId)?.serialNumber;
+      answer.set(
+        assetRowKey(deviceId, 'annotatedAssetId'),
+        typeof duplicate === 'string' ? duplicate : null,
+      );
+    }
+    return answer;
+  }
+
   async targets(
     session: SessionResponse,
     previewId: string,
@@ -474,9 +712,20 @@ export class DeviceUpdates {
     const rows = (await this.database.connection.query(sql.text, sql.values))
       .rows;
     const page = rows.slice(0, pageSize);
+    const duplicates = await this.duplicates(
+      previewId,
+      String(row['customer_id']),
+      page,
+    );
     return {
       targets: page.map((target) =>
-        deviceUpdateTargetSchema.parse(previewTargetRow(target)),
+        deviceUpdateTargetSchema.parse(
+          previewTargetRow(
+            target,
+            duplicates.get(assetRowKey(target['device_id'], target['field'])) ??
+              null,
+          ),
+        ),
       ),
       nextCursor:
         rows.length > pageSize

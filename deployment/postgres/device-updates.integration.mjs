@@ -361,6 +361,10 @@ export async function qualifyDeviceUpdates({
       "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'ib4-%'",
       [customer],
     );
+    await migrator.query(
+      "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'ib5-%'",
+      [customer],
+    );
     if (createdArtifacts.size)
       await migrator.query(
         'DELETE FROM cc.artifacts WHERE id=ANY($1::text[])',
@@ -2785,6 +2789,128 @@ export async function qualifyDeviceUpdates({
             [preview.preview_id],
           );
         }
+      },
+    );
+
+    // IB5 (addendum section 6): the duplicate Asset tag warning reads the frozen targets and the
+    // inventory through the devices_asset index, and it never blocks the save.
+    const freshRows = async (ids) =>
+      (
+        await database.connection.query(
+          `SELECT device_id,serial_number,org_unit_path,asset_tag,annotated_location,
+             annotated_user,notes,removed_at,last_entity_sync
+           FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[])
+           ORDER BY device_id`,
+          [customer, ids],
+        )
+      ).rows;
+    const editAsset = (deviceId, value, baselineValue) => ({
+      deviceId,
+      field: 'annotatedAssetId',
+      mode: 'replace',
+      value,
+      baselineValue,
+    });
+
+    await check(
+      'IB5 a request equal to another device Asset tag names that serial number',
+      async () => {
+        await insertEditDevice('ib5-a', { tag: 'IB5-A' });
+        await insertEditDevice('ib5-b', { tag: 'IB5-DUP' });
+        const preview = await updates.editPreview(
+          session,
+          current,
+          { edits: [editAsset('ib5-a', 'IB5-DUP', 'IB5-A')] },
+          await freshRows(['ib5-a']),
+        );
+        assert.equal(preview.eligible, 1);
+        const page = await updates.targets(
+          session,
+          preview.previewId,
+          undefined,
+          undefined,
+          100,
+        );
+        assert.deepEqual(
+          page.targets.map((target) => [
+            target.deviceId,
+            target.field,
+            target.disposition,
+            target.duplicateSerialNumber,
+          ]),
+          [['ib5-a', 'annotatedAssetId', 'eligible', 'SN-ib5-b']],
+        );
+      },
+    );
+
+    await check('IB5 a swap of two Asset tags names none', async () => {
+      await insertEditDevice('ib5-c', { tag: 'IB5-C' });
+      await insertEditDevice('ib5-d', { tag: 'IB5-D' });
+      const preview = await updates.editPreview(
+        session,
+        current,
+        {
+          edits: [
+            editAsset('ib5-c', 'IB5-D', 'IB5-C'),
+            editAsset('ib5-d', 'IB5-C', 'IB5-D'),
+          ],
+        },
+        await freshRows(['ib5-c', 'ib5-d']),
+      );
+      const page = await updates.targets(
+        session,
+        preview.previewId,
+        undefined,
+        undefined,
+        100,
+      );
+      assert.deepEqual(
+        page.targets.map((target) => [
+          target.deviceId,
+          target.duplicateSerialNumber,
+        ]),
+        [
+          ['ib5-c', null],
+          ['ib5-d', null],
+        ],
+        'Each device leaves the tag that the other one takes.',
+      );
+    });
+
+    await check(
+      'IB5 a device that this preview moves away holds no duplicate',
+      async () => {
+        await insertEditDevice('ib5-e', { tag: 'IB5-E' });
+        await insertEditDevice('ib5-f', { tag: 'IB5-SHARED' });
+        const preview = await updates.editPreview(
+          session,
+          current,
+          {
+            edits: [
+              editAsset('ib5-e', 'IB5-SHARED', 'IB5-E'),
+              editAsset('ib5-f', 'IB5-OTHER', 'IB5-SHARED'),
+            ],
+          },
+          await freshRows(['ib5-e', 'ib5-f']),
+        );
+        const page = await updates.targets(
+          session,
+          preview.previewId,
+          undefined,
+          undefined,
+          100,
+        );
+        assert.deepEqual(
+          page.targets.map((target) => [
+            target.deviceId,
+            target.duplicateSerialNumber,
+          ]),
+          [
+            ['ib5-e', null],
+            ['ib5-f', null],
+          ],
+          'ib5-f holds no IB5-SHARED tag after this save.',
+        );
       },
     );
   } finally {
