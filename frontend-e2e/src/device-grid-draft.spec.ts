@@ -601,6 +601,8 @@ test('restores an invalid value beside a valid entry after a reload', async ({
   await expect(
     cell(page, 'C0A1-0002', 'assetTag').locator('.device-cell-value'),
   ).toHaveText('CB-VALID');
+  await axe(page);
+  await screenshot(page, 'grid-draft-invalid-restored.png');
   await expect(page.locator('.draft-line')).toHaveText(
     '1 change cannot be saved. C0A1-0001 · Asset tag holds 1 to 256 characters.',
   );
@@ -643,6 +645,40 @@ test('keeps a null baseline when the row changes before a later edit', async ({
   await expect(page.locator('#draft-count')).toHaveText(
     '1 pending change · 1 device',
   );
+  await axe(page);
+  await screenshot(page, 'grid-draft-null-baseline.png');
+});
+
+test('shows a restore warning when no stored entry restores', async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ({ key }) => {
+      try {
+        sessionStorage.setItem(
+          key,
+          JSON.stringify({ grid: { entries: [{ deviceId: 'd0' }] } }),
+        );
+      } catch {
+        // about:blank has no storage; the app document does.
+      }
+    },
+    { key: storageKey },
+  );
+  await openDevices(page);
+  const panel = page.locator('.draft-bar');
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('#draft-count')).toHaveText(
+    '1 change did not restore from this tab. Check each changed cell before you save.',
+  );
+  await expect(
+    panel.getByRole('button', { name: 'Revert all changes' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Save changes', exact: true }),
+  ).toBeDisabled();
+  await axe(page);
+  await screenshot(page, 'grid-draft-restore-warning.png');
 });
 
 test('keeps a conflict through an invalid value, correction, and reload', async ({
@@ -708,6 +744,8 @@ test('keeps a conflict through an invalid value, correction, and reload', async 
     state: 'conflict',
     currentValue: 'HS-CHANGED',
   });
+  await axe(page);
+  await screenshot(page, 'grid-draft-conflict-retained.png');
 
   await page.reload();
   await expect(
@@ -746,6 +784,8 @@ test('keeps the organization unit hint off when the unit read is denied', async 
   await expect(
     page.getByRole('dialog', { name: 'Choose organization unit' }),
   ).toHaveCount(0);
+  await axe(page);
+  await screenshot(page, 'grid-draft-org-unit-denied.png');
 });
 
 test('reverts a pending cell with Shift+Enter without opening an editor', async ({
