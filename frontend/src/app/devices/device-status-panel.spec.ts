@@ -9,6 +9,7 @@ function setup(
 ) {
   const store = {
     page: signal(page),
+    pendingMatching: signal<number | null>(null),
     offline: signal(false),
     groupLimit: signal(false),
     sync: signal({ stale: false }),
@@ -105,5 +106,26 @@ it.each(refreshMessages)('shows the refresh status line: %s', (message) => {
   render();
   expect(element.querySelector('.refresh-status')?.textContent?.trim()).toBe(
     message,
+  );
+});
+
+it('counts the pending view while the grid shows it', () => {
+  const { store, element, render } = setup({
+    matching: 1234,
+    total: 128431,
+    observedAt: '2026-10-05T12:00:00.000Z',
+  });
+  expect(element.textContent).toContain(
+    '1,234 matching devices · 128,431 in district',
+  );
+  store.pendingMatching.set(4);
+  render();
+  expect(element.textContent).toContain(
+    '4 matching devices · 128,431 in district',
+  );
+  store.pendingMatching.set(null);
+  render();
+  expect(element.textContent).toContain(
+    '1,234 matching devices · 128,431 in district',
   );
 });

@@ -26,7 +26,8 @@ import {
 } from './device-action-messages';
 import { DeviceFilter } from './device-filter';
 import { DeviceGrid } from './device-grid';
-import { DevicesPage } from './devices';
+import { DeviceGridDraftStore } from './device-grid-draft.store';
+import { PENDING_VIEW_LINE, DevicesPage } from './devices';
 import { DevicesStore } from './devices.store';
 import { DeviceWriteAccessStore } from './device-write-access.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
@@ -45,6 +46,9 @@ class GridStub {
   readonly saveState = input<unknown>();
   readonly predicates = input<unknown>();
   readonly orgUnits = input<unknown>();
+  readonly pendingIds = input<unknown>();
+  readonly loadPending = input<unknown>();
+  readonly pendingRevision = input(0);
   readonly selection = input<unknown>();
   readonly rowRefresh = input<unknown>();
   readonly selectedView = input(false);
@@ -172,6 +176,9 @@ function setup(options: {
     reconnect: vi.fn().mockResolvedValue(undefined),
     setPredicates: vi.fn(),
     rows: vi.fn(),
+    pendingRows: vi.fn().mockResolvedValue([]),
+    pendingMatching: signal<number | null>(null),
+    pendingFailure: signal(false),
     loadOrgUnits: vi.fn().mockResolvedValue(undefined),
   };
   TestBed.configureTestingModule({
@@ -1125,5 +1132,156 @@ describe('Bulk Actions', () => {
     ].find((candidate) => candidate.textContent?.trim() === 'Update device');
     expect(item?.disabled).toBe(false);
     expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('pending view', () => {
+  const stageAssetTag = (draft: DeviceGridDraftStore) =>
+    draft.stage({
+      deviceId: 'd1',
+      serialNumber: 'C0A1-0001',
+      field: 'annotatedAssetId',
+      mode: 'replace',
+      value: 'HS-NEW',
+      baseline: 'HS-0001',
+      orgUnitId: null,
+    });
+
+  it('shows no view toggle without a pending change', () => {
+    const { button } = setup({ sync: ready() });
+    expect(button('Show pending changes')).toBeUndefined();
+    expect(button('Show all devices')).toBeUndefined();
+  });
+
+  it('switches the grid to the draft devices and restores the person query', () => {
+    const predicates: DevicePredicate[] = [
+      { field: 'serialNumber', operator: 'contains', value: 'C0A1-0001' },
+    ];
+    const { element, fixture, button, store } = setup({
+      sync: ready(),
+      predicates,
+    });
+    const draft = TestBed.inject(DeviceGridDraftStore);
+    stageAssetTag(draft);
+    fixture.detectChanges();
+    const grid = () =>
+      fixture.debugElement.query(By.directive(GridStub))
+        .componentInstance as GridStub | null;
+
+    expect(grid()?.pendingIds()).toBeNull();
+    const toggle = button('Show pending changes');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    toggle?.click();
+    fixture.detectChanges();
+
+    // The pending view lists the changed device, whatever the person's filter is.
+    expect(grid()?.pendingIds()).toEqual(['d1']);
+    expect(button('Show all devices')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(element.querySelector('#draft-count')?.textContent?.trim()).toBe(
+      '1 pending change · 1 device',
+    );
+    expect(element.querySelector('.draft-line')?.textContent?.trim()).toBe(
+      PENDING_VIEW_LINE,
+    );
+    expect(store.setPredicates).not.toHaveBeenCalled();
+
+    button('Show all devices')?.click();
+    fixture.detectChanges();
+    expect(grid()?.pendingIds()).toBeNull();
+    expect(button('Show pending changes')?.getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    // Neither switch changes the draft.
+    expect(draft.counts().changes).toBe(1);
+    expect(element.querySelector('#draft-count')?.textContent?.trim()).toBe(
+      '1 pending change · 1 device',
+    );
+  });
+
+  it('keeps a blocked save reason above the pending view line', () => {
+    const { element, fixture, button } = setup({ sync: ready() });
+    const draft = TestBed.inject(DeviceGridDraftStore);
+    draft.stage({
+      deviceId: 'd1',
+      serialNumber: 'C0A1-0001',
+      field: 'annotatedAssetId',
+      mode: 'replace',
+      value: '',
+      baseline: 'HS-0001',
+      orgUnitId: null,
+    });
+    fixture.detectChanges();
+    button('Show pending changes')?.click();
+    fixture.detectChanges();
+    expect(element.querySelector('.draft-line')?.textContent).toContain(
+      '1 change cannot be saved. C0A1-0001 · Asset tag holds 1 to 256 characters.',
+    );
+    expect(element.querySelector('.draft-line')?.textContent).not.toContain(
+      PENDING_VIEW_LINE,
+    );
+  });
+
+  it('returns to the person query when the draft empties', () => {
+    const { fixture, button } = setup({ sync: ready() });
+    const draft = TestBed.inject(DeviceGridDraftStore);
+    stageAssetTag(draft);
+    fixture.detectChanges();
+    button('Show pending changes')?.click();
+    fixture.detectChanges();
+    const grid = () =>
+      fixture.debugElement.query(By.directive(GridStub))
+        .componentInstance as GridStub | null;
+    expect(grid()?.pendingIds()).toEqual(['d1']);
+
+    draft.revertAll();
+    fixture.detectChanges();
+    expect(grid()?.pendingIds()).toBeNull();
+    expect(button('Show all devices')).toBeUndefined();
+  });
+
+  it('names a failed pending read and retries it', () => {
+    const { element, fixture, button, store } = setup({ sync: ready() });
+    const draft = TestBed.inject(DeviceGridDraftStore);
+    stageAssetTag(draft);
+    store.pendingFailure.set(true);
+    fixture.detectChanges();
+    button('Show pending changes')?.click();
+    fixture.detectChanges();
+
+    const message = element.querySelector('.grid-message[role="alert"]');
+    expect(message?.textContent).toContain('The pending devices did not load');
+    expect(message?.textContent).toContain(
+      'Show all devices returns to your filters.',
+    );
+    expect(element.querySelector('app-device-grid')?.className).toContain(
+      'hidden',
+    );
+
+    button('Try again')?.click();
+    fixture.detectChanges();
+    const grid = fixture.debugElement.query(By.directive(GridStub))
+      .componentInstance as GridStub;
+    expect(grid.pendingRevision()).toBe(1);
+    expect(draft.counts().changes).toBe(1);
+  });
+
+  it('names an empty pending read and returns to the query', () => {
+    const { element, fixture, button, store } = setup({ sync: ready() });
+    const draft = TestBed.inject(DeviceGridDraftStore);
+    stageAssetTag(draft);
+    store.pendingMatching.set(0);
+    fixture.detectChanges();
+    button('Show pending changes')?.click();
+    fixture.detectChanges();
+
+    expect(element.querySelector('.grid-message')?.textContent).toContain(
+      'No pending devices were found',
+    );
+    button('Show all devices')?.click();
+    fixture.detectChanges();
+    expect(button('Show pending changes')).toBeDefined();
+    expect(element.querySelector('.grid-message')).toBeNull();
   });
 });

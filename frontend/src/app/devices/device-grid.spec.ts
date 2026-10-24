@@ -418,6 +418,7 @@ function mounted() {
         provide: DevicesStore,
         useValue: {
           page: signal(null),
+          pendingMatching: signal<number | null>(null),
           offline: signal(false),
           sync: signal(null),
           groupLimit: signal(false),
@@ -431,21 +432,37 @@ function mounted() {
   const fixture = TestBed.createComponent(DeviceGrid);
   fixture.componentRef.setInput('load', vi.fn());
   fixture.componentRef.setInput('loadGroups', vi.fn());
+  const loadPending = vi.fn().mockResolvedValue([]);
+  fixture.componentRef.setInput('loadPending', loadPending);
   fixture.componentRef.setInput('selection', {
     provider: {} as never,
     tabId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
   });
   const retryServerSideLoads = vi.fn();
-  (fixture.componentInstance as unknown as { api: unknown }).api = {
-    setGridOption: vi.fn(),
+  const setGridOption = vi.fn();
+  const setFilterModel = vi.fn();
+  const setRowGroupColumns = vi.fn();
+  const api = {
+    setGridOption,
+    setFilterModel,
+    setRowGroupColumns,
     getFilterModel: () => ({}),
-    setFilterModel: vi.fn(),
+    getRowGroupColumns: () => [{ getColId: () => 'orgUnitPath' }],
     retryServerSideLoads,
   };
+  (fixture.componentInstance as unknown as { api: unknown }).api = api;
   fixture.detectChanges();
   // The mount's first effect run is not a resume.
   retryServerSideLoads.mockClear();
-  return { fixture, retryServerSideLoads };
+  return {
+    fixture,
+    retryServerSideLoads,
+    api,
+    loadPending,
+    setGridOption,
+    setFilterModel,
+    setRowGroupColumns,
+  };
 }
 
 // S5: the blocks whose loads failed retry, and the rows that loaded stay in place.
@@ -458,4 +475,72 @@ it('retries the failed server-side blocks when a resumed session asks for it', (
   fixture.componentRef.setInput('resumeRevision', 2);
   fixture.detectChanges();
   expect(retryServerSideLoads).toHaveBeenCalledTimes(2);
+});
+
+// The pending view of the in-grid editing record: flat rows of the draft's devices.
+it('switches to the pending view and puts the person grouping back', async () => {
+  const {
+    fixture,
+    loadPending,
+    setGridOption,
+    setFilterModel,
+    setRowGroupColumns,
+  } = mounted();
+
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+
+  // The pending view is flat: the person's filters and grouping leave the grid.
+  expect(setRowGroupColumns).toHaveBeenCalledWith([]);
+  expect(setFilterModel).toHaveBeenCalledWith(null);
+  expect(setGridOption).toHaveBeenCalledWith(
+    'serverSideDatasource',
+    expect.objectContaining({ getRows: expect.any(Function) }),
+  );
+  // One read answers the view, and only a block request starts it.
+  expect(loadPending).not.toHaveBeenCalled();
+
+  const datasource = setGridOption.mock.calls.at(-1)![1] as {
+    getRows: (params: unknown) => void;
+  };
+  const success = vi.fn();
+  datasource.getRows({
+    request: { startRow: 0, endRow: 100, sortModel: [], filterModel: null },
+    success,
+    fail: vi.fn(),
+  });
+  await vi.waitFor(() =>
+    expect(success).toHaveBeenCalledWith({ rowData: [], rowCount: 0 }),
+  );
+  expect(loadPending).toHaveBeenCalledWith(['d1']);
+
+  fixture.componentRef.setInput('pendingIds', null);
+  fixture.detectChanges();
+  expect(setRowGroupColumns).toHaveBeenLastCalledWith(['orgUnitPath']);
+  expect(setGridOption).toHaveBeenLastCalledWith(
+    'serverSideDatasource',
+    expect.objectContaining({ getRows: expect.any(Function) }),
+  );
+});
+
+it('ignores a column filter while the pending view is on', () => {
+  const { fixture, api } = mounted();
+  const filtersChange = vi.fn();
+  fixture.componentInstance.filtersChange.subscribe(filtersChange);
+  fixture.componentRef.setInput('pendingIds', ['d1']);
+  fixture.detectChanges();
+  const options = (
+    fixture.componentInstance as unknown as {
+      options: { onFilterChanged: () => void };
+    }
+  ).options;
+
+  options.onFilterChanged();
+  expect(filtersChange).not.toHaveBeenCalled();
+
+  fixture.componentRef.setInput('pendingIds', null);
+  fixture.detectChanges();
+  options.onFilterChanged();
+  expect(filtersChange).toHaveBeenCalled();
+  expect(api.setFilterModel).toHaveBeenCalledWith(null);
 });

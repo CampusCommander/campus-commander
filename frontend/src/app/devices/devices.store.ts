@@ -212,6 +212,15 @@ export class DevicesStore {
   readonly page = signal<Omit<DevicePage, 'rows' | 'refreshJobId'> | null>(
     null,
   );
+  /**
+   * The pending view's row count. Null while the grid shows the person's own query,
+   * so the status bar counts the query (addendum section 5).
+   */
+  readonly pendingMatching = signal<number | null>(null);
+  /** The pending read failed, so the view names the failure and offers a retry. */
+  readonly pendingFailure = signal(false);
+  /** Invalidates a pending read that answers after the person returns to the query. */
+  private pendingSequence = 0;
   /** Stale devices in the counted result set, and whether a refresh job runs (D11). */
   readonly freshness = signal<DeviceFreshness | null>(null);
   /** The cause of the last refresh job that failed. A new refresh job clears it. */
@@ -552,6 +561,10 @@ export class DevicesStore {
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
+    // The person's own query replaces the pending view, so the status bar counts it again.
+    this.pendingSequence += 1;
+    this.pendingMatching.set(null);
+    this.pendingFailure.set(false);
     const view = this.view();
     const revision = this.revision();
     const response = await this.call('/api/devices/query', {
@@ -575,6 +588,40 @@ export class DevicesStore {
       this.groupLimit.set(true);
     this.keepCounts(view, revision, page);
     return page;
+  }
+
+  /**
+   * The pending view's rows: the changed devices of the grid draft, read by ID
+   * (addendum section 5). A draft holds at most 500 devices, the request limit, so one
+   * POST answers the view.
+   */
+  async pendingRows(ids: readonly string[]): Promise<DeviceRow[] | null> {
+    const sequence = ++this.pendingSequence;
+    this.pendingFailure.set(false);
+    // The pending set is one row per changed device, so this count holds during the read.
+    this.pendingMatching.set(ids.length);
+    if (!ids.length) {
+      this.pendingMatching.set(0);
+      return [];
+    }
+    const response = await this.call('/api/devices/by-ids', {
+      deviceIds: [...ids],
+    });
+    if (!response?.ok) {
+      if (sequence === this.pendingSequence) this.pendingFailure.set(true);
+      return null;
+    }
+    try {
+      const rows = deviceRowsSchema.parse((await response.json()).rows);
+      // A read that answers after the person returned to the query changes no count.
+      if (sequence === this.pendingSequence)
+        this.pendingMatching.set(rows.length);
+      return rows;
+    } catch {
+      // A contract drift is a failed read, not an empty view.
+      if (sequence === this.pendingSequence) this.pendingFailure.set(true);
+      return null;
+    }
   }
 
   async groups(view: DeviceView): Promise<DeviceGroupPage | null> {

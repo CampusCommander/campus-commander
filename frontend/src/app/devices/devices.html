@@ -281,11 +281,11 @@
     <div class="draft-copy" aria-live="polite">
       @if (gridDraft.visible()) {
       <p id="draft-count" class="draft-count">{{ gridDraft.countLine() }}</p>
-      @if (gridDraft.line().text; as text) {
+      @if (draftLine().text; as text) {
       <p
         class="draft-line"
-        [class.error]="gridDraft.line().tone === 'error'"
-        [class.warning]="gridDraft.line().tone === 'warning'"
+        [class.error]="draftLine().tone === 'error'"
+        [class.warning]="draftLine().tone === 'warning'"
       >
         {{ text }}
       </p>
@@ -298,6 +298,14 @@
     </div>
     <div class="draft-actions">
       @if (gridDraft.visible()) {
+      <button
+        mat-stroked-button
+        type="button"
+        [attr.aria-pressed]="pendingView()"
+        (click)="togglePendingView()"
+      >
+        {{ pendingView() ? 'Show all devices' : 'Show pending changes' }}
+      </button>
       <button mat-stroked-button type="button" (click)="revertOpen.set(true)">
         Revert all changes
       </button>
@@ -318,7 +326,26 @@
   }
 
   <div class="grid-region">
-    @if (noMatches()) {
+    @if (pendingFailure()) {
+    <div class="grid-message" role="alert">
+      <h2>The pending devices did not load</h2>
+      <p>
+        Campus Commander could not read the changed devices. Show all devices
+        returns to your filters.
+      </p>
+      <button mat-flat-button type="button" (click)="retryPending()">
+        Try again
+      </button>
+    </div>
+    } @else if (pendingEmpty()) {
+    <div class="grid-message" role="status">
+      <h2>No pending devices were found</h2>
+      <p>
+        The changed devices are no longer in the inventory. Show all devices
+        returns to your filters.
+      </p>
+    </div>
+    } @if (noMatches()) {
     <div class="grid-message" role="status">
       <h2>No devices match these filters</h2>
       <p>Check the serial or asset tag, or clear the current filters.</p>
@@ -333,7 +360,12 @@
     </div>
     }
     <app-device-grid
-      [class.hidden]="noMatches() || emptyInventory()"
+      [class.hidden]="
+        noMatches() ||
+        emptyInventory() ||
+        pendingFailure() ||
+        pendingEmpty()
+      "
       [load]="load"
       [loadGroups]="loadGroups"
       [revision]="store.revision()"
@@ -344,6 +376,9 @@
       [selectedView]="store.selectedView()"
       [predicates]="store.predicates()"
       [orgUnits]="store.orgUnits()"
+      [pendingIds]="pendingIds()"
+      [loadPending]="loadPending"
+      [pendingRevision]="pendingRevision()"
       (filtersChange)="store.setPredicates($event)"
       (details)="open($event)"
       [selection]="selection"

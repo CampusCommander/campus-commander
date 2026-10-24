@@ -2009,3 +2009,43 @@ describe('the Refresh menu requests', () => {
     expect(store.refreshStatus()).toBe('');
   });
 });
+
+it('reads the pending view rows by device ID and counts them', async () => {
+  const request = routes({
+    '/api/devices/by-ids': () =>
+      Response.json({ rows: [rowFor('d1', false), rowFor('d2', false)] }),
+  });
+  const store = setup(request);
+  expect(await store.pendingRows(['d1', 'd2'])).toHaveLength(2);
+  expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
+    deviceIds: ['d1', 'd2'],
+  });
+  expect(store.pendingMatching()).toBe(2);
+  expect(store.offline()).toBe(false);
+});
+
+it('marks a failed pending read and keeps its count', async () => {
+  const request = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+  const store = setup(request);
+  expect(await store.pendingRows(['d1'])).toBeNull();
+  // The view names the failure. The count stays at one row per changed device.
+  expect(store.pendingMatching()).toBe(1);
+  expect(store.pendingFailure()).toBe(true);
+  expect(store.offline()).toBe(true);
+});
+
+it('stops counting the pending view when the person returns to the query', async () => {
+  const request = routes({
+    '/api/devices/by-ids': () => Response.json({ rows: [rowFor('d1', false)] }),
+    '/api/devices/query': () => Response.json({ page }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale: 0, refreshing: false } }),
+  });
+  const store = setup(request);
+  store.recountDelay = 0;
+  await store.pendingRows(['d1']);
+  expect(store.pendingMatching()).toBe(1);
+  await store.rows(0, 100);
+  expect(store.pendingMatching()).toBeNull();
+  expect(store.page()?.matching).toBe(96);
+});

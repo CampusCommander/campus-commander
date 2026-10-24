@@ -54,6 +54,10 @@ import {
 import { DeviceWriteAccessStore } from './device-write-access.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
 
+/** The panel's second line while the pending view is on (mockup state 04). */
+export const PENDING_VIEW_LINE =
+  'Showing only devices with pending changes. Show all devices returns to your filters.';
+
 /** The three Bulk Actions entries of the owner mockup of 2026-10-21. */
 export type BulkActionKey = 'update' | 'command' | 'status';
 
@@ -109,6 +113,8 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly bulkMenuOpen = signal(false);
   protected readonly updateOpen = signal(false);
   protected readonly revertOpen = signal(false);
+  /** The grid shows the draft's devices instead of the person's query (addendum 5). */
+  protected readonly pendingView = signal(false);
   protected readonly commandOpen = signal(false);
   protected readonly statusOpen = signal(false);
   protected readonly copied = signal('');
@@ -119,6 +125,8 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly published = computed(() => !!this.sync()?.observedAt);
   protected readonly noMatches = computed(
     () =>
+      // The pending view lists rows outside the person's filters, so they cannot empty it.
+      !this.pendingView() &&
       this.store.page()?.matching === 0 &&
       this.store.predicates().length > 0 &&
       // Show All Selected keeps the grid, so its footer can return to all records.
@@ -165,6 +173,40 @@ export class DevicesPage implements OnInit, OnDestroy {
     this.store.setView(view);
     return this.store.groups(view);
   };
+  /**
+   * The draft's devices, or null while the grid shows the person's own query. The
+   * pending view lists every changed device, inside or outside the current filter.
+   */
+  protected readonly pendingIds = computed<readonly string[] | null>(() => {
+    if (!this.pendingView()) return null;
+    return [
+      ...new Set(this.gridDraft.entries().map((entry) => entry.deviceId)),
+    ];
+  });
+  protected readonly loadPending = (ids: readonly string[]) =>
+    this.store.pendingRows(ids);
+  /** A failed pending read names the failure and offers Try again. */
+  protected readonly pendingFailure = computed(
+    () => this.pendingView() && this.store.pendingFailure(),
+  );
+  /** The changed devices that the read found. Show all devices returns to the query. */
+  protected readonly pendingEmpty = computed(
+    () =>
+      this.pendingView() &&
+      !this.store.pendingFailure() &&
+      this.store.pendingMatching() === 0,
+  );
+  /** A retry asks the grid for the pending rows again. */
+  protected readonly pendingRevision = signal(0);
+  /**
+   * The panel's second line. A reason for a blocked save wins over the view's own
+   * explanation, because the person must resolve it first.
+   */
+  protected readonly draftLine = computed(() => {
+    const line = this.gridDraft.line();
+    if (line.text || !this.pendingView()) return line;
+    return { text: PENDING_VIEW_LINE, tone: '' as const };
+  });
   /** A grouped grid cannot scroll back to a row inside a closed group. */
   protected readonly grouped = computed(
     () => !!this.store.view().group?.by.length,
@@ -306,6 +348,13 @@ export class DevicesPage implements OnInit, OnDestroy {
       )
         untracked(() => void this.writeAccess.load());
     });
+    // The pending view needs a changed device. Reverting the last change returns to the query.
+    effect(() => {
+      if (this.gridDraft.counts().changes > 0) return;
+      untracked(() => {
+        if (this.pendingView()) this.pendingView.set(false);
+      });
+    });
   }
 
   ngOnInit(): void {
@@ -406,8 +455,19 @@ export class DevicesPage implements OnInit, OnDestroy {
   /** Revert all changes clears the grid draft after the one question names the count. */
   protected confirmRevertAll(): void {
     this.gridDraft.revertAll();
+    this.pendingView.set(false);
     this.revertOpen.set(false);
     this.focusBulkActions();
+  }
+
+  /** One toggle switches between the draft's devices and the person's own query. */
+  protected togglePendingView(): void {
+    this.pendingView.update((active) => !active);
+  }
+
+  /** Try again reads the pending devices once more, without touching the draft. */
+  protected retryPending(): void {
+    this.pendingRevision.update((value) => value + 1);
   }
 
   /** One filter per field. A chip for a filtered field replaces that filter. */
@@ -454,18 +514,21 @@ export class DevicesPage implements OnInit, OnDestroy {
     route: string[] | null;
     count: number | null;
   }): void {
-    // Next device follows the opened device's group.
-    const view = this.store.view();
-    if (event.route)
-      this.store.view.set({
-        ...view,
-        group: { by: view.group?.by ?? [], keys: event.route },
+    // Next device follows the opened device's group. The pending view holds rows outside
+    // the person's query, so its index names no row there and sets no position.
+    if (!this.pendingView()) {
+      const view = this.store.view();
+      if (event.route)
+        this.store.view.set({
+          ...view,
+          group: { by: view.group?.by ?? [], keys: event.route },
+        });
+      this.store.position.set({
+        index: event.index,
+        deviceId: event.row.deviceId,
+        ...(event.count === null ? {} : { count: event.count }),
       });
-    this.store.position.set({
-      index: event.index,
-      deviceId: event.row.deviceId,
-      ...(event.count === null ? {} : { count: event.count }),
-    });
+    }
     void this.router.navigate(['/devices', event.row.deviceId]);
   }
 }

@@ -11,8 +11,8 @@ import { selectionScope } from './device-selection';
     <div class="status" aria-live="polite">
       @if (store.page(); as page) {
         <p>
-          {{ count(page.matching) }} matching devices ·
-          {{ count(page.total) }} in district
+          {{ count(store.pendingMatching() ?? page.matching) }} matching devices
+          · {{ count(page.total) }} in district
         </p>
         <p>
           @if (store.offline()) {
