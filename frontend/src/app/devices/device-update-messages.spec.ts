@@ -1,6 +1,7 @@
 import {
   DEVICE_WRITE_ACCESS_DENIED_MESSAGE,
   DEVICE_ORG_UNIT_TREE_DENIED_MESSAGE,
+  DEVICE_UPDATE_FIELD_LABELS,
   type DeviceOrgUnitTree,
   type DeviceWriteAccess,
 } from '@campus/application-contracts';
@@ -10,9 +11,11 @@ import {
   DEVICE_WRITE_ACCESS_BUSY_MESSAGE,
   changedFieldsText,
   deviceCountText,
+  deviceUpdateClearNote,
   deviceUpdateValueCounter,
   deviceUpdateValueError,
   deviceUpdateValueHint,
+  detailUpdateNote,
   updateDeviceNote,
   updateDeviceOrgUnitNote,
   type UpdateDeviceAvailability,
@@ -191,6 +194,19 @@ describe('draft copy', () => {
     );
   });
 
+  it('names a Clear that changes nothing and accepts a real Clear', () => {
+    for (const field of [
+      'annotatedLocation',
+      'annotatedUser',
+      'notes',
+    ] as const) {
+      const note = `${DEVICE_UPDATE_FIELD_LABELS[field]} is already empty. Clear changes nothing.`;
+      expect(deviceUpdateClearNote(field, null)).toBe(note);
+      expect(deviceUpdateClearNote(field, '')).toBe(note);
+      expect(deviceUpdateClearNote(field, 'Science wing')).toBeNull();
+    }
+  });
+
   it('pins the busy answer of the write-access check', () => {
     expect(DEVICE_WRITE_ACCESS_BUSY_MESSAGE).toBe(
       'Another check started less than 30 seconds ago. Try again in 30 seconds.',
@@ -260,5 +276,47 @@ describe('draft copy', () => {
         '',
       ),
     ).toBeNull();
+  });
+});
+
+describe('detailUpdateNote', () => {
+  const detail = {
+    offline: false,
+    permissionsKnown: true,
+    canRead: true,
+    canWrite: true,
+    canBulk: true,
+  };
+
+  it('enables Update device when the device is online and the person holds the three actions', () => {
+    expect(detailUpdateNote(detail)).toBeNull();
+  });
+
+  it('waits for the customer scope before it claims a denial', () => {
+    expect(detailUpdateNote({ ...detail, permissionsKnown: false })).toEqual({
+      text: 'Checking your device permissions…',
+      actions: [],
+      error: false,
+    });
+  });
+
+  it('names the offline state first', () => {
+    expect(
+      detailUpdateNote({ ...detail, offline: true, permissionsKnown: false }),
+    ).toEqual({
+      text: 'Update device is unavailable while you are offline.',
+      actions: [],
+      error: false,
+    });
+  });
+
+  it('names the three required permissions for each missing action', () => {
+    for (const missing of ['canRead', 'canWrite', 'canBulk'] as const) {
+      expect(detailUpdateNote({ ...detail, [missing]: false })).toEqual({
+        text: DEVICE_UPDATE_PERMISSION_MESSAGE,
+        actions: [],
+        error: false,
+      });
+    }
   });
 });

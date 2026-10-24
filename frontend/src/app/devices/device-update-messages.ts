@@ -7,7 +7,6 @@ import {
   deviceOrgUnitTreeMessage,
   type DeviceOrgUnitTree,
   type DeviceUpdateField,
-  type DeviceUpdateTextField,
   type DeviceWriteAccess,
   type GoogleFailure,
 } from '@campus/application-contracts';
@@ -30,10 +29,40 @@ export const DEVICE_ORG_UNIT_SCOPE =
 export const DEVICE_UPDATE_PERMISSION_MESSAGE =
   'You need the devices:read, devices:write, and devices:bulk-actions permissions to update devices. Ask your administrator for access.';
 
-/** The validation message for one field value, or null when it passes. */
+/**
+ * The request that one change writes. A Clear writes null.
+ * Shared by the sheet drafts, so one rule compares a request with its baseline.
+ */
+export function deviceUpdateRequest(
+  mode: 'replace' | 'clear' | 'move',
+  value: string,
+): string | null {
+  return mode === 'clear' ? null : value;
+}
+
+/**
+ * True when a request changes nothing. Text compares exactly, and a path compares without
+ * case, as every path reader does (addendum section 4).
+ */
+export function sameUpdateRequest(
+  field: DeviceUpdateField,
+  request: string | null,
+  baseline: string | null,
+): boolean {
+  const seen = baseline === '' ? null : baseline;
+  if (field === 'orgUnitPath')
+    return (request ?? '').toLowerCase() === (seen ?? '').toLowerCase();
+  return request === seen;
+}
+
+/**
+ * The validation message for one field value, or null when it passes. A baseline checks the
+ * edit-list rule: a request equal to the value that the person saw changes nothing.
+ */
 export function deviceUpdateValueError(
   field: DeviceUpdateField,
   value: string,
+  baseline?: string | null,
 ): string | null {
   const limit = DEVICE_UPDATE_FIELD_LIMITS[field];
   const label = DEVICE_UPDATE_FIELD_LABELS[field];
@@ -41,17 +70,32 @@ export function deviceUpdateValueError(
   if (length < 1 || length > limit)
     return `${label} holds 1 to ${limit} characters.`;
   if (value.trim().length === 0) return `${label} needs a visible character.`;
+  if (baseline !== undefined && sameUpdateRequest(field, value, baseline))
+    return `${label} already holds this value.`;
   return null;
 }
 
 /** The hint under a value field. It names the limit of its own field. */
-export function deviceUpdateValueHint(field: DeviceUpdateTextField): string {
+export function deviceUpdateValueHint(field: DeviceUpdateField): string {
   return `Use ${DEVICE_UPDATE_FIELD_LIMITS[field]} characters or fewer. Spaces alone do not count.`;
+}
+
+/**
+ * The note beside a Clear that changes nothing, or null when the Clear removes a value.
+ * The single-device draft omits that Clear, so the note explains the omission (B4).
+ */
+export function deviceUpdateClearNote(
+  field: DeviceUpdateField,
+  baseline: string | null,
+): string | null {
+  return sameUpdateRequest(field, null, baseline)
+    ? `${DEVICE_UPDATE_FIELD_LABELS[field]} is already empty. Clear changes nothing.`
+    : null;
 }
 
 /** The end counter under a value field, in code points. */
 export function deviceUpdateValueCounter(
-  field: DeviceUpdateTextField,
+  field: DeviceUpdateField,
   value: string,
 ): string {
   return `${[...value].length} of ${
@@ -195,4 +239,43 @@ export function updateDeviceNote(
         error: true,
       };
   }
+}
+
+/** What device details needs to know before it enables Update device. */
+export interface DetailUpdateAvailability {
+  offline: boolean;
+  /** False until the customer scope arrives, so a slow read does not claim a denial. */
+  permissionsKnown: boolean;
+  canRead: boolean;
+  canWrite: boolean;
+  canBulk: boolean;
+}
+
+/**
+ * The reason that Update device is disabled on device details, or null when it is enabled
+ * (`docs/ui/rules.md:73`, addendum section 8). The page names the three actions of the
+ * workflow, so the same permission sentence serves the toolbar note.
+ */
+export function detailUpdateNote(
+  availability: DetailUpdateAvailability,
+): UpdateDeviceNote | null {
+  if (availability.offline)
+    return {
+      text: 'Update device is unavailable while you are offline.',
+      actions: [],
+      error: false,
+    };
+  if (!availability.permissionsKnown)
+    return {
+      text: 'Checking your device permissions…',
+      actions: [],
+      error: false,
+    };
+  if (!availability.canRead || !availability.canWrite || !availability.canBulk)
+    return {
+      text: DEVICE_UPDATE_PERMISSION_MESSAGE,
+      actions: [],
+      error: false,
+    };
+  return null;
 }

@@ -28,12 +28,13 @@ import { MatSelect, MatSelectModule } from '@angular/material/select';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
   jobDetailSchema,
+  type DeviceDetail,
   type DeviceUpdateEdit,
+  type DeviceUpdateField,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
   type DeviceUpdatePreview,
   type DeviceUpdateTarget,
-  type DeviceUpdateTextField,
   type GoogleFailure,
   type JobDetail,
 } from '@campus/application-contracts';
@@ -48,7 +49,9 @@ import {
 import { DevicesStore } from './devices.store';
 import { DEVICE_GRID_ID } from './device-selection';
 import {
+  DEVICE_SINGLE_UPDATE_DRAFT_FIELDS,
   DEVICE_UPDATE_DRAFT_FIELDS,
+  DeviceSingleUpdateDraftStore,
   DeviceUpdateDraftStore,
   type DeviceUpdateDraftMode,
 } from './device-update-draft.store';
@@ -76,6 +79,7 @@ import {
   previewMetaLine,
   previewTitle,
   problemSummary,
+  singleDeviceReviewNote,
   staleWarning,
   targetNote,
   targetGroups,
@@ -91,6 +95,7 @@ import { DeviceUpdateFlow } from './device-update-flow';
 import {
   changedFieldsText,
   deviceCountText,
+  deviceUpdateClearNote,
   deviceUpdateValueCounter,
   deviceUpdateValueError,
   deviceUpdateValueHint,
@@ -104,8 +109,28 @@ import { DevicePathText } from './device-path-text';
 
 export type SheetStep = 'prepare' | 'edit' | 'review' | 'confirm' | 'done';
 
-/** The draft that the sheet prepares: the browsing selection or the grid draft. */
-export type SheetSource = 'selection' | 'grid';
+/**
+ * The draft that the sheet prepares: the browsing selection, the grid draft, or one device
+ * from device details (addendum section 8).
+ */
+export type SheetSource = 'selection' | 'grid' | 'device';
+
+/**
+ * The field API that both sheet drafts offer. The selection draft holds the four fields of
+ * the bulk sheet, and the single-device draft holds the five fields of the record.
+ */
+interface DeviceUpdateFieldDraft {
+  modeOf(field: DeviceUpdateField): DeviceUpdateDraftMode;
+  valueOf(field: DeviceUpdateField): string;
+  setMode(field: DeviceUpdateField, mode: DeviceUpdateDraftMode): void;
+  setValue(field: DeviceUpdateField, value: string): void;
+  orgUnitId(): string | null;
+  setOrgUnit(unit: { orgUnitId: string | null; path: string }): void;
+  readonly changed: () => boolean;
+  readonly changedCount: () => number;
+  readonly storageError: () => string;
+  reset(): void;
+}
 
 /** The note of behavior item 12. The owner reviews this drafted string. */
 export const SELECTION_CHANGED_NOTE =
@@ -166,15 +191,21 @@ class ValueErrorMatcher implements ErrorStateMatcher {
 export class DeviceUpdateSheet {
   /** The Devices page opens and closes the sheet. */
   readonly open = input.required<boolean>();
-  /** The draft that Save changes prepared: the browsing selection or the grid draft. */
+  /** The draft that Save changes prepared: the browsing selection, the grid, or one device. */
   readonly source = input<SheetSource>('selection');
+  /** The one device that the device source edits. Device details supplies its values. */
+  readonly device = input<DeviceDetail | null>(null);
   /** The page returns focus to the Bulk Actions button. */
   readonly closed = output<void>();
   /** The grid source asks the page to show the devices with pending changes. */
   readonly pendingViewRequested = output<void>();
+  /** A receipt asks device details to read the device again (Figma 116:299). */
+  readonly deviceReload = output<void>();
 
   protected readonly store = inject(DevicesStore);
   protected readonly draft = inject(DeviceUpdateDraftStore);
+  /** The one-device draft that device details edits (addendum section 8). */
+  protected readonly singleDraft = inject(DeviceSingleUpdateDraftStore);
   /** The grid draft that the grid source prepares, marks, and settles (DRAFT-02). */
   protected readonly gridDraft = inject(DeviceGridDraftStore);
   private readonly flow = inject(DeviceUpdateFlow);
@@ -246,8 +277,18 @@ export class DeviceUpdateSheet {
   protected readonly observed = observedValueText;
   protected readonly approved = approvedValueText;
   protected readonly note = targetNote;
-  /** The three text fields of the draft, in the record order. */
-  protected readonly fields = DEVICE_UPDATE_DRAFT_FIELDS;
+  /** The text fields of the active draft, in the record order. */
+  protected readonly fields = computed(() =>
+    this.source() === 'device'
+      ? DEVICE_SINGLE_UPDATE_DRAFT_FIELDS
+      : DEVICE_UPDATE_DRAFT_FIELDS,
+  );
+  /** The draft that the active source edits. */
+  private readonly fieldDraft = computed<DeviceUpdateFieldDraft>(() =>
+    this.source() === 'device' ? this.singleDraft : this.draft,
+  );
+  /** Device details opened the sheet for one device (addendum section 8). */
+  protected readonly deviceSource = computed(() => this.source() === 'device');
   /** The frozen targets as one row group per device and one row per changed field. */
   protected readonly groups = computed<TargetGroup[]>(() =>
     targetGroups(this.targets()),
@@ -280,33 +321,46 @@ export class DeviceUpdateSheet {
     if (lines.length) return lines;
     return this.retainedDuplicates().map(duplicateTagLine);
   });
-  /** Why Continue is blocked on a grid save, or an empty string. */
-  protected readonly gridNote = computed(() => {
+  /** Why Continue is blocked on an edit-list save, or an empty string. */
+  protected readonly reviewNote = computed(() => {
     const preview = this.preview();
-    return preview && this.source() === 'grid' ? gridReviewNote(preview) : '';
+    if (!preview) return '';
+    if (this.source() === 'grid') return gridReviewNote(preview);
+    if (this.source() === 'device') return singleDeviceReviewNote(preview);
+    return '';
   });
   /**
-   * The one-cell answer that Google already holds. The row leaves the draft and no job
-   * exists, so Review names the outcome instead of a count of zero (B2).
+   * The answer that Google already holds. No job exists, so Review names the outcome instead
+   * of a count of zero (B2). A grid row leaves its draft; a single-device field waits for a
+   * new value.
    */
-  protected readonly unchangedGridNote = computed(() => {
+  protected readonly unchangedNote = computed(() => {
     const preview = this.preview();
-    if (!preview || this.source() !== 'grid' || preview.eligible > 0) return '';
+    if (!preview || preview.eligible > 0) return '';
     if (preview.unchanged < 1) return '';
+    if (this.source() === 'device')
+      return 'Google already holds the value. Edit the draft to choose another value.';
+    if (this.source() !== 'grid') return '';
     // A row that stages against a pending accepted value keeps its later change (B7).
     return this.gridDraft.keptUnchanged() > 0
       ? 'Google still holds the value. The change stays in the draft until the earlier update finishes.'
       : 'Google already holds the value. The change left the draft.';
   });
   /**
-   * The mode of one target's field change. Each row reads the change of its own field, so a
-   * Clear row shows the removed value.
+   * The mode of one frozen target row. Each row reads the change of its own device and field,
+   * so a Clear row shows the removed value. An edit list carries no changes, so its frozen
+   * edit list supplies the mode.
    */
-  protected modeOf(field: DeviceUpdateTarget['field']): DeviceUpdateMode {
+  protected modeOf(target: DeviceUpdateTarget): DeviceUpdateMode {
     const change = this.preview()?.changes?.find(
-      (entry) => entry.field === field,
+      (entry) => entry.field === target.field,
     );
-    return change?.mode ?? 'replace';
+    if (change) return change.mode;
+    const edit = this.frozenEdits().find(
+      (entry) =>
+        entry.deviceId === target.deviceId && entry.field === target.field,
+    );
+    return edit?.mode ?? 'replace';
   }
 
   /** The tree as the picker reads it. It is empty until a granted read. */
@@ -334,8 +388,8 @@ export class DeviceUpdateSheet {
    */
   protected readonly orgUnitMoveBlocked = computed(
     () =>
-      this.draft.modeOf('orgUnitPath') === 'move' &&
-      this.draft.valueOf('orgUnitPath').length > 0 &&
+      this.draftMode('orgUnitPath') === 'move' &&
+      this.draftValue('orgUnitPath').length > 0 &&
       this.orgUnitDisabled(),
   );
 
@@ -344,7 +398,7 @@ export class DeviceUpdateSheet {
    * control in its field, so the value never changes without a choice.
    */
   protected chooseOrgUnitMode(mode: DeviceUpdateDraftMode): void {
-    this.draft.setMode('orgUnitPath', mode);
+    this.fieldDraft().setMode('orgUnitPath', mode);
     if (mode === 'move') this.openPicker('select');
   }
 
@@ -357,14 +411,14 @@ export class DeviceUpdateSheet {
 
   /** Choose sets the destination and closes the dialog. */
   protected chooseOrgUnit(unit: { id: string; path: string }): void {
-    this.draft.setOrgUnit({ orgUnitId: unit.id, path: unit.path });
+    this.fieldDraft().setOrgUnit({ orgUnitId: unit.id, path: unit.path });
     this.closePicker();
   }
 
   /** Cancel on the first pick returns the field to Leave unchanged (design choice 10). */
   protected cancelPicker(): void {
-    if (!this.draft.valueOf('orgUnitPath'))
-      this.draft.setMode('orgUnitPath', 'unchanged');
+    if (!this.draftValue('orgUnitPath'))
+      this.fieldDraft().setMode('orgUnitPath', 'unchanged');
     this.closePicker();
   }
 
@@ -383,7 +437,7 @@ export class DeviceUpdateSheet {
 
   /** Remove a retained Move that the disabled field cannot remove itself (UI-07, UI-09). */
   protected discardOrgUnitMove(): void {
-    this.draft.setMode('orgUnitPath', 'unchanged');
+    this.fieldDraft().setMode('orgUnitPath', 'unchanged');
   }
 
   /** Copy the read scope that the denied note names (design choice 14). */
@@ -405,76 +459,136 @@ export class DeviceUpdateSheet {
     void this.orgUnitTree.load();
   }
 
-  protected readonly count = computed<number | null>(
-    () => this.store.selection.spec()?.selectedCount ?? this.loadedCount(),
-  );
+  protected readonly count = computed<number | null>(() => {
+    // Device details opens the sheet for exactly one device (addendum section 8).
+    if (this.deviceSource()) return this.device() ? 1 : null;
+    return this.store.selection.spec()?.selectedCount ?? this.loadedCount();
+  });
   /** A selection that expired while the sheet stayed open is an expired selection. */
   protected readonly expired = computed(
-    () => this.selectionExpired() || !!this.store.selection.spec()?.expiredAt,
+    () =>
+      this.source() === 'selection' &&
+      (this.selectionExpired() || !!this.store.selection.spec()?.expiredAt),
   );
-  protected hintOf(field: DeviceUpdateTextField): string {
+  /** The mode of one field in the active draft. */
+  protected draftMode(field: DeviceUpdateField): DeviceUpdateDraftMode {
+    return this.fieldDraft().modeOf(field);
+  }
+  /** The value of one field in the active draft. */
+  protected draftValue(field: DeviceUpdateField): string {
+    return this.fieldDraft().valueOf(field);
+  }
+  /** The storage warning of the active draft, or an empty string. */
+  protected storageError(): string {
+    return this.fieldDraft().storageError();
+  }
+  /** The chosen Organization unit id of the active draft, for the picker. */
+  protected orgUnitId(): string | null {
+    return this.fieldDraft().orgUnitId();
+  }
+  /** Reset stays available while the active draft holds a change. */
+  protected canReset(): boolean {
+    return this.fieldDraft().changed();
+  }
+  protected hintOf(field: DeviceUpdateField): string {
     return deviceUpdateValueHint(field);
   }
   protected fieldLabel(field: DeviceUpdateTarget['field']): string {
     return DEVICE_UPDATE_FIELD_LABELS[field];
   }
   /** The help and error ids of one value field, for `aria-describedby`. */
-  protected describedBy(field: DeviceUpdateTextField): string {
+  protected describedBy(field: DeviceUpdateField): string {
     return this.showValueError(field)
       ? `${field}-help ${field}-error`
       : `${field}-help`;
   }
-  protected counterOf(field: DeviceUpdateTextField): string {
-    return deviceUpdateValueCounter(field, this.draft.valueOf(field));
+  protected counterOf(field: DeviceUpdateField): string {
+    return deviceUpdateValueCounter(field, this.draftValue(field));
+  }
+  /** The value that the person saw for one field of the single-device draft. */
+  private singleBaseline(field: DeviceUpdateField): string | null {
+    return this.singleDraft.baselineOf(field);
   }
   /** The validation message of one field, or null when the field passes. */
-  protected valueError(field: DeviceUpdateTextField): string | null {
-    return this.draft.modeOf(field) === 'replace'
-      ? deviceUpdateValueError(field, this.draft.valueOf(field))
-      : null;
+  protected valueError(field: DeviceUpdateField): string | null {
+    if (this.draftMode(field) !== 'replace') return null;
+    // The edit list refuses a request equal to the baseline of the open device.
+    return this.deviceSource()
+      ? deviceUpdateValueError(
+          field,
+          this.draftValue(field),
+          this.singleBaseline(field),
+        )
+      : deviceUpdateValueError(field, this.draftValue(field));
+  }
+  /**
+   * The note beside a Clear that changes nothing. The draft omits that Clear, so the note
+   * explains why the field contributes no change (UI-05, B4).
+   */
+  protected clearNote(field: DeviceUpdateField): string | null {
+    if (!this.deviceSource() || !this.singleDraft.clearsNothing(field))
+      return null;
+    return deviceUpdateClearNote(field, this.singleBaseline(field));
   }
   /** An empty value shows its error once the operator leaves the field or tries to save. */
-  protected showValueError(field: DeviceUpdateTextField): boolean {
+  protected showValueError(field: DeviceUpdateField): boolean {
     const error = this.valueError(field);
     return (
       !!error &&
-      (this.draft.valueOf(field).length > 0 ||
+      (this.draftValue(field).length > 0 ||
         this.attempted() ||
         this.blurred().has(field))
     );
   }
   /** The fields that lost focus, so an empty value explains why Save stays disabled. */
   private readonly blurred = signal<ReadonlySet<string>>(new Set());
-  protected markBlurred(field: DeviceUpdateTextField): void {
+  protected markBlurred(field: DeviceUpdateField): void {
     if (this.blurred().has(field)) return;
     this.blurred.update((fields) => new Set(fields).add(field));
   }
   /** One matcher per field, so Material reuses it and the error outline follows the rule. */
   private readonly valueMatchers = new Map<string, ValueErrorMatcher>();
-  protected valueErrorMatcher(field: DeviceUpdateTextField): ValueErrorMatcher {
+  protected valueErrorMatcher(field: DeviceUpdateField): ValueErrorMatcher {
     const existing = this.valueMatchers.get(field);
     if (existing) return existing;
     const matcher = new ValueErrorMatcher(() => this.showValueError(field));
     this.valueMatchers.set(field, matcher);
     return matcher;
   }
+  /**
+   * A Move to the unit that the device already sits in changes nothing, and the edit list
+   * refuses it. The field keeps the choice until the person chooses another unit.
+   */
+  protected readonly orgUnitUnchanged = computed(
+    () =>
+      this.deviceSource() &&
+      this.draftMode('orgUnitPath') === 'move' &&
+      this.draftValue('orgUnitPath').length > 0 &&
+      this.singleDraft.baselineOf('orgUnitPath') !== null &&
+      this.draftValue('orgUnitPath').toLowerCase() ===
+        (this.singleDraft.baselineOf('orgUnitPath') ?? '').toLowerCase(),
+  );
   /** At least one changed field holds a value that the contract refuses. */
-  protected readonly invalid = computed(() =>
-    this.fields.some((field) => this.valueError(field.id) !== null),
+  protected readonly invalid = computed(
+    () =>
+      this.fields().some((field) => this.valueError(field.id) !== null) ||
+      this.orgUnitUnchanged(),
   );
   protected readonly summary = computed(
     () =>
       `${deviceCountText(this.count() ?? 0)} · ${changedFieldsText(
-        this.draft.changedCount(),
+        this.fieldDraft().changedCount(),
       )} · Not submitted`,
   );
-  protected readonly editReady = computed(
-    () =>
+  protected readonly editReady = computed(() => {
+    if (this.deviceSource()) return this.device() !== null;
+    return (
       !this.loadingSelection() &&
       !this.expired() &&
       !this.selectionError() &&
-      (this.count() ?? 0) > 0,
-  );
+      (this.count() ?? 0) > 0
+    );
+  });
   /** Save and preview needs a change, no invalid value, and no blocked Move (design note 7). */
   protected readonly canSave = computed(
     () =>
@@ -482,7 +596,8 @@ export class DeviceUpdateSheet {
       !this.editOffline() &&
       !this.saving() &&
       !this.orgUnitMoveBlocked() &&
-      this.draft.changed() &&
+      !this.orgUnitUnchanged() &&
+      this.fieldDraft().changed() &&
       !this.invalid(),
   );
   protected readonly countLine = computed(() => {
@@ -496,9 +611,9 @@ export class DeviceUpdateSheet {
   protected readonly canContinue = computed(() => {
     const preview = this.preview();
     if (!preview || preview.eligible === 0) return false;
-    // The bulk selection Review keeps its own rule. A grid save blocks on a conflict or an
-    // excluded device (addendum section 5).
-    if (this.source() !== 'grid') return true;
+    // The bulk selection Review keeps its own rule. An edit-list save blocks on a conflict or
+    // an excluded device (addendum sections 5 and 8).
+    if (this.source() === 'selection') return true;
     return preview.conflicts === 0 && preview.excluded === 0;
   });
   protected readonly heading = computed(() => {
@@ -542,7 +657,7 @@ export class DeviceUpdateSheet {
   protected readonly selectionChanged = computed(
     () =>
       // An edit list carries its own scope, so the browsing selection cannot invalidate it.
-      this.source() !== 'grid' &&
+      this.source() === 'selection' &&
       this.preview() !== null &&
       this.frozenSelection() !== this.selectionSignature(),
   );
@@ -657,10 +772,29 @@ export class DeviceUpdateSheet {
       void this.prepareGrid(this.generation);
       return;
     }
+    if (this.source() === 'device') {
+      this.startDevice();
+      return;
+    }
     this.step.set('edit');
     // The field reads its own scope, so a missing grant disables it before a choice.
     void this.orgUnitTree.load();
     void this.loadSelection();
+  }
+
+  /**
+   * Open the one-device draft for the device that device details shows (addendum section 8).
+   * Every field starts at Leave unchanged, and the baselines are the values on that page. A
+   * draft for another device starts empty.
+   */
+  private startDevice(): void {
+    this.step.set('edit');
+    this.loadingSelection.set(false);
+    const device = this.device();
+    if (!device) return;
+    this.singleDraft.open(device);
+    // The Organization unit picker reads its own scope, as the bulk sheet does.
+    void this.orgUnitTree.load();
   }
 
   private resetState(): void {
@@ -795,6 +929,7 @@ export class DeviceUpdateSheet {
     this.submitted.set({
       previewId: preview.previewId,
       manifestDigest: preview.manifestDigest,
+      source: 'grid',
       entries: [...edits],
       ...(this.retainedDuplicates().length
         ? { duplicates: this.retainedDuplicates() }
@@ -854,21 +989,31 @@ export class DeviceUpdateSheet {
   }
 
   protected setMode(
-    field: DeviceUpdateTextField,
+    field: DeviceUpdateField,
     mode: DeviceUpdateDraftMode,
   ): void {
-    this.draft.setMode(field, mode);
+    this.fieldDraft().setMode(field, mode);
   }
 
-  protected setValue(field: DeviceUpdateTextField, value: string): void {
-    this.draft.setValue(field, value);
+  protected setValue(field: DeviceUpdateField, value: string): void {
+    this.fieldDraft().setValue(field, value);
   }
 
   protected reset(): void {
     this.attempted.set(false);
     this.saveError.set('');
     this.scopeCopied.set('');
-    this.draft.reset();
+    this.fieldDraft().reset();
+  }
+
+  /**
+   * The receipt's "Back to device" reloads device details and returns the focus path to its
+   * source (Figma 116:299). The accepted fields already settled when their answer arrived,
+   * and a later draft keeps its value.
+   */
+  protected backToDevice(): void {
+    this.deviceReload.emit();
+    this.close();
   }
 
   /** Show the selected devices in the grid beside the sheet. The draft stays. */
@@ -934,6 +1079,10 @@ export class DeviceUpdateSheet {
     this.attempted.set(true);
     // A disabled Organization unit field must not submit its retained Move (UI-07).
     if (!this.canSave()) return;
+    if (this.source() === 'device') {
+      await this.prepareSingle();
+      return;
+    }
     this.saving.set(true);
     this.saveError.set('');
     const generation = ++this.generation;
@@ -965,6 +1114,50 @@ export class DeviceUpdateSheet {
       return;
     }
     this.showPrepareProblem(preparation.answer);
+  }
+
+  /**
+   * Prepare the edit list of the one-device draft (addendum section 8). The sheet keeps its
+   * Edit, Review, and Confirm steps, even for one change (record ruling 4).
+   */
+  private async prepareSingle(): Promise<void> {
+    const edits = this.singleDraft.edits();
+    if (!edits.length) return;
+    this.saving.set(true);
+    this.saveError.set('');
+    const generation = ++this.generation;
+    const preparation = await this.confirmations.prepareEdits(edits);
+    if (generation !== this.generation) return;
+    this.saving.set(false);
+    switch (preparation.kind) {
+      case 'receipt':
+        this.openReceipt(preparation.receipt, preparation.submitted ?? null);
+        return;
+      case 'preview':
+        // Freeze the list that this preview answered, as a grid save does.
+        this.frozenEdits.set([...edits]);
+        await this.showPreview(
+          preparation.preview,
+          null,
+          generation,
+          this.frozenEdits(),
+        );
+        return;
+      case 'uncertain':
+        this.submitted.set(preparation.submitted);
+        this.step.set('confirm');
+        this.showProblem('confirm-uncertain');
+        return;
+      case 'unresolved':
+        // The early answer cannot prove that the first request created no job.
+        this.submitted.set(preparation.submitted);
+        this.step.set('confirm');
+        this.showProblem('confirm-receipt-unavailable');
+        return;
+      case 'problem':
+        this.showPrepareProblem(preparation.answer);
+        return;
+    }
   }
 
   /** Keep the draft page's own inline answers for a failed preview request. */
@@ -1058,11 +1251,16 @@ export class DeviceUpdateSheet {
     // Confirm sends and settles exactly the edit list that the preview answered. A cell
     // edited while Review stays open keeps its own later draft (B8).
     const entries = this.frozenEdits();
+    // An edit-list save carries its entries, so a late accepted answer can settle the rows
+    // or fields that the job covers, even after the sheet closed (B3).
+    const carriesEntries =
+      this.source() === 'grid' || this.source() === 'device';
     await this.submit(
       {
         previewId: preview.previewId,
         manifestDigest: preview.manifestDigest,
-        ...(this.source() === 'grid' && entries.length ? { entries } : {}),
+        source: this.source(),
+        ...(carriesEntries && entries.length ? { entries } : {}),
         ...(duplicates.length ? { duplicates } : {}),
       },
       false,
@@ -1102,10 +1300,10 @@ export class DeviceUpdateSheet {
       }
       // The answer settles the retained record even after the sheet closed.
       this.confirmations.release(record.previewId);
-      // A closed sheet still settles its submitted rows: the job exists (B6). The grid
-      // draft is a root store, so settlement does not depend on the current sheet opening.
+      // A closed sheet still settles its submitted draft: the job exists (B6). Both
+      // drafts are root stores, so settlement does not depend on the sheet opening.
       if (generation !== this.generation) {
-        this.settleGrid(record, result.value.displayId, targets);
+        this.settleAccepted(record, result.value.displayId, targets);
         return;
       }
       this.creating.set(false);
@@ -1154,10 +1352,28 @@ export class DeviceUpdateSheet {
     this.step.set('done');
     // A recovered receipt keeps the duplicate evidence that the submission recorded (B3).
     this.retainedDuplicates.set(submitted?.duplicates ?? []);
-    // A recovered receipt settles its rows even when another sheet source recovered it:
-    // the submitted entries prove that the grid rows are the ones the job covers (B6).
-    this.settleGrid(submitted, receipt.displayId);
+    // A recovered receipt settles the draft that its own submission covers. A grid or
+    // selection receipt never clears the single-device draft (B2), and a single-device
+    // receipt never clears the grid draft (B3).
+    this.settleAccepted(submitted, receipt.displayId);
     void this.loadJob(receipt.displayId);
+  }
+
+  /**
+   * Settle the draft that sent the confirmation. The submitted record carries its source,
+   * so a receipt that another source recovered never touches this draft (B2, B3).
+   */
+  private settleAccepted(
+    submitted: SubmittedConfirmation | null,
+    displayId: string,
+    targets: readonly DeviceUpdateTarget[] = this.targets(),
+  ): void {
+    if (submitted && !this.owns(submitted)) return;
+    if (submitted?.source === 'device') {
+      this.singleDraft.settle(submitted.entries ?? []);
+      return;
+    }
+    this.settleGrid(submitted, displayId, targets);
   }
 
   /**
@@ -1306,10 +1522,10 @@ export class DeviceUpdateSheet {
     }
     this.preview.set(summary.value);
     this.targets.set(targets.value);
-    // A grid answer that Google already holds keeps its Review; it has no job, and its
-    // row already left the draft (B2).
+    // An edit-list answer that Google already holds keeps its Review; it has no job. A grid
+    // row already left the draft (B2). A single-device field waits for a new value.
     const unchangedOnly =
-      this.source() === 'grid' && summary.value.unchanged > 0;
+      this.source() !== 'selection' && summary.value.unchanged > 0;
     if (summary.value.eligible === 0 && !unchangedOnly) {
       this.showProblem('nothing-to-update', null, summary.value.displayId);
       return;
@@ -1339,6 +1555,50 @@ export class DeviceUpdateSheet {
     if (this.orgUnitMoveBlocked()) {
       this.goEdit();
       return;
+    }
+    if (this.source() === 'device') {
+      this.preparing.set(true);
+      this.problemDetail.set('');
+      const deviceGeneration = ++this.generation;
+      const edits = this.singleDraft.edits();
+      const preparation = await this.confirmations.prepareEdits(edits);
+      if (deviceGeneration !== this.generation) return;
+      this.preparing.set(false);
+      switch (preparation.kind) {
+        case 'receipt':
+          this.openReceipt(preparation.receipt, preparation.submitted ?? null);
+          return;
+        case 'preview':
+          this.frozenEdits.set([...edits]);
+          await this.showPreview(
+            preparation.preview,
+            null,
+            deviceGeneration,
+            this.frozenEdits(),
+          );
+          return;
+        case 'uncertain':
+          this.submitted.set(preparation.submitted);
+          this.step.set('confirm');
+          this.showProblem('confirm-uncertain');
+          return;
+        case 'unresolved':
+          this.submitted.set(preparation.submitted);
+          this.step.set('confirm');
+          this.showProblem('confirm-receipt-unavailable');
+          return;
+        case 'problem':
+          this.showProblem(
+            preparation.answer,
+            preparation.expiresAt,
+            this.preview()?.displayId,
+          );
+          if (preparation.answer === 'offline')
+            this.problemDetail.set(
+              'Cannot reach Campus Commander. Your draft stays in this tab.',
+            );
+          return;
+      }
     }
     this.preparing.set(true);
     this.problemDetail.set('');

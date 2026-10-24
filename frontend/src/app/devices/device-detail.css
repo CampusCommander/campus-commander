@@ -15,6 +15,11 @@
   gap: var(--cc-space-sm);
   margin-block: var(--cc-space-lg);
 }
+/* The reason beside the disabled Update device button (`docs/ui/rules.md:73`). */
+.update-note {
+  margin-block: calc(-1 * var(--cc-space-sm)) var(--cc-space-lg);
+  color: var(--cc-text-secondary);
+}
 .detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
