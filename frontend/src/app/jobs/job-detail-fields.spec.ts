@@ -789,6 +789,31 @@ describe('job detail fields', () => {
         }),
       ),
     ).toBe('Science wing');
+
+    // A Clear request displays the label "Clear value", and that label is also valid
+    // field content. Equality uses the stored request, so a real observation still shows.
+    expect(
+      observedText(
+        operation({
+          operation: 'clear',
+          baselineValue: 'notes-before',
+          requestedValue: null,
+          observedValue: 'Clear value',
+        }),
+      ),
+    ).toBe('Clear value');
+
+    // A request that literally reads "Clear value" adds no line when the read-back repeats it.
+    expect(
+      observedText(
+        operation({
+          operation: 'replace',
+          baselineValue: null,
+          requestedValue: 'Clear value',
+          observedValue: 'Clear value',
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('names an Asset tag row under the Operation cell', () => {

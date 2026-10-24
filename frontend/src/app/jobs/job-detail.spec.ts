@@ -727,6 +727,56 @@ it('renders the observed value of a divergent edit-list row', () => {
   expect(cells(0)[3]).toBe('CB415508');
 });
 
+it('shows the observed value when the observation repeats the Clear label', () => {
+  // Review B2: a Clear request renders "Clear value", which is also valid field content.
+  const clearJob = job({
+    displayId: 'UPD-009',
+    status: 'completed-with-errors',
+    scope: { kind: 'devices', deviceCount: 1 },
+    previewDisplayId: 'PV-009',
+    changes: null,
+    progress: {
+      total: 1,
+      succeeded: 0,
+      failed: 1,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      pending: 0,
+    },
+  });
+  const { element } = setup({
+    job: clearJob,
+    operations: [
+      operation({
+        operationId: 'UPD-009-1-notes',
+        serialNumber: '0727D2E',
+        field: 'notes',
+        operation: 'clear',
+        baselineValue: 'notes-before',
+        requestedValue: null,
+        observedValue: 'Clear value',
+        outcome: 'failed',
+        outcomeReason: 'value-differs',
+        googleStatus: 200,
+        googleReason: null,
+        verifiedBy: 'read-back',
+      }),
+    ],
+  });
+  const row = element.querySelector('tbody tr') as HTMLTableRowElement;
+  const cells = [...row.querySelectorAll('td')].map(
+    (cell) => cell.textContent?.trim() ?? '',
+  );
+  expect(cells[1]).toBe('Notes');
+  expect(cells[2]).toBe('notes-before');
+  expect(cells[3]).toContain('Clear value');
+  expect(cells[3]).toContain('Observed: Clear value');
+  expect(row.querySelectorAll('.observed-value')).toHaveLength(1);
+  // The row keeps the built update sentence of the action.
+  expect(cells[4]).toContain('0727D2E does not hold the requested value.');
+});
+
 it('shows the observed value in the failure evidence', async () => {
   const { element, fixture } = setup({
     job: editListJob(),

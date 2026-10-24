@@ -272,7 +272,6 @@ export function requestedText(operation: JobOperation): string {
 export function observedText(operation: JobOperation): string | null {
   const observed = operation.observedValue;
   if (observed === null) return null;
-  const requested = requestedText(operation);
   switch (operation.operation) {
     case 'reboot':
     case 'wipe-users':
@@ -281,11 +280,14 @@ export function observedText(operation: JobOperation): string | null {
     case 'disable':
     case 'reenable':
     case 'deprovision': {
+      // A status is an enum, and Google can return it in another case. Compare the labels.
       const status = statusText(observed);
-      return status === requested ? null : status;
+      return status === requestedText(operation) ? null : status;
     }
     default:
-      return observed === requested ? null : observed;
+      // A field value is arbitrary text, and the Requested cell can show a label that is
+      // also valid content ("Clear value"). Compare the stored strings, then display.
+      return observed === operation.requestedValue ? null : observed;
   }
 }
 
