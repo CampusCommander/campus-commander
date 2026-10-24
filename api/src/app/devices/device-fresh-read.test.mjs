@@ -280,6 +280,34 @@ test('a missing device credential answers 409 connection-required', async () => 
   assert.deepEqual(harness.readCalls, []);
 });
 
+test('a credential authorization refusal keeps its 403 and reads nothing', async () => {
+  // The credential adapter maps the SQL 42501 refusal to 403. It must not become a
+  // retryable Google read failure when access changes after the route's own check.
+  const harness = createRead({
+    credential: async () => {
+      const { ForbiddenException } = await import('@nestjs/common');
+      throw new ForbiddenException({ reason: 'forbidden' });
+    },
+  });
+  const answer = await settle(() =>
+    harness.route.read(session, connected, ['d1']),
+  );
+
+  assert.ok(answer.error instanceof Error);
+  assert.equal(
+    answer.error.getStatus(),
+    403,
+    'The refusal keeps its 403 answer.',
+  );
+  assert.deepEqual(answer.error.getResponse(), { reason: 'forbidden' });
+  assert.deepEqual(
+    harness.readCalls,
+    [],
+    'A refused credential reads no device.',
+  );
+  assert.deepEqual(harness.writes, [], 'A refused credential stores nothing.');
+});
+
 test('a Postgres fault answers 503 device-store-unavailable without a preview', async () => {
   const client = {
     async query() {

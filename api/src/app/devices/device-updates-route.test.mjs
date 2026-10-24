@@ -151,6 +151,8 @@ before(async () => {
           read: async (_session, _connected, ids) => {
             freshRead.push(ids);
             const next = reads.shift();
+            // A queued real read runs the production fresh read, not the double.
+            if (next?.real) return next.real.read(_session, _connected, ids);
             if (next?.failure) throw next.failure;
             return {
               rows: next?.rows ?? [],
@@ -454,5 +456,95 @@ test('the edit route refuses a body outside the edit list contract', async () =>
     freshRead.length,
     readsBefore,
     'A refused body reads no device.',
+  );
+});
+
+test('a credential refusal after the route check answers 403 and reads nothing', async () => {
+  const { ForbiddenException } = await import('@nestjs/common');
+  const { DeviceFreshRead } = await import('./device-fresh-read.ts');
+  const { createDeviceWriteAccessStore } = await import(
+    './device-write-access-store.ts'
+  );
+
+  // The locked permission check of the real adapter refuses with SQL 42501, as it does when
+  // access changes between the controller's authorization and the credential read.
+  const credentialStore = createDeviceWriteAccessStore(
+    {
+      connection: {
+        query: async () => {
+          throw Object.assign(new Error('permission denied'), {
+            code: '42501',
+          });
+        },
+      },
+    },
+    {},
+    {},
+  );
+  let direct;
+  try {
+    await credentialStore.credential(session, connected);
+  } catch (error) {
+    direct = error;
+  }
+  assert.ok(direct instanceof ForbiddenException);
+  assert.equal(
+    direct.getStatus(),
+    403,
+    'The credential adapter answers the SQL refusal with 403.',
+  );
+
+  let providerCalls = 0;
+  let storeTransactions = 0;
+  const real = new DeviceFreshRead(
+    {
+      connection: {
+        query: async (sql) => ({
+          rows: sql.includes('clock_timestamp')
+            ? [{ stamp: new Date('2026-10-23T12:00:01.000Z') }]
+            : [{ device_id: 'd1' }],
+        }),
+      },
+      async transaction() {
+        storeTransactions += 1;
+        throw new Error('A refused credential stores nothing.');
+      },
+    },
+    {
+      credential: (openSession, context) =>
+        credentialStore.credential(openSession, context),
+      read: async () => {
+        providerCalls += 1;
+        throw new Error('A refused credential reads no device.');
+      },
+    },
+  );
+  reads.push({ real });
+  const before = editPreviews.length;
+  const answer = await editPreview(
+    editBody([
+      {
+        deviceId: 'd1',
+        field: 'notes',
+        mode: 'replace',
+        value: 'New',
+        baselineValue: 'Old',
+      },
+    ]),
+  );
+
+  assert.deepEqual(answer, {
+    status: 403,
+    body: { reason: 'forbidden' },
+  });
+  assert.deepEqual(
+    [providerCalls, storeTransactions],
+    [0, 0],
+    'A permission refusal calls no Google device and opens no store transaction.',
+  );
+  assert.equal(
+    editPreviews.length,
+    before,
+    'A permission refusal creates no preview.',
   );
 });

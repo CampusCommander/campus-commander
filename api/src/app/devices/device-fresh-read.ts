@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -244,9 +245,12 @@ export class DeviceFreshRead {
         read.missing.push(...batch.missing);
       }
     } catch (error) {
-      // A refused connection and a store fault keep their own answer.
+      // A refused connection, a refused credential, and a store fault keep their own answer.
+      // The credential adapter answers the SQL 42501 permission refusal with 403; a Google
+      // failure must not hide that local refusal behind a retryable 503.
       if (
         error instanceof ConflictException ||
+        error instanceof ForbiddenException ||
         error instanceof ServiceUnavailableException
       )
         throw error;
