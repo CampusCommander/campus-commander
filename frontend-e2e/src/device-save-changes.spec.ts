@@ -1611,3 +1611,143 @@ test('a successful terminal job keeps its value until its row read recovers (B4)
   );
   await screenshot(page, 'save-changes-12-read-recovered.png');
 });
+
+/**
+ * Dispatch one `job-changed` event through the page's own jobs stream handler. Every API
+ * answer stays mocked; this is the test EventSource boundary that the application opens.
+ */
+async function emitJobChanged(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ jobId, displayId, requestedBy }) => {
+      const streams = (
+        window as unknown as {
+          __reviewStreams: {
+            url: string;
+            dispatchEvent(event: Event): boolean;
+          }[];
+        }
+      ).__reviewStreams.filter((stream) => stream.url === '/api/jobs/events');
+      for (const stream of streams)
+        stream.dispatchEvent(
+          new MessageEvent('job-changed', {
+            data: JSON.stringify({
+              type: 'job-changed',
+              jobId,
+              displayId,
+              revision: 2,
+              requestedBy,
+            }),
+          }),
+        );
+    },
+    {
+      jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      displayId: jobDisplayId,
+      requestedBy: principal,
+    },
+  );
+}
+
+/**
+ * Confirm one device with an Asset tag and a Move, then settle it as the production
+ * classifier does: the Asset tag holds REQUESTED-TAG while Google normalizes the Move, so
+ * the whole operation is failed/value-differs after HTTP 200 with zero succeeded
+ * operations. The row read then fails or omits the device (B4).
+ */
+async function settlePartialValueDiffers(
+  page: Page,
+  sim: SaveChangesSimulator,
+  read: 'failed' | 'missing',
+): Promise<void> {
+  await fakeDeviceEvents(page);
+  await openDevices(page, sim);
+  await editText(page, 'C0A1-0001', 'assetTag', 'REQUESTED-TAG');
+  await stageMove(page, 'C0A1-0001');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review 1 device update' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to confirmation' }).click();
+  await page.getByRole('checkbox', { name: /I reviewed all 1 device/ }).check();
+  await page.getByRole('button', { name: 'Create update job' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Update job created' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.waitForTimeout(300);
+
+  // The worker applies the Asset tag and Google returns a different Move value.
+  sim.settle();
+  sim.change('d0', 'orgUnitPath', '/Chrome Devices/Google normalized unit');
+  const failed = sim.jobDetail();
+  failed.status = 'failed';
+  failed.progress.succeeded = 0;
+  failed.progress.failed = 1;
+  failed.latestActivity.failed = {
+    count: 1,
+    operations: [
+      {
+        operationId: 'UPD-006-1-annotatedAssetId',
+        deviceId: 'd0',
+        serialNumber: 'C0A1-0001',
+        outcomeReason: 'value-differs',
+        googleStatus: 200,
+        googleReason: null,
+        updatedAt: '2026-10-21T18:03:02.000Z',
+      },
+    ],
+  };
+  await page.route(`**/api/jobs/${jobDisplayId}`, (route) =>
+    route.fulfill({ json: failed }),
+  );
+  if (read === 'failed')
+    await page.route('**/api/devices/by-ids', (route) =>
+      route.fulfill({ status: 503, json: { code: 'network-failure' } }),
+    );
+  else
+    await page.route('**/api/devices/by-ids', (route) =>
+      route.fulfill({ json: { rows: [] } }),
+    );
+  const readDone = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/devices/by-ids',
+  );
+  await emitJobChanged(page);
+  await readDone;
+}
+
+for (const read of ['failed', 'missing'] as const) {
+  test(`a value-differs failed job keeps its written value when the row read is ${read} (B4)`, async ({
+    page,
+  }) => {
+    const sim = new SaveChangesSimulator(seedDevices());
+    await settlePartialValueDiffers(page, sim, read);
+    const tag = cell(page, 'C0A1-0001', 'assetTag');
+
+    // Zero succeeded operations do not prove that Google wrote nothing: the Asset tag
+    // holds its request even though the operation failed on the normalized Move value.
+    await expect(tag.locator('.device-cell-value')).toHaveText(
+      'REQUESTED-TAG',
+      {
+        timeout: 2000,
+      },
+    );
+    await expect(tag.locator('.cell-state.accepted')).toBeVisible();
+    await screenshot(page, `save-changes-12-value-differs-${read}.png`);
+
+    // The next authoritative read proves the partial write and settles the mark.
+    await page.unroute('**/api/devices/by-ids');
+    const recovered = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/devices/by-ids',
+    );
+    await emitJobChanged(page);
+    await recovered;
+    await expect(tag.locator('.cell-state.accepted')).toHaveCount(0, {
+      timeout: 2000,
+    });
+    await expect(tag.locator('.device-cell-value')).toHaveText('REQUESTED-TAG');
+    await screenshot(
+      page,
+      `save-changes-12-value-differs-${read}-recovered.png`,
+    );
+  });
+}

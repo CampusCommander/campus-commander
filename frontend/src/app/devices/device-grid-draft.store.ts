@@ -155,16 +155,6 @@ const TERMINAL_JOB_STATUSES: ReadonlySet<JobStatus> = new Set<JobStatus>([
 ]);
 
 /**
- * True when a terminal job proves that no value reached Google. An all-failed job keeps the
- * old row, so the accepted mark settles. A job that succeeded, ended unknown, or expired
- * may have written a value, so a missing row proves nothing about it (B4).
- */
-export function jobProvesNoWrite(job: JobDetail): boolean {
-  const { succeeded, unknown, expired } = job.progress;
-  return succeeded === 0 && unknown === 0 && expired === 0;
-}
-
-/**
  * True when the authoritative row holds the accepted request. A matching row is success
  * evidence: the worker publishes inventory IDs only after a value reaches Google (B4). A
  * row without the field proves nothing and never settles the cell. The Asset tag edit field
@@ -470,10 +460,11 @@ export class DeviceGridDraftStore {
   /**
    * Reconcile accepted cells with the owning job and the authoritative device rows (B4).
    *
-   * A row that holds the request settles the cell. A job that reached a terminal status
-   * without the value settles the cell too, because the worker publishes only successful
-   * writes. A job that still runs keeps the mark, so an unrelated refresh never erases it.
-   * Reads every accepted device, so a cell outside the refreshed page settles as well.
+   * A row that holds the request settles the cell. A terminal job settles a cell only when
+   * an authoritative row proves the outcome: a missing row never proves that no value
+   * reached Google, because one failed operation can hold some of its requested values. A
+   * job that still runs keeps the mark, so an unrelated refresh never erases it. Reads every
+   * accepted device, so a cell outside the refreshed page settles as well.
    */
   async reconcileAccepted(job?: JobDetail): Promise<void> {
     if (!this.acceptedSignal().length) return;
@@ -530,11 +521,10 @@ export class DeviceGridDraftStore {
           settled.add(acceptedKey(entry));
           continue;
         }
-        // No row reached the grid. An all-failed job proves that nothing was written, so
-        // the old value is the settled value. A job with a successful, unknown, or expired
-        // operation may hold this value, so a failed or missing read must not expose the
-        // old value as settled. Keep the accepted mark until a row arrives (B4).
-        if (jobProvesNoWrite(detail)) settled.add(acceptedKey(entry));
+        // No row reached the grid. A missing row proves nothing about the write: the job
+        // counters count device operations, not field effects, and a failed operation can
+        // hold some of its requested values after a partial application (B4). Keep the
+        // accepted mark until an authoritative row arrives, even when the job failed.
       }
       if (settled.size)
         this.acceptedSignal.set(

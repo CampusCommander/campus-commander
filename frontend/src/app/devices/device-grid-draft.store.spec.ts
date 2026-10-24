@@ -1332,3 +1332,77 @@ it('keeps a successful accepted value when its row read fails or omits the devic
     'GOOGLE-WRITTEN',
   );
 });
+
+it('keeps a partially applied failed value when its row read fails or omits the device (B4)', async () => {
+  // A value-differs operation is marked failed after HTTP 200 and can still hold some of
+  // its requested fields. Zero succeeded operations therefore do not prove that Google
+  // wrote nothing, so a missing row must not expose the old value as settled.
+  const failed = jobOf('UPD-006', 'failed', {
+    total: 1,
+    succeeded: 0,
+    failed: 1,
+  });
+  failed.latestActivity.failed = {
+    count: 1,
+    operations: [
+      {
+        operationId: 'UPD-006-1-annotatedAssetId',
+        deviceId: 'd1',
+        serialNumber: 'C0A1-0000',
+        outcomeReason: 'value-differs',
+        googleStatus: 200,
+        googleReason: null,
+        updatedAt: '2026-10-21T18:03:02.000Z',
+      },
+    ],
+  };
+  let read: 'fail' | 'missing' | 'written' = 'fail';
+  const { draft } = configureWith((requestPath) => {
+    if (requestPath === '/api/jobs/UPD-006') return Response.json(failed);
+    if (read === 'fail')
+      return Response.json({ code: 'network-failure' }, { status: 503 });
+    if (read === 'missing') return Response.json({ rows: [] });
+    return Response.json({
+      rows: [
+        row({ assetTag: 'REQUESTED-TAG', notes: 'Google normalized note' }),
+      ],
+    });
+  });
+  const old = row({ assetTag: 'HS-0001', notes: 'Old note' });
+  draft.stageText(old, 'annotatedAssetId', 'REQUESTED-TAG');
+  draft.stageText(old, 'notes', 'Requested note');
+  draft.accept(
+    draft.edits(),
+    [
+      target('d1', 'annotatedAssetId', 'eligible', 'REQUESTED-TAG', 'HS-0001'),
+      target('d1', 'notes', 'eligible', 'Requested note', 'Old note'),
+    ],
+    'UPD-006',
+  );
+  await draft.reconcileAccepted();
+  await flush();
+
+  // A failed read proves nothing: the Asset tag may hold REQUESTED-TAG even though the
+  // operation failed on the normalized Move value.
+  expect(draft.acceptedFor('d1', 'annotatedAssetId')).not.toBeNull();
+  expect(draft.valueFor('d1', 'annotatedAssetId', 'HS-0001')).toBe(
+    'REQUESTED-TAG',
+  );
+
+  // A read that omits the device is no evidence either.
+  read = 'missing';
+  await draft.reconcileAccepted();
+  expect(draft.acceptedFor('d1', 'annotatedAssetId')).not.toBeNull();
+  expect(draft.valueFor('d1', 'annotatedAssetId', 'HS-0001')).toBe(
+    'REQUESTED-TAG',
+  );
+
+  // A later authoritative row proves the partial write, applies it, and settles the marks.
+  read = 'written';
+  await draft.reconcileAccepted();
+  expect(draft.accepted()).toEqual([]);
+  expect(draft.acceptedFor('d1', 'annotatedAssetId')).toBeNull();
+  expect(draft.valueFor('d1', 'annotatedAssetId', 'REQUESTED-TAG')).toBe(
+    'REQUESTED-TAG',
+  );
+});
