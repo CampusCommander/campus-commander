@@ -173,7 +173,7 @@ interface DeviceGridConflictView {
     :host ::ng-deep .device-stale {
       color: var(--cc-text-secondary);
     }
-    /* DRAFT-02: the pending, invalid, and conflict cells of the grid draft. */
+    /* DRAFT-02: the pending, invalid, conflict, excluded, and accepted cells of the grid draft. */
     :host ::ng-deep .ag-cell.device-draft-pending {
       border-radius: 2px;
       background: var(--cc-surface-selected);
@@ -188,6 +188,18 @@ interface DeviceGridConflictView {
       border-radius: 2px;
       background: color-mix(in srgb, var(--cc-status-warning) 14%, transparent);
       box-shadow: inset 0 0 0 2px var(--cc-status-warning);
+    }
+    /* An excluded device cannot be written: the cell carries the error mark, not a draft. */
+    :host ::ng-deep .ag-cell.device-draft-excluded {
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--cc-status-error) 8%, transparent);
+      box-shadow: inset 0 0 0 2px var(--cc-status-error);
+    }
+    /* An accepted cell waits for the job's record, so it keeps the pending surface. */
+    :host ::ng-deep .ag-cell.device-draft-accepted {
+      border-radius: 2px;
+      background: var(--cc-surface-selected);
+      box-shadow: inset 0 0 0 2px var(--cc-accent);
     }
     :host ::ng-deep .lgr-ssrm-selection-footer {
       display: flex;
@@ -353,6 +365,7 @@ export class DeviceGrid implements OnInit {
     // A restored or changed draft repaints the cells that show its values.
     effect(() => {
       this.draft.entries();
+      this.draft.accepted();
       untracked(() => this.refreshDraftCells());
     });
     effect(() => {
@@ -440,7 +453,11 @@ export class DeviceGrid implements OnInit {
     const refresh = this.rowRefresh();
     refresh?.attach(event.api);
     // A refreshed record reaches the pending view's cached rows, so sorting keeps it (D7).
-    const stop = refresh?.onApply((rows) => this.pendingSource?.update(rows));
+    // It also settles an accepted cell once the job's own record arrives.
+    const stop = refresh?.onApply((rows) => {
+      this.pendingSource?.update(rows);
+      this.draft.settleAccepted(rows);
+    });
     this.destroyRef.onDestroy(() => {
       refresh?.detach(event.api);
       stop?.();
@@ -463,11 +480,21 @@ export class DeviceGrid implements OnInit {
       value: (deviceId, field, text) =>
         this.draft.valueFor(deviceId, field, text),
       entry: (deviceId, field) => this.draft.entryFor(deviceId, field),
+      accepted: (deviceId, field) => this.draft.acceptedFor(deviceId, field),
       reason: (entry) => this.draft.reasonFor(entry),
       onRevert: (deviceId, field) => this.draft.revert(deviceId, field),
       onConflict: (deviceId, field, anchor) =>
         this.openConflict(deviceId, field, anchor),
     };
+  }
+
+  /**
+   * Stop the active editor before Save changes reads the draft (addendum section 5). The
+   * live input already reached the draft, so Commit live keeps it.
+   */
+  endEdit(): void {
+    this.api?.stopEditing();
+    this.endLiveEdit();
   }
 
   /**
@@ -496,6 +523,7 @@ export class DeviceGrid implements OnInit {
     const entry = this.draft.entryFor(event.data.deviceId, field);
     this.draft.beginLive({
       deviceId: event.data.deviceId,
+      serialNumber: event.data.serialNumber,
       field,
       baseline: baselineFor(entry, event.data, field),
       value:

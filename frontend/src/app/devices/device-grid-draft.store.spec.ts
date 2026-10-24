@@ -179,6 +179,7 @@ it('counts an open editor before it stages', () => {
   const draft = configure();
   draft.beginLive({
     deviceId: 'd1',
+    serialNumber: 'CB-1',
     field: 'notes',
     baseline: 'Old',
     value: 'Old',

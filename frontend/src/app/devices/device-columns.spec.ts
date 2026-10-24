@@ -134,6 +134,7 @@ it('gives the five draft columns their editors, renderer, and state rules', () =
       field === 'annotatedAssetId' && deviceId === 'd1' ? 'CB-DRAFT' : fallback,
     entry: (_deviceId: string, field: string) =>
       ({ state: field === 'notes' ? 'invalid' : 'pending' }) as never,
+    accepted: (_deviceId: string, _field: string) => null,
     reason: () => 'Notes holds 1 to 500 characters.',
     onRevert: () => undefined,
     onConflict: () => undefined,

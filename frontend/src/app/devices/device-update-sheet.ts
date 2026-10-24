@@ -28,11 +28,13 @@ import { MatSelect, MatSelectModule } from '@angular/material/select';
 import {
   DEVICE_UPDATE_FIELD_LABELS,
   jobDetailSchema,
+  type DeviceUpdateEdit,
   type DeviceUpdateJobReceipt,
   type DeviceUpdateMode,
   type DeviceUpdatePreview,
   type DeviceUpdateTarget,
   type DeviceUpdateTextField,
+  type GoogleFailure,
   type JobDetail,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
@@ -63,8 +65,10 @@ import {
   confirmationMayExist,
   confirmationMetaLine,
   confirmTitle,
+  duplicateTagNotes,
   expiryLine,
   flowExpiry,
+  gridReviewNote,
   observedValueText,
   previewCountLine,
   previewMetaLine,
@@ -73,6 +77,7 @@ import {
   staleWarning,
   targetNote,
   targetGroups,
+  targetSentences,
   unchangedSentence,
   type FlowActionId,
   type FlowProblem,
@@ -89,11 +94,15 @@ import {
   updateDeviceOrgUnitNote,
 } from './device-update-messages';
 import { DeviceUpdateProblem } from './device-update-problem';
+import { DeviceGridDraftStore } from './device-grid-draft.store';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { DeviceOrgUnitPicker } from './device-org-unit-picker';
 import { DevicePathText } from './device-path-text';
 
-export type SheetStep = 'edit' | 'review' | 'confirm' | 'done';
+export type SheetStep = 'prepare' | 'edit' | 'review' | 'confirm' | 'done';
+
+/** The draft that the sheet prepares: the browsing selection or the grid draft. */
+export type SheetSource = 'selection' | 'grid';
 
 /** The note of behavior item 12. The owner reviews this drafted string. */
 export const SELECTION_CHANGED_NOTE =
@@ -154,11 +163,17 @@ class ValueErrorMatcher implements ErrorStateMatcher {
 export class DeviceUpdateSheet {
   /** The Devices page opens and closes the sheet. */
   readonly open = input.required<boolean>();
+  /** The draft that Save changes prepared: the browsing selection or the grid draft. */
+  readonly source = input<SheetSource>('selection');
   /** The page returns focus to the Bulk Actions button. */
   readonly closed = output<void>();
+  /** The grid source asks the page to show the devices with pending changes. */
+  readonly pendingViewRequested = output<void>();
 
   protected readonly store = inject(DevicesStore);
   protected readonly draft = inject(DeviceUpdateDraftStore);
+  /** The grid draft that the grid source prepares, marks, and settles (DRAFT-02). */
+  protected readonly gridDraft = inject(DeviceGridDraftStore);
   private readonly flow = inject(DeviceUpdateFlow);
   private readonly confirmations = inject(DeviceUpdateConfirmationStore);
   private readonly auth = inject(AuthStore);
@@ -228,15 +243,30 @@ export class DeviceUpdateSheet {
   protected readonly groups = computed<TargetGroup[]>(() =>
     targetGroups(this.targets()),
   );
-  /** The Confirm step lists one change per field, then the fields that keep their value. */
+  /**
+   * The Confirm step lists one change per field for a selection, and one row per device and
+   * field for an edit list (mockup state 11).
+   */
   protected readonly sentences = computed(() => {
     const preview = this.preview();
+    if (!preview) return [];
     // The counts come from the frozen rows: one device can keep one field's value.
-    return preview ? changeSentences(preview, this.targets()) : [];
+    return preview.changes === null
+      ? targetSentences(this.targets())
+      : changeSentences(preview, this.targets());
   });
   protected readonly unchanged = computed(() => {
     const preview = this.preview();
-    return preview ? unchangedSentence(preview) : '';
+    return preview ? unchangedSentence(preview, this.targets()) : '';
+  });
+  /** A duplicate Asset tag warns and never blocks the save (addendum section 6). */
+  protected readonly duplicates = computed(() =>
+    duplicateTagNotes(this.targets()),
+  );
+  /** Why Continue is blocked on a grid save, or an empty string. */
+  protected readonly gridNote = computed(() => {
+    const preview = this.preview();
+    return preview && this.source() === 'grid' ? gridReviewNote(preview) : '';
   });
   /**
    * The mode of one target's field change. Each row reads the change of its own field, so a
@@ -427,18 +457,23 @@ export class DeviceUpdateSheet {
   );
   protected readonly countLine = computed(() => {
     const preview = this.preview();
-    return preview ? previewCountLine(preview) : '';
+    return preview ? previewCountLine(preview, this.targets()) : '';
   });
   protected readonly metaLine = computed(() => {
     const preview = this.preview();
     return preview ? previewMetaLine(preview) : '';
   });
-  protected readonly canContinue = computed(
-    () => (this.preview()?.eligible ?? 0) > 0,
-  );
+  protected readonly canContinue = computed(() => {
+    const preview = this.preview();
+    if (!preview || preview.eligible === 0) return false;
+    // The bulk selection Review keeps its own rule. A grid save blocks on a conflict or an
+    // excluded device (addendum section 5).
+    if (this.source() !== 'grid') return true;
+    return preview.conflicts === 0 && preview.excluded === 0;
+  });
   protected readonly heading = computed(() => {
     const preview = this.preview();
-    return preview ? confirmationHeading(preview) : '';
+    return preview ? confirmationHeading(preview, this.targets()) : '';
   });
   protected readonly confirmMeta = computed(() => {
     const preview = this.preview();
@@ -476,6 +511,8 @@ export class DeviceUpdateSheet {
   });
   protected readonly selectionChanged = computed(
     () =>
+      // An edit list carries its own scope, so the browsing selection cannot invalidate it.
+      this.source() !== 'grid' &&
       this.preview() !== null &&
       this.frozenSelection() !== this.selectionSignature(),
   );
@@ -502,10 +539,23 @@ export class DeviceUpdateSheet {
       state: index < current ? 'done' : index === current ? 'active' : 'later',
     }));
   });
+  /**
+   * The grid save shows no stepper at its receipt, because the person saw no step (mockup
+   * choice 14), and none while it prepares the preview.
+   */
+  protected readonly showStepper = computed(
+    () =>
+      !(
+        this.source() === 'grid' &&
+        (this.step() === 'prepare' || this.step() === 'done')
+      ),
+  );
   protected readonly title = computed(() => {
     const problem = this.problem();
     if (problem) return problem.title;
     switch (this.step()) {
+      case 'prepare':
+        return 'Save changes';
       case 'edit': {
         if (this.expired()) return 'Selection expired';
         const count = this.count();
@@ -529,6 +579,8 @@ export class DeviceUpdateSheet {
     const problem = this.problem();
     if (problem) return problem.subtitle;
     switch (this.step()) {
+      case 'prepare':
+        return 'Preparing the preview';
       case 'edit':
         return this.expired()
           ? 'No job created'
@@ -566,6 +618,22 @@ export class DeviceUpdateSheet {
   /** Open at Edit with the kept draft, then read the current selection. */
   private start(): void {
     this.generation++;
+    this.resetState();
+    afterNextRender(() => this.sheetTitle()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+    // Save changes prepares one edit list and opens the sheet at its preview (IF3).
+    if (this.source() === 'grid') {
+      void this.prepareGrid(this.generation);
+      return;
+    }
+    this.step.set('edit');
+    // The field reads its own scope, so a missing grant disables it before a choice.
+    void this.orgUnitTree.load();
+    void this.loadSelection();
+  }
+
+  private resetState(): void {
     this.step.set('edit');
     this.status.set('ready');
     this.problem.set(null);
@@ -588,12 +656,98 @@ export class DeviceUpdateSheet {
     this.loadedCount.set(null);
     this.pickerOpen.set(false);
     this.scopeCopied.set('');
-    // The field reads its own scope, so a missing grant disables it before a choice.
-    void this.orgUnitTree.load();
-    afterNextRender(() => this.sheetTitle()?.nativeElement.focus(), {
-      injector: this.injector,
+  }
+
+  /**
+   * Prepare the edit list of the grid draft (addendum sections 3 and 5). One pending change
+   * confirms at once and opens the receipt. Every other answer opens Review, which keeps
+   * Continue disabled while the preview holds a conflict or an excluded device.
+   */
+  private async prepareGrid(generation: number): Promise<void> {
+    const edits = this.gridDraft.edits();
+    if (!edits.length) {
+      this.close();
+      return;
+    }
+    this.step.set('prepare');
+    this.status.set('loading');
+    this.problem.set(null);
+    this.problemDetail.set('');
+    this.preparing.set(true);
+    const preparation = await this.confirmations.prepareEdits(edits);
+    if (generation !== this.generation) return;
+    this.preparing.set(false);
+    switch (preparation.kind) {
+      case 'receipt':
+        // A lost answer recovered its job. Settle the rows the record kept.
+        this.openReceipt(preparation.receipt, preparation.submitted ?? null);
+        return;
+      case 'preview': {
+        const preview = preparation.preview;
+        this.preview.set(preview);
+        this.frozenSelection.set(null);
+        if (this.oneChangeSave(edits, preview)) {
+          await this.confirmOneChange(preview, edits, generation);
+          return;
+        }
+        await this.showPreview(preview, null, generation);
+        return;
+      }
+      case 'uncertain':
+        this.submitted.set(preparation.submitted);
+        this.step.set('confirm');
+        this.showProblem('confirm-uncertain');
+        return;
+      case 'unresolved':
+        // The early answer cannot prove that the first request created no job. Keep the
+        // retained identity and show the receipt recovery, not a new preview.
+        this.submitted.set(preparation.submitted);
+        this.step.set('confirm');
+        this.showProblem('confirm-receipt-unavailable');
+        return;
+      case 'problem':
+        this.step.set('prepare');
+        this.showProblem(
+          preparation.answer,
+          preparation.expiresAt,
+          null,
+          preparation.failure ?? null,
+        );
+        return;
+    }
+  }
+
+  /**
+   * One eligible device, one field change, and a fresh answer: the press of Save changes is
+   * the acknowledgment, so no Review or Confirm screen opens (owner direction, 2026-10-23).
+   */
+  private oneChangeSave(
+    edits: readonly DeviceUpdateEdit[],
+    preview: DeviceUpdatePreview,
+  ): boolean {
+    return (
+      edits.length === 1 &&
+      preview.eligible === 1 &&
+      preview.fieldChanges === 1 &&
+      !preview.stale
+    );
+  }
+
+  /** Send the one confirmation of a one-change save and open its receipt. */
+  private async confirmOneChange(
+    preview: DeviceUpdatePreview,
+    edits: readonly DeviceUpdateEdit[],
+    generation: number,
+  ): Promise<void> {
+    this.step.set('prepare');
+    this.status.set('loading');
+    this.submitted.set({
+      previewId: preview.previewId,
+      manifestDigest: preview.manifestDigest,
+      entries: [...edits],
     });
-    void this.loadSelection();
+    await this.submit(this.submitted()!, false);
+    if (generation !== this.generation) return;
   }
 
   /** Read the stored selection. It reports the count and an expired selection. */
@@ -665,6 +819,12 @@ export class DeviceUpdateSheet {
 
   /** Show the selected devices in the grid beside the sheet. The draft stays. */
   protected reviewPending(): void {
+    // A grid save shows the devices that hold a change, so the person can resolve a mark.
+    if (this.source() === 'grid') {
+      this.pendingViewRequested.emit();
+      this.close();
+      return;
+    }
     this.store.selectedView.set(true);
   }
 
@@ -728,7 +888,7 @@ export class DeviceUpdateSheet {
     if (generation !== this.generation) return;
     this.saving.set(false);
     if (preparation.kind === 'receipt') {
-      this.openReceipt(preparation.receipt);
+      this.openReceipt(preparation.receipt, preparation.submitted ?? null);
       return;
     }
     if (preparation.kind === 'preview') {
@@ -825,6 +985,9 @@ export class DeviceUpdateSheet {
       return;
     }
     this.targets.set(targets.value);
+    // The grid marks the frozen answer: a conflict cell shows the current Google value, an
+    // excluded cell shows its reason (addendum section 5).
+    if (this.source() === 'grid') this.gridDraft.applyPreview(targets.value);
     this.status.set('ready');
   }
 
@@ -836,6 +999,10 @@ export class DeviceUpdateSheet {
       {
         previewId: preview.previewId,
         manifestDigest: preview.manifestDigest,
+        // The confirmed grid rows settle into accepted cells after the receipt (DRAFT-02).
+        ...(this.source() === 'grid'
+          ? { entries: this.gridDraft.edits() }
+          : {}),
       },
       false,
     );
@@ -862,8 +1029,7 @@ export class DeviceUpdateSheet {
       this.confirmations.release(submitted.previewId);
       if (generation !== this.generation) return;
       this.creating.set(false);
-      this.submitted.set(null);
-      this.openReceipt(result.value);
+      this.openReceipt(result.value, submitted);
       return;
     }
     if (result.answer === 'confirm-uncertain') {
@@ -892,7 +1058,10 @@ export class DeviceUpdateSheet {
   }
 
   /** Show the receipt and read the job that the confirmation created. */
-  private openReceipt(receipt: DeviceUpdateJobReceipt): void {
+  private openReceipt(
+    receipt: DeviceUpdateJobReceipt,
+    submitted: SubmittedConfirmation | null,
+  ): void {
     this.generation++;
     this.receipt.set(receipt);
     this.job.set(null);
@@ -901,7 +1070,22 @@ export class DeviceUpdateSheet {
     this.problem.set(null);
     this.problemDetail.set('');
     this.step.set('done');
+    if (this.source() === 'grid') this.settleGrid(submitted, receipt.displayId);
     void this.loadJob(receipt.displayId);
+  }
+
+  /**
+   * Settle the confirmed rows (DRAFT-02): the eligible rows become accepted cells, unchanged
+   * rows leave the draft, and a conflict or excluded row keeps its mark. A recovered receipt
+   * carries the submitted rows, so it settles them without a frozen preview.
+   */
+  private settleGrid(
+    submitted: SubmittedConfirmation | null,
+    displayId: string,
+  ): void {
+    const edits = (submitted?.entries ?? []) as DeviceUpdateEdit[];
+    if (!edits.length) return;
+    this.gridDraft.accept(edits, this.targets(), displayId);
   }
 
   /** Read the durable job. A reload and the first view follow the same read. */
@@ -971,6 +1155,10 @@ export class DeviceUpdateSheet {
 
   /** Retry the failed read or replay of the active step. */
   private async retry(): Promise<void> {
+    if (this.step() === 'prepare') {
+      await this.prepareGrid(++this.generation);
+      return;
+    }
     if (this.step() === 'done') {
       const displayId = this.jobDisplayId();
       if (displayId) void this.loadJob(displayId);
@@ -1037,6 +1225,11 @@ export class DeviceUpdateSheet {
   /** Prepare a new preview from the durable draft and open Review. */
   private async prepareNewPreview(): Promise<void> {
     if (this.preparing()) return;
+    // A grid save prepares an edit list again from the cells that keep a change.
+    if (this.source() === 'grid') {
+      void this.prepareGrid(++this.generation);
+      return;
+    }
     // A disabled Organization unit field must not submit its retained Move (UI-07). The
     // draft returns to Edit, where the field note and the discard action offer recovery.
     if (this.orgUnitMoveBlocked()) {
@@ -1052,7 +1245,7 @@ export class DeviceUpdateSheet {
     this.preparing.set(false);
     switch (preparation.kind) {
       case 'receipt':
-        this.openReceipt(preparation.receipt);
+        this.openReceipt(preparation.receipt, preparation.submitted ?? null);
         return;
       case 'preview':
         await this.showPreview(preparation.preview, selection, generation);
@@ -1088,8 +1281,11 @@ export class DeviceUpdateSheet {
     kind: FlowProblemKind,
     expiresAt: string | null = null,
     displayId: string | null = null,
+    failure: GoogleFailure | null = null,
   ): void {
-    this.problem.set(this.flow.problem(kind, { displayId, expiresAt }));
+    this.problem.set(
+      this.flow.problem(kind, { displayId, expiresAt, failure }),
+    );
     this.status.set('problem');
   }
 

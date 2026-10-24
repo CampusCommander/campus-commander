@@ -876,5 +876,20 @@ export function actionProblem(
         ],
         actions: [backToDevices(), retry],
       };
+    // These answers belong to the device update preview. A command or status sheet never
+    // receives one, so it shows the generic preview recovery.
+    case 'save-too-large':
+    case 'device-read-failed':
+    case 'preview-conflict':
+      return {
+        kind,
+        title: 'The preview is unavailable',
+        subtitle: NO_JOB,
+        heading: 'Campus Commander could not prepare the preview',
+        paragraphs: [
+          'The preview request failed. Retry the preview before you create the job.',
+        ],
+        actions: [backToDevices(), retry],
+      };
   }
 }

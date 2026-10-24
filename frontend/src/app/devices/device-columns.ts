@@ -28,7 +28,10 @@ import {
 import { GroupCellRenderer } from '@libregrid/row-grouping';
 import { DeviceDetailsCell } from './device-details-cell';
 import { DeviceDraftCell } from './device-draft-cell';
-import type { DeviceGridDraftEntry } from './device-grid-draft.store';
+import type {
+  DeviceGridAcceptedEntry,
+  DeviceGridDraftEntry,
+} from './device-grid-draft.store';
 import { orgUnitTreePath } from './device-filter-model';
 
 function value(row: DeviceRow, field: DeviceSortField, now: number): string {
@@ -243,6 +246,11 @@ export interface DeviceDraftColumnOptions {
     deviceId: string,
     field: DeviceUpdateField,
   ) => DeviceGridDraftEntry | null;
+  /** The accepted value of a cell whose job is running (mockup state 09). */
+  accepted: (
+    deviceId: string,
+    field: DeviceUpdateField,
+  ) => DeviceGridAcceptedEntry | null;
   reason: (entry: DeviceGridDraftEntry) => string;
   onRevert: (deviceId: string, field: DeviceUpdateField) => void;
   onConflict: (
@@ -273,12 +281,20 @@ function editableColumn(
     !params.data || params.node?.group
       ? null
       : draft.entry(params.data.deviceId, field);
+  const acceptedOf = (params: {
+    data?: DeviceRow | null;
+    node?: IRowNode<DeviceRow>;
+  }): DeviceGridAcceptedEntry | null =>
+    !params.data || params.node?.group || entryOf(params)
+      ? null
+      : draft.accepted(params.data.deviceId, field);
   return {
     cellRenderer: DeviceDraftCell,
     cellRendererParams: {
       updateField: field,
       label: DEVICE_UPDATE_FIELD_LABELS[field],
       entryFor: (deviceId: string) => draft.entry(deviceId, field),
+      acceptedFor: (deviceId: string) => draft.accepted(deviceId, field),
       reasonFor: (entry: DeviceGridDraftEntry) => draft.reason(entry),
       // The unit hint follows the read state, not only the page permissions (B4 note).
       editable: () =>
@@ -293,6 +309,9 @@ function editableColumn(
       'device-draft-invalid': (params) => entryOf(params)?.state === 'invalid',
       'device-draft-conflict': (params) =>
         entryOf(params)?.state === 'conflict',
+      'device-draft-excluded': (params) =>
+        entryOf(params)?.state === 'excluded',
+      'device-draft-accepted': (params) => !!acceptedOf(params),
     },
     // The picker opens on Enter, F2, or a double-click, so the unit column has no editor.
     editable: (params) =>

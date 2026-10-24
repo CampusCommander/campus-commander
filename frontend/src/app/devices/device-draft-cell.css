@@ -49,6 +49,16 @@
   color: var(--cc-status-error-text);
 }
 
+/* An excluded device cannot be written, so its cell carries a block mark (addendum 5). */
+.cell-state.excluded {
+  color: var(--cc-status-error-text);
+}
+
+/* An accepted cell waits for the job's record (mockup state 09, design gap 2). */
+.cell-state.accepted {
+  color: var(--cc-text-link);
+}
+
 .cell-action {
   display: inline-flex;
   flex: none;

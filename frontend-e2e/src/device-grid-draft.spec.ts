@@ -273,9 +273,10 @@ test('stages two cells on two devices, reverts one, then reverts all', async ({
   await expect(page.locator('#draft-count')).toHaveText(
     '2 pending changes · 2 devices',
   );
+  // Two valid changes enable Save changes; IF3 opens the preview from it.
   await expect(
     page.getByRole('button', { name: 'Save changes', exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await axe(page);
   await screenshot(page, 'grid-draft-pending.png');
 

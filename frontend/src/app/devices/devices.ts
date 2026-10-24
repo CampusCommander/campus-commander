@@ -107,11 +107,15 @@ export class DevicesPage implements OnInit, OnDestroy {
     ElementRef<HTMLButtonElement>,
     ElementRef<HTMLButtonElement>
   >('bulkButton', { read: ElementRef });
+  /** The grid owns the active editor that Save changes stops (addendum section 5). */
+  private readonly grid = viewChild(DeviceGrid);
   protected readonly sync = this.store.sync;
   protected readonly editingIndex = signal<number | null>(null);
   protected readonly refreshMenuOpen = signal(false);
   protected readonly bulkMenuOpen = signal(false);
   protected readonly updateOpen = signal(false);
+  /** The draft that the open sheet prepares: the browsing selection or the grid draft. */
+  protected readonly sheetSource = signal<'selection' | 'grid'>('selection');
   protected readonly revertOpen = signal(false);
   /** The grid shows the draft's devices instead of the person's query (addendum 5). */
   protected readonly pendingView = signal(false);
@@ -389,7 +393,30 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   /** Update device opens the bulk action sheet over the grid (owner, 2026-10-20). */
   protected startUpdate(): void {
+    // The Bulk Actions entry prepares the browsing selection, not the grid draft.
+    this.sheetSource.set('selection');
     this.updateOpen.set(true);
+  }
+
+  /**
+   * Save changes stops the active editor, stages its input, and opens the sheet at the
+   * edit-list preview (IF3, addendum section 5). An entry that cannot be saved stays in the
+   * grid, so the panel line names it and this action does nothing.
+   */
+  protected saveGridDraft(): void {
+    if (!this.gridDraft.visible() || this.gridDraft.blocked()) return;
+    this.grid()?.endEdit();
+    // The live input reached the draft through its own edit handler; commit covers the
+    // value that the person typed without pressing Enter.
+    this.gridDraft.commitLive();
+    if (!this.gridDraft.edits().length) return;
+    this.sheetSource.set('grid');
+    this.updateOpen.set(true);
+  }
+
+  /** The grid source asks for the devices with pending changes (mockup state 04). */
+  protected showPendingDevices(): void {
+    this.pendingView.set(true);
   }
 
   /** Send command opens the command sheet over the grid. */

@@ -10,7 +10,11 @@ import type {
   DeviceRow,
   DeviceUpdateField,
 } from '@campus/application-contracts';
-import type { DeviceGridDraftEntry } from './device-grid-draft.store';
+import type {
+  DeviceGridAcceptedEntry,
+  DeviceGridDraftEntry,
+} from './device-grid-draft.store';
+import { exclusionReasonText } from './device-update-flow';
 import { deviceUpdateValueCounter } from './device-update-messages';
 
 /** The parameters that the editable device columns pass to this renderer. */
@@ -19,6 +23,8 @@ export interface DeviceDraftCellParams
   updateField: DeviceUpdateField;
   label: string;
   entryFor: (deviceId: string) => DeviceGridDraftEntry | null;
+  /** The accepted value of the cell while its job runs (mockup state 09). */
+  acceptedFor: (deviceId: string) => DeviceGridAcceptedEntry | null;
   reasonFor: (entry: DeviceGridDraftEntry) => string;
   editable: () => boolean;
   onRevert: (deviceId: string) => void;
@@ -58,6 +64,19 @@ export class DeviceDraftCell implements ICellRendererAngularComp {
     if (!params?.data || params.node?.group) return null;
     return params.entryFor(params.data.deviceId);
   });
+  /** The accepted value of the cell while its job runs (mockup state 09). */
+  protected readonly accepted = computed(() => {
+    const params = this.params();
+    if (!params?.data || params.node?.group || this.entry()) return null;
+    return params.acceptedFor(params.data.deviceId);
+  });
+  /** The job line of an accepted cell: "UPD-006 · Google changes have not completed." */
+  protected readonly acceptedTitle = computed(() => {
+    const accepted = this.accepted();
+    return accepted
+      ? `${accepted.displayId} · Google changes have not completed.`
+      : '';
+  });
   protected readonly editable = computed(
     () => this.params()?.editable() ?? false,
   );
@@ -88,14 +107,23 @@ export class DeviceDraftCell implements ICellRendererAngularComp {
       `Resolve conflict on ${this.label().toLowerCase()} of ${this.serialNumber()}`,
   );
   protected readonly stateText = computed(() => {
+    const accepted = this.accepted();
+    if (accepted)
+      return `Accepted by job ${accepted.displayId}. Google changes have not completed.`;
     const entry = this.entry();
     if (!entry) return '';
     if (entry.state === 'invalid')
       return `Invalid change to ${this.label().toLowerCase()}. ${this.reason()}`;
+    if (entry.state === 'excluded')
+      return `Not updated. ${exclusionReasonText(entry.exclusionReason ?? null)}. Revert this change to save.`;
     if (entry.state === 'conflict')
       return `Conflict on ${this.label().toLowerCase()}. Current value: ${readable(entry.currentValue)}.`;
     return `Pending change to ${this.label().toLowerCase()}. Baseline: ${readable(entry.baseline)}.`;
   });
+  /** The reason line of an excluded cell, in the frame style. */
+  protected readonly excludedText = computed(() =>
+    exclusionReasonText(this.entry()?.exclusionReason ?? null),
+  );
 
   agInit(params: DeviceDraftCellParams): void {
     this.params.set(params);

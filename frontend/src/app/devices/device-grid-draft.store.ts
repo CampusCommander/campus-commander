@@ -11,11 +11,14 @@ import {
   DEVICE_BY_IDS_LIMIT,
   DEVICE_UPDATE_FIELD_LABELS,
   DEVICE_UPDATE_FIELD_LIMITS,
+  DEVICE_UPDATE_FIELD_ORDER,
   deviceUpdateFieldSchema,
   deviceUpdateModeSchema,
   type DeviceRow,
+  type DeviceUpdateEdit,
   type DeviceUpdateField,
   type DeviceUpdateMode,
+  type DeviceUpdateTarget,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import type { OrgUnitTreeRow } from './device-org-unit-tree.store';
@@ -26,7 +29,11 @@ import {
 } from './device-update-messages';
 
 /** The grid draft holds at most one entry per device and field (addendum section 5). */
-export type DeviceGridDraftState = 'pending' | 'invalid' | 'conflict';
+export type DeviceGridDraftState =
+  | 'pending'
+  | 'invalid'
+  | 'conflict'
+  | 'excluded';
 
 export interface DeviceGridDraftEntry {
   deviceId: string;
@@ -43,11 +50,29 @@ export interface DeviceGridDraftEntry {
   state: DeviceGridDraftState;
   /** The current Google value of a conflict entry. */
   currentValue?: string | null;
+  /** Why Google cannot write an excluded entry, such as `removed`. */
+  exclusionReason?: string;
+}
+
+/**
+ * The value of one accepted cell (mockup state 09, design gap 2). The job holds the row, so
+ * the cell shows the accepted value with a clock until the job's own record arrives. An
+ * accepted cell is not a draft entry: rollback never reverses a provider effect (DRAFT-02).
+ */
+export interface DeviceGridAcceptedEntry {
+  deviceId: string;
+  field: DeviceUpdateField;
+  mode: DeviceUpdateMode;
+  /** The approved value that the job will write. A Clear carries an empty string. */
+  value: string;
+  /** The job that accepted the row. */
+  displayId: string;
 }
 
 /** One open editor. Its changed input counts as a pending change (mockup choice 5). */
 export interface DeviceGridLiveEdit {
   deviceId: string;
+  serialNumber: string;
   field: DeviceUpdateField;
   baseline: string | null;
   value: string;
@@ -75,8 +100,9 @@ const entrySchema = z.strictObject({
   value: z.string(),
   baseline: z.string().nullable(),
   orgUnitId: z.string().min(1).max(128).nullable(),
-  state: z.enum(['pending', 'invalid', 'conflict']),
+  state: z.enum(['pending', 'invalid', 'conflict', 'excluded']),
   currentValue: z.string().nullable().optional(),
+  exclusionReason: z.string().max(64).optional(),
 });
 
 /** The outer shape only. Each entry validates alone, so one bad entry keeps the rest. */
@@ -190,7 +216,9 @@ function restoredEntry(
     ? 'invalid'
     : entry.currentValue !== undefined
       ? 'conflict'
-      : 'pending';
+      : entry.exclusionReason !== undefined
+        ? 'excluded'
+        : 'pending';
   return {
     deviceId: entry.deviceId,
     serialNumber: entry.serialNumber,
@@ -202,6 +230,9 @@ function restoredEntry(
     state,
     ...(entry.currentValue !== undefined
       ? { currentValue: entry.currentValue }
+      : {}),
+    ...(entry.exclusionReason !== undefined
+      ? { exclusionReason: entry.exclusionReason }
       : {}),
   };
 }
@@ -217,6 +248,7 @@ function restoredEntry(
 export class DeviceGridDraftStore {
   private readonly auth = inject(AuthStore);
   private readonly entriesSignal = signal<DeviceGridDraftEntry[]>([]);
+  private readonly acceptedSignal = signal<DeviceGridAcceptedEntry[]>([]);
   private readonly liveSignal = signal<DeviceGridLiveEdit | null>(null);
   private readonly refusalSignal = signal('');
   private readonly restoreErrorSignal = signal('');
@@ -228,6 +260,7 @@ export class DeviceGridDraftStore {
   private principal = this.auth.session()?.identity.id ?? null;
 
   readonly entries = computed(() => this.entriesSignal());
+  readonly accepted = computed(() => this.acceptedSignal());
   readonly live = computed(() => this.liveSignal());
   readonly refusal = computed(() => this.refusalSignal());
 
@@ -251,15 +284,42 @@ export class DeviceGridDraftStore {
     );
   }
 
-  /** The cell value: the pending value over the row value. */
+  /**
+   * The cell value: the pending value over the row value. An accepted value covers the row
+   * until the job's own record arrives.
+   */
   valueFor(
     deviceId: string,
     field: DeviceUpdateField,
     rowValue: string,
   ): string {
     const entry = this.entryFor(deviceId, field);
-    if (!entry) return rowValue;
-    return entry.mode === 'clear' ? '' : entry.value;
+    if (entry) return entry.mode === 'clear' ? '' : entry.value;
+    const accepted = this.acceptedFor(deviceId, field);
+    if (accepted) return accepted.mode === 'clear' ? '' : accepted.value;
+    return rowValue;
+  }
+
+  /** The accepted value of one cell, or null. */
+  acceptedFor(
+    deviceId: string,
+    field: DeviceUpdateField,
+  ): DeviceGridAcceptedEntry | null {
+    return (
+      this.acceptedSignal().find(
+        (entry) => entry.deviceId === deviceId && entry.field === field,
+      ) ?? null
+    );
+  }
+
+  /** Drop the accepted values of the devices whose fresh records arrived. */
+  settleAccepted(rows: readonly Pick<DeviceRow, 'deviceId'>[]): void {
+    if (!this.acceptedSignal().length) return;
+    const settled = new Set(rows.map((row) => row.deviceId));
+    if (!settled.size) return;
+    this.acceptedSignal.set(
+      this.acceptedSignal().filter((entry) => !settled.has(entry.deviceId)),
+    );
   }
 
   /** The reason that the entry cannot be saved, or an empty string. */
@@ -469,6 +529,171 @@ export class DeviceGridDraftStore {
     const entry = this.entryFor(deviceId, field);
     if (!entry) return;
     this.upsert({ ...entry, state: 'conflict', currentValue });
+  }
+
+  /** Mark an entry whose device Google cannot write (addendum section 5). */
+  markExcluded(
+    deviceId: string,
+    field: DeviceUpdateField,
+    reason: string | null,
+  ): void {
+    const entry = this.entryFor(deviceId, field);
+    if (!entry) return;
+    const next: DeviceGridDraftEntry = {
+      ...entry,
+      state: 'excluded',
+      ...(reason ? { exclusionReason: reason } : {}),
+    };
+    delete next.currentValue;
+    this.upsert(next);
+  }
+
+  /**
+   * Mark the cells of a frozen preview: a conflict row carries the current value, and an
+   * excluded row names why Google cannot write it. The row stays in the draft until the
+   * person resolves it.
+   */
+  applyPreview(targets: readonly DeviceUpdateTarget[]): void {
+    for (const target of targets) {
+      if (target.disposition === 'conflict')
+        this.markConflict(target.deviceId, target.field, target.observedValue);
+      else if (target.disposition === 'excluded')
+        this.markExcluded(
+          target.deviceId,
+          target.field,
+          target.exclusionReason,
+        );
+    }
+  }
+
+  /** The edit list of one save: every pending entry, one edit per device and field. */
+  edits(): DeviceUpdateEdit[] {
+    return this.entriesSignal()
+      .filter((entry) => entry.state === 'pending')
+      .slice()
+      .sort((left, right) => {
+        if (left.deviceId !== right.deviceId)
+          return left.deviceId < right.deviceId ? -1 : 1;
+        return (
+          DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
+          DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field)
+        );
+      })
+      .map((entry) => ({
+        deviceId: entry.deviceId,
+        field: entry.field,
+        mode: entry.mode,
+        ...(entry.mode === 'clear' ? {} : { value: entry.value }),
+        baselineValue: entry.baseline,
+      }));
+  }
+
+  /**
+   * Stage the input of the open editor, so Save changes keeps the value the person typed
+   * without pressing Enter (addendum section 5). Returns true when the value joined the draft.
+   */
+  commitLive(): boolean {
+    const live = this.liveSignal();
+    if (!live) return false;
+    const mode = modeForText(live.field, live.value);
+    const changed = !sameRequest(
+      live.field,
+      requestOf(mode, live.value),
+      live.baseline,
+    );
+    if (!changed) {
+      this.endLive();
+      return false;
+    }
+    const result = this.stage({
+      deviceId: live.deviceId,
+      serialNumber: live.serialNumber,
+      field: live.field,
+      mode,
+      value: live.value,
+      baseline: live.baseline,
+      orgUnitId: null,
+    });
+    this.endLive();
+    return result.ok && !result.removed;
+  }
+
+  /**
+   * Settle a confirmed save (DRAFT-02): an eligible row becomes an accepted cell, an
+   * unchanged row leaves the draft, and an excluded or conflict row keeps its mark. Only
+   * the entries that still hold the submitted request leave; a later edit stays.
+   */
+  accept(
+    submitted: readonly DeviceUpdateEdit[],
+    targets: readonly DeviceUpdateTarget[],
+    displayId: string,
+  ): void {
+    const edits = new Map(
+      submitted.map((edit) => [keyOf(edit), edit] as const),
+    );
+    const settled = new Set<string>();
+    const accepted: DeviceGridAcceptedEntry[] = [];
+    for (const target of targets) {
+      const key = keyOf(target);
+      if (target.disposition === 'conflict') {
+        this.markConflict(target.deviceId, target.field, target.observedValue);
+        continue;
+      }
+      if (target.disposition === 'excluded') {
+        this.markExcluded(
+          target.deviceId,
+          target.field,
+          target.exclusionReason,
+        );
+        continue;
+      }
+      settled.add(key);
+      if (target.disposition !== 'eligible') continue;
+      accepted.push(this.acceptedEntry(edits.get(key), target, displayId));
+    }
+    // A receipt that this tab recovered by replay has no frozen preview. Every submitted
+    // edit settled, because the confirmation covered exactly those rows.
+    if (!targets.length) {
+      for (const edit of submitted) {
+        settled.add(keyOf(edit));
+        accepted.push(this.acceptedEntry(edit, null, displayId));
+      }
+    }
+    if (accepted.length) {
+      const next = this.acceptedSignal().filter(
+        (entry) => !accepted.some((row) => keyOf(row) === keyOf(entry)),
+      );
+      this.acceptedSignal.set([...next, ...accepted]);
+    }
+    // Remove settled entries whose value still equals the submitted value (patterns 160-161).
+    const remaining = this.entriesSignal().filter((entry) => {
+      const key = keyOf(entry);
+      if (!settled.has(key)) return true;
+      const edit = edits.get(key);
+      if (!edit) return false;
+      return !(entry.mode === edit.mode && entry.value === (edit.value ?? ''));
+    });
+    if (remaining.length !== this.entriesSignal().length) {
+      this.entriesSignal.set(remaining);
+      this.persist();
+    }
+  }
+
+  private acceptedEntry(
+    edit: DeviceUpdateEdit | undefined,
+    target: DeviceUpdateTarget | null,
+    displayId: string,
+  ): DeviceGridAcceptedEntry {
+    const mode = edit?.mode ?? 'replace';
+    const value =
+      mode === 'clear' ? '' : (edit?.value ?? target?.approvedValue ?? '');
+    return {
+      deviceId: target?.deviceId ?? edit!.deviceId,
+      field: target?.field ?? edit!.field,
+      mode,
+      value,
+      displayId,
+    };
   }
 
   /** Keep current value removes the pending change. */
