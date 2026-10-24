@@ -94,6 +94,8 @@ const load = async () => {
   );
   return {
     DeviceUpdates: updates.DeviceUpdates,
+    manifestDigest: updates.manifestDigest,
+    targetDocument: updates.targetDocument,
     selectionStorageKey: selection.selectionStorageKey,
     requireDeviceUpdateActions: actions.requireDeviceUpdateActions,
     authorizeAction: authorize.authorizeAction,
@@ -123,6 +125,8 @@ export async function qualifyDeviceUpdates({
   const failures = [];
   const {
     DeviceUpdates,
+    manifestDigest,
+    targetDocument,
     selectionStorageKey,
     requireDeviceUpdateActions,
     authorizeAction,
@@ -351,6 +355,10 @@ export async function qualifyDeviceUpdates({
     ]);
     await migrator.query(
       "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'b3-%'",
+      [customer],
+    );
+    await migrator.query(
+      "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'ib4-%'",
       [customer],
     );
     if (createdArtifacts.size)
@@ -2414,6 +2422,369 @@ export async function qualifyDeviceUpdates({
           )
         ).rows[0].job_id;
         assert.equal(job, null, 'The refused confirmation creates no job.');
+      },
+    );
+
+    // IB4 (addendum section 2): an edit list freezes a value per device, and confirmation copies
+    // each row's own request and baseline into the operation field rows.
+    const insertEditDevice = async (
+      id,
+      { location = null, user = null, notes = null, tag = `AT-${id}` } = {},
+    ) =>
+      await migrator.query(
+        `INSERT INTO cc.devices(customer_id,device_id,serial_number,model,asset_tag,org_unit_path,
+           annotated_location,annotated_user,notes,status,last_entity_sync,removed_at)
+         VALUES($1,$2,$3,'IB4 model',$4,'/IB4 School',$5,$6,$7,'ACTIVE',clock_timestamp(),NULL)
+         ON CONFLICT(customer_id,device_id) DO UPDATE SET annotated_location=EXCLUDED.annotated_location,
+           annotated_user=EXCLUDED.annotated_user,notes=EXCLUDED.notes,asset_tag=EXCLUDED.asset_tag,
+           removed_at=NULL,last_entity_sync=clock_timestamp()`,
+        [customer, id, `SN-${id}`, tag, location, user, notes],
+      );
+    const editTarget = (ordinal, deviceId, fields) => ({
+      ordinal,
+      deviceId,
+      serialNumber: `SN-${deviceId}`,
+      orgUnitPath: '/IB4 School',
+      observedAt: null,
+      disposition: fields.some((field) => field.disposition === 'conflict')
+        ? 'conflict'
+        : fields.some((field) => field.disposition === 'eligible')
+          ? 'eligible'
+          : 'unchanged',
+      exclusionReason: null,
+      fields,
+    });
+    const editRow = (
+      field,
+      requestedValue,
+      observedValue,
+      baselineValue,
+      disposition = 'eligible',
+    ) => ({
+      field,
+      requestedValue,
+      observedValue,
+      baselineValue,
+      disposition,
+    });
+    const createEditPreview = async (targets) => {
+      const digest = manifestDigest(targets);
+      const result = (
+        await database.connection.query(
+          `SELECT cc.create_device_update_preview($1::uuid,$2::integer,$3::text,$4::integer,
+            $5::text,$6::jsonb,$7::text,$8::jsonb,$9::integer) AS result`,
+          [
+            session.identity.id,
+            session.identity.permissionVersion,
+            customer,
+            generation,
+            'annotated-location',
+            null,
+            digest,
+            JSON.stringify(targetDocument(targets)),
+            // The preview lifetime that the API requests (15 minutes).
+            15,
+          ],
+        )
+      ).rows[0].result;
+      return { result, digest };
+    };
+    const storedPreview = async (previewId) =>
+      (
+        await migrator.query(
+          'SELECT * FROM cc.device_update_previews WHERE preview_id=$1',
+          [previewId],
+        )
+      ).rows[0];
+
+    await check(
+      'IB4 an edit list freezes a request and a baseline per device and row',
+      async () => {
+        await insertEditDevice('ib4-a', { location: 'Old A' });
+        await insertEditDevice('ib4-b', { location: 'Old B', tag: 'IB4-OLD' });
+        const targets = [
+          editTarget(0, 'ib4-a', [
+            editRow('annotatedLocation', 'Room A', 'Old A', 'Old A'),
+            editRow('notes', 'Note A', null, null),
+          ]),
+          editTarget(1, 'ib4-b', [
+            editRow('annotatedAssetId', 'IB4-TAG-B', 'IB4-OLD', 'IB4-OLD'),
+            editRow('annotatedLocation', 'Room B', 'Old B', 'Old B'),
+          ]),
+        ];
+        const { result, digest } = await createEditPreview(targets);
+        assert.equal(result.outcome, 'created');
+        const preview = await storedPreview(result.preview.preview_id);
+        assert.equal(
+          preview.action_version,
+          3,
+          'An update preview runs version 3.',
+        );
+        assert.equal(preview.selected, 2);
+        assert.equal(preview.eligible, 2);
+        assert.equal(preview.conflicts, 0);
+        assert.equal(
+          preview.field_changes,
+          4,
+          'The count covers eligible rows.',
+        );
+        assert.equal(
+          preview.manifest_digest,
+          digest,
+          'The preview freezes the digest of its rows.',
+        );
+        assert.equal(
+          (
+            await migrator.query(
+              'SELECT count(*)::integer AS count FROM cc.device_update_changes WHERE preview_id=$1',
+              [preview.preview_id],
+            )
+          ).rows[0].count,
+          0,
+          'An edit list stores no selection change row.',
+        );
+        const rows = (
+          await migrator.query(
+            `SELECT t.device_id,f.field,f.requested_value,f.observed_value,f.baseline_value,f.disposition
+             FROM cc.device_update_target_fields f
+             JOIN cc.device_update_preview_targets t
+               ON t.preview_id=f.preview_id AND t.ordinal=f.ordinal
+             WHERE f.preview_id=$1
+             ORDER BY t.ordinal,array_position(ARRAY['annotatedLocation','annotatedAssetId',
+               'annotatedUser','notes','orgUnitPath']::text[],f.field)`,
+            [preview.preview_id],
+          )
+        ).rows;
+        assert.deepEqual(rows, [
+          {
+            device_id: 'ib4-a',
+            field: 'annotatedLocation',
+            requested_value: 'Room A',
+            observed_value: 'Old A',
+            baseline_value: 'Old A',
+            disposition: 'eligible',
+          },
+          {
+            device_id: 'ib4-a',
+            field: 'notes',
+            requested_value: 'Note A',
+            observed_value: null,
+            baseline_value: null,
+            disposition: 'eligible',
+          },
+          {
+            device_id: 'ib4-b',
+            field: 'annotatedLocation',
+            requested_value: 'Room B',
+            observed_value: 'Old B',
+            baseline_value: 'Old B',
+            disposition: 'eligible',
+          },
+          {
+            device_id: 'ib4-b',
+            field: 'annotatedAssetId',
+            requested_value: 'IB4-TAG-B',
+            observed_value: 'IB4-OLD',
+            baseline_value: 'IB4-OLD',
+            disposition: 'eligible',
+          },
+        ]);
+        // The manifest adds the field rows and their values to every target.
+        const manifest = (
+          await database.connection.query(
+            'SELECT cc.read_device_update_preview_manifest($1::uuid,$2::integer,$3::text,$4::uuid) AS result',
+            [
+              session.identity.id,
+              session.identity.permissionVersion,
+              customer,
+              preview.preview_id,
+            ],
+          )
+        ).rows[0].result;
+        assert.equal(manifest.outcome, 'manifest');
+        assert.equal(manifest.manifest.preview.conflicts, 0);
+        assert.deepEqual(manifest.manifest.targets[0].fields, [
+          {
+            field: 'annotatedLocation',
+            requestedValue: 'Room A',
+            observedValue: 'Old A',
+            baselineValue: 'Old A',
+            disposition: 'eligible',
+          },
+          {
+            field: 'notes',
+            requestedValue: 'Note A',
+            observedValue: null,
+            baselineValue: null,
+            disposition: 'eligible',
+          },
+        ]);
+        const confirmed = await updates.confirm(
+          session,
+          current,
+          preview.preview_id,
+          {
+            manifestDigest: digest,
+            acknowledged: true,
+          },
+        );
+        assert.equal(confirmed.existing, false);
+        assert.equal(confirmed.receipt.deviceCount, 2);
+        const fields = (
+          await migrator.query(
+            `SELECT o.device_id,o.operation_number,f.field,f.requested_value,f.baseline_value
+             FROM cc.device_update_operation_fields f
+             JOIN cc.device_update_operations o
+               ON o.job_id=f.job_id AND o.operation_number=f.operation_number
+             WHERE f.job_id=$1
+             ORDER BY o.operation_number,array_position(ARRAY['annotatedLocation','annotatedAssetId',
+               'annotatedUser','notes','orgUnitPath']::text[],f.field)`,
+            [confirmed.receipt.jobId],
+          )
+        ).rows;
+        assert.deepEqual(fields, [
+          {
+            device_id: 'ib4-a',
+            operation_number: 1,
+            field: 'annotatedLocation',
+            requested_value: 'Room A',
+            baseline_value: 'Old A',
+          },
+          {
+            device_id: 'ib4-a',
+            operation_number: 1,
+            field: 'notes',
+            requested_value: 'Note A',
+            baseline_value: null,
+          },
+          {
+            device_id: 'ib4-b',
+            operation_number: 2,
+            field: 'annotatedLocation',
+            requested_value: 'Room B',
+            baseline_value: 'Old B',
+          },
+          {
+            device_id: 'ib4-b',
+            operation_number: 2,
+            field: 'annotatedAssetId',
+            requested_value: 'IB4-TAG-B',
+            baseline_value: 'IB4-OLD',
+          },
+        ]);
+      },
+    );
+
+    await check(
+      'IB4 a conflict preview answers preview-conflict and creates no job',
+      async () => {
+        await insertEditDevice('ib4-c', { location: 'Old C' });
+        const targets = [
+          editTarget(0, 'ib4-c', [
+            // Google holds a value that differs from both the baseline and the request.
+            editRow(
+              'annotatedLocation',
+              'Room C',
+              'Someone else',
+              'Old C',
+              'conflict',
+            ),
+          ]),
+        ];
+        const { result, digest } = await createEditPreview(targets);
+        assert.equal(result.outcome, 'created');
+        const preview = await storedPreview(result.preview.preview_id);
+        assert.equal(preview.conflicts, 1);
+        assert.equal(preview.eligible, 0);
+        assert.equal(preview.selected, 1);
+        // The manifest answers the conflict before the route stores an artifact.
+        const manifest = (
+          await database.connection.query(
+            'SELECT cc.read_device_update_preview_manifest($1::uuid,$2::integer,$3::text,$4::uuid) AS result',
+            [
+              session.identity.id,
+              session.identity.permissionVersion,
+              customer,
+              preview.preview_id,
+            ],
+          )
+        ).rows[0].result;
+        assert.deepEqual(manifest, { outcome: 'preview-conflict' });
+        const recorder = recordingStorage();
+        await rejects(
+          new DeviceUpdates(database, cache, recorder.storage).confirm(
+            session,
+            current,
+            preview.preview_id,
+            { manifestDigest: digest, acknowledged: true },
+          ),
+          'preview-conflict',
+          409,
+        );
+        const after = await storedPreview(preview.preview_id);
+        assert.equal(after.job_id, null, 'A conflict preview creates no job.');
+        assert.equal(
+          (
+            await migrator.query(
+              `SELECT count(*)::integer AS count FROM cc.jobs j
+               JOIN cc.device_update_previews p ON p.job_id=j.job_id
+               WHERE p.preview_id=$1`,
+              [preview.preview_id],
+            )
+          ).rows[0].count,
+          0,
+        );
+        assert.equal(
+          recorder.stored.length,
+          0,
+          'A conflict preview stores no artifact.',
+        );
+      },
+    );
+
+    await check(
+      'IB4 a version two preview answers 409 preview-changed',
+      async () => {
+        await insertEditDevice('ib4-d', { location: 'Old D' });
+        const targets = [
+          editTarget(0, 'ib4-d', [
+            editRow('annotatedLocation', 'Room D', 'Old D', 'Old D'),
+          ]),
+        ];
+        const { result, digest } = await createEditPreview(targets);
+        const preview = await storedPreview(result.preview.preview_id);
+        await migrator.query(
+          'UPDATE cc.device_update_previews SET action_version=2 WHERE preview_id=$1',
+          [preview.preview_id],
+        );
+        try {
+          const recorder = recordingStorage();
+          await rejects(
+            new DeviceUpdates(database, cache, recorder.storage).confirm(
+              session,
+              current,
+              preview.preview_id,
+              { manifestDigest: digest, acknowledged: true },
+            ),
+            'preview-changed',
+            409,
+          );
+          assert.equal(
+            recorder.stored.length,
+            0,
+            'A version two preview stores no artifact.',
+          );
+          assert.equal(
+            (await storedPreview(preview.preview_id)).job_id,
+            null,
+            'A version two preview creates no job.',
+          );
+        } finally {
+          await migrator.query(
+            'UPDATE cc.device_update_previews SET action_version=3 WHERE preview_id=$1',
+            [preview.preview_id],
+          );
+        }
       },
     );
   } finally {
