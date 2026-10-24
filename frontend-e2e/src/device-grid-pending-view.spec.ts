@@ -908,7 +908,12 @@ test('keeps the original sort priority across navigation from the pending view',
   ).toHaveAttribute('aria-sort', 'ascending');
 
   await page.getByRole('link', { name: 'Jobs' }).click();
-  await expect(page.getByRole('link', { name: 'Devices' })).toBeVisible();
+  // Wait for the Jobs page before returning. The nav link is visible everywhere, so a
+  // click on it can race the navigation and leave the Devices view (and its pending view)
+  // in place.
+  await expect(
+    page.getByRole('heading', { name: 'Jobs', exact: true }),
+  ).toBeVisible();
   await page.getByRole('link', { name: 'Devices' }).click();
   await expect(
     page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
