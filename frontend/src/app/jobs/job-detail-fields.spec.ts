@@ -722,10 +722,25 @@ describe('job detail fields', () => {
 
   it('labels every writable field and a row without one', () => {
     expect(fieldLabel('annotatedLocation')).toBe('Annotated location');
+    expect(fieldLabel('annotatedAssetId')).toBe('Asset tag');
     expect(fieldLabel('annotatedUser')).toBe('Annotated user');
     expect(fieldLabel('notes')).toBe('Notes');
     expect(fieldLabel('orgUnitPath')).toBe('Organization unit');
     expect(fieldLabel(null)).toBe('—');
+  });
+
+  it('names an Asset tag row under the Operation cell', () => {
+    // The addendum adds annotatedAssetId, and a row names the field label (IF5).
+    const assetTag = operation({
+      operationId: 'UPD-008-1-annotatedAssetId',
+      field: 'annotatedAssetId',
+      operation: 'replace',
+      baselineValue: null,
+      requestedValue: 'CB415508',
+    });
+    expect(operationLabel(assetTag)).toBe('Asset tag');
+    expect(beforeText(assetTag)).toBe('Not set');
+    expect(requestedText(assetTag)).toBe('CB415508');
   });
 
   it('names Organization unit and shows both paths of a Move row', () => {
@@ -942,6 +957,23 @@ describe('job detail fields', () => {
     ).toEqual([]);
   });
 
+  it('names the update failure for an edit-list job without shared changes', () => {
+    // An edit-list job answers `changes: null`, and its rows still hold the requested and
+    // observed values per device and field. The row names the app outcome (IF5).
+    const editList = job({ changes: null });
+    expect(
+      rowFailureText(
+        editList,
+        operation({
+          outcome: 'failed',
+          outcomeReason: 'value-differs',
+          googleStatus: 200,
+          googleReason: 'Google text',
+        }),
+      ),
+    ).toBe('C0A1-7F84 does not hold the requested value.');
+  });
+
   it('names a cancelled command under its failed row', () => {
     const cancelled = operation({
       field: null,
@@ -950,7 +982,7 @@ describe('job detail fields', () => {
       outcomeReason: 'command-cancelled',
       googleReason: null,
     });
-    expect(rowFailureText({ changes: null }, cancelled)).toBe(
+    expect(rowFailureText({ action: 'powerwash-devices' }, cancelled)).toBe(
       'Google cancelled the command.',
     );
   });
@@ -1231,5 +1263,46 @@ describe('job detail fields', () => {
         hasNext: false,
       }),
     ).toBe('Rows 1–6 of 6 operations');
+  });
+
+  it('omits the row total of an edit-list update job', () => {
+    // An edit list holds its own fields per device, so the header cannot count the rows.
+    const editList = job({ changes: null });
+    expect(
+      operationsFooter(editList, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 3,
+        hasNext: false,
+      }),
+    ).toBe('Rows 1–3');
+    expect(
+      operationsFooter(editList, {
+        attention: true,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 2,
+        hasNext: false,
+      }),
+    ).toBe('Rows 1–2 matching operations');
+    expect(
+      operationsFooter(editList, {
+        attention: false,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 0,
+        hasNext: false,
+      }),
+    ).toBe('0 operations');
+    expect(
+      operationsFooter(editList, {
+        attention: true,
+        pageIndex: 0,
+        pageSize: 6,
+        shown: 0,
+        hasNext: false,
+      }),
+    ).toBe('0 matching operations');
   });
 });
