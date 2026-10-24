@@ -848,6 +848,28 @@ export function gridReviewNote(preview: DeviceUpdatePreview): string {
   return `${parts.join(' ')} Resolve the marked cells in the grid, then save the changes again.`;
 }
 
+/**
+ * Why Continue stays disabled on the Review step of a single-device save (addendum section
+ * 8). The sheet returns to Edit, where the person chooses a value that is current now.
+ */
+export function singleDeviceReviewNote(preview: DeviceUpdatePreview): string {
+  const parts: string[] = [];
+  if (preview.conflicts > 0)
+    parts.push(
+      `${preview.conflicts.toLocaleString('en-US')} ${
+        preview.conflicts === 1 ? 'conflict' : 'conflicts'
+      }. A value changed in Google after you opened this sheet.`,
+    );
+  if (preview.excluded > 0)
+    parts.push(
+      `${preview.excluded.toLocaleString('en-US')} excluded ${
+        preview.excluded === 1 ? 'device' : 'devices'
+      } cannot be updated.`,
+    );
+  if (!parts.length) return '';
+  return `${parts.join(' ')} Edit the draft and prepare a new preview.`;
+}
+
 /** One page of targets, or the answer that stopped the read. */
 export type FlowRead<T> =
   | { ok: true; value: T }

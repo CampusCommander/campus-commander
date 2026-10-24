@@ -13,6 +13,7 @@ import {
   deviceUpdateValueCounter,
   deviceUpdateValueError,
   deviceUpdateValueHint,
+  detailUpdateNote,
   updateDeviceNote,
   updateDeviceOrgUnitNote,
   type UpdateDeviceAvailability,
@@ -260,5 +261,47 @@ describe('draft copy', () => {
         '',
       ),
     ).toBeNull();
+  });
+});
+
+describe('detailUpdateNote', () => {
+  const detail = {
+    offline: false,
+    permissionsKnown: true,
+    canRead: true,
+    canWrite: true,
+    canBulk: true,
+  };
+
+  it('enables Update device when the device is online and the person holds the three actions', () => {
+    expect(detailUpdateNote(detail)).toBeNull();
+  });
+
+  it('waits for the customer scope before it claims a denial', () => {
+    expect(detailUpdateNote({ ...detail, permissionsKnown: false })).toEqual({
+      text: 'Checking your device permissions…',
+      actions: [],
+      error: false,
+    });
+  });
+
+  it('names the offline state first', () => {
+    expect(
+      detailUpdateNote({ ...detail, offline: true, permissionsKnown: false }),
+    ).toEqual({
+      text: 'Update device is unavailable while you are offline.',
+      actions: [],
+      error: false,
+    });
+  });
+
+  it('names the three required permissions for each missing action', () => {
+    for (const missing of ['canRead', 'canWrite', 'canBulk'] as const) {
+      expect(detailUpdateNote({ ...detail, [missing]: false })).toEqual({
+        text: DEVICE_UPDATE_PERMISSION_MESSAGE,
+        actions: [],
+        error: false,
+      });
+    }
   });
 });

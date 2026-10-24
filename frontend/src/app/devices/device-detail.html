@@ -24,6 +24,16 @@
   <div class="actions">
     <a mat-stroked-button routerLink="/devices">Back to devices</a>
     <button
+      #updateDevice
+      mat-flat-button
+      type="button"
+      [disabled]="!!updateNote()"
+      [attr.aria-describedby]="updateNote() ? 'update-device-note' : null"
+      (click)="openSheet()"
+    >
+      Update device
+    </button>
+    <button
       mat-stroked-button
       type="button"
       [disabled]="!hasNext()"
@@ -32,6 +42,9 @@
       Next device
     </button>
   </div>
+  @if (updateNote(); as note) {
+  <p id="update-device-note" class="update-note">{{ note.text }}</p>
+  }
   <div class="detail-layout">
     <section class="card" aria-labelledby="device-identity-title">
       <h2 id="device-identity-title">{{ identity(current) }}</h2>
@@ -109,5 +122,13 @@
       } }
     </section>
   </div>
-  } } }
+  } } } @if (device(); as current) {
+  <app-device-update-sheet
+    [open]="sheetOpen()"
+    source="device"
+    [device]="current"
+    (closed)="closeSheet()"
+    (deviceReload)="reloadAfterUpdate()"
+  />
+  }
 </div>

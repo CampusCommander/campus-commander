@@ -1,37 +1,71 @@
 import {
   Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   effect,
   inject,
   input,
   signal,
   untracked,
+  viewChild,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import type {
+  Action,
   DeviceBattery,
   DeviceDetail,
 } from '@campus/application-contracts';
+import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
+import { DeviceUpdateSheet } from './device-update-sheet';
+import { detailUpdateNote } from './device-update-messages';
 import { batteryText, relativeTime } from './device-fields';
 
 @Component({
   selector: 'app-device-detail',
-  imports: [DatePipe, RouterLink, MatButtonModule],
+  imports: [DatePipe, RouterLink, MatButtonModule, DeviceUpdateSheet],
   templateUrl: './device-detail.html',
   styleUrl: './device-detail.css',
 })
 export class DeviceDetailPage {
   readonly deviceId = input.required<string>();
   protected readonly store = inject(DevicesStore);
+  protected readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
   protected readonly device = signal<DeviceDetail | null>(null);
+  /** The one-device Update device sheet (addendum section 8). */
+  protected readonly sheetOpen = signal(false);
+  private readonly updateButton = viewChild('updateDevice', {
+    read: ElementRef,
+  });
   protected readonly status = signal<
     'loading' | 'ready' | 'missing' | 'offline'
   >('loading');
   protected readonly busy = signal(false);
+  /** The three actions of Update device (`docs/ui/rules.md:73`). */
+  protected readonly canRead = computed(() => this.authorized('devices:read'));
+  protected readonly canWrite = computed(() =>
+    this.authorized('devices:write'),
+  );
+  protected readonly canBulk = computed(() =>
+    this.authorized('devices:bulk-actions'),
+  );
+  /** The reason that Update device is disabled, or null when it is enabled. */
+  protected readonly updateNote = computed(() =>
+    detailUpdateNote({
+      offline: this.store.offline(),
+      // The sync read supplies the customer scope that a grant names.
+      permissionsKnown: !!this.store.sync(),
+      canRead: this.canRead(),
+      canWrite: this.canWrite(),
+      canBulk: this.canBulk(),
+    }),
+  );
   protected readonly hasNext = computed(() => {
     const position = this.store.position();
     const page = this.store.page();
@@ -53,7 +87,30 @@ export class DeviceDetailPage {
     });
   }
 
+  /** Device details opens the sheet for the device that the page shows. */
+  protected openSheet(): void {
+    if (this.updateNote()) return;
+    this.sheetOpen.set(true);
+  }
+
+  /** Closing returns focus to the button that opened the sheet. */
+  protected closeSheet(): void {
+    this.sheetOpen.set(false);
+    afterNextRender(() => this.updateButton()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  /** The receipt's Back to device reads the device again (Figma 116:299). */
+  protected reloadAfterUpdate(): void {
+    void this.load(this.deviceId());
+  }
+
   private async load(id: string): Promise<void> {
+    // The sheet belongs to the device that opened it (addendum section 8).
+    this.sheetOpen.set(false);
+    // A direct link opens without the Devices page, so the permission scope reads here.
+    if (!this.store.sync()) void this.store.loadSync();
     // Keep the current device visible while the next one loads, so focus stays on Next device.
     if (!this.device()) this.status.set('loading');
     this.busy.set(true);
@@ -81,6 +138,14 @@ export class DeviceDetailPage {
       deviceId: row.deviceId,
     });
     await this.router.navigate(['/devices', row.deviceId]);
+  }
+
+  /** One permission for the connected customer, as the Devices page reads it. */
+  private authorized(action: Action): boolean {
+    const customerId = this.store.sync()?.customerId;
+    return (
+      !!customerId && this.auth.can(action, { kind: 'district', customerId })
+    );
   }
 
   protected identity(device: DeviceDetail): string {

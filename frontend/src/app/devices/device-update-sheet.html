@@ -133,6 +133,16 @@
         </button>
       </div>
     </section>
+    } @else if (deviceSource() && !device()) {
+    <section aria-labelledby="missing-device-title">
+      <h2 id="missing-device-title">The device is unavailable</h2>
+      <p>Return to Devices and open the device again.</p>
+      <div class="inline-actions">
+        <button mat-flat-button type="button" (click)="close()">
+          Return to devices
+        </button>
+      </div>
+    </section>
     } @else if ((count() ?? 0) === 0) {
     <section aria-labelledby="no-selection-title">
       <h2 id="no-selection-title">No devices are selected</h2>
@@ -154,23 +164,25 @@
       </p>
 
       <form (ngSubmit)="prepare()">
-        @for (field of fields; track field.id) {
+        @for (field of fields(); track field.id) {
         <div class="field-block" [attr.data-field]="field.id">
           <mat-form-field appearance="outline" subscriptSizing="dynamic">
             <mat-label>{{ field.label }}</mat-label>
             <mat-select
-              [value]="draft.modeOf(field.id)"
+              [value]="draftMode(field.id)"
               (selectionChange)="setMode(field.id, $event.value)"
             >
               <mat-option value="unchanged">Leave unchanged</mat-option>
               <mat-option value="replace"
                 >Update · Replace the existing value</mat-option
               >
+              @if (field.id !== 'annotatedAssetId') {
               <mat-option value="clear">Clear value</mat-option>
+              }
             </mat-select>
           </mat-form-field>
 
-          @if (draft.modeOf(field.id) === 'replace') {
+          @if (draftMode(field.id) === 'replace') {
           <mat-form-field appearance="outline" subscriptSizing="dynamic">
             <mat-label>New value</mat-label>
             @if (field.multiline) {
@@ -180,7 +192,7 @@
               cdkTextareaAutosize
               [cdkAutosizeMinRows]="1"
               [errorStateMatcher]="valueErrorMatcher(field.id)"
-              [ngModel]="draft.valueOf(field.id)"
+              [ngModel]="draftValue(field.id)"
               [ngModelOptions]="{ standalone: true }"
               (ngModelChange)="setValue(field.id, $event)"
               (blur)="markBlurred(field.id)"
@@ -192,7 +204,7 @@
               matInput
               autocomplete="off"
               [errorStateMatcher]="valueErrorMatcher(field.id)"
-              [ngModel]="draft.valueOf(field.id)"
+              [ngModel]="draftValue(field.id)"
               [ngModelOptions]="{ standalone: true }"
               (ngModelChange)="setValue(field.id, $event)"
               (blur)="markBlurred(field.id)"
@@ -219,7 +231,7 @@
             <mat-label>Organization unit</mat-label>
             <mat-select
               #orgUnitSelect
-              [value]="draft.modeOf('orgUnitPath')"
+              [value]="draftMode('orgUnitPath')"
               [disabled]="orgUnitDisabled()"
               [attr.aria-describedby]="orgUnitNote() ? 'orgUnitPath-note' : null"
               (selectionChange)="chooseOrgUnitMode($event.value)"
@@ -229,8 +241,8 @@
             </mat-select>
           </mat-form-field>
 
-          @if (draft.modeOf('orgUnitPath') === 'move' &&
-          draft.valueOf('orgUnitPath')) {
+          @if (draftMode('orgUnitPath') === 'move' && draftValue('orgUnitPath'))
+          {
           <mat-form-field appearance="outline" subscriptSizing="dynamic">
             <mat-label>Destination</mat-label>
             <textarea
@@ -239,7 +251,7 @@
               cdkTextareaAutosize
               [cdkAutosizeMinRows]="1"
               readonly
-              [value]="draft.valueOf('orgUnitPath')"
+              [value]="draftValue('orgUnitPath')"
             ></textarea>
             <button
               #destinationPicker
@@ -295,8 +307,8 @@
           To remove an annotation, choose Clear value explicitly.
         </p>
 
-        @if (draft.storageError()) {
-        <p class="error" role="alert">{{ draft.storageError() }}</p>
+        @if (storageError()) {
+        <p class="error" role="alert">{{ storageError() }}</p>
         } @if (saveError()) {
         <p class="error" role="alert">{{ saveError() }}</p>
         }
@@ -328,10 +340,10 @@
     <p class="stale" role="status">{{ staleNote() }}</p>
     } @if (selectionChanged()) {
     <p class="notice" role="status">{{ SELECTION_CHANGED_NOTE }}</p>
-    } @if (gridNote()) {
-    <p class="stale" role="status">{{ gridNote() }}</p>
-    } @if (unchangedGridNote()) {
-    <p class="note" role="status">{{ unchangedGridNote() }}</p>
+    } @if (reviewNote()) {
+    <p class="stale" role="status">{{ reviewNote() }}</p>
+    } @if (unchangedNote()) {
+    <p class="note" role="status">{{ unchangedNote() }}</p>
     } @for (line of duplicates(); track $index) {
     <p class="note" role="status">{{ line }}</p>
     }
@@ -380,9 +392,7 @@
               [class.approved]="target.disposition === 'eligible'"
               [class.not-updated]="target.disposition === 'excluded'"
             >
-              <app-device-path-text
-                [text]="approved(target, modeOf(target.field))"
-              />
+              <app-device-path-text [text]="approved(target, modeOf(target))" />
               @if (note(target)) {
               <span class="line">{{ note(target) }}</span>
               }
@@ -397,7 +407,7 @@
     <p class="empty" role="status">
       No frozen targets were returned for this preview.
     </p>
-    } @if (activePreview.eligible === 0 && source() !== 'grid') {
+    } @if (activePreview.eligible === 0 && source() === 'selection') {
     <p class="note">
       No device needs this change. Edit the draft to choose a different value.
     </p>
@@ -489,6 +499,7 @@
     >
       {{ saving() ? 'Preparing preview…' : 'Save and preview' }}
     </button>
+    @if (!deviceSource()) {
     <button
       mat-button
       type="button"
@@ -497,10 +508,11 @@
     >
       Review pending devices
     </button>
+    }
     <button
       mat-button
       type="button"
-      [disabled]="saving() || !draft.changed()"
+      [disabled]="saving() || !canReset()"
       (click)="reset()"
     >
       Reset
@@ -547,7 +559,13 @@
   } @else if (step() === 'done' && status() === 'ready' && !problem()) {
   <div class="sheet-foot">
     <button mat-flat-button type="button" (click)="viewJob()">View job</button>
+    @if (deviceSource()) {
+    <button mat-button type="button" (click)="backToDevice()">
+      Back to device
+    </button>
+    } @else {
     <button mat-button type="button" (click)="close()">Done</button>
+    }
   </div>
   }
 </section>
@@ -557,7 +575,7 @@
   [open]="pickerOpen()"
   [units]="orgUnitUnits()"
   [deviceCount]="count() ?? 0"
-  [selectedId]="draft.orgUnitId()"
+  [selectedId]="orgUnitId()"
   (chosen)="chooseOrgUnit($event)"
   (cancelled)="cancelPicker()"
 />

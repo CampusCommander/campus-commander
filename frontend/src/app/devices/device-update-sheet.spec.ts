@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
+  DeviceDetail,
   DeviceRow,
   DeviceSelectionSpec,
   DeviceUpdateField,
@@ -14,7 +15,10 @@ import type {
 import { AuthStore } from '../auth.store';
 import { DevicesStore } from './devices.store';
 import { DeviceUpdateConfirmationStore } from './device-update-confirmation.store';
-import { DeviceUpdateDraftStore } from './device-update-draft.store';
+import {
+  DeviceSingleUpdateDraftStore,
+  DeviceUpdateDraftStore,
+} from './device-update-draft.store';
 import { DeviceGridDraftStore } from './device-grid-draft.store';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import {
@@ -59,6 +63,52 @@ const preview: DeviceUpdatePreview = {
 };
 
 const previewReadPath = `/api/devices/updates/previews/${previewId}`;
+
+/** The device that device details shows (addendum section 8). */
+function deviceDetail(extra: Partial<DeviceDetail> = {}): DeviceDetail {
+  return {
+    deviceId: 'synthetic-device-1',
+    serialNumber: 'C0A1-0001',
+    model: 'Lenovo 100e Gen 4',
+    assetTag: 'HS-0401',
+    orgUnitPath: '/School A',
+    lastContact: '2026-10-05T11:58:00.000Z',
+    annotatedLocation: 'Science wing',
+    annotatedUser: 'maya.chen@example.org',
+    notes: 'Cart 7 loaner pool',
+    status: 'ACTIVE',
+    battery: { status: 'no-report' },
+    lastEntitySync: '2026-10-05T14:00:00.000Z',
+    stale: false,
+    removedAt: null,
+    batteryReports: [],
+    ...extra,
+  };
+}
+
+/** The preview that the edit route answers for the one-device Asset tag change. */
+const devicePreview: DeviceUpdatePreview = {
+  ...preview,
+  // An edit-list preview answers no changes: each frozen target carries its own request.
+  changes: null,
+  fieldChanges: 1,
+  selected: 1,
+  eligible: 1,
+};
+
+const deviceTargets: DeviceUpdateTarget[] = [
+  {
+    deviceId: 'synthetic-device-1',
+    serialNumber: 'C0A1-0001',
+    field: 'annotatedAssetId',
+    observedValue: 'HS-0401',
+    baselineValue: 'HS-0401',
+    approvedValue: 'HS-0402',
+    duplicateSerialNumber: null,
+    disposition: 'eligible',
+    exclusionReason: null,
+  },
+];
 
 /** The organization unit tree of the granted read (design section 6). */
 const orgUnitTree = {
@@ -260,7 +310,9 @@ interface SetupOptions {
   request?: RequestHandler;
   open?: boolean;
   /** The draft that the sheet prepares. The grid source opens at its edit-list preview. */
-  source?: 'selection' | 'grid';
+  source?: 'selection' | 'grid' | 'device';
+  /** The device that device details supplies to the device source. */
+  device?: DeviceDetail;
   /** Stage grid entries after the test bed exists and before the sheet opens. */
   stage?: (grid: DeviceGridDraftStore) => void;
 }
@@ -293,12 +345,19 @@ async function setup(options: SetupOptions = {}) {
       if (options.request) return options.request(path, body);
       if (path === '/api/devices/updates/org-units')
         return Response.json(orgUnitTree);
+      if (path === '/api/devices/updates/edit-previews')
+        return Response.json(devicePreview, { status: 201 });
       if (path === '/api/devices/updates/previews')
         return Response.json(preview, { status: 201 });
       if (path === `/api/devices/updates/previews/${previewId}`)
-        return Response.json(preview);
+        return Response.json(
+          options.source === 'device' ? devicePreview : preview,
+        );
       if (path.includes('/targets'))
-        return Response.json({ targets, nextCursor: null });
+        return Response.json({
+          targets: options.source === 'device' ? deviceTargets : targets,
+          nextCursor: null,
+        });
       if (path.endsWith('/confirm'))
         return Response.json(receipt, { status: 201 });
       if (path === '/api/jobs/UPD-006') return Response.json(job);
@@ -341,10 +400,13 @@ async function setup(options: SetupOptions = {}) {
   const fixture = TestBed.createComponent(DeviceUpdateSheet);
   if (options.stage) options.stage(TestBed.inject(DeviceGridDraftStore));
   fixture.componentRef.setInput('source', options.source ?? 'selection');
+  if (options.device) fixture.componentRef.setInput('device', options.device);
   fixture.componentRef.setInput('open', options.open ?? true);
   fixture.detectChanges();
   const closed = vi.fn();
   fixture.componentInstance.closed.subscribe(closed);
+  const deviceReload = vi.fn();
+  fixture.componentInstance.deviceReload.subscribe(deviceReload);
   const element: HTMLElement = fixture.nativeElement;
   const settle = async () => {
     fixture.detectChanges();
@@ -404,6 +466,9 @@ async function setup(options: SetupOptions = {}) {
   const orgBlock = () => block('orgUnitPath');
   const orgSelect = () =>
     orgBlock()?.querySelector<HTMLElement>('.mat-mdc-select-trigger') ?? null;
+  /** The mode select of one text or Asset tag field block. */
+  const modeSelect = (field: DeviceUpdateField) =>
+    block(field)?.querySelector<HTMLElement>('.mat-mdc-select-trigger') ?? null;
   const option = (label: string) =>
     [...document.querySelectorAll<HTMLElement>('mat-option')].find(
       (candidate) => candidate.textContent?.trim() === label,
@@ -446,8 +511,10 @@ async function setup(options: SetupOptions = {}) {
     request,
     navigate,
     closed,
+    deviceReload,
     button,
     block,
+    modeSelect,
     input,
     valueInput,
     type,
@@ -467,6 +534,7 @@ async function setup(options: SetupOptions = {}) {
     angularErrors,
     tree: TestBed.inject(DeviceOrgUnitTreeStore),
     draft: TestBed.inject(DeviceUpdateDraftStore),
+    single: TestBed.inject(DeviceSingleUpdateDraftStore),
   };
 }
 
@@ -3263,4 +3331,160 @@ it('a late accepted answer cannot install the previous principal values (B5)', a
     'PERSON-B-GOOGLE-VALUE',
   );
   expect(grid.accepted()).toEqual([]);
+});
+
+// Addendum section 8: the single-device sheet that device details opens.
+describe('device details source', () => {
+  /** Type a value into one field of the single-device draft, as the sheet does. */
+  async function typeDevice(
+    ui: Awaited<ReturnType<typeof setup>>,
+    field: DeviceUpdateField,
+    value: string,
+  ) {
+    if (ui.single.modeOf(field) !== 'replace') {
+      ui.single.setMode(field, 'replace');
+      await ui.settle();
+    }
+    const target = ui.valueInput(field as DeviceUpdateTextField);
+    if (!target) throw new Error(`The ${field} value field is missing.`);
+    target.value = value;
+    target.dispatchEvent(new Event('input'));
+    await ui.settle();
+  }
+
+  it('shows five fields in record order and keeps the bulk-only actions out', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    expect(
+      [...ui.element.querySelectorAll('.field-block')].map((item) =>
+        item.getAttribute('data-field'),
+      ),
+    ).toEqual([
+      'annotatedLocation',
+      'annotatedAssetId',
+      'annotatedUser',
+      'notes',
+      'orgUnitPath',
+    ]);
+    expect(ui.element.querySelector('.summary')?.textContent).toContain(
+      '1 device',
+    );
+    expect(ui.button('Review pending devices')).toBeUndefined();
+    expect(ui.button('Reset')).toBeDefined();
+  });
+
+  it('offers Leave unchanged and Update alone for the Asset tag', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    ui.modeSelect('annotatedAssetId')?.click();
+    await ui.settle();
+    const labels = [
+      ...document.querySelectorAll<HTMLElement>('mat-option'),
+    ].map((item) => item.textContent?.trim());
+    expect(labels).toEqual([
+      'Leave unchanged',
+      'Update · Replace the existing value',
+    ]);
+  });
+
+  it('prepares one edit list for the device and confirms one job', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    await typeDevice(ui, 'annotatedAssetId', 'HS-0402');
+    expect(ui.button('Save and preview')!.disabled).toBe(false);
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    const editCall = ui.request.mock.calls.find(
+      ([path]) => path === '/api/devices/updates/edit-previews',
+    );
+    expect(editCall?.[1]).toEqual({
+      edits: [
+        {
+          deviceId: 'synthetic-device-1',
+          field: 'annotatedAssetId',
+          mode: 'replace',
+          value: 'HS-0402',
+          baselineValue: 'HS-0401',
+        },
+      ],
+    });
+    expect(ui.element.textContent).toContain('HS-0401');
+    expect(ui.element.textContent).toContain('HS-0402');
+
+    ui.button('Continue to confirmation')!.click();
+    await ui.settle();
+    const box = ui.element.querySelector<HTMLInputElement>(
+      'mat-checkbox input[type="checkbox"]',
+    );
+    box!.click();
+    await ui.settle();
+    ui.button('Create update job')!.click();
+    await ui.settle();
+    await ui.settle();
+    expect(ui.request).toHaveBeenCalledWith(
+      expect.stringContaining('/confirm'),
+      expect.objectContaining({
+        manifestDigest: preview.manifestDigest,
+        acknowledged: true,
+      }),
+    );
+    expect(ui.single.changed()).toBe(false);
+  });
+
+  it('reloads device details from the receipt Back to device', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    await typeDevice(ui, 'annotatedLocation', 'North lab');
+    ui.button('Save and preview')!.click();
+    await ui.settle();
+    ui.button('Continue to confirmation')!.click();
+    await ui.settle();
+    ui.element
+      .querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')!
+      .click();
+    await ui.settle();
+    ui.button('Create update job')!.click();
+    await ui.settle();
+    await ui.settle();
+    expect(ui.button('Done')).toBeUndefined();
+    ui.button('Back to device')!.click();
+    await ui.settle();
+    expect(ui.deviceReload).toHaveBeenCalledTimes(1);
+    expect(ui.closed).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a value that the device already holds', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    await typeDevice(ui, 'annotatedLocation', 'Science wing');
+    expect(ui.button('Save and preview')!.disabled).toBe(true);
+    expect(ui.element.textContent).toContain(
+      'Annotated location already holds this value.',
+    );
+  });
+
+  it('starts empty when the sheet opens for another device', async () => {
+    const ui = await setup({ source: 'device', device: deviceDetail() });
+    await typeDevice(ui, 'notes', 'Cart 7');
+    expect(ui.single.changed()).toBe(true);
+    await ui.close();
+    ui.fixture.componentRef.setInput(
+      'device',
+      deviceDetail({
+        deviceId: 'synthetic-device-2',
+        serialNumber: 'C0A1-0002',
+      }),
+    );
+    await ui.open();
+    expect(ui.single.deviceId()).toBe('synthetic-device-2');
+    expect(ui.single.changed()).toBe(false);
+    expect(ui.single.modeOf('notes')).toBe('unchanged');
+  });
+});
+
+it('keeps the draft when the sheet reopens for the same device', async () => {
+  const ui = await setup({ source: 'device', device: deviceDetail() });
+  ui.single.setMode('notes', 'replace');
+  ui.single.setValue('notes', 'Cart 7');
+  await ui.settle();
+  await ui.close();
+  await ui.open();
+  expect(ui.single.deviceId()).toBe('synthetic-device-1');
+  expect(ui.single.modeOf('notes')).toBe('replace');
+  expect(ui.single.valueOf('notes')).toBe('Cart 7');
 });
