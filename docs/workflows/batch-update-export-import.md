@@ -1,6 +1,6 @@
 # Batch update devices through export and import
 
-Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). The record waits for his confirmation.
+Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation. The record waits for his confirmation.
 Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, and 2026-10-26, quoted under [Owner direction](#owner-direction).
 
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain. A mockup comes before the build.
@@ -31,11 +31,11 @@ The existing update and status jobs run the changes. The job pages show each res
 
 - A blank cell keeps the current value. `[clear]` empties Annotated location, Annotated user, or Notes.
 - `[clear]` in Asset tag or Organization unit rejects the row.
-- The Status cell holds the status label. A status code replaces the label to request an action.
-- Status codes: `DISABLE`, `REENABLE`, and `DEPROVISION:<reason code>`.
+- The Status cell holds Google's status value, for example `ACTIVE`. The person changes it to request a status.
+- Status codes: `ACTIVE` re-enables, `DISABLED` disables, and `DEPROVISION:<reason code>` deprovisions.
 - Reason codes: `RETIRING_DEVICE`, `DIFFERENT_MODEL_REPLACEMENT`, `SAME_MODEL_REPLACEMENT`, and `UPGRADE_TRANSFER`.
 - The import sheet lists the codes. The exported file holds no code list.
-- A status label never requests an action.
+- Another Google status value, for example `DEPROVISIONED`, is export-only. It requests nothing.
 
 ### Import and validate
 
@@ -48,6 +48,9 @@ The existing update and status jobs run the changes. The job pages show each res
 - The validation job refreshes device data from Google first. Sync changes refreshes stale devices. Sync all rows refreshes every device.
 - It compares each nonblank cell with the fresh current value, field by field.
 - One invalid cell rejects the whole row.
+- Each Organization unit path must exist in the organization unit tree. A mistyped unit rejects the row before any write.
+- A missing, malformed, or duplicated device ID rejects its row, in both modes.
+- Blank rows count nowhere. Header matching ignores outer spaces and letter case.
 
 ### Review, execute, or cancel
 
@@ -55,10 +58,12 @@ The existing update and status jobs run the changes. The job pages show each res
 - The person downloads the rejected rows to correct them.
 - Execute runs the proposed changes only. Rejected rows never run.
 - When the plan holds a Deprovision, Execute asks for the typed phrase DEPROVISION.
-- Cancel discards the plan. Nothing runs.
+- Cancel discards the plan. Nothing runs. Cancel also stops a running validation, and that job ends Cancelled.
+- With rejected rows and no proposed change, the page shows the rejected rows. A failed import never reads as a success.
 - The plan expires 1 hour after validation completes.
 - Execute creates one update job and one status job per action and reason. The status jobs start after the update job.
 - Each job page shows each result. The grid shows each confirmed value.
+- No result shows success while an operation failed or reads unknown. Every count reads the job's operations.
 
 ## Data and access
 
@@ -72,12 +77,12 @@ The existing update and status jobs run the changes. The job pages show each res
 All scopes use the `https://www.googleapis.com/auth/` prefix.
 The `drive.file` scope joins the DWD install scopes, the delegation link, and the Diagnostics check.
 
-| Action                         | Permissions at district scope                                      |
-| ------------------------------ | ------------------------------------------------------------------ |
-| Export                         | `devices:read`, `devices:bulk-actions`, and a new `devices:export` |
-| Import, review, Execute        | `devices:read`, `devices:write`, and `devices:bulk-actions`        |
-| `DISABLE` and `REENABLE` codes | Add `devices:status`                                               |
-| Deprovision codes              | Add `devices:deprovision`                                          |
+| Action                        | Permissions at district scope                                      |
+| ----------------------------- | ------------------------------------------------------------------ |
+| Export                        | `devices:read`, `devices:bulk-actions`, and a new `devices:export` |
+| Import, review, Execute       | `devices:read`, `devices:write`, and `devices:bulk-actions`        |
+| `ACTIVE` and `DISABLED` codes | Add `devices:status`                                               |
+| Deprovision codes             | Add `devices:deprovision`                                          |
 
 A status code without its permission rejects its row.
 Google writes each device on its own. A failed device keeps its old value. Nothing undoes a device that succeeded.
@@ -116,6 +121,21 @@ The owner supplied the technical design of his earlier implementation of this fe
 
 He directed that Campus Commander adapt the reference design as much as possible. Its design and code contain no name from the reference product. This sentence paraphrases his message, because the message names that product.
 
+### 2026-10-26, main chat: notes on the earlier implementation
+
+The owner supplied notes on how his earlier implementation validates and executes an import, with a list of its defects.
+The notes name the earlier product, so this record paraphrases them.
+The [technical design](../research/batch-update-export-import-technical-design.md#appendix-a-differences-from-the-reference-design) maps each item.
+
+- Status cells accept `ACTIVE`, `DISABLED`, and Deprovision codes. Echoed export-only statuses are skipped.
+- A flag for all file values bypasses the checksum gate.
+- Cancel works during validation and before execution.
+- Execution reuses the ordinary bulk update path, linked to the validation job.
+- The defects: a success message despite refused updates, and Organization unit paths unchecked until execution.
+- More defects: wrong counts and an inert error-log button after a failure.
+- More defects: a validated file that runs twice after a retry.
+- More defects: untrimmed headers, stubbed permission checks, the whole file inside a JSON request body, and a bind-parameter limit.
+
 ### 2026-10-26, main chat: decisions D1 to D4
 
 The eng-lead asked four decisions, each with a recommended option. The owner answered:
@@ -139,7 +159,8 @@ The eng-lead asked four decisions, each with a recommended option. The owner ans
 These defaults are engineering choices for owner review, not owner decisions. Change them when the owner asks.
 The [technical design](../research/batch-update-export-import-technical-design.md#21-owner-decisions-and-engineering-defaults) lists every default. These defaults change visible behavior:
 
-1. One Status column. The export writes the status label. Only a status code requests an action. An untouched label never re-enables a device that another person disabled after the export.
+1. The edit export writes Google's status value. `ACTIVE`, `DISABLED`, and Deprovision codes request a status, as in the reference implementation. Other values are export-only.
+   Under D1, an edited row whose Status still reads `ACTIVE` re-enables a device that another person disabled after the export. The review shows that Re-enable.
 2. Status codes match exactly, in upper case. The reason codes are Google's four accepted reasons without the `DEPROVISION_REASON_` prefix (`libs/application-contracts/src/lib/devices.ts:588-606`).
 3. Execute asks for the typed phrase DEPROVISION when the plan holds a Deprovision, as the Deprovision sheet does (`docs/workflows/wipe-powerwash-deprovision.md:33`).
 4. Fresh means read from Google within 24 hours, the inventory rule (`libs/application-contracts/src/lib/entity-cache.ts:16-19`).
@@ -153,6 +174,10 @@ The [technical design](../research/batch-update-export-import-technical-design.m
 12. `[clear]` rejects the row for Asset tag and Organization unit.
 13. Export and import each hold at most 50,000 rows.
 14. Export needs a new permission, `devices:export`.
+15. Cancel during validation stops the validation job. The jobs contract gains the status Cancelled, for validation jobs only.
+16. Validation reads the organization unit tree from Google once and checks every Organization unit path.
+17. Header matching ignores outer spaces and letter case. Blank rows count nowhere.
+18. The import sheet checks a chosen CSV file for a header row and one data row before the upload.
 
 ## Design
 
@@ -174,6 +199,7 @@ Figma values are examples (`docs/ui/rules.md:91`).
 | `109:250`  | State / import-receipt-4                 | Receipt after Execute                                               |
 | `109:295`  | State / import-result-4                  | Result counts                                                       |
 | `228:5550` | Screen / Jobs / Detail / IMP-004         | Job rows. The built job detail uses the same row model.             |
+| `228:4996` | Screen / Jobs / Detail / IMP-012         | Cancel of a running validation                                      |
 | `104:479`  | State / baseline-expired                 | Becomes the expired plan state                                      |
 | `106:471`  | State / download                         | Rejected rows download                                              |
 | `105:101`  | State / storage                          | Storage unavailable                                                 |
@@ -189,6 +215,7 @@ Design gaps:
 7. No frame shows the Google connection inputs: the Picker API key and the project number. **Open.**
 8. The frames use full pages. The built bulk actions use the side sheet. The mockup places Export and Import in the sheet and the review on the validation job page. **Open.**
 9. The conflict cards and the baseline expiry (`99:145`, `106:514`, `104:479`) contradict D1. **Superseded.** The mockup removes them.
+10. No frame shows Cancel while validation runs. `228:4996` shows Cancel pending work for a queued import. **Open.**
 
 ## Exclusions and open decisions
 
@@ -197,7 +224,7 @@ Excluded from this workflow:
 - Device creation, enrollment, or deletion. An unknown device ID never creates a device.
 - Reboot, Wipe user data, and Powerwash in the file.
 - Re-enable of a deprovisioned device, and the seven Google Deprovision reasons outside the verified four.
-- Row-by-row selection in the review, and job cancellation.
+- Row-by-row selection in the review. Cancellation of export, update, and status jobs.
 - Export sharing with recipients and notification email.
 - Google users, groups, and organizational units. Later phases reuse this design.
 - A new navigation destination.
@@ -213,21 +240,22 @@ Open decisions:
 
 ## Risks
 
-1. Overwrite of a newer value (D1). A candidate row compares every nonblank cell. A value that another person changed after the export returns to the file value. The review shows each change before Execute.
+1. Overwrite of a newer value (D1). A candidate row compares every nonblank cell, Status included. A value that another person changed after the export returns to the file value. An exported `ACTIVE` re-enables a device that someone disabled since. The review shows each change before Execute.
 2. Freshness window. In Sync changes, a device read within 24 hours counts as fresh. A value changed in the Admin console after that read stays invisible. The review then shows an old current value. Sync all rows reads every device and avoids this gap.
 3. Blast radius. One file holds up to 50,000 rows, and Sync all rows applies every row. The guards are the review counts, Execute or Cancel, the per-row Deprovision code, and the typed phrase.
 4. Deprovision is one-way and keeps local data (`docs/workflows/wipe-powerwash-deprovision.md:190`).
 5. The Picker needs changes to the edge script and frame rules and to the referrer policy. The browser holds a `drive.file` token for one hour.
 6. Annotated user and Notes hold personal data. Exported files leave Campus Commander.
+7. The Cancelled status changes the jobs contract and the Jobs page. Only validation jobs use it.
 
 ## Completion
 
 Demonstrate the CSV slice on admin-sdk-mock:
 
-1. Export selected devices for editing to a CSV file. The file holds the template, the status labels, and the checksums.
+1. Export selected devices for editing to a CSV file. The file holds the template, Google's status values, and the checksums.
 2. Import the unedited file with Sync changes. Every row is unchanged, and Execute stays disabled.
-3. Edit a field, a clear, a status code, an invalid cell, and a wrong reason code. Validation refreshes a stale device first. The review shows the proposed changes, the rejected rows, the warnings, and counts that add up.
-4. Cancel. Nothing runs.
+3. Edit a field, a clear, a status code, a mistyped Organization unit, an invalid cell, and a wrong reason code. Validation refreshes a stale device first. The review shows the proposed changes, the rejected rows, the warnings, and counts that add up.
+4. Cancel the plan. Nothing runs. Cancel a running validation of a large file, and the job shows Cancelled.
 5. Import again and Execute. The typed phrase gates the Deprovision. The update job runs, then the status jobs. Rejected rows never run.
 6. Import a saved sheet with Sync all rows. Validation reads every device and proposes only the differences. A second import proposes nothing.
 7. A partial job shows each outcome.
