@@ -1,7 +1,9 @@
 # Batch update devices through export and import
 
 Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
-Later that day he answered five open defaults and directed a universal job cancel (D6). The record waits for his confirmation of the cancel rules.
+Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
+The mockup comes next. The record waits for the owner's confirmation with the mockup.
+
 Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, and 2026-10-26, quoted under [Owner direction](#owner-direction).
 
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain. A mockup comes before the build.
@@ -70,12 +72,12 @@ The existing update and status jobs run the changes. The job pages show each res
 
 - Every job page offers Cancel pending work while work remains that has not reached Google.
 - It works for every job kind: refresh, update, command, status, validation, and export.
-- The requester can cancel. A person with `jobs:read` can cancel too. Both need the permission that starts the job.
+- The requester, a person with the new permission `jobs:manage`, or a platform administrator can cancel.
 - The confirmation states the pending count and the work already sent. Nothing rolls back.
 - A job that has not started ends at once. Nothing reaches Google.
 - A running job stops within 30 seconds. Sent requests settle from their answers. Unsent operations read Cancelled.
 - The page shows "Cancellation requested" until every operation has settled. The job then ends Cancelled.
-- A job with an Unknown operation ends Needs review instead.
+- The results keep every outcome from before the cancel. An Unknown operation keeps Reconcile.
 - Once every command of a command job is issued, Cancel pending work is not offered. No API cancels an issued command.
 - Cancel pending work on the update job of an import also cancels its waiting status jobs.
 
@@ -97,7 +99,7 @@ The `drive.file` scope joins the DWD install scopes, the delegation link, and th
 | Import, review, Execute       | `devices:read`, `devices:write`, and `devices:bulk-actions`        |
 | `ACTIVE` and `DISABLED` codes | Add `devices:status`                                               |
 | Deprovision codes             | Add `devices:deprovision`                                          |
-| Cancel pending work           | The requester or `jobs:read`, and the job's permission             |
+| Cancel pending work           | The requester, `jobs:manage`, or a platform administrator          |
 
 A status code without its permission rejects its row.
 Google writes each device on its own. A failed device keeps its old value. Nothing undoes a device that succeeded.
@@ -187,6 +189,23 @@ The eng-lead asked four decisions, each with a recommended option. The owner ans
 
 Answer 2 is decision D6. The [technical design](../research/batch-update-export-import-technical-design.md#142-universal-job-cancel-owner-decision-d6) defines the cancel.
 
+### 2026-10-26, main chat: the cancel rules
+
+The eng-lead asked five questions about the cancel. The owner answered:
+
+<!-- prettier-ignore -->
+> 1 Anyone with Job:Manage a platform admin, or the owner can cancel the job.
+>
+> 2) agreed
+>
+> 3) Nope cancelled is fine.  We will still have a status document even if it was cancelled. Any successes or failures that happened before the cancel will be recorded int he job results.
+>
+> 4) That is correct there is no ability to claw that back
+>
+> 5) That is fine
+
+His answer calls the requester the owner of the job.
+
 ## Implementation defaults
 
 The owner settled these points on 2026-10-26:
@@ -197,6 +216,11 @@ The owner settled these points on 2026-10-26:
 4. The plan expires 1 hour after validation completes.
 5. Execute asks for the typed phrase DEPROVISION when the plan holds a Deprovision, as the Deprovision sheet does (`docs/workflows/wipe-powerwash-deprovision.md:33`).
 6. Every job kind supports Cancel pending work (D6).
+7. The requester, a person with `jobs:manage`, or a platform administrator can cancel a job.
+8. Cancel pending work on the update job of an import also cancels its waiting status jobs.
+9. A cancelled job ends Cancelled, also with an Unknown operation. Its results keep every outcome from before the cancel.
+10. After every command of a command job is issued, Cancel pending work is not offered.
+11. The universal job cancel ships first, as its own slice.
 
 The remaining defaults are engineering choices for owner review, not owner decisions. Change them when the owner asks.
 The [technical design](../research/batch-update-export-import-technical-design.md#21-owner-decisions-and-engineering-defaults) lists every default. These defaults change visible behavior:
@@ -215,12 +239,10 @@ The [technical design](../research/batch-update-export-import-technical-design.m
 12. Validation reads the organization unit tree from Google once and checks every Organization unit path.
 13. Header matching ignores outer spaces and letter case. Blank rows count nowhere.
 14. The import sheet checks a chosen CSV file for a header row and one data row before the upload.
-15. The requester can cancel a job. A person with `jobs:read` can cancel it too. Both need the permission that starts the job.
-16. The worker reads a cancel request at each batch claim and each lease renewal. A running job stops within 30 seconds.
-17. A cancelled job with an Unknown operation ends Needs review.
-18. Cancel pending work on the update job of an import also cancels its waiting status jobs.
-19. After every command of a command job is issued, Cancel pending work is not offered.
-20. A Sheet export offers no Cancel pending work after its Sheet write starts.
+15. The worker reads a cancel request at each batch claim and each lease renewal. A running job stops within 30 seconds.
+16. A Sheet export offers no Cancel pending work after its Sheet write starts.
+17. `jobs:manage` includes the job visibility of `jobs:read`.
+18. A cancelled job with a failed or Unknown operation raises the Jobs attention dot.
 
 ## Design
 
@@ -277,7 +299,7 @@ Excluded from this workflow:
 
 Open decisions:
 
-- The owner confirms this record, the cancel rules, and the remaining implementation defaults.
+- The owner confirms this record and the remaining implementation defaults with the mockup.
 - The mockup closes the open design gaps before the build.
 - G16 keeps one open question: where explicit creation applies. A user CSV import stays a later workflow.
 - Live device writes need explicit owner authorization and an enrolled test device.

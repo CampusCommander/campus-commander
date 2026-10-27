@@ -3,7 +3,9 @@
 Technical design · adapted for Campus Commander · 2026-10-26
 
 Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5).
-He also answered five open defaults and directed a universal job cancel (D6). [Section 21](#21-owner-decisions-and-engineering-defaults) quotes him.
+He also answered the open defaults, directed a universal job cancel (D6), and set its rules. [Section 21](#21-owner-decisions-and-engineering-defaults) quotes him.
+The mockup comes next.
+
 Scope: export devices, edit the file, import it in one of two modes, review, execute or cancel, and inspect results.
 Every job also gains Cancel pending work.
 
@@ -783,7 +785,7 @@ flowchart TD
   classDef new fill:#d0ebff,stroke:#1c7ed6,color:#1e1e1e
   classDef decision fill:#fff3bf,stroke:#f08c00,stroke-dasharray:6 3,color:#1e1e1e
 
-  C0["Job page · Cancel pending work · D6<br/>every job kind: REF, UPD, CMD, STS, IMP, EXP<br/>requester or jobs:read, and the job's permission"]:::decision
+  C0["Job page · Cancel pending work · D6<br/>every job kind: REF, UPD, CMD, STS, IMP, EXP<br/>requester, jobs:manage, or a platform administrator"]:::decision
   C1["Confirmation<br/>pending count · work already sent · no rollback<br/>names the waiting status jobs of an import"]:::new
   C2["POST /api/jobs/{jobId}/cancel<br/>stores the person and the time · audit"]:::new
   C3{"Job state"}:::new
@@ -792,37 +794,24 @@ flowchart TD
   C6["The worker reads the request<br/>next batch claim or lease renewal · within 30 s"]:::new
   C7["No new Google request<br/>sent requests settle from their answers<br/>written fields still get their read-back"]:::reuse
   C8["Unsent operations settle Cancelled<br/>a completed change stays"]:::new
-  C9{"Any operation Unknown?"}:::reuse
-  C10["Needs review<br/>reconcile as built"]:::reuse
-  C11["Cancelled<br/>counts show each outcome · write slot released"]:::new
+  C11["Cancelled · also with an Unknown operation<br/>results keep every outcome from before the cancel<br/>write slot released"]:::decision
   C12["Refused<br/>awaiting devices: no API cancels an issued command<br/>finished: nothing left to stop"]:::reuse
 
   C0 --> C1 --> C2 --> C3
   C3 -->|"not started"| C4 --> C11
-  C3 -->|"running"| C5 --> C6 --> C7 --> C8 --> C9
-  C9 -->|"yes"| C10
-  C9 -->|"no"| C11
+  C3 -->|"running"| C5 --> C6 --> C7 --> C8 --> C11
   C3 -->|"awaiting devices or finished"| C12
 ```
 
 #### Who can cancel
 
-- The requester of the job, or a person with `jobs:read` for the job's customer. Job visibility as built uses the same rule (`deployment/postgres/migrations/017-jobs.sql:318-330`).
-- The person also holds the permission that starts the job, at the time of the request.
+The owner set this rule on 2026-10-26 (section 21). His answer calls the requester the owner of the job.
 
-| Job                               | Permission that starts the job |
-| --------------------------------- | ------------------------------ |
-| `UPD` update                      | `devices:write`                |
-| `CMD` Reboot                      | `devices:commands`             |
-| `CMD` Wipe user data or Powerwash | `devices:wipe`                 |
-| `STS` Disable or Re-enable        | `devices:status`               |
-| `STS` Deprovision                 | `devices:deprovision`          |
-| `REF` refresh                     | `devices:read`                 |
-| `IMP` validation                  | The import permissions         |
-| `EXP` export                      | The export permissions         |
-
-The write permissions match the job service as built (`deployment/postgres/migrations/017-jobs.sql:498-500`).
-Section 17 lists the import and export permissions.
+- The requester of the job can cancel it.
+- A person with the new permission `jobs:manage` for the job's customer can cancel it.
+- A platform administrator can cancel it. The platform administrator preset holds every action, `jobs:manage` included (`libs/application-contracts/src/lib/authorization.ts:112`).
+- Cancel needs no device permission, because it only stops work.
+- `jobs:manage` includes the job visibility of `jobs:read` (`deployment/postgres/migrations/017-jobs.sql:318-330`).
 
 #### Request
 
@@ -865,8 +854,10 @@ Section 17 lists the import and export permissions.
 #### Final status
 
 - The job ends when every operation has settled.
-- With one or more Unknown operations, the job ends Needs review, as built. Uncertainty wins over the cancel.
-- Otherwise, with one or more Cancelled operations, the job ends Cancelled.
+- With one or more Cancelled operations, the job ends Cancelled. An Unknown operation does not change that status (owner answer, section 21).
+- The results keep every outcome from before the cancel: succeeded, failed, unknown, skipped, and expired.
+- An Unknown operation of a cancelled job keeps Reconcile. Reconcile checks the operation outcome, not the job status (`api/src/app/jobs/jobs.ts:719`).
+- A cancelled job with a failed or Unknown operation raises the Jobs attention dot (`api/src/app/jobs/jobs.ts:824`).
 - Without a Cancelled operation, the existing status rule applies. The work finished before the worker read the request.
 - A cancelled job releases its write slot and its hold like any finished job (`api/src/app/jobs/job-service.ts:105`).
 - The next queued job then starts, in admission order.
@@ -874,7 +865,7 @@ Section 17 lists the import and export permissions.
 #### Jobs of an import
 
 - The status jobs of an import wait for its update job (section 13).
-- Cancel pending work on that update job also cancels those status jobs. None of them has started.
+- Cancel pending work on that update job also cancels those status jobs. None of them has started. The owner agreed on 2026-10-26.
 - The confirmation names each status job that it cancels.
 - Cancel pending work on one status job cancels only that job.
 
@@ -890,6 +881,7 @@ Section 17 lists the import and export permissions.
 
 | Place                                                                                     | Change                                                                               |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `actionSchema`, `libs/application-contracts/src/lib/authorization.ts:3-23`                | Adds `jobs:manage` for the platform and district scopes                              |
 | `jobStatusSchema`, `libs/application-contracts/src/lib/jobs.ts:45-55`                     | Adds `cancelled`, a finished status                                                  |
 | `jobOutcomeSchema`, `libs/application-contracts/src/lib/jobs.ts:140-147`                  | Adds `cancelled`                                                                     |
 | `jobProgressSchema`, `libs/application-contracts/src/lib/jobs.ts:82-98`                   | Adds the `cancelled` count                                                           |
@@ -898,7 +890,9 @@ Section 17 lists the import and export permissions.
 | `cc.device_update_operations`, `deployment/postgres/migrations/017-jobs.sql:223`          | Adds `cancelled` to the status check                                                 |
 | `cc.device_update_stop_reason`, `deployment/postgres/migrations/017-jobs.sql:520-529`     | Returns the cancel request as a stop reason                                          |
 | `cc.skip_device_update_pending`, `deployment/postgres/migrations/017-jobs.sql:464-476`    | A sibling function settles pending operations Cancelled                              |
-| `cc.device_update_terminal_status`, `deployment/postgres/migrations/017-jobs.sql:424-431` | Adds the Cancelled rule                                                              |
+| `cc.device_update_terminal_status`, `deployment/postgres/migrations/017-jobs.sql:424-431` | Adds the Cancelled rule before the Needs review rule                                 |
+| `cc.job_visible`, `deployment/postgres/migrations/017-jobs.sql:318-330`                   | Accepts `jobs:manage` as well as `jobs:read`                                         |
+| Attention rule, `api/src/app/jobs/jobs.ts:824`                                            | Adds a cancelled job with a failed or Unknown operation                              |
 | `holdReleased`, `api/src/app/jobs/job-service.ts:105`                                     | Adds `cancelled`                                                                     |
 | Refresh worker                                                                            | Checks the cancel request before each page or batch                                  |
 
@@ -1020,7 +1014,7 @@ admin-sdk-mock has no Drive or Sheets methods. Tests use a fake transport.
 | `ACTIVE` and `DISABLED` codes | The import permissions and `devices:status`                        |
 | Deprovision codes             | The import permissions and `devices:deprovision`                   |
 | Execute                       | The permissions of every proposed change, rechecked at Execute     |
-| Cancel pending work           | The requester or `jobs:read`, and the job's permission             |
+| Cancel pending work           | The requester, `jobs:manage`, or a platform administrator          |
 
 - A status code without its permission rejects its row.
 - The status permissions match the Change status actions as built (`libs/application-contracts/src/lib/device-actions.ts:48-57`).
@@ -1194,7 +1188,8 @@ The reference product's files are not fixtures.
 - A running update job stops within 30 seconds. No Google request follows the read of the cancel request.
 - Each written field keeps its read-back. A completed change stays. Nothing rolls back.
 - Unsent operations read Cancelled. The counts show Cancelled apart from the other outcomes.
-- A cancelled job with an Unknown operation ends Needs review.
+- A cancelled job with an Unknown operation ends Cancelled. Its results show the Unknown operation, and Reconcile stays available.
+- The requester, a person with `jobs:manage`, and a platform administrator can cancel. The API refuses anyone else.
 - A command job that awaits devices offers no Cancel pending work. The API refuses the request.
 - A cancelled full sync publishes nothing and marks no device removed.
 - A cancel of the update job of an import cancels its waiting status jobs.
@@ -1275,43 +1270,64 @@ His answer 2 is decision D6.
 | Plan life                                           | 1 hour after validation completes                                          | Section 12            |
 | Typed phrase                                        | Execute asks for DEPROVISION when the plan holds a Deprovision             | Section 12            |
 
+### Owner answers on the cancel rules — 2026-10-26
+
+The eng-lead asked five questions about the cancel, each with a recommendation. The owner answered:
+
+<!-- prettier-ignore -->
+> 1 Anyone with Job:Manage a platform admin, or the owner can cancel the job.
+>
+> 2) agreed
+>
+> 3) Nope cancelled is fine.  We will still have a status document even if it was cancelled. Any successes or failures that happened before the cancel will be recorded int he job results.
+>
+> 4) That is correct there is no ability to claw that back
+>
+> 5) That is fine
+
+| Question                                  | Owner answer                                                              | Result       |
+| ----------------------------------------- | ------------------------------------------------------------------------- | ------------ |
+| Who can cancel                            | The requester, a person with `jobs:manage`, or a platform administrator   | Section 14.2 |
+| Cancel of the update job of an import     | Agreed: it also cancels the waiting status jobs of the import             | Section 14.2 |
+| Cancelled job with an Unknown operation   | It ends Cancelled. The results keep every outcome from before the cancel. | Section 14.2 |
+| Command job after every command is issued | No Cancel pending work. An issued command cannot be taken back.           | Section 14.2 |
+| Build order                               | The universal job cancel ships first, as its own slice                    | Section 22   |
+
 ### Engineering defaults
 
 The owner can change each default.
 
-| Topic                                 | Default                                                                                                            |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Status column                         | Google's status value. `ACTIVE`, `DISABLED`, and Deprovision codes request a status. Other values are export-only. |
-| Status codes                          | `ACTIVE`, `DISABLED`, and `DEPROVISION:<reason code>`. Exact upper case. Outer spaces ignored.                     |
-| Reason codes                          | The four Google reasons without the `DEPROVISION_REASON_` prefix                                                   |
-| Freshness                             | The inventory rule of 24 hours. Validation refreshes stale candidate devices only.                                 |
-| Refresh failure                       | Rejects the affected rows. Other rows continue.                                                                    |
-| Job order                             | The status jobs of an import wait for its update job                                                               |
-| Default import mode                   | Sync changes                                                                                                       |
-| Cancel permission                     | The requester or `jobs:read`, and the permission that starts the job                                               |
-| Cancel check                          | At each batch claim and each lease renewal of 30 seconds                                                           |
-| Cancel request revision               | None. The request stops the work that remains.                                                                     |
-| Cancel with an Unknown operation      | The job ends Needs review                                                                                          |
-| Cancel of the update job of an import | Also cancels the waiting status jobs of the import                                                                 |
-| Cancel after every command is issued  | Not offered. Issued commands stay armed.                                                                           |
-| Cancel of a Sheet export              | Not offered after the Sheet write starts                                                                           |
-| Checksum column                       | Optional and ignored in Sync all rows                                                                              |
-| Organization unit check               | Against the tree that validation reads from Google once                                                            |
-| Header matching                       | Outer spaces and letter case ignored                                                                               |
-| File check in the browser             | A header row and one data row, before the upload                                                                   |
-| Clear token                           | `[clear]` in any letter case                                                                                       |
-| Clear rejects                         | Asset tag and Organization unit                                                                                    |
-| Unknown columns                       | Ignored with a warning. Every template column is required.                                                         |
-| Row checksum                          | SHA-256 over a JSON array, 128 bits, base64url, schema version prefix                                              |
-| CSV export                            | UTF-8 with a byte order mark, CRLF, and a tab escape for formula cells                                             |
-| Limits                                | 50,000 rows for an edit export and for an import                                                                   |
-| Retention                             | 30 days for files, snapshots, reports, and plans                                                                   |
-| Job types                             | `EXP` and `IMP`. Execution reuses `UPD` and `STS`.                                                                 |
-| Review location                       | The validation job page                                                                                            |
-| Drive import                          | A Google Sheet tab or a CSV file. Hidden and filtered rows count.                                                  |
-| Export permission                     | A new `devices:export`                                                                                             |
-| API key                               | Restricted by API only                                                                                             |
-| Sharing                               | None. A Drive owner shares the Sheet in Drive.                                                                     |
+| Topic                         | Default                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Status column                 | Google's status value. `ACTIVE`, `DISABLED`, and Deprovision codes request a status. Other values are export-only. |
+| Status codes                  | `ACTIVE`, `DISABLED`, and `DEPROVISION:<reason code>`. Exact upper case. Outer spaces ignored.                     |
+| Reason codes                  | The four Google reasons without the `DEPROVISION_REASON_` prefix                                                   |
+| Freshness                     | The inventory rule of 24 hours. Validation refreshes stale candidate devices only.                                 |
+| Refresh failure               | Rejects the affected rows. Other rows continue.                                                                    |
+| Job order                     | The status jobs of an import wait for its update job                                                               |
+| Default import mode           | Sync changes                                                                                                       |
+| Cancel check                  | At each batch claim and each lease renewal of 30 seconds                                                           |
+| Cancel request revision       | None. The request stops the work that remains.                                                                     |
+| Cancel of a Sheet export      | Not offered after the Sheet write starts                                                                           |
+| `jobs:manage` visibility      | Includes the job visibility of `jobs:read`                                                                         |
+| Attention for a cancelled job | A failed or Unknown operation raises the attention dot                                                             |
+| Checksum column               | Optional and ignored in Sync all rows                                                                              |
+| Organization unit check       | Against the tree that validation reads from Google once                                                            |
+| Header matching               | Outer spaces and letter case ignored                                                                               |
+| File check in the browser     | A header row and one data row, before the upload                                                                   |
+| Clear token                   | `[clear]` in any letter case                                                                                       |
+| Clear rejects                 | Asset tag and Organization unit                                                                                    |
+| Unknown columns               | Ignored with a warning. Every template column is required.                                                         |
+| Row checksum                  | SHA-256 over a JSON array, 128 bits, base64url, schema version prefix                                              |
+| CSV export                    | UTF-8 with a byte order mark, CRLF, and a tab escape for formula cells                                             |
+| Limits                        | 50,000 rows for an edit export and for an import                                                                   |
+| Retention                     | 30 days for files, snapshots, reports, and plans                                                                   |
+| Job types                     | `EXP` and `IMP`. Execution reuses `UPD` and `STS`.                                                                 |
+| Review location               | The validation job page                                                                                            |
+| Drive import                  | A Google Sheet tab or a CSV file. Hidden and filtered rows count.                                                  |
+| Export permission             | A new `devices:export`                                                                                             |
+| API key                       | Restricted by API only                                                                                             |
+| Sharing                       | None. A Drive owner shares the Sheet in Drive.                                                                     |
 
 ## 22. Records to update and next steps
 

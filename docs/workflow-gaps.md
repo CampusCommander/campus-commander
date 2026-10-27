@@ -229,3 +229,5 @@ The [batch update through export and import record](workflows/batch-update-expor
   Sync all rows refreshes stale devices only. Source: the owner's answers in the main chat. Replaced behavior: a refresh of every device in Sync all rows.
 - **G16 and G17, D6, universal job cancel.** The job service gains Cancel pending work for every job kind. It stops work that has not reached Google and never rolls back.
   Source: the owner's direction D6 in the main chat. Replaced behavior: no cancel in the first jobs slice (`docs/superpowers/specs/2026-10-16-device-write-jobs-design.md:264`).
+- **G17, cancel rules.** The requester, a person with the new `jobs:manage`, or a platform administrator cancels a job.
+  A cancelled job ends Cancelled and keeps every earlier outcome. Source: the owner's answers in the main chat. Replaced behavior: none.
