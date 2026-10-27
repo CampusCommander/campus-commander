@@ -19,6 +19,7 @@ On 2026-10-24 the owner signed off the in-grid editing build. Owner, in the main
 On 2026-10-24 the owner started the CSV and Google Drive export and import workflow (gap G16). Owner: "We need to start the work on the CSV/Google Drive import export. For google drive we will use the google drive picker."
 On 2026-10-26 the owner supplied his reference design, answered decisions D1 to D4, and added the import modes (D5).
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
+On 2026-10-26 the owner approved the job cancel mockup. Owner: "Thats fine." The approved mockup is [2026-10-26-job-cancel.html](ui/designs/2026-10-26-job-cancel.html).
 The [batch update through export and import record](workflows/batch-update-export-import.md) is proposed. A mockup comes before the build.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
@@ -37,7 +38,7 @@ This is the active workflow. The [record](workflows/batch-update-export-import.m
 The record quotes the owner's answers D1 to D4 and his import modes direction (D5).
 It also quotes his answers on the defaults and the universal job cancel (D6).
 
-Next: the mockup of the cancel slice, then the mockup of the CSV slice. Each build waits for the owner's approval of its mockup.
+Next: the design addendum and the build cards of the cancel slice. The CSV slice mockup follows. Its build waits for the owner's approval of that mockup.
 
 The universal job cancel comes first. The CSV slice, the Google Drive slice, and the report export follow.
 A live Google Sheet export creates a Google file. It needs the owner's authorization, as live device writes do.

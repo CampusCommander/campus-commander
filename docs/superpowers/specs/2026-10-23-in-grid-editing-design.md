@@ -250,7 +250,7 @@ Internal changes:
 
 Unchanged:
 
-- Four fields, their modes, limits, copy, counts, and row order (`docs/current-work.md:48-51`).
+- Four fields, their modes, limits, copy, counts, and row order (`docs/current-work.md:64-67`).
 - The selection route body, its 4,096-byte cap, and its cached read. It never reads Google.
 - The Confirm sentence reads the four selection fields (`fe/devices/device-update-flow.ts:519-536`), so it never names Asset tag.
 

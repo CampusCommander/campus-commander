@@ -4,7 +4,7 @@ Technical design · adapted for Campus Commander · 2026-10-26
 
 Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5).
 He also answered the open defaults, directed a universal job cancel (D6), and set its rules. [Section 21](#21-owner-decisions-and-engineering-defaults) quotes him.
-The mockup comes next.
+He approved the job cancel mockup the same day. The CSV slice mockup comes next.
 
 Scope: export devices, edit the file, import it in one of two modes, review, execute or cancel, and inspect results.
 Every job also gains Cancel pending work.
@@ -815,7 +815,7 @@ The owner set this rule on 2026-10-26 (section 21). His answer calls the request
 
 #### Request
 
-- `POST /api/jobs/{jobId}/cancel` records the cancel request. It carries no revision.
+- `POST /api/jobs/{jobId}/cancel` records the cancel request. It carries no revision and no reason (owner answer, section 21).
 - The request applies to the work that remains when the server records it.
 - The server stores the person and the time on the job. The audit record holds them (`docs/portfolio/03-architecture.md:456`).
 - A repeated request returns the same job state.
@@ -876,6 +876,7 @@ The owner set this rule on 2026-10-26 (section 21). His answer calls the request
 - The confirmation states the pending count, the work already sent, and the absence of rollback.
 - The job page shows the person and the time of the cancel request.
 - The Jobs grid filter offers the status Cancelled. The activity summary counts a cancelled job as finished.
+- The owner approved these screens as the [job cancel mockup](../ui/designs/2026-10-26-job-cancel.html), with its [notes](../ui/designs/2026-10-26-job-cancel-notes.md).
 
 #### Contracts and schema
 
@@ -1293,6 +1294,19 @@ The eng-lead asked five questions about the cancel, each with a recommendation. 
 | Command job after every command is issued | No Cancel pending work. An issued command cannot be taken back.           | Section 14.2 |
 | Build order                               | The universal job cancel ships first, as its own slice                    | Section 22   |
 
+### Owner approval of the job cancel mockup — 2026-10-26
+
+The eng-lead asked the owner to approve the mockup. He also recommended no cancel reason and the 30-second cancel check.
+The owner answered:
+
+> Thats fine.
+
+| Topic              | Owner answer                                             | Result       |
+| ------------------ | -------------------------------------------------------- | ------------ |
+| Job cancel screens | Approved as drawn                                        | Section 14.2 |
+| Cancel reason      | None. The job records the person and the time.           | Section 14.2 |
+| Cancel check       | At each batch claim and each lease renewal of 30 seconds | Section 14.2 |
+
 ### Engineering defaults
 
 The owner can change each default.
@@ -1306,7 +1320,6 @@ The owner can change each default.
 | Refresh failure               | Rejects the affected rows. Other rows continue.                                                                    |
 | Job order                     | The status jobs of an import wait for its update job                                                               |
 | Default import mode           | Sync changes                                                                                                       |
-| Cancel check                  | At each batch claim and each lease renewal of 30 seconds                                                           |
 | Cancel request revision       | None. The request stops the work that remains.                                                                     |
 | Cancel of a Sheet export      | Not offered after the Sheet write starts                                                                           |
 | `jobs:manage` visibility      | Includes the job visibility of `jobs:read`                                                                         |
@@ -1365,6 +1378,8 @@ The mockup redraws these Figma frames on page `94:2` before the build:
 | `122:370` Recovery index   | The Cancel queued work and Cancel running work examples                                                                                  |
 | `104:479` Baseline expired | Replaced by the expired plan state                                                                                                       |
 | Google connection page     | The API key, the project number, and the Drive scope row                                                                                 |
+
+The owner approved the three cancel rows on 2026-10-26 as the [job cancel mockup](../ui/designs/2026-10-26-job-cancel.html).
 
 ### Implementation order
 
