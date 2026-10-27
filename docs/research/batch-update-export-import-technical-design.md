@@ -2,8 +2,10 @@
 
 Technical design · adapted for Campus Commander · 2026-10-26
 
-Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). [Section 21](#21-owner-decisions-and-engineering-defaults) quotes him.
+Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5).
+He also answered five open defaults and directed a universal job cancel (D6). [Section 21](#21-owner-decisions-and-engineering-defaults) quotes him.
 Scope: export devices, edit the file, import it in one of two modes, review, execute or cancel, and inspect results.
+Every job also gains Cancel pending work.
 
 Source: the owner's technical design of his earlier implementation, his notes on how that implementation behaves, and his decisions. He supplied them on 2026-10-26.
 Baseline: repository `origin/main` at `89d5478`.
@@ -30,7 +32,7 @@ Reading guide:
 This document adapts the owner's reference design to Campus Commander.
 It keeps the reference behavior where Campus Commander has no conflicting rule.
 It maps each responsibility to an existing component where one exists.
-It applies the owner's decisions D1 to D5 of 2026-10-26.
+It applies the owner's decisions D1 to D6 of 2026-10-26.
 It closes each defect that the owner's notes name in his earlier implementation (Appendix A).
 
 ### Owner direction
@@ -45,6 +47,8 @@ It closes each defect that the owner's notes name in his earlier implementation 
 | 2026-10-26 | Answers to decisions D1 to D4. Section 21 quotes them.                                                                                                                                                                                                                                | Main chat                                                  |
 | 2026-10-26 | An import mode selector with "Sync all rows" and "Sync changes". Section 21 quotes it as D5.                                                                                                                                                                                          | Main chat                                                  |
 | 2026-10-26 | Notes on how the earlier implementation validates and executes an import, with its defects. Appendix A maps each item.                                                                                                                                                                | Main chat, paraphrased                                     |
+| 2026-10-26 | Answers on the open defaults: the overwrite risk accepted, `[clear]`, stale refresh only in Sync all rows, plan life, and the typed phrase.                                                                                                                                           | Main chat                                                  |
+| 2026-10-26 | "We need to add a universal cancel job feature to the job service." Section 21 quotes it as D6.                                                                                                                                                                                       | Main chat                                                  |
 
 The paraphrased rows come from messages that name the reference product, so this record does not quote them.
 
@@ -81,6 +85,7 @@ The existing update and status jobs run the changes. Their job pages show the ac
 | Import of an uploaded CSV file: validation job, review, and Execute or Cancel    | First  | Reference, owner D2             |
 | Row checksum, refresh of stale device data, and field comparison with fresh data | First  | Owner D1                        |
 | Import modes: Sync changes and Sync all rows                                     | First  | Owner D5                        |
+| Universal job cancel: Cancel pending work for every job kind                     | First  | Owner D6                        |
 | Blank cells that keep values, and an explicit clear token                        | First  | Reference                       |
 | Asset tag, Annotated location, Annotated user, Notes, and Organization unit      | First  | Reference, field rules as built |
 | Status codes: Disable, Re-enable, and Deprovision with a reason code             | First  | Owner D3                        |
@@ -98,7 +103,7 @@ The existing update and status jobs run the changes. Their job pages show the ac
 - Google users, groups, and organizational units. Later phases reuse this design.
 - Execution without review. Validation never writes to Google.
 - Row-by-row selection in the review. Execute runs every proposed change.
-- Cancellation of export, update, and status jobs. Cancel stops only a running validation job (section 14).
+- Pause, Resume, and Retry. Cancel pending work adds none of them (section 14.2).
 - A spreadsheet editor inside Campus Commander.
 - Automatic rollback of completed Google writes.
 - Files from the reference product. Campus Commander owns its headers, checksum, and status codes.
@@ -109,37 +114,38 @@ The existing update and status jobs run the changes. Their job pages show the ac
 
 ## 3. Vocabulary
 
-| Term               | Meaning                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Edit export        | An export for editing. It writes the fixed edit template. The purpose label reads "For editing".                                                  |
-| Report export      | An export for reading. It writes the visible grid columns and no row checksum. The label reads "Report".                                          |
-| Export job         | The background job that writes an export. Job ID prefix `EXP`.                                                                                    |
-| Source             | The CSV file or the Google Sheet tab that a person submits for import.                                                                            |
-| Validation job     | The background job that reads a source, refreshes stale device data, and builds the report and the plan. Job ID prefix `IMP`.                     |
-| Update job         | The existing job `UPD` with action `update-device-annotations`. It writes field changes.                                                          |
-| Status job         | The existing job `STS`. It holds one action: `disable-devices`, `reenable-devices`, or `deprovision-devices`. A Deprovision job holds one reason. |
-| Device ID          | Google's `deviceId`. It is the inventory key and the target of every write.                                                                       |
-| Context column     | A read-only column that helps a person recognize a device.                                                                                        |
-| Editable column    | Status, or one of the five writable fields.                                                                                                       |
-| Export-only status | A Google status value that requests nothing, for example `DEPROVISIONED`. The export writes it, and import skips it.                              |
-| Status code        | A Status cell value that requests a status: `ACTIVE`, `DISABLED`, or `DEPROVISION:<reason code>`.                                                 |
-| Reason code        | One entry of the Deprovision reason list in section 7.5.                                                                                          |
-| Row checksum       | The fingerprint of one row's device ID, Status cell, and editable values at export.                                                               |
-| Import mode        | The choice in the import sheet: Sync changes or Sync all rows.                                                                                    |
-| Sync changes       | The import mode that validates the candidate rows that the checksum selects. The default.                                                         |
-| Sync all rows      | The import mode that ignores the checksum and validates every row. It resets the devices to the sheet.                                            |
-| Unchanged row      | In Sync changes, a row whose file values still match its row checksum.                                                                            |
-| Candidate row      | In Sync changes, a row whose file values differ from its row checksum, or whose checksum cell is blank or malformed. In Sync all rows, every row. |
-| Fresh              | Read from Google within the inventory freshness window of 24 hours.                                                                               |
-| Stale              | Older than the freshness window. Validation refreshes a stale candidate device from Google.                                                       |
-| Proposed change    | One field value that differs from the fresh current value, or one eligible status action, in a row that passes every rule.                        |
-| Rejected row       | A row that fails a structure, identity, access, field, or status rule.                                                                            |
-| Report             | The counts, rejected rows, warnings, and proposed changes of one validation job.                                                                  |
-| Plan               | The server-owned list of proposed changes, with the current value that each comparison used.                                                      |
-| Execute            | The person's choice to run the plan. It creates the jobs.                                                                                         |
-| Cancel             | The person's choice to discard the plan. Nothing runs.                                                                                            |
-| Clear token        | The cell text `[clear]`. It requests an empty field value.                                                                                        |
-| Source row number  | The spreadsheet row number of one logical record. The header is row 1.                                                                            |
+| Term                | Meaning                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edit export         | An export for editing. It writes the fixed edit template. The purpose label reads "For editing".                                                  |
+| Report export       | An export for reading. It writes the visible grid columns and no row checksum. The label reads "Report".                                          |
+| Export job          | The background job that writes an export. Job ID prefix `EXP`.                                                                                    |
+| Source              | The CSV file or the Google Sheet tab that a person submits for import.                                                                            |
+| Validation job      | The background job that reads a source, refreshes stale device data, and builds the report and the plan. Job ID prefix `IMP`.                     |
+| Update job          | The existing job `UPD` with action `update-device-annotations`. It writes field changes.                                                          |
+| Status job          | The existing job `STS`. It holds one action: `disable-devices`, `reenable-devices`, or `deprovision-devices`. A Deprovision job holds one reason. |
+| Device ID           | Google's `deviceId`. It is the inventory key and the target of every write.                                                                       |
+| Context column      | A read-only column that helps a person recognize a device.                                                                                        |
+| Editable column     | Status, or one of the five writable fields.                                                                                                       |
+| Export-only status  | A Google status value that requests nothing, for example `DEPROVISIONED`. The export writes it, and import skips it.                              |
+| Status code         | A Status cell value that requests a status: `ACTIVE`, `DISABLED`, or `DEPROVISION:<reason code>`.                                                 |
+| Reason code         | One entry of the Deprovision reason list in section 7.5.                                                                                          |
+| Row checksum        | The fingerprint of one row's device ID, Status cell, and editable values at export.                                                               |
+| Import mode         | The choice in the import sheet: Sync changes or Sync all rows.                                                                                    |
+| Sync changes        | The import mode that validates the candidate rows that the checksum selects. The default.                                                         |
+| Sync all rows       | The import mode that ignores the checksum and validates every row. It resets the devices to the sheet.                                            |
+| Unchanged row       | In Sync changes, a row whose file values still match its row checksum.                                                                            |
+| Candidate row       | In Sync changes, a row whose file values differ from its row checksum, or whose checksum cell is blank or malformed. In Sync all rows, every row. |
+| Fresh               | Read from Google within the inventory freshness window of 24 hours.                                                                               |
+| Stale               | Older than the freshness window. Validation refreshes a stale candidate device from Google.                                                       |
+| Proposed change     | One field value that differs from the fresh current value, or one eligible status action, in a row that passes every rule.                        |
+| Rejected row        | A row that fails a structure, identity, access, field, or status rule.                                                                            |
+| Report              | The counts, rejected rows, warnings, and proposed changes of one validation job.                                                                  |
+| Plan                | The server-owned list of proposed changes, with the current value that each comparison used.                                                      |
+| Execute             | The person's choice to run the plan. It creates the jobs.                                                                                         |
+| Cancel              | The person's choice to discard the plan after validation. Nothing runs.                                                                           |
+| Cancel pending work | The job action that stops the work of a job that has not reached Google. Owner decision D6, section 14.2.                                         |
+| Clear token         | The cell text `[clear]`. It requests an empty field value.                                                                                        |
+| Source row number   | The spreadsheet row number of one logical record. The header is row 1.                                                                            |
 
 The device ID serves as both the device identity and the provider identity of the reference design.
 Campus Commander never guesses a device from a serial number, an Asset tag, or a row position.
@@ -272,7 +278,7 @@ flowchart TD
     I1 -->|"Google Drive"| I3 --> I4
     I4 --> M1
     M1 -->|"Sync changes"| I5
-    M1 -->|"Sync all rows<br/>checksum ignored · every device read"| I8
+    M1 -->|"Sync all rows<br/>checksum ignored · every row a candidate"| I7
     I5 -->|"yes"| I6
     I5 -->|"no: candidate row"| I7
     I7 -->|"no"| I8
@@ -283,7 +289,7 @@ flowchart TD
   subgraph RV["3 · Review on the validation job page"]
     R1["Mode and counts that add up<br/>rejected rows with reasons and a download<br/>every proposed change: current to new"]:::new
     R2{"Execute or Cancel · D2"}:::decision
-    R3["Cancel<br/>also stops a running validation · nothing runs"]:::decision
+    R3["Cancel<br/>discard the plan · nothing runs"]:::decision
     R4["Execute: valid changes only<br/>typed phrase DEPROVISION when the plan holds one<br/>a value changed since validation is excluded"]:::decision
     R1 --> R2
     R2 -->|"Cancel"| R3
@@ -294,7 +300,9 @@ flowchart TD
     J1["Update job UPD<br/>one PATCH per device, read-back, cache update"]:::reuse
     J2["Status jobs STS, after the update job<br/>one job per action and Deprovision reason"]:::reuse
     J3["Results on each job page<br/>succeeded, failed, unknown, skipped"]:::reuse
+    J4["Cancel pending work on any job · D6<br/>validation included · stops unsent work · no rollback"]:::decision
     J1 --> J2 --> J3
+    J1 -.-> J4
   end
 
   B -->|"Export"| E1
@@ -496,7 +504,7 @@ Duplicate device IDs count across all rows, unchanged rows included (section 10.
 The owner set this rule on 2026-10-26. Section 21 quotes it.
 
 1. In Sync changes, the row checksum flags a candidate row. In Sync all rows, every row is a candidate row.
-2. Validation checks the age of each candidate device's data in Postgres. Sync all rows reads every candidate device (section 8.5).
+2. Validation checks the age of each candidate device's data in Postgres, in both modes (section 8.5).
 3. Data older than the freshness window of 24 hours is stale (`libs/application-contracts/src/lib/entity-cache.ts:16-19`).
 4. Validation refreshes the stale devices from Google before any comparison.
 5. Validation compares each nonblank cell with the fresh current value, field by field.
@@ -521,14 +529,16 @@ The owner added the import modes on 2026-10-26. Section 21 quotes him.
 | Use                 | Apply the edits of an exported file | Reset devices to a saved sheet, the same way every time |
 | Candidate rows      | The rows that the checksum flags    | Every row                                               |
 | Checksum column     | Required                            | Optional and ignored                                    |
-| Refresh from Google | Stale candidate devices only        | Every candidate device                                  |
+| Refresh from Google | Stale candidate devices only        | Stale candidate devices only                            |
 | Blank cell          | Keeps the value                     | Keeps the value                                         |
 | Field comparison    | Fresh data, field by field (D1)     | Fresh data, field by field (D1)                         |
 | Execute             | Valid changes only (D2)             | Valid changes only (D2)                                 |
 
 - The import sheet offers both modes. Sync changes starts selected.
 - The validation job records the mode. The report, Execute, and the audit record name it.
-- Sync all rows reads every candidate device. A value that changed in Google today therefore returns to the sheet value.
+- Both modes refresh only the stale candidate devices. The owner set this rule on 2026-10-26 (section 21).
+- A fresh device compares with its stored data. A change in Google after that read stays invisible until the device is stale.
+- A Refresh of the devices before the import makes every value current.
 - A value that already matches needs no change in either mode. Execute writes only the differences.
 - Sync all rows uses `[clear]` to empty a field. A blank cell never clears in either mode.
 - Status codes work the same way in both modes. A code whose result already holds needs no change.
@@ -588,7 +598,7 @@ The worker parses the stored file as a stream. The stored source stays unchanged
 4. Check the device ID of every row. A missing, malformed, or duplicated ID rejects the row.
 5. In Sync changes, partition the rows by row checksum. In Sync all rows, take every row as a candidate row.
 6. Resolve each candidate device ID in the customer's inventory.
-7. Select the devices to refresh: the stale candidate devices, or every candidate device in Sync all rows. Refresh them from Google and store the reads.
+7. Refresh the stale candidate devices from Google, in both modes. Store the reads.
 8. Read the current values and observation times of the candidate devices.
 9. Read the organization unit tree from Google once, when a candidate row changes Organization unit.
 10. Apply the access checks of the edit-list preview and the status permissions to each target device.
@@ -611,7 +621,7 @@ The worker parses the stored file as a stream. The stored source stays unchanged
 ### 10.3 Current values
 
 - Validation compares with Postgres data only after step 7, so every compared value is fresh.
-- Sync all rows refreshes every candidate device, fresh or stale.
+- Both modes refresh only the stale candidate devices. A fresh device gets no new read.
 - The refresh reuses the fresh read of in-grid editing (`api/src/app/devices/device-fresh-read.ts:89-94`).
 - Postgres stamps the read time before the Google call. The reads go in batches of 1,000.
 - The worker stores each read as a refresh read and soft-deletes each device that Google no longer holds.
@@ -724,10 +734,13 @@ Execute reads no Google data. The validation job already refreshed the stale dev
 - A read-back failure after a successful write keeps the write outcome.
 - The grid updates each device when its read-back arrives. A partial job updates its successful devices.
 - Each job records the validation job ID. The job pages link both ways.
+- Cancel pending work on the update job also cancels the waiting status jobs of the import (section 14.2).
 - The Execute receipt claims no Google result. The page uses success wording only after confirmed effects (`docs/portfolio/04-ux-ui-spec.md:205`).
 - Every count and every action on a result reads the job's operations. A result never claims success while an operation failed or reads unknown (`docs/portfolio/04-ux-ui-spec.md:218`).
 
 ## 14. Jobs and states
+
+### 14.1 Jobs of this workflow
 
 | Job        | Prefix | Action                                                          | Completion                       |
 | ---------- | ------ | --------------------------------------------------------------- | -------------------------------- |
@@ -741,13 +754,153 @@ Execute reads no Google data. The validation job already refreshed the stale dev
 - The six status jobs are Disable, Re-enable, and one Deprovision job per reason (`libs/application-contracts/src/lib/jobs.ts:252-255`).
 - `EXP` and `IMP` progress counts rows. `UPD` and `STS` progress counts operations, as built.
 - Cancel works in both phases, as in the reference implementation.
-- During validation, Cancel stops the validation job at its next batch. The job ends with the new status Cancelled.
-- A Cancel before the receipt arrives cancels the import as soon as its job ID arrives.
-- After validation, Cancel changes the plan state, not the job status.
-- Only a validation job can be cancelled. The jobs contract adds `cancelled` for it (`libs/application-contracts/src/lib/jobs.ts:44-55`).
+- During validation, Cancel pending work stops the validation job (section 14.2). The job produces no report and no plan.
+- A Cancel before the receipt arrives cancels the validation job as soon as its job ID arrives.
+- After validation, Cancel discards the plan. It changes the plan state, not the job status.
+- During execution, Cancel pending work stops the update job or a status job (section 14.2).
 - Previews and jobs carry their rows as one JSON document per database call (`api/src/app/devices/device-updates.ts:525-537`, `:785`).
 - A plan of 50,000 rows therefore never meets the database limit on bind parameters.
 - Job state lives in the database. Server events report progress. A reconnect reloads the state.
+
+### 14.2 Universal job cancel (owner decision D6)
+
+The owner directed a universal cancel in the job service on 2026-10-26. Section 21 quotes him.
+Every job kind supports it: `REF`, `UPD`, `CMD`, `STS`, `IMP`, and `EXP`.
+The control keeps its Figma name, Cancel pending work (`228:4524`, `228:4996`).
+The existing jobs gain it in the same slice. They need no import.
+
+The design follows the documented cancellation rules:
+
+- Cancellation stops future dispatch. It never undoes a completed Google change (`docs/portfolio/03-architecture.md:257-258`, `docs/portfolio/01-product-brief.md:99`).
+- The page confirms the pending count and explains the work already sent (`docs/ui/patterns.md:314`).
+- The page shows "Cancellation requested" until the final operation evidence (`docs/ui/patterns.md:315`, `docs/ui/jobs-grid.json:175`).
+- The counts show Cancelled apart from the other outcomes (`docs/ui/patterns.md:303`).
+- Cancel adds no Pause, Resume, or Retry (G17, `docs/workflow-gaps.md:75`).
+
+```mermaid
+flowchart TD
+  classDef reuse fill:#d3f9d8,stroke:#2f9e44,color:#1e1e1e
+  classDef new fill:#d0ebff,stroke:#1c7ed6,color:#1e1e1e
+  classDef decision fill:#fff3bf,stroke:#f08c00,stroke-dasharray:6 3,color:#1e1e1e
+
+  C0["Job page · Cancel pending work · D6<br/>every job kind: REF, UPD, CMD, STS, IMP, EXP<br/>requester or jobs:read, and the job's permission"]:::decision
+  C1["Confirmation<br/>pending count · work already sent · no rollback<br/>names the waiting status jobs of an import"]:::new
+  C2["POST /api/jobs/{jobId}/cancel<br/>stores the person and the time · audit"]:::new
+  C3{"Job state"}:::new
+  C4["Accepted, Queued, or Held<br/>ends at once · no request reached Google"]:::new
+  C5["Running · Cancellation requested"]:::new
+  C6["The worker reads the request<br/>next batch claim or lease renewal · within 30 s"]:::new
+  C7["No new Google request<br/>sent requests settle from their answers<br/>written fields still get their read-back"]:::reuse
+  C8["Unsent operations settle Cancelled<br/>a completed change stays"]:::new
+  C9{"Any operation Unknown?"}:::reuse
+  C10["Needs review<br/>reconcile as built"]:::reuse
+  C11["Cancelled<br/>counts show each outcome · write slot released"]:::new
+  C12["Refused<br/>awaiting devices: no API cancels an issued command<br/>finished: nothing left to stop"]:::reuse
+
+  C0 --> C1 --> C2 --> C3
+  C3 -->|"not started"| C4 --> C11
+  C3 -->|"running"| C5 --> C6 --> C7 --> C8 --> C9
+  C9 -->|"yes"| C10
+  C9 -->|"no"| C11
+  C3 -->|"awaiting devices or finished"| C12
+```
+
+#### Who can cancel
+
+- The requester of the job, or a person with `jobs:read` for the job's customer. Job visibility as built uses the same rule (`deployment/postgres/migrations/017-jobs.sql:318-330`).
+- The person also holds the permission that starts the job, at the time of the request.
+
+| Job                               | Permission that starts the job |
+| --------------------------------- | ------------------------------ |
+| `UPD` update                      | `devices:write`                |
+| `CMD` Reboot                      | `devices:commands`             |
+| `CMD` Wipe user data or Powerwash | `devices:wipe`                 |
+| `STS` Disable or Re-enable        | `devices:status`               |
+| `STS` Deprovision                 | `devices:deprovision`          |
+| `REF` refresh                     | `devices:read`                 |
+| `IMP` validation                  | The import permissions         |
+| `EXP` export                      | The export permissions         |
+
+The write permissions match the job service as built (`deployment/postgres/migrations/017-jobs.sql:498-500`).
+Section 17 lists the import and export permissions.
+
+#### Request
+
+- `POST /api/jobs/{jobId}/cancel` records the cancel request. It carries no revision.
+- The request applies to the work that remains when the server records it.
+- The server stores the person and the time on the job. The audit record holds them (`docs/portfolio/03-architecture.md:456`).
+- A repeated request returns the same job state.
+- The server refuses a finished job, and a job without work left to stop.
+
+#### Effect by job state
+
+| Job state                 | Effect of the request                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Accepted, Queued, or Held | The job ends at once. Every operation settles Cancelled. No request reached Google. The job leaves the admission queue.                          |
+| Running                   | The page shows "Cancellation requested". The worker stops at its next check.                                                                     |
+| Awaiting devices          | Not offered. Every command is already issued, and no API cancels an issued command (`docs/workflows/wipe-powerwash-deprovision.md:171`, `:188`). |
+| Finished                  | Not offered.                                                                                                                                     |
+
+#### Worker check
+
+- The worker checks the cancel request before each Google request and after each result (`docs/portfolio/03-architecture.md:257`).
+- It reads the request from Postgres at each batch claim and each lease renewal.
+- The renewal runs every 30 seconds (`worker/src/device-update.ts:1344`). A running batch therefore stops within 30 seconds.
+- After the worker reads the request, it sends no new Google request.
+- A request already sent settles from its answer. A lost answer stays Unknown and goes to the read-back, as built.
+- The update job still reads back each written field. A read-back sends no write.
+- The job service never stops an orchestration run by force. The run ends through its normal finish step.
+
+#### Effect by job kind
+
+| Job              | After the worker reads the request                                                                                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UPD` update     | No new PATCH. Each written field gets its read-back. Unsent operations settle Cancelled.                                                                                                                        |
+| `STS` status     | No new status request. A Deprovision that Google accepted stays, because Deprovision is one-way.                                                                                                                |
+| `CMD` command    | No new command. Issued commands stay armed with Google. Polls continue until each command settles or expires.                                                                                                   |
+| `REF` refresh    | A full sync stops at its next page. It publishes nothing and marks no device removed (`docs/portfolio/03-architecture.md:379`, `:387`). A refresh of selected devices keeps the batches that it already stored. |
+| `IMP` validation | It stops at its next batch. It produces no report and no plan. The refresh reads that it stored stay.                                                                                                           |
+| `EXP` export     | It stops at its next batch and deletes its partial file. A Sheet export writes its Sheet last. Cancel pending work is not offered after that write starts.                                                      |
+
+#### Final status
+
+- The job ends when every operation has settled.
+- With one or more Unknown operations, the job ends Needs review, as built. Uncertainty wins over the cancel.
+- Otherwise, with one or more Cancelled operations, the job ends Cancelled.
+- Without a Cancelled operation, the existing status rule applies. The work finished before the worker read the request.
+- A cancelled job releases its write slot and its hold like any finished job (`api/src/app/jobs/job-service.ts:105`).
+- The next queued job then starts, in admission order.
+
+#### Jobs of an import
+
+- The status jobs of an import wait for its update job (section 13).
+- Cancel pending work on that update job also cancels those status jobs. None of them has started.
+- The confirmation names each status job that it cancels.
+- Cancel pending work on one status job cancels only that job.
+
+#### Screens
+
+- The job page shows Cancel pending work beside Refresh (`228:4524`, `frontend/src/app/jobs/job-detail.html:11-18`).
+- Only an authorized person sees it, and only while work remains to stop.
+- The confirmation states the pending count, the work already sent, and the absence of rollback.
+- The job page shows the person and the time of the cancel request.
+- The Jobs grid filter offers the status Cancelled. The activity summary counts a cancelled job as finished.
+
+#### Contracts and schema
+
+| Place                                                                                     | Change                                                                               |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `jobStatusSchema`, `libs/application-contracts/src/lib/jobs.ts:45-55`                     | Adds `cancelled`, a finished status                                                  |
+| `jobOutcomeSchema`, `libs/application-contracts/src/lib/jobs.ts:140-147`                  | Adds `cancelled`                                                                     |
+| `jobProgressSchema`, `libs/application-contracts/src/lib/jobs.ts:82-98`                   | Adds the `cancelled` count                                                           |
+| `jobSummarySchema` and `jobDetailSchema`                                                  | Add the time and the person of the cancel request                                    |
+| `cc.jobs`, `deployment/postgres/migrations/017-jobs.sql:17-45`                            | Adds `cancelled` to the status check, a `cancelled` counter, and the request columns |
+| `cc.device_update_operations`, `deployment/postgres/migrations/017-jobs.sql:223`          | Adds `cancelled` to the status check                                                 |
+| `cc.device_update_stop_reason`, `deployment/postgres/migrations/017-jobs.sql:520-529`     | Returns the cancel request as a stop reason                                          |
+| `cc.skip_device_update_pending`, `deployment/postgres/migrations/017-jobs.sql:464-476`    | A sibling function settles pending operations Cancelled                              |
+| `cc.device_update_terminal_status`, `deployment/postgres/migrations/017-jobs.sql:424-431` | Adds the Cancelled rule                                                              |
+| `holdReleased`, `api/src/app/jobs/job-service.ts:105`                                     | Adds `cancelled`                                                                     |
+| Refresh worker                                                                            | Checks the cancel request before each page or batch                                  |
 
 ## 15. API and stored data
 
@@ -764,7 +917,8 @@ Route names are engineering defaults. The contracts define the information and t
 | `GET /api/devices/imports/{jobId}/report`   | Page, filter                                                              | Counts, rows, warnings, plan ID, revision, state, and expiry           |
 | `GET /api/devices/imports/{jobId}/rejected` | Job ID                                                                    | CSV file of the rejected rows                                          |
 | `POST /api/devices/imports/{jobId}/execute` | Plan ID, revision, and the typed phrase when the plan holds a Deprovision | Receipts of the update job and the status jobs, and the conflict count |
-| `POST /api/devices/imports/{jobId}/cancel`  | Job ID, and the plan ID and revision after validation                     | The cancelled import state                                             |
+| `POST /api/devices/imports/{jobId}/cancel`  | Plan ID and plan revision                                                 | The cancelled plan                                                     |
+| `POST /api/jobs/{jobId}/cancel`             | Job ID. No revision.                                                      | The job detail with the cancel request (section 14.2)                  |
 | `POST /api/google/drive/session`            | Nothing                                                                   | A one-hour token, the API key, and the App ID for the person           |
 | `GET /api/google/drive/files/{fileId}/tabs` | Drive file ID                                                             | Tab IDs and titles                                                     |
 
@@ -783,6 +937,7 @@ Route names are engineering defaults. The contracts define the information and t
 | Import mode                                            | Validation job detail table | With the job                                |
 | Plan state: open, executed, cancelled, or expired      | Validation job detail table | With the job                                |
 | Update and status outcomes                             | Existing job tables         | With the job                                |
+| Cancel request: person and time                        | Job table                   | With the job                                |
 
 The 30-day value follows the planning retention for input files and downloads, `docs/reviews/2026-09-04-technical-change-instructions.md:613-614`.
 Existing job and artifact tables hold this data. The design adds detail tables, not new services.
@@ -865,6 +1020,7 @@ admin-sdk-mock has no Drive or Sheets methods. Tests use a fake transport.
 | `ACTIVE` and `DISABLED` codes | The import permissions and `devices:status`                        |
 | Deprovision codes             | The import permissions and `devices:deprovision`                   |
 | Execute                       | The permissions of every proposed change, rechecked at Execute     |
+| Cancel pending work           | The requester or `jobs:read`, and the job's permission             |
 
 - A status code without its permission rejects its row.
 - The status permissions match the Change status actions as built (`libs/application-contracts/src/lib/device-actions.ts:48-57`).
@@ -904,7 +1060,10 @@ admin-sdk-mock has no Drive or Sheets methods. Tests use a fake transport.
 | Checksum mismatch                                             | Full validation. A mismatch alone is not an error.                                              |
 | No proposed change                                            | Execute stays disabled. The page states that no update is needed.                               |
 | Plan expired or cancelled                                     | Execute refuses. The page offers a new import.                                                  |
-| Cancel during validation                                      | The validation job stops at its next batch and ends Cancelled. Nothing runs.                    |
+| Cancel pending work during validation                         | The job stops within 30 seconds and ends Cancelled. No report and no plan.                      |
+| Cancel pending work on a running update or status job         | Sent requests settle from their answers. Unsent operations settle Cancelled.                    |
+| Cancel pending work on the update job of an import            | The waiting status jobs of the import end Cancelled. None starts.                               |
+| Cancel request after every command is issued                  | Refused. No API cancels an issued command.                                                      |
 | Field value changed in Postgres after validation              | Execute excludes the field as a conflict. The report lists it.                                  |
 | Device no longer eligible for its status action at Execute    | The status preview excludes it with its reason, as built.                                       |
 | Permission removed after validation                           | Execute refuses the work.                                                                       |
@@ -941,9 +1100,15 @@ All values are examples. They define no headers or checksum text.
 
 **K. Reset of library devices.** The person keeps a Google Sheet for 30 library devices. Each row holds Organization unit `/Library`, Annotated location "Library", and `[clear]` in Annotated user. Every week the person imports the sheet with Sync all rows.
 
-Validation reads all 30 devices from Google. Four devices sit in another unit, and seven hold a student name. The review proposes those 11 field changes only, and Execute writes them. With Sync changes, a row that still matches its export checksum is skipped, so its drift stays.
+Validation refreshes the devices whose data is older than 24 hours. Four devices sit in another unit, and seven hold a student name. The review proposes those 11 field changes only, and Execute writes them. With Sync changes, a row that still matches its export checksum is skipped, so its drift stays.
 
 **L. Mistyped unit.** A row holds Organization unit `/Libary`. The tree holds no such unit, so validation rejects the row. Nothing reaches Google.
+
+**M. Cancel during execution.** The update job of an import writes 2,000 devices. A Deprovision job of the import waits.
+After 600 devices, the person chooses Cancel pending work. The confirmation names the Deprovision job.
+
+Within 30 seconds the worker stops. The 40 requests in flight settle from their answers.
+The update job ends Cancelled with 640 succeeded and 1,360 cancelled. The Deprovision job ends Cancelled and never starts.
 
 ## 20. Acceptance checks
 
@@ -985,7 +1150,7 @@ The reference product's files are not fixtures.
 
 - Sync changes skips the rows whose checksum matches. Sync all rows evaluates every row.
 - Sync all rows accepts a file without the Checksum column. Sync changes refuses it.
-- Sync all rows reads every candidate device from Google before the comparison.
+- Sync all rows refreshes only the stale candidate devices. A fresh device gets no new read.
 - A second Sync all rows import of the same sheet, without drift, proposes no change.
 - A blank cell keeps the value in both modes.
 - The report, Execute, and the audit record name the mode.
@@ -1010,7 +1175,7 @@ The reference product's files are not fixtures.
 - A result never shows success while an operation failed or reads unknown. Its counts match the job's operations.
 - Every link and button on a result page opens its target.
 - After validation, the page shows the report and never returns to the file choice by itself.
-- Cancel during validation stops the job at its next batch. The job shows Cancelled.
+- Cancel pending work during validation stops the job within 30 seconds. The job shows Cancelled.
 - A plan of 50,000 rows executes. Each database call passes its rows as one JSON document.
 
 ### Google Drive
@@ -1021,6 +1186,20 @@ The reference product's files are not fixtures.
 - Hidden and filtered rows count, as the import sheet states.
 - A missing file and a refused grant show source errors.
 - A person outside the connected domain sees CSV only.
+
+### Universal job cancel
+
+- Cancel pending work shows on the page of each job kind, for an authorized person only.
+- A queued job ends Cancelled at once. No Google request runs.
+- A running update job stops within 30 seconds. No Google request follows the read of the cancel request.
+- Each written field keeps its read-back. A completed change stays. Nothing rolls back.
+- Unsent operations read Cancelled. The counts show Cancelled apart from the other outcomes.
+- A cancelled job with an Unknown operation ends Needs review.
+- A command job that awaits devices offers no Cancel pending work. The API refuses the request.
+- A cancelled full sync publishes nothing and marks no device removed.
+- A cancel of the update job of an import cancels its waiting status jobs.
+- A repeated cancel request returns the same state. The audit record holds the person and the time.
+- A cancelled job releases its write slot. The next queued job starts.
 
 ## 21. Owner decisions and engineering defaults
 
@@ -1063,48 +1242,83 @@ Result: section 16.3. The planned Picker spike and the browser OAuth fallback en
 
 Result: sections 4.5 and 8.5.
 
+**D6, universal job cancel.** The eng-lead proposed the status Cancelled for validation jobs only. The owner answered:
+
+<!-- prettier-ignore -->
+> We need to add a universal cancel job feature to the job service.
+
+Result: section 14.2. Every job kind supports Cancel pending work.
+
+### Owner answers on the defaults — 2026-10-26
+
+The eng-lead asked the owner to confirm the status echo under D1, the Cancelled status, and four defaults. The owner answered:
+
+<!-- prettier-ignore -->
+> 1) I Am OK with that side effect. That is why there is a validation step. The user will be able to deconflict before executing.
+>
+> 3)
+> -Yes use [clear] for an explicit clear of a field.
+>
+> - No Sync all rows only gets data from Google if the device record is stale. Then it only gets stale rows.
+>
+> -A validated plan expires after 1 hour. That is fine.
+>
+> -Execute still asks for the typed DEPROVISION confirmation. This is OK.
+
+His answer 2 is decision D6.
+
+| Topic                                               | Owner answer                                                               | Result                |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | --------------------- |
+| Overwrite of a newer value and the status echo (D1) | Accepted. The review lets the person resolve each conflict before Execute. | Sections 7.5 and 8.4  |
+| Blank cell and `[clear]`                            | A blank cell keeps the value in both modes. `[clear]` clears a field.      | Section 7.3           |
+| Refresh in Sync all rows                            | Stale candidate devices only, as in Sync changes                           | Sections 8.5 and 10.1 |
+| Plan life                                           | 1 hour after validation completes                                          | Section 12            |
+| Typed phrase                                        | Execute asks for DEPROVISION when the plan holds a Deprovision             | Section 12            |
+
 ### Engineering defaults
 
 The owner can change each default.
 
-| Topic                       | Default                                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Status column               | Google's status value. `ACTIVE`, `DISABLED`, and Deprovision codes request a status. Other values are export-only. |
-| Status codes                | `ACTIVE`, `DISABLED`, and `DEPROVISION:<reason code>`. Exact upper case. Outer spaces ignored.                     |
-| Reason codes                | The four Google reasons without the `DEPROVISION_REASON_` prefix                                                   |
-| Typed phrase                | Execute asks for DEPROVISION when the plan holds a Deprovision                                                     |
-| Freshness                   | The inventory rule of 24 hours. Validation refreshes stale candidate devices only.                                 |
-| Refresh failure             | Rejects the affected rows. Other rows continue.                                                                    |
-| Plan life                   | 1 hour after validation completes                                                                                  |
-| Job order                   | The status jobs of an import wait for its update job                                                               |
-| Default import mode         | Sync changes                                                                                                       |
-| Refresh in Sync all rows    | Every candidate device, fresh or stale                                                                             |
-| Checksum column             | Optional and ignored in Sync all rows                                                                              |
-| Blank cell in Sync all rows | Keeps the value. `[clear]` empties a field.                                                                        |
-| Cancel during validation    | Stops the validation job. New job status Cancelled.                                                                |
-| Organization unit check     | Against the tree that validation reads from Google once                                                            |
-| Header matching             | Outer spaces and letter case ignored                                                                               |
-| File check in the browser   | A header row and one data row, before the upload                                                                   |
-| Clear token                 | `[clear]` in any letter case                                                                                       |
-| Clear rejects               | Asset tag and Organization unit                                                                                    |
-| Unknown columns             | Ignored with a warning. Every template column is required.                                                         |
-| Row checksum                | SHA-256 over a JSON array, 128 bits, base64url, schema version prefix                                              |
-| CSV export                  | UTF-8 with a byte order mark, CRLF, and a tab escape for formula cells                                             |
-| Limits                      | 50,000 rows for an edit export and for an import                                                                   |
-| Retention                   | 30 days for files, snapshots, reports, and plans                                                                   |
-| Job types                   | `EXP` and `IMP`. Execution reuses `UPD` and `STS`.                                                                 |
-| Review location             | The validation job page                                                                                            |
-| Drive import                | A Google Sheet tab or a CSV file. Hidden and filtered rows count.                                                  |
-| Export permission           | A new `devices:export`                                                                                             |
-| API key                     | Restricted by API only                                                                                             |
-| Sharing                     | None. A Drive owner shares the Sheet in Drive.                                                                     |
+| Topic                                 | Default                                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Status column                         | Google's status value. `ACTIVE`, `DISABLED`, and Deprovision codes request a status. Other values are export-only. |
+| Status codes                          | `ACTIVE`, `DISABLED`, and `DEPROVISION:<reason code>`. Exact upper case. Outer spaces ignored.                     |
+| Reason codes                          | The four Google reasons without the `DEPROVISION_REASON_` prefix                                                   |
+| Freshness                             | The inventory rule of 24 hours. Validation refreshes stale candidate devices only.                                 |
+| Refresh failure                       | Rejects the affected rows. Other rows continue.                                                                    |
+| Job order                             | The status jobs of an import wait for its update job                                                               |
+| Default import mode                   | Sync changes                                                                                                       |
+| Cancel permission                     | The requester or `jobs:read`, and the permission that starts the job                                               |
+| Cancel check                          | At each batch claim and each lease renewal of 30 seconds                                                           |
+| Cancel request revision               | None. The request stops the work that remains.                                                                     |
+| Cancel with an Unknown operation      | The job ends Needs review                                                                                          |
+| Cancel of the update job of an import | Also cancels the waiting status jobs of the import                                                                 |
+| Cancel after every command is issued  | Not offered. Issued commands stay armed.                                                                           |
+| Cancel of a Sheet export              | Not offered after the Sheet write starts                                                                           |
+| Checksum column                       | Optional and ignored in Sync all rows                                                                              |
+| Organization unit check               | Against the tree that validation reads from Google once                                                            |
+| Header matching                       | Outer spaces and letter case ignored                                                                               |
+| File check in the browser             | A header row and one data row, before the upload                                                                   |
+| Clear token                           | `[clear]` in any letter case                                                                                       |
+| Clear rejects                         | Asset tag and Organization unit                                                                                    |
+| Unknown columns                       | Ignored with a warning. Every template column is required.                                                         |
+| Row checksum                          | SHA-256 over a JSON array, 128 bits, base64url, schema version prefix                                              |
+| CSV export                            | UTF-8 with a byte order mark, CRLF, and a tab escape for formula cells                                             |
+| Limits                                | 50,000 rows for an edit export and for an import                                                                   |
+| Retention                             | 30 days for files, snapshots, reports, and plans                                                                   |
+| Job types                             | `EXP` and `IMP`. Execution reuses `UPD` and `STS`.                                                                 |
+| Review location                       | The validation job page                                                                                            |
+| Drive import                          | A Google Sheet tab or a CSV file. Hidden and filtered rows count.                                                  |
+| Export permission                     | A new `devices:export`                                                                                             |
+| API key                               | Restricted by API only                                                                                             |
+| Sharing                               | None. A Drive owner shares the Sheet in Drive.                                                                     |
 
 ## 22. Records to update and next steps
 
 ### Records updated with this revision
 
-- New workflow record `docs/workflows/batch-update-export-import.md`, proposed.
-- `docs/workflow-gaps.md`: the G16 row links the record and records decisions D1 to D4.
+- Workflow record `docs/workflows/batch-update-export-import.md`, proposed. It records D1 to D6 and the owner answers on the defaults.
+- `docs/workflow-gaps.md`: the G16 row links the record. The decisions section records D1 to D6.
 - `docs/current-work.md`: the active workflow and its next step.
 
 ### Records to update after the owner confirms the workflow record
@@ -1114,6 +1328,9 @@ The owner can change each default.
 - `docs/portfolio/05-decisions-and-open-questions.md`: R18 and the directions of questions 35, 39, and 42.
 - `docs/portfolio/01-product-brief.md:93`: the Google Sheets row.
 - `docs/portfolio/phase-3-google-credentials.md`: the `drive.file` capability.
+- `docs/ui/patterns.md:314-315`: JOB-04 names the universal Cancel pending work and its states.
+- `docs/ui/jobs-grid.json`: the status filter value Cancelled.
+- `docs/superpowers/specs/2026-10-16-device-write-jobs-design.md:264`: the job status list adds `cancelled`.
 
 ### Mockup
 
@@ -1127,54 +1344,61 @@ The mockup redraws these Figma frames on page `94:2` before the build:
 | `106:426` File choice      | The import mode selector. Upload a CSV file, or choose from Google Drive, then a tab. The rules, the status codes, and the reason codes. |
 | `99:145` Review            | The validation job page: counts, rejected rows, proposed changes, warnings, Execute, and Cancel                                          |
 | `107:219` Confirm          | The typed phrase DEPROVISION when the plan holds a Deprovision                                                                           |
-| `228:4996` Queued import   | Cancel during a running validation                                                                                                       |
+| `228:4996` Queued job      | Cancel pending work on a queued job. The job ends at once.                                                                               |
+| `228:4524` Running job     | Cancel pending work: the confirmation, Cancellation requested, and the Cancelled result                                                  |
+| `122:370` Recovery index   | The Cancel queued work and Cancel running work examples                                                                                  |
 | `104:479` Baseline expired | Replaced by the expired plan state                                                                                                       |
 | Google connection page     | The API key, the project number, and the Drive scope row                                                                                 |
 
 ### Implementation order
 
 1. The owner confirms the workflow record and approves the mockup.
-2. Build the schema module, the status codes, and the row checksum, with tests.
-3. Build the CSV edit export for a frozen device scope.
-4. Build the streaming upload, the parser, the import modes, and the validation job with the refresh.
-5. Build the report, the plan, and the review page with counts that add up.
-6. Build Execute and Cancel: the edit-list preview, device-list status previews, the jobs, and the job order.
-7. Demonstrate on admin-sdk-mock: both import modes, a stale refresh, a clear, a rejected row, status codes, and a partial job.
-8. Build the Drive slice: capability, setup inputs, edge rules, Picker, Sheet export, and Drive import.
-9. Build the report export.
+2. Build the universal job cancel: contracts, schema, job service, worker, and the job page.
+3. Demonstrate the cancel on admin-sdk-mock with queued and running update, status, command, and refresh jobs.
+4. Build the schema module, the status codes, and the row checksum, with tests.
+5. Build the CSV edit export for a frozen device scope.
+6. Build the streaming upload, the parser, the import modes, and the validation job with the refresh.
+7. Build the report, the plan, and the review page with counts that add up.
+8. Build Execute and Cancel: the edit-list preview, device-list status previews, the jobs, and the job order.
+9. Demonstrate the CSV slice on admin-sdk-mock: both import modes, a stale refresh, a clear, and a rejected row.
+   Include status codes, a cancel, and a partial job.
+10. Build the Drive slice: capability, setup inputs, edge rules, Picker, Sheet export, and Drive import.
+11. Build the report export.
 
+The cancel slice completes when a person cancels a queued job and a running job of each kind.
+Each job page then shows the actual outcomes.
 The CSV slice completes when a person exports, edits, validates, reviews, executes, and sees actual results.
 Passing tests do not approve the screens or settle an open decision.
 
 ## Appendix A. Differences from the reference design
 
-| Reference design                                                                                       | Campus Commander                                                                                  | Reason                                                                     |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| A separate validation job and execution job                                                            | Validation job `IMP`. Execution through the existing update job `UPD` and status jobs `STS`.      | One write engine, as the reference design asks                             |
-| Review in a report view                                                                                | The validation job page, with Execute and Cancel                                                  | Large reports need the job details grid. Owner decision D2.                |
-| Change marker of any form                                                                              | SHA-256 row checksum with a schema version prefix                                                 | Owner direction: Campus Commander's own checksum                           |
-| Current values from the database only                                                                  | Stale devices refresh from Google first. Sync all rows reads every device.                        | Owner decisions D1 and D5                                                  |
-| No detection of rows changed after the export                                                          | Kept. The field comparison uses fresh data only.                                                  | Owner decision D1                                                          |
-| An all-file-values flag that bypasses the checksum gate                                                | An import mode selector: Sync changes and Sync all rows                                           | Owner decision D5                                                          |
-| Invalid-row policy left open                                                                           | Execute runs the valid rows. Cancel discards the plan.                                            | Owner decision D2                                                          |
-| Clear of an organizational unit moves it to root                                                       | Clear rejects the row                                                                             | Every device has a unit. No silent move to root.                           |
-| Clear of the asset annotation empties it                                                               | Clear rejects the row                                                                             | Google keeps no empty Asset tag                                            |
-| `ACTIVE`, `DISABLED`, and `DEPROVISION:` codes. Echoed export-only statuses skipped silently.          | Kept, with the four verified reasons. A changed export-only value adds a warning.                 | Owner decision D3, `libs/application-contracts/src/lib/devices.ts:588-606` |
-| Repair and no-longer-required Deprovision reasons                                                      | Excluded                                                                                          | Google refuses them (`docs/workflows/wipe-powerwash-deprovision.md:102`)   |
-| Sheets under a configured identity                                                                     | The person's own Drive through a DWD token and the Picker                                         | Owner direction of 2026-10-24 and decision D4                              |
-| Sharing and notification email                                                                         | Excluded                                                                                          | Drive sharing covers it                                                    |
-| Unknown-column policy left open                                                                        | Ignored with a warning. Every template column is required.                                        | A misspelled header refuses the file anyway                                |
-| Row permission check left as a stub                                                                    | The access checks of the edit-list preview and the status permissions                             | Corrects a reference defect                                                |
-| Grid refresh after full success only                                                                   | Each device updates when its read-back arrives                                                    | Corrects a reference defect                                                |
-| The browser reads the whole file and posts it inside a JSON request body                               | A streaming upload into the artifact store                                                        | Removes the memory bound on file size                                      |
-| Organization unit paths fail only at execution                                                         | Validation checks each path against the tree                                                      | Corrects a reference defect                                                |
-| A success message despite refused updates. Wrong counts and an inert error-log button after a failure. | Results read the job's operations. No success wording while an operation failed or reads unknown. | Corrects reference defects (`docs/portfolio/04-ux-ui-spec.md:205`, `:218`) |
-| A validated file can run twice after a retry                                                           | Execute returns the same jobs. A plan runs once.                                                  | Corrects a reference defect                                                |
-| A results step that can return to the file choice                                                      | The report stays on the validation job page                                                       | Corrects a reference defect                                                |
-| Untrimmed column headers                                                                               | Header matching ignores outer spaces and letter case                                              | Corrects a reference defect                                                |
-| Large executions meet the database limit on bind parameters                                            | Previews and jobs pass rows as one JSON document                                                  | Avoids a known reference limit                                             |
-| Cancel in both phases                                                                                  | Kept. During validation, Cancel stops the job. After validation, it discards the plan.            | Reference behavior                                                         |
-| Review age left open                                                                                   | Plan for 1 hour. A value changed after validation stays out at Execute.                           | Reuses the conflict rule as built                                          |
+| Reference design                                                                                       | Campus Commander                                                                                                  | Reason                                                                     |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A separate validation job and execution job                                                            | Validation job `IMP`. Execution through the existing update job `UPD` and status jobs `STS`.                      | One write engine, as the reference design asks                             |
+| Review in a report view                                                                                | The validation job page, with Execute and Cancel                                                                  | Large reports need the job details grid. Owner decision D2.                |
+| Change marker of any form                                                                              | SHA-256 row checksum with a schema version prefix                                                                 | Owner direction: Campus Commander's own checksum                           |
+| Current values from the database only                                                                  | Stale devices refresh from Google first, in both modes                                                            | Owner decision D1, owner answer of 2026-10-26                              |
+| No detection of rows changed after the export                                                          | Kept. The field comparison uses fresh data only.                                                                  | Owner decision D1                                                          |
+| An all-file-values flag that bypasses the checksum gate                                                | An import mode selector: Sync changes and Sync all rows                                                           | Owner decision D5                                                          |
+| Invalid-row policy left open                                                                           | Execute runs the valid rows. Cancel discards the plan.                                                            | Owner decision D2                                                          |
+| Clear of an organizational unit moves it to root                                                       | Clear rejects the row                                                                                             | Every device has a unit. No silent move to root.                           |
+| Clear of the asset annotation empties it                                                               | Clear rejects the row                                                                                             | Google keeps no empty Asset tag                                            |
+| `ACTIVE`, `DISABLED`, and `DEPROVISION:` codes. Echoed export-only statuses skipped silently.          | Kept, with the four verified reasons. A changed export-only value adds a warning.                                 | Owner decision D3, `libs/application-contracts/src/lib/devices.ts:588-606` |
+| Repair and no-longer-required Deprovision reasons                                                      | Excluded                                                                                                          | Google refuses them (`docs/workflows/wipe-powerwash-deprovision.md:102`)   |
+| Sheets under a configured identity                                                                     | The person's own Drive through a DWD token and the Picker                                                         | Owner direction of 2026-10-24 and decision D4                              |
+| Sharing and notification email                                                                         | Excluded                                                                                                          | Drive sharing covers it                                                    |
+| Unknown-column policy left open                                                                        | Ignored with a warning. Every template column is required.                                                        | A misspelled header refuses the file anyway                                |
+| Row permission check left as a stub                                                                    | The access checks of the edit-list preview and the status permissions                                             | Corrects a reference defect                                                |
+| Grid refresh after full success only                                                                   | Each device updates when its read-back arrives                                                                    | Corrects a reference defect                                                |
+| The browser reads the whole file and posts it inside a JSON request body                               | A streaming upload into the artifact store                                                                        | Removes the memory bound on file size                                      |
+| Organization unit paths fail only at execution                                                         | Validation checks each path against the tree                                                                      | Corrects a reference defect                                                |
+| A success message despite refused updates. Wrong counts and an inert error-log button after a failure. | Results read the job's operations. No success wording while an operation failed or reads unknown.                 | Corrects reference defects (`docs/portfolio/04-ux-ui-spec.md:205`, `:218`) |
+| A validated file can run twice after a retry                                                           | Execute returns the same jobs. A plan runs once.                                                                  | Corrects a reference defect                                                |
+| A results step that can return to the file choice                                                      | The report stays on the validation job page                                                                       | Corrects a reference defect                                                |
+| Untrimmed column headers                                                                               | Header matching ignores outer spaces and letter case                                                              | Corrects a reference defect                                                |
+| Large executions meet the database limit on bind parameters                                            | Previews and jobs pass rows as one JSON document                                                                  | Avoids a known reference limit                                             |
+| Cancel in both phases                                                                                  | Kept. Cancel pending work stops any job, the validation job included. After validation, Cancel discards the plan. | Reference behavior, owner decision D6                                      |
+| Review age left open                                                                                   | Plan for 1 hour. A value changed after validation stays out at Execute.                                           | Reuses the conflict rule as built                                          |
 
 ## Appendix B. Sources
 
@@ -1197,6 +1421,11 @@ Passing tests do not approve the screens or settle an open decision.
 - Plain device IDs, preview creation, and confirmation: `api/src/app/devices/device-updates.ts:52`, `:525-537`, `:785`.
 - Organization unit tree read: `api/src/app/devices/device-org-unit-tree.ts`, `libs/google-connection/src/lib/devices.ts:655`.
 - Result truth: `docs/portfolio/04-ux-ui-spec.md:205`, `:218`.
+- Cancellation rules: `docs/portfolio/03-architecture.md:257-258`, `:379`, `:387`, `:456`, and `docs/portfolio/01-product-brief.md:99`.
+- Cancellation screens: `docs/ui/patterns.md:267`, `:303`, `:314-315`, and `docs/ui/jobs-grid.json:172-175`.
+- Job service and worker: `deployment/postgres/migrations/017-jobs.sql:17-45`, `:223`, `:318-330`, `:424-431`, `:464-476`, `:498-500`, `:520-529`.
+- Write slot and lease renewal: `api/src/app/jobs/job-service.ts:105`, `worker/src/device-update.ts:1344`.
+- Issued commands stay armed: `docs/workflows/wipe-powerwash-deprovision.md:171`, `:188`.
 - Selection expiry: `api/src/app/devices/device-selection.ts:13`.
 - Entity freshness: `libs/application-contracts/src/lib/entity-cache.ts:16-19`.
 - Artifact store: `api/src/app/storage/storage.service.ts:24-33`.
@@ -1209,6 +1438,7 @@ Passing tests do not approve the screens or settle an open decision.
 ### Figma
 
 File `lqZx6qpWevsN3AAfWkworl`, page `94:2`: `216:4309`, `99:109`, `104:524`, `106:426`, `99:145`, `106:514`, `106:579`, `107:219`, `109:250`, `109:295`, `228:5550`, `104:479`, `106:471`.
+Cancel pending work: `228:4524` (running update job) and `228:4996` (queued job), inspected on 2026-10-26. Recovery index: `122:370`.
 
 ### Google documentation, read on 2026-10-24 and 2026-10-26
 

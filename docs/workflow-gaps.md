@@ -225,3 +225,7 @@ The [batch update through export and import record](workflows/batch-update-expor
   Source: the owner's answer D4 in the main chat. He confirmed the DWD token path from his own earlier work. Replaced behavior: no Drive identity.
 - **G16, D5, import modes.** The import sheet offers Sync changes and Sync all rows. Sync all rows ignores the checksum and resets devices to the sheet.
   Source: the owner's direction D5 in the main chat. Replaced behavior: one import mode.
+- **G16, answers on the defaults.** The owner accepted the overwrite risk of D1. He confirmed `[clear]`, the 1-hour plan, and the typed phrase.
+  Sync all rows refreshes stale devices only. Source: the owner's answers in the main chat. Replaced behavior: a refresh of every device in Sync all rows.
+- **G16 and G17, D6, universal job cancel.** The job service gains Cancel pending work for every job kind. It stops work that has not reached Google and never rolls back.
+  Source: the owner's direction D6 in the main chat. Replaced behavior: no cancel in the first jobs slice (`docs/superpowers/specs/2026-10-16-device-write-jobs-design.md:264`).
