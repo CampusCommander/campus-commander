@@ -1802,6 +1802,11 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
           [['cancelled', 'cancel-requested']],
         );
         assert.equal((await cancelEvents(holding.displayId)).n, 1);
+        // A job that ends at once records the request and the final status as one change.
+        const changes = (await publications(holding.jobId)).filter(
+          (row) => row.status_changed,
+        );
+        assert.equal(changes.length, 1);
 
         // The released event runs cleanup and admission. The key leaves the test Redis, the
         // registry entry takes its cleanup mark, and the smallest waiting job takes the slot.
