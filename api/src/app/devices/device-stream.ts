@@ -91,7 +91,7 @@ export interface DeviceStreamAuth {
 export interface DeviceStreamPingReads {
   /** The sync of the customer, after the devices:read authority of the session. */
   current(session: SessionResponse): Promise<{ customerId: string } | null>;
-  /** True when the session holds jobs:read at platform scope or district scope of the customer. */
+  /** True when the session holds jobs:read or jobs:manage at platform or district scope. */
   jobVisibility(session: SessionResponse, customerId: string): boolean;
 }
 
@@ -104,7 +104,7 @@ export interface DeviceStreamRecheck {
 
 /**
  * One ping of the Devices stream (section 3.3). The session must still hold devices:read for the
- * customer, and its jobs:read visibility must not change. A changed visibility closes the stream,
+ * customer, and its job visibility must not change. A changed visibility closes the stream,
  * so the browser reconnects and reads the failures it may now see or no longer see.
  */
 export async function recheckDeviceStream(input: {

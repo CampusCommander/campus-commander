@@ -547,7 +547,7 @@ export class DevicesService {
 
   /**
    * The failure of one job, as the caller may see it. The predicate decides, so a caller without
-   * jobs:read reads null for another person's job. A missing header row reads as null.
+   * the job read reads null for another person's job. A missing header row reads as null.
    */
   async jobFailure(
     session: SessionResponse,

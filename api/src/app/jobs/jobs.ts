@@ -447,7 +447,7 @@ export class Jobs {
     }
   }
 
-  /** The connected customer of a caller with jobs:read or devices:read (eng-lead ruling 1). */
+  /** The connected customer of a caller with jobs:read, jobs:manage, or devices:read (ruling 1). */
   async customer(session: SessionResponse): Promise<string> {
     const rows = await this.rows(
       'SELECT r.customer_id FROM cc.job_reader($1,$2) r',
@@ -712,7 +712,7 @@ export class Jobs {
    * attempt and starts one reconcile flow. An operation under a live read-back lease claims nothing,
    * so it answers 202 without a second flow.
    *
-   * The permission checks run in the order of the route: `jobs:read` before the job lookup, then the
+   * The permission checks run in the order of the route: the job read before the job lookup, then the
    * write permission of the operation kind (design section 6). A refused request claims nothing.
    */
   async reconcile(
