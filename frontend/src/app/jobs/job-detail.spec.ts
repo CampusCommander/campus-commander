@@ -131,8 +131,10 @@ const multiFieldJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
       unknown: 1,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: 0,
     },
+    cancelRequest: null,
     latestActivity: {
       at: '2026-10-21T19:06:00.000Z',
       failed: { count: 0, operations: [] },
@@ -248,8 +250,10 @@ const editListJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
       unknown: 0,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: 0,
     },
+    cancelRequest: null,
     latestActivity: {
       at: '2026-10-23T19:23:00.000Z',
       failed: {
@@ -334,8 +338,10 @@ const commandJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
       unknown: 1,
       skipped: 0,
       expired: 1,
+      cancelled: 0,
       pending: 2,
     },
+    cancelRequest: null,
     latestActivity: {
       at: '2026-10-20T19:08:00.000Z',
       failed: {
@@ -381,8 +387,10 @@ const statusJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
       unknown: 0,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: 0,
     },
+    cancelRequest: null,
     latestActivity: {
       at: '2026-10-20T19:08:00.000Z',
       failed: { count: 1, operations: [] },
@@ -434,8 +442,10 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
     unknown: 1,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 0,
   },
+  cancelRequest: null,
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-006',
@@ -742,8 +752,10 @@ it('shows the observed value when the observation repeats the Clear label', () =
       unknown: 0,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: 0,
     },
+    cancelRequest: null,
   });
   const { element } = setup({
     job: clearJob,
@@ -1010,8 +1022,10 @@ it('renders a Powerwash job with every command state and Google expiry', () => {
         unknown: 1,
         skipped: 0,
         expired: 1,
+        cancelled: 0,
         pending: 2,
       },
+      cancelRequest: null,
     }),
     operations,
   });
@@ -1077,8 +1091,10 @@ it('renders a Deprovision job with its reason and status rows', () => {
         unknown: 0,
         skipped: 0,
         expired: 0,
+        cancelled: 0,
         pending: 0,
       },
+      cancelRequest: null,
       latestActivity: {
         at: '2026-10-22T14:16:00.000Z',
         failed: { count: 0, operations: [] },
@@ -1305,6 +1321,7 @@ it('shows the counter line for a job with no samples', () => {
       unknown: 0,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: 12,
     },
     latestActivity: {
@@ -1331,8 +1348,10 @@ it('shows a refresh job with counters and Latest activity only', () => {
       unknown: 0,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: null,
     },
+    cancelRequest: null,
     latestActivity: {
       at: '2026-10-19T10:42:00.000Z',
       failed: { count: 0, operations: [] },

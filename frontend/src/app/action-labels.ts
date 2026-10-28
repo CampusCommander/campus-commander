@@ -20,4 +20,5 @@ export const actionLabels: Record<Action, string> = {
   'devices:deprovision': 'Device Deprovision',
   'devices:bulk-actions': 'Run device bulk actions',
   'jobs:read': 'View jobs',
+  'jobs:manage': 'Manage jobs',
 };

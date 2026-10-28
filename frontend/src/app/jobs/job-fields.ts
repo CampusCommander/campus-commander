@@ -59,6 +59,7 @@ export const JOB_STATUS_LABELS: Readonly<Record<JobStatus, string>> = {
   'completed-with-errors': 'Completed with errors',
   failed: 'Failed',
   'needs-review': 'Needs review',
+  cancelled: 'Cancelled',
 };
 
 export const JOB_STATUSES: readonly JobStatus[] = Object.keys(
