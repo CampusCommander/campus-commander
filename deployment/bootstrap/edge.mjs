@@ -1,20 +1,61 @@
 import http from 'node:http';
+import http2 from 'node:http2';
 import https from 'node:https';
 import { readFile } from 'node:fs/promises';
 import { credentialFromAuthorization } from './access.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
-import { proxyApplication } from './application-edge.mjs';
+import { proxyApplication, responseHeaders } from './application-edge.mjs';
 
 const assetPath =
   /^\/(?:assets\/)?[A-Za-z0-9_/-]+\.(?:js|css|ico|png|svg|woff2?)$/;
 const finish = (response, status, message) => {
+  // The request deadline answers a slow body. The body reader then rejects on the closed
+  // stream, and this second answer must not throw.
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
   });
   response.end(message);
 };
+
+/**
+ * The HTTP/2 listener has no incoming request deadline. Bound each stream with the configured
+ * `requestTimeout` value. The deadline covers the request body only, so a completed request and
+ * an open event stream outlive it. A session inactivity timer would reset on busy sibling
+ * streams, so each stream gets its own timer.
+ */
+function enforceRequestDeadline(server, request, response) {
+  const stream = request.stream;
+  if (!stream || stream.endAfterHeaders) return;
+  const timer = setTimeout(() => {
+    if (!response.headersSent) {
+      response.writeHead(408, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      response.end('The request timed out.\n');
+    }
+    if (!stream.destroyed) stream.close(http2.constants.NGHTTP2_CANCEL);
+  }, server.requestTimeout);
+  timer.unref();
+  const clear = () => clearTimeout(timer);
+  // The compatibility request emits `end` only when the application reads its body. An unread
+  // GET or HEAD request never emits it, even after the client completes its input with an
+  // empty DATA END_STREAM. The stream reports that completion, so watch both.
+  stream.once('end', clear);
+  stream.once('close', clear);
+  stream.once('aborted', clear);
+  request.once('end', clear);
+  request.once('close', clear);
+  request.once('aborted', clear);
+  response.once('finish', clear);
+  response.once('close', clear);
+}
 
 /** Serve application routes and protected installer checks through the TLS edge. */
 export async function createBootstrapEdge({
@@ -43,7 +84,9 @@ export async function createBootstrapEdge({
           : undefined,
     };
   }
-  const server = https.createServer(material, async (request, response) => {
+  // One request handler serves HTTP/2 and HTTP/1.1 with the same routes, limits, and timeouts.
+  const handleRequest = async (request, response) => {
+    enforceRequestDeadline(server, request, response);
     response.setHeader('strict-transport-security', 'max-age=31536000');
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');
@@ -115,6 +158,8 @@ export async function createBootstrapEdge({
         ca: target.ca,
         rejectUnauthorized: true,
         headers: {
+          // The upstream receives its configured endpoint name, so Node verifies the upstream
+          // certificate against that endpoint and not against the public client host.
           host: target.url.host,
           accept: request.headers.accept || '*/*',
           ...(api ? { authorization: request.headers.authorization } : {}),
@@ -127,11 +172,7 @@ export async function createBootstrapEdge({
           incoming.destroy();
           return finish(response, 502, 'Startup service unavailable.\n');
         }
-        response.writeHead(status, {
-          'content-type':
-            incoming.headers['content-type'] || 'application/octet-stream',
-          'cache-control': 'no-store',
-        });
+        response.writeHead(status, responseHeaders(incoming, false));
         incoming.on('error', () => response.destroy());
         incoming.pipe(response);
       },
@@ -146,7 +187,21 @@ export async function createBootstrapEdge({
     });
     response.once('close', () => upstream.destroy());
     upstream.end();
+  };
+  const server = http2.createSecureServer(
+    { ...material, allowHTTP1: true },
+    handleRequest,
+  );
+  // node:http2 has no closeAllConnections. Keep the teardown that process shutdown and the
+  // callers use, and reach both protocols through the TLS socket of each connection.
+  const sockets = new Set();
+  server.on('secureConnection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
   });
+  server.closeAllConnections = () => {
+    for (const socket of sockets) socket.destroy();
+  };
   server.requestTimeout = 10000;
   server.headersTimeout = 10000;
   server.keepAliveTimeout = 5000;
