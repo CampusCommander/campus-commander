@@ -44,6 +44,12 @@ function enforceRequestDeadline(server, request, response) {
   }, server.requestTimeout);
   timer.unref();
   const clear = () => clearTimeout(timer);
+  // The compatibility request emits `end` only when the application reads its body. An unread
+  // GET or HEAD request never emits it, even after the client completes its input with an
+  // empty DATA END_STREAM. The stream reports that completion, so watch both.
+  stream.once('end', clear);
+  stream.once('close', clear);
+  stream.once('aborted', clear);
   request.once('end', clear);
   request.once('close', clear);
   request.once('aborted', clear);
