@@ -6,6 +6,7 @@ export async function qualifyDeviceWriteJobs({
   runtime,
   migrator,
   connect,
+  close,
   issuer,
   password,
 }) {
@@ -13346,15 +13347,18 @@ export async function qualifyDeviceWriteJobs({
         }
         // Another schema role holds no EXECUTE, so the database refuses its call (card rule).
         const outsiderName = `cc-outsider-${randomUUID().slice(0, 8)}`;
+        const adminSession = await connect('postgres', 'cc-app');
         let outsider;
         try {
-          await migrator.query(
+          await adminSession.query(
             `CREATE ROLE "${outsiderName}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`,
           );
-          await migrator.query(
+          await adminSession.query(
             `GRANT CONNECT ON DATABASE "cc-app" TO "${outsiderName}"`,
           );
-          await migrator.query(`GRANT USAGE ON SCHEMA cc TO "${outsiderName}"`);
+          await adminSession.query(
+            `GRANT USAGE ON SCHEMA cc TO "${outsiderName}"`,
+          );
           outsider = await connect(outsiderName, 'cc-app');
           for (const [signature, text, values] of [
             [
@@ -13379,10 +13383,11 @@ export async function qualifyDeviceWriteJobs({
             assert.equal(granted.rows[0].granted, false);
           }
         } finally {
-          await outsider?.end().catch(() => undefined);
-          await migrator
+          if (outsider !== undefined) await close(outsider);
+          await adminSession
             .query(`DROP ROLE IF EXISTS "${outsiderName}"`)
             .catch(() => undefined);
+          await close(adminSession);
         }
       },
     );

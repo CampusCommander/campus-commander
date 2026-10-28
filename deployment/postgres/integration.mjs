@@ -587,6 +587,7 @@ try {
       runtime,
       migrator: migrators[0],
       connect,
+      close,
       issuer,
       password,
     })),
