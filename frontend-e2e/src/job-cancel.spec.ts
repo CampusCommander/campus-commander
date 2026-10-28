@@ -803,6 +803,41 @@ async function openCancelQuestion(page: Page) {
   return dialog;
 }
 
+interface HeldCancel {
+  path: string;
+  fulfill: (options: Parameters<Route['fulfill']>[0]) => Promise<void>;
+}
+
+/**
+ * Holds every cancel answer so a test can inspect focus and duplicate-submission
+ * behavior while the request is in flight (UI-07, UI-09).
+ */
+async function holdCancelAnswers(page: Page) {
+  const held: HeldCancel[] = [];
+  const posts: string[] = [];
+  await page.route('**/api/jobs/*/cancel', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    posts.push(path);
+    await new Promise<void>((resolve) => {
+      held.push({
+        path,
+        fulfill: async (options) => {
+          await route.fulfill(options);
+          resolve();
+        },
+      });
+    });
+  });
+  return {
+    posts,
+    release: async (path: string, options: Parameters<Route['fulfill']>[0]) => {
+      const match = held.find((entry) => entry.path === path);
+      if (!match) throw new Error(`No held cancel request for ${path}`);
+      await match.fulfill(options);
+    },
+  };
+}
+
 test('state 01: the running job offers Cancel pending work', async ({
   page,
 }, testInfo) => {
@@ -1070,4 +1105,129 @@ test('the selected-device refresh question names the batches', async ({
   await page.screenshot({
     path: testInfo.outputPath('09-refresh-selected-question.png'),
   });
+});
+
+test('a held answer keeps focus in the question and returns it on dismiss', async ({
+  page,
+}) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-26T14:42:27Z');
+  await signIn(page, state);
+  await page.goto('/jobs/UPD-001');
+  const held = await holdCancelAnswers(page);
+
+  const dialog = await openCancelQuestion(page);
+  const confirm = dialog.getByRole('button', { name: 'Cancel pending work' });
+  await confirm.click();
+  await expect(dialog).toBeVisible();
+  await expect(confirm).toBeFocused();
+  await expect(confirm).toHaveAttribute('aria-disabled', 'true');
+
+  await dialog.getByRole('button', { name: 'Keep job running' }).click();
+  await expect(dialog).toBeHidden();
+  const control = page.locator('#cancel-job');
+  await expect(control).toHaveText('Cancelling…');
+  await expect(control).toBeFocused();
+
+  state.upd = 'requested';
+  await held.release('/api/jobs/UPD-001/cancel', { status: 200, json: {} });
+  await expect(control).toHaveText('Cancellation requested');
+  await expect(control).toBeFocused();
+});
+
+test('Escape closes a held question and returns focus to the control', async ({
+  page,
+}) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-26T14:42:27Z');
+  await signIn(page, state);
+  await page.goto('/jobs/UPD-001');
+  const held = await holdCancelAnswers(page);
+
+  const dialog = await openCancelQuestion(page);
+  const confirm = dialog.getByRole('button', { name: 'Cancel pending work' });
+  await confirm.click();
+  await expect(confirm).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  const control = page.locator('#cancel-job');
+  await expect(control).toHaveText('Cancelling…');
+  await expect(control).toBeFocused();
+
+  state.upd = 'requested';
+  await held.release('/api/jobs/UPD-001/cancel', { status: 200, json: {} });
+  await expect(control).toHaveText('Cancellation requested');
+});
+
+test('a missing job after the answer focuses Back to jobs', async ({
+  page,
+}) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-26T14:42:27Z');
+  await signIn(page, state);
+  await page.goto('/jobs/UPD-001');
+  const dialog = await openCancelQuestion(page);
+
+  // The cancel answers 404 and its reread answers 404, so the job disappears.
+  await page.route('**/api/jobs/UPD-001', (route) =>
+    route.fulfill({ status: 404, json: { reason: 'job-not-found' } }),
+  );
+  await page.route('**/api/jobs/UPD-001/cancel', (route) =>
+    route.fulfill({ status: 404, json: { reason: 'job-not-found' } }),
+  );
+  await dialog
+    .getByRole('button', { name: 'Cancel pending work' })
+    .dispatchEvent('click');
+
+  await expect(
+    page.getByRole('heading', { name: 'Job not found' }),
+  ).toBeVisible();
+  await expect(page.locator('#job-missing-back')).toBeFocused();
+});
+
+test('an obsolete answer does not release the next job request', async ({
+  page,
+}) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-26T14:42:27Z');
+  await signIn(page, state);
+  await page.goto('/jobs/UPD-001');
+  const held = await holdCancelAnswers(page);
+
+  // Hold the answer, dismiss the question, and leave the job.
+  const first = await openCancelQuestion(page);
+  await first.getByRole('button', { name: 'Cancel pending work' }).click();
+  await expect(
+    first.getByRole('button', { name: 'Cancel pending work' }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(first).toBeHidden();
+  await page.getByRole('link', { name: 'Back to jobs' }).click();
+  await expect(page).toHaveURL(/\/jobs$/);
+
+  // Hold the next job's answer too, staying in the same document so the first
+  // request remains in flight.
+  await page
+    .getByRole('link', { name: 'Open details for job STS-001' })
+    .click();
+  await expect(page).toHaveURL(/\/jobs\/STS-001$/);
+  const second = await openCancelQuestion(page);
+  const confirm = second.getByRole('button', { name: 'Cancel pending work' });
+  await confirm.click();
+  await expect(confirm).toBeFocused();
+
+  // The earlier job's answer must leave the newer request busy.
+  state.upd = 'requested';
+  await held.release('/api/jobs/UPD-001/cancel', { status: 200, json: {} });
+  await expect(confirm).toHaveAttribute('aria-disabled', 'true');
+  await confirm.dispatchEvent('click');
+  await page.waitForTimeout(300);
+  expect(
+    held.posts.filter((path) => path.endsWith('/STS-001/cancel')),
+  ).toHaveLength(1);
+
+  state.sts = 'cancelled';
+  await held.release('/api/jobs/STS-001/cancel', { status: 200, json: {} });
+  await expect(page.getByText('Job STS-001 · Cancelled')).toBeVisible();
 });
