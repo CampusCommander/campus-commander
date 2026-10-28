@@ -13378,7 +13378,7 @@ export async function qualifyDeviceWriteJobs({
               `${signature} must refuse a role without EXECUTE.`,
             );
             const granted = await outsider.query(
-              `SELECT has_function_privilege(current_user,'cc.${signature}','EXECUTE') AS granted`,
+              `SELECT has_function_privilege(current_user,'${signature}','EXECUTE') AS granted`,
             );
             assert.equal(granted.rows[0].granted, false);
           }
