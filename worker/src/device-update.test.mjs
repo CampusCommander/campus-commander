@@ -164,6 +164,8 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
         lastIds = ids;
         await options.onSend?.(ids);
         call.rounds += 1;
+        // A part stays in flight across this gate, so a test can act mid-round.
+        if (round.answerGate) await round.answerGate;
         if (round.gate) await round.gate;
         if (round.abortBeforeAnswer) {
           call.aborted = true;
@@ -253,6 +255,8 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
         lastIds = ids;
         await options.onSend?.(ids);
         call.rounds += 1;
+        // A part stays in flight across this gate, so a test can act mid-round.
+        if (round.answerGate) await round.answerGate;
         if (round.gate) await round.gate;
         if (round.abortBeforeAnswer) {
           call.aborted = true;
@@ -418,8 +422,10 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
         }
         const round = statusRounds[number] ?? {};
         number += 1;
-        call.rounds += 1;
+        if (round.gate) await round.gate;
         const sent = parts.slice(start, start + perRound);
+        await options.onSend?.(sent);
+        call.rounds += 1;
         for (const part of sent)
           call.parts.push({
             id: part.id,
@@ -429,7 +435,7 @@ function reader(rounds = [], states = [], statusRounds = [], pollRounds = []) {
               : { deprovisionReason: part.deprovisionReason }),
             deviceIds: [...part.deviceIds],
           });
-        await options.onSend?.(sent);
+        if (round.gate) await round.gate;
         for (const part of sent) {
           if (round.failure) {
             await options.onResponse?.({
@@ -538,6 +544,8 @@ function database(overrides = {}) {
       return overrides.claim ? overrides.claim(values) : claimed([op(1, 'd1')]);
     if (name === 'renew_device_update_batch')
       return overrides.renew ? overrides.renew(values) : stamp();
+    if (name === 'job_cancel_requested')
+      return overrides.cancel ? overrides.cancel(values) : false;
     if (name === 'clock_timestamp') return stamp();
     if (name === 'release_device_update_batch') return null;
     if (name === 'report_device_update_backoff') return true;
@@ -1774,6 +1782,7 @@ test('an in-flight part at a graceful stop becomes unknown', async () => {
 });
 
 test('a rejected renewal fences the attempt and sends no later round', async () => {
+  let cancelReadCalls = 0;
   const db = database({
     claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
     renew: () => {
@@ -1781,6 +1790,11 @@ test('a rejected renewal fences the attempt and sends no later round', async () 
         code: 'P0001',
         detail: 'attempt-fenced',
       });
+    },
+    // A fenced renewal is a lost lease, not a cancel: it reads no request.
+    cancel: () => {
+      cancelReadCalls += 1;
+      return true;
     },
   });
   const source = reader([
@@ -1790,6 +1804,7 @@ test('a rejected renewal fences the attempt and sends no later round', async () 
   const { create } = jobs({ db, reader: source, batchSize: 1 });
   const answer = await create.runBatch(batchRequest, AbortSignal.timeout(5000));
   assert.deepEqual(answer, { outcome: 'attempt-fenced' });
+  assert.equal(cancelReadCalls, 0);
   assert.equal(source.calls[0].rounds, 1);
   assert.equal(source.calls[0].aborted, true);
   assert.equal(
@@ -3620,6 +3635,287 @@ test('a renewal that fails during the final drain answers non-2xx and releases n
     false,
     'A renewal failure never releases the lease.',
   );
+});
+
+/** The cancel reads of one run: one after every successful renewal. */
+const cancelReads = (db) =>
+  db.calls.filter((call) => call.name === 'job_cancel_requested');
+
+test('a cancel read at the renewal tick stops the next round and settles unsent operations pending', async () => {
+  const clock = advancingTimers(base);
+  const db = database({
+    claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
+    cancel: () => true,
+  });
+  let openAnswer;
+  const answerGate = new Promise((resolve) => {
+    openAnswer = resolve;
+  });
+  const source = reader([{ answerGate, parts: { d1: { kind: 'success' } } }]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    batchSize: 1,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  await until(() => source.calls[0]?.rounds === 1);
+  // The first part is in flight. The tick renews and reads the request.
+  clock.advance(30_000);
+  await until(() => cancelReads(db).length === 1);
+  assert.equal(cancelReads(db)[0].values[1], jobId, 'The read names the job.');
+  openAnswer();
+  const answer = await running;
+  // The round in flight settles from its own answer, not from the cancel.
+  assert.equal(JSON.parse(settlements(db)[0].values[5])[0].outcome, 'succeeded');
+  // The second operation never left the worker.
+  assert.equal(source.calls[0].rounds, 1);
+  assert.equal(source.calls[0].aborted, false, 'A drain aborts no call.');
+  const leftover = JSON.parse(settlements(db)[1].values[5]);
+  assert.deepEqual(
+    leftover.map((one) => one.outcome),
+    ['pending'],
+    'An unsent operation returns to pending.',
+  );
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.failure, null);
+  assert.equal(names(db.calls).at(-1), 'release_device_update_batch');
+  // The worker never writes `cancelled`: the next claim settles those rows.
+  assert.equal(
+    JSON.stringify(settlements(db).map((call) => call.values[5])).includes(
+      'cancelled',
+    ),
+    false,
+  );
+});
+
+test('a failed cancel read leaves the flag unset and the next tick reads again', async () => {
+  const clock = advancingTimers(base);
+  let reads = 0;
+  const db = database({
+    claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
+    cancel: () => {
+      reads += 1;
+      if (reads === 1) throw new Error('the cancel read failed');
+      return true;
+    },
+  });
+  let openAnswer;
+  const answerGate = new Promise((resolve) => {
+    openAnswer = resolve;
+  });
+  let openSecond;
+  const secondGate = new Promise((resolve) => {
+    openSecond = resolve;
+  });
+  const source = reader([
+    { answerGate, parts: { d1: { kind: 'success' } } },
+    { gate: secondGate, parts: { d2: { kind: 'success' } } },
+  ]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    batchSize: 1,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  await until(() => source.calls[0]?.rounds === 1);
+  clock.advance(30_000);
+  await until(() => reads === 1);
+  // A failed read answers no cancel. Round 1 finishes, and round 2 reaches its send.
+  openAnswer();
+  await until(() => settlements(db).length === 1);
+  assert.equal(source.calls[0].rounds, 1);
+  clock.advance(30_000);
+  await until(() => reads === 2);
+  openSecond();
+  const answer = await running;
+  assert.equal(reads, 2, 'The next tick reads the request again.');
+  assert.equal(source.calls[0].rounds, 1, 'The second round never left.');
+  assert.deepEqual(
+    JSON.parse(settlements(db)[1].values[5]).map((one) => one.outcome),
+    ['pending'],
+  );
+  assert.equal(answer.outcome, 'settled');
+});
+
+test('a cancelled job keeps the read-back of a written field and renews until the release', async () => {
+  const clock = advancingTimers(base);
+  const db = database({
+    claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
+    cancel: () => true,
+  });
+  let openAnswer;
+  const answerGate = new Promise((resolve) => {
+    openAnswer = resolve;
+  });
+  let openRead;
+  const readGate = new Promise((resolve) => {
+    openRead = resolve;
+  });
+  const source = reader([
+    {
+      answerGate,
+      parts: {
+        d1: { kind: 'retry', status: 0, reason: 'timeout', transient: 1 },
+      },
+    },
+    { parts: { d2: { kind: 'success' } } },
+  ]);
+  source.deviceStates = async (_credential, _customer, ids) => {
+    source.calls.push({ name: 'deviceStates', ids: [...ids] });
+    await readGate;
+    return [
+      {
+        deviceId: 'd1',
+        status: 'found',
+        device: { deviceId: 'd1', annotatedLocation: 'Room 1' },
+      },
+    ];
+  };
+  const { create } = jobs({
+    db,
+    reader: source,
+    batchSize: 1,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  await until(() => source.calls[0]?.rounds === 1);
+  clock.advance(30_000);
+  await until(() => cancelReads(db).length === 1);
+  openAnswer();
+  // The lost answer stays unknown and goes to the read-back.
+  await until(() => source.calls.some((call) => call.name === 'deviceStates'));
+  const renewals = () =>
+    db.calls.filter((call) => call.name === 'renew_device_update_batch')
+      .length;
+  const before = renewals();
+  clock.advance(30_000);
+  await until(() => renewals() === before + 1);
+  assert.ok(
+    clock.delays().includes(30_000),
+    'The renewal interval still runs while the read-back waits.',
+  );
+  openRead();
+  const answer = await running;
+  // The cancel request stopped the second operation before it left the worker.
+  assert.equal(source.calls[0].rounds, 1);
+  assert.equal(cancelReads(db)[0].values[1], jobId);
+  // The written field keeps its read-back after the cancel request.
+  const readBack = settlements(db).at(-1);
+  assert.equal(readBack.values[4], 'read-back');
+  const verified = JSON.parse(readBack.values[5])[0];
+  assert.equal(verified.outcome, 'succeeded');
+  assert.equal(verified.verifiedBy, 'read-back');
+  assert.equal(verified.values.annotatedLocation, 'Room 1');
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(names(db.calls).at(-1), 'release_device_update_batch');
+  assert.equal(clock.count, 0, 'No timer outlives the release.');
+});
+
+test('a drained command batch leaves its issued rows issued', async () => {
+  const clock = advancingTimers(base);
+  const db = database({
+    claim: () =>
+      claimed(
+        [statusOp(1, 'd1'), statusOp(2, 'd2'), statusOp(3, 'd3')],
+        [],
+        'reboot',
+      ),
+    cancel: () => true,
+  });
+  let openSecond;
+  const secondGate = new Promise((resolve) => {
+    openSecond = resolve;
+  });
+  const source = reader([
+    { parts: { d1: { kind: 'success', commandId: '4100000001' } } },
+    {
+      gate: secondGate,
+      parts: { d2: { kind: 'success', commandId: '4100000002' } },
+    },
+  ]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    batchSize: 1,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  await until(() => settlements(db).length === 1);
+  clock.advance(30_000);
+  await until(() => cancelReads(db).length === 1);
+  openSecond();
+  const answer = await running;
+  assert.equal(source.calls[0].name, 'issueDeviceCommands');
+  assert.equal(source.calls[0].rounds, 1, 'The second command never left.');
+  const [issued, leftover] = settlements(db);
+  assert.equal(issued.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(issued.values[5]).map((one) => [
+      one.outcome,
+      one.commandId ?? null,
+    ]),
+    [['issued', '4100000001']],
+    'An issued command stays issued.',
+  );
+  assert.equal(leftover.values[4], 'issue');
+  assert.deepEqual(
+    JSON.parse(leftover.values[5]).map((one) => one.outcome),
+    ['pending', 'pending'],
+    'An unissued command returns to pending.',
+  );
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.failure, null);
+});
+
+test('a drained status batch sends no further part', async () => {
+  const clock = advancingTimers(base);
+  const operations = Array.from({ length: 51 }, (_, index) =>
+    statusOp(index + 1, `d${index + 1}`),
+  );
+  const db = database({
+    claim: () => claimed(operations, [], 'disable'),
+    cancel: () => true,
+  });
+  let openSecond;
+  const secondGate = new Promise((resolve) => {
+    openSecond = resolve;
+  });
+  // One part holds up to 50 devices, so the 51 operations make two parts.
+  const source = reader([], [], [{}, { gate: secondGate }]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    batchSize: 1,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  await until(() => settlements(db).length === 1);
+  clock.advance(30_000);
+  await until(() => cancelReads(db).length === 1);
+  openSecond();
+  const answer = await running;
+  assert.equal(source.calls[0].name, 'changeDeviceStatus');
+  assert.equal(source.calls[0].rounds, 1, 'The second part never left.');
+  assert.deepEqual(
+    source.calls[0].parts.map((part) => part.deviceIds.length),
+    [50],
+  );
+  const [first, leftover] = settlements(db);
+  assert.equal(JSON.parse(first.values[5]).length, 50);
+  assert.deepEqual(
+    JSON.parse(leftover.values[5]).map((one) => one.outcome),
+    ['pending'],
+    'The unread operation returns to pending.',
+  );
+  assert.equal(answer.outcome, 'settled');
+  assert.equal(answer.failure, null);
 });
 
 test('a numeric Reconcile request requires a verification attempt', async () => {
