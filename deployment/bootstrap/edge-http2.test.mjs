@@ -207,6 +207,11 @@ function h2Open(
     );
     stream.on('error', reject);
   });
+  const first = new Promise((resolve, reject) => {
+    stream.once('data', (chunk) => resolve(chunk.toString('utf8')));
+    stream.on('error', reject);
+  });
+  first.catch(() => undefined);
   const payload = new Promise((resolve, reject) => {
     const chunks = [];
     stream.on('data', (chunk) => chunks.push(chunk));
@@ -215,7 +220,7 @@ function h2Open(
   });
   payload.catch(() => undefined);
   stream.end(body);
-  return { stream, answer, payload };
+  return { stream, answer, first, payload };
 }
 
 const session = (environment) =>
@@ -249,6 +254,11 @@ test(
         streams.push(h2Open(environment, client, { path: '/api/jobs/events' }));
       const answered = await Promise.all(streams.map(({ answer }) => answer));
       for (const { status } of answered) assert.equal(status, 200);
+      assert.match(
+        await streams[0].first,
+        /retry: 3000/,
+        'The event stream delivers its first frame over HTTP/2.',
+      );
       assert.equal(
         environment.api.open.size,
         8,
