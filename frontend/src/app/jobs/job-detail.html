@@ -40,12 +40,9 @@
   } @if (showCancelBanner()) {
   <section class="banner" aria-labelledby="job-cancel-banner-title">
     <h2 id="job-cancel-banner-title">
-      <strong>Cancellation requested</strong> · The job stops within 30 seconds
+      <strong>Cancellation requested</strong> · {{ cancelBanner(job).title }}
     </h2>
-    <p>
-      Requests already sent to Google finish and keep their results. Pending
-      operations that have not reached Google end Cancelled. Nothing rolls back.
-    </p>
+    <p>{{ cancelBanner(job).body }}</p>
   </section>
   } @if (store.offline()) {
   <section class="banner" aria-labelledby="job-offline-title">

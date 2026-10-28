@@ -7,14 +7,17 @@ import {
   type JobFailedActivityOperation,
   type JobOperation,
   type JobOutcome,
-  type JobProgress,
   type JobStatus,
   type JobUnknownActivityOperation,
 } from '@campus/application-contracts';
 import type { AuthStore } from '../auth.store';
 import { statusText } from '../devices/device-fields';
 import { deviceCountText } from '../devices/device-update-messages';
-import { formatDuration, formatTimestamp } from './job-fields';
+import {
+  cancelledRefreshAll,
+  formatDuration,
+  formatTimestamp,
+} from './job-fields';
 
 /** The outcome tones of the shared status chip (UI-04). */
 export type OutcomeTone = 'neutral' | 'info' | 'warning' | 'error' | 'success';
@@ -108,14 +111,18 @@ export interface JobCounter {
 
 /**
  * The seven counters of the job detail (step 5 mockup, note 11).
+ * A cancelled Refresh all reads its succeeded count as devices read and saved none.
  * Expired follows Unknown. Pending counts Pending delivery and Acknowledged.
  * Cancelled reads the stored count (design section 6, choice 13).
  */
-export function jobCounters(progress: JobProgress): readonly JobCounter[] {
+export function jobCounters(
+  job: Pick<JobDetail, 'progress' | 'action' | 'status' | 'scope'>,
+): readonly JobCounter[] {
+  const { progress } = job;
   return [
     {
       key: 'succeeded',
-      label: 'Succeeded',
+      label: cancelledRefreshAll(job) ? 'Read · none saved' : 'Succeeded',
       value: progress.succeeded,
       tone: 'success',
     },
@@ -419,6 +426,30 @@ export function cancelLine(
   )}`;
 }
 
+/** The banner copy of a stored cancel request. */
+export interface CancelBannerCopy {
+  /** The clause after "Cancellation requested ·". */
+  title: string;
+  body: string;
+}
+
+/**
+ * The banner copy of a cancel request.
+ * A command job warns that each sent command still runs on its device.
+ * An update or status job keeps the built copy, because its sent work is a Google request.
+ */
+export function cancelBanner(job: Pick<JobDetail, 'action'>): CancelBannerCopy {
+  if (isCommandJob(job))
+    return {
+      title: 'Sent commands still run on their devices',
+      body: 'Campus Commander sends no new command. Each sent command runs when its device connects, or it expires. Nothing rolls back.',
+    };
+  return {
+    title: 'The job stops within 30 seconds',
+    body: 'Requests already sent to Google finish and keep their results. Pending operations that have not reached Google end Cancelled. Nothing rolls back.',
+  };
+}
+
 export interface CancelQuestion {
   title: string;
   paragraphs: readonly [string, string];
@@ -526,7 +557,7 @@ export function cancelQuestion(job: JobDetail): CancelQuestion {
 export function cancelActivitySentence(job: JobDetail): string {
   if (job.action === 'refresh-inventory')
     return job.scope.kind === 'all-devices'
-      ? 'Cancellation ended the refresh. No device was marked removed.'
+      ? 'Cancellation ended the refresh. It saved none of the devices that it read, and it marked no device removed.'
       : 'Cancellation ended the refresh. Devices already read keep their data.';
   if (!job.startedAt)
     return 'Cancellation ended the job before it started. No request reached Google.';
