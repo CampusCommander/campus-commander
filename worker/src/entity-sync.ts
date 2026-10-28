@@ -26,9 +26,12 @@ import {
   type EntityCache,
 } from './entity-cache';
 import {
+  CancelWatch,
   DeviceSyncError,
   callStore,
+  readCancelRequested,
   type DeviceSyncDatabase,
+  type SyncTimers,
 } from './device-sync';
 
 export interface EntityReader {
@@ -96,6 +99,9 @@ export class EntitySyncBatch {
   private readonly options: {
     backoff?: (attempt: number) => number;
     sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+    timers?: SyncTimers;
+    /** The cancel tick of section 3. Defaults to 30 seconds. */
+    cancelPollMilliseconds?: number;
   };
 
   constructor(
@@ -106,6 +112,9 @@ export class EntitySyncBatch {
     options: {
       backoff?: (attempt: number) => number;
       sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+      timers?: SyncTimers;
+      /** The cancel tick of section 3. Defaults to 30 seconds. */
+      cancelPollMilliseconds?: number;
     } = {},
   ) {
     this.database = database;
@@ -167,6 +176,16 @@ export class EntitySyncBatch {
         input.batch,
       ]),
     );
+    const watch = new CancelWatch(
+      this.database,
+      input.customerId,
+      input.jobId,
+      signal,
+      {
+        timers: this.options.timers,
+        milliseconds: this.options.cancelPollMilliseconds,
+      },
+    );
     const inflight = inflightKey('device', input.customerId);
     const claim = { key: inflight, ids: batch.ids };
     let updated: string[] = [];
@@ -196,29 +215,35 @@ export class EntitySyncBatch {
         credential,
         input.customerId,
         batch.ids,
-        signal,
+        watch.signal,
         extendClaim,
       );
       const present = read.devices.map((device) => device.deviceId);
       let batteries: BatteryObservation[] | null = null;
       try {
-        batteries = await this.untilQuotaClears(signal, claim, () =>
+        batteries = await this.untilQuotaClears(watch.signal, claim, () =>
           this.reader.batteryBatch(
             credential,
             input.customerId,
             present,
-            signal,
+            watch.signal,
           ),
         );
       } catch (error) {
         // A telemetry failure keeps the stored battery fields. The Directory data still lands.
         if (
-          signal.aborted ||
+          watch.signal.aborted ||
           !(error instanceof GoogleConnectionError) ||
           error.code === 'quota'
         )
           throw error;
       }
+      // Section 3: a second read before the upsert. A true answer ends the batch with no
+      // device write and no batch record, so a cancel during the Google read stores nothing.
+      if (
+        await readCancelRequested(this.database, input.customerId, input.jobId)
+      )
+        throw new DeviceSyncError('entity-sync-changed');
       // A refresh read is a current observation. The kind orders it against a live overlay (5.8).
       await this.call('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
         input.customerId,
@@ -256,13 +281,15 @@ export class EntitySyncBatch {
     } catch (error) {
       if (error instanceof DeviceSyncError || error instanceof EntityCacheError)
         throw error;
-      if (signal.aborted) throw new DeviceSyncError('worker-stopping');
+      if (watch.signal.aborted) throw new DeviceSyncError('worker-stopping');
       failure =
         error instanceof GoogleConnectionError
           ? error.code
           : error instanceof CredentialError
             ? 'key-unavailable'
             : 'request-failed';
+    } finally {
+      watch.close();
     }
     // Freed IDs let the next stale read dispatch them again.
     await this.cache.removeMembers(inflight, batch.ids);
