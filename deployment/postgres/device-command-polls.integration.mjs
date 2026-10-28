@@ -117,7 +117,7 @@ export async function qualifyDeviceCommandPolls({
     };
     const jobRow = (jobId) =>
       adminRow(
-        `SELECT status,finished_at,succeeded,failed,unknown,expired,revision
+        `SELECT status,finished_at,succeeded,failed,unknown,expired,cancelled,revision
           FROM cc.jobs WHERE job_id=$1`,
         [jobId],
       );
@@ -853,6 +853,78 @@ export async function qualifyDeviceCommandPolls({
             .catch(() => undefined);
           await close(adminSession);
         }
+      },
+    );
+    await check(
+      'a cancelled awaiting-devices job ends cancelled after its last poll (S6)',
+      async () => {
+        const display = async (jobId) =>
+          (
+            await adminRow('SELECT display_id FROM cc.jobs WHERE job_id=$1', [
+              jobId,
+            ])
+          ).display_id;
+        const cancel = (jobId) =>
+          result('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
+            actor,
+            version,
+            customer,
+            jobId,
+            randomUUID(),
+          ]);
+        // Once every command is issued, the request is refused: no API cancels an issued command.
+        const issued = await makeJob();
+        await assert.rejects(
+          cancel(await display(issued)),
+          (error) => error.detail === 'nothing-to-stop',
+        );
+        // A running command job with one sent and one unsent operation. The request stores while the
+        // pending row exists, the finish moves the job to awaiting-devices, and the last poll ends it.
+        const jobId = await makeJob({
+          devices: ['cmd-poll-a', 'cmd-poll-b'],
+          status: 'running',
+        });
+        const token = randomUUID();
+        await admin(
+          'UPDATE cc.device_update_jobs SET dispatch_token=$2 WHERE job_id=$1',
+          [jobId, token],
+        );
+        await admin(
+          "UPDATE cc.device_update_operations SET status='pending',command_id=NULL,poll_after=NULL WHERE job_id=$1 AND operation_number=2",
+          [jobId],
+        );
+        assert.deepEqual(await cancel(await display(jobId)), {
+          outcome: 'requested',
+        });
+        const prepared = await result(
+          'SELECT cc.prepare_device_update_finish($1,$2,$3) AS result',
+          [customer, jobId, token],
+        );
+        assert.equal(prepared.outcome, 'ready');
+        assert.equal((await opRow(jobId, 2)).status, 'cancelled');
+        const finished = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, jobId, token],
+        );
+        assert.equal(finished.status, 'awaiting-devices');
+        const leaseId = (await dueFor(jobId)).leaseId;
+        const attempt = randomUUID();
+        assert.equal((await claim(jobId, attempt, leaseId)).outcome, 'claimed');
+        const settled = await settledIn(jobId, attempt, leaseId, [
+          {
+            operationNumber: 1,
+            outcome: 'unknown',
+            outcomeReason: 'not-observed',
+            googleStatus: 0,
+          },
+        ]);
+        assert.equal(settled.status, 'cancelled');
+        const row = await jobRow(jobId);
+        assert.equal(row.status, 'cancelled');
+        assert.notEqual(row.finished_at, null);
+        assert.equal(row.cancelled, 1);
+        assert.equal(row.unknown, 1);
+        await release(jobId, leaseId);
       },
     );
   } finally {

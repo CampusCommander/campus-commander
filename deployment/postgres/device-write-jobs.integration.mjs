@@ -12872,6 +12872,520 @@ export async function qualifyDeviceWriteJobs({
         assert.deepEqual(await snapshot(), closed);
       },
     );
+    // The cancel request of section 2. A refusal raises its reason as DETAIL, as cc.request_device_sync
+    // raises device-sync-running.
+    const cancel = (actor, displayId, version = 1) =>
+      result('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
+        actor,
+        version,
+        customer,
+        displayId,
+        randomUUID(),
+      ]);
+    const refuse = (promise, reason) => rejects(promise, 'P0001', reason);
+    const cancelEvents = (displayId) =>
+      adminRow(
+        'SELECT count(*)::int AS n FROM cc.security_events WHERE event=$1 AND detail=$2',
+        ['job-cancel-requested', displayId],
+      );
+    const cancelRequested = (jobId) =>
+      result('SELECT cc.job_cancel_requested($1,$2) AS result', [
+        customer,
+        jobId,
+      ]);
+    const manager = await principal(`${randomUUID()}`, [
+      ['jobs:manage', district()],
+    ]);
+    await upsert(
+      Array.from({ length: 18 }, (_, index) => device(`cn${index + 1}`)),
+      new Date(Date.now() - 60 * 60 * 1000),
+    );
+
+    await check(
+      'a queued job and a held job end cancelled at once with one audit row (S1)',
+      async () => {
+        const running = await makeJob({ devices: ['cn1'] });
+        const queued = await makeJob({ devices: ['cn2'] });
+        const held = await makeJob({ devices: ['cn3'] });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, running.jobId);
+        const queuedRow = await jobRow(queued.jobId);
+        assert.equal(queuedRow.status, 'queued');
+        assert.deepEqual(await cancel(confirmer, queuedRow.display_id), {
+          outcome: 'requested',
+        });
+        const stoppedQueued = await jobRow(queued.jobId);
+        assert.equal(stoppedQueued.status, 'cancelled');
+        assert.equal(stoppedQueued.failure, null);
+        assert.equal(stoppedQueued.cancelled, 1);
+        assert.notEqual(stoppedQueued.finished_at, null);
+        assert.deepEqual(
+          (await operations(queued.jobId)).map((row) => [
+            row.status,
+            row.outcome_reason,
+          ]),
+          [['cancelled', 'cancel-requested']],
+          'Every operation of the cancelled job reads Cancelled.',
+        );
+        assert.equal((await cancelEvents(queuedRow.display_id)).n, 1);
+        await admit(true);
+        const heldRow = await jobRow(held.jobId);
+        assert.equal(heldRow.status, 'held');
+        assert.deepEqual(await cancel(confirmer, heldRow.display_id), {
+          outcome: 'requested',
+        });
+        const stoppedHeld = await jobRow(held.jobId);
+        assert.equal(stoppedHeld.status, 'cancelled');
+        assert.equal(stoppedHeld.failure, null);
+        assert.equal(stoppedHeld.cancelled, 1);
+        assert.deepEqual(
+          (await operations(held.jobId)).map((row) => row.status),
+          ['cancelled'],
+        );
+        assert.equal((await cancelEvents(heldRow.display_id)).n, 1);
+        await endJob(running.jobId);
+      },
+    );
+
+    await check(
+      'a running job without a first claim ends cancelled at once and its claim is superseded (S2)',
+      async () => {
+        const job = await makeJob({ devices: ['cn4'] });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        const row = await jobRow(job.jobId);
+        assert.deepEqual(await cancel(confirmer, row.display_id), {
+          outcome: 'requested',
+        });
+        const stopped = await jobRow(job.jobId);
+        assert.equal(stopped.status, 'cancelled');
+        assert.equal(stopped.failure, null);
+        assert.equal(stopped.cancelled, 1);
+        assert.notEqual(stopped.finished_at, null);
+        assert.equal(
+          (await claim(job.jobId, admitted.dispatchToken, 0, randomUUID()))
+            .outcome,
+          'superseded',
+        );
+        assert.equal((await operations(job.jobId))[0].status, 'cancelled');
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT count(*)::int AS n FROM cc.device_update_batches WHERE job_id=$1',
+              [job.jobId],
+            )
+          ).n,
+          0,
+          'The superseded claim dispatches nothing.',
+        );
+      },
+    );
+
+    await check(
+      'a claim with a request answers done, records no failure, and leaves no pending operation (S3)',
+      async () => {
+        const job = await makeJob({ devices: ['cn5', 'cn6'], batchSize: 1 });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(job.jobId, admitted.dispatchToken, 0, attempt)).outcome,
+          'claimed',
+        );
+        const row = await jobRow(job.jobId);
+        assert.deepEqual(await cancel(confirmer, row.display_id), {
+          outcome: 'requested',
+        });
+        // The claim of the next batch takes the stop branch: it settles the pending rows Cancelled and
+        // answers done, so the worker starts no send.
+        assert.deepEqual(
+          await claim(job.jobId, admitted.dispatchToken, 1, randomUUID()),
+          { outcome: 'done' },
+        );
+        const still = await jobRow(job.jobId);
+        assert.equal(still.status, 'running');
+        assert.equal(still.failure, null);
+        assert.deepEqual(
+          (await operations(job.jobId)).map((one) => [
+            one.operation_number,
+            one.status,
+          ]),
+          [
+            [1, 'dispatched'],
+            [2, 'cancelled'],
+          ],
+        );
+        await expireBatches(job.jobId);
+        assert.equal(
+          (await prepareFinish(job.jobId, admitted.dispatchToken)).outcome,
+          'ready',
+        );
+        assert.equal((await finishJob(job.jobId)).status, 'cancelled');
+      },
+    );
+
+    await check(
+      'a request after the last claim settles the returned pending rows cancelled in the preparation (S4)',
+      async () => {
+        const job = await makeJob({ devices: ['cn7', 'cn8'], batchSize: 250 });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        // The worker leaves its unsent row pending and settles the sent one (section 3).
+        await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              values: { annotatedLocation: 'Room 12' },
+              verifiedBy: 'write-response',
+            },
+            { operationNumber: 2, outcome: 'pending' },
+          ],
+          new Date(),
+        );
+        const row = await jobRow(job.jobId);
+        assert.equal(row.succeeded, 1);
+        assert.deepEqual(await cancel(confirmer, row.display_id), {
+          outcome: 'requested',
+        });
+        assert.equal(
+          (await prepareFinish(job.jobId, admitted.dispatchToken)).outcome,
+          'ready',
+        );
+        assert.deepEqual(
+          (await operations(job.jobId)).map((one) => [
+            one.operation_number,
+            one.status,
+          ]),
+          [
+            [1, 'succeeded'],
+            [2, 'cancelled'],
+          ],
+          'The preparation settles the returned pending row Cancelled.',
+        );
+        assert.equal((await finishJob(job.jobId)).status, 'cancelled');
+        const finished = await jobRow(job.jobId);
+        assert.equal(finished.succeeded, 1);
+        assert.equal(finished.cancelled, 1);
+      },
+    );
+
+    await check(
+      'a live lease answers busy and recovery finalizes a cancelled lost runner without a start (S5)',
+      async () => {
+        const job = await makeJob({ devices: ['cn9', 'cn10'], batchSize: 1 });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        await claim(job.jobId, admitted.dispatchToken, 0, randomUUID());
+        const row = await jobRow(job.jobId);
+        assert.deepEqual(await cancel(confirmer, row.display_id), {
+          outcome: 'requested',
+        });
+        assert.equal(
+          (await prepareFinish(job.jobId, admitted.dispatchToken)).outcome,
+          'busy',
+          'A live lease answers busy.',
+        );
+        await expireBatches(job.jobId);
+        await admin(
+          "UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const recovered = await recover();
+        assert.equal(
+          recovered.starts.some((one) => one.jobId === job.jobId),
+          false,
+          'Recovery dispatches no start for a cancelled runner.',
+        );
+        assert.ok(recovered.reconciles.includes(job.jobId));
+        const stopped = await jobRow(job.jobId);
+        assert.equal(stopped.status, 'cancelled');
+        assert.equal(stopped.failure, null);
+        assert.equal(stopped.unknown, 1);
+        assert.equal(stopped.cancelled, 1);
+        assert.deepEqual(
+          (await operations(job.jobId)).map((one) => [
+            one.operation_number,
+            one.status,
+          ]),
+          [
+            [1, 'unknown'],
+            [2, 'cancelled'],
+          ],
+          'The sent row keeps its evidence and the unsent row reads Cancelled.',
+        );
+      },
+    );
+
+    await check(
+      'one cancelled and one unknown operation end the job cancelled (S6)',
+      async () => {
+        const job = await makeJob({ devices: ['cn11', 'cn12'], batchSize: 1 });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'unknown',
+              outcomeReason: 'ambiguous',
+              googleStatus: 0,
+            },
+          ],
+          new Date(),
+        );
+        const row = await jobRow(job.jobId);
+        assert.equal(row.unknown, 1);
+        assert.deepEqual(await cancel(confirmer, row.display_id), {
+          outcome: 'requested',
+        });
+        await prepareFinish(job.jobId, admitted.dispatchToken);
+        assert.equal((await finishJob(job.jobId)).status, 'cancelled');
+        const stored = await jobRow(job.jobId);
+        assert.equal(stored.cancelled, 1);
+        assert.equal(stored.unknown, 1);
+      },
+    );
+
+    await check(
+      'a cancel waits on the admission lock and each refusal raises its reason (S7)',
+      async () => {
+        const waiting = await makeJob({ devices: ['cn13'] });
+        const display = (await jobRow(waiting.jobId)).display_id;
+        const holder = await connect('cc-migrator', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+            [`cc.job-admission:${customer}`],
+          );
+          const pending = writer.query(
+            'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+            [confirmer, 1, customer, display, randomUUID()],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The cancel waits on the admission lock.',
+          );
+          await holder.query('COMMIT');
+          assert.deepEqual((await pending).rows[0].result, {
+            outcome: 'requested',
+          });
+        } finally {
+          await Promise.allSettled([holder.end(), writer.end()]);
+        }
+        assert.equal((await jobRow(waiting.jobId)).status, 'cancelled');
+        await refuse(cancel(confirmer, 'UPD-999999'), 'job-not-found');
+        const hidden = await makeJob({ devices: ['cn14'] });
+        await refuse(
+          cancel(foreign, (await jobRow(hidden.jobId)).display_id),
+          'job-not-found',
+        );
+        const visible = await makeJob({ devices: ['cn15'] });
+        await refuse(
+          cancel(auditor, (await jobRow(visible.jobId)).display_id),
+          'cancel-not-permitted',
+        );
+        const done = await makeJob({ devices: ['cn16'] });
+        await endJob(done.jobId);
+        await refuse(
+          cancel(confirmer, (await jobRow(done.jobId)).display_id),
+          'job-finished',
+        );
+        const settled = await makeJob({ devices: ['cn17'] });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, settled.jobId);
+        const attempt = randomUUID();
+        await claim(settled.jobId, admitted.dispatchToken, 0, attempt);
+        await settle(
+          settled.jobId,
+          admitted.dispatchToken,
+          attempt,
+          'write',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'succeeded',
+              values: { annotatedLocation: 'Room 12' },
+              verifiedBy: 'write-response',
+            },
+          ],
+          new Date(),
+        );
+        await refuse(
+          cancel(confirmer, (await jobRow(settled.jobId)).display_id),
+          'nothing-to-stop',
+        );
+        for (const job of [hidden, visible, settled])
+          await endJob(job.jobId).catch(() => undefined);
+      },
+    );
+
+    await check(
+      'a repeat keeps the first person and time and writes no second audit row (S8)',
+      async () => {
+        const job = await makeJob({ devices: ['cn18'] });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        const display = (await jobRow(job.jobId)).display_id;
+        assert.deepEqual(await cancel(confirmer, display), {
+          outcome: 'requested',
+        });
+        const first = await jobRow(job.jobId);
+        assert.deepEqual(await cancel(manager, display), {
+          outcome: 'repeated',
+        });
+        const after = await jobRow(job.jobId);
+        assert.equal(after.cancel_requested_by, first.cancel_requested_by);
+        assert.deepEqual(after.cancel_requested_at, first.cancel_requested_at);
+        assert.equal((await cancelEvents(display)).n, 1);
+        // A job without a Cancelled operation keeps the built rule.
+        const plain = await makeJob({ devices: ['cn18'] });
+        await endJob(plain.jobId);
+        const plainRow = await jobRow(plain.jobId);
+        assert.equal(plainRow.status, 'failed');
+        assert.equal(plainRow.cancelled, 0);
+      },
+    );
+
+    await check(
+      'the runtime executes both cancel functions and PUBLIC holds neither (S13)',
+      async () => {
+        const job = await makeJob({ devices: ['cn13'] });
+        const display = (await jobRow(job.jobId)).display_id;
+        assert.deepEqual(await cancel(confirmer, display), {
+          outcome: 'requested',
+        });
+        assert.equal(await cancelRequested(job.jobId), true);
+        assert.equal(await cancelRequested(randomUUID()), false);
+        assert.deepEqual(
+          await admin(
+            `SELECT p.proname,bool_and(p.prosecdef) AS definer,
+              COALESCE(bool_or(a.grantee=0),false) AS public_grant,
+              COALESCE(bool_or(a.grantee=(SELECT oid FROM pg_roles WHERE rolname='cc-app')),false) AS app_grant
+             FROM pg_proc p LEFT JOIN aclexplode(p.proacl) a ON true
+             WHERE p.oid IN (to_regprocedure('cc.request_job_cancel(uuid,integer,text,text,uuid)'),
+               to_regprocedure('cc.job_cancel_requested(text,uuid)'))
+             GROUP BY p.proname ORDER BY p.proname`,
+          ),
+          [
+            {
+              proname: 'job_cancel_requested',
+              definer: true,
+              public_grant: false,
+              app_grant: true,
+            },
+            {
+              proname: 'request_job_cancel',
+              definer: true,
+              public_grant: false,
+              app_grant: true,
+            },
+          ],
+          'A PUBLIC grantee answers false for both new functions.',
+        );
+        // The runtime call is guarded by its grant, not by PUBLIC.
+        await migrator.query(
+          'REVOKE EXECUTE ON FUNCTION cc.request_job_cancel(uuid,integer,text,text,uuid) FROM cc-app',
+        );
+        try {
+          await rejects(
+            runtime.query('SELECT cc.request_job_cancel($1,$2,$3,$4,$5)', [
+              confirmer,
+              1,
+              customer,
+              display,
+              randomUUID(),
+            ]),
+            '42501',
+          );
+        } finally {
+          await migrator.query(
+            'GRANT EXECUTE ON FUNCTION cc.request_job_cancel(uuid,integer,text,text,uuid) TO cc-app',
+          );
+        }
+        await migrator.query(
+          'REVOKE EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) FROM cc-app',
+        );
+        try {
+          await rejects(
+            runtime.query('SELECT cc.job_cancel_requested($1,$2)', [
+              customer,
+              job.jobId,
+            ]),
+            '42501',
+          );
+        } finally {
+          await migrator.query(
+            'GRANT EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) TO cc-app',
+          );
+        }
+      },
+    );
+
+    await check(
+      'the hold cleanup marks a cancelled job with a written hold (S14)',
+      async () => {
+        const job = await makeJob({ devices: ['cn14'] });
+        const admitted = await admit(false);
+        assert.equal(admitted?.jobId, job.jobId);
+        await cancel(confirmer, (await jobRow(job.jobId)).display_id);
+        await admin(
+          'UPDATE cc.device_update_jobs SET hold_written_at=clock_timestamp() WHERE job_id=$1',
+          [job.jobId],
+        );
+        assert.equal(
+          await result('SELECT cc.clean_device_update_hold($1,$2) AS result', [
+            customer,
+            job.jobId,
+          ]),
+          true,
+        );
+        assert.notEqual(
+          (
+            await adminRow(
+              'SELECT hold_cleaned_at FROM cc.device_update_jobs WHERE job_id=$1',
+              [job.jobId],
+            )
+          ).hold_cleaned_at,
+          null,
+        );
+        assert.equal(
+          await result('SELECT cc.clean_device_update_hold($1,$2) AS result', [
+            customer,
+            job.jobId,
+          ]),
+          false,
+        );
+      },
+    );
+    await migrator
+      .query(
+        "DELETE FROM cc.devices WHERE customer_id=$1 AND device_id LIKE 'cn%'",
+        [customer],
+      )
+      .catch(() => undefined);
   } finally {
     await migrator.query('UPDATE cc.google_connection SET active=$1', [
       wasActive,

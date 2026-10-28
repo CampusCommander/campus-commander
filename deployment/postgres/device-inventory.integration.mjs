@@ -784,6 +784,176 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       },
     );
 
+    // The cancel of section 2 on a full sync. The runner stages, the cancel clears the lease, and the
+    // finish raises before it removes any device.
+    await check(
+      'a cancel after the last stage ends the full sync cancelled (S9)',
+      async () => {
+        const jobId = randomUUID();
+        const state = await result(
+          'SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result',
+          [reader, customer, generation, jobId, randomUUID()],
+        );
+        assert.equal(state.status, 'running');
+        const attempt = randomUUID();
+        await claim(jobId, attempt);
+        await stage(jobId, attempt, [device('cnref1'), device('cnref2')]);
+        const before = (
+          await migrator.query(
+            'SELECT generation FROM cc.device_sync_state WHERE customer_id=$1',
+            [customer],
+          )
+        ).rows[0];
+        const display = (
+          await migrator.query(
+            'SELECT display_id FROM cc.jobs WHERE job_id=$1',
+            [jobId],
+          )
+        ).rows[0].display_id;
+        assert.deepEqual(
+          await result(
+            'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+            [reader, 1, customer, display, randomUUID()],
+          ),
+          { outcome: 'requested' },
+        );
+        const job = (
+          await migrator.query(
+            'SELECT status,finished_at,failure,succeeded,cancelled FROM cc.jobs WHERE job_id=$1',
+            [jobId],
+          )
+        ).rows[0];
+        assert.equal(job.status, 'cancelled');
+        assert.notEqual(job.finished_at, null);
+        assert.equal(job.failure, null);
+        assert.equal(job.succeeded, 2);
+        assert.equal(job.cancelled, 0);
+        const after = (
+          await migrator.query(
+            'SELECT generation,sync_id FROM cc.device_sync_state WHERE customer_id=$1',
+            [customer],
+          )
+        ).rows[0];
+        assert.equal(after.sync_id, null, 'The cancel clears the sync lease.');
+        assert.equal(after.generation, before.generation);
+        await assert.rejects(
+          finish(jobId, attempt),
+          detail('device-sync-changed'),
+        );
+        assert.equal(
+          (
+            await migrator.query(
+              'SELECT count(*)::int AS n FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[]) AND removed_at IS NOT NULL',
+              [customer, ['cnref1', 'cnref2']],
+            )
+          ).rows[0].n,
+          0,
+          'A cancelled full sync removes no device.',
+        );
+      },
+    );
+
+    await check(
+      'a selected-device refresh cancel keeps its batch and fences a late batch (S10, S11)',
+      async () => {
+        const jobId = randomUUID();
+        const ids = ['cns1', 'cns2', 'cns3'];
+        const created = await result(
+          'SELECT cc.create_entity_sync_job($1,1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            reader,
+            customer,
+            'device',
+            JSON.stringify(ids),
+            1,
+            jobId,
+            randomUUID(),
+          ],
+        );
+        assert.equal(created.batchCount, 3);
+        const first = await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, jobId, 0, null],
+        );
+        assert.equal(first.completedBatches, 1);
+        const display = (
+          await migrator.query(
+            'SELECT display_id FROM cc.jobs WHERE job_id=$1',
+            [jobId],
+          )
+        ).rows[0].display_id;
+        assert.deepEqual(
+          await result(
+            'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+            [reader, 1, customer, display, randomUUID()],
+          ),
+          { outcome: 'requested' },
+        );
+        const job = (
+          await migrator.query(
+            'SELECT status,succeeded,cancelled FROM cc.jobs WHERE job_id=$1',
+            [jobId],
+          )
+        ).rows[0];
+        assert.equal(job.status, 'cancelled');
+        assert.equal(job.succeeded, 1, 'The recorded batch keeps its count.');
+        assert.equal(
+          job.cancelled,
+          2,
+          'The unrecorded batches count as cancelled.',
+        );
+        assert.notEqual(
+          (
+            await migrator.query(
+              'SELECT finished_at FROM cc.entity_sync_jobs WHERE job_id=$1',
+              [jobId],
+            )
+          ).rows[0].finished_at,
+          null,
+        );
+        assert.deepEqual(
+          (
+            await migrator.query(
+              'SELECT batch FROM cc.entity_sync_batches WHERE job_id=$1 ORDER BY batch',
+              [jobId],
+            )
+          ).rows,
+          [{ batch: 0 }],
+          'The recorded batch row stays.',
+        );
+        await assert.rejects(
+          result('SELECT cc.read_entity_sync_batch($1,$2,$3) AS result', [
+            customer,
+            jobId,
+            1,
+          ]),
+          detail('entity-sync-changed'),
+        );
+        await result(
+          'SELECT cc.finish_entity_sync_batch($1,$2,$3,$4) AS result',
+          [customer, jobId, 1, null],
+        );
+        assert.deepEqual(
+          (
+            await migrator.query(
+              'SELECT batch FROM cc.entity_sync_batches WHERE job_id=$1 ORDER BY batch',
+              [jobId],
+            )
+          ).rows,
+          [{ batch: 0 }],
+          'A late batch finish records nothing.',
+        );
+        const unchanged = (
+          await migrator.query(
+            'SELECT status,cancelled FROM cc.jobs WHERE job_id=$1',
+            [jobId],
+          )
+        ).rows[0];
+        assert.equal(unchanged.status, 'cancelled');
+        assert.equal(unchanged.cancelled, 2);
+      },
+    );
+
     await migrator.query(
       'UPDATE cc.application_principals SET permission_version=2 WHERE id=$1',
       [reader],
