@@ -48,110 +48,110 @@ export async function createBootstrapEdge({
           : undefined,
     };
   }
-  const server = http2.createSecureServer(
-    { ...material, allowHTTP1: true },
-    async (request, response) => {
-      response.setHeader('strict-transport-security', 'max-age=31536000');
-      response.setHeader('x-content-type-options', 'nosniff');
-      response.setHeader('referrer-policy', 'no-referrer');
-      response.setHeader(
-        'content-security-policy',
-        // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-      );
-      const path = request.url || '';
-      if (path === '/health/live') return finish(response, 200, 'live\n');
-      if (path === '/health' || path === '/health/ready') {
-        try {
-          const status = await getStatus();
-          return finish(
-            response,
-            status.status === 'ready' ? 200 : 503,
-            `${status.status === 'ready' ? 'ready' : 'not-ready'}\n`,
-          );
-        } catch {
-          return finish(response, 503, 'not-ready\n');
-        }
-      }
-      if (config.phase >= 2 && path !== '/api/startup')
-        return proxyApplication(
-          request,
-          response,
-          upstreams,
-          config.applicationAuth.publicOrigin,
-          config.phase,
-        );
-      if (request.method !== 'GET' && request.method !== 'HEAD')
-        return finish(response, 405, 'Method unavailable.\n');
-      const api =
-        path === '/api' ||
-        path === '/api/startup' ||
-        path === '/api/application';
-      if (
-        path.includes('..') ||
-        !(
-          api ||
-          path === '/' ||
-          path === '/startup' ||
-          path === '/index.html' ||
-          assetPath.test(path)
-        )
-      ) {
-        return finish(response, 404, 'Route unavailable.\n');
-      }
-      let accepted = false;
+  // One request handler serves HTTP/2 and HTTP/1.1 with the same routes, limits, and timeouts.
+  const handleRequest = async (request, response) => {
+    response.setHeader('strict-transport-security', 'max-age=31536000');
+    response.setHeader('x-content-type-options', 'nosniff');
+    response.setHeader('referrer-policy', 'no-referrer');
+    response.setHeader(
+      'content-security-policy',
+      // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
+      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+    );
+    const path = request.url || '';
+    if (path === '/health/live') return finish(response, 200, 'live\n');
+    if (path === '/health' || path === '/health/ready') {
       try {
-        accepted = await verify(
-          credentialFromAuthorization(request.headers.authorization),
+        const status = await getStatus();
+        return finish(
+          response,
+          status.status === 'ready' ? 200 : 503,
+          `${status.status === 'ready' ? 'ready' : 'not-ready'}\n`,
         );
       } catch {
-        /* Deny unavailable verification. */
+        return finish(response, 503, 'not-ready\n');
       }
-      if (!accepted) {
-        response.setHeader(
-          'www-authenticate',
-          'Basic realm="Installation", charset="UTF-8"',
-        );
-        return finish(response, 401, 'Installation access required.\n');
-      }
-      const target = upstreams[api ? 'api' : 'frontend'];
-      const transport = target.url.protocol === 'https:' ? https : http;
-      const upstream = transport.request(
-        target.url,
-        {
-          method: request.method,
-          path,
-          ca: target.ca,
-          rejectUnauthorized: true,
-          headers: {
-            host: requestHost(request),
-            accept: request.headers.accept || '*/*',
-            ...(api ? { authorization: request.headers.authorization } : {}),
-          },
-          timeout: 5000,
-        },
-        (incoming) => {
-          const status = incoming.statusCode || 502;
-          if (status >= 300 && status < 400) {
-            incoming.destroy();
-            return finish(response, 502, 'Startup service unavailable.\n');
-          }
-          response.writeHead(status, responseHeaders(incoming, false));
-          incoming.on('error', () => response.destroy());
-          incoming.pipe(response);
-        },
+    }
+    if (config.phase >= 2 && path !== '/api/startup')
+      return proxyApplication(
+        request,
+        response,
+        upstreams,
+        config.applicationAuth.publicOrigin,
+        config.phase,
       );
-      upstream.on('timeout', () =>
-        upstream.destroy(new Error('Upstream timed out.')),
+    if (request.method !== 'GET' && request.method !== 'HEAD')
+      return finish(response, 405, 'Method unavailable.\n');
+    const api =
+      path === '/api' || path === '/api/startup' || path === '/api/application';
+    if (
+      path.includes('..') ||
+      !(
+        api ||
+        path === '/' ||
+        path === '/startup' ||
+        path === '/index.html' ||
+        assetPath.test(path)
+      )
+    ) {
+      return finish(response, 404, 'Route unavailable.\n');
+    }
+    let accepted = false;
+    try {
+      accepted = await verify(
+        credentialFromAuthorization(request.headers.authorization),
       );
-      upstream.on('error', () => {
-        if (!response.headersSent)
-          finish(response, 502, 'Startup service unavailable.\n');
-        else response.destroy();
-      });
-      response.once('close', () => upstream.destroy());
-      upstream.end();
-    },
+    } catch {
+      /* Deny unavailable verification. */
+    }
+    if (!accepted) {
+      response.setHeader(
+        'www-authenticate',
+        'Basic realm="Installation", charset="UTF-8"',
+      );
+      return finish(response, 401, 'Installation access required.\n');
+    }
+    const target = upstreams[api ? 'api' : 'frontend'];
+    const transport = target.url.protocol === 'https:' ? https : http;
+    const upstream = transport.request(
+      target.url,
+      {
+        method: request.method,
+        path,
+        ca: target.ca,
+        rejectUnauthorized: true,
+        headers: {
+          host: requestHost(request),
+          accept: request.headers.accept || '*/*',
+          ...(api ? { authorization: request.headers.authorization } : {}),
+        },
+        timeout: 5000,
+      },
+      (incoming) => {
+        const status = incoming.statusCode || 502;
+        if (status >= 300 && status < 400) {
+          incoming.destroy();
+          return finish(response, 502, 'Startup service unavailable.\n');
+        }
+        response.writeHead(status, responseHeaders(incoming, false));
+        incoming.on('error', () => response.destroy());
+        incoming.pipe(response);
+      },
+    );
+    upstream.on('timeout', () =>
+      upstream.destroy(new Error('Upstream timed out.')),
+    );
+    upstream.on('error', () => {
+      if (!response.headersSent)
+        finish(response, 502, 'Startup service unavailable.\n');
+      else response.destroy();
+    });
+    response.once('close', () => upstream.destroy());
+    upstream.end();
+  };
+  const server = http2.createSecureServer(
+    { ...material, allowHTTP1: true },
+    handleRequest,
   );
   // node:http2 has no closeAllConnections. Keep the teardown that process shutdown and the
   // callers use, and reach both protocols through the TLS socket of each connection.
