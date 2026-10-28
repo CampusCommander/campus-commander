@@ -536,6 +536,52 @@ describe('cancelled jobs', () => {
           },
         }),
       ),
-    ).toEqual(['600 devices read', 'Refresh cancelled']);
+    ).toEqual(['600 devices read · none saved', 'Refresh cancelled']);
+  });
+
+  it('keeps the built refresh row when the refresh saved its devices', () => {
+    expect(
+      progressLines(
+        summary({
+          displayId: 'REF-002',
+          action: 'refresh-inventory',
+          status: 'cancelled',
+          scope: { kind: 'devices', deviceCount: 1000 },
+          progress: {
+            total: 1000,
+            succeeded: 250,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 750,
+            pending: 0,
+          },
+        }),
+      ),
+    ).toEqual(['250 devices read', '750 cancelled']);
+  });
+
+  it('keeps one device singular in the saved-none line', () => {
+    expect(
+      progressLines(
+        summary({
+          displayId: 'REF-005',
+          action: 'refresh-inventory',
+          status: 'cancelled',
+          scope: { kind: 'all-devices', deviceCount: null },
+          progress: {
+            total: null,
+            succeeded: 1,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: null,
+          },
+        }),
+      ),
+    ).toEqual(['1 device read · none saved', 'Refresh cancelled']);
   });
 });

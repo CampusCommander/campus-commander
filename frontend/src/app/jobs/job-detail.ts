@@ -28,6 +28,7 @@ import {
   attentionCount,
   beforeText,
   canReconcile,
+  cancelBanner,
   cancelLine,
   cancelQuestion as buildCancelQuestion,
   cancelState,
@@ -105,6 +106,7 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly formatTimestamp = formatTimestamp;
   protected readonly formatTime = formatTime;
   protected readonly operationLabel = operationLabel;
+  protected readonly cancelBanner = cancelBanner;
   protected readonly operationChip = operationChip;
   protected readonly isCommandOperation = isCommandOperation;
   protected readonly beforeText = beforeText;
@@ -143,7 +145,7 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   });
   protected readonly counters = computed<readonly JobCounter[]>(() => {
     const job = this.store.job();
-    return job ? jobCounters(job.progress) : [];
+    return job ? jobCounters(job) : [];
   });
   protected readonly attention = computed(() => {
     const job = this.store.job();
