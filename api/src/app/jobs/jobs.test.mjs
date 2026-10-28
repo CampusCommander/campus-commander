@@ -115,8 +115,10 @@ test('a refresh summary reads the REF- action, its requester, and its counters',
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 0,
   });
+  assert.equal(summary.cancelRequest, null);
   assert.equal(summary.scope.kind, 'devices');
   assert.equal(summary.revision, 4);
 });
@@ -292,6 +294,9 @@ test('the detail joins the write fields and derives Latest activity from every o
   ]);
   const detail = await new Jobs(db).detail(session(), 'C0123456', 'UPD-006');
   assert.equal(detail.displayId, 'UPD-006');
+  // Until the cancel route lands, every detail reports no request and no cancelled count.
+  assert.equal(detail.cancelRequest, null);
+  assert.equal(detail.progress.cancelled, 0);
   assert.equal(detail.confirmedBy.displayName, 'Katherine Johnson');
   assert.equal(detail.previewDisplayId, 'PV-006');
   assert.deepEqual(detail.changes, [

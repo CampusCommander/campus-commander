@@ -207,6 +207,8 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
       unknown,
       skipped,
       expired,
+      // The stored cancelled counter lands with the cancel route (design card CB6).
+      cancelled: 0,
       pending:
         total === null
           ? null
@@ -216,6 +218,8 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
             ),
     },
     failure: row['failure'],
+    // The stored request lands with the cancel route (design card CB6).
+    cancelRequest: null,
   });
 }
 
