@@ -422,7 +422,10 @@ test('record expiry follows the freshness that remains', () => {
 });
 
 test('the cancel tick aborts the stalled read and the raising finish leaves Redis untouched', async () => {
-  const db = database({ fail: { finish_device_sync: 'device-sync-changed' } });
+  const db = database({
+    cancels: [true],
+    fail: { finish_device_sync: 'device-sync-changed' },
+  });
   const redis = cache();
   const clock = timers();
   const source = stallingReader();
