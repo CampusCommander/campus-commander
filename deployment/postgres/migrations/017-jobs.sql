@@ -605,6 +605,20 @@ BEGIN
   -- first write, the principal row before the connection row, as the credential functions take them.
   PERFORM 1 FROM cc.application_principals p WHERE p.id=p_actor FOR KEY SHARE;
   PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  -- The header lock holds job state. It holds neither the principal nor its grants, so an access change
+  -- that committed during either wait above leaves the early checks stale (review round 1, P1). Both
+  -- rules run again here, after the last blocking lock and before the first write, so a refused cancel
+  -- changes nothing. They repeat the early reasons, so a refused person learns nothing about the job.
+  -- A platform administrator holds jobs:manage at platform scope, so the grant covers that case.
+  IF NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RAISE EXCEPTION 'The job does not exist.' USING DETAIL='job-not-found';
+  END IF;
+  IF job.requested_by<>p_actor AND NOT EXISTS(SELECT 1 FROM cc.application_grants g
+      WHERE g.principal_id=p_actor AND g.action='jobs:manage' AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) THEN
+    RAISE EXCEPTION 'The cancel is not permitted.' USING DETAIL='cancel-not-permitted';
+  END IF;
   now_at:=clock_timestamp();
   UPDATE cc.jobs SET cancel_requested_at=now_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
   IF job.kind='inventory-refresh' THEN
