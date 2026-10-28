@@ -3668,7 +3668,10 @@ test('a cancel read at the renewal tick stops the next round and settles unsent 
   openAnswer();
   const answer = await running;
   // The round in flight settles from its own answer, not from the cancel.
-  assert.equal(JSON.parse(settlements(db)[0].values[5])[0].outcome, 'succeeded');
+  assert.equal(
+    JSON.parse(settlements(db)[0].values[5])[0].outcome,
+    'succeeded',
+  );
   // The second operation never left the worker.
   assert.equal(source.calls[0].rounds, 1);
   assert.equal(source.calls[0].aborted, false, 'A drain aborts no call.');
@@ -3790,8 +3793,7 @@ test('a cancelled job keeps the read-back of a written field and renews until th
   // The lost answer stays unknown and goes to the read-back.
   await until(() => source.calls.some((call) => call.name === 'deviceStates'));
   const renewals = () =>
-    db.calls.filter((call) => call.name === 'renew_device_update_batch')
-      .length;
+    db.calls.filter((call) => call.name === 'renew_device_update_batch').length;
   const before = renewals();
   clock.advance(30_000);
   await until(() => renewals() === before + 1);
