@@ -461,7 +461,9 @@ export function cancelQuestion(job: JobDetail): CancelQuestion {
       return {
         title,
         paragraphs: [
-          `${read} of ${countText(total)} devices are read. The refresh stops at its next batch.`,
+          `${read} of ${countText(total)} ${
+            total === 1 ? 'device is' : 'devices are'
+          } read. The refresh stops at its next batch.`,
           'Devices already read keep their new data. The other devices keep their earlier data.',
         ],
         dismissLabel: 'Keep job running',
@@ -488,7 +490,9 @@ export function cancelQuestion(job: JobDetail): CancelQuestion {
     return {
       title,
       paragraphs: [
-        `No operation has started. All ${countText(total)} operations end Cancelled.`,
+        total === 1
+          ? `No operation has started. The ${countText(total)} operation ends Cancelled.`
+          : `No operation has started. All ${countText(total)} operations end Cancelled.`,
         `No request reaches Google. The ${countText(total)} ${
           total === 1 ? 'device keeps its' : 'devices keep their'
         } current status.`,
@@ -501,7 +505,9 @@ export function cancelQuestion(job: JobDetail): CancelQuestion {
   return {
     title,
     paragraphs: [
-      `${countText(pending)} of ${countText(total)} operations are pending. Those that have not reached Google end Cancelled and never run.`,
+      `${countText(pending)} of ${countText(total)} ${
+        total === 1 ? 'operation is' : 'operations are'
+      } pending. Those that have not reached Google end Cancelled and never run.`,
       `Requests already sent to Google finish and keep their results. The ${countText(
         succeeded,
       )} confirmed ${succeeded === 1 ? noun.one : noun.many} ${
@@ -528,7 +534,7 @@ export function cancelActivitySentence(job: JobDetail): string {
   if (stopped > 0)
     return `Cancellation stopped ${countText(stopped)} ${
       stopped === 1 ? 'operation' : 'operations'
-    } before they reached Google.`;
+    } before ${stopped === 1 ? 'it' : 'they'} reached Google.`;
   return 'Cancellation ended the job before it started. No request reached Google.';
 }
 
