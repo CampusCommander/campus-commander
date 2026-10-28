@@ -4,7 +4,10 @@ Technical design · adapted for Campus Commander · 2026-10-26
 
 Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5).
 He also answered the open defaults, directed a universal job cancel (D6), and set its rules. [Section 21](#21-owner-decisions-and-engineering-defaults) quotes him.
-He approved the job cancel mockup the same day. The CSV slice mockup comes next.
+He approved the job cancel mockup the same day.
+
+On 2026-10-28 he approved version 4 of the CSV slice mockup: "This is perfect. Please go ahead and execute on this."
+The approved [mockup](../ui/designs/2026-10-28-device-export-import.html) outranks this design on composition. It places Export, Reports, Import, and the results in one dialog.
 
 Scope: export devices, edit the file, import it in one of two modes, review, execute or cancel, and inspect results.
 Every job also gains Cancel pending work.

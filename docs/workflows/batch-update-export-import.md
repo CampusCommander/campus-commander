@@ -1,16 +1,20 @@
 # Batch update devices through export and import
 
-Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
+Status: proposed, and the CSV slice mockup is approved. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
+
 On 2026-10-28 the owner signed off the universal job cancel (D6). Owner: "Agreed I sign off on that."
 The same day he sent UI changes for the CSV slice.
 
 On 2026-10-26 the owner approved the job cancel mockup. Owner, in the main chat: "Thats fine."
-The CSV slice mockup comes next. The CSV parts stay proposed until he approves the mockup.
+
+On 2026-10-28 the owner approved version 4 of the CSV slice mockup and directed its build. Owner, in the main chat: "This is perfect. Please go ahead and execute on this."
+The approved [mockup](../ui/designs/2026-10-28-device-export-import.html) and its [notes](../ui/designs/2026-10-28-device-export-import-notes.md) set the CSV slice screens. They outrank this record on composition.
+The Google Drive slice stays proposed.
 
 Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, 2026-10-26, and 2026-10-28, quoted under [Owner direction](#owner-direction).
 
-Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain. A mockup comes before the build.
+Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). The approved CSV slice mockup closes the CSV design gaps. Gaps 2 and 7 stay open for the Google Drive slice.
 Technical design: [batch update through export and import](../research/batch-update-export-import-technical-design.md).
 Replaces: the stored-baseline comparison of `docs/portfolio/02-domain-model.md:120-151` and CSV-01 to CSV-03 (`docs/ui/patterns.md:221-254`).
 
@@ -248,6 +252,32 @@ The owner sent these changes for the CSV slice:
 >
 > Go ahead and make those changes then we will do the next polish pass on the design.
 
+### 2026-10-28, main chat: build direction and the CSV slice mockup
+
+Early that day the owner directed the build:
+
+> Go ahead and execute on the import and export work.
+
+After the first CSV slice mockup, he paused the work:
+
+> Lets pause on the export/import work. There are changes to the UI that have to be made. Ill reply with changes when ready.
+
+His UI changes follow in the section above. On version 2 of the mockup, he wrote:
+
+> OK the flow looks good. It needs a graphic design UI./UX polish pass. Use the skill of a expert front end designer and make the UI/UX a professional experiance.
+
+On version 3, he removed the file previews:
+
+> I dont like having the export and import preview. Just the raw data in the dialog. We can do without that. The important UI is the results of the validation and the results of the execution.
+
+On version 4, he approved the screens and directed the build:
+
+> This is perfect. Please go ahead and execute on this.
+
+The eng-lead then asked: "Failed tab on the execution results: yes or no." The owner answered:
+
+> yes
+
 ## Implementation defaults
 
 The owner settled these points on 2026-10-26:
@@ -316,18 +346,21 @@ Figma values are examples (`docs/ui/rules.md:91`).
 
 Design gaps:
 
-1. No frame shows the import mode selector. **Open.**
-2. No frame shows the Google Sheet export, the Picker, or the tab choice. **Open.**
-3. No frame shows status codes, the code list, or status actions in the review. **Open.**
-4. No frame shows rejected rows or warnings beside proposed changes. The frames show "0 invalid" only. **Open.**
-5. No frame shows Execute and Cancel on the validation job page. **Open.**
-6. No frame shows the typed phrase in the import flow. The Deprovision frame `97:93` supplies the pattern. **Open.**
-7. No frame shows the Google connection inputs: the Picker API key and the project number. **Open.**
-8. The frames use full pages. The built bulk actions use the side sheet. The mockup places Export and Import in the sheet and the review on the validation job page. **Open.**
+The approved [CSV slice mockup](../ui/designs/2026-10-28-device-export-import.html) closes the CSV gaps. The state numbers below are its PNG numbers.
+
+1. No frame shows the import mode selector. **Closed** by state 09.
+2. No frame shows the Google Sheet export, the Picker, or the tab choice. **Open** for the Google Drive slice. The CSV slice mockup shows the Google choices as unavailable.
+3. No frame shows status codes, the code list, or status actions in the review. **Closed** by states 11 and 13.
+4. No frame shows rejected rows or warnings beside proposed changes. The frames show "0 invalid" only. **Closed** by states 13 to 15.
+5. No frame shows Execute and Cancel on the validation job page. **Closed** by states 13, 16, and 20. Execute and Cancel import sit in the import dialog.
+6. No frame shows the typed phrase in the import flow. The Deprovision frame `97:93` supplies the pattern. **Closed** by state 16.
+7. No frame shows the Google connection inputs: the Picker API key and the project number. **Open** for the Drive slice.
+8. The frames use full pages. The built bulk actions use the side sheet. **Closed** by the UI changes of 2026-10-28 and the approved mockup.
+   Export, Reports, and Import open one dialog. Its setup steps take the built 480 px dialog width, and the results widen it to 1120 px.
 9. The conflict cards and the baseline expiry (`99:145`, `106:514`, `104:479`) contradict D1. **Superseded.** The mockup removes them.
 10. No frame shows the cancel confirmation, Cancellation requested, or a Cancelled job. `228:4524` and `228:4996` show only the control.
     **Closed** by the approved [job cancel mockup](../ui/designs/2026-10-26-job-cancel.html) and its [notes](../ui/designs/2026-10-26-job-cancel-notes.md).
-    The import confirmation that names the waiting status jobs stays open. The CSV slice mockup draws it.
+    State 16 of the approved CSV slice mockup draws the import confirmation that names the waiting status jobs.
 
 ## Exclusions and open decisions
 
@@ -344,8 +377,8 @@ Excluded from this workflow:
 
 Open decisions:
 
-- The owner confirms this record and the remaining implementation defaults with the mockup.
-- The mockup closes the open design gaps before the build.
+- The CSV slice builds from the approved mockup and its notes. The owner can change any engineering default.
+- The Google Drive slice needs its own mockup for design gaps 2 and 7.
 - G16 keeps one open question: where explicit creation applies. A user CSV import stays a later workflow.
 - Live device writes need explicit owner authorization and an enrolled test device.
 - A live Google Sheet export creates a Google file. It needs explicit owner authorization.
@@ -376,6 +409,8 @@ Then demonstrate the CSV slice on admin-sdk-mock:
 5. Import again and Execute. The typed phrase gates the Deprovision. The update job runs, then the status jobs. Rejected rows never run.
 6. Import a saved sheet with Sync all rows. Validation refreshes the stale devices and proposes only the differences. A second import proposes nothing.
 7. A partial job shows each outcome.
+8. Create a report of selected devices to a CSV file. The file holds the visible grid columns in grid order.
+9. The import dialog shows the validation progress, the report, and the result of each change. The Failed tab lists the failed changes. No step needs the job page.
 
 Demonstrate the Drive slice with the owner on his domain.
 The Picker opens with the DWD token, and the import reads the chosen tab.
