@@ -9,6 +9,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   connectionHeaders,
   requestHost,
@@ -454,6 +455,34 @@ test(
       environment.edge.closeAllConnections();
       await Promise.all([sessionClosed, socketClosed]);
       agent.destroy();
+    } finally {
+      client.close();
+      await environment.close();
+    }
+  },
+);
+
+test(
+  'closing an HTTP/2 event stream releases its upstream request',
+  {
+    timeout: 30000,
+  },
+  async () => {
+    const environment = await startEnvironment();
+    const client = session(environment);
+    try {
+      const opened = h2Open(environment, client, { path: '/api/jobs/events' });
+      assert.equal((await opened.answer).status, 200);
+      assert.equal(environment.api.open.size, 1);
+      opened.stream.close();
+      const deadline = Date.now() + 2000;
+      while (environment.api.open.size > 0 && Date.now() < deadline)
+        await delay(20);
+      assert.equal(
+        environment.api.open.size,
+        0,
+        'The edge closed the upstream stream with the HTTP/2 stream.',
+      );
     } finally {
       client.close();
       await environment.close();
