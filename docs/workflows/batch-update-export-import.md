@@ -2,11 +2,13 @@
 
 Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
+On 2026-10-28 the owner signed off the universal job cancel (D6). Owner: "Agreed I sign off on that."
+The same day he sent UI changes for the CSV slice.
 
 On 2026-10-26 the owner approved the job cancel mockup. Owner, in the main chat: "Thats fine."
-The CSV slice mockup comes next. The CSV parts of this record wait for the owner's confirmation with that mockup.
+The CSV slice mockup comes next. The CSV parts stay proposed until he approves the mockup.
 
-Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, and 2026-10-26, quoted under [Owner direction](#owner-direction).
+Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, 2026-10-26, and 2026-10-28, quoted under [Owner direction](#owner-direction).
 
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). Design gaps remain. A mockup comes before the build.
 Technical design: [batch update through export and import](../research/batch-update-export-import-technical-design.md).
@@ -215,6 +217,37 @@ The owner answered:
 
 > Thats fine.
 
+### 2026-10-28, main chat: job cancel sign-off
+
+The eng-lead asked for "signed off" and the numbers of the findings to change, and recommended findings 2 and 6.
+The owner asked:
+
+> What do 2 and 6 reresent?
+
+The eng-lead answered, and the owner replied:
+
+> Agreed I sign off on that.
+
+The sign-off changes findings 2 and 6 (card `t_5355eacd`).
+The owner kept HTTP/2 at the edge for finding 7 (card `t_82e670d2`). Owner: "Yea keep with http/2 if it wont turn into a development blocker."
+
+### 2026-10-28, main chat: UI changes for export and import
+
+The owner sent these changes for the CSV slice:
+
+<!-- prettier-ignore -->
+> OK so lets talk about the UI for the export / import. Seperate the export for editing and export for reporting as two bulk edit actions. Call one export and the other reports.
+>
+> The difference is export for bulk action exports the defined list of editable fields plus the meta data fields needed. The export for report exports the selected items with the current grid config(column visibility and order)
+>
+> the import export should be a dialog instad of a sidebar. We will need the exrtea horrizantal space.
+>
+> We should not make the user go to the job page to run device steps. On the import the user gets a progress indicator that the validation is running. And when it is done the in the same dialog you get the validation report.
+>
+> Any instructions should not be in the normal flow of the UI. Add a help/info icon button that shows the help docs for the import / export.
+>
+> Go ahead and make those changes then we will do the next polish pass on the design.
+
 ## Implementation defaults
 
 The owner settled these points on 2026-10-26:
@@ -330,8 +363,9 @@ Open decisions:
 
 ## Completion
 
-Demonstrate the cancel slice on admin-sdk-mock first. Cancel a queued job and a running job of each kind.
-Each job page shows the actual outcomes, and nothing rolls back.
+The cancel slice demonstration is complete and signed off on 2026-10-28.
+CQ1 cancelled a queued job and a running job of each kind on admin-sdk-mock.
+Each job page showed the actual outcomes, and nothing rolled back.
 
 Then demonstrate the CSV slice on admin-sdk-mock:
 
