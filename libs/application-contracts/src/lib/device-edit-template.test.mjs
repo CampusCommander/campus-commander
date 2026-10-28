@@ -466,17 +466,11 @@ test('each row of the status table maps to its effect', () => {
 
 test('a Status cell that holds no code rejects and names the code list', () => {
   for (const cell of [
-    'active',
-    'Active',
     'DISABLD',
-    'DEPROVISION',
-    'DEPROVISION:',
     'DEPROVISION:FOO',
-    'deprovision:RETIRING_DEVICE',
     '[clear]',
     '[CLEAR]',
     'ENABLED',
-    'Disabled',
   ]) {
     const result = statusOf(cell);
     assert.equal(result.ok, false, cell);
@@ -494,6 +488,48 @@ test('a Status cell that holds no code rejects and names the code list', () => {
     ok: true,
     intent: { intent: 'none', status: 'DEPROVISIONED' },
   });
+});
+
+test('a Status cell that differs only by letter case leads with the upper-case code', () => {
+  const reason = (code) =>
+    `Status codes are upper case. Write ${code}. ${DEVICE_STATUS_CELL_REFUSAL}`;
+  for (const [cell, code] of [
+    ['active', 'ACTIVE'],
+    ['Active', 'ACTIVE'],
+    ['Disabled', 'DISABLED'],
+    ['deprovision:retiring_device', 'DEPROVISION:RETIRING_DEVICE'],
+  ]) {
+    const result = statusOf(cell);
+    assert.equal(result.ok, false, cell);
+    assert.equal(result.reason, reason(code), cell);
+  }
+  // A Google status in another letter case also names its upper-case form.
+  assert.equal(statusOf('deprovisioned').reason, reason('DEPROVISIONED'));
+});
+
+test('a Status cell that holds DEPROVISION alone names the missing reason code', () => {
+  for (const cell of [
+    'DEPROVISION',
+    'DEPROVISION:',
+    'deprovision',
+    ' deprovision: ',
+  ]) {
+    const result = statusOf(cell);
+    assert.equal(result.ok, false, cell);
+    assert.equal(
+      result.reason,
+      `DEPROVISION needs a reason code. ${DEVICE_STATUS_CELL_REFUSAL}`,
+      cell,
+    );
+  }
+});
+
+test('a Status cell that names no known code keeps the code list alone', () => {
+  for (const cell of ['DISABLD', 'DEPROVISION:FOO', '[clear]', 'ENABLED']) {
+    const result = statusOf(cell);
+    assert.equal(result.ok, false, cell);
+    assert.equal(result.reason, DEVICE_STATUS_CELL_REFUSAL, cell);
+  }
 });
 
 test('the Status cell codes of section 7.5 are listed for the import sheet', () => {
@@ -589,6 +625,35 @@ test('a field change passes deviceUpdateChangeSchema or returns its reason', () 
   }
 });
 
+test('a clear of Asset tag or Organization unit reads its own reason', () => {
+  assert.deepEqual(changeOf('annotatedAssetId', '[clear]'), {
+    ok: false,
+    reason:
+      'Asset tag cannot be cleared. Write a new tag, or leave the cell blank to keep the current tag.',
+  });
+  assert.deepEqual(changeOf('orgUnitPath', '[clear]'), {
+    ok: false,
+    reason:
+      'Organization unit cannot be cleared. Write a unit path, or leave the cell blank to keep the current unit.',
+  });
+  // A clear token in any letter case gives the same reason, as the cell intent does.
+  assert.deepEqual(
+    changeOf('annotatedAssetId', ' [CLEAR] '),
+    changeOf('annotatedAssetId', '[clear]'),
+  );
+  // Every other refusal keeps the schema message, with no added sentence.
+  const tagLimit = DEVICE_UPDATE_FIELD_LIMITS.annotatedAssetId;
+  const pathLimit = DEVICE_UPDATE_FIELD_LIMITS.orgUnitPath;
+  assert.deepEqual(changeOf('annotatedAssetId', 'a'.repeat(tagLimit + 1)), {
+    ok: false,
+    reason: `Asset tag holds 1 to ${tagLimit} characters.`,
+  });
+  assert.deepEqual(changeOf('orgUnitPath', 'Schools/East'), {
+    ok: false,
+    reason: `Organization unit needs a path that starts with / and holds at most ${pathLimit} characters.`,
+  });
+});
+
 test('the formula escape round trip restores each value', () => {
   for (const value of [
     '=SUM(A1:A2)',
@@ -662,7 +727,7 @@ test('header matching refuses a missing column and names it', () => {
   assert.equal(missingChecksum.ok, false);
   assert.equal(
     missingChecksum.reason,
-    'The file is missing the Checksum column.',
+    'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
   );
   const misspelled = matchDeviceEditHeaders(
     templateHeaders.map((header) =>
@@ -677,6 +742,38 @@ test('header matching refuses a missing column and names it', () => {
     sparse.reason,
     'The file is missing the Serial number, Model, Asset tag, Annotated location, Annotated user, Notes, and Organization unit columns.',
   );
+});
+
+test('a two-name missing list joins with and, and a longer list keeps the serial comma', () => {
+  const without = (...headers) =>
+    matchDeviceEditHeaders(
+      templateHeaders.filter((header) => !headers.includes(header)),
+    );
+  const two = without('Device ID', 'Checksum');
+  assert.equal(two.ok, false);
+  assert.equal(
+    two.reason,
+    'The file is missing the Device ID and Checksum columns. Sync changes needs the Checksum column. Sync all rows ignores it.',
+  );
+  const three = without('Device ID', 'Status', 'Checksum');
+  assert.equal(three.ok, false);
+  assert.equal(
+    three.reason,
+    'The file is missing the Device ID, Status, and Checksum columns. Sync changes needs the Checksum column. Sync all rows ignores it.',
+  );
+  // A missing Checksum alone adds the mode sentence after the missing-column sentence.
+  const checksum = without('Checksum');
+  assert.equal(checksum.ok, false);
+  assert.equal(
+    checksum.reason,
+    'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
+  );
+  // Sync all rows ignores the Checksum column, so the same file passes the match.
+  const allRows = matchDeviceEditHeaders(
+    templateHeaders.filter((header) => header !== 'Checksum'),
+    'sync-all-rows',
+  );
+  assert.equal(allRows.ok, true);
 });
 
 test('header matching refuses a duplicate header', () => {
