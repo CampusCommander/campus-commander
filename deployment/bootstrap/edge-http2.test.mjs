@@ -28,6 +28,7 @@ const closeServer = async (server) => {
 function createApiStub(material) {
   const requests = [];
   const open = new Set();
+  const api = { requests, open, answerDelay: 0 };
   const handler = (request, response) => {
     requests.push({
       method: request.method,
@@ -45,17 +46,22 @@ function createApiStub(material) {
       response.once('close', () => open.delete(response));
       return;
     }
-    response.writeHead(200, {
-      'content-type': 'application/json',
-      'set-cookie': 'session=example',
-      'x-correlation-id': 'example-correlation',
-    });
-    response.end('api');
+    const answer = () => {
+      if (response.destroyed || response.writableEnded) return;
+      response.writeHead(200, {
+        'content-type': 'application/json',
+        'set-cookie': 'session=example',
+        'x-correlation-id': 'example-correlation',
+      });
+      response.end('api');
+    };
+    if (api.answerDelay > 0) setTimeout(answer, api.answerDelay).unref();
+    else answer();
   };
-  const server = material
+  api.server = material
     ? https.createServer(material, handler)
     : http.createServer(handler);
-  return { server, requests, open };
+  return api;
 }
 const createFrontendStub = (material) => {
   const requests = [];
@@ -687,11 +693,15 @@ test(
   async () => {
     const environment = await startEnvironment();
     environment.edge.requestTimeout = 400;
+    // Hold the upstream answer past the deadline. The request body completes first, so the
+    // deadline must not cut the answer of a completed request.
+    environment.api.answerDelay = 700;
     const client = session(environment);
     try {
       const events = h2Open(environment, client, { path: '/api/jobs/events' });
       assert.equal((await events.answer).status, 200);
       assert.match(await events.first, /retry: 3000/);
+      const started = Date.now();
       const post = h2Open(environment, client, {
         path: '/api/auth/preferences',
         method: 'POST',
@@ -699,6 +709,10 @@ test(
         body: '{"theme":"example"}',
       });
       assert.equal((await post.answer).status, 200);
+      assert.ok(
+        Date.now() - started >= 400,
+        'The upstream answer arrived after the deadline.',
+      );
       assert.equal(await post.payload, 'api');
       await delay(700);
       assert.equal(
@@ -715,6 +729,62 @@ test(
       assert.equal((await again.answer).status, 200);
       await again.payload;
       events.stream.close();
+    } finally {
+      client.close();
+      await environment.close();
+    }
+  },
+);
+
+test(
+  'an event request that completes after its headers outlives the request deadline',
+  {
+    timeout: 30000,
+  },
+  async () => {
+    const environment = await startEnvironment();
+    environment.edge.requestTimeout = 400;
+    const client = session(environment);
+    try {
+      const stream = client.request(
+        { ':path': '/api/jobs/events', ':method': 'GET' },
+        { endStream: false },
+      );
+      const answer = new Promise((resolve, reject) => {
+        stream.on('response', (headers) => resolve(headers[':status']));
+        stream.on('error', reject);
+      });
+      const received = [];
+      stream.on('data', (chunk) => received.push(chunk.toString('utf8')));
+      const readable = async (pattern) => {
+        const until = Date.now() + 3000;
+        while (Date.now() < until) {
+          if (received.join('').includes(pattern)) return;
+          await delay(20);
+        }
+        assert.fail(`No ${pattern} arrived within 3 s.`);
+      };
+      assert.equal(await answer, 200);
+      await readable('retry: 3000');
+      assert.equal(environment.api.open.size, 1);
+      // The client completes its request input with an empty DATA END_STREAM. The unread
+      // request never emits end, so only the stream reports the completed input.
+      stream.end();
+      await delay(700);
+      assert.equal(
+        stream.closed,
+        false,
+        'The completed request stays open past the deadline.',
+      );
+      assert.equal(
+        environment.api.open.size,
+        1,
+        'The upstream event stream stays open.',
+      );
+      const [upstream] = environment.api.open;
+      upstream.write('data: later\n\n');
+      await readable('data: later');
+      stream.close();
     } finally {
       client.close();
       await environment.close();
