@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-24.
+Updated: 2026-10-26.
 
 ## Authorized now
 
@@ -16,6 +16,11 @@ Owner, in the main chat: "2", which chose the option "In-grid editing and the si
 The [in-grid editing record](workflows/in-grid-editing.md) is owner-confirmed. Its [design addendum](superpowers/specs/2026-10-23-in-grid-editing-design.md) comes before the build.
 On 2026-10-23 the owner approved the in-grid editing mockup. Owner: "Yea go ahead with this visual design." The approved mockup is [2026-10-23-in-grid-editing.html](ui/designs/2026-10-23-in-grid-editing.html).
 On 2026-10-24 the owner signed off the in-grid editing build. Owner, in the main chat: "I sign off." The build merged at `1e5f9d3`.
+On 2026-10-24 the owner started the CSV and Google Drive export and import workflow (gap G16). Owner: "We need to start the work on the CSV/Google Drive import export. For google drive we will use the google drive picker."
+On 2026-10-26 the owner supplied his reference design, answered decisions D1 to D4, and added the import modes (D5).
+Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
+On 2026-10-26 the owner approved the job cancel mockup. Owner: "Thats fine." The approved mockup is [2026-10-26-job-cancel.html](ui/designs/2026-10-26-job-cancel.html).
+The [batch update through export and import record](workflows/batch-update-export-import.md) is proposed. A mockup comes before the build.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -26,6 +31,17 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Batch update through export and import (record proposed 2026-10-26)
+
+This is the active workflow. The [record](workflows/batch-update-export-import.md) and its [technical design](research/batch-update-export-import-technical-design.md) define it.
+The record quotes the owner's answers D1 to D4 and his import modes direction (D5).
+It also quotes his answers on the defaults and the universal job cancel (D6).
+
+Next: the design addendum and the build cards of the cancel slice. The CSV slice mockup follows. Its build waits for the owner's approval of that mockup.
+
+The universal job cancel comes first. The CSV slice, the Google Drive slice, and the report export follow.
+A live Google Sheet export creates a Google file. It needs the owner's authorization, as live device writes do.
 
 ### Update device fields (signed off 2026-10-22)
 
