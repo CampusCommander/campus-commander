@@ -615,6 +615,19 @@ function storeError(error: unknown): DeviceSyncError {
 }
 
 /**
+ * The error of an `onSend` hook after a renewal tick reads a cancel request. It stops the
+ * batch without a job failure, and the unsent operations settle `pending` (cancel design
+ * section 3). The worker never settles an operation `cancelled`: the next claim or the
+ * preparation does that through the skip function of the schema.
+ */
+class BatchDrained extends Error {
+  constructor() {
+    super('The job holds a cancel request, so the batch stops sending.');
+    this.name = 'BatchDrained';
+  }
+}
+
+/**
  * A command job issues one Google command per operation. Its action is Reboot, Wipe user data, or
  * Powerwash (design addendum section 1). Every other action writes the annotated fields or the
  * cached status.
@@ -1201,6 +1214,21 @@ export class DeviceUpdateJobs {
     }
   }
 
+  /**
+   * The cancel request of one job header (cancel design section 3). A read without a
+   * lock, so a renewal tick can call it after every successful renewal.
+   */
+  private async jobCancelRequested(
+    customer: string,
+    job: string,
+  ): Promise<boolean> {
+    const answer = await this.call(
+      'SELECT cc.job_cancel_requested($1,$2) AS result',
+      [customer, job],
+    );
+    return answer === true;
+  }
+
   /** A clock read. It reads no table, and the worker holds no lock between calls. */
   private async clock(): Promise<Date> {
     const value = await this.call('SELECT clock_timestamp() AS result', []);
@@ -1335,6 +1363,8 @@ export class DeviceUpdateJobs {
     const tracked = new Map<string, TrackedWrite>();
     let claimedOperations: ClaimedOperation[] = [];
     let fenced = false;
+    /** True once a renewal tick reads a cancel request. Each later send stops. */
+    let drained = false;
     let storeFailure = false;
     let failureCode: string | null = null;
     let mintScopeFailure: string | null = null;
@@ -1503,6 +1533,15 @@ export class DeviceUpdateJobs {
           if (failure.code === 'attempt-fenced') fenced = true;
           else renewalError ??= failure;
           stop.abort();
+          return;
+        }
+        // The renewal succeeded, so the header is readable. A failed read leaves
+        // the flag unset, and the next tick reads the request again (section 3).
+        try {
+          if (await this.jobCancelRequested(input.customerId, input.jobId))
+            drained = true;
+        } catch {
+          /* A read that fails is no cancel answer. The next tick reads again. */
         }
       };
       renewalTimer = this.timers.setInterval(() => {
@@ -1537,6 +1576,8 @@ export class DeviceUpdateJobs {
         const options = {
           batchSize: this.batchSize,
           onSend: (ids: readonly string[]) => {
+            // A cancel request stops the send before any entry reads as sent.
+            if (drained) throw new BatchDrained();
             roundIds = [...ids];
             for (const id of ids) {
               const entry = tracked.get(id);
@@ -1611,6 +1652,8 @@ export class DeviceUpdateJobs {
               {
                 batchSize: this.batchSize,
                 onSend: (parts) => {
+                  // A cancel request stops the send before any entry reads as sent.
+                  if (drained) throw new BatchDrained();
                   roundIds = [];
                   for (const part of parts) {
                     partDevices.set(part.id, part.deviceIds);
@@ -1675,6 +1718,9 @@ export class DeviceUpdateJobs {
           if (renewalError !== null) throw renewalError;
           if (fenced) {
             /* The attempt is fenced. Stop the batch and answer attempt-fenced. */
+          } else if (error instanceof BatchDrained) {
+            // The cancel request stops the batch without a job failure. The
+            // leftover settlement sends its unsent operations back as pending.
           } else if (error instanceof DeviceSyncError) {
             storeFailure = true;
             throw error;
@@ -1703,7 +1749,9 @@ export class DeviceUpdateJobs {
       for (const operation of claimedOperations) {
         const entry = tracked.get(operation.deviceId);
         if (entry === undefined || entry.settled) continue;
-        const classified = classify(entry, failureCode);
+        // After a cancel request every unsent operation settles `pending`, also
+        // after an observed failure. The next claim settles it Cancelled.
+        const classified = classify(entry, drained ? null : failureCode);
         leftovers.push({ entry, outcome: classified.outcome });
         if (classified.observedFailure !== null && failureCode === null)
           failureCode = classified.observedFailure;

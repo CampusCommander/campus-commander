@@ -40,7 +40,13 @@ const device = (deviceId) => ({
   status: null,
 });
 
-function database({ fail = {}, onPage = () => undefined, removed = [] } = {}) {
+function database({
+  fail = {},
+  onPage = () => undefined,
+  removed = [],
+  cancels = [],
+  onFinish = async () => undefined,
+} = {}) {
   const calls = [];
   return {
     calls,
@@ -52,6 +58,15 @@ function database({ fail = {}, onPage = () => undefined, removed = [] } = {}) {
           code: 'P0001',
           detail: fail[name],
         });
+      if (name === 'job_cancel_requested') {
+        const next = cancels.length > 0 ? cancels.shift() : false;
+        if (next === 'fail')
+          throw Object.assign(new Error(name), {
+            code: 'P0001',
+            detail: 'store-down',
+          });
+        return { rows: [{ result: next }] };
+      }
       if (name === 'claim_device_sync')
         return {
           rows: [
@@ -64,7 +79,10 @@ function database({ fail = {}, onPage = () => undefined, removed = [] } = {}) {
             },
           ],
         };
-      if (name === 'finish_device_sync') return { rows: [{ result: state }] };
+      if (name === 'finish_device_sync') {
+        await onFinish();
+        return { rows: [{ result: state }] };
+      }
       if (name === 'page_last_removed_device_ids')
         return { rows: [{ result: values[1] === '' ? removed : [] }] };
       if (name === 'page_device_records') onPage();
@@ -136,6 +154,60 @@ function reader({
   };
 }
 const names = (calls) => calls.map((call) => call.name);
+
+/** Timers whose interval the test fires by hand. The delay of each one is recorded. */
+function timers() {
+  const intervals = new Map();
+  const scheduled = [];
+  let sequence = 0;
+  const handle = {
+    setInterval(callback, delay) {
+      const id = ++sequence;
+      intervals.set(id, { callback, delay });
+      scheduled.push(delay);
+      return id;
+    },
+    clearInterval(id) {
+      intervals.delete(id);
+    },
+  };
+  return {
+    handle,
+    async fire() {
+      for (const entry of [...intervals.values()]) await entry.callback();
+    },
+    delays() {
+      return scheduled;
+    },
+    get count() {
+      return intervals.size;
+    },
+  };
+}
+
+const untilAborted = (signal) =>
+  new Promise((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener('abort', resolve, { once: true });
+  });
+
+/** One page, then a read that ends only when the run signal aborts. */
+function stallingReader() {
+  let staged;
+  const started = new Promise((resolve) => (staged = resolve));
+  return {
+    started,
+    async *devicePages(_credential, _customer, signal) {
+      yield [device('d1'), device('d2')];
+      staged();
+      await untilAborted(signal);
+      throw new GoogleConnectionError('network-failure');
+    },
+    async *batteryPages() {
+      yield [];
+    },
+  };
+}
 
 test('stages every page, publishes, fills Redis, and bumps the query generation', async () => {
   const db = database();
@@ -347,4 +419,90 @@ test('record expiry follows the freshness that remains', () => {
     'A future stamp keeps the full threshold.',
   );
   assert.equal(recordSeconds('not a time', now), 1);
+});
+
+test('the cancel tick aborts the stalled read and the raising finish leaves Redis untouched', async () => {
+  const db = database({
+    cancels: [true],
+    fail: { finish_device_sync: 'device-sync-changed' },
+  });
+  const redis = cache();
+  const clock = timers();
+  const source = stallingReader();
+  const run = new DeviceSync(db, cipher, source, redis, {
+    timers: clock.handle,
+  }).run(request, AbortSignal.timeout(5000));
+  await source.started;
+  await clock.fire();
+  await assert.rejects(
+    run,
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'device-sync-changed',
+  );
+  assert.deepEqual(names(db.calls), [
+    'claim_device_sync',
+    'stage_devices',
+    'job_cancel_requested',
+    'finish_device_sync',
+  ]);
+  assert.equal(
+    names(db.calls).includes('stage_device_batteries'),
+    false,
+    'No stage follows the abort.',
+  );
+  const cancel = db.calls.find((call) => call.name === 'job_cancel_requested');
+  assert.deepEqual(cancel.values, [customerId, request.syncId]);
+  assert.deepEqual(names(redis.calls), []);
+  assert.deepEqual(clock.delays(), [30_000]);
+  assert.equal(clock.count, 0, 'The tick stops at the end of the run.');
+});
+
+test('a cancel that the finish does not refuse still runs no Redis step and publishes no event', async () => {
+  const clock = timers();
+  const db = database({ cancels: [true], onFinish: () => clock.fire() });
+  const redis = cache();
+  const result = await new DeviceSync(db, cipher, reader(), redis, {
+    timers: clock.handle,
+  }).run(request, AbortSignal.timeout(5000));
+  assert.deepEqual(result, state);
+  assert.deepEqual(names(db.calls), [
+    'claim_device_sync',
+    'stage_devices',
+    'stage_device_batteries',
+    'finish_device_sync',
+    'job_cancel_requested',
+  ]);
+  assert.deepEqual(names(redis.calls), []);
+});
+
+test('a failed cancel read leaves the sync running and the next tick reads again', async () => {
+  const db = database({
+    cancels: ['fail', true],
+    fail: { finish_device_sync: 'device-sync-changed' },
+  });
+  const clock = timers();
+  const source = stallingReader();
+  const run = new DeviceSync(db, cipher, source, cache(), {
+    timers: clock.handle,
+  }).run(request, AbortSignal.timeout(5000));
+  await source.started;
+  await clock.fire();
+  assert.equal(
+    names(db.calls).includes('finish_device_sync'),
+    false,
+    'A failed read does not abort the sync.',
+  );
+  await clock.fire();
+  await assert.rejects(
+    run,
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'device-sync-changed',
+  );
+  assert.deepEqual(names(db.calls), [
+    'claim_device_sync',
+    'stage_devices',
+    'job_cancel_requested',
+    'job_cancel_requested',
+    'finish_device_sync',
+  ]);
 });
