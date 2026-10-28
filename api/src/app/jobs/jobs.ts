@@ -11,6 +11,7 @@ import { z } from 'zod';
 import {
   isAuthorized,
   jobActivitySchema,
+  jobCancelRefusalSchema,
   jobDetailSchema,
   jobListSchema,
   jobOperationsPageSchema,
@@ -19,6 +20,7 @@ import {
   jobSummarySchema,
   type JobAction,
   type JobActivity,
+  type JobCancelRefusal,
   type JobDetail,
   type JobFailedActivityOperation,
   type JobLatestActivity,
@@ -82,6 +84,42 @@ function translate(error: unknown): never {
   const parsed = z.object({ code: z.string() }).safeParse(error);
   if (parsed.success && parsed.data.code === '42501')
     throw new ForbiddenException({ reason: 'forbidden' });
+  throw new ServiceUnavailableException(
+    { reason: 'job-store-unavailable' },
+    { cause: error },
+  );
+}
+
+/** The status of each cancel refusal (design section 1). */
+const cancelRefusalStatuses: Readonly<Record<JobCancelRefusal, number>> = {
+  'job-not-found': 404,
+  'cancel-not-permitted': 403,
+  'job-finished': 409,
+  'nothing-to-stop': 409,
+};
+
+/**
+ * The cancel call raises one reason per refusal as DETAIL, as `cc.request_device_sync` raises its
+ * conflicts (016). The route maps that reason to its status of design section 1.
+ */
+function translateCancel(error: unknown): never {
+  if (error instanceof HttpException) throw error;
+  const parsed = z
+    .object({ code: z.string(), detail: z.string().optional() })
+    .safeParse(error);
+  if (parsed.success && parsed.data.code === '42501')
+    throw new ForbiddenException({ reason: 'forbidden' });
+  if (parsed.success && parsed.data.code === 'P0001') {
+    const refusal = jobCancelRefusalSchema.safeParse(parsed.data.detail);
+    if (refusal.success) {
+      const response = { reason: refusal.data };
+      if (cancelRefusalStatuses[refusal.data] === 404)
+        throw new NotFoundException(response);
+      if (cancelRefusalStatuses[refusal.data] === 403)
+        throw new ForbiddenException(response);
+      throw new ConflictException(response);
+    }
+  }
   throw new ServiceUnavailableException(
     { reason: 'job-store-unavailable' },
     { cause: error },
@@ -183,6 +221,7 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
   const unknown = counted(row['unknown']);
   const skipped = counted(row['skipped']);
   const expired = counted(row['expired']);
+  const cancelled = counted(row['cancelled']);
   return jobSummarySchema.parse({
     jobId: row['job_id'],
     displayId: row['display_id'],
@@ -207,19 +246,34 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
       unknown,
       skipped,
       expired,
-      // The stored cancelled counter lands with the cancel route (design card CB6).
-      cancelled: 0,
+      // An operation that never left the worker has settled, so it is not pending (design section 1).
+      cancelled,
       pending:
         total === null
           ? null
           : Math.max(
               0,
-              total - succeeded - failed - unknown - skipped - expired,
+              total -
+                succeeded -
+                failed -
+                unknown -
+                skipped -
+                expired -
+                cancelled,
             ),
     },
     failure: row['failure'],
-    // The stored request lands with the cancel route (design card CB6).
-    cancelRequest: null,
+    // The stored request, with the person in the shape of requestedBy (design section 5).
+    cancelRequest:
+      row['cancel_requested_at'] == null
+        ? null
+        : {
+            at: measuredAt(row['cancel_requested_at']),
+            by: {
+              id: row['cancel_requested_by'],
+              displayName: row['cancel_requested_by_name'],
+            },
+          },
   });
 }
 
@@ -486,8 +540,10 @@ export class Jobs {
     const pageQuery = build(true);
     const rows = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
+        cb.display_name AS cancel_requested_by_name,
         to_char(j.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
         FROM cc.jobs j JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${pageQuery.where}
         ORDER BY j.created_at DESC, j.display_id DESC
@@ -515,10 +571,12 @@ export class Jobs {
     return (
       await this.rows(
         `SELECT j.*, p.display_name AS requested_by_name,
+          cb.display_name AS cancel_requested_by_name,
           u.confirmed_by, u.action, c.changes, pr.deprovision_reason,
           cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         LEFT JOIN LATERAL (
           SELECT jsonb_agg(
@@ -756,6 +814,40 @@ export class Jobs {
     return jobOperation(row, displayId);
   }
 
+  /**
+   * Request the cancel of one job (design section 5). The SQL function decides every refusal, so
+   * the API reads nothing before it answers. A stored request answers its current summary, also
+   * after the job ends, and writes no second audit row.
+   */
+  async cancel(
+    session: SessionResponse,
+    customerId: string,
+    displayId: string,
+    correlationId: string,
+  ): Promise<JobSummary> {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = (
+        await this.database.connection.query(
+          'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+          [...this.actor(session), customerId, displayId, correlationId],
+        )
+      ).rows;
+    } catch (error) {
+      translateCancel(error);
+    }
+    const result = rows[0]?.['result'];
+    const outcome =
+      result && typeof result === 'object' && 'outcome' in result
+        ? result.outcome
+        : null;
+    if (outcome !== 'requested' && outcome !== 'repeated')
+      throw new ServiceUnavailableException({ reason: 'job-store-unavailable' });
+    const job = await this.header(session, customerId, displayId);
+    if (!job) throw new NotFoundException({ reason: 'job-not-found' });
+    return jobSummary(job);
+  }
+
   async activity(
     session: SessionResponse,
     customerId: string,
@@ -778,8 +870,10 @@ export class Jobs {
       )
     )[0];
     const running = await this.rows(
-      `SELECT j.*, u.action, p.display_name AS requested_by_name FROM cc.jobs j
+      `SELECT j.*, u.action, p.display_name AS requested_by_name,
+        cb.display_name AS cancel_requested_by_name FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('running','awaiting-devices')
         ORDER BY j.created_at DESC, j.display_id DESC LIMIT ${ACTIVITY_RUNNING_ROWS}`,
@@ -793,8 +887,10 @@ export class Jobs {
       )
     )[0];
     const waiting = await this.rows(
-      `SELECT j.*, u.action, p.display_name AS requested_by_name FROM cc.jobs j
+      `SELECT j.*, u.action, p.display_name AS requested_by_name,
+        cb.display_name AS cancel_requested_by_name FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('accepted','queued','held')
         ORDER BY j.target_count ASC NULLS LAST, j.created_at ASC, j.display_id ASC
@@ -812,20 +908,24 @@ export class Jobs {
       )
     )[0];
     const recent = await this.rows(
-      `SELECT j.*, u.action, p.display_name AS requested_by_name FROM cc.jobs j
+      `SELECT j.*, u.action, p.display_name AS requested_by_name,
+        cb.display_name AS cancel_requested_by_name FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
+        LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
         WHERE ${visible} AND j.finished_at IS NOT NULL
           AND j.finished_at >= clock_timestamp() - interval '${ACTIVITY_WINDOW}'
         ORDER BY j.finished_at DESC LIMIT ${ACTIVITY_RECENT_ROWS}`,
       [...actor, customerId],
     );
-    // The stored seen time is compared in SQL, so database microseconds decide the answer.
+    // The stored seen time is compared in SQL, so database microseconds decide the answer. A
+    // cancelled job raises attention only with a failed or Unknown operation (record default 17).
     const attention = (
       await this.rows(
         `SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE ${visible}
           AND j.finished_at IS NOT NULL
-          AND j.status IN ('needs-review','completed-with-errors','failed')
+          AND (j.status IN ('needs-review','completed-with-errors','failed')
+            OR (j.status='cancelled' AND (j.failed>0 OR j.unknown>0)))
           AND j.finished_at > COALESCE((SELECT s.seen_at FROM cc.job_activity_seen s
             WHERE s.principal_id=$4),'-infinity'::timestamptz)) AS attention`,
         [...actor, customerId, actor[0]],
@@ -885,12 +985,20 @@ export class Jobs {
   }
 }
 
-/** True when the caller holds jobs:read at platform scope or district scope of this customer. */
-export const seesEveryJob = (
+/**
+ * True when the caller holds jobs:read or jobs:manage at platform scope, or at district scope of
+ * this customer. jobs:manage holds the job visibility of jobs:read (engineering default 16).
+ */
+export const jobReadable = (
   session: SessionResponse,
   customerId: string,
-): boolean =>
-  isAuthorized(session.identity.grants, 'jobs:read', {
-    kind: 'district',
-    customerId,
-  });
+): boolean => {
+  const scope = { kind: 'district' as const, customerId };
+  return (
+    isAuthorized(session.identity.grants, 'jobs:read', scope) ||
+    isAuthorized(session.identity.grants, 'jobs:manage', scope)
+  );
+};
+
+/** The Jobs stream and the Jobs list ask the rule of `jobReadable` for every job of a customer. */
+export const seesEveryJob = jobReadable;
