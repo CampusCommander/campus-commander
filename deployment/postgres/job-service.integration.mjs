@@ -592,6 +592,28 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
       'SELECT publication_id,status_changed,revision FROM cc.job_publications WHERE job_id=$1 ORDER BY publication_id',
       [jobId],
     );
+  /** The stored cancel request of one job, as the route passes it (cancel design section 2). */
+  const cancelOf = async (displayId) => {
+    const version = (
+      await adminRow(
+        'SELECT permission_version FROM cc.application_principals WHERE id=$1',
+        [owner],
+      )
+    ).permission_version;
+    return result('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
+      owner,
+      version,
+      customer,
+      displayId,
+      randomUUID(),
+    ]);
+  };
+  /** The one audit row of a cancel request, named by the display ID (cancel design section 2). */
+  const cancelEvents = (displayId) =>
+    adminRow(
+      'SELECT count(*)::int AS n FROM cc.security_events WHERE event=$1 AND detail=$2',
+      ['job-cancel-requested', displayId],
+    );
   /** End every open write job and clear the hold state before a fresh admission check. */
   const settle = async () => {
     await admin(
@@ -1740,6 +1762,253 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
           left.filter((row) => row.status_changed).length,
           0,
           JSON.stringify(left),
+        );
+      },
+    );
+
+    await check(
+      'a cancelled held job loses its hold, marks the cleanup, and the next queued job takes the slot',
+      async () => {
+        await settle();
+        // The held job owns the hold: its registry entry is written and the key names its identity.
+        const holding = await makeJob({ devices: ['b5-cxl1'] });
+        await admin(`UPDATE cc.jobs SET status='held' WHERE job_id=$1`, [
+          holding.jobId,
+        ]);
+        await admin(
+          'UPDATE cc.device_update_jobs SET hold_written_at=clock_timestamp() WHERE job_id=$1',
+          [holding.jobId],
+        );
+        await publisher.set(jobHoldKey(customer), holding.jobId, { EX: 300 });
+        // A larger and a smaller job wait behind the same hold.
+        const large = await makeJob({ devices: ['b5-cxl2', 'b5-cxl3'] });
+        const small = await makeJob({ devices: ['b5-cxl4'] });
+        assert.equal(await service.admit(customer), false);
+        assert.equal((await jobRow(large.jobId)).status, 'held');
+        assert.equal((await jobRow(small.jobId)).status, 'held');
+
+        // The request ends a held job at once: the pending operation settles Cancelled.
+        assert.deepEqual(await cancelOf(holding.displayId), {
+          outcome: 'requested',
+        });
+        const cancelled = await jobRow(holding.jobId);
+        assert.equal(cancelled.status, 'cancelled');
+        assert.ok(cancelled.finished_at instanceof Date);
+        assert.deepEqual(
+          (await operations(holding.jobId)).map((row) => [
+            row.status,
+            row.outcome_reason,
+          ]),
+          [['cancelled', 'cancel-requested']],
+        );
+        assert.equal((await cancelEvents(holding.displayId)).n, 1);
+
+        // The released event runs cleanup and admission. The key leaves the test Redis, the
+        // registry entry takes its cleanup mark, and the smallest waiting job takes the slot.
+        const before = starts.length;
+        await service.changed(customer, holding.jobId);
+        assert.equal(await cached(jobHoldKey(customer)), null);
+        assert.ok(
+          (await detail(holding.jobId)).hold_cleaned_at instanceof Date,
+        );
+        assert.equal((await jobRow(small.jobId)).status, 'running');
+        assert.equal((await jobRow(large.jobId)).status, 'queued');
+        assert.equal(starts.length, before + 1);
+        assert.equal(starts.at(-1).jobId, small.jobId);
+      },
+    );
+
+    await check(
+      'a cancelled running job frees the slot and the next queued job starts',
+      async () => {
+        await settle();
+        const active = await makeJob({
+          devices: ['b5-run1', 'b5-run2'],
+          batchSize: 1,
+        });
+        assert.equal(await service.admit(customer), false);
+        const token = await tokenOf(active.jobId);
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(active.jobId, token, 0, attempt)).outcome,
+          'claimed',
+        );
+        assert.equal(await report(active.jobId, token, 0, attempt), true);
+        // The report writes the hold registry entry, and the key names this job.
+        assert.equal(await service.applyHold(customer), true);
+        assert.equal(await cached(jobHoldKey(customer)), active.jobId);
+        // The next job waits behind the hold.
+        const waiting = await makeJob({ devices: ['b5-run3'] });
+        assert.equal(await service.admit(customer), false);
+        assert.equal((await jobRow(waiting.jobId)).status, 'held');
+
+        // The request changes only the header. The worker keeps the settlement of the rest.
+        assert.deepEqual(await cancelOf(active.displayId), {
+          outcome: 'requested',
+        });
+        const requested = await jobRow(active.jobId);
+        assert.equal(requested.status, 'running');
+        assert.ok(requested.cancel_requested_at instanceof Date);
+
+        // The worker settles its batch and finishes. One row reads Unknown, the other Cancelled.
+        await expireBatches(active.jobId);
+        assert.equal(
+          (
+            await result(
+              'SELECT cc.prepare_device_update_finish($1,$2,$3) AS result',
+              [customer, active.jobId, token],
+            )
+          ).outcome,
+          'ready',
+        );
+        const finished = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, active.jobId, token],
+        );
+        assert.equal(finished.status, 'cancelled', JSON.stringify(finished));
+        assert.deepEqual(
+          (await operations(active.jobId)).map((row) => row.status),
+          ['unknown', 'cancelled'],
+        );
+
+        // The status change frees the slot. Cleanup releases the hold, and admission starts the
+        // job that waited behind it.
+        const before = starts.length;
+        await service.changed(customer, active.jobId);
+        assert.equal(await cached(jobHoldKey(customer)), null);
+        assert.ok((await detail(active.jobId)).hold_cleaned_at instanceof Date);
+        assert.equal((await jobRow(waiting.jobId)).status, 'running');
+        assert.equal(starts.length, before + 1);
+        assert.equal(starts.at(-1).jobId, waiting.jobId);
+      },
+    );
+
+    await check(
+      'a cancelled lost runner takes no new start and ends Cancelled',
+      async () => {
+        await settle();
+        const lost = await makeJob({
+          devices: ['b5-lost1', 'b5-lost2'],
+          batchSize: 1,
+        });
+        assert.equal(await service.admit(customer), false);
+        const token = await tokenOf(lost.jobId);
+        assert.equal(
+          (await claim(lost.jobId, token, 0, randomUUID())).outcome,
+          'claimed',
+        );
+        await admin(
+          `UPDATE cc.device_update_jobs SET heartbeat_at=clock_timestamp()-interval '11 minutes'
+            WHERE job_id=$1`,
+          [lost.jobId],
+        );
+        await expireBatches(lost.jobId);
+        assert.deepEqual(await cancelOf(lost.displayId), {
+          outcome: 'requested',
+        });
+        assert.equal((await jobRow(lost.jobId)).status, 'running');
+
+        const before = starts.length;
+        const reconcileBefore = reconciles.length;
+        const recovered = await service.recover(customer);
+        // The lost runner ends through the finalizer. The reaper asks for no new write start.
+        assert.equal(starts.length, before);
+        assert.equal(
+          starts.filter((one) => one.jobId === lost.jobId).length,
+          1,
+          'Only the admission start names the job.',
+        );
+        const header = await jobRow(lost.jobId);
+        assert.equal(header.status, 'cancelled', JSON.stringify(header));
+        assert.ok(header.finished_at instanceof Date);
+        assert.deepEqual(
+          (await operations(lost.jobId)).map((row) => row.status),
+          ['unknown', 'cancelled'],
+        );
+        // The Unknown row of a cancelled job keeps its read-back (record default 9).
+        assert.equal(recovered, true);
+        assert.equal(reconciles.length, reconcileBefore + 1);
+        assert.equal(reconciles.at(-1).jobId, lost.jobId);
+        assert.equal(reconciles.at(-1).operationNumber, 'all');
+      },
+    );
+
+    await check(
+      'the cancel request and the final status each record one change, and the relay sends both',
+      async () => {
+        await settle();
+        const { jobId, displayId } = await makeJob({
+          devices: ['b5-cxpub1', 'b5-cxpub2'],
+          batchSize: 1,
+        });
+        assert.equal(await service.admit(customer), false);
+        const token = await tokenOf(jobId);
+        assert.equal(
+          (await claim(jobId, token, 0, randomUUID())).outcome,
+          'claimed',
+        );
+        // Drain the admission and claim changes, so this check reads the cancel changes alone.
+        await service.relay();
+        assert.equal((await publications(jobId)).length, 0);
+
+        assert.deepEqual(await cancelOf(displayId), { outcome: 'requested' });
+        const requested = await publications(jobId);
+        assert.equal(requested.length, 1);
+        assert.equal(requested[0].status_changed, true);
+        await admin(
+          `UPDATE cc.job_publications SET created_at=clock_timestamp()-interval '6 seconds'
+            WHERE job_id=$1`,
+          [jobId],
+        );
+        const sent = take('job').filter(
+          (event) => event.jobId === jobId,
+        ).length;
+        await service.relay();
+        assert.equal(
+          take('job').filter((event) => event.jobId === jobId).length,
+          sent + 1,
+        );
+        assert.equal(
+          Number(
+            take('job')
+              .filter((event) => event.jobId === jobId)
+              .at(-1).revision,
+          ),
+          Number(requested[0].revision),
+        );
+
+        await expireBatches(jobId);
+        await result(
+          'SELECT cc.prepare_device_update_finish($1,$2,$3) AS result',
+          [customer, jobId, token],
+        );
+        const finished = await result(
+          'SELECT cc.finish_device_update_job($1,$2,$3) AS result',
+          [customer, jobId, token],
+        );
+        assert.equal(finished.status, 'cancelled');
+        const final = (await publications(jobId)).filter(
+          (row) => row.status_changed,
+        );
+        assert.equal(final.length, 1);
+        assert.ok(Number(final[0].revision) > Number(requested[0].revision));
+        await admin(
+          `UPDATE cc.job_publications SET created_at=clock_timestamp()-interval '6 seconds'
+            WHERE job_id=$1`,
+          [jobId],
+        );
+        await service.relay();
+        assert.equal(
+          take('job').filter((event) => event.jobId === jobId).length,
+          sent + 2,
+        );
+        assert.equal(
+          Number(
+            take('job')
+              .filter((event) => event.jobId === jobId)
+              .at(-1).revision,
+          ),
+          Number(final[0].revision),
         );
       },
     );
