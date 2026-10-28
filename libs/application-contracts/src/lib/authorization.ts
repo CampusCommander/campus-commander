@@ -20,6 +20,7 @@ export const actionSchema = z.enum([
   'devices:deprovision',
   'devices:bulk-actions',
   'jobs:read',
+  'jobs:manage',
 ]);
 export type Action = z.infer<typeof actionSchema>;
 
@@ -54,6 +55,7 @@ export const actionScopeKinds: Readonly<
   'devices:deprovision': ['platform', 'district'],
   'devices:bulk-actions': ['platform', 'district'],
   'jobs:read': ['platform', 'district'],
+  'jobs:manage': ['platform', 'district'],
 };
 
 export const grantSchema = z

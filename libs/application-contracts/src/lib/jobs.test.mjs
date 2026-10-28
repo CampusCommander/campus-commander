@@ -10,6 +10,7 @@ import {
   JOB_ACTION_LABELS,
   jobActionSchema,
   jobActivitySchema,
+  jobCancelRefusalSchema,
   jobCommandStateSchema,
   jobDetailSchema,
   jobDisplayIdSchema,
@@ -50,9 +51,11 @@ const summary = {
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 7,
   },
   failure: null,
+  cancelRequest: null,
 };
 
 const operation = {
@@ -99,6 +102,7 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'completed-with-errors',
     'failed',
     'needs-review',
+    'cancelled',
   ]);
   assert.deepEqual(jobActionSchema.options, [
     'update-device-annotations',
@@ -276,7 +280,7 @@ test('job summaries are strict objects', () => {
   );
   assert.equal(
     jobSummarySchema.safeParse({ ...summary, status: 'cancelled' }).success,
-    false,
+    true,
   );
   assert.equal(
     jobSummarySchema.safeParse({ ...summary, revision: 0 }).success,
@@ -308,6 +312,7 @@ test('progress counts total and pending together', () => {
     unknown: 1,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: null,
   };
   assert.equal(jobProgressSchema.safeParse(running).success, true);
@@ -325,6 +330,125 @@ test('progress counts total and pending together', () => {
   );
   assert.equal(
     jobProgressSchema.safeParse({ ...running, extra: 1 }).success,
+    false,
+  );
+});
+
+test('a progress carries a required cancelled count', () => {
+  assert.equal(jobProgressSchema.safeParse(summary.progress).success, true);
+  assert.equal(summary.progress.cancelled, 0);
+  const cancelled = {
+    ...summary.progress,
+    succeeded: 4,
+    cancelled: 8,
+    pending: 0,
+  };
+  assert.equal(jobProgressSchema.safeParse(cancelled).success, true);
+  assert.equal(jobProgressSchema.parse(cancelled).cancelled, 8);
+  // A progress without the count fails, so a reader never invents it.
+  const withoutCancelled = { ...summary.progress };
+  delete withoutCancelled.cancelled;
+  assert.equal(jobProgressSchema.safeParse(withoutCancelled).success, false);
+  assert.equal(
+    jobProgressSchema.safeParse({ ...summary.progress, cancelled: -1 }).success,
+    false,
+  );
+  assert.equal(
+    jobProgressSchema.safeParse({ ...summary.progress, cancelled: 1.5 })
+      .success,
+    false,
+  );
+});
+
+test('the cancelled status and outcome parse', () => {
+  assert.equal(jobStatusSchema.safeParse('cancelled').success, true);
+  assert.equal(jobOutcomeSchema.safeParse('cancelled').success, true);
+  const cancelled = {
+    ...summary,
+    status: 'cancelled',
+    finishedAt: at,
+    progress: { ...summary.progress, succeeded: 4, cancelled: 8, pending: 0 },
+  };
+  assert.deepEqual(jobSummarySchema.parse(cancelled), cancelled);
+  assert.equal(
+    jobOperationSchema.safeParse({ ...operation, outcome: 'cancelled' })
+      .success,
+    true,
+  );
+});
+
+test('a cancel request names one person and one time', () => {
+  const request = {
+    at,
+    by: { id: requesterId, displayName: 'Alex Rivera' },
+  };
+  const requested = { ...summary, cancelRequest: request };
+  assert.deepEqual(jobSummarySchema.parse(requested), requested);
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, cancelRequest: {} }).success,
+    false,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, cancelRequest: { at } }).success,
+    false,
+    'A request names the person who asked.',
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      cancelRequest: { ...request, by: requesterId },
+    }).success,
+    false,
+    'The person holds the job person shape.',
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      cancelRequest: { ...request, at: '2026-10-17' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      cancelRequest: { ...request, extra: true },
+    }).success,
+    false,
+  );
+  // The detail inherits the request of the summary.
+  const detail = {
+    ...requested,
+    confirmedBy: null,
+    previewDisplayId: null,
+    changes: null,
+    commandType: null,
+    statusAction: null,
+    deprovisionReason: null,
+    targetOrgUnitPaths: null,
+    correlationId: jobId,
+    latestActivity: {
+      at,
+      failed: { count: 0, operations: [] },
+      unknown: { count: 0, operations: [] },
+    },
+  };
+  assert.deepEqual(jobDetailSchema.parse(detail).cancelRequest, request);
+  assert.equal(
+    jobDetailSchema.safeParse({ ...detail, cancelRequest: undefined }).success,
+    false,
+    'The detail requires the request field.',
+  );
+});
+
+test('the cancel route answers four refusal reasons', () => {
+  assert.deepEqual(jobCancelRefusalSchema.options, [
+    'job-not-found',
+    'cancel-not-permitted',
+    'job-finished',
+    'nothing-to-stop',
+  ]);
+  assert.equal(
+    jobCancelRefusalSchema.safeParse('job-cancelled').success,
     false,
   );
 });
