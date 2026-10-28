@@ -3744,6 +3744,50 @@ test('a failed cancel read leaves the flag unset and the next tick reads again',
   assert.equal(answer.outcome, 'settled');
 });
 
+test('a drain after an observed failure still returns unsent operations to pending', async () => {
+  const clock = advancingTimers(base);
+  const db = database({
+    claim: () => claimed([op(1, 'd1'), op(2, 'd2')]),
+    cancel: () => true,
+  });
+  let openSecond;
+  const secondGate = new Promise((resolve) => {
+    openSecond = resolve;
+  });
+  const source = reader([
+    { parts: { d1: { kind: 'auth', status: 403, reason: 'forbidden' } } },
+    { gate: secondGate, parts: { d2: { kind: 'success' } } },
+  ]);
+  const { create } = jobs({
+    db,
+    reader: source,
+    batchSize: 1,
+    timers: clock.timers,
+    now: () => clock.now,
+  });
+  const running = create.runBatch(batchRequest, AbortSignal.timeout(5000));
+  await until(() => settlements(db).length === 1);
+  clock.advance(30_000);
+  await until(() => cancelReads(db).length === 1);
+  openSecond();
+  const answer = await running;
+  assert.equal(source.calls[0].rounds, 1);
+  const [observed, leftover] = settlements(db);
+  // The observed failure of the sent operation keeps its own outcome.
+  assert.equal(JSON.parse(observed.values[5])[0].outcome, 'failed');
+  assert.equal(observed.values[7], 'permission-denied');
+  // The unsent operation settles pending, not skipped, after that failure.
+  assert.deepEqual(
+    JSON.parse(leftover.values[5]).map((one) => [
+      one.outcome,
+      one.outcomeReason ?? null,
+    ]),
+    [['pending', null]],
+  );
+  assert.equal(answer.outcome, 'stopped');
+  assert.equal(answer.failure, 'permission-denied');
+});
+
 test('a cancelled job keeps the read-back of a written field and renews until the release', async () => {
   const clock = advancingTimers(base);
   const db = database({
