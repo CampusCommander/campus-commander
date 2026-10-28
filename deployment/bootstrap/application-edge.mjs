@@ -98,6 +98,17 @@ const deviceActionWrite = new RegExp(
   `^/api/devices/(?:commands|status-changes)/previews(?:/${previewIdPath}/confirm)?$`,
 );
 const jobPage = new RegExp(`^/jobs(?:/${jobDisplayIdPath})?$`);
+/**
+ * HTTP/2 forbids these headers on an answer. The edge removes each one from an upstream
+ * answer, so both protocols carry the same headers.
+ */
+export const connectionHeaders = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-connection',
+  'transfer-encoding',
+  'upgrade',
+]);
 const finish = (response, status, message) => {
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
@@ -105,6 +116,26 @@ const finish = (response, status, message) => {
   });
   response.end(message);
 };
+
+/** The client host arrives in `:authority` over HTTP/2 and in `host` over HTTP/1.1. */
+export function requestHost(request) {
+  return request.headers[':authority'] ?? request.headers.host ?? '';
+}
+
+/** Copy an upstream answer without a connection-specific header. */
+export function responseHeaders(incoming, api) {
+  const source = incoming.headers;
+  const headers = {
+    'content-type': source['content-type'] ?? 'application/octet-stream',
+    'cache-control': 'no-store',
+  };
+  if (api)
+    for (const name of ['set-cookie', 'location', 'x-correlation-id']) {
+      if (source[name]) headers[name] = source[name];
+    }
+  for (const name of connectionHeaders) delete headers[name];
+  return headers;
+}
 
 /**
  * Upstream idle timeouts in milliseconds. Node applies `timeout` to socket inactivity.
@@ -130,7 +161,7 @@ export async function proxyApplication(
     path.includes('\\')
   )
     return finish(response, 404, 'Route unavailable.\n');
-  if (request.headers.host !== new URL(publicOrigin).host)
+  if (requestHost(request) !== new URL(publicOrigin).host)
     return finish(response, 421, 'Use the configured application address.\n');
   const pathname = path.split('?')[0];
   const readable =
@@ -210,7 +241,9 @@ export async function proxyApplication(
   const target = upstreams[api ? 'api' : 'frontend'];
   const transport = target.url.protocol === 'https:' ? https : http;
   const headers = {
-    host: target.url.host,
+    // The client host comes from `:authority` over HTTP/2. The edge has compared it with the
+    // configured application address, so the upstream receives that address and no pseudo-header.
+    host: requestHost(request),
     accept: request.headers.accept ?? '*/*',
   };
   if (api) {
@@ -239,16 +272,10 @@ export async function proxyApplication(
           : timeouts.request,
     },
     (incoming) => {
-      const forwarded = {
-        'content-type':
-          incoming.headers['content-type'] ?? 'application/octet-stream',
-        'cache-control': 'no-store',
-      };
-      if (api)
-        for (const name of ['set-cookie', 'location', 'x-correlation-id']) {
-          if (incoming.headers[name]) forwarded[name] = incoming.headers[name];
-        }
-      response.writeHead(incoming.statusCode ?? 502, forwarded);
+      response.writeHead(
+        incoming.statusCode ?? 502,
+        responseHeaders(incoming, api),
+      );
       incoming.on('error', () => response.destroy());
       incoming.pipe(response);
     },

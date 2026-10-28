@@ -1,10 +1,15 @@
 import http from 'node:http';
+import http2 from 'node:http2';
 import https from 'node:https';
 import { readFile } from 'node:fs/promises';
 import { credentialFromAuthorization } from './access.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
-import { proxyApplication } from './application-edge.mjs';
+import {
+  proxyApplication,
+  requestHost,
+  responseHeaders,
+} from './application-edge.mjs';
 
 const assetPath =
   /^\/(?:assets\/)?[A-Za-z0-9_/-]+\.(?:js|css|ico|png|svg|woff2?)$/;
@@ -43,110 +48,121 @@ export async function createBootstrapEdge({
           : undefined,
     };
   }
-  const server = https.createServer(material, async (request, response) => {
-    response.setHeader('strict-transport-security', 'max-age=31536000');
-    response.setHeader('x-content-type-options', 'nosniff');
-    response.setHeader('referrer-policy', 'no-referrer');
-    response.setHeader(
-      'content-security-policy',
-      // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
-      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-    );
-    const path = request.url || '';
-    if (path === '/health/live') return finish(response, 200, 'live\n');
-    if (path === '/health' || path === '/health/ready') {
-      try {
-        const status = await getStatus();
-        return finish(
+  const server = http2.createSecureServer(
+    { ...material, allowHTTP1: true },
+    async (request, response) => {
+      response.setHeader('strict-transport-security', 'max-age=31536000');
+      response.setHeader('x-content-type-options', 'nosniff');
+      response.setHeader('referrer-policy', 'no-referrer');
+      response.setHeader(
+        'content-security-policy',
+        // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+      );
+      const path = request.url || '';
+      if (path === '/health/live') return finish(response, 200, 'live\n');
+      if (path === '/health' || path === '/health/ready') {
+        try {
+          const status = await getStatus();
+          return finish(
+            response,
+            status.status === 'ready' ? 200 : 503,
+            `${status.status === 'ready' ? 'ready' : 'not-ready'}\n`,
+          );
+        } catch {
+          return finish(response, 503, 'not-ready\n');
+        }
+      }
+      if (config.phase >= 2 && path !== '/api/startup')
+        return proxyApplication(
+          request,
           response,
-          status.status === 'ready' ? 200 : 503,
-          `${status.status === 'ready' ? 'ready' : 'not-ready'}\n`,
+          upstreams,
+          config.applicationAuth.publicOrigin,
+          config.phase,
+        );
+      if (request.method !== 'GET' && request.method !== 'HEAD')
+        return finish(response, 405, 'Method unavailable.\n');
+      const api =
+        path === '/api' ||
+        path === '/api/startup' ||
+        path === '/api/application';
+      if (
+        path.includes('..') ||
+        !(
+          api ||
+          path === '/' ||
+          path === '/startup' ||
+          path === '/index.html' ||
+          assetPath.test(path)
+        )
+      ) {
+        return finish(response, 404, 'Route unavailable.\n');
+      }
+      let accepted = false;
+      try {
+        accepted = await verify(
+          credentialFromAuthorization(request.headers.authorization),
         );
       } catch {
-        return finish(response, 503, 'not-ready\n');
+        /* Deny unavailable verification. */
       }
-    }
-    if (config.phase >= 2 && path !== '/api/startup')
-      return proxyApplication(
-        request,
-        response,
-        upstreams,
-        config.applicationAuth.publicOrigin,
-        config.phase,
-      );
-    if (request.method !== 'GET' && request.method !== 'HEAD')
-      return finish(response, 405, 'Method unavailable.\n');
-    const api =
-      path === '/api' || path === '/api/startup' || path === '/api/application';
-    if (
-      path.includes('..') ||
-      !(
-        api ||
-        path === '/' ||
-        path === '/startup' ||
-        path === '/index.html' ||
-        assetPath.test(path)
-      )
-    ) {
-      return finish(response, 404, 'Route unavailable.\n');
-    }
-    let accepted = false;
-    try {
-      accepted = await verify(
-        credentialFromAuthorization(request.headers.authorization),
-      );
-    } catch {
-      /* Deny unavailable verification. */
-    }
-    if (!accepted) {
-      response.setHeader(
-        'www-authenticate',
-        'Basic realm="Installation", charset="UTF-8"',
-      );
-      return finish(response, 401, 'Installation access required.\n');
-    }
-    const target = upstreams[api ? 'api' : 'frontend'];
-    const transport = target.url.protocol === 'https:' ? https : http;
-    const upstream = transport.request(
-      target.url,
-      {
-        method: request.method,
-        path,
-        ca: target.ca,
-        rejectUnauthorized: true,
-        headers: {
-          host: target.url.host,
-          accept: request.headers.accept || '*/*',
-          ...(api ? { authorization: request.headers.authorization } : {}),
+      if (!accepted) {
+        response.setHeader(
+          'www-authenticate',
+          'Basic realm="Installation", charset="UTF-8"',
+        );
+        return finish(response, 401, 'Installation access required.\n');
+      }
+      const target = upstreams[api ? 'api' : 'frontend'];
+      const transport = target.url.protocol === 'https:' ? https : http;
+      const upstream = transport.request(
+        target.url,
+        {
+          method: request.method,
+          path,
+          ca: target.ca,
+          rejectUnauthorized: true,
+          headers: {
+            host: requestHost(request),
+            accept: request.headers.accept || '*/*',
+            ...(api ? { authorization: request.headers.authorization } : {}),
+          },
+          timeout: 5000,
         },
-        timeout: 5000,
-      },
-      (incoming) => {
-        const status = incoming.statusCode || 502;
-        if (status >= 300 && status < 400) {
-          incoming.destroy();
-          return finish(response, 502, 'Startup service unavailable.\n');
-        }
-        response.writeHead(status, {
-          'content-type':
-            incoming.headers['content-type'] || 'application/octet-stream',
-          'cache-control': 'no-store',
-        });
-        incoming.on('error', () => response.destroy());
-        incoming.pipe(response);
-      },
-    );
-    upstream.on('timeout', () =>
-      upstream.destroy(new Error('Upstream timed out.')),
-    );
-    upstream.on('error', () => {
-      if (!response.headersSent)
-        finish(response, 502, 'Startup service unavailable.\n');
-      else response.destroy();
-    });
-    response.once('close', () => upstream.destroy());
-    upstream.end();
+        (incoming) => {
+          const status = incoming.statusCode || 502;
+          if (status >= 300 && status < 400) {
+            incoming.destroy();
+            return finish(response, 502, 'Startup service unavailable.\n');
+          }
+          response.writeHead(status, responseHeaders(incoming, false));
+          incoming.on('error', () => response.destroy());
+          incoming.pipe(response);
+        },
+      );
+      upstream.on('timeout', () =>
+        upstream.destroy(new Error('Upstream timed out.')),
+      );
+      upstream.on('error', () => {
+        if (!response.headersSent)
+          finish(response, 502, 'Startup service unavailable.\n');
+        else response.destroy();
+      });
+      response.once('close', () => upstream.destroy());
+      upstream.end();
+    },
+  );
+  // node:http2 has no closeAllConnections. Keep the teardown that process shutdown and the
+  // callers use, and reach both protocols through the TLS socket of each connection.
+  const sockets = new Set();
+  server.on('secureConnection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
   });
+  server.closeAllConnections = () => {
+    for (const socket of sockets) socket.destroy();
+  };
   server.requestTimeout = 10000;
   server.headersTimeout = 10000;
   server.keepAliveTimeout = 5000;
