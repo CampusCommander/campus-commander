@@ -840,3 +840,33 @@ test('each Reconcile check runs its own action at the district scope', async () 
     ]);
   }
 });
+
+test('a jobs:manage-only person reads and reconciles with the manage action', async () => {
+  const manager = {
+    ...session,
+    identity: {
+      ...session.identity,
+      grants: [
+        { action: 'jobs:manage', scope: { kind: 'district', customerId: customer } },
+      ],
+    },
+  };
+  const calls = [];
+  const auth = {
+    authorize: async (_session, granted, resource, correlation) => {
+      calls.push([granted, resource, correlation]);
+    },
+  };
+  await requireReconcileActions(auth, manager, customer, correlationId, 'read');
+  // The manage grant carries the job read, so the read check never asks for jobs:read as well.
+  assert.deepEqual(calls, [
+    ['jobs:manage', { kind: 'district', customerId: customer }, correlationId],
+  ]);
+  // The device action of each Reconcile stays.
+  calls.length = 0;
+  await requireReconcileActions(auth, manager, customer, correlationId, 'update');
+  assert.deepEqual(
+    calls.map(([action]) => action),
+    ['devices:write'],
+  );
+});
