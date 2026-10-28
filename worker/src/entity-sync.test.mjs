@@ -54,7 +54,7 @@ const record = (deviceId) => ({
 });
 
 const clock = new Date('2026-10-06T11:59:59.123Z');
-function database({ fail = {}, finish = job() } = {}) {
+function database({ fail = {}, finish = job(), cancels = [] } = {}) {
   const calls = [];
   return {
     calls,
@@ -67,6 +67,15 @@ function database({ fail = {}, finish = job() } = {}) {
           code: 'P0001',
           detail: fail[name],
         });
+      if (name === 'job_cancel_requested') {
+        const next = cancels.length > 0 ? cancels.shift() : false;
+        if (next === 'fail')
+          throw Object.assign(new Error(name), {
+            code: 'P0001',
+            detail: 'store-down',
+          });
+        return { rows: [{ result: next }] };
+      }
       if (name === 'read_entity_sync_batch')
         return {
           rows: [
@@ -131,6 +140,36 @@ function reader({ devices = [], batteries = [], rounds = 0 } = {}) {
 const names = (calls) => calls.map((call) => call.name);
 const noSleep = { sleep: async () => undefined, backoff: () => 0 };
 
+/** Timers whose interval the test fires by hand. The delay of each one is recorded. */
+function timers() {
+  const intervals = new Map();
+  const scheduled = [];
+  let sequence = 0;
+  const handle = {
+    setInterval(callback, delay) {
+      const id = ++sequence;
+      intervals.set(id, { callback, delay });
+      scheduled.push(delay);
+      return id;
+    },
+    clearInterval(id) {
+      intervals.delete(id);
+    },
+  };
+  return {
+    handle,
+    async fire() {
+      for (const entry of [...intervals.values()]) await entry.callback();
+    },
+    delays() {
+      return scheduled;
+    },
+    get count() {
+      return intervals.size;
+    },
+  };
+}
+
 test('a batch upserts, caches, removes in-flight IDs, and publishes one event', async () => {
   const db = database();
   const redis = cache();
@@ -146,6 +185,7 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
   assert.deepEqual(names(db.calls), [
     'read_entity_sync_batch',
     'clock_timestamp',
+    'job_cancel_requested',
     'upsert_devices',
     'upsert_device_batteries',
     'soft_delete_devices',
@@ -153,12 +193,12 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
     'finish_entity_sync_batch',
   ]);
   assert.deepEqual(
-    JSON.parse(db.calls[2].values[1]).map((d) => d.deviceId),
+    JSON.parse(db.calls[3].values[1]).map((d) => d.deviceId),
     ['d1', 'd3'],
   );
-  assert.equal(db.calls[2].values[2], clock.toISOString());
-  assert.deepEqual(JSON.parse(db.calls[4].values[1]), ['d2']);
-  assert.deepEqual(db.calls[6].values, [customerId, jobId, 0, null]);
+  assert.equal(db.calls[3].values[2], clock.toISOString());
+  assert.deepEqual(JSON.parse(db.calls[5].values[1]), ['d2']);
+  assert.deepEqual(db.calls[7].values, [customerId, jobId, 0, null]);
   assert.deepEqual(names(redis.calls), [
     'setRecords',
     'remove',
@@ -502,6 +542,7 @@ test('a telemetry failure keeps the batch devices and skips the battery upsert',
   assert.deepEqual(names(db.calls), [
     'read_entity_sync_batch',
     'clock_timestamp',
+    'job_cancel_requested',
     'upsert_devices',
     'soft_delete_devices',
     'read_device_records',
@@ -561,10 +602,11 @@ test('the freshness stamp comes from Postgres before the Directory read', async 
     request,
     AbortSignal.timeout(5000),
   );
-  assert.deepEqual(names(db.calls).slice(0, 4), [
+  assert.deepEqual(names(db.calls).slice(0, 5), [
     'read_entity_sync_batch',
     'clock_timestamp',
     'deviceBatch',
+    'job_cancel_requested',
     'upsert_devices',
   ]);
   const upsert = db.calls.find((call) => call.name === 'upsert_devices');
@@ -623,4 +665,148 @@ test('a failed claim extension does not stop a quota retry or a batch round', as
   ).run(request, AbortSignal.timeout(5000));
   assert.equal(result.failure, null);
   assert.deepEqual(result.updated, ['d1', 'd2', 'd3']);
+});
+
+test('the cancel tick ends a telemetry quota wait', async () => {
+  const clock = timers();
+  const redis = cache();
+  let extended;
+  const extension = new Promise((resolve) => (extended = resolve));
+  const extend = redis.extendMembers;
+  redis.extendMembers = async (...args) => {
+    await extend(...args);
+    extended();
+  };
+  const db = database({ cancels: [true] });
+  const run = new EntitySyncBatch(
+    db,
+    cipher,
+    reader({ batteries: [new GoogleConnectionError('quota')] }),
+    redis,
+    { backoff: () => 60_000, timers: clock.handle },
+  ).run(request, AbortSignal.timeout(60_000));
+  await extension;
+  await clock.fire();
+  await assert.rejects(
+    run,
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'worker-stopping',
+  );
+  assert.equal(names(db.calls).includes('finish_entity_sync_batch'), false);
+  assert.deepEqual(
+    names(redis.calls),
+    ['extendMembers'],
+    'The wait ends without another read or a recorded batch.',
+  );
+  assert.deepEqual(clock.delays(), [30_000]);
+  assert.equal(clock.count, 0, 'The tick stops at the end of the batch.');
+});
+
+test('the cancel tick aborts a stalled Directory read and the batch records nothing', async () => {
+  const clock = timers();
+  let entered;
+  const started = new Promise((resolve) => (entered = resolve));
+  const source = reader();
+  source.deviceBatch = async (_credential, _customer, _ids, signal) => {
+    entered();
+    await new Promise((resolve) => {
+      if (signal.aborted) resolve();
+      else signal.addEventListener('abort', resolve, { once: true });
+    });
+    throw new GoogleConnectionError('network-failure');
+  };
+  const db = database({ cancels: [true] });
+  const redis = cache();
+  const run = new EntitySyncBatch(db, cipher, source, redis, {
+    timers: clock.handle,
+  }).run(request, AbortSignal.timeout(5000));
+  await started;
+  await clock.fire();
+  await assert.rejects(
+    run,
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'worker-stopping',
+  );
+  assert.deepEqual(names(db.calls), [
+    'read_entity_sync_batch',
+    'clock_timestamp',
+    'job_cancel_requested',
+  ]);
+  assert.deepEqual(redis.calls, []);
+});
+
+test('a cancel read before the upsert stores nothing', async () => {
+  const db = database({ cancels: [true] });
+  const redis = cache();
+  await assert.rejects(
+    new EntitySyncBatch(db, cipher, reader(), redis, noSleep).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'entity-sync-changed',
+  );
+  assert.deepEqual(names(db.calls), [
+    'read_entity_sync_batch',
+    'clock_timestamp',
+    'job_cancel_requested',
+  ]);
+  assert.deepEqual(redis.calls, []);
+});
+
+test('an earlier batch keeps its writes and records after a later batch is cancelled', async () => {
+  const db = database({ cancels: [false, true] });
+  const redis = cache();
+  const first = await new EntitySyncBatch(
+    db,
+    cipher,
+    reader(),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(first.failure, null);
+  assert.equal(
+    names(db.calls).filter((name) => name === 'upsert_devices').length,
+    1,
+  );
+  assert.equal(
+    names(db.calls).filter((name) => name === 'finish_entity_sync_batch')
+      .length,
+    1,
+  );
+  await assert.rejects(
+    new EntitySyncBatch(db, cipher, reader(), redis, noSleep).run(
+      { ...request, batch: 1 },
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'entity-sync-changed',
+  );
+  assert.equal(
+    names(db.calls).filter((name) => name === 'upsert_devices').length,
+    1,
+    'The cancelled batch stores nothing.',
+  );
+  assert.equal(
+    names(db.calls).filter((name) => name === 'finish_entity_sync_batch')
+      .length,
+    1,
+    'The cancelled batch records nothing.',
+  );
+});
+
+test('a failed cancel read fails the batch without a store', async () => {
+  const db = database({ cancels: ['fail'] });
+  const redis = cache();
+  await assert.rejects(
+    new EntitySyncBatch(db, cipher, reader(), redis, noSleep).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'store-unavailable',
+  );
+  assert.equal(names(db.calls).includes('upsert_devices'), false);
+  assert.equal(names(db.calls).includes('finish_entity_sync_batch'), false);
+  assert.deepEqual(redis.calls, []);
 });
