@@ -1135,6 +1135,31 @@ test('a held answer keeps focus in the question and returns it on dismiss', asyn
   await expect(control).toBeFocused();
 });
 
+test('a scrim click closes a held question and keeps focus', async ({
+  page,
+}) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-26T14:42:27Z');
+  await signIn(page, state);
+  await page.goto('/jobs/UPD-001');
+  const held = await holdCancelAnswers(page);
+
+  const dialog = await openCancelQuestion(page);
+  const confirm = dialog.getByRole('button', { name: 'Cancel pending work' });
+  await confirm.click();
+  await expect(confirm).toBeFocused();
+
+  await page.locator('.picker-scrim').click({ position: { x: 10, y: 10 } });
+  await expect(dialog).toBeHidden();
+  const control = page.locator('#cancel-job');
+  await expect(control).toHaveText('Cancelling…');
+  await expect(control).toBeFocused();
+
+  state.upd = 'requested';
+  await held.release('/api/jobs/UPD-001/cancel', { status: 200, json: {} });
+  await expect(control).toHaveText('Cancellation requested');
+});
+
 test('Escape closes a held question and returns focus to the control', async ({
   page,
 }) => {
