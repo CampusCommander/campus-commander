@@ -12,6 +12,7 @@ import {
   canCancel,
   canReconcile,
   cancelActivitySentence,
+  cancelBanner,
   cancelLine,
   cancelQuestion,
   cancelState,
@@ -668,7 +669,7 @@ describe('latest activity', () => {
 
 describe('job detail fields', () => {
   it('shows the counters in the command job order', () => {
-    expect(jobCounters(progress())).toEqual([
+    expect(jobCounters(job())).toEqual([
       { key: 'succeeded', label: 'Succeeded', value: 4, tone: 'success' },
       { key: 'failed', label: 'Failed', value: 1, tone: 'error' },
       { key: 'unknown', label: 'Unknown', value: 1, tone: 'warning' },
@@ -679,7 +680,7 @@ describe('job detail fields', () => {
     ]);
   });
   it('counts expired operations beside failed and unknown', () => {
-    const counters = jobCounters(progress({ expired: 2 }));
+    const counters = jobCounters(job({ progress: progress({ expired: 2 }) }));
     expect(counters.find((counter) => counter.key === 'expired')?.value).toBe(
       2,
     );
@@ -687,12 +688,14 @@ describe('job detail fields', () => {
 
   it('keeps a null pending count distinct from zero', () => {
     const counters = jobCounters(
-      progress({
-        total: null,
-        pending: null,
-        succeeded: 128,
-        failed: 0,
-        unknown: 0,
+      job({
+        progress: progress({
+          total: null,
+          pending: null,
+          succeeded: 128,
+          failed: 0,
+          unknown: 0,
+        }),
       }),
     );
     expect(counters.find((counter) => counter.key === 'pending')?.value).toBe(
@@ -701,6 +704,67 @@ describe('job detail fields', () => {
     expect(operationTotal(job())).toBe(6);
     expect(attentionCount(job())).toBe(2);
     expect(attentionCount(job({ progress: progress({ expired: 1 }) }))).toBe(3);
+  });
+
+  it('names the saved-none count of a cancelled Refresh all', () => {
+    const cancelledRefresh = job({
+      displayId: 'REF-001',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      scope: { kind: 'all-devices', deviceCount: null },
+      progress: progress({
+        total: null,
+        succeeded: 600,
+        failed: 0,
+        unknown: 0,
+        pending: null,
+      }),
+    });
+    expect(
+      jobCounters(cancelledRefresh).find(
+        (counter) => counter.key === 'succeeded',
+      ),
+    ).toEqual({
+      key: 'succeeded',
+      label: 'Read · none saved',
+      value: 600,
+      tone: 'success',
+    });
+  });
+
+  it('keeps the built Succeeded label when the refresh saved its devices', () => {
+    const selected = job({
+      displayId: 'REF-002',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      scope: { kind: 'devices', deviceCount: 1000 },
+      progress: progress({
+        total: 1000,
+        succeeded: 250,
+        failed: 0,
+        unknown: 0,
+        pending: 0,
+        cancelled: 750,
+      }),
+    });
+    const completedAll = job({
+      displayId: 'REF-004',
+      action: 'refresh-inventory',
+      status: 'completed',
+      scope: { kind: 'all-devices', deviceCount: null },
+      progress: progress({
+        total: null,
+        succeeded: 128,
+        failed: 0,
+        unknown: 0,
+        pending: null,
+      }),
+    });
+    const succeededLabel = (candidate: JobDetail) =>
+      jobCounters(candidate).find((counter) => counter.key === 'succeeded')
+        ?.label;
+    expect(succeededLabel(selected)).toBe('Succeeded');
+    expect(succeededLabel(completedAll)).toBe('Succeeded');
   });
 
   it('renders the identity card of frame 104:209', () => {
@@ -1640,6 +1704,53 @@ describe('cancel', () => {
     ]);
   });
 
+  it('names the inventory that a cancelled Refresh all did not save', () => {
+    const refreshAll = job({
+      displayId: 'REF-001',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      scope: { kind: 'all-devices', deviceCount: null },
+    });
+    const selected = job({
+      displayId: 'REF-002',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      scope: { kind: 'devices', deviceCount: 1000 },
+    });
+    expect(cancelActivitySentence(refreshAll)).toBe(
+      'Cancellation ended the refresh. It saved none of the devices that it read, and it marked no device removed.',
+    );
+    expect(cancelActivitySentence(selected)).toBe(
+      'Cancellation ended the refresh. Devices already read keep their data.',
+    );
+  });
+
+  it('warns that sent commands still run on a command job', () => {
+    const commandBanner = {
+      title: 'Sent commands still run on their devices',
+      body: 'Campus Commander sends no new command. Each sent command runs when its device connects, or it expires. Nothing rolls back.',
+    };
+    for (const action of [
+      'reboot-devices',
+      'wipe-user-data',
+      'powerwash-devices',
+    ] as const)
+      expect(cancelBanner(job({ action }))).toEqual(commandBanner);
+  });
+
+  it('keeps the built banner for an update job and a status job', () => {
+    const builtBanner = {
+      title: 'The job stops within 30 seconds',
+      body: 'Requests already sent to Google finish and keep their results. Pending operations that have not reached Google end Cancelled. Nothing rolls back.',
+    };
+    expect(cancelBanner(job({ action: 'update-device-annotations' }))).toEqual(
+      builtBanner,
+    );
+    expect(cancelBanner(job({ action: 'disable-devices' }))).toEqual(
+      builtBanner,
+    );
+  });
+
   it('names one stopped operation in Latest activity', () => {
     expect(
       cancelActivitySentence(
@@ -1785,7 +1896,7 @@ describe('cancel', () => {
   });
 
   it('reads the Cancelled counter from the stored count', () => {
-    const counters = jobCounters(progress({ cancelled: 8 }));
+    const counters = jobCounters(job({ progress: progress({ cancelled: 8 }) }));
     expect(counters.find((counter) => counter.key === 'cancelled')?.value).toBe(
       8,
     );
@@ -1893,7 +2004,7 @@ describe('cancel', () => {
       },
     });
     expect(latestActivityLine(refresh)).toBe(
-      `${formatTime('2026-10-26T14:42:00.000Z')} · Cancellation ended the refresh. No device was marked removed. 600 devices read.`,
+      `${formatTime('2026-10-26T14:42:00.000Z')} · Cancellation ended the refresh. It saved none of the devices that it read, and it marked no device removed. 600 devices read.`,
     );
   });
 

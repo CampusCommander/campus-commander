@@ -1370,6 +1370,42 @@ it('shows a refresh job with counters and Latest activity only', () => {
   expect(text(element)).toContain('128 devices read. The refresh completed.');
 });
 
+it('shows the saved-none label and activity of a cancelled Refresh all', () => {
+  const refresh = job({
+    displayId: 'REF-001',
+    action: 'refresh-inventory',
+    status: 'cancelled',
+    scope: { kind: 'all-devices', deviceCount: null },
+    changes: null,
+    progress: {
+      total: null,
+      succeeded: 600,
+      failed: 0,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      cancelled: 0,
+      pending: null,
+    },
+    cancelRequest: request,
+    latestActivity: {
+      at: '2026-10-26T14:42:00.000Z',
+      failed: { count: 0, operations: [] },
+      unknown: { count: 0, operations: [] },
+    },
+  });
+  const { element } = setup({ job: refresh, operations: [] });
+  expect(element.querySelector('.counter dt')?.textContent?.trim()).toBe(
+    'Read · none saved',
+  );
+  expect(element.querySelector('.counter .value')?.textContent?.trim()).toBe(
+    '600',
+  );
+  expect(text(element)).toContain(
+    'Cancellation ended the refresh. It saved none of the devices that it read, and it marked no device removed.',
+  );
+});
+
 it('shows the missing, offline, unavailable, and loading states', () => {
   const missing = setup({ job: null, missing: true });
   expect(text(missing.element)).toContain('Job not found');
@@ -1800,6 +1836,20 @@ it('keeps the request visible while the job runs and after it ends', async () =>
   expect(text(element)).not.toContain('The job stops within 30 seconds');
   expect(text(element)).toContain('Cancellation requested by District Admin');
   expect(text(element)).toContain('Cancelled');
+});
+
+it('shows the command banner while a command job has a cancel request', () => {
+  const { element } = setup({
+    job: commandJob({ cancelRequest: request }),
+    operations: commandOperations(),
+  });
+  expect(text(element)).toContain(
+    'Cancellation requested · Sent commands still run on their devices',
+  );
+  expect(text(element)).toContain(
+    'Campus Commander sends no new command. Each sent command runs when its device connects, or it expires. Nothing rolls back.',
+  );
+  expect(text(element)).not.toContain('The job stops within 30 seconds');
 });
 
 it('shows the cancel refusal beside the toolbar', () => {
