@@ -46,9 +46,10 @@ Run `node deployment/bootstrap/main.mjs` with `CC_CONFIG_FILE` pointing to the m
 The edge listens on port 8443 unless `PORT` selects another internal port.
 Map the public district HTTPS port to that listener.
 One listener serves HTTP/2 and HTTP/1.1 with the same routes, limits, and timeouts.
-Every request to the origin then shares one connection with each event stream.
+Only HTTP/2 shares one connection among concurrent requests and event streams.
+An HTTP/1.1 fallback opens one connection per concurrent request instead.
 The edge removes every connection-specific header from an upstream answer.
-The upstream receives the client host in `host`, taken from `:authority` over HTTP/2.
+The upstream receives its configured endpoint name in `host`.
 Mount the configured certificate and private key read-only.
 Kubernetes secret references resolve under `/run/secrets/<name>/<key>`.
 Use browser-trusted district certificates for operator acceptance.
