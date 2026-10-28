@@ -8,7 +8,8 @@ ALTER TABLE cc.security_events ADD CONSTRAINT security_events_event_check CHECK 
   'customer-confirmed','customer-settings-changed','connection-authorized','connection-replaced',
   'connection-staged','connection-stage-failed','connection-stage-expired',
   'connection-token-renewed','connection-token-failed',
-  'connection-revoked','connection-checked','credential-key-rotated','school-scope-changed','recovery-required'
+  'connection-revoked','connection-checked','credential-key-rotated','school-scope-changed','recovery-required',
+  'job-cancel-requested'
 ));
 
 CREATE TABLE cc.google_access_tokens (

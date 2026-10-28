@@ -22,7 +22,7 @@ CREATE TABLE cc.jobs (
   kind text NOT NULL CHECK(kind IN ('inventory-refresh','device-update','device-command','device-status')),
   scope_kind text NOT NULL CHECK(scope_kind IN ('devices','all-devices')),
   status text NOT NULL CHECK(status IN ('accepted','queued','held','running','awaiting-devices','completed',
-    'completed-with-errors','failed','needs-review')),
+    'completed-with-errors','failed','needs-review','cancelled')),
   requested_by uuid NOT NULL REFERENCES cc.application_principals(id),
   generation integer NOT NULL,
   target_count integer CHECK(target_count IS NULL OR target_count>=0),
@@ -32,6 +32,11 @@ CREATE TABLE cc.jobs (
   unknown integer NOT NULL DEFAULT 0 CHECK(unknown>=0),
   skipped integer NOT NULL DEFAULT 0 CHECK(skipped>=0),
   expired integer NOT NULL DEFAULT 0 CHECK(expired>=0),
+  cancelled integer NOT NULL DEFAULT 0 CHECK(cancelled>=0),
+  -- The one cancel request of section 2. A request sets both columns and it never clears them, so a
+  -- repeated request keeps the first person and time.
+  cancel_requested_at timestamptz,
+  cancel_requested_by uuid REFERENCES cc.application_principals(id),
   failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled',
     'policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable',
     'invalid-response','wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
@@ -43,7 +48,9 @@ CREATE TABLE cc.jobs (
   admitted_at timestamptz,
   started_at timestamptz,
   finished_at timestamptz,
-  CHECK(scope_kind<>'devices' OR (target_count IS NOT NULL AND target_count BETWEEN 1 AND 100000))
+  CHECK(scope_kind<>'devices' OR (target_count IS NOT NULL AND target_count BETWEEN 1 AND 100000)),
+  CHECK((cancel_requested_at IS NULL)=(cancel_requested_by IS NULL)),
+  CHECK(status<>'cancelled' OR cancel_requested_at IS NOT NULL)
 );
 CREATE INDEX jobs_recent ON cc.jobs(customer_id,created_at DESC,display_id DESC);
 -- The write slot: one running device write job per customer. An awaiting-devices command job holds none.
@@ -221,7 +228,8 @@ CREATE TABLE cc.device_update_operations (
   baseline_value text,
   requested_value text,
   batch integer NOT NULL CHECK(batch>=0),
-  status text NOT NULL CHECK(status IN ('pending','dispatched','issued','succeeded','failed','unknown','skipped','expired')),
+  status text NOT NULL CHECK(status IN ('pending','dispatched','issued','succeeded','failed','unknown','skipped','expired',
+    'cancelled')),
   attempt_id uuid,
   -- The HTTP status of Google's answer, or null when no answer arrived (fix D1). Both settlement
   -- writers normalize a status outside 100 to 599 to null.
@@ -315,7 +323,7 @@ LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT p_prefix||'-'||CASE WHEN p_number<1000 THEN lpad(p_number::text,3,'0') ELSE p_number::text END;
 $$;
 
--- The visibility predicate of section 2.1. A holder of jobs:read sees every job of the customer.
+-- The visibility predicate of section 2.1. A holder of jobs:read or jobs:manage sees every job of the customer.
 CREATE FUNCTION cc.job_visible(p_actor uuid,p_version integer,p_customer text,p_requested_by uuid) RETURNS boolean
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 BEGIN
@@ -324,7 +332,8 @@ BEGIN
     RETURN false;
   END IF;
   IF p_requested_by IS NOT NULL AND p_requested_by=p_actor THEN RETURN true; END IF;
-  RETURN EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND g.action='jobs:read' AND
+  RETURN EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+    g.action IN ('jobs:read','jobs:manage') AND
     (g.scope='{"kind":"platform"}'::jsonb OR
     (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)));
 END;
@@ -416,15 +425,19 @@ BEGIN
     failed=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='failed'),
     unknown=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='unknown'),
     skipped=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='skipped'),
-    expired=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='expired')
+    expired=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='expired'),
+    cancelled=(SELECT count(*) FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='cancelled')
   WHERE j.job_id=p_job;
 END;
 $$;
 
--- The status rule of section 5.10, with expired beside failed. It reads only counters.
+-- The status rule of section 5.10, with expired beside failed. It reads only counters. A cancelled
+-- operation ends the job Cancelled, also beside an Unknown one (record default 9), so the cancel rule
+-- precedes the Needs review rule.
 CREATE FUNCTION cc.device_update_terminal_status(p_job uuid) RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-  SELECT CASE WHEN j.unknown>0 THEN 'needs-review'
+  SELECT CASE WHEN j.cancelled>0 THEN 'cancelled'
+    WHEN j.unknown>0 THEN 'needs-review'
     WHEN j.succeeded=j.target_count THEN 'completed'
     WHEN j.succeeded>0 AND j.failed+j.expired+j.skipped>0 THEN 'completed-with-errors'
     ELSE 'failed' END
@@ -459,40 +472,184 @@ BEGIN
 END;
 $$;
 
--- Every pending operation of a job becomes skipped. The complete set locks first, in operation_number
--- order, so the update never waits and its clock reads after every wait (round 3, R2-F2). Every caller
--- locks the same set before its first write, so this lock never waits either.
+-- Every pending operation of a job becomes skipped, or cancelled when the header holds a cancel request.
+-- The complete set locks first, in operation_number order, so the update never waits and its clock reads
+-- after every wait (round 3, R2-F2). Every caller locks the same set before its first write, so this lock
+-- never waits either. Every caller holds the header lock, so the request read stays stable (section 2).
 CREATE FUNCTION cc.skip_device_update_pending(p_job uuid,p_reason text) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE skipped integer;
+DECLARE skipped integer; requested boolean;
 BEGIN
+  requested:=EXISTS(SELECT 1 FROM cc.jobs j WHERE j.job_id=p_job AND j.cancel_requested_at IS NOT NULL);
   PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=p_job AND o.status='pending'
     ORDER BY o.operation_number FOR UPDATE;
-  UPDATE cc.device_update_operations SET status='skipped',outcome_reason=COALESCE(outcome_reason,p_reason),
-    updated_at=clock_timestamp()
+  UPDATE cc.device_update_operations
+    SET status=CASE WHEN requested THEN 'cancelled' ELSE 'skipped' END,
+      outcome_reason=CASE WHEN requested THEN 'cancel-requested' ELSE COALESCE(outcome_reason,p_reason) END,
+      updated_at=clock_timestamp()
   WHERE job_id=p_job AND status='pending';
   GET DIAGNOSTICS skipped=ROW_COUNT;
   RETURN skipped;
 END;
 $$;
 
--- A refresh header that ends without its live sync lease ends as failed.
+-- A refresh header that ends without its live sync lease ends as failed, or as cancelled when it holds a
+-- cancel request (section 2). A cancelled header keeps its failure.
 -- A full-sync closure records the targets it observed before its one publication (section 1.2, review F19).
 CREATE FUNCTION cc.close_refresh_job(p_job uuid,p_failure text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 BEGIN
-  UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,p_failure),
+  UPDATE cc.jobs SET status=CASE WHEN cancel_requested_at IS NULL THEN 'failed' ELSE 'cancelled' END,
+    failure=COALESCE(failure,p_failure),
     finished_at=COALESCE(finished_at,clock_timestamp()),
     target_count=CASE WHEN scope_kind='all-devices'
       THEN (SELECT count(*) FROM cc.job_targets t WHERE t.job_id=p_job) ELSE target_count END,
     succeeded=CASE WHEN scope_kind='all-devices'
       THEN (SELECT count(*) FROM cc.job_targets t WHERE t.job_id=p_job) ELSE succeeded END,
+    -- A selected-device refresh counts the devices of every batch that recorded nothing as cancelled
+    -- (section 2). A full sync knows no total, so its cancelled count stays 0.
+    cancelled=CASE WHEN cancel_requested_at IS NOT NULL AND scope_kind='devices'
+      THEN (SELECT COALESCE(sum(LEAST(u.batch_size,jsonb_array_length(u.ids)-g.batch*u.batch_size)),0)
+        FROM cc.entity_sync_jobs u,generate_series(0,u.batch_count-1) g(batch)
+        WHERE u.job_id=p_job AND NOT EXISTS(SELECT 1 FROM cc.entity_sync_batches b
+          WHERE b.job_id=u.job_id AND b.batch=g.batch))
+      ELSE cancelled END,
     target_org_unit_paths=CASE WHEN scope_kind='all-devices'
       THEN (SELECT COALESCE(array_agg(DISTINCT t.org_unit_path ORDER BY t.org_unit_path)
         FILTER (WHERE t.org_unit_path IS NOT NULL),'{}'::text[]) FROM cc.job_targets t WHERE t.job_id=p_job)
       ELSE target_org_unit_paths END
   WHERE job_id=p_job AND finished_at IS NULL;
   IF FOUND THEN PERFORM cc.record_job_change(p_job,true); END IF;
+END;
+$$;
+
+-- The cancel request of one header, without a lock (section 2). Every runner reads it in a 30-second tick
+-- (section 3). A missing job, or one of another customer, answers false.
+CREATE FUNCTION cc.job_cancel_requested(p_customer text,p_job uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+  SELECT EXISTS(SELECT 1 FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer AND
+    j.cancel_requested_at IS NOT NULL);
+$$;
+
+-- The cancel request of section 2. It stores one request per job. A job that sent nothing to Google ends
+-- at once, every refresh job ends at once, and a running write job keeps its worker to settle the rest.
+-- Each refusal raises its reason as DETAIL.
+CREATE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer text,p_display_id text,
+  p_correlation uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; pending integer; dispatched integer;
+  stop_now boolean:=false;
+BEGIN
+  -- S2: a null identifier never matches a header.
+  IF p_actor IS NULL OR p_customer IS NULL OR p_display_id IS NULL OR p_correlation IS NULL THEN
+    RAISE EXCEPTION 'The cancel request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Lock order (section 2 table): the admission lock first, as admission and hold cleanup take it.
+  PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
+  -- The kind and the scope never change after creation, so this unlocked read only chooses the lock order.
+  -- Every decision below reads the row under its lock.
+  SELECT * INTO job FROM cc.jobs j WHERE j.customer_id=p_customer AND j.display_id=p_display_id;
+  IF job.job_id IS NULL THEN
+    RAISE EXCEPTION 'The job does not exist.' USING DETAIL='job-not-found';
+  END IF;
+  IF job.scope_kind='all-devices' THEN
+    -- A full sync holds its state row first, as its claim, its lease, its finish, and its abandon do (016).
+    PERFORM 1 FROM cc.device_sync_state s WHERE s.customer_id=p_customer FOR UPDATE;
+  END IF;
+  -- The header locks second on every path, as every write-job and refresh writer takes it.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=job.job_id AND j.customer_id=p_customer FOR UPDATE;
+  -- A selected-device refresh locks its detail row after the header, as the batch finish does (016).
+  IF job.scope_kind='devices' AND job.kind='inventory-refresh' THEN
+    PERFORM 1 FROM cc.entity_sync_jobs u WHERE u.job_id=job.job_id FOR UPDATE;
+  END IF;
+  -- The person sees the job, or the call answers as a missing job (017 cc.job_visible).
+  IF NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RAISE EXCEPTION 'The job does not exist.' USING DETAIL='job-not-found';
+  END IF;
+  -- The requester, a jobs:manage holder of the customer, or a platform administrator cancels (record:75).
+  IF job.requested_by<>p_actor AND NOT EXISTS(SELECT 1 FROM cc.application_grants g
+      WHERE g.principal_id=p_actor AND g.action='jobs:manage' AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) THEN
+    RAISE EXCEPTION 'The cancel is not permitted.' USING DETAIL='cancel-not-permitted';
+  END IF;
+  -- A request ends any job at once, so a header that holds one answers `repeated` and keeps the first
+  -- person and time. A repeated request writes no second audit row.
+  IF job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','repeated');
+  END IF;
+  IF job.finished_at IS NOT NULL THEN
+    RAISE EXCEPTION 'The job has finished.' USING DETAIL='job-finished';
+  END IF;
+  IF job.kind<>'inventory-refresh' THEN
+    -- The header lock holds every operation status: each writer of an operation status locks the header
+    -- first (017 cc.settle_device_update_operations, cc.claim_device_update_verification).
+    SELECT count(*) FILTER (WHERE o.status='pending'),count(*) FILTER (WHERE o.status='dispatched')
+      INTO pending,dispatched
+      FROM cc.device_update_operations o WHERE o.job_id=job.job_id;
+    IF job.status='awaiting-devices' OR pending+dispatched=0 THEN
+      RAISE EXCEPTION 'The job holds no work to stop.' USING DETAIL='nothing-to-stop';
+    END IF;
+    -- A job after its first claim changes only its header, and its worker settles the operations
+    -- (section 3). The claim writes first_claimed_at under the header lock, so this read holds.
+    SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
+    stop_now:=job.status<>'running' OR detail.first_claimed_at IS NULL;
+    -- Lock order (section 2 table): the pending operations lock by number before the requester row and
+    -- the connection row. The header lock is held, so the complete set never waits.
+    IF stop_now THEN
+      PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=job.job_id AND o.status='pending'
+        ORDER BY o.operation_number FOR UPDATE;
+    END IF;
+  END IF;
+  -- The request names the actor and the publication names the connection row. Those rows lock before the
+  -- first write, the principal row before the connection row, as the credential functions take them.
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=p_actor FOR KEY SHARE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  -- The header lock holds job state. It holds neither the principal nor its grants, so an access change
+  -- that committed during either wait above leaves the early checks stale (review round 1, P1). Both
+  -- rules run again here, after the last blocking lock and before the first write, so a refused cancel
+  -- changes nothing. They repeat the early reasons, so a refused person learns nothing about the job.
+  -- A platform administrator holds jobs:manage at platform scope, so the grant covers that case.
+  IF NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RAISE EXCEPTION 'The job does not exist.' USING DETAIL='job-not-found';
+  END IF;
+  IF job.requested_by<>p_actor AND NOT EXISTS(SELECT 1 FROM cc.application_grants g
+      WHERE g.principal_id=p_actor AND g.action='jobs:manage' AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) THEN
+    RAISE EXCEPTION 'The cancel is not permitted.' USING DETAIL='cancel-not-permitted';
+  END IF;
+  now_at:=clock_timestamp();
+  UPDATE cc.jobs SET cancel_requested_at=now_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
+  IF job.kind='inventory-refresh' THEN
+    IF job.scope_kind='all-devices' THEN
+      -- The five sync columns clear, so the runner's stage, lease, and finish fence on a changed sync.
+      -- The generation, the device count, and the failure stay.
+      UPDATE cc.device_sync_state SET sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,
+        sync_expires_at=NULL WHERE customer_id=p_customer;
+    ELSE
+      -- A selected-device refresh closes its detail row and keeps its batch records.
+      UPDATE cc.entity_sync_jobs SET finished_at=now_at WHERE job_id=job.job_id;
+    END IF;
+    PERFORM cc.close_refresh_job(job.job_id,NULL);
+  ELSE
+    -- A job that never claimed stops at once: every pending operation settles Cancelled and the terminal
+    -- rule ends the job. The pending set is already locked above, and the skip re-locks rows this call
+    -- holds.
+    IF stop_now THEN
+      PERFORM cc.skip_device_update_pending(job.job_id,'cancelled');
+      PERFORM cc.refresh_device_update_counters(job.job_id);
+      -- The closure clock reads after the operation locks.
+      now_at:=clock_timestamp();
+      UPDATE cc.jobs SET status=cc.device_update_terminal_status(job.job_id),finished_at=now_at
+      WHERE job_id=job.job_id;
+    END IF;
+  END IF;
+  PERFORM cc.record_job_change(job.job_id,true);
+  -- One audit row per request. The display ID names the job, and the row holds no reason (section 2).
+  INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail)
+    VALUES(gen_random_uuid(),p_actor,'job-cancel-requested',p_correlation,job.display_id);
+  RETURN jsonb_build_object('outcome','requested');
 END;
 $$;
 
@@ -716,7 +873,9 @@ BEGIN
       END IF;
     ELSIF detail.first_claimed_at IS NOT NULL AND NOT live AND
       detail.heartbeat_at<=now_at-interval '10 minutes' THEN
-      IF detail.dispatch_count<3 THEN
+      -- A stored cancel request ends the lost runner through the finalizer, under this header lock, and
+      -- dispatches no new start (section 2). The header lock holds the request for this transaction.
+      IF detail.dispatch_count<3 AND job.cancel_requested_at IS NULL THEN
         -- S1 (round 2): the same order for a lost runner. The live lease repeats on the fresh clock too.
         SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id FOR UPDATE;
         now_at:=clock_timestamp();
@@ -750,6 +909,7 @@ CREATE FUNCTION cc.claim_device_update_batch(p_customer text,p_job uuid,p_token 
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; held cc.device_update_batches; connection cc.google_connection;
   now_at timestamptz; stopped text:=NULL; lost uuid:=NULL; claim jsonb:='[]'::jsonb; readback jsonb:='[]'::jsonb;
+  requested boolean;
 BEGIN
   -- S2 (round 3): a claim records the execution that runs its batch. A null execution rejects before
   -- any lock.
@@ -778,7 +938,9 @@ BEGIN
   -- (B2c ruling 4): the job never dispatches again after the settlement that recorded it.
   stopped:=COALESCE(job.failure,cc.device_update_stop_reason(p_customer,detail.confirmed_by,
         detail.confirmer_permission_version,job.generation,detail.action));
-  IF stopped IS NULL THEN
+  -- A stored cancel request takes the stop branch (section 2). The header lock holds it for this call.
+  requested:=job.cancel_requested_at IS NOT NULL;
+  IF stopped IS NULL AND NOT requested THEN
     -- S1/R6-2: the batch ownership and its lease eligibility read under the header, before the batch
     -- lock. A duplicate claim answers busy instead of waiting on the held batch row.
     SELECT * INTO held FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
@@ -837,7 +999,7 @@ BEGIN
     -- The claim writes read the clock after every wait.
     now_at:=clock_timestamp();
   END IF;
-  IF stopped IS NOT NULL THEN
+  IF stopped IS NOT NULL OR requested THEN
     -- S1 (round 3, R2-F2): the stop skips every pending operation of the job, so that complete set locks
     -- first, in operation_number order, and no write below waits. A stop found at the first decision locks
     -- the set here; a stop found after the batch or detail wait re-locks rows that this call already holds
@@ -858,6 +1020,15 @@ BEGIN
     -- B2c ruling 7: the heartbeat and the first claim of a stopped answer prove the execution is live.
     UPDATE cc.device_update_jobs SET heartbeat_at=now_at,first_claimed_at=COALESCE(first_claimed_at,now_at)
     WHERE job_id=p_job;
+    -- A stored cancel request (section 2) stops the job without a job failure: the pending operations
+    -- settle Cancelled, and the answer `done` carries the worker to its finish step. The header lock holds
+    -- the request for this transaction.
+    IF job.cancel_requested_at IS NOT NULL THEN
+      PERFORM cc.skip_device_update_pending(p_job,stopped);
+      PERFORM cc.refresh_device_update_counters(p_job);
+      PERFORM cc.record_job_change(p_job,false);
+      RETURN jsonb_build_object('outcome','done');
+    END IF;
     UPDATE cc.jobs SET failure=COALESCE(failure,stopped) WHERE job_id=p_job;
     PERFORM cc.skip_device_update_pending(p_job,stopped);
     PERFORM cc.refresh_device_update_counters(p_job);
@@ -2195,7 +2366,7 @@ BEGIN
   -- four terminal ones and `awaiting-devices`, where a command job waits for Google without the slot
   -- (command-jobs design section 1 and section 4 step 4). A direct call therefore never marks the registry
   -- entry of a live (running) job (round 2, eng-lead ruling 3).
-  IF job.status NOT IN ('completed','completed-with-errors','failed','needs-review','awaiting-devices') THEN
+  IF job.status NOT IN ('completed','completed-with-errors','failed','needs-review','awaiting-devices','cancelled') THEN
     RETURN false;
   END IF;
   SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
@@ -2772,8 +2943,8 @@ BEGIN
 END;
 $$;
 
--- Eng-lead ruling 1: the connected customer for a caller with jobs:read or devices:read.
--- It copies cc.device_reader of 016 and accepts either action.
+-- Eng-lead ruling 1: the connected customer for a caller with jobs:read, jobs:manage, or devices:read.
+-- It copies cc.device_reader of 016 and accepts those actions.
 CREATE FUNCTION cc.job_reader(p_actor uuid,p_version integer) RETURNS cc.google_connection
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE connection cc.google_connection;
@@ -2782,7 +2953,7 @@ BEGIN
   IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
       WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
     NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
-      g.action IN ('jobs:read','devices:read') AND (
+      g.action IN ('jobs:read','jobs:manage','devices:read') AND (
       g.scope='{"kind":"platform"}'::jsonb OR
       (g.scope->>'kind'='district' AND g.scope->>'customerId'=connection.customer_id))) THEN
     RAISE EXCEPTION 'Job read authority is required.' USING ERRCODE='42501';
@@ -2836,4 +3007,5 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.release_device_command_poll(text,uuid,uuid),
   cc.claim_device_command_polls(text,uuid,uuid,uuid),
   cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
-  cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer) FROM PUBLIC;
+  cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer),
+  cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid) FROM PUBLIC;

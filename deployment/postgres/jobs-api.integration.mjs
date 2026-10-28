@@ -2269,6 +2269,44 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         }
       },
     );
+    await check(
+      'a jobs:manage-only principal sees every job of the customer (S12)',
+      async () => {
+        const owner = await principal(`cancel-owner-${randomUUID()}`, [
+          ['devices:read', district()],
+          ['jobs:read', district()],
+        ]);
+        const manager = await principal(`cancel-manager-${randomUUID()}`, [
+          ['jobs:manage', district()],
+        ]);
+        const job = await header({ requestedBy: owner, status: 'queued' });
+        const visible = await statement(
+          'SELECT cc.job_visible($1,$2,$3,$4) AS visible',
+          [manager, 1, customer, owner],
+        );
+        assert.equal(visible[0].visible, true);
+        const reader = await statement(
+          'SELECT (cc.job_reader($1,$2)).customer_id AS customer',
+          [manager, 1],
+        );
+        assert.equal(reader[0].customer, customer);
+        const foreign = await principal(`cancel-foreign-${randomUUID()}`, [
+          ['jobs:manage', district('C-other')],
+        ]);
+        assert.equal(
+          (
+            await statement('SELECT cc.job_visible($1,$2,$3,$4) AS visible', [
+              foreign,
+              1,
+              customer,
+              owner,
+            ])
+          )[0].visible,
+          false,
+        );
+        await admin('DELETE FROM cc.jobs WHERE job_id=$1', [job.jobId]);
+      },
+    );
   } finally {
     await stopStreams().catch(() => undefined);
     await migrator

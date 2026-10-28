@@ -306,7 +306,9 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.claim_device_command_polls(text,uuid,uuid,uuid),
         cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
         cc.job_reader(uuid,integer),
-        cc.record_job_activity_seen(uuid,integer) TO ${role}`);
+        cc.record_job_activity_seen(uuid,integer),
+        cc.job_cancel_requested(text,uuid),
+        cc.request_job_cancel(uuid,integer,text,text,uuid) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '018-device-write-access')) {
       await client.query(`GRANT EXECUTE ON FUNCTION
