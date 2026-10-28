@@ -1,8 +1,6 @@
 # Technical design addendum: device export and import, CSV slice
 
-Status: proposed. Card `t_b3d42173`. Record: `docs/workflows/batch-update-export-import.md`. The record stays proposed (`record:3`).
-Technical design: `docs/research/batch-update-export-import-technical-design.md`. Its sections 5 to 20 set the behavior. This addendum maps that behavior to code.
-Mockup: `docs/ui/designs/2026-10-28-device-export-import.html`, its notes, and its state PNGs.
+Status: proposed. Card `t_b3d42173`. Record: `docs/workflows/batch-update-export-import.md`. The record stays proposed (`record:3`). Technical design: `docs/research/batch-update-export-import-technical-design.md`. Its sections 5 to 20 set the behavior. This addendum maps that behavior to code. Mockup: `docs/ui/designs/2026-10-28-device-export-import.html`, its notes, and its state PNGs.
 Extends: [job cancel](2026-10-26-job-cancel-design.md), [device-write jobs](2026-10-16-device-write-jobs-design.md), [worker contracts](2026-10-19-device-write-worker-contracts.md), [command jobs](2026-10-21-device-command-jobs-design.md), [Update device fields](2026-10-21-update-device-fields-design.md), [status jobs](2026-10-23-wipe-powerwash-deprovision-design.md), and [in-grid editing](2026-10-23-in-grid-editing-design.md).
 Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose the curtains."
 
@@ -27,8 +25,7 @@ The approval rulings of this card, in its numbering:
 ## Conventions
 
 - Paths are relative to the repository root at `5f50d7c`, the base of this card. `ac/` is `libs/application-contracts/src/lib/`, `api/` is `api/src/app/`, and `fe/` is `frontend/src/app/`.
-- `record:N` cites the record and `td:N` the technical design. `cancel:N` cites the job cancel design. `ig:N`, `uf:N`, and `wpd:N` cite the in-grid editing, Update device fields, and status job designs.
-- `001`, `016`, and `017` name files in `deployment/postgres/migrations/`. `tpl:N` cites `ac/device-edit-template.ts`. `store:N` cites `deployment/storage/index.mjs`. `edge:N` cites `deployment/bootstrap/application-edge.mjs`, and `tls:N` cites `deployment/bootstrap/edge.mjs`.
+- `record:N` cites the record and `td:N` the technical design. `cancel:N` cites the job cancel design. `ig:N`, `uf:N`, and `wpd:N` cite the in-grid editing, Update device fields, and status job designs. `001`, `016`, and `017` name files in `deployment/postgres/migrations/`. `tpl:N` cites `ac/device-edit-template.ts`. `store:N` cites `deployment/storage/index.mjs`. `edge:N` cites `deployment/bootstrap/application-edge.mjs`, and `tls:N` cites `deployment/bootstrap/edge.mjs`.
 - `notes` is `docs/ui/designs/2026-10-28-device-export-import-notes.md`. State NN is `docs/ui/designs/2026-10-28-device-export-import-NN-<name>.png`. A parallel docs card stores the mockup, the notes, and the PNGs. These paths hold no file at this base, so this design cites note sections by name.
 
 ## Decision summary
@@ -36,9 +33,9 @@ The approval rulings of this card, in its numbering:
 1. Two job kinds join `cc.jobs`: `device-export` (`EXP`, action `export-devices`) and `device-import` (`IMP`, action `validate-device-import`).
 2. Neither kind takes the write slot or holds an operation. Progress counts rows. A phase block carries the phase name and its counts.
 3. Postgres tables hold the export scope, the report, and the plan. The artifact store holds the uploaded file and the export file for 30 days.
-4. The upload streams through its own edge branch and a `text/csv` guard exception into a streamed artifact stage.
+4. The upload streams through its own edge branch into a streamed artifact stage. Its 1 GiB cap derives from the encoded field limits.
 5. One worker handler per kind runs the whole job under a lease. It reads the cancel request at each batch and every 30 seconds.
-6. Execute runs one API transaction. It holds one edit-list preview, the status previews, every confirm, the waits, and the plan links.
+6. Execute runs one API transaction. It fills each preview in pages of 250 devices, so no string or document holds the whole plan.
 7. The status jobs of an import wait in admission for its update job. A cancel of the update job ends them in the same transaction.
 8. The execution results read the job detail API (ruling 1). Its operations route gains a number filter. The IMP detail sums every outcome. A Failed tab lists the failed changes (ruling 4).
 9. One dialog component on the Devices page serves Export, Reports, and Import. It reuses the device dialog shell, not MatDialog.
@@ -50,7 +47,7 @@ The approval rulings of this card, in its numbering:
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
 | `jobDisplayIdSchema`, `ac/jobs.ts:19-21`                     | Adds `EXP` and `IMP`. `jobOperationIdSchema` (`ac/jobs.ts:28-32`) stays, because neither kind holds an operation.           |
 | `jobActionSchema`, `ac/jobs.ts:60-69`                        | Adds `export-devices` and `validate-device-import` (`td:749-750`), labeled as state 26 shows them.                          |
-| `jobFailureSchema`, `ac/jobs.ts:105-108`                     | Adds `storage-unavailable` and `inventory-unavailable` (`td:1038`, `td:1049`).                                              |
+| `jobFailureSchema`, `ac/jobs.ts:105-108`                     | Adds `storage-unavailable`, `inventory-unavailable` (`td:1038`, `td:1049`), and `export-too-large` (section 4).             |
 | `jobSummarySchema`, `ac/jobs.ts:133-148`                     | Adds `phase` `{ name, done, total }`, `exportSummary` `{ purpose }`, and `importSummary`. Each stays null for another kind. |
 | Same schema                                                  | `importSummary` is `{ mode, planState, proposed, rejected, refusal }`. The three blocks feed state 26.                      |
 | `jobScopeSchema`, `ac/jobs.ts:125-129`                       | Adds the scope kind `rows` for both kinds. Its count holds the row count (state 26).                                        |
@@ -83,9 +80,7 @@ The approval rulings of this card, in its numbering:
 - The refresh facts are the stale devices read and the oldest observation (`td:635`, state 13).
 - The rejected file holds the ten template columns, then Row and Reason (notes question 10). One row carries every reason of its source row.
 
-Export of either purpose needs `devices:read`, `devices:bulk-actions`, and `devices:export` at district scope (`record:102`, `td:1013`). Reports therefore needs `devices:export`.
-Import, review, Execute, and the plan cancel need `devices:read`, `devices:write`, and `devices:bulk-actions` (`record:103`). Status codes add a status permission (`record:104-105`).
-Execute and the plan cancel accept the requester only (`api/devices/device-updates.ts:586-587`). A download needs job visibility (`017:327-340`), as `td:1023` requires. It also needs `devices:read`.
+Export of either purpose needs `devices:read`, `devices:bulk-actions`, and `devices:export` at district scope (`record:102`, `td:1013`). Reports therefore needs `devices:export`. Import, review, Execute, and the plan cancel need `devices:read`, `devices:write`, and `devices:bulk-actions` (`record:103`). Status codes add a status permission (`record:104-105`). Execute and the plan cancel accept the requester only (`api/devices/device-updates.ts:586-587`). A download needs job visibility (`017:327-340`), as `td:1023` requires. It also needs `devices:read`.
 
 ## 2. Progress phases
 
@@ -112,7 +107,7 @@ Each change edits `017` in place. Development data is disposable.
 **`cc.jobs`** (`017:18-54`):
 
 - The display ID check (`017:20`) adds `EXP` and `IMP`. The sequences `cc.job_number_exp` and `cc.job_number_imp` join `017:10-14`.
-- The kind check (`017:22`) adds `device-export` and `device-import`. The failure check (`017:40-43`) adds the two codes of section 1.
+- The kind check (`017:22`) adds `device-export` and `device-import`. The failure check (`017:40-43`) adds the three codes of section 1.
 - The scope check (`017:23`) adds `rows` for both kinds, so the devices check (`017:51`) leaves them free.
 - `target_count` holds the row count, from 0 to 50,000, or null before the header check.
 - `jobs_one_running` and `jobs_admission` (`017:57-60`) name the write kinds only. Both new kinds skip admission and take no write slot.
@@ -130,15 +125,11 @@ Each change edits `017` in place. Development data is disposable.
 
 The import counts follow `td:663`, with the stale devices read and the oldest observation (`td:635`). Within a source row, field changes follow template order (`tpl:83`), and the status change comes last (state 13).
 
-**Where the report and the plan live.** The three line tables hold them, not artifacts. This departs from `td:610` and `td:931`. The report pages 10 lines by key (ruling 2). The execution counts join each change with its operation (`017:222-281`).
-Execute reads the plan with current values in one query. `cc.purge_jobs` (`017:2856-2857`) keeps write jobs today. It gains a step that deletes these lines 30 days after the job ends. The header, the mode, and the plan state stay with the job (`td:932-933`).
+**Where the report and the plan live.** The three line tables hold them, not artifacts. This departs from `td:610` and `td:931`. The report pages 10 lines by key (ruling 2). The execution counts join each change with its operation (`017:222-281`). Execute reads the plan with current values in pages (section 7). `cc.purge_jobs` (`017:2856-2857`) keeps write jobs today. It gains a step that deletes these lines 30 days after the job ends. The header, the mode, and the plan state stay with the job (`td:932-933`).
 
-**Change to job and operation.** `cc.link_device_import_jobs` fills `job_id` and `operation_number` of each change row by device ID. A field change maps to the update job, the operation of its device, and the field row (`017:271-281`). The operation keeps the outcome (`017:270`, `uf:23`).
-A status change maps to its status job and its device operation (`017:222-261`). A change without an operation or a field row does not run. Its `not_run_reason` reads `changed-after-validation`, `no-change-needed`, `removed`, or a status exclusion (`api/devices/device-actions.ts:99-119`).
+**Change to job and operation.** `cc.link_device_import_jobs` fills `job_id` and `operation_number` of each change row by device ID. A field change maps to the update job, the operation of its device, and the field row (`017:271-281`). The operation keeps the outcome (`017:270`, `uf:23`). A status change maps to its status job and its device operation (`017:222-261`). A change without an operation or a field row does not run. Its `not_run_reason` reads `changed-after-validation`, `no-change-needed`, `removed`, or a status exclusion (`api/devices/device-actions.ts:99-119`).
 
-**The wait.** `cc.device_update_jobs` (`017:172-205`) gains `import_job_id` and `wait_for_job_id`. Execute sets the wait on each status job of a plan with field changes.
-`cc.admit_device_update_job` (`017:699-757`) skips a candidate whose awaited job is not final, and that candidate takes `queued` (`017:750-752`). Final means a finished status, cancelled included.
-The terminal `job-changed` of the update job runs admission at once, and the tick repeats it (`api/jobs/job-service.ts:225-238`, `:169-184`).
+**The wait.** `cc.device_update_jobs` (`017:172-205`) gains `import_job_id` and `wait_for_job_id`. Execute sets the wait on each status job of a plan with field changes. `cc.admit_device_update_job` (`017:699-757`) skips a candidate whose awaited job is not final, and that candidate takes `queued` (`017:750-752`). Final means a finished status, cancelled included. The terminal `job-changed` of the update job runs admission at once, and the tick repeats it (`api/jobs/job-service.ts:225-238`, `:169-184`).
 
 **The cancel.** `cc.request_job_cancel` (`017:537-654`) gains two branches:
 
@@ -147,40 +138,47 @@ The terminal `job-changed` of the update job runs admission at once, and the tic
 
 **New functions.** Each runs as SECURITY DEFINER. Each joins the grant block (`deployment/postgres/index.mjs:273-311`) and the PUBLIC revoke list (`017:2982-3011`).
 
-| Function                                                     | Use                                                                                                   |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `cc.create_device_export_job`                                | Inserts the running header, the detail row, and the targets as one JSON document (`td:763`)           |
-| `cc.claim_device_export_job`, `cc.claim_device_import_job`   | Takes the lease and stamps `first_claimed_at`. A request answers `done`. A live lease answers `busy`. |
-| `cc.renew_device_export_job`, `cc.renew_device_import_job`   | Renews the lease and writes the phase and the counts                                                  |
-| `cc.finish_device_export_job`, `cc.finish_device_import_job` | Ends the job under the header lock. A stored request deletes the lines and ends Cancelled.            |
-| `cc.create_device_import_job`                                | Inserts the running header and the detail row after the upload                                        |
-| `cc.store_device_import_lines`                               | Inserts at most 1,000 lines of one table per call                                                     |
-| `cc.cancel_device_import_plan`                               | Cancels an open plan. A repeat answers the same plan.                                                 |
-| `cc.lock_device_import_plan`, `cc.link_device_import_jobs`   | The two Execute steps of section 7                                                                    |
+| Function                                                                       | Use                                                                                                          |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `cc.create_device_export_job`                                                  | Inserts the running header, the detail row, and the targets as one JSON document (`td:763`)                  |
+| `cc.create_device_import_job`                                                  | Inserts the running header and the detail row after the upload                                               |
+| `cc.claim_device_export_job`, `cc.claim_device_import_job`                     | Takes a 2-minute lease and stamps `first_claimed_at`. A request answers `done`. A live lease answers `busy`. |
+| `cc.renew_device_export_job`, `cc.renew_device_import_job`                     | Renews the lease and writes the phase and the counts                                                         |
+| `cc.store_device_import_lines`                                                 | Inserts at most 1,000 lines and 32 MiB of JSON per call, under the caller's lease                            |
+| `cc.finish_device_export_job`, `cc.finish_device_import_job`                   | Ends the job under the header lock. A stored request deletes the lines and ends Cancelled.                   |
+| `cc.recover_device_file_jobs`                                                  | Fails a lost EXP or IMP run with `interrupted` (section 5)                                                   |
+| `cc.cancel_device_import_plan`                                                 | Cancels an open plan. A repeat answers the same plan.                                                        |
+| `cc.lock_device_import_plan`, `cc.mark_device_import_changes`                  | The plan lock and the conflict marks of section 7                                                            |
+| `cc.link_device_import_jobs`                                                   | The links, the waits, and the executed plan of section 7                                                     |
+| `cc.open_device_update_preview`, `cc.add_device_update_preview_targets`        | The paged preview of section 7: an open row, then pages of at most 250 targets                               |
+| `cc.seal_device_update_preview`, `cc.read_device_update_preview_manifest_page` | The counts and the digest of a filled preview, and one manifest page of 250 targets                          |
 
 A cancelled EXP or IMP finish sets `cancelled` to the rows left, at least 1. The shared terminal rule then answers Cancelled (`017:437-445`, `cancel:301`).
 
-**Lock order.** Built writers lock the header first (`cancel:145`). No writer takes the admission lock after a header (`cancel:156`).
+**Lock order.** Built writers lock the header first (`cancel:145`). No built writer takes the admission lock after a header, and the cancel never takes the global access lock (`cancel:156`).
 
-| Writer                                 | Lock order                                                                                                                             |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| EXP and IMP claim, renew, and finish   | Header, then its detail row. The finish then writes line rows.                                                                         |
-| `cc.request_job_cancel`, EXP or IMP    | Admission lock (`017:548`), header, detail row, requester, connection                                                                  |
-| `cc.request_job_cancel`, import update | Admission lock, update header, its operations, each waiting status header, their operations                                            |
-| Admission with the wait                | As built (`017:710`, `:713`). It reads the awaited header without a lock.                                                              |
-| Plan cancel                            | Import detail row                                                                                                                      |
-| Execute                                | Global access lock (`017:2582`), import detail row, then per preview its row (`017:2726`), its artifact (`017:2788-2789`), and its job |
+| Writer                                 | Lock order                                                                                                                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EXP and IMP claim, renew, and finish   | Header, then its detail row. The finish then writes line rows.                                                                                                                         |
+| `cc.store_device_import_lines`         | Header, then its detail row. It checks the lease of its caller under both locks. A lapsed lease writes nothing.                                                                        |
+| `cc.recover_device_file_jobs`          | Each running EXP or IMP header in creation order, then its detail row                                                                                                                  |
+| `cc.request_job_cancel`, EXP or IMP    | Admission lock (`017:548`), header, detail row, requester, connection                                                                                                                  |
+| `cc.request_job_cancel`, import update | Admission lock, update header, its operations, each waiting status header, their operations                                                                                            |
+| Admission with the wait                | As built (`017:710`, `:713`). It reads the awaited header without a lock.                                                                                                              |
+| Plan cancel                            | IMP header, then its detail row                                                                                                                                                        |
+| Execute                                | Global access lock (`017:2582`), IMP header, IMP detail row, its change rows. Then per preview: its row (`017:2726`), the connection, its artifact (`017:2788-2789`), and its new job. |
 
-The requester and connection rows take KEY SHARE last, as built. Execute and the plan cancel lock no job header, and both need a finished IMP job.
-`cc.lock_device_import_plan` takes the global access lock before the detail row, as preview creation does (`017:2579-2582`).
+Every IMP writer locks the header before its detail row. Execute and the plan cancel write that header through `cc.record_job_change` (`017:382`). Execute takes the global access lock first, as preview creation does (`017:2579-2582`). Each confirm inside Execute takes it again and never waits.
+A cancel request takes the admission lock, then the header (`017:548`, `:560`). On a finished IMP job it waits for Execute, then refuses `job-finished` (`017:581-582`). Neither writer takes the other's first lock, so the pair never deadlocks. The requester and connection rows take KEY SHARE last, as built.
 
 ## 4. Upload and storage
 
 - **Route.** `POST /api/devices/imports?mode=…&name=…` carries the raw file as `text/csv`. No JSON body wraps it (`td:579`, `record:158`).
 - **Edge.** The edge buffers every POST body (`edge:215-246`). A new branch streams this path and counts its bytes. The query passes, because the edge forwards `request.url` (`edge:161`, `edge:172`).
-- **Cap.** The branch answers 413 above 335,544,320 bytes (320 MiB). Every other route keeps its cap (`edge:222-237`). The cap follows `td:576`. 50,000 rows at every field limit in ASCII take about 295 MB (`ac/devices.ts:58-59`, `ac/devices.ts:89`, `ac/devices.ts:433-445`).
-- **Deadline.** The upload path gets a 10-minute body deadline. Others keep 10 seconds (`tls:26-58`, `tls:205`). HTTP/2 and HTTP/1.1 behave alike (`tls:191-194`).
-- Node applies `requestTimeout` to every HTTP/1.1 request of the server (`tls:205`). The edge raises it to 10 minutes. The per-request timer of `tls:26-58` then runs on both protocols, with the deadline of the path.
+- **Cap.** The branch answers 413 above 1,073,741,824 bytes (1 GiB). Every other route keeps its cap (`edge:222-237`). `td:576` sets the cap from the field limits.
+- **Bound.** A code-point limit takes at most 4 UTF-8 bytes per character, and a UTF-16 limit 3 bytes per unit. A doubled quote takes 2 bytes. Limits: Device ID 128, Serial number and Model 256, and Status 64 (`016:36-45`). The five fields keep theirs (`ac/devices.ts:433-445`), and the Checksum holds 24 (`tpl:458-459`).
+- With two quotes and one formula tab per cell (`tpl:337-339`), a row takes at most 19,390 bytes. Fifty thousand rows with header and byte order mark take at most 969,500,118 bytes. A stored value above its field limit (`ac/devices.ts:56-67`) breaks that bound. The edit export then stops at the cap with `export-too-large` (section 5).
+- **Deadline.** The upload path gets a 30-minute body deadline, so 1 GiB passes above 4.8 Mbit/s. Others keep 10 seconds (`tls:26-58`, `tls:205`). HTTP/2 and HTTP/1.1 behave alike (`tls:191-194`). Node applies `requestTimeout` to every HTTP/1.1 request of the server (`tls:205`). The edge raises it to 30 minutes. The per-request timer of `tls:26-58` then runs on both protocols, with the deadline of the path.
 - **Guard.** `AuthGuard` refuses a body that is not JSON (`api/auth/auth.guard.ts:44-48`). Route metadata lets the upload handler accept `text/csv`. Origin and CSRF checks stay.
 - **Store.** `stage` demands the size and the SHA-256 first (`store:191-211`). A streamed variant computes both while it writes. A ready record holds both (`001:5-6`, `001:16`).
 - **Retention.** Stage records `retentionUntil` (`store:198`) 30 days ahead for both files (`td:928`, `td:930`). No purge reads `retention_until` today (`001:10`). The storage service adds an hourly purge of each expired artifact that `remove` accepts (`store:374`).
@@ -189,18 +187,19 @@ The requester and connection rows take KEY SHARE last, as built. Execute and the
 
 ## 5. The export job
 
-**API.** `POST /api/devices/exports` checks the export permissions. An expired selection answers 409, as previews do (`api/devices/device-updates.ts:507-508`). One query resolves the selection terms (`api/devices/device-query.ts:370-406`) in grid order, with the device ID as the tie (`api/devices/device-query.ts:163-169`).
-Above 50,000 devices it answers 422 for both purposes (`td:1037`, notes eng-lead answer 2). Otherwise it creates the job and starts the flow.
+**API.** `POST /api/devices/exports` checks the export permissions. An expired selection answers 409, as previews do (`api/devices/device-updates.ts:507-508`). One query resolves the selection terms (`api/devices/device-query.ts:370-406`) in grid order, with the device ID as the tie (`api/devices/device-query.ts:163-169`). Above 50,000 devices it answers 422 for both purposes (`td:1037`, notes eng-lead answer 2). Otherwise it creates the job and starts the flow.
 
 **Flow.** `deployment/kestra/device-export.yaml` sends one `/dispatch/device-export` request. It retries as `deployment/kestra/device-update.yaml:48-52` does. It queues at 2 runs (`deployment/kestra/entity-sync.yaml:4-6`). Its `errors` block fails the job with `interrupted`, as `deployment/kestra/device-update.yaml:79-84` finishes.
 
+**Lost runs.** The job-service tick (`api/jobs/job-service.ts:170-189`) also visits a customer with a running EXP or IMP job (`api/jobs/job-service.ts:158-164`). `cc.recover_device_file_jobs` fails such a job with `interrupted` in two cases. No worker claimed it within 60 minutes, or its lease lapsed 15 minutes ago. The flow queue explains the long first window. The built recovery skips both kinds (`017:851-852`). The purge ends a lost refresh the same way (`017:2878-2882`).
+
 **Worker** (`worker/src/device-export.ts`):
 
-1. Claim, then tick every 30 seconds. The tick renews the lease and calls `cc.job_cancel_requested` (`017:528-532`), as `worker/src/device-update.ts:1221-1230` does.
+1. Claim, then tick every 30 seconds. The tick renews the 2-minute lease and calls `cc.job_cancel_requested` (`017:528-532`), as `worker/src/device-update.ts:1221-1230` does.
 2. Read the targets in ordinal batches of 1,000 joined with `cc.devices` (`td:345`). Write the batches in ordinal order (`td:346`).
 3. Edit purpose: the header is `DEVICE_EDIT_TEMPLATE_HEADERS` (`tpl:148`). Status holds Google's value (`td:350`). Each cell passes `deviceEditEscapeCell` (`tpl:337`).
 4. The Checksum cell is `deviceEditRowChecksum` of the unescaped cells (`tpl:461`, `td:358`). Report purpose: stored columns, no Checksum (`td:328`), the same escape (`td:357`).
-5. `ac/csv.ts` writes UTF-8 with a byte order mark, commas, CRLF, and RFC 4180 quoting (`td:354-355`) into a streamed stage.
+5. `ac/csv.ts` writes UTF-8 with a byte order mark, commas, CRLF, and RFC 4180 quoting (`td:354-355`) into a streamed stage. It counts the bytes, and an edit file past the cap fails with `export-too-large`.
 6. Phase `prepare-download` publishes. The finish records name, size, rows, columns, and the expiry. Names follow the notes section "Scenario and data".
 
 - An empty scope writes the header row only (`td:340`). A failed read or write removes the staged file and fails the job (`td:348`, `td:1038`). A true cancel read stops at the next batch, removes the staged file, and ends Cancelled (`cancel:300`).
@@ -219,53 +218,66 @@ Above 50,000 devices it answers 422 for both purposes (`td:1037`, notes eng-lead
 6. In Sync changes, a well-formed Checksum cell (`tpl:481`) equal to the row checksum marks the row unchanged (`td:493-497`). Sync all rows takes every row (`td:499`).
 7. **Lookup.** Candidate IDs resolve in `cc.devices` in batches of 1,000. An unknown or removed ID rejects its row (`td:618`). A failed lookup fails the job (`td:633`).
 8. **`refresh`.** Stale means read more than 24 hours ago (`ac/entity-cache.ts:16-19`). Only stale candidate devices get a read (`record:257`).
-9. Postgres stamps the read time before the Google call (`api/devices/device-fresh-read.ts:128-139`). `deviceBatch` reads up to 1,000 devices (`libs/google-connection/src/lib/devices.ts:718-786`). The store calls follow `api/devices/device-fresh-read.ts:154-175`, run as `worker/src/entity-sync.ts:200-259` runs them (`td:630`). A failed read rejects its rows (`td:631`).
-10. **Units.** One `readOrgUnitTree` call serves the job when a candidate row assigns a unit (`libs/google-connection/src/lib/devices.ts:651-716`, `record:283`). Paths compare without case (`tpl:381`). A failed tree read rejects each unit change as "Organization unit check unavailable" (`td:634`).
-11. **Access.** A status code without its stored permission rejects its row (`record:108`). No per-device scope exists yet (`td:636`).
-12. **Pass 2, `compare`.** The worker parses the file again in batches of 1,000 candidate rows. `deviceEditStatusCellIntent` reads Status (`tpl:246`).
-13. Eligibility follows `api/devices/device-actions.ts:99-119` on the fresh status. `deviceEditFieldChange` reads each field cell (`tpl:301`).
-14. One invalid cell rejects the row, which keeps every reason (`td:608`). A value equal to the fresh value needs no change (`api/devices/device-updates.ts:126-135`, `td:647`).
-15. Warnings follow `td:649-653` and the unknown column text (`tpl:574`). A malformed Checksum cell adds a warning (`td:496`).
-16. **`report`.** `cc.store_device_import_lines` writes the lines, and the counts satisfy `td:674`. Proposed changes create a plan that expires 1 hour after the finish (`record:258`).
+9. Postgres stamps the read time before the Google call (`api/devices/device-fresh-read.ts:128-139`). `deviceStates` reads up to 1,000 devices and answers one state for each (`libs/google-connection/src/lib/devices.ts:1072-1157`). `deviceBatch` throws on the first final failure and drops the found siblings (`libs/google-connection/src/lib/devices.ts:775-785`). The job never calls it.
+10. One transaction stores each found device as a read and soft-deletes each missing device, with the calls of `api/devices/device-fresh-read.ts:141-180` (`td:629`).
+11. A failed device rejects only its own rows as "Current values unavailable" (`record:275`, `td:631`). Its stored values and stamp stay unchanged.
+12. A token failure throws for the whole call (`libs/google-connection/src/lib/devices.ts:1113-1115`). The rows of that batch then reject, and later batches continue.
+13. **Units.** One `readOrgUnitTree` call serves the job when a candidate row assigns a unit (`libs/google-connection/src/lib/devices.ts:651-716`, `record:283`). Paths compare without case (`tpl:381`). A failed tree read rejects each unit change as "Organization unit check unavailable" (`td:634`).
+14. **Access.** A status code without its stored permission rejects its row (`record:108`). No per-device scope exists yet (`td:636`).
+15. **Pass 2, `compare`.** The worker parses the file again in batches of 1,000 candidate rows. `deviceEditStatusCellIntent` reads Status (`tpl:246`).
+16. Eligibility follows `api/devices/device-actions.ts:99-119` on the fresh status. `deviceEditFieldChange` reads each field cell (`tpl:301`).
+17. One invalid cell rejects the row, which keeps every reason (`td:608`). A value equal to the fresh value needs no change (`api/devices/device-updates.ts:126-135`, `td:647`).
+18. Warnings follow `td:649-653` and the unknown column text (`tpl:574`). A malformed Checksum cell adds a warning (`td:496`).
+19. **`report`.** `cc.store_device_import_lines` writes the lines, and the counts satisfy `td:674`. A call closes at 1,000 lines or 32 MiB of JSON. A line of ten full cells fits one call.
+20. Proposed changes create a plan that expires 1 hour after the finish (`record:258`).
 
-**Status.** Completed, or Completed with errors when proposed is 0 and rejected is above 0 (notes version 2 answer 5).
-A refusal or a lookup or storage fault fails the job. A refusal stores its code and the module text for states 23 and 26.
-**State 23 is the server guard** (notes question 7). The browser check stops most refusals (`record:285`). The worker repeats every check, and tests reach state 23 through a direct upload.
-**Cancel** follows `cancel:292-304`. A stopped validation keeps no report and no plan, and its stored refresh reads stay (`cancel:299`).
+**Status.** Completed, or Completed with errors when proposed is 0 and rejected is above 0 (notes version 2 answer 5). A refusal or a lookup or storage fault fails the job. A refusal stores its code and the module text for states 23 and 26.
+**State 23 is the server guard** (notes question 7). The browser check stops most refusals (`record:285`). The worker repeats every check, and tests reach state 23 through a direct upload. **Cancel** follows `cancel:292-304`. A stopped validation keeps no report and no plan, and its stored refresh reads stay (`cancel:299`).
 
 **Failures** follow `td:1032-1070`:
 
-| Failure                                  | Job outcome                                                                         |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| Malformed file, missing column, or limit | Failed with the refusal. No report and no plan (`td:1040-1043`).                    |
-| Checksum column missing in Sync changes  | Failed. The dialog names Sync all rows (`td:1041`, state 23).                       |
-| Inventory lookup fails                   | Failed with `inventory-unavailable` (`td:1049`)                                     |
-| Refresh read or tree read fails          | Validation rejects the affected rows, and the job completes (`td:1048`, `td:1050`). |
-| Storage fault                            | Failed with `storage-unavailable`                                                   |
-| Lost worker run                          | The flow `errors` block fails the job with `interrupted`.                           |
+| Failure                                  | Job outcome                                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| Malformed file, missing column, or limit | Failed with the refusal. No report and no plan (`td:1040-1043`).                       |
+| Checksum column missing in Sync changes  | Failed. The dialog names Sync all rows (`td:1041`, state 23).                          |
+| Inventory lookup fails                   | Failed with `inventory-unavailable` (`td:1049`)                                        |
+| Refresh read or tree read fails          | Validation rejects the affected rows, and the job completes (`td:1048`, `td:1050`).    |
+| Storage fault                            | Failed with `storage-unavailable`                                                      |
+| Lost worker run                          | The flow `errors` block or the recovery of section 5 fails the job with `interrupted`. |
 
 ## 7. Execute
 
-`POST /api/devices/imports/{displayId}/execute` runs these steps:
+`POST /api/devices/imports/{displayId}/execute` runs these steps in one transaction (`api/database/database.service.ts:63-66`):
 
 1. **Recheck.** District `devices:read`, `devices:write`, `devices:bulk-actions`, and each status permission of the plan (`td:1017`). A missing one answers 403 (`td:1064`).
 2. **Phrase.** A Deprovision needs `DEPROVISION` (`record:67`), trimmed and compared exactly (`api/devices/device-actions.ts:431-435`, `wpd:72`). A mismatch answers 422 (`td:1065`).
-3. **Plan state.** An executed plan answers 200 with its stored receipts (`td:719`, `td:1066`). Cancelled answers 409, and expired answers 410.
-4. **Conflicts.** One query reads the field changes with the current inventory values. A value that differs from both its baseline and its request is a conflict (`td:715`, `ig:24`). Its change records `changed-after-validation`.
-5. The split comes first. The builder makes a device with one conflict a conflict device, and that preview never confirms (`api/devices/device-updates.ts:265-272`).
-6. **Edit list.** `editPreviewTargets` builds one preview from the remaining edits and their baselines (`api/devices/device-updates.ts:216-284`, `td:713`). A field equal to its request stays out as unchanged.
-7. The 500-device cap lives in the route parser (`api/devices/device-updates.ts:429-439`, `ac/device-updates.ts:51-61`). The SQL cap is 100,000 (`017:2463-2464`, `td:722-723`).
-8. **Status.** `actionTargets` builds one preview per action and reason from a device list (`api/devices/device-actions.ts:121-155`, `td:717`). A read by device ID supplies its row columns (`api/devices/device-actions.ts:127-140`). The built routes take a selection key only (`ac/device-actions.ts:77-101`).
-9. **Manifests.** Each manifest goes to `storeJson` first, as the built confirms do (`api/devices/device-updates.ts:782`, `api/devices/device-actions.ts:436`).
-10. **One transaction** (`api/database/database.service.ts:63-66`). `cc.lock_device_import_plan` locks the plan and checks state, revision, and expiry (notes question 11).
-11. Each preview runs `cc.create_device_update_preview` (`017:2398-2402`) and `cc.confirm_device_update_preview` (`017:2707-2712`), with the phrase for Deprovision (`017:2762-2768`).
+3. **Plan lock.** `cc.lock_device_import_plan` takes the global access lock, the IMP header, and the detail row. It checks state, revision, and expiry (notes question 11). **Plan state.** An executed plan answers 200 with its stored receipts (`td:719`, `td:1066`). Cancelled answers 409, and expired answers 410.
+4. **Pages.** The handler reads the plan changes with current inventory values, 250 devices at a time. Ordinals continue across pages. The read orders device IDs with `COLLATE "C"`, the JavaScript order of plain IDs (`api/devices/device-updates.ts:52`).
+5. **Conflicts.** A value that differs from both its baseline and its request is a conflict (`td:715`, `ig:24`). `cc.mark_device_import_changes` records `changed-after-validation`.
+6. The split comes first. The builder makes a device with one conflict a conflict device, and that preview never confirms (`api/devices/device-updates.ts:265-272`, `017:2743-2747`).
+7. **Edit list.** `editPreviewTargets` builds the page of one preview from the remaining edits and their baselines (`api/devices/device-updates.ts:216-284`, `td:713`). A field equal to its request stays out as unchanged.
+8. **Status.** `actionTargets` builds the page of one preview per action and reason (`api/devices/device-actions.ts:121-155`, `td:717`). A read by device ID supplies its row columns (`api/devices/device-actions.ts:127-140`).
+9. **Fill.** `cc.add_device_update_preview_targets` stores each page. `cc.seal_device_update_preview` then writes the counts and the digest of each preview.
+10. **Manifests.** `cc.read_device_update_preview_manifest_page` returns 250 targets per call. The handler streams the document of `017:2683-2700` into a streamed stage.
+11. **Jobs.** Each preview runs `cc.confirm_device_update_preview` (`017:2707-2712`), with the phrase for Deprovision (`017:2762-2768`).
 12. `cc.link_device_import_jobs` writes the waits, links, and change rows. It marks the plan executed with one change and one audit row.
 13. A refusal rolls back every job (`td:718`). After the commit the handler admits (`api/devices/device-updates.controller.ts:196`).
 
+- The 500-device cap lives in the route parser (`api/devices/device-updates.ts:429-439`, `ac/device-updates.ts:51-61`). The seal keeps the 100,000-target cap (`017:2463-2464`, `td:722-723`).
 - Another revision answers 409. A plan with no change left answers 409 `nothing-to-run`, and the plan stays open.
-- Each SQL call takes its rows as one JSON document (`td:763-764`). A plan of 50,000 rows executes (`td:1174`).
-- **Budget.** The SQL of a 50,000-row plan finishes within 20 seconds, under the 45-second edge timeout (`edge:150`). S4 logs the time.
-- **Plan cancel.** `POST …/cancel` checks the plan ID and revision and cancels the plan. Nothing runs, and the report stays (`td:710`, state 20).
+
+**Bounded serialization.** No string, JSON document, or result set of Execute holds the whole plan.
+
+- The built route sends its targets as one document (`api/devices/device-updates.ts:568`). It reads the manifest as one `jsonb_agg` (`017:2674-2682`) and stores one string (`api/devices/device-updates.ts:763-782`).
+- One 4,096-unit path change on each of 50,000 devices puts at least 614,400,000 characters into the digest text (`api/devices/device-updates.ts:292-316`). Node `v24.19.0` caps a string at 536,870,888 characters (`buffer.constants.MAX_STRING_LENGTH`). The built pipeline therefore fails before its SQL runs.
+- A target holds at most 51,648 UTF-16 units: its row columns and three values of each field (`ac/devices.ts:56-67`, `ac/devices.ts:433-445`). JSON escapes one unit into at most 6 characters. A page of 250 targets with its keys stays under 80,000,000 characters. Each call still passes its rows as one JSON document (`td:1174`).
+- `manifestDigest` feeds its canonical text to the hash target by target. Pages arrive in its device ID order (`api/devices/device-updates.ts:293-295`). Its bytes and its digest equal the built form. `cc.create_device_update_preview` (`017:2398-2633`) runs the open, the add, and the seal in one call. One target check serves both callers.
+- Confirm and both manifest reads refuse an unsealed preview. A null digest never meets the check of `017:2756`.
+
+**Time and the plan cancel.**
+
+- **Budget.** A 50,000-row plan of short values commits within 20 seconds, under the 45-second idle timeout of the edge (`edge:150`). S4 logs both plan sizes. A lost answer keeps its outcome. The IMP job change reaches the dialog (section 8). A repeat waits for the first commit, then answers the receipts.
+- **Plan cancel.** `POST …/cancel` locks the IMP header, then its detail row. It checks the plan ID and revision and cancels the plan. Nothing runs, and the report stays (`td:710`, state 20).
 
 ## 8. The execution results
 
@@ -278,8 +290,7 @@ A refusal or a lookup or storage fault fails the job. A refusal stores its code 
 - For each job of the page, the dialog reads the operations of its changes in one call. A page needs at most seven calls (`td:755`).
 - The rows keep the shapes of `ac/jobs.ts:185-221`. Dispatched and issued read pending (`api/jobs/jobs.ts:367-370`), with both reason fields (`:371-374`).
 
-**IMP detail.** After Execute the IMP job detail adds `planJobs` for the job band. It holds the summary of each plan job (`api/jobs/jobs.ts:215-278`). The detail also adds `executionCounts`, the changes by outcome. One aggregate query over the change rows and their operations fills it (`017:222-281`).
-The terms are Succeeded, Failed, Unknown, Skipped, Expired, Cancelled, Pending, and Not run. The dialog shows each term above 0 (notes "Execution results").
+**IMP detail.** After Execute the IMP job detail adds `planJobs` for the job band. It holds the summary of each plan job (`api/jobs/jobs.ts:215-278`). The detail also adds `executionCounts`, the changes by outcome. One aggregate query over the change rows and their operations fills it (`017:222-281`). The terms are Succeeded, Failed, Unknown, Skipped, Expired, Cancelled, Pending, and Not run. The dialog shows each term above 0 (notes "Execution results").
 
 **Each change.** A field change shows the outcome of its device operation (`017:270`). A status change shows its own operation.
 
@@ -295,25 +306,19 @@ The terms are Succeeded, Failed, Unknown, Skipped, Expired, Cancelled, Pending, 
 - The tab opens on All changes. A Not run change never joins Failed, because no operation ran it.
 - On the Failed tab, each read after an event also repeats the failed view page. A page past the last page moves to the last page.
 
-**Proposal on Unknown.** This design proposes that an Unknown outcome joins the Failed tab. Engineering default 17 raises the Jobs attention dot for a cancelled job with a failed or Unknown operation (`record:288`, `api/jobs/jobs.ts:924`).
-The record lets no result show success while an operation reads unknown (`record:73`). An Unknown write needs the same check in Google as a failed one. Its row keeps the Unknown chip, so the tab hides no difference.
+**Proposal on Unknown.** This design proposes that an Unknown outcome joins the Failed tab. Engineering default 17 raises the Jobs attention dot for a cancelled job with a failed or Unknown operation (`record:288`, `api/jobs/jobs.ts:924`). The record lets no result show success while an operation reads unknown (`record:73`). An Unknown write needs the same check in Google as a failed one. Its row keeps the Unknown chip, so the tab hides no difference.
 
 The constant holds `failed` until the owner answers. His yes adds `unknown`. Expired stays out, because the ruling and default 17 omit it. The job page filter reads all three (`api/jobs/jobs.ts:684`).
 
-**Live updates.** The dialog opens the job events stream (`api/jobs/jobs.controller.ts:147-193`). A newer revision of a plan job marks the reader dirty (`fe/jobs/job-reader.ts:40-44`).
-One read of the IMP detail and the page's operations runs at a time, 250 ms after an event (`fe/jobs/job-reader.ts:11-22`). With every job final, "Finished" and the end time replace the live line (state 17b).
-The EXP and IMP workers publish as the write worker does (`worker/src/device-update.ts:1304-1351`). The relay covers a missed publish (`api/jobs/job-service.ts:512-567`).
+**Live updates.** The dialog opens the job events stream (`api/jobs/jobs.controller.ts:147-193`). A newer revision of a plan job marks the reader dirty (`fe/jobs/job-reader.ts:40-44`). One read of the IMP detail and the page's operations runs at a time, 250 ms after an event (`fe/jobs/job-reader.ts:11-22`). With every job final, "Finished" and the end time replace the live line (state 17b). The EXP and IMP workers publish as the write worker does (`worker/src/device-update.ts:1304-1351`). The relay covers a missed publish (`api/jobs/job-service.ts:512-567`).
 
 ## 9. The client
 
-**Component.** `fe/devices/device-export-import-dialog.ts`, `.html`, and `.css` serve the three entries. The app uses no MatDialog. It follows the built pattern: an `[open]` input, the scrim, `cdkTrapFocus`, and the shell of `fe/devices/device-dialog.css:29-40` (`fe/devices/device-grid-revert-dialog.html:1-13`).
-It mounts beside the sheets (`fe/devices/devices.html:394-416`). Handlers open it as `startUpdate` opens its sheet (`fe/devices/devices.ts:405-409`).
+**Component.** `fe/devices/device-export-import-dialog.ts`, `.html`, and `.css` serve the three entries. The app uses no MatDialog. It follows the built pattern: an `[open]` input, the scrim, `cdkTrapFocus`, and the shell of `fe/devices/device-dialog.css:29-40` (`fe/devices/device-grid-revert-dialog.html:1-13`). It mounts beside the sheets (`fe/devices/devices.html:394-416`). Handlers open it as `startUpdate` opens its sheet (`fe/devices/devices.ts:405-409`).
 
-**Widths** follow the notes section "Dialog widths and the help pane". States 02 to 05, 07 to 10, 12, 23, and 24 take 480 px. The docked help makes 1000 px (states 06 and 11).
-States 13 to 22 and 17b take 1120 px, the confirmation and the results included. There the 520 px help pane lies over the body (notes question 2).
+**Widths** follow the notes section "Dialog widths and the help pane". States 02 to 05, 07 to 10, 12, 23, and 24 take 480 px. The docked help makes 1000 px (states 06 and 11). States 13 to 22 and 17b take 1120 px, the confirmation and the results included. There the 520 px help pane lies over the body (notes question 2).
 
-**Paging.** A page holds 10 lines, and a continued device repeats its Row and Device cells (ruling 2). Only the last page holds fewer (ruling 3). This replaces the rule of the notes section "Execution results" that never splits the changes of one device.
-A pure helper beside `fe/devices/device-path-text.ts:1-16` cuts a long path at a `/` boundary and keeps whole trailing segments (ruling 3).
+**Paging.** A page holds 10 lines, and a continued device repeats its Row and Device cells (ruling 2). Only the last page holds fewer (ruling 3). This replaces the rule of the notes section "Execution results" that never splits the changes of one device. A pure helper beside `fe/devices/device-path-text.ts:1-16` cuts a long path at a `/` boundary and keeps whole trailing segments (ruling 3).
 
 | States             | Reads                                                                                        | Sends                                                  |
 | ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -361,30 +366,31 @@ Stop validation sends `POST /api/jobs/{displayId}/cancel`. The app holds Materia
 
 ## 10. Tests
 
-| ID  | Target and file                                                                                   | Check                                                                                                             |
-| --- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| K1  | `application-contracts:test`: `ac/jobs.test.mjs`, `ac/authorization.test.mjs`                     | EXP and IMP parse. Each block parses. `devices:export` parses at both scopes.                                     |
-| K2  | Same target: new `ac/csv.test.mjs`                                                                | RFC 4180 vectors: BOM, CRLF, LF, quotes, multiline cells, a ragged record, an open quote, any chunk split.        |
-| K3  | Same target: new `ac/device-import.test.mjs`, `ac/device-export.test.mjs`                         | Each route schema. Report cells match the grid text. Device contact writes ISO 8601.                              |
-| S1  | `deployment:postgres-integration`: new `deployment/postgres/device-export-import.integration.mjs` | Kind, display ID, and phase checks. Claim, renew, and finish. A cancel before and after the first claim.          |
-| S2  | Same file                                                                                         | Lines page by key. The plan cancels, expires under the lock, and executes once. A repeat returns the jobs.        |
-| S3  | Same file, two sessions                                                                           | Status jobs wait for the update job. Its cancel ends them. Admission and the cancel raise no deadlock.            |
-| S4  | Same file                                                                                         | A 50,000-row plan executes in one transaction. Its execution counts read in one query. The test logs both times.  |
-| S5  | Same file                                                                                         | The purge keeps write jobs and removes the import lines and the export targets after 30 days.                     |
-| B1  | `deployment:storage-test`, `deployment:storage-integration`                                       | A streamed stage records size and digest. Over the cap it removes the file. The purge removes expired files.      |
-| E1  | `deployment:bootstrap-test`: `application-edge.test.mjs`, `edge-http2.test.mjs`                   | The upload streams on both protocols and answers 413 above the cap. A slow body passes only there.                |
-| E2  | Same files                                                                                        | `content-disposition` passes on the file routes only. Each new path passes or answers 404 by phase.               |
-| W1  | `worker:test`: new `worker/src/device-export.test.mjs`                                            | Batches write in order. Escape and checksum hold. A failure publishes nothing. A cancel deletes the file.         |
-| W2  | `worker:test`: new `worker/src/device-import.test.mjs` with a fake reader and store               | Every check of `td:1124-1151`. Only stale devices get a read. The tree reads once. Counts add up.                 |
-| W3  | `worker:test`: new `worker/src/device-import-mock.test.mjs`                                       | The refresh and the tree read against admin-sdk-mock 0.2.0, as `worker/src/device-status-mock.test.mjs:199` does. |
-| A1  | `api:test`: new `api/src/app/devices/device-exports.test.mjs`, `device-imports.test.mjs`          | Each route, refusal, and permission. The guard accepts `text/csv` on the upload only. The failed view.            |
-| A2  | `api:test`: new `api/src/app/devices/device-import-execute.test.mjs`                              | Conflict split, device-list previews, phrase, expiry, recheck, repeat, and the change links.                      |
-| A3  | `api:test`: `api/src/app/jobs/jobs.test.mjs`                                                      | Each summary and detail block. The operations filter by number. `executionCounts` sums each outcome.              |
-| C1  | `frontend:test`: dialog specs, `devices.spec.ts`, `job-activity.spec.ts`, `job-fields.spec.ts`    | Each row of the state table. The menu without a selection. Activity routing. State 26 lines. The path cut.        |
-| C2  | `frontend-e2e:e2e` (`nx.json:40-42`): new `frontend-e2e/src/device-export-import.spec.ts`         | States 01 to 26 and 17b hold against a mocked API. The Failed tab lists the failed change of state 17b.           |
-| Q1  | `api-e2e:client-review-mock` (`api-e2e/project.json:22-41`)                                       | Card XQ1.                                                                                                         |
+| ID  | Target and file                                                                                   | Check                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| K1  | `application-contracts:test`: `ac/jobs.test.mjs`, `ac/authorization.test.mjs`                     | EXP and IMP parse. Each block parses. `devices:export` parses at both scopes.                                                             |
+| K2  | Same target: new `ac/csv.test.mjs`                                                                | RFC 4180 vectors: BOM, CRLF, LF, quotes, multiline cells, a ragged record, an open quote, any chunk split.                                |
+| K3  | Same target: new `ac/device-import.test.mjs`, `ac/device-export.test.mjs`                         | Each route schema. Report cells match the grid text. Device contact writes ISO 8601.                                                      |
+| S1  | `deployment:postgres-integration`: new `deployment/postgres/device-export-import.integration.mjs` | Kind, display ID, and phase checks. Claim, renew, finish, and recovery. Cancels around the first claim. Lease fence.                      |
+| S2  | Same file, two sessions                                                                           | Lines page by key. The plan cancels, expires under the lock, and executes once. A repeat returns the jobs. Execute races the plan cancel. |
+| S3  | Same file, two sessions                                                                           | Status jobs wait for the update job. Its cancel ends them. A job cancel races Execute and admission without a deadlock.                   |
+| S4  | Same file                                                                                         | 50,000 short rows, then 50,000 distinct 4,096-unit paths, each execute in one transaction. No call passes two pages.                      |
+| S5  | Same file                                                                                         | The purge keeps write jobs and removes the import lines and the export targets after 30 days.                                             |
+| B1  | `deployment:storage-test`, `deployment:storage-integration`                                       | A streamed stage records size and digest. Over the cap it removes the file. The purge removes expired files.                              |
+| E1  | `deployment:bootstrap-test`: `application-edge.test.mjs`, `edge-http2.test.mjs`                   | On both protocols, 1,073,741,824 bytes stream and one more byte answers 413. A slow body passes only there.                               |
+| E2  | Same files                                                                                        | `content-disposition` passes on the file routes only. Each new path passes or answers 404 by phase.                                       |
+| W1  | `worker:test`: new `worker/src/device-export.test.mjs`                                            | Batches write in order. Escape and checksum hold. A worst row takes 19,390 bytes at most. A cancel deletes the file.                      |
+| W2  | `worker:test`: new `worker/src/device-import.test.mjs` with a fake reader and store               | Every check of `td:1124-1151`. A batch of a found, a missing, and a failed device rejects only the failed device's rows.                  |
+| W3  | `worker:test`: new `worker/src/device-import-mock.test.mjs`                                       | The refresh and the tree read against admin-sdk-mock 0.2.0, as `worker/src/device-status-mock.test.mjs:199` does.                         |
+| A1  | `api:test`: new `api/src/app/devices/device-exports.test.mjs`, `device-imports.test.mjs`          | Each route, refusal, and permission. The guard accepts `text/csv` on the upload only. The failed view.                                    |
+| A2  | `api:test`: new `api/src/app/devices/device-import-execute.test.mjs`                              | Conflict split, paged previews, phrase, expiry, recheck, repeat, and links. The paged digest equals the built one.                        |
+| A3  | `api:test`: `api/src/app/jobs/jobs.test.mjs`, `api/src/app/jobs/job-service.test.mjs`             | Each summary and detail block. The number filter. `executionCounts` sums each outcome. The tick recovers lost runs.                       |
+| C1  | `frontend:test`: dialog specs, `devices.spec.ts`, `job-activity.spec.ts`, `job-fields.spec.ts`    | Each row of the state table. The menu without a selection. Activity routing. State 26 lines. The path cut.                                |
+| C2  | `frontend-e2e:e2e` (`nx.json:40-42`): new `frontend-e2e/src/device-export-import.spec.ts`         | States 01 to 26 and 17b hold against a mocked API. The Failed tab lists the failed change of state 17b.                                   |
+| Q1  | `api-e2e:client-review-mock` (`api-e2e/project.json:22-41`)                                       | Card XQ1.                                                                                                                                 |
 
-S1 registers its file in `deployment/postgres/integration.mjs`. No test writes to live Google (`record:110`). Device writes go to admin-sdk-mock only.
+S1 registers its file in `deployment/postgres/integration.mjs`. No test writes to live Google (`record:110`). Device writes go to admin-sdk-mock only. W1 also writes one row at every limit in 4-byte characters, and a file past the cap fails with `export-too-large`. S4 logs both times.
+Built tests show one `deviceStates` state per device and a kept failed part (`libs/google-connection/src/lib/devices.test.mjs:989`, `:1009`). W2 adds the mixed batch.
 
 ## Google Drive seams
 
@@ -397,8 +403,9 @@ S1 registers its file in `deployment/postgres/integration.mjs`. No test writes t
 
 ## Risks
 
-1. Execute of 50,000 rows holds about 250,000 edits in API memory and one transaction. S4 measures it. A slower database needs a background Execute.
-2. A file of non-ASCII cells at every field limit exceeds 320 MiB. The refusal names the limit.
+1. Execute of 50,000 changes at the path limit writes more than 1 GB in one transaction. S4 times it. A lost answer keeps its outcome (section 7).
+   Execute holds the global access lock to its commit, so write batch claims wait meanwhile (`017:921`).
+2. A 1 GiB upload meets its deadline only above 4.8 Mbit/s. A slower link answers 408 at the edge (`tls:35-44`).
 3. One import of 50,000 rows stores up to about 300,000 line rows until the purge. Each results refresh sums them, and S4 times that query.
 4. A second Execute that races the first leaves its manifests unreferenced. They carry no expiry, so the purge keeps them.
 5. The worker reads the unit tree with the `school-ou-references` scope (`libs/google-connection/src/lib/devices.ts:664-666`). Without it, validation rejects every unit change.
@@ -406,66 +413,55 @@ S1 registers its file in `deployment/postgres/integration.mjs`. No test writes t
 
 ## Card plan
 
-| ID  | Title                                                                 | Profile  | Depends on |
-| --- | --------------------------------------------------------------------- | -------- | ---------- |
-| XB1 | Contracts: EXP and IMP, the blocks, `devices:export`, and CSV         | backend  | none       |
-| XB2 | Schema: EXP and IMP kinds, the export tables, the claim functions     | backend  | XB1        |
-| XB3 | Schema: report, plan, Execute steps, the wait, the cascade            | backend  | XB2        |
-| XB4 | Artifact store: streamed stage, retention, and purge                  | backend  | none       |
-| XB5 | Edge: streamed upload, file downloads, and the new paths              | backend  | XB1        |
-| XB6 | Worker: the export job and its flow                                   | backend  | XB2, XB4   |
-| XB7 | Worker: the validation job and its flow                               | backend  | XB3, XB6   |
-| XB8 | API: export routes                                                    | backend  | XB5, XB6   |
-| XB9 | API: upload, report, rejected rows, plan cancel, and revalidate       | backend  | XB7, XB8   |
-| XBA | API: Execute and the change links                                     | backend  | XB9        |
-| XBB | Jobs API: phases, blocks, execution counts, and the operations filter | backend  | XB3        |
-| XF1 | Devices dialog: Bulk Actions, Export, Reports, and help               | frontend | XB8, XBB   |
-| XF2 | Devices dialog: Import, validation, and the report                    | frontend | XF1, XB9   |
-| XF3 | Devices dialog: Execute, the results, the Failed tab, and the cancel  | frontend | XF2, XBA   |
-| XQ1 | Rehearse the CSV slice on admin-sdk-mock                              | qa       | XF3        |
+| ID  | Title                                                                | Profile  | Depends on    |
+| --- | -------------------------------------------------------------------- | -------- | ------------- |
+| XB1 | Contracts: EXP and IMP, the blocks, `devices:export`, and CSV        | backend  | none          |
+| XB2 | Schema: EXP and IMP kinds, every new table, the lease functions      | backend  | XB1           |
+| XB3 | Schema: plan, paged previews, Execute steps, the wait, the cascade   | backend  | XB2           |
+| XB4 | Artifact store: streamed stage, retention, and purge                 | backend  | none          |
+| XB5 | Edge: streamed upload, file downloads, and the new paths             | backend  | XB1           |
+| XB6 | Worker: the export job and its flow                                  | backend  | XB2, XB4      |
+| XB7 | Worker: the validation job and its flow                              | backend  | XB2, XB6      |
+| XB8 | API: export routes                                                   | backend  | XB5, XB6      |
+| XB9 | API: upload, report, rejected rows, plan cancel, and revalidate      | backend  | XB3, XB7, XB8 |
+| XBA | API: Execute, the paged previews, and the change links               | backend  | XB9           |
+| XBB | Jobs API: phases, blocks, execution counts, filter, and recovery     | backend  | XB3           |
+| XF1 | Devices dialog: Bulk Actions, Export, Reports, and help              | frontend | XB8, XBB      |
+| XF2 | Devices dialog: Import, validation, and the report                   | frontend | XF1, XB9      |
+| XF3 | Devices dialog: Execute, the results, the Failed tab, and the cancel | frontend | XF2, XBA      |
+| XQ1 | Rehearse the CSV slice on admin-sdk-mock                             | qa       | XF3           |
 
 IDs are local to this design. A card that changes a contract updates every consumer, the `frontend-e2e` and `api-e2e` fixtures included.
 
-**XB1.** Scope: section 1 in `ac/jobs.ts`, `ac/authorization.ts`, the three new modules, their tests, and the row at `017:4-8`. It fixes each consumer of the wider enums, for example `actionKinds` (`api/jobs/jobs.ts:167-176`).
-Until XBB, each block answers null. Acceptance: K1 to K3 pass. `api:test`, `worker:test`, `frontend:build`, and `frontend:test` pass. A session with a `devices:export` grant parses.
+**XB1.** Scope: section 1 in `ac/jobs.ts`, `ac/authorization.ts`, the three new modules, their tests, and the row at `017:4-8`. It fixes each consumer of the wider enums, for example `actionKinds` (`api/jobs/jobs.ts:167-176`). Until XBB, each block answers null. Acceptance: K1 to K3 pass. `api:test`, `worker:test`, `frontend:build`, and `frontend:test` pass. A session with a `devices:export` grant parses.
 
-**XB2.** Scope: the `cc.jobs` changes, the export tables, the EXP and IMP cancel branches, and the lease functions. It also owns their grants and S1. Acceptance: S1 passes on a fresh database. A cancel before the first claim ends an EXP job at once.
+**XB2.** Scope: the `cc.jobs` changes, every EXP and IMP table, and their create, lease, line, finish, and recovery functions. It also owns both cancel branches, their grants, and S1. Acceptance: S1 passes on a fresh database. A cancel before the first claim ends an EXP job and an IMP job at once. A lapsed lease stores no line.
 
-**XB3.** Scope: the import tables, the line and plan functions, the Execute steps, the wait, and the cascade cancel. It also owns the purge and S2 to S5. Acceptance: S2 to S5 pass on a fresh database. S4 logs the time of a 50,000-row plan.
+**XB3.** Scope: the plan functions, the paged preview functions, the Execute steps, the wait, the cascade cancel, and the purge. It also owns S2 to S5. Acceptance: S2 to S5 pass on a fresh database. The built preview tests of `deployment:postgres-integration` and `api:test` pass. S4 logs both plan sizes.
 
 **XB4.** Scope: section 4 in `store`, `api/storage/storage.service.ts:24-34`, the hourly purge, and B1. Acceptance: B1 passes. `storeJson` keeps its integrity check.
 
-**XB5.** Scope: section 4 in `edge` and `tls`, with E1 and E2. The new paths and `jobDisplayIdPath` (`edge:74`) accept `EXP` and `IMP`.
-Acceptance: E1 and E2 pass. Every other route keeps its cap and its 10-second deadline.
+**XB5.** Scope: section 4 in `edge` and `tls`, with E1 and E2. The new paths and `jobDisplayIdPath` (`edge:74`) accept `EXP` and `IMP`. Acceptance: E1 and E2 pass. Every other route keeps its cap and its 10-second deadline.
 
-**XB6.** Scope: the worker part of section 5, `deployment/kestra/device-export.yaml`, the dispatch route, the store client, and W1.
-Acceptance: W1 and `deployment:kestra-test` pass. A cancelled export leaves no staged file.
+**XB6.** Scope: the worker part of section 5, `deployment/kestra/device-export.yaml`, the dispatch route, the store client, and W1. Acceptance: W1 and `deployment:kestra-test` pass. A cancelled export leaves no staged file. An edit file past the cap fails with `export-too-large`.
 
-**XB7.** Scope: section 6, a shared read from `worker/src/entity-sync.ts:200-259`, `deployment/kestra/device-import.yaml`, W2, and W3.
-Acceptance: W2 and W3 pass. Every refresh read keeps its stamp before the Google call.
+**XB7.** Scope: section 6, `deployment/kestra/device-import.yaml`, W2, and W3. It reads through `deviceStates` and changes no Google library file. Acceptance: W2 and W3 pass. Every refresh read keeps its stamp before the Google call. A failed device rejects only its own rows.
 
-**XB8.** Scope: the API part of section 5 in new `api/devices/device-exports.ts`, its controller, and the file route.
-It also owns the flow start and the export rows of A1. Acceptance: those rows pass. A download of another customer's file answers 404.
+**XB8.** Scope: the API part of section 5 in new `api/devices/device-exports.ts`, its controller, and the file route. It also owns the flow start and the export rows of A1. Acceptance: those rows pass. A download of another customer's file answers 404.
 
-**XB9.** Scope: the upload, the report and its four views, the rejected rows, the plan cancel, and revalidate.
-It also owns the guard exception, the flow start, and the import rows of A1. Acceptance: those rows pass. The upload never buffers the whole file. The failed view lists only the outcomes of its constant.
+**XB9.** Scope: the upload, the report and its four views, the rejected rows, the plan cancel, and revalidate. It also owns the guard exception, the flow start, and the import rows of A1. Acceptance: those rows pass. The upload never buffers the whole file. The failed view lists only the outcomes of its constant.
 
-**XBA.** Scope: section 7 in new `api/devices/device-import-execute.ts`, the change links, the not-run reasons, and A2.
-Acceptance: A2 passes. A conflict or an ineligible device never reaches a job. A repeated Execute creates no job.
+**XBA.** Scope: section 7 in new `api/devices/device-import-execute.ts`, the paged `manifestDigest`, the streamed manifests, the links and not-run reasons, and A2. Acceptance: A2 passes. No call of Execute passes more than one page. A conflict or an ineligible device never reaches a job. A repeated Execute creates no job.
 
-**XBB.** Scope: `phase`, the summary and detail blocks, `planJobs`, and `executionCounts` in `api/jobs/jobs.ts:215-278`. It also owns the operations filter of section 8 and A3.
-Acceptance: A3 passes. It proves the data of each state 26 row and the counts of state 17b. The jobs list filters both new actions.
+**XBB.** Scope: `phase`, the summary and detail blocks, `planJobs`, and `executionCounts` in `api/jobs/jobs.ts:215-278`. It also owns the operations filter of section 8, the recovery step of the tick, and A3. Acceptance: A3 passes. It proves the data of each state 26 row and the counts of state 17b. The jobs list filters both new actions.
 
-**XF1.** Scope: section 9 behaviors 1 to 9 and 11, states 01 to 08, the help pane, C1, and C2. It routes the Activity row to the dialog. XF2 and XF3 add their steps.
-Drafted strings: failed, cancelled, and expired export states, running and failed EXP grid lines, and the EXP cancel question.
+**XF1.** Scope: section 9 behaviors 1 to 9 and 11, states 01 to 08, the help pane, C1, and C2. It routes the Activity row to the dialog. XF2 and XF3 add their steps. Drafted strings: failed, cancelled, and expired export states, and running and failed EXP grid lines. Also drafted: the `export-too-large` failure and the EXP cancel question.
 Acceptance: on a mocked API the dialog matches states 01 to 08. Without a selection, the menu enables only Import.
 
-**XF2.** Scope: states 09 to 15 and 18 to 24, the upload, Stop validation, IMP grid lines, C1, and C2.
-Drafted strings: the reason texts of `ac/device-import.ts`, the grid refusal lines, and the upload errors. Also drafted: the IMP cancel question and the grid line of an open plan.
-Acceptance: the dialog matches each state. A cancel before the receipt cancels the job when its ID arrives (`td:760`). Expired shows at the expiry.
+**XF2.** Scope: states 09 to 15 and 18 to 24, the upload, Stop validation, IMP grid lines, C1, and C2. Drafted strings: the reason texts of `ac/device-import.ts`, the grid refusal lines, and the upload errors with the 1 GiB refusal. Also drafted: the IMP cancel question and the grid line of an open plan.
+Acceptance: the dialog matches each state. A file above 1 GiB never uploads. A cancel before the receipt cancels the job when its ID arrives (`td:760`). Expired shows at the expiry.
 
-**XF3.** Scope: states 16, 17, 17b, and 25, built behavior 10, the live results, the Failed tab, C1, and C2.
-Drafted strings: the Not run chip, each not-run reason, and the empty Failed view. Also drafted: the Execute refusals for a permission, a plan revision, and nothing to run.
+**XF3.** Scope: states 16, 17, 17b, and 25, built behavior 10, the live results, the Failed tab, C1, and C2. Drafted strings: the Not run chip, each not-run reason, and the empty Failed view. Also drafted: the Execute refusals for a permission, a plan revision, and nothing to run.
 Acceptance: the dialog matches states 16, 17, and 17b. The Activity row of the import opens the results. Each page holds 10 lines. In state 17b, Failed reads 1 and lists the Re-enable of `04XTBHJ`.
 
 **XQ1.** Scope: the completion steps of `record:370-378` on `api-e2e:client-review-mock` through the import dialog, with screenshots.
@@ -480,18 +476,20 @@ Acceptance: the dialog matches states 16, 17, and 17b. The Activity row of the i
 
 **Shared files.** Each shared file sits on one dependency path.
 
-| File                                                 | Cards, in merge order     |
-| ---------------------------------------------------- | ------------------------- |
-| `deployment/postgres/migrations/017-jobs.sql`        | XB1 (`017:4-8`), XB2, XB3 |
-| `deployment/postgres/index.mjs`                      | XB2, XB3                  |
-| `api/src/app/jobs/jobs.ts`, `jobs.test.mjs`          | XB1, XBB                  |
-| `api/src/app/orchestration/orchestration.service.ts` | XB8, XB9                  |
-| `api/src/app/devices/devices.module.ts`              | XB8, XB9, XBA             |
-| `api/src/app/devices/device-imports.controller.ts`   | XB9, XBA                  |
-| `worker/src/main.ts`, `worker/src/dispatch.ts`       | XB6, XB7                  |
-| `fe/devices/device-export-import-dialog.*`           | XF1, XF2, XF3             |
-| `fe/jobs/job-fields.ts`, `fe/jobs/job-detail.html`   | XF1, XF2, XF3             |
-| `frontend-e2e/src/device-export-import.spec.ts`      | XF1, XF2, XF3             |
+| File                                                       | Cards, in merge order           |
+| ---------------------------------------------------------- | ------------------------------- |
+| `deployment/postgres/migrations/017-jobs.sql`              | XB1 (`017:4-8`), XB2, XB3       |
+| `deployment/postgres/index.mjs`                            | XB2, XB3                        |
+| `deployment/postgres/device-export-import.integration.mjs` | XB2 (S1), XB3 (S2 to S5)        |
+| `libs/application-contracts/src/lib/device-export.ts`      | XB1, XF1 (behavior 11)          |
+| `libs/application-contracts/src/lib/device-import.ts`      | XB1, XF2 (drafted reason texts) |
+| `api/src/app/jobs/jobs.ts`, `jobs.test.mjs`                | XB1, XBB                        |
+| `api/src/app/orchestration/orchestration.service.ts`       | XB8, XB9                        |
+| `api/src/app/devices/devices.module.ts`                    | XB8, XB9, XBA                   |
+| `api/src/app/devices/device-imports.controller.ts`         | XB9, XBA                        |
+| `worker/src/main.ts`, `worker/src/dispatch.ts`             | XB6, XB7                        |
+| `fe/devices/device-export-import-dialog.*`                 | XF1, XF2, XF3                   |
+| `fe/jobs/job-fields.ts`, `fe/jobs/job-detail.html`         | XF1, XF2, XF3                   |
+| `frontend-e2e/src/device-export-import.spec.ts`            | XF1, XF2, XF3                   |
 
-Every other file belongs to one card. XB4 owns `store`, XB5 owns `edge` and `tls`, and XB7 owns `worker/src/entity-sync.ts`.
-XF1 owns `fe/devices/devices.html` and `devices.ts`. XB4 and XB5 run beside the schema cards, and XBB runs beside XB9.
+Every other file belongs to one card. XB4 owns `store`, XB5 owns `edge` and `tls`, and XBA owns `api/devices/device-updates.ts`. XBB owns `api/jobs/job-service.ts`. XF1 owns `fe/devices/devices.html` and `devices.ts`. XB4 and XB5 run beside the schema cards, and XBB runs beside XB9.
