@@ -1,8 +1,8 @@
 # Technical design addendum: universal job cancel (Cancel pending work)
 
-Status: design for review. Card `t_e31b9cb4`.
+Status: approved, built, and signed off on 2026-10-28. Card `t_e31b9cb4`.
 Record: `docs/workflows/batch-update-export-import.md`. The record stays proposed. Its cancel rules are owner-settled (`record:71-82`, `:192-207`, `:218-223`).
-Mockup: `docs/ui/designs/2026-10-26-job-cancel*`, states 01 to 07 and the notes. On 2026-10-26 the owner approved it: "Thats fine."
+Mockup: `docs/ui/designs/2026-10-26-job-cancel.html` with the state files `docs/ui/designs/2026-10-26-job-cancel-01-running-job.png`, `docs/ui/designs/2026-10-26-job-cancel-02-cancel-confirm-running.png`, `docs/ui/designs/2026-10-26-job-cancel-03-cancellation-requested.png`, `docs/ui/designs/2026-10-26-job-cancel-04-cancelled-result.png`, `docs/ui/designs/2026-10-26-job-cancel-05-queued-confirm.png`, `docs/ui/designs/2026-10-26-job-cancel-06-queued-cancelled.png`, and `docs/ui/designs/2026-10-26-job-cancel-07-jobs-grid-cancelled.png`. The notes are `docs/ui/designs/2026-10-26-job-cancel-notes.md`. On 2026-10-26 the owner approved it: "Thats fine."
 The same answer accepted no cancel reason and the 30-second cancel check (mockup questions 1 and 2).
 Extends: [device-write jobs](2026-10-16-device-write-jobs-design.md), [worker contracts](2026-10-19-device-write-worker-contracts.md), [device command jobs](2026-10-21-device-command-jobs-design.md), and [status jobs](2026-10-23-wipe-powerwash-deprovision-design.md).
 Owner direction, 2026-10-19: "We are building a doghouse. We dont need to choose the curtains."
@@ -306,7 +306,8 @@ The `IMP` and `EXP` slices implement these rules. This plan holds no card for th
 ## Open item
 
 O1. No mockup state draws the question for a refresh job. Refresh jobs count pages, so the body needs its own count sentence.
-The mockup build notes name this gap. CF1 ships the `REF` control after the owner answers its wording. Until then, CQ1 cancels `REF` jobs through the API.
+The mockup build notes name this gap. The eng-lead ruled O1 on 2026-10-26 on card `t_e31b9cb4`: the refresh questions use drafted copy.
+CF1 shipped the question, and the owner accepted it at the sign-off on 2026-10-28.
 
 ## Card plan
 
@@ -378,4 +379,4 @@ CB6 owns the device gates. CF1 owns `jobs.store.ts`. CB3, CB4, and CB5 share no 
 3. A lost runner with a request waits for the 10-minute heartbeat before recovery ends it (`017:716-717`).
 4. A selected-device batch whose read before the upsert precedes the cancel stores its devices. Its finish records no batch (`016:941-943`).
 5. An Unknown row keeps a cancelled job in attention until a person reconciles it (`record:245`).
-6. The `REF` question waits for the owner (O1). Live Google device writes stay unverified (`record:106`).
+6. The `REF` question uses drafted copy, and the owner accepted it at the sign-off (O1). Live Google device writes stay unverified (`record:106`).

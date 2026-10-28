@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-26.
+Updated: 2026-10-28.
 
 ## Authorized now
 
@@ -20,6 +20,9 @@ On 2026-10-24 the owner started the CSV and Google Drive export and import workf
 On 2026-10-26 the owner supplied his reference design, answered decisions D1 to D4, and added the import modes (D5).
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
 On 2026-10-26 the owner approved the job cancel mockup. Owner: "Thats fine." The approved mockup is [2026-10-26-job-cancel.html](ui/designs/2026-10-26-job-cancel.html).
+On 2026-10-28 the owner signed off the universal job cancel. He asked "What do 2 and 6 reresent?" and then replied: "Agreed I sign off on that."
+On 2026-10-28 the owner kept HTTP/2 at the edge. Owner: "Yea keep with http/2 if it wont turn into a development blocker." Card `t_82e670d2` serves the app over HTTP/2.
+On 2026-10-28 the owner sent UI changes for export and import. Owner: "Seperate the export for editing and export for reporting as two bulk edit actions. Call one export and the other reports." He asked for a dialog instead of a sidebar, a validation progress indicator and its report in the same dialog, and a help icon button for instructions outside the normal flow. Owner: "Go ahead and make those changes then we will do the next polish pass on the design." The [record](workflows/batch-update-export-import.md#2026-10-28-main-chat-ui-changes-for-export-and-import) holds the full message.
 The [batch update through export and import record](workflows/batch-update-export-import.md) is proposed. A mockup comes before the build.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
@@ -38,10 +41,74 @@ This is the active workflow. The [record](workflows/batch-update-export-import.m
 The record quotes the owner's answers D1 to D4 and his import modes direction (D5).
 It also quotes his answers on the defaults and the universal job cancel (D6).
 
-Next: the design addendum and the build cards of the cancel slice. The CSV slice mockup follows. Its build waits for the owner's approval of that mockup.
+He signed off the cancel slice on 2026-10-28.
 
-The universal job cancel comes first. The CSV slice, the Google Drive slice, and the report export follow.
+Version 2 of the CSV slice mockup applies the UI changes of 2026-10-28 for the owner's polish pass.
+Its build waits for his approval of that mockup.
+
+The universal job cancel is built. The CSV slice, the Google Drive slice, and the report export follow.
 A live Google Sheet export creates a Google file. It needs the owner's authorization, as live device writes do.
+
+### Cancel pending work on any job (signed off 2026-10-28)
+
+The [record](workflows/batch-update-export-import.md#cancel-pending-work-on-any-job-d6) section defines the cancel rules.
+The [design addendum](superpowers/specs/2026-10-26-job-cancel-design.md) and the approved [mockup](ui/designs/2026-10-26-job-cancel.html) hold the design.
+The owner approved the mockup on 2026-10-26 with "Thats fine."
+
+PRs #143 and #144 hold the records and the designs.
+PRs #146 and #148 to #153 hold the build, and PR #154 holds the singular forms.
+`main` was `d6a482f` at the sign-off.
+
+On 2026-10-28 the owner signed off the build.
+He asked "What do 2 and 6 reresent?" and then replied: "Agreed I sign off on that."
+He named two changes: finding 2, the Refresh all count, and finding 6, the command job banner.
+Card `t_5355eacd` builds them.
+
+The sign-off accepts these defaults as built:
+
+- Record engineering default 15: a Sheet export offers no Cancel pending work after its Sheet write starts.
+- Record engineering default 16: Manage jobs includes the job visibility of View jobs.
+- Record engineering default 17: a cancelled job with a failed or Unknown operation raises the Jobs attention dot.
+- The control reads "Cancelling…" and stays disabled while the request travels. The dismiss button, Escape, and a click on the scrim still close the question, and the request continues.
+- A click on the scrim outside the question closes it, as Escape and the dismiss button do. No request starts.
+- The request is not optimistic. The banner and the disabled Cancellation requested control show after the server answers and the page reads the job again.
+- A refused request closes the question and shows an alert above the identity card. After a 404 or a 409, the page reads the job again. The next request clears the alert.
+- Focus returns to the control when the question closes. A job that ends at once moves focus to Refresh. A job that no longer exists moves focus to Back to jobs.
+- The question shows the live counts while it stays open. A page stops updating when the browser already holds six connections to the app (finding 7).
+- While the page reports offline, Cancel pending work stays available on the cached job, and Refresh is disabled. A request then shows "Cannot reach Campus Commander. Cancel did not start."
+- The running question names "confirmed status changes" for a status job and "confirmed commands" for a command job. PR #154 changed four sentences to the singular form for a count of 1.
+
+The sign-off accepts the drafted wording in the package's `owner-review-wording.md` as built: 18 items and 11 defaults.
+Two examples are "This job no longer exists." for a missing job and "Cancellation stopped 1 operation before it reached Google." for a single operation.
+
+Findings 1, 3, 4, and 5 stay as built.
+Finding 7 stays as the HTTP/2 edge of card `t_82e670d2`. The owner kept HTTP/2.
+
+Three runs support the sign-off:
+
+- Rehearsal CQ1 (`t_75a718b3`) cancelled a queued job and a running job of each kind on admin-sdk-mock 0.2.0 at `e90a14a`. Steps 1 to 6 and step 8 passed, and step 7 is partial because no cancelled job held an Unknown operation.
+- The walkthrough dry run `t_5d39b795` found finding 7 and needed five guide corrections, which the eng-lead applied.
+- The diagnosis `t_8e0b269a` reproduced finding 7 with four tabs and saw the page recover when two tabs closed.
+
+This is the surface that stays unverified:
+
+- An Unknown operation of a cancelled job keeps Reconcile. Tests cover it with test answers.
+- Live Google writes. The test domain holds no ChromeOS device.
+- A person with Manage jobs alone in the review environment. The CQ1 observer held View jobs as well.
+- A cancelled job with only Expired outcomes, and no attention dot. Follow-up `t_5c4cabd1` adds stored-row checks.
+- A request that reaches a running write job after its last operation left the worker. CB2 test S8 covers the rule.
+- Recovery of a lost worker run that holds a cancel request. CB2 test S5 covers it.
+- The validation, export, and import jobs and record engineering default 15. The CSV slice builds them.
+- The Chromium end-to-end suites at `e90a14a`. CQ1 did not run them.
+- Dark theme, Firefox, WebKit, a screen reader, 200 percent text zoom, and a 320 px width. CQ1 used Chromium at 1440 x 900 in the light theme.
+- Parts of the walkthrough: the Cancelling… label, the counts in an open question, the 5-day expiry, and the attention dot of an Unknown operation.
+- The Cancellation requested banner on a refresh job.
+
+Three follow-ups sit in the `swe` board triage. None blocks this build:
+
+- `t_0790df3f` (CB3): the test of a failed cancel read never checks that the worker keeps sending after that read.
+- `t_5c4cabd1` (CB6): the attention and running-count tests use fixed database answers.
+- `t_a9905796` (CF1): the browser fixture of PNG 07 lists REF-001 before newer jobs and shows 3m 00s, not 2m 58s.
 
 ### Update device fields (signed off 2026-10-22)
 
