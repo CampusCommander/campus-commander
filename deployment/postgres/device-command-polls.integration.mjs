@@ -885,8 +885,11 @@ export async function qualifyDeviceCommandPolls({
           status: 'running',
         });
         const token = randomUUID();
+        // The job after its first claim: one operation went to Google and one never left the worker.
+        // The claim itself is covered by other checks, so the fixture sets the claimed marker.
         await admin(
-          'UPDATE cc.device_update_jobs SET dispatch_token=$2 WHERE job_id=$1',
+          `UPDATE cc.device_update_jobs SET dispatch_token=$2,first_claimed_at=clock_timestamp(),
+            heartbeat_at=clock_timestamp() WHERE job_id=$1`,
           [jobId, token],
         );
         await admin(
