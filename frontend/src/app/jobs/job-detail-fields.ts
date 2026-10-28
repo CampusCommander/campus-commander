@@ -522,6 +522,8 @@ export function cancelActivitySentence(job: JobDetail): string {
     return job.scope.kind === 'all-devices'
       ? 'Cancellation ended the refresh. No device was marked removed.'
       : 'Cancellation ended the refresh. Devices already read keep their data.';
+  if (!job.startedAt)
+    return 'Cancellation ended the job before it started. No request reached Google.';
   const stopped = job.progress.cancelled;
   if (stopped > 0)
     return `Cancellation stopped ${countText(stopped)} ${

@@ -242,10 +242,13 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   /** Focus the cancel control, or Refresh when the job ended and the control left. */
   private focusCancel(): void {
     afterNextRender(
-      () =>
-        this.host.nativeElement
-          .querySelector<HTMLElement>('#cancel-job, #job-refresh')
-          ?.focus(),
+      () => {
+        const host = this.host.nativeElement;
+        const target =
+          host.querySelector<HTMLElement>('#cancel-job') ??
+          host.querySelector<HTMLElement>('#job-refresh');
+        target?.focus();
+      },
       { injector: this.injector },
     );
   }
