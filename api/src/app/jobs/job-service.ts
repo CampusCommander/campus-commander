@@ -100,9 +100,10 @@ interface PublicationElement {
 /**
  * A job that keeps no write slot. A terminal job released it, and a command job in
  * `awaiting-devices` released it when issuing ended (design section 1). Its hold and the
- * next admission therefore run without waiting for the last command.
+ * next admission therefore run without waiting for the last command. A cancelled job is
+ * finished and holds no slot (cancel design section 4).
  */
-const holdReleased = `('completed','completed-with-errors','failed','needs-review','awaiting-devices')`;
+const holdReleased = `('completed','completed-with-errors','failed','needs-review','awaiting-devices','cancelled')`;
 
 /**
  * The job service of design section 6 and the relay of section 3.6. It runs inside the API process as
