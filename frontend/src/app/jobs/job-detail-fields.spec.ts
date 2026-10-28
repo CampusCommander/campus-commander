@@ -11,6 +11,7 @@ import {
   beforeText,
   canCancel,
   canReconcile,
+  cancelActivitySentence,
   cancelLine,
   cancelQuestion,
   cancelState,
@@ -1637,6 +1638,132 @@ describe('cancel', () => {
       '250 of 1,000 devices are read. The refresh stops at its next batch.',
       'Devices already read keep their new data. The other devices keep their earlier data.',
     ]);
+  });
+
+  it('names one stopped operation in Latest activity', () => {
+    expect(
+      cancelActivitySentence(
+        job({
+          status: 'cancelled',
+          progress: progress({ cancelled: 1 }),
+        }),
+      ),
+    ).toBe('Cancellation stopped 1 operation before it reached Google.');
+    expect(
+      cancelActivitySentence(
+        job({
+          status: 'cancelled',
+          progress: progress({ cancelled: 8 }),
+        }),
+      ),
+    ).toBe('Cancellation stopped 8 operations before they reached Google.');
+  });
+
+  it('drafts the waiting question for one operation', () => {
+    const one = cancelQuestion(
+      job({
+        displayId: 'STS-002',
+        action: 'disable-devices',
+        status: 'queued',
+        scope: { kind: 'devices', deviceCount: 1 },
+        progress: progress({
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 1,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(one.paragraphs[0]).toBe(
+      'No operation has started. The 1 operation ends Cancelled.',
+    );
+    const many = cancelQuestion(
+      job({
+        displayId: 'STS-001',
+        action: 'disable-devices',
+        status: 'queued',
+        scope: { kind: 'devices', deviceCount: 18 },
+        progress: progress({
+          total: 18,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 18,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(many.paragraphs[0]).toBe(
+      'No operation has started. All 18 operations end Cancelled.',
+    );
+  });
+
+  it('drafts the running question for one operation', () => {
+    const one = cancelQuestion(
+      job({
+        displayId: 'UPD-007',
+        status: 'running',
+        scope: { kind: 'devices', deviceCount: 1 },
+        progress: progress({
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 1,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(one.paragraphs[0]).toBe(
+      '1 of 1 operation is pending. Those that have not reached Google end Cancelled and never run.',
+    );
+    expect(cancelQuestion(running()).paragraphs[0]).toBe(
+      '12 of 48 operations are pending. Those that have not reached Google end Cancelled and never run.',
+    );
+  });
+
+  it('drafts the selected-device refresh question for one device', () => {
+    const one = cancelQuestion(
+      job({
+        displayId: 'REF-003',
+        action: 'refresh-inventory',
+        status: 'running',
+        scope: { kind: 'devices', deviceCount: 1 },
+        progress: progress({
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 1,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(one.paragraphs).toEqual([
+      '0 of 1 device is read. The refresh stops at its next batch.',
+      'Devices already read keep their new data. The other devices keep their earlier data.',
+    ]);
+    const many = cancelQuestion(
+      job({
+        displayId: 'REF-004',
+        action: 'refresh-inventory',
+        status: 'running',
+        scope: { kind: 'devices', deviceCount: 1000 },
+        progress: progress({
+          total: 1000,
+          succeeded: 250,
+          failed: 0,
+          unknown: 0,
+          pending: 750,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(many.paragraphs[0]).toBe(
+      '250 of 1,000 devices are read. The refresh stops at its next batch.',
+    );
   });
 
   it('renders the identity line of the request', () => {
