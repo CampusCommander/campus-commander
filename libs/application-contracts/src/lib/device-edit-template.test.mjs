@@ -53,6 +53,13 @@ const goldenRow = {
   orgUnitPath: '/Schools/East/Main',
 };
 const row = (overrides) => ({ ...goldenRow, ...overrides });
+const fields = [
+  'annotatedAssetId',
+  'annotatedLocation',
+  'annotatedUser',
+  'notes',
+  'orgUnitPath',
+];
 const statusOf = (cell) => deviceEditStatusCellIntent(cell);
 const changeOf = (field, cell) => deviceEditFieldChange(field, cell);
 
@@ -332,6 +339,63 @@ test('the status cell changes the checksum and a blank does not add a value', as
     active,
   );
   assert.equal(deviceEditRowChecksumValues(row({ status: '' }))[2], '');
+});
+
+test('a null cell is empty text at the canonical boundary (section 8.2)', async () => {
+  // Section 8.2: null, empty text, and spaces only become empty text.
+  assert.equal(deviceEditCanonicalValue(null), '');
+  assert.equal(deviceEditCanonicalStatusCell(null), '');
+  for (const field of fields)
+    assert.equal(deviceEditCanonicalFieldValue(field, null), '', field);
+  const emptyRow = {
+    deviceId: 'DEV-0001',
+    status: null,
+    annotatedAssetId: null,
+    annotatedLocation: null,
+    annotatedUser: null,
+    notes: null,
+    orgUnitPath: null,
+  };
+  assert.deepEqual(deviceEditRowChecksumValues(emptyRow), [
+    1,
+    'DEV-0001',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]);
+  // A null cell, an empty cell, and a spaces-only cell give one checksum.
+  const goldenBlank = await deviceEditRowChecksum(row({ notes: '' }));
+  assert.equal(await deviceEditRowChecksum(row({ notes: null })), goldenBlank);
+  assert.equal(await deviceEditRowChecksum(row({ notes: '   ' })), goldenBlank);
+  for (const field of fields) {
+    const empty = await deviceEditRowChecksum(row({ [field]: '' }));
+    assert.equal(
+      await deviceEditRowChecksum(row({ [field]: null })),
+      empty,
+      field,
+    );
+    assert.equal(
+      await deviceEditRowChecksum(row({ [field]: ' \t ' })),
+      empty,
+      field,
+    );
+    // The clear token keeps its own value in every position.
+    assert.notEqual(
+      await deviceEditRowChecksum(row({ [field]: DEVICE_EDIT_CLEAR_TOKEN })),
+      empty,
+      field,
+    );
+  }
+  const blankStatus = await deviceEditRowChecksum(row({ status: '' }));
+  assert.equal(await deviceEditRowChecksum(row({ status: null })), blankStatus);
+  assert.equal(
+    await deviceEditRowChecksum(row({ status: '   ' })),
+    blankStatus,
+  );
+  assert.equal(deviceEditRowChecksumValues(row({ status: null }))[2], '');
 });
 
 test('a row with quotes, commas, and leading zeros keeps its values', async () => {
@@ -624,6 +688,43 @@ test('header matching refuses a duplicate header', () => {
   const byCase = matchDeviceEditHeaders(['device id', ...templateHeaders]);
   assert.equal(byCase.ok, false);
   assert.equal(byCase.reason.includes('Device ID'), true);
+});
+
+test('header matching refuses an unknown duplicate header in both modes', () => {
+  for (const mode of [undefined, 'sync-changes', 'sync-all-rows']) {
+    const identical = matchDeviceEditHeaders(
+      [...templateHeaders, 'Grade', 'Grade'],
+      mode,
+    );
+    assert.equal(identical.ok, false, String(mode));
+    assert.equal(
+      identical.reason,
+      'The file holds two "Grade" columns, at positions 11 and 12. Remove one.',
+      String(mode),
+    );
+    const byCase = matchDeviceEditHeaders(
+      [...templateHeaders, ' Grade ', 'gRaDe'],
+      mode,
+    );
+    assert.equal(byCase.ok, false, String(mode));
+    assert.equal(byCase.reason.includes('Grade'), true);
+    assert.equal(byCase.reason.includes('positions 11 and 12'), true);
+    const blank = matchDeviceEditHeaders([...templateHeaders, '', '  '], mode);
+    assert.equal(blank.ok, false, String(mode));
+    assert.equal(blank.reason.includes('positions 11 and 12'), true);
+    // One unknown column stays accepted, warned, and out of the mapping.
+    const single = matchDeviceEditHeaders(
+      [...templateHeaders, ' Grade '],
+      mode,
+    );
+    assert.equal(single.ok, true, String(mode));
+    assert.deepEqual(single.match.unknown, [{ header: ' Grade ', index: 10 }]);
+    assert.equal(single.match.warnings.length, 1);
+    assert.equal(
+      single.match.columns.some((entry) => entry.header === ' Grade '),
+      false,
+    );
+  }
 });
 
 test('header matching warns on an unknown column and keeps it out of the mapping', () => {

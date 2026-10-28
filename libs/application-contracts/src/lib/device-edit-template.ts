@@ -271,8 +271,8 @@ export type DeviceEditFieldCellIntent =
   | { intent: 'clear' }
   | { intent: 'assign'; value: string };
 
-function isClearToken(cell: string): boolean {
-  return cell.trim().toLowerCase() === DEVICE_EDIT_CLEAR_TOKEN;
+function isClearToken(cell: string | null): boolean {
+  return cellText(cell).trim().toLowerCase() === DEVICE_EDIT_CLEAR_TOKEN;
 }
 
 /**
@@ -349,11 +349,19 @@ export function deviceEditUnescapeCell(cell: string): string {
 }
 
 /**
- * The canonical text of one cell (section 8.2). A blank cell becomes empty text. CRLF and CR
- * become LF. The text is NFC. Spaces inside a value stay.
+ * The text of one cell. A null cell is empty text (section 8.2), so a stored device field that
+ * Google leaves unset needs no conversion at the call site.
  */
-export function deviceEditCanonicalValue(cell: string): string {
-  const value = cell.replace(/\r\n?/g, '\n');
+function cellText(cell: string | null): string {
+  return cell ?? '';
+}
+
+/**
+ * The canonical text of one cell (section 8.2). A null cell, an empty cell, and a spaces-only
+ * cell become empty text. CRLF and CR become LF. The text is NFC. Spaces inside a value stay.
+ */
+export function deviceEditCanonicalValue(cell: string | null): string {
+  const value = cellText(cell).replace(/\r\n?/g, '\n');
   return value.trim() === '' ? '' : value.normalize('NFC');
 }
 
@@ -361,17 +369,18 @@ export function deviceEditCanonicalValue(cell: string): string {
  * The canonical Status cell (section 8.2). Outer spaces are removed and the letter case stays.
  * The clear token has no meaning in this column, so its text stays.
  */
-export function deviceEditCanonicalStatusCell(cell: string): string {
+export function deviceEditCanonicalStatusCell(cell: string | null): string {
   return deviceEditCanonicalValue(cell).trim();
 }
 
 /**
  * The canonical value of one field cell (section 8.2). A clear token hashes as the token text, so
- * a clear differs from a blank. An Organization unit path compares without case.
+ * a clear differs from a blank. A null cell is a blank. An Organization unit path compares
+ * without case.
  */
 export function deviceEditCanonicalFieldValue(
   field: DeviceUpdateField,
-  cell: string,
+  cell: string | null,
 ): string {
   if (isClearToken(cell)) return DEVICE_EDIT_CLEAR_TOKEN;
   const value = deviceEditCanonicalValue(cell);
@@ -393,17 +402,17 @@ export type DeviceEditRowChecksumValues = readonly [
   orgUnitPath: string,
 ];
 
-/** The cells that a row checksum covers, without the formula escape. */
+/** The cells that a row checksum covers, without the formula escape. A null cell is blank. */
 export interface DeviceEditRowCells {
   /** Google's `deviceId`. */
   deviceId: string;
   /** The Status cell. */
-  status: string;
-  annotatedAssetId: string;
-  annotatedLocation: string;
-  annotatedUser: string;
-  notes: string;
-  orgUnitPath: string;
+  status: string | null;
+  annotatedAssetId: string | null;
+  annotatedLocation: string | null;
+  annotatedUser: string | null;
+  notes: string | null;
+  orgUnitPath: string | null;
 }
 
 /** The canonical values that the row checksum digests (sections 8.1 and 8.2). */
@@ -517,11 +526,22 @@ function listNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
 
+function duplicateHeaderReason(
+  label: string,
+  first: number,
+  second: number,
+): string {
+  return `The file holds two "${label}" columns, at positions ${first + 1} and ${
+    second + 1
+  }. Remove one.`;
+}
+
 /**
  * Match the headers of a file to the template columns (section 7.2). Matching ignores outer
  * spaces and letter case. A missing column refuses the file and names the column. A duplicate
- * header refuses the file. An unknown column stays out of the mapping and returns a warning.
- * Checksum is optional in Sync all rows only.
+ * header refuses the file, whether it names a template column or an unknown one. An unknown
+ * column stays out of the mapping and returns a warning. Checksum is optional in Sync all rows
+ * only.
  */
 export function matchDeviceEditHeaders(
   headers: readonly string[],
@@ -533,8 +553,21 @@ export function matchDeviceEditHeaders(
   const indexes = new Map<DeviceEditColumnKey, number>();
   const unknown: DeviceEditUnknownHeader[] = [];
   const warnings: string[] = [];
+  // Duplicate detection covers every header name, known or unknown, before the unknown branch.
+  const seenHeaders = new Map<string, { index: number; label: string }>();
   for (const [index, header] of headers.entries()) {
-    const column = columnsByHeader.get(normalizeHeader(header));
+    const name = normalizeHeader(header);
+    const seen = seenHeaders.get(name);
+    if (seen !== undefined)
+      return {
+        ok: false,
+        reason: duplicateHeaderReason(seen.label, seen.index, index),
+      };
+    const column = columnsByHeader.get(name);
+    seenHeaders.set(name, {
+      index,
+      label: column === undefined ? header.trim() : column.header,
+    });
     if (column === undefined) {
       unknown.push({ header, index });
       warnings.push(
@@ -542,14 +575,6 @@ export function matchDeviceEditHeaders(
       );
       continue;
     }
-    const first = indexes.get(column.key);
-    if (first !== undefined)
-      return {
-        ok: false,
-        reason: `The file holds two "${column.header}" columns, at positions ${first + 1} and ${
-          index + 1
-        }. Remove one.`,
-      };
     indexes.set(column.key, index);
   }
   const required = DEVICE_EDIT_TEMPLATE_COLUMNS.filter(
