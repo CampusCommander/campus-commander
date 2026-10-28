@@ -1,0 +1,11 @@
+.picker-content p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--cc-text-primary);
+}
+
+/* The cancel question holds two paragraphs, 12 px apart (mockup choice 3). */
+.picker-content p + p {
+  margin-block-start: var(--cc-space-md);
+}

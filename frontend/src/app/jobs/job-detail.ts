@@ -28,9 +28,13 @@ import {
   attentionCount,
   beforeText,
   canReconcile,
+  cancelLine,
+  cancelQuestion as buildCancelQuestion,
+  cancelState,
   formatTime,
   identityLine,
   isCommandOperation,
+  isFinishedJob,
   jobCounters,
   latestActivityLine,
   operationChip,
@@ -44,9 +48,11 @@ import {
   requestedText,
   rowFailureText,
   scopeHeading,
+  type CancelQuestion,
   type JobCounter,
 } from './job-detail-fields';
 import { JobDetailStore, OPERATIONS_PAGE_SIZE } from './job-detail.store';
+import { JobCancelDialog } from './job-cancel-dialog';
 
 /**
  * One job of design 2.5 (frames 104:209, 231:4707, and 228:4524).
@@ -54,7 +60,7 @@ import { JobDetailStore, OPERATIONS_PAGE_SIZE } from './job-detail.store';
  */
 @Component({
   selector: 'app-job-detail',
-  imports: [RouterLink, MatButtonModule],
+  imports: [RouterLink, MatButtonModule, JobCancelDialog],
   templateUrl: './job-detail.html',
   styleUrl: './job-detail.css',
 })
@@ -143,6 +149,27 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     const job = this.store.job();
     return job ? attentionCount(job) : 0;
   });
+  /** Whether the toolbar offers the cancel, shows it disabled, or hides it. */
+  protected readonly cancelControl = computed(() => {
+    const job = this.store.job();
+    return job ? cancelState(this.auth, job) : 'none';
+  });
+  /** The question of the open cancel dialog. */
+  protected readonly cancelQuestion = computed<CancelQuestion | null>(() => {
+    const job = this.store.job();
+    return job ? buildCancelQuestion(job) : null;
+  });
+  /** The request line of the identity card. It stays after the job ends. */
+  protected readonly cancelIdentity = computed(() => {
+    const job = this.store.job();
+    return job ? cancelLine(job) : null;
+  });
+  /** The banner shows until every operation settles (choice 9). */
+  protected readonly showCancelBanner = computed(() => {
+    const job = this.store.job();
+    return !!job?.cancelRequest && !isFinishedJob(job.status);
+  });
+  protected readonly cancelOpen = signal(false);
   protected readonly isRefresh = computed(
     () => this.store.job()?.action === 'refresh-inventory',
   );
@@ -188,6 +215,39 @@ export class JobDetailPage implements OnChanges, OnDestroy {
 
   protected reconcile(operation: JobOperation): void {
     void this.store.reconcile(operation);
+  }
+
+  /** Open the question. A stored request or a hidden control opens nothing (choice 8). */
+  protected requestCancel(): void {
+    if (this.cancelControl() !== 'request') return;
+    this.cancelOpen.set(true);
+  }
+
+  /** "Keep job running" and Escape close the question and return focus (UI-09). */
+  protected keepRunning(): void {
+    this.cancelOpen.set(false);
+    this.focusCancel();
+  }
+
+  /**
+   * The request is not optimistic. The question stays open with its confirm disabled
+   * until the answer, then focus returns to the control (UI-09).
+   */
+  protected async confirmCancel(): Promise<void> {
+    await this.store.cancel();
+    this.cancelOpen.set(false);
+    this.focusCancel();
+  }
+
+  /** Focus the cancel control, or Refresh when the job ended and the control left. */
+  private focusCancel(): void {
+    afterNextRender(
+      () =>
+        this.host.nativeElement
+          .querySelector<HTMLElement>('#cancel-job, #job-refresh')
+          ?.focus(),
+      { injector: this.injector },
+    );
   }
 
   protected counterText(counter: JobCounter): string {

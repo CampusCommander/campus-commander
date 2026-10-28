@@ -8,6 +8,7 @@ import {
   type JobOperation,
   type JobOutcome,
   type JobProgress,
+  type JobStatus,
   type JobUnknownActivityOperation,
 } from '@campus/application-contracts';
 import type { AuthStore } from '../auth.store';
@@ -70,6 +71,7 @@ export function operationChip(operation: JobOperation): {
 
 /**
  * The notes under an outcome chip (mockup state 09, DEVICE-02).
+ * A cancelled operation never left the worker, so it says so (choice 12).
  * A command that still waits, or settled unknown, keeps Google's expiry, because the
  * command stays armed at Google. An unknown Wipe user data or Powerwash row names the
  * 30-day watch window (record ruling 2). Reboot keeps its own window, so it names none.
@@ -79,6 +81,7 @@ export function outcomeNotes(
   operation: JobOperation,
   now = new Date(),
 ): readonly string[] {
+  if (operation.outcome === 'cancelled') return ['Not sent to Google'];
   if (!isCommandOperation(operation)) return [];
   const notes: string[] = [];
   if (
@@ -104,9 +107,9 @@ export interface JobCounter {
 }
 
 /**
- * The seven counters of the command job detail (step 5 mockup, note 11).
+ * The seven counters of the job detail (step 5 mockup, note 11).
  * Expired follows Unknown. Pending counts Pending delivery and Acknowledged.
- * Cancellation is outside this slice (design 1.2), so Cancelled stays at zero.
+ * Cancelled reads the stored count (design section 6, choice 13).
  */
 export function jobCounters(progress: JobProgress): readonly JobCounter[] {
   return [
@@ -141,7 +144,12 @@ export function jobCounters(progress: JobProgress): readonly JobCounter[] {
       value: progress.skipped,
       tone: 'neutral',
     },
-    { key: 'cancelled', label: 'Cancelled', value: 0, tone: 'neutral' },
+    {
+      key: 'cancelled',
+      label: 'Cancelled',
+      value: progress.cancelled,
+      tone: 'neutral',
+    },
   ];
 }
 
@@ -335,8 +343,9 @@ export function canReconcile(
         ? 'devices:status'
         : 'devices:write';
   return (
-    grants.some((grant) => grant.action === 'jobs:read') &&
-    grants.some((grant) => grant.action === action)
+    grants.some(
+      (grant) => grant.action === 'jobs:read' || grant.action === 'jobs:manage',
+    ) && grants.some((grant) => grant.action === action)
   );
 }
 
@@ -347,6 +356,178 @@ export function reasonLine(
   return job.deprovisionReason
     ? `Deprovision reason: ${DEPROVISION_REASON_LABELS[job.deprovisionReason]}`
     : null;
+}
+
+/** A finished job offers no cancel, because no work remains (design section 6). */
+export function isFinishedJob(status: JobStatus): boolean {
+  return (
+    status === 'completed' ||
+    status === 'completed-with-errors' ||
+    status === 'failed' ||
+    status === 'needs-review' ||
+    status === 'cancelled'
+  );
+}
+
+/**
+ * The requester or a `jobs:manage` grant can cancel (record:75, design section 6).
+ * The administrator preset holds `jobs:manage`, so it passes here.
+ */
+export function canCancel(
+  auth: InstanceType<typeof AuthStore>,
+  job: Pick<JobDetail, 'requestedBy'>,
+): boolean {
+  if (auth.metadata()?.phase !== 3) return false;
+  const session = auth.session();
+  const grants = session?.identity.grants ?? [];
+  if (grants.some((grant) => grant.action === 'jobs:manage')) return true;
+  return session?.identity.id === job.requestedBy.id;
+}
+
+/** The three states of the toolbar control (design section 6, choices 1, 2, and 8). */
+export type CancelState = 'none' | 'request' | 'requested';
+
+/**
+ * The control shows while work remains that has not reached Google.
+ * Awaiting devices, a finished job, and a job without pending work hide it (record:73).
+ * A stored request shows the disabled control until the job ends.
+ */
+export function cancelState(
+  auth: InstanceType<typeof AuthStore>,
+  job: JobDetail,
+): CancelState {
+  if (!canCancel(auth, job)) return 'none';
+  if (job.cancelRequest)
+    return isFinishedJob(job.status) ? 'none' : 'requested';
+  if (isFinishedJob(job.status) || job.status === 'awaiting-devices')
+    return 'none';
+  // A refresh has no operations, and no waiting status exists (design O1 ruling).
+  if (job.action === 'refresh-inventory') return 'request';
+  return (job.progress.pending ?? 0) > 0 ? 'request' : 'none';
+}
+
+/** The identity line of a stored cancel request (choice 10). */
+export function cancelLine(
+  job: Pick<JobDetail, 'cancelRequest'>,
+  now = new Date(),
+): string | null {
+  const request = job.cancelRequest;
+  if (!request) return null;
+  return `Cancellation requested by ${request.by.displayName} · ${formatTimestamp(
+    request.at,
+    now,
+  )}`;
+}
+
+export interface CancelQuestion {
+  title: string;
+  paragraphs: readonly [string, string];
+  dismissLabel: string;
+  confirmLabel: string;
+}
+
+const countText = (value: number) => value.toLocaleString('en-US');
+
+/** The confirmed noun of the running question (choice 5). */
+function confirmedNoun(job: JobDetail): { one: string; many: string } {
+  if (
+    job.action === 'disable-devices' ||
+    job.action === 'reenable-devices' ||
+    job.action === 'deprovision-devices'
+  )
+    return { one: 'status change', many: 'status changes' };
+  if (
+    job.action === 'reboot-devices' ||
+    job.action === 'wipe-user-data' ||
+    job.action === 'powerwash-devices'
+  )
+    return { one: 'command', many: 'commands' };
+  return { one: 'update', many: 'updates' };
+}
+
+/**
+ * The question of one cancel (choices 3 to 7, and the O1 refresh ruling).
+ * A running job names the pending count and the work already sent.
+ * A job that has not started names every operation and the untouched devices.
+ */
+export function cancelQuestion(job: JobDetail): CancelQuestion {
+  const title = `Cancel pending work on ${job.displayId}?`;
+  const confirmLabel = 'Cancel pending work';
+  const succeeded = job.progress.succeeded;
+  if (job.action === 'refresh-inventory') {
+    const read = countText(job.progress.succeeded);
+    if (job.scope.kind === 'devices') {
+      const total = job.scope.deviceCount ?? job.progress.total ?? 0;
+      return {
+        title,
+        paragraphs: [
+          `${read} of ${countText(total)} devices are read. The refresh stops at its next batch.`,
+          'Devices already read keep their new data. The other devices keep their earlier data.',
+        ],
+        dismissLabel: 'Keep job running',
+        confirmLabel,
+      };
+    }
+    return {
+      title,
+      paragraphs: [
+        `The refresh has read ${read} ${succeeded === 1 ? 'device' : 'devices'}. It stops at its next page.`,
+        'It saves none of this refresh and marks no device removed. The inventory keeps its earlier data.',
+      ],
+      dismissLabel: 'Keep job running',
+      confirmLabel,
+    };
+  }
+  const total =
+    job.progress.total ?? job.scope.deviceCount ?? job.progress.pending ?? 0;
+  const waiting =
+    job.status === 'accepted' ||
+    job.status === 'queued' ||
+    job.status === 'held';
+  if (waiting)
+    return {
+      title,
+      paragraphs: [
+        `No operation has started. All ${countText(total)} operations end Cancelled.`,
+        `No request reaches Google. The ${countText(total)} ${
+          total === 1 ? 'device keeps its' : 'devices keep their'
+        } current status.`,
+      ],
+      dismissLabel: 'Keep job waiting',
+      confirmLabel,
+    };
+  const pending = job.progress.pending ?? 0;
+  const noun = confirmedNoun(job);
+  return {
+    title,
+    paragraphs: [
+      `${countText(pending)} of ${countText(total)} operations are pending. Those that have not reached Google end Cancelled and never run.`,
+      `Requests already sent to Google finish and keep their results. The ${countText(
+        succeeded,
+      )} confirmed ${succeeded === 1 ? noun.one : noun.many} ${
+        succeeded === 1 ? 'stays' : 'stay'
+      }. Nothing rolls back.`,
+    ],
+    dismissLabel: 'Keep job running',
+    confirmLabel,
+  };
+}
+
+/**
+ * The sentence that leads Latest activity of a cancelled job (choice 14).
+ * A refresh names the inventory; a write job names the operations it stopped.
+ */
+export function cancelActivitySentence(job: JobDetail): string {
+  if (job.action === 'refresh-inventory')
+    return job.scope.kind === 'all-devices'
+      ? 'Cancellation ended the refresh. No device was marked removed.'
+      : 'Cancellation ended the refresh. Devices already read keep their data.';
+  const stopped = job.progress.cancelled;
+  if (stopped > 0)
+    return `Cancellation stopped ${countText(stopped)} ${
+      stopped === 1 ? 'operation' : 'operations'
+    } before they reached Google.`;
+  return 'Cancellation ended the job before it started. No request reached Google.';
 }
 
 const NUMBER_WORDS = [
@@ -564,14 +745,13 @@ function updateCounterLine(job: JobDetail): string {
 }
 
 /**
- * The Latest activity line of a command job (step 5 mockup, note 12).
+ * The sentences of a command job's Latest activity line (step 5 mockup, note 12).
  * The line names expired commands, the failed and uncertain samples, and the
  * commands that wait for their device. It never offers reconciliation.
  */
-function commandCounterLine(job: JobDetail): string {
+function commandParts(job: JobDetail): string[] {
   const { expired, pending, succeeded } = job.progress;
   const { failed, unknown } = job.latestActivity;
-  const time = formatTime(job.latestActivity.at);
   const parts: string[] = [];
   if (expired > 0)
     parts.push(
@@ -607,13 +787,20 @@ function commandCounterLine(job: JobDetail): string {
         succeeded === 1 ? 'command confirmed.' : 'commands confirmed.'
       }`,
     );
+  return parts;
+}
+
+/** The Latest activity line of a command job. A cancelled job leads with its cancel. */
+function commandCounterLine(job: JobDetail): string {
+  const time = formatTime(job.latestActivity.at);
+  const parts = commandParts(job);
+  if (job.status === 'cancelled') parts.unshift(cancelActivitySentence(job));
   return `${time} · ${parts.join(' ')}`;
 }
 
-/** The drafted counter line of a refresh job. Its latest activity has no samples. */
-function refreshCounterLine(job: JobDetail): string {
-  const { succeeded, failed, pending } = job.progress;
-  const time = formatTime(job.latestActivity.at);
+/** The read counts of a refresh job. Its latest activity has no samples. */
+function refreshParts(job: JobDetail): string[] {
+  const { succeeded, failed } = job.progress;
   const parts = [
     `${succeeded.toLocaleString('en-US')} ${
       succeeded === 1 ? 'device' : 'devices'
@@ -626,6 +813,16 @@ function refreshCounterLine(job: JobDetail): string {
         failed === 1 ? 'device' : 'devices'
       } could not be read.`,
     );
+  return parts;
+}
+
+/** The drafted counter line of a refresh job. */
+function refreshCounterLine(job: JobDetail): string {
+  const { pending } = job.progress;
+  const time = formatTime(job.latestActivity.at);
+  if (job.status === 'cancelled')
+    return `${time} · ${[cancelActivitySentence(job), ...refreshParts(job)].join(' ')}`;
+  const parts = refreshParts(job);
   switch (job.status) {
     case 'completed':
       parts.push('The refresh completed.');
@@ -655,10 +852,12 @@ function refreshCounterLine(job: JobDetail): string {
  * The Latest activity line of section 2.5. Sample lines name each failed and unknown
  * operation of the whole job. Counters supply the time and totals when no sample exists.
  * A refresh job has no operations, so its counters always supply the line.
+ * A cancelled job leads with its cancel sentence (choice 14).
  */
 export function latestActivityLine(job: JobDetail): string {
   if (job.action === 'refresh-inventory') return refreshCounterLine(job);
   if (isCommandJob(job)) return commandCounterLine(job);
+  const cancelled = job.status === 'cancelled';
   const subject =
     job.action === 'disable-devices' ||
     job.action === 'reenable-devices' ||
@@ -676,6 +875,7 @@ export function latestActivityLine(job: JobDetail): string {
       ),
       ...unknownSamples.map(reconciliationSentence),
     ];
+    if (cancelled) sentences.unshift(cancelActivitySentence(job));
     return `${formatTime(sampleTime(failedSamples, unknownSamples))} · ${sentences.join(' ')}`;
   }
   if (failed.count || unknown.count) {
@@ -695,8 +895,11 @@ export function latestActivityLine(job: JobDetail): string {
           ]
         : []),
     ];
+    if (cancelled) sentences.unshift(cancelActivitySentence(job));
     return `${formatTime(job.latestActivity.at)} · ${sentences.join(' ')}`;
   }
+  if (cancelled)
+    return `${formatTime(job.latestActivity.at)} · ${cancelActivitySentence(job)}`;
   return updateCounterLine(job);
 }
 

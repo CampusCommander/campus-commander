@@ -71,6 +71,10 @@ export class JobDetailStore {
   readonly reconcileError = signal('');
   /** A successful Reconcile start or a settled operation. */
   readonly notice = signal('');
+  /** A cancel request is in flight (design section 6, choice 8). */
+  readonly cancelling = signal(false);
+  /** The reason a cancel did not start, shown beside the toolbar. */
+  readonly cancelError = signal('');
 
   private readonly reader = new JobReader(() => this.read());
   private readonly events = new JobStream({
@@ -275,6 +279,70 @@ export class JobDetailStore {
     }
   }
 
+  /**
+   * Request the cancel of the current job (design section 6). The SQL function decides
+   * every refusal. A 200 reads the job again, so the banner, the identity line, and the
+   * disabled control follow the stored request rather than an optimistic guess.
+   */
+  async cancel(): Promise<boolean> {
+    const displayId = this.displayId();
+    if (!displayId || this.cancelling()) return false;
+    const epoch = this.epoch;
+    const mount = this.mountGeneration;
+    const identity = this.auth.session()?.identity.id ?? null;
+    const current = () =>
+      this.mounted &&
+      this.mountGeneration === mount &&
+      this.epoch === epoch &&
+      this.displayId() === displayId &&
+      (this.auth.session()?.identity.id ?? null) === identity;
+    this.cancelError.set('');
+    this.cancelling.set(true);
+    try {
+      const response = await this.auth.request(
+        `/api/jobs/${encodeURIComponent(displayId)}/cancel`,
+        {},
+      );
+      if (!current()) return false;
+      if (response.ok) {
+        await this.reader.request();
+        return current();
+      }
+      const body: unknown = await response.json().catch(() => null);
+      if (!current()) return false;
+      const reason = (body as { reason?: unknown } | null)?.reason;
+      if (response.status === 403) {
+        this.cancelError.set('You do not have permission to cancel this job.');
+        return false;
+      }
+      if (response.status === 404) {
+        this.cancelError.set('This job no longer exists.');
+        await this.reader.request();
+        return false;
+      }
+      if (response.status === 409 && reason === 'job-finished') {
+        this.cancelError.set('The job finished before the cancel arrived.');
+        await this.reader.request();
+        return false;
+      }
+      if (response.status === 409 && reason === 'nothing-to-stop') {
+        this.cancelError.set('The job holds no pending work to stop.');
+        await this.reader.request();
+        return false;
+      }
+      this.cancelError.set('Cancel could not start. Try again.');
+      return false;
+    } catch {
+      if (current())
+        this.cancelError.set(
+          'Cannot reach Campus Commander. Cancel did not start.',
+        );
+      return false;
+    } finally {
+      this.cancelling.set(false);
+    }
+  }
+
   private go(index: number): void {
     this.pageIndex.set(index);
     this.navigating.set(true);
@@ -312,6 +380,8 @@ export class JobDetailStore {
     this.navigating.set(false);
     this.cursors.set([null]);
     this.clearReconcileState();
+    this.cancelling.set(false);
+    this.cancelError.set('');
     if (reread && this.streamWanted) {
       this.events.restart();
       // Do not wait for the stream open to remove the previous person's data.

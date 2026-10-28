@@ -512,6 +512,8 @@ function setup(options: SetupOptions = {}) {
     ),
     reconcileError: signal(options.reconcileError ?? ''),
     notice: signal(options.notice ?? ''),
+    cancelling: signal(false),
+    cancelError: signal(''),
     init: vi.fn().mockResolvedValue(undefined),
     leave: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
@@ -519,6 +521,7 @@ function setup(options: SetupOptions = {}) {
     next: vi.fn(),
     previous: vi.fn(),
     reconcile: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue(true),
   };
   const grants = (
     options.grants ?? ['jobs:read', 'devices:read', 'devices:write']

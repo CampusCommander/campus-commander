@@ -128,6 +128,7 @@ function counterLine(progress: JobProgress): string {
     progress.unknown ? `${count(progress.unknown)} unknown` : '',
     progress.skipped ? `${count(progress.skipped)} skipped` : '',
     progress.expired ? `${count(progress.expired)} expired` : '',
+    progress.cancelled ? `${count(progress.cancelled)} cancelled` : '',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -176,6 +177,11 @@ function updateProgress(job: JobSummary): [string, string] {
         `${count(progress.succeeded)} succeeded`,
         counterLine(progress) || 'Needs review',
       ];
+    case 'cancelled':
+      return [
+        `${count(progress.succeeded)} succeeded`,
+        counterLine(progress) || 'Cancelled',
+      ];
     default:
       return ['Not started', 'In progress'];
   }
@@ -202,6 +208,8 @@ function refreshProgress(job: JobSummary): [string, string] {
       return [read, counterLine(progress) || 'Refresh failed'];
     case 'needs-review':
       return [read, 'Refresh needs review'];
+    case 'cancelled':
+      return [read, counterLine(progress) || 'Refresh cancelled'];
     default:
       return ['Not started', 'In progress'];
   }
@@ -235,6 +243,7 @@ export function recentLine(job: JobSummary): string {
   const label = JOB_STATUS_LABELS[job.status];
   const [primary, exceptions] = progressLines(job);
   switch (job.status) {
+    case 'cancelled':
     case 'completed-with-errors':
     case 'failed':
     case 'needs-review':
