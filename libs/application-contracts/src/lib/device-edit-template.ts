@@ -240,6 +240,37 @@ function deprovisionReasonForCode(code: string): DeprovisionReason | null {
 }
 
 /**
+ * The intent of a Status cell whose text matches a code exactly, or null when no code matches.
+ * A code matches in upper case only.
+ */
+function statusCellIntentForCode(
+  value: string,
+): DeviceEditStatusCellIntent | null {
+  if (value === 'ACTIVE') return { intent: 'reenable' };
+  if (value === 'DISABLED') return { intent: 'disable' };
+  if (value.startsWith('DEPROVISION:')) {
+    const reason = deprovisionReasonForCode(value.slice('DEPROVISION:'.length));
+    return reason === null ? null : { intent: 'deprovision', reason };
+  }
+  if (isGoogleDeviceStatus(value)) return { intent: 'none', status: value };
+  return null;
+}
+
+/**
+ * The refusal of a Status cell (section 7.5). A cell that the upper case of the cell would match
+ * leads with the upper-case code. A cell that holds DEPROVISION alone names the missing reason
+ * code. Every other cell keeps the code list alone.
+ */
+function statusCellRefusal(value: string): string {
+  const upper = value.toUpperCase();
+  if (statusCellIntentForCode(upper) !== null)
+    return `Status codes are upper case. Write ${upper}. ${DEVICE_STATUS_CELL_REFUSAL}`;
+  if (upper === 'DEPROVISION' || upper === 'DEPROVISION:')
+    return `DEPROVISION needs a reason code. ${DEVICE_STATUS_CELL_REFUSAL}`;
+  return DEVICE_STATUS_CELL_REFUSAL;
+}
+
+/**
  * The effect of a Status cell (section 7.5). Outer spaces are ignored. A code matches exactly, in
  * upper case. Device eligibility stays with the validation job.
  */
@@ -249,17 +280,9 @@ export function deviceEditStatusCellIntent(
   const value = cell.trim();
   if (value === '')
     return { ok: true, intent: { intent: 'none', status: null } };
-  if (value === 'ACTIVE') return { ok: true, intent: { intent: 'reenable' } };
-  if (value === 'DISABLED') return { ok: true, intent: { intent: 'disable' } };
-  if (value.startsWith('DEPROVISION:')) {
-    const reason = deprovisionReasonForCode(value.slice('DEPROVISION:'.length));
-    if (reason !== null)
-      return { ok: true, intent: { intent: 'deprovision', reason } };
-    return { ok: false, reason: DEVICE_STATUS_CELL_REFUSAL };
-  }
-  if (isGoogleDeviceStatus(value))
-    return { ok: true, intent: { intent: 'none', status: value } };
-  return { ok: false, reason: DEVICE_STATUS_CELL_REFUSAL };
+  const intent = statusCellIntentForCode(value);
+  if (intent !== null) return { ok: true, intent };
+  return { ok: false, reason: statusCellRefusal(value) };
 }
 
 /** The clear token of section 7.3, in the canonical form that the checksum hashes. */
@@ -293,10 +316,24 @@ export type DeviceEditFieldCellResult =
   | { ok: false; reason: string };
 
 /**
+ * The refusal of a clear of Asset tag or Organization unit (section 7.3). The schema refuses both
+ * clears, so the module names what the person writes instead. Every other field keeps the schema
+ * message.
+ */
+const DEVICE_EDIT_CLEAR_REFUSALS: Readonly<
+  Partial<Record<DeviceUpdateField, string>>
+> = Object.freeze({
+  annotatedAssetId:
+    'Asset tag cannot be cleared. Write a new tag, or leave the cell blank to keep the current tag.',
+  orgUnitPath:
+    'Organization unit cannot be cleared. Write a unit path, or leave the cell blank to keep the current unit.',
+});
+
+/**
  * The change of one field cell (sections 7.3 and 7.4), or the reason that the cell rejects. A
  * blank cell answers no change. The change runs through `deviceUpdateChangeSchema`, so the field
  * rules and the limits stay in `devices.ts`. An Organization unit assign is a move. A clear of
- * Asset tag or Organization unit rejects, because the schema refuses a clear of those fields.
+ * Asset tag or Organization unit rejects with the reason of `DEVICE_EDIT_CLEAR_REFUSALS`.
  */
 export function deviceEditFieldChange(
   field: DeviceUpdateField,
@@ -315,6 +352,10 @@ export function deviceEditFieldChange(
         };
   const parsed = deviceUpdateChangeSchema.safeParse(change);
   if (parsed.success) return { ok: true, change: parsed.data };
+  if (cellIntent.intent === 'clear') {
+    const clearRefusal = DEVICE_EDIT_CLEAR_REFUSALS[field];
+    if (clearRefusal !== undefined) return { ok: false, reason: clearRefusal };
+  }
   const message =
     parsed.error.issues[0]?.message ?? 'The field rule refused this value.';
   const label = DEVICE_UPDATE_FIELD_LABELS[field];
@@ -523,6 +564,7 @@ function normalizeHeader(header: string): string {
 
 function listNames(names: readonly string[]): string {
   if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
 
@@ -583,13 +625,16 @@ export function matchDeviceEditHeaders(
   const missing = required.filter((column) => !indexes.has(column.key));
   if (missing.length > 0) {
     const names = listNames(missing.map((column) => column.header));
-    return {
-      ok: false,
-      reason:
-        missing.length === 1
-          ? `The file is missing the ${names} column.`
-          : `The file is missing the ${names} columns.`,
-    };
+    const missingColumns =
+      missing.length === 1
+        ? `The file is missing the ${names} column.`
+        : `The file is missing the ${names} columns.`;
+    // Sync changes reads every row checksum, so a missing Checksum column names that mode. Sync
+    // all rows ignores the column, so its file never reaches this branch.
+    const checksumNote = missing.some((column) => column.key === 'checksum')
+      ? ' Sync changes needs the Checksum column. Sync all rows ignores it.'
+      : '';
+    return { ok: false, reason: `${missingColumns}${checksumNote}` };
   }
   const columns: DeviceEditHeaderMapping[] = [];
   for (const column of DEVICE_EDIT_TEMPLATE_COLUMNS) {
