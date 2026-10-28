@@ -110,6 +110,12 @@ export const connectionHeaders = new Set([
   'upgrade',
 ]);
 const finish = (response, status, message) => {
+  // The request deadline answers a slow body. The body reader then rejects on the closed
+  // stream, and this second answer must not throw.
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
@@ -238,12 +244,15 @@ export async function proxyApplication(
       return finish(response, 400, 'The request body is invalid.\n');
     }
   }
+  // The request deadline answered this request and closed its stream. Send nothing upstream.
+  if (response.headersSent) return;
   const target = upstreams[api ? 'api' : 'frontend'];
   const transport = target.url.protocol === 'https:' ? https : http;
   const headers = {
-    // The client host comes from `:authority` over HTTP/2. The edge has compared it with the
-    // configured application address, so the upstream receives that address and no pseudo-header.
-    host: requestHost(request),
+    // The upstream receives its configured endpoint name. Node derives the TLS server name from
+    // this header, so the upstream certificate is verified against that endpoint. The public
+    // client host stays out of the upstream request.
+    host: target.url.host,
     accept: request.headers.accept ?? '*/*',
   };
   if (api) {

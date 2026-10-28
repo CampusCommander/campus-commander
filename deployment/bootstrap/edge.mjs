@@ -5,21 +5,51 @@ import { readFile } from 'node:fs/promises';
 import { credentialFromAuthorization } from './access.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
-import {
-  proxyApplication,
-  requestHost,
-  responseHeaders,
-} from './application-edge.mjs';
+import { proxyApplication, responseHeaders } from './application-edge.mjs';
 
 const assetPath =
   /^\/(?:assets\/)?[A-Za-z0-9_/-]+\.(?:js|css|ico|png|svg|woff2?)$/;
 const finish = (response, status, message) => {
+  // The request deadline answers a slow body. The body reader then rejects on the closed
+  // stream, and this second answer must not throw.
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
   });
   response.end(message);
 };
+
+/**
+ * The HTTP/2 listener has no incoming request deadline. Bound each stream with the configured
+ * `requestTimeout` value. The deadline covers the request body only, so a completed request and
+ * an open event stream outlive it. A session inactivity timer would reset on busy sibling
+ * streams, so each stream gets its own timer.
+ */
+function enforceRequestDeadline(server, request, response) {
+  const stream = request.stream;
+  if (!stream || stream.endAfterHeaders) return;
+  const timer = setTimeout(() => {
+    if (!response.headersSent) {
+      response.writeHead(408, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      response.end('The request timed out.\n');
+    }
+    if (!stream.destroyed) stream.close(http2.constants.NGHTTP2_CANCEL);
+  }, server.requestTimeout);
+  timer.unref();
+  const clear = () => clearTimeout(timer);
+  request.once('end', clear);
+  request.once('close', clear);
+  request.once('aborted', clear);
+  response.once('finish', clear);
+  response.once('close', clear);
+}
 
 /** Serve application routes and protected installer checks through the TLS edge. */
 export async function createBootstrapEdge({
@@ -50,6 +80,7 @@ export async function createBootstrapEdge({
   }
   // One request handler serves HTTP/2 and HTTP/1.1 with the same routes, limits, and timeouts.
   const handleRequest = async (request, response) => {
+    enforceRequestDeadline(server, request, response);
     response.setHeader('strict-transport-security', 'max-age=31536000');
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');
@@ -121,7 +152,9 @@ export async function createBootstrapEdge({
         ca: target.ca,
         rejectUnauthorized: true,
         headers: {
-          host: requestHost(request),
+          // The upstream receives its configured endpoint name, so Node verifies the upstream
+          // certificate against that endpoint and not against the public client host.
+          host: target.url.host,
           accept: request.headers.accept || '*/*',
           ...(api ? { authorization: request.headers.authorization } : {}),
         },
