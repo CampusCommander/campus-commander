@@ -13410,11 +13410,7 @@ export async function qualifyDeviceWriteJobs({
           );
         } finally {
           await holder.query('ROLLBACK').catch(() => undefined);
-          await Promise.allSettled([
-            holder.end(),
-            writer.end(),
-            changer.end(),
-          ]);
+          await Promise.allSettled([holder.end(), writer.end(), changer.end()]);
         }
         assert.deepEqual(
           await cancelState(job.jobId, display),
