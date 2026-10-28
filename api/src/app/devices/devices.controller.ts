@@ -268,7 +268,7 @@ export class DevicesController {
     const current = await this.current(request);
     if (!current)
       throw new ConflictException({ reason: 'connection-required' });
-    // A holder of jobs:read at platform or district scope receives every failure of the customer.
+    // A holder of jobs:read or jobs:manage at platform or district scope receives every failure.
     const seesEveryJob = this.devices.jobVisibility(
       request.session,
       current.customerId,

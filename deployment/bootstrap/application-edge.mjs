@@ -77,9 +77,10 @@ const previewIdPath =
 const jobRead = new RegExp(
   `^/api/jobs(?:/(?:activity|requesters|events|${jobDisplayIdPath}(?:/operations)?))?$`,
 );
-// An operation number is a whole number from 1. The route rejects the rest.
+// An operation number is a whole number from 1. The route rejects the rest. The cancel route
+// takes no part of the path after the display ID.
 const jobWrite = new RegExp(
-  `^/api/jobs/(?:activity/seen|${jobDisplayIdPath}/operations/[1-9]\\d{0,8}/reconcile)$`,
+  `^/api/jobs/(?:activity/seen|${jobDisplayIdPath}/(?:cancel|operations/[1-9]\\d{0,8}/reconcile))$`,
 );
 const deviceUpdateRead = new RegExp(
   `^/api/devices/updates/(?:access|org-units|previews/${previewIdPath}(?:/targets)?)$`,

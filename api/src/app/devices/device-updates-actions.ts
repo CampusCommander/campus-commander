@@ -1,5 +1,6 @@
 import {
   DEVICE_ACTION_PERMISSIONS,
+  isAuthorized,
   type Action,
   type DeviceAction,
   type ResourceScope,
@@ -81,14 +82,16 @@ export async function requireDeviceUpdateActions(
 }
 
 /**
- * Reconcile of an update operation requires `jobs:read` and `devices:write` (design 469).
- * Reconcile of a disable or re-enable operation requires `jobs:read` and `devices:status`
- * (design section 6). Reconcile of a Deprovision operation requires `jobs:read` and
+ * Reconcile of an update operation requires the job read and `devices:write` (design 469).
+ * Reconcile of a disable or re-enable operation requires the job read and `devices:status`
+ * (design section 6). Reconcile of a Deprovision operation requires the job read and
  * `devices:deprovision` (record default D13).
  * The read check runs before the job lookup. The write check runs after the operation lookup.
  * A command operation has no Reconcile, so it has no list.
+ * The read check accepts `jobs:read` or `jobs:manage`, because `jobs:manage` holds the job
+ * visibility of `jobs:read` (engineering default 16).
  */
-export const RECONCILE_READ_ACTIONS = ['jobs:read'] as const;
+export const RECONCILE_READ_ACTIONS = ['jobs:read', 'jobs:manage'] as const;
 export const RECONCILE_UPDATE_ACTIONS = ['devices:write'] as const;
 export const RECONCILE_STATUS_ACTIONS = ['devices:status'] as const;
 export const RECONCILE_DEPROVISION_ACTIONS = ['devices:deprovision'] as const;
@@ -105,6 +108,21 @@ export function reconcileActions(check: ReconcileCheck): readonly Action[] {
     : RECONCILE_UPDATE_ACTIONS;
 }
 
+/**
+ * The one read action of a Reconcile. A person holding `jobs:manage` reads through it, so a
+ * manager never needs `jobs:read` as well. A person holding neither is checked against
+ * `jobs:read`, so the refusal and its audit row name the read permission.
+ */
+function reconcileReadAction(
+  session: SessionResponse,
+  customerId: string,
+): Action {
+  const scope: ResourceScope = { kind: 'district', customerId };
+  return isAuthorized(session.identity.grants, 'jobs:manage', scope)
+    ? 'jobs:manage'
+    : 'jobs:read';
+}
+
 export async function requireReconcileActions(
   auth: DeviceUpdateAuthorizer,
   session: SessionResponse,
@@ -112,6 +130,15 @@ export async function requireReconcileActions(
   correlationId: string,
   check: ReconcileCheck,
 ): Promise<void> {
+  if (check === 'read') {
+    await auth.authorize(
+      session,
+      reconcileReadAction(session, customerId),
+      { kind: 'district', customerId },
+      correlationId,
+    );
+    return;
+  }
   await requireDeviceActions(
     auth,
     session,

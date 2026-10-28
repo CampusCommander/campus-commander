@@ -15,6 +15,7 @@ import {
   Jobs,
   operationCursor,
   operationCursorSchema,
+  seesEveryJob,
 } from './jobs.ts';
 
 const REQUESTER = '22222222-2222-4222-8222-222222222222';
@@ -1053,7 +1054,7 @@ test('reconcile claims an unknown update operation and starts its read-back', as
 test('an empty activity window gives a null next expiry', async () => {
   const db = database([
     ['clock_timestamp() AS now', [{ now: new Date() }]],
-    ['FROM cc.job_activity_seen', []],
+    ['SELECT seen_at FROM cc.job_activity_seen WHERE principal_id', []],
     [
       "j.status IN ('running','awaiting-devices')",
       (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
@@ -1372,4 +1373,246 @@ test('Latest activity keeps the counters from the header, not from the samples',
   assert.equal(activity.unknown.count, 40);
   assert.equal(activity.failed.operations.length, 1);
   assert.equal(activity.unknown.operations.length, 0);
+});
+
+const CANCEL_AT = new Date('2026-10-26T12:06:00.000Z');
+
+/** A header row of a job that a person asked to cancel. */
+const cancelledRow = (overrides = {}) =>
+  jobRow({
+    status: 'cancelled',
+    finished_at: new Date('2026-10-26T12:06:05.000Z'),
+    cancel_requested_at: CANCEL_AT,
+    cancel_requested_by: REQUESTER,
+    cancel_requested_by_name: 'Ada Lovelace',
+    ...overrides,
+  });
+
+test('a summary maps the cancelled counter and the stored cancel request', () => {
+  const summary = jobSummary(
+    cancelledRow({
+      kind: 'device-update',
+      display_id: 'UPD-004',
+      target_count: 8,
+      succeeded: 3,
+      failed: 1,
+      unknown: 0,
+      cancelled: 2,
+    }),
+  );
+  assert.equal(summary.status, 'cancelled');
+  assert.equal(summary.progress.cancelled, 2);
+  // An operation that never left the worker has settled, so it is not pending.
+  assert.equal(summary.progress.pending, 2);
+  assert.deepEqual(summary.cancelRequest, {
+    at: CANCEL_AT.toISOString(),
+    by: { id: REQUESTER, displayName: 'Ada Lovelace' },
+  });
+});
+
+test('a summary without a request answers a null cancel request', () => {
+  assert.equal(jobSummary(jobRow()).cancelRequest, null);
+});
+
+test('the list joins the person of the stored cancel request', async () => {
+  const db = database([
+    ['AS matching', [{ matching: 1, observed_at: new Date() }]],
+    ['ORDER BY j.created_at DESC', [cancelledRow({ display_id: 'UPD-004' })]],
+  ]);
+  const page = await new Jobs(db).list(
+    session(),
+    'C0123456',
+    {},
+    undefined,
+    50,
+  );
+  assert.deepEqual(page.jobs[0].cancelRequest, {
+    at: CANCEL_AT.toISOString(),
+    by: { id: REQUESTER, displayName: 'Ada Lovelace' },
+  });
+  const [paged] = db.calls.at(-1);
+  assert.ok(
+    paged.includes(
+      'LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by',
+    ),
+    'The list reads the cancel person of each row.',
+  );
+  assert.ok(paged.includes('cb.display_name AS cancel_requested_by_name'));
+});
+
+test('the detail carries the cancel request of its header', async () => {
+  const db = database([
+    ['p.display_name AS requested_by_name', [cancelledRow()]],
+    ['WHERE job_id=$1 AND status=$2', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'REF-001');
+  assert.deepEqual(detail.cancelRequest, {
+    at: CANCEL_AT.toISOString(),
+    by: { id: REQUESTER, displayName: 'Ada Lovelace' },
+  });
+  const [header] = db.calls;
+  assert.ok(
+    header[0].includes(
+      'LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by',
+    ),
+  );
+});
+
+test('attention counts a cancelled job only with a failed or Unknown operation', async () => {
+  const db = database([
+    [
+      'clock_timestamp() AS now',
+      [{ now: new Date('2026-10-26T12:10:00.000Z') }],
+    ],
+    [
+      'SELECT seen_at FROM cc.job_activity_seen WHERE principal_id',
+      [{ seen_at: new Date('2026-10-26T10:00:00.000Z') }],
+    ],
+    [
+      "j.status IN ('running','awaiting-devices')",
+      (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
+    ],
+    [
+      "j.status IN ('accepted','queued','held')",
+      (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
+    ],
+    [
+      'j.finished_at >= clock_timestamp()',
+      (v, text) =>
+        text.includes('count(*)')
+          ? [{ count: 1, next_expiry_at: null }]
+          : [cancelledRow({ failed: 1 })],
+    ],
+    ['AS attention', [{ attention: true }]],
+  ]);
+  const activity = await new Jobs(db).activity(session(), 'C0123456');
+  assert.equal(activity.attention, true);
+  assert.equal(activity.recent.jobs[0].status, 'cancelled');
+  const [[sql]] = db.calls.filter(([text]) => text.includes('AS attention'));
+  assert.ok(
+    sql.includes(
+      "j.status IN ('needs-review','completed-with-errors','failed')",
+    ),
+    'The built rule stays.',
+  );
+  assert.ok(
+    sql.includes("(j.status='cancelled' AND (j.failed>0 OR j.unknown>0))"),
+    'A cancelled job raises attention only with a failed or Unknown operation.',
+  );
+});
+
+test('a cancelled job counts as finished, not running', async () => {
+  const db = database([
+    [
+      'clock_timestamp() AS now',
+      [{ now: new Date('2026-10-26T12:10:00.000Z') }],
+    ],
+    [
+      'SELECT seen_at FROM cc.job_activity_seen WHERE principal_id',
+      [{ seen_at: null }],
+    ],
+    [
+      "j.status IN ('running','awaiting-devices')",
+      (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
+    ],
+    [
+      "j.status IN ('accepted','queued','held')",
+      (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
+    ],
+    [
+      'j.finished_at >= clock_timestamp()',
+      (v, text) =>
+        text.includes('count(*)')
+          ? [{ count: 1, next_expiry_at: null }]
+          : [cancelledRow({ cancelled: 2 })],
+    ],
+    ['AS attention', [{ attention: false }]],
+  ]);
+  const activity = await new Jobs(db).activity(session(), 'C0123456');
+  assert.equal(activity.running.count, 0);
+  assert.deepEqual(
+    activity.recent.jobs.map((job) => job.status),
+    ['cancelled'],
+  );
+  const runningRows = db.calls.find(
+    ([text]) =>
+      text.includes("j.status IN ('running','awaiting-devices')") &&
+      text.includes('ORDER BY'),
+  );
+  assert.equal(
+    runningRows[0].includes("'cancelled'"),
+    false,
+    'The running count and list hold no cancelled job.',
+  );
+});
+
+test('seesEveryJob accepts jobs:read or jobs:manage at the customer scope', () => {
+  const district = (action, customerId = 'C0123456') =>
+    session([{ action, scope: { kind: 'district', customerId } }]);
+  assert.equal(seesEveryJob(district('jobs:read'), 'C0123456'), true);
+  assert.equal(seesEveryJob(district('jobs:manage'), 'C0123456'), true);
+  assert.equal(
+    seesEveryJob(
+      session([{ action: 'jobs:manage', scope: { kind: 'platform' } }]),
+      'C0123456',
+    ),
+    true,
+  );
+  // Another customer's manage grant sees nothing here, and so does a caller with no grant.
+  assert.equal(
+    seesEveryJob(district('jobs:manage', 'C-other'), 'C0123456'),
+    false,
+  );
+  assert.equal(seesEveryJob(session(), 'C0123456'), false);
+});
+
+test('an Unknown row of a cancelled job keeps Reconcile', async () => {
+  const db = reconcileDatabase(
+    {
+      status: 'cancelled',
+      cancelled: 1,
+      finished_at: new Date('2026-10-26T12:06:05.000Z'),
+      cancel_requested_at: CANCEL_AT,
+      cancel_requested_by: REQUESTER,
+      cancel_requested_by_name: 'Ada Lovelace',
+    },
+    { status: 'unknown' },
+  );
+  const orchestration = reconcileOrchestration();
+  const operation = await new Jobs(db).reconcile(
+    session(),
+    'C0123456',
+    'UPD-001',
+    1,
+    '55555555-5555-4555-8555-555555555555',
+    orchestration,
+    authorizer(['read', 'update']),
+  );
+  assert.equal(operation.outcome, 'unknown');
+  assert.equal(claimCount(db), 1, 'The cancelled job keeps its read-back.');
+  assert.equal(orchestration.started.length, 1);
+});
+
+test('a Cancelled row holds no Reconcile', async () => {
+  const db = reconcileDatabase(
+    { status: 'cancelled', cancelled: 1 },
+    { status: 'cancelled' },
+  );
+  const orchestration = reconcileOrchestration();
+  await assert.rejects(
+    new Jobs(db).reconcile(
+      session(),
+      'C0123456',
+      'UPD-001',
+      1,
+      '55555555-5555-4555-8555-555555555555',
+      orchestration,
+      authorizer(['read', 'update']),
+    ),
+    (error) =>
+      error instanceof ConflictException &&
+      error.getResponse().reason === 'operation-settled',
+  );
+  assert.equal(claimCount(db), 0);
+  assert.deepEqual(orchestration.started, []);
 });

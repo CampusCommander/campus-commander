@@ -25,7 +25,8 @@ export interface JobStreamRecheck {
 
 /**
  * One ping of the jobs stream (section 3.3). The session and both read actions must still hold for the
- * customer that opened the stream. A removed `jobs:read` closes the stream of a holder of every job.
+ * customer that opened the stream. A removed `jobs:read` or `jobs:manage` closes the stream of a
+ * holder of every job.
  */
 export async function recheckJobStream(input: {
   auth: JobStreamAuth;

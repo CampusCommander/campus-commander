@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -75,6 +76,9 @@ const requestersQuerySchema = z.strictObject({
   query: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(20).optional(),
 });
+
+/** The cancel request carries no revision, so its body is an empty strict object (design section 1). */
+const cancelBodySchema = z.strictObject({});
 
 /** The job channel and its schema. The Jobs stream sends `job-changed` only. */
 const jobListener = {
@@ -214,6 +218,25 @@ export class JobsController {
       input.attention === true,
       input.cursor,
       input.limit,
+    );
+  }
+
+  /** Request the cancel of one job (design section 5). The SQL function decides every refusal. */
+  @Post(':displayId/cancel')
+  @HttpCode(200)
+  async cancel(
+    @Req() request: AuthenticatedRequest,
+    @Param('displayId') displayId: string,
+    @Body() body: unknown,
+  ) {
+    cancelBodySchema.parse(body ?? {});
+    const id = jobDisplayIdSchema.parse(displayId);
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.cancel(
+      request.session,
+      customerId,
+      id,
+      request.correlationId,
     );
   }
 
