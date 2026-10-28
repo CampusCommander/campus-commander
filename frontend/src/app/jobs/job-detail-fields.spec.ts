@@ -9,7 +9,11 @@ import { formatTimestamp } from './job-fields';
 import {
   attentionCount,
   beforeText,
+  canCancel,
   canReconcile,
+  cancelLine,
+  cancelQuestion,
+  cancelState,
   fieldLabel,
   formatTime,
   identityLine,
@@ -1393,5 +1397,381 @@ describe('job detail fields', () => {
         hasNext: false,
       }),
     ).toBe('0 matching operations');
+  });
+});
+
+describe('cancel', () => {
+  const auth = (
+    actions: string[],
+    requesterId = person.id,
+    phase = 3,
+  ): Parameters<typeof canCancel>[0] =>
+    ({
+      metadata: () => ({ phase }),
+      session: () => ({
+        identity: {
+          id: requesterId,
+          grants: actions.map((action) => ({
+            action,
+            scope: { kind: 'district', customerId: 'C0123456' },
+          })),
+        },
+      }),
+    }) as unknown as Parameters<typeof canCancel>[0];
+
+  const running = (overrides: Partial<JobDetail> = {}) =>
+    job({
+      status: 'running',
+      progress: progress({
+        total: 48,
+        succeeded: 36,
+        failed: 0,
+        unknown: 0,
+        pending: 12,
+      }),
+      finishedAt: null,
+      ...overrides,
+    });
+
+  it('lets the requester or a jobs:manage holder cancel', () => {
+    expect(canCancel(auth(['jobs:read']), running())).toBe(true);
+    expect(
+      canCancel(
+        auth(['jobs:manage'], 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+        running(),
+      ),
+    ).toBe(true);
+    expect(
+      canCancel(
+        auth(['jobs:read'], 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+        running(),
+      ),
+    ).toBe(false);
+    expect(canCancel(auth(['jobs:read'], person.id, 2), running())).toBe(false);
+  });
+
+  it('shows the control only while work remains that can stop', () => {
+    expect(cancelState(auth(['jobs:read']), running())).toBe('request');
+    expect(
+      cancelState(auth(['jobs:read']), running({ status: 'queued' })),
+    ).toBe('request');
+    expect(
+      cancelState(auth(['jobs:read']), running({ status: 'awaiting-devices' })),
+    ).toBe('none');
+    expect(
+      cancelState(
+        auth(['jobs:read']),
+        running({
+          status: 'completed',
+          progress: progress({ pending: 0 }),
+        }),
+      ),
+    ).toBe('none');
+    expect(
+      cancelState(
+        auth(['jobs:read']),
+        running({ progress: progress({ pending: 0 }) }),
+      ),
+    ).toBe('none');
+    // A refresh has no operations and no waiting status (O1 ruling).
+    expect(
+      cancelState(
+        auth(['jobs:read']),
+        job({
+          action: 'refresh-inventory',
+          status: 'running',
+          scope: { kind: 'all-devices', deviceCount: null },
+          progress: progress({
+            total: null,
+            succeeded: 600,
+            failed: 0,
+            unknown: 0,
+            pending: null,
+          }),
+        }),
+      ),
+    ).toBe('request');
+  });
+
+  it('shows the stored request disabled until the job ends', () => {
+    const request = {
+      at: '2026-10-26T14:42:00.000Z',
+      by: person,
+    };
+    expect(
+      cancelState(auth(['jobs:read']), running({ cancelRequest: request })),
+    ).toBe('requested');
+    expect(
+      cancelState(
+        auth(['jobs:read']),
+        running({ status: 'cancelled', cancelRequest: request }),
+      ),
+    ).toBe('none');
+    // A person without the right sees no control at all.
+    expect(
+      cancelState(
+        auth(['jobs:read'], 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+        running({ cancelRequest: request }),
+      ),
+    ).toBe('none');
+  });
+
+  it('drafts the running question of state 02', () => {
+    const question = cancelQuestion(running({ displayId: 'UPD-001' }));
+    expect(question.title).toBe('Cancel pending work on UPD-001?');
+    expect(question.paragraphs).toEqual([
+      '12 of 48 operations are pending. Those that have not reached Google end Cancelled and never run.',
+      'Requests already sent to Google finish and keep their results. The 36 confirmed updates stay. Nothing rolls back.',
+    ]);
+    expect(question.dismissLabel).toBe('Keep job running');
+    expect(question.confirmLabel).toBe('Cancel pending work');
+  });
+
+  it('drafts the waiting question of state 05', () => {
+    const question = cancelQuestion(
+      job({
+        displayId: 'STS-001',
+        action: 'disable-devices',
+        status: 'queued',
+        scope: { kind: 'devices', deviceCount: 18 },
+        progress: progress({
+          total: 18,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 18,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(question.title).toBe('Cancel pending work on STS-001?');
+    expect(question.paragraphs).toEqual([
+      'No operation has started. All 18 operations end Cancelled.',
+      'No request reaches Google. The 18 devices keep their current status.',
+    ]);
+    expect(question.dismissLabel).toBe('Keep job waiting');
+  });
+
+  it('names confirmed commands and status changes in a running question', () => {
+    const command = cancelQuestion(
+      job({
+        displayId: 'CMD-001',
+        action: 'reboot-devices',
+        status: 'running',
+        changes: null,
+        commandType: 'REBOOT',
+        progress: progress({
+          total: 4,
+          succeeded: 3,
+          failed: 0,
+          unknown: 0,
+          pending: 1,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(command.paragraphs[1]).toBe(
+      'Requests already sent to Google finish and keep their results. The 3 confirmed commands stay. Nothing rolls back.',
+    );
+    const status = cancelQuestion(
+      job({
+        displayId: 'STS-001',
+        action: 'disable-devices',
+        status: 'running',
+        progress: progress({
+          total: 4,
+          succeeded: 1,
+          failed: 0,
+          unknown: 0,
+          pending: 3,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(status.paragraphs[1]).toBe(
+      'Requests already sent to Google finish and keep their results. The 1 confirmed status change stays. Nothing rolls back.',
+    );
+  });
+
+  it('drafts the refresh questions of the O1 ruling', () => {
+    const all = cancelQuestion(
+      job({
+        displayId: 'REF-001',
+        action: 'refresh-inventory',
+        status: 'running',
+        scope: { kind: 'all-devices', deviceCount: null },
+        progress: progress({
+          total: null,
+          succeeded: 600,
+          failed: 0,
+          unknown: 0,
+          pending: null,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(all.title).toBe('Cancel pending work on REF-001?');
+    expect(all.paragraphs).toEqual([
+      'The refresh has read 600 devices. It stops at its next page.',
+      'It saves none of this refresh and marks no device removed. The inventory keeps its earlier data.',
+    ]);
+    expect(all.dismissLabel).toBe('Keep job running');
+
+    const selected = cancelQuestion(
+      job({
+        displayId: 'REF-002',
+        action: 'refresh-inventory',
+        status: 'running',
+        scope: { kind: 'devices', deviceCount: 1000 },
+        progress: progress({
+          total: 1000,
+          succeeded: 250,
+          failed: 0,
+          unknown: 0,
+          pending: 750,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(selected.paragraphs).toEqual([
+      '250 of 1,000 devices are read. The refresh stops at its next batch.',
+      'Devices already read keep their new data. The other devices keep their earlier data.',
+    ]);
+  });
+
+  it('renders the identity line of the request', () => {
+    const now = new Date('2026-10-26T15:00:00.000Z');
+    expect(
+      cancelLine(
+        {
+          cancelRequest: { at: '2026-10-26T14:42:00.000Z', by: person },
+        },
+        now,
+      ),
+    ).toBe('Cancellation requested by District Admin · Oct 26, 10:42 AM');
+    expect(cancelLine({ cancelRequest: null }, now)).toBeNull();
+  });
+
+  it('reads the Cancelled counter from the stored count', () => {
+    const counters = jobCounters(progress({ cancelled: 8 }));
+    expect(counters.find((counter) => counter.key === 'cancelled')?.value).toBe(
+      8,
+    );
+  });
+
+  it('notes that a cancelled operation never reached Google', () => {
+    expect(outcomeNotes(job(), operation({ outcome: 'cancelled' }))).toEqual([
+      'Not sent to Google',
+    ]);
+    expect(operationChip(operation({ outcome: 'cancelled' })).label).toBe(
+      'Cancelled',
+    );
+    expect(outcomeTone('cancelled')).toBe('neutral');
+  });
+
+  it('leads Latest activity with the cancel sentence of state 04', () => {
+    const cancelled = job({
+      status: 'cancelled',
+      displayId: 'UPD-001',
+      progress: progress({
+        total: 48,
+        succeeded: 38,
+        failed: 1,
+        unknown: 1,
+        pending: 0,
+        cancelled: 8,
+      }),
+      latestActivity: {
+        at: '2026-10-26T14:43:00.000Z',
+        failed: {
+          count: 1,
+          operations: [
+            {
+              operationId: 'UPD-001-39',
+              deviceId: 'synthetic-device-39',
+              serialNumber: '04XTBHJ',
+              outcomeReason: 'quota',
+              googleStatus: 429,
+              googleReason: 'Quota exceeded',
+              updatedAt: '2026-10-26T14:42:00.000Z',
+            },
+          ],
+        },
+        unknown: {
+          count: 1,
+          operations: [
+            {
+              operationId: 'UPD-001-40',
+              deviceId: 'synthetic-device-40',
+              serialNumber: '0727D2E',
+              updatedAt: '2026-10-26T14:43:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+    expect(latestActivityLine(cancelled)).toBe(
+      '10:43 AM · Cancellation stopped 8 operations before they reached Google. Google quota stopped the update for 04XTBHJ. 0727D2E requires reconciliation before any retry.',
+    );
+  });
+
+  it('ends a job that never started with the before-it-started sentence', () => {
+    const queued = job({
+      displayId: 'STS-001',
+      action: 'disable-devices',
+      status: 'cancelled',
+      scope: { kind: 'devices', deviceCount: 18 },
+      startedAt: null,
+      progress: progress({
+        total: 18,
+        succeeded: 0,
+        failed: 0,
+        unknown: 0,
+        pending: 0,
+        cancelled: 18,
+      }),
+      latestActivity: {
+        at: '2026-10-26T14:41:00.000Z',
+        failed: { count: 0, operations: [] },
+        unknown: { count: 0, operations: [] },
+      },
+    });
+    expect(latestActivityLine(queued)).toBe(
+      '10:41 AM · Cancellation ended the job before it started. No request reached Google.',
+    );
+  });
+
+  it('names the stopped refresh in Latest activity', () => {
+    const refresh = job({
+      displayId: 'REF-001',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      scope: { kind: 'all-devices', deviceCount: null },
+      progress: progress({
+        total: null,
+        succeeded: 600,
+        failed: 0,
+        unknown: 0,
+        pending: null,
+      }),
+      latestActivity: {
+        at: '2026-10-26T14:42:00.000Z',
+        failed: { count: 0, operations: [] },
+        unknown: { count: 0, operations: [] },
+      },
+    });
+    expect(latestActivityLine(refresh)).toBe(
+      '10:42 AM · Cancellation ended the refresh. No device was marked removed. 600 devices read.',
+    );
+  });
+
+  it('accepts jobs:manage as the read check of Reconcile', () => {
+    const manage = auth(['jobs:manage', 'devices:write']);
+    expect(
+      canReconcile(manage, {
+        action: 'update-device-annotations',
+        statusAction: null,
+      }),
+    ).toBe(true);
   });
 });

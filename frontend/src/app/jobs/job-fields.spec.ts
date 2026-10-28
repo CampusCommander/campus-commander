@@ -452,3 +452,90 @@ describe('activity lines', () => {
     ).toBeNull();
   });
 });
+
+describe('cancelled jobs', () => {
+  it('renders the cancelled progress cells of state 07', () => {
+    expect(
+      progressLines(
+        summary({
+          displayId: 'UPD-001',
+          status: 'cancelled',
+          progress: {
+            total: 48,
+            succeeded: 38,
+            failed: 1,
+            unknown: 1,
+            skipped: 0,
+            expired: 0,
+            cancelled: 8,
+            pending: 0,
+          },
+        }),
+      ),
+    ).toEqual(['38 succeeded', '1 failed · 1 unknown · 8 cancelled']);
+
+    expect(
+      progressLines(
+        summary({
+          displayId: 'STS-001',
+          action: 'disable-devices',
+          status: 'cancelled',
+          scope: { kind: 'devices', deviceCount: 18 },
+          progress: {
+            total: 18,
+            succeeded: 0,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 18,
+            pending: 0,
+          },
+        }),
+      ),
+    ).toEqual(['0 succeeded', '18 cancelled']);
+  });
+
+  it('lists a cancelled job with the finished jobs in Activity', () => {
+    expect(
+      recentLine(
+        summary({
+          status: 'cancelled',
+          progress: {
+            total: 48,
+            succeeded: 38,
+            failed: 1,
+            unknown: 1,
+            skipped: 0,
+            expired: 0,
+            cancelled: 8,
+            pending: 0,
+          },
+        }),
+      ),
+    ).toBe('Cancelled · 38 succeeded · 1 failed · 1 unknown · 8 cancelled');
+  });
+
+  it('renders a cancelled refresh row', () => {
+    expect(
+      progressLines(
+        summary({
+          displayId: 'REF-001',
+          action: 'refresh-inventory',
+          status: 'cancelled',
+          scope: { kind: 'all-devices', deviceCount: null },
+          progress: {
+            total: null,
+            succeeded: 600,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: null,
+          },
+        }),
+      ),
+    ).toEqual(['600 devices read', 'Refresh cancelled']);
+  });
+});

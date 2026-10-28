@@ -164,6 +164,16 @@ describe('Shell activity button', () => {
     ).not.toBeNull();
   });
 
+  it('shows the Activity button to a jobs:manage holder', async () => {
+    configure({ grants: [{ action: 'jobs:manage' }] });
+    const fixture = await renderAt('/account');
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector(
+        'button[aria-label^="Activity:"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it('hides the Activity button without jobs:read or devices:read', async () => {
     configure({ grants: [{ action: 'schools:read' }] });
     const fixture = await renderAt('/account');
@@ -176,6 +186,13 @@ describe('Shell activity button', () => {
 describe('Shell navigation', () => {
   it('shows Jobs to a jobs:read holder without devices:read', async () => {
     configure({ grants: [{ action: 'jobs:read' }] });
+    const fixture = await renderAt('/account');
+    expect(nav(fixture, 'Jobs')).not.toBeNull();
+    expect(nav(fixture, 'Devices')).toBeNull();
+  });
+
+  it('shows Jobs to a jobs:manage holder without devices:read', async () => {
+    configure({ grants: [{ action: 'jobs:manage' }] });
     const fixture = await renderAt('/account');
     expect(nav(fixture, 'Jobs')).not.toBeNull();
     expect(nav(fixture, 'Devices')).toBeNull();
