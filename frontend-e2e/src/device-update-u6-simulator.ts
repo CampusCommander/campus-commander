@@ -259,8 +259,10 @@ export class U6Simulator {
         unknown: 0,
         skipped: 0,
         expired: 0,
+        cancelled: 0,
         pending: done ? 0 : total,
       },
+      cancelRequest: null,
       failure: null,
       confirmedBy: {
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

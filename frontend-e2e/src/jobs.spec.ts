@@ -30,8 +30,10 @@ const running = {
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 12,
   },
+  cancelRequest: null,
   failure: null,
 };
 
@@ -53,8 +55,10 @@ const refreshed = {
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: null,
   },
+  cancelRequest: null,
   failure: null,
 };
 
@@ -76,8 +80,10 @@ const review = {
     unknown: 1,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 0,
   },
+  cancelRequest: null,
   failure: null,
 };
 
