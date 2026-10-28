@@ -740,6 +740,71 @@ test('an awaiting-devices command job releases its hold and admits the next job'
   assert.equal(orchestration.calls.length, 1);
 });
 
+test('a cancelled job releases its hold and admits the next job', async () => {
+  const database = databaseOf([
+    ['SELECT 1 FROM cc.jobs j WHERE', () => [{ '?column?': 1 }]],
+    [
+      'SELECT j.job_id FROM cc.jobs j JOIN cc.device_update_jobs u',
+      () => [{ job_id: JOB }],
+    ],
+    ['SELECT cc.clean_device_update_hold', () => [{ result: true }]],
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    ['SELECT cc.admit_device_update_job', () => [{ result: admitted() }]],
+    [
+      'SELECT batch_count FROM cc.device_update_jobs',
+      () => [{ batch_count: 1 }],
+    ],
+    ['SELECT p.publication_id,p.job_id', () => []],
+    ['SELECT cc.record_device_update_start', () => [{ result: null }]],
+  ]);
+  const cache = cacheOf();
+  const orchestration = orchestrationOf();
+  const service = serviceOf({ database, cache, orchestration });
+  await service.changed(CUSTOMER, JOB);
+  // A cancelled job is finished. Its hold leaves, and the write slot admits the next job.
+  const changedCall = database.calls.find((call) =>
+    call.text.includes('SELECT 1 FROM cc.jobs j WHERE'),
+  );
+  assert.ok(changedCall.text.includes("'cancelled'"));
+  const cleanupCall = database.calls.find((call) =>
+    call.text.includes(
+      'SELECT j.job_id FROM cc.jobs j JOIN cc.device_update_jobs u',
+    ),
+  );
+  assert.ok(cleanupCall.text.includes("'cancelled'"));
+  assert.deepEqual(
+    cache.calls.map((call) => call.name),
+    ['release'],
+  );
+  assert.equal(cache.calls[0].values[1], JOB);
+  assert.ok(
+    database.calls.some((call) =>
+      call.text.includes('cc.clean_device_update_hold'),
+    ),
+  );
+  assert.equal(orchestration.calls.length, 1);
+});
+
+test('a recovery answer without a start dispatches nothing', async () => {
+  const database = databaseOf([
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    [
+      'SELECT cc.recover_device_update_jobs',
+      () => [{ result: { starts: [], reconciles: [] } }],
+    ],
+    ['SELECT p.publication_id', () => []],
+  ]);
+  const orchestration = orchestrationOf();
+  const service = serviceOf({
+    database,
+    cache: cacheOf(),
+    orchestration,
+  });
+  // A cancelled lost runner ends through the finalizer, which asks for no start.
+  assert.equal(await service.recover(CUSTOMER), false);
+  assert.deepEqual(orchestration.calls, []);
+});
+
 test('a slow tick never delays the relay', async () => {
   let finishStart;
   const starting = new Promise((resolve) => {
