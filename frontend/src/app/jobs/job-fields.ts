@@ -120,6 +120,20 @@ export function scopeLabel(scope: JobScope): string {
 
 const count = (value: number) => value.toLocaleString('en-US');
 
+/**
+ * A cancelled Refresh all saves none of the devices that it read.
+ * A refresh of selected devices keeps the devices that it read.
+ */
+export function cancelledRefreshAll(
+  job: Pick<JobSummary, 'action' | 'status' | 'scope'>,
+): boolean {
+  return (
+    job.action === 'refresh-inventory' &&
+    job.status === 'cancelled' &&
+    job.scope.kind === 'all-devices'
+  );
+}
+
 /** The counter line of a progress cell. Pending leads, then the exceptions. */
 function counterLine(progress: JobProgress): string {
   return [
@@ -209,7 +223,10 @@ function refreshProgress(job: JobSummary): [string, string] {
     case 'needs-review':
       return [read, 'Refresh needs review'];
     case 'cancelled':
-      return [read, counterLine(progress) || 'Refresh cancelled'];
+      return [
+        cancelledRefreshAll(job) ? `${read} · none saved` : read,
+        counterLine(progress) || 'Refresh cancelled',
+      ];
     default:
       return ['Not started', 'In progress'];
   }
