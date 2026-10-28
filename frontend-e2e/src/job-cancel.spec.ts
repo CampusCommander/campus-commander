@@ -584,7 +584,11 @@ const listRows = [
   }),
 ];
 
-async function signIn(page: Page, state: MockState) {
+async function signIn(
+  page: Page,
+  state: MockState,
+  theme: 'light' | 'dark' = 'light',
+) {
   await page.route('**/api/**', async (route: Route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -625,7 +629,7 @@ async function signIn(page: Page, state: MockState) {
                 scope: { kind: 'platform' as const },
               },
             ],
-            preferences: { theme: 'light', navigationCollapsed: false },
+            preferences: { theme, navigationCollapsed: false },
           },
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
@@ -992,6 +996,29 @@ test('state 07: the Jobs grid shows the cancelled rows', async ({
   await page.screenshot({
     path: testInfo.outputPath('07-jobs-grid-cancelled-full.png'),
     fullPage: true,
+  });
+});
+
+test('the question and the requested banner hold in the dark theme', async ({
+  page,
+}, testInfo) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-26T14:42:27Z');
+  await signIn(page, state, 'dark');
+  await page.goto('/jobs/UPD-001');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  const dialog = await openCancelQuestion(page);
+  await top(page);
+  await page.screenshot({
+    path: testInfo.outputPath('10-dark-cancel-question.png'),
+  });
+  await dialog.getByRole('button', { name: 'Cancel pending work' }).click();
+  await expect(page.locator('#cancel-job')).toHaveText(
+    'Cancellation requested',
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('11-dark-cancellation-requested.png'),
   });
 });
 
