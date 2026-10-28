@@ -13246,6 +13246,221 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    // The cancel rechecks authority after its last blocking lock (review round 1, P1). These helpers read
+    // the stored state of a job, so a refusal can prove that it changed nothing.
+    const cancelState = async (jobId, displayId) => ({
+      job: await jobRow(jobId),
+      operations: await operations(jobId),
+      publications: await publications(jobId),
+      events: (await cancelEvents(displayId)).n,
+    });
+    const permissionRow = (id) =>
+      adminRow(
+        'SELECT enabled,permission_version FROM cc.application_principals WHERE id=$1',
+        [id],
+      );
+    const grantsOf = (id) =>
+      admin(
+        'SELECT action,scope FROM cc.application_grants WHERE principal_id=$1 ORDER BY action,scope',
+        [id],
+      );
+    const visibleTo = (actor, version) =>
+      result('SELECT cc.job_visible($1,$2,$3,$4) AS result', [
+        actor,
+        version,
+        customer,
+        confirmer,
+      ]);
+    const reviewAccess = (client, actor, target, enabled, grants) =>
+      client.query(
+        'SELECT cc.review_platform_access($1,$2,$3,$4,$5,$6) AS result',
+        [actor, 1, target, 1, enabled, JSON.stringify(grants)],
+      );
+    const changeAccess = (client, actor, target, enabled, grants) =>
+      client.query(
+        'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+        [
+          actor,
+          1,
+          target,
+          1,
+          enabled,
+          JSON.stringify(grants),
+          randomUUID(),
+          '[]',
+        ],
+      );
+
+    await check(
+      'a cancel refuses when its requester is disabled during the requester-row wait (S7b)',
+      async () => {
+        // A manager holds the customer grant and the platform-users grant, so it can change its own access.
+        const selfManager = await principal(`${randomUUID()}`, [
+          ['jobs:manage', district()],
+          ['platform-users:manage', { kind: 'platform' }],
+        ]);
+        const job = await makeJob({ devices: ['cn13'] });
+        const display = (await jobRow(job.jobId)).display_id;
+        const before = await cancelState(job.jobId, display);
+        const holder = await connect('cc-app', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          // The review holds the manager row FOR UPDATE, as a self-review of a disable does.
+          await reviewAccess(holder, selfManager, selfManager, false, []);
+          const pending = writer.query(
+            'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+            [selfManager, 1, customer, display, randomUUID()],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The cancel waits on the requester row.',
+          );
+          // The disable commits while the cancel waits, after its authorization reads.
+          await changeAccess(holder, selfManager, selfManager, false, []);
+          await holder.query('COMMIT');
+          await refuse(pending, 'job-not-found');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([holder.end(), writer.end()]);
+        }
+        assert.deepEqual(
+          await cancelState(job.jobId, display),
+          before,
+          'A refused cancel changes no request, state, revision, publication, or audit row.',
+        );
+        assert.deepEqual(await permissionRow(selfManager), {
+          enabled: false,
+          permission_version: 2,
+        });
+        assert.deepEqual(await grantsOf(selfManager), []);
+        assert.equal(await visibleTo(selfManager, 1), false);
+        assert.equal(await visibleTo(selfManager, 2), false);
+        await endJob(job.jobId);
+      },
+    );
+
+    await check(
+      'a cancel refuses when a manager loses jobs:manage during its connection-row wait (S7c)',
+      async () => {
+        const grantsManager = await principal(`${randomUUID()}`, [
+          ['jobs:manage', district()],
+        ]);
+        // A second administrator changes the manager, so no principal lock stands in the cancel's way.
+        const accessAdmin = await principal(`${randomUUID()}`, [
+          ['jobs:manage', { kind: 'platform' }],
+          ['platform-users:manage', { kind: 'platform' }],
+        ]);
+        const job = await makeJob({ devices: ['cn12'] });
+        const display = (await jobRow(job.jobId)).display_id;
+        const before = await cancelState(job.jobId, display);
+        const holder = await connect('cc-migrator', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        const changer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          // The connection row is the last blocking lock of the cancel.
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.google_connection WHERE customer_id=$1 FOR UPDATE',
+            [customer],
+          );
+          const pending = writer.query(
+            'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+            [grantsManager, 1, customer, display, randomUUID()],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The cancel waits on the connection row.',
+          );
+          // The grant loss commits while the cancel waits on the connection row.
+          await changeAccess(changer, accessAdmin, grantsManager, true, []);
+          await holder.query('ROLLBACK');
+          await refuse(pending, 'job-not-found');
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([
+            holder.end(),
+            writer.end(),
+            changer.end(),
+          ]);
+        }
+        assert.deepEqual(
+          await cancelState(job.jobId, display),
+          before,
+          'A refused cancel changes no request, state, revision, publication, or audit row.',
+        );
+        assert.deepEqual(await permissionRow(grantsManager), {
+          enabled: true,
+          permission_version: 2,
+        });
+        assert.deepEqual(await grantsOf(grantsManager), []);
+        assert.equal(await visibleTo(grantsManager, 2), false);
+        await endJob(job.jobId);
+      },
+    );
+
+    await check(
+      'a cancel keeps a valid authority through its requester-row wait (S7d)',
+      async () => {
+        const controlManager = await principal(`${randomUUID()}`, [
+          ['jobs:manage', district()],
+          ['platform-users:manage', { kind: 'platform' }],
+        ]);
+        const job = await makeJob({ devices: ['cn11'] });
+        const display = (await jobRow(job.jobId)).display_id;
+        const holder = await connect('cc-app', 'cc-app');
+        const writer = await connect('cc-app', 'cc-app');
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const writerPid = (
+            await writer.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          // The review locks the row and commits nothing, so the authority stays valid.
+          await holder.query('BEGIN');
+          await reviewAccess(holder, controlManager, controlManager, false, []);
+          const pending = writer.query(
+            'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+            [controlManager, 1, customer, display, randomUUID()],
+          );
+          pending.catch(() => undefined);
+          assert.equal(
+            await waitsFor(writerPid, holderPid),
+            true,
+            'The control cancel waits on the requester row.',
+          );
+          await holder.query('ROLLBACK');
+          assert.deepEqual((await pending).rows[0].result, {
+            outcome: 'requested',
+          });
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await Promise.allSettled([holder.end(), writer.end()]);
+        }
+        const row = await jobRow(job.jobId);
+        assert.equal(row.status, 'cancelled');
+        assert.equal(row.cancel_requested_by, controlManager);
+        assert.equal((await cancelEvents(display)).n, 1);
+      },
+    );
+
     await check(
       'a repeat keeps the first person and time and writes no second audit row (S8)',
       async () => {
