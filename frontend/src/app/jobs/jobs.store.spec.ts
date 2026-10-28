@@ -137,6 +137,10 @@ describe('jobsReadable', () => {
     expect(jobsReadable(auth([{ action: 'devices:read' }]))).toBe(true);
   });
 
+  it('shows Jobs to a jobs:manage holder', () => {
+    expect(jobsReadable(auth([{ action: 'jobs:manage' }]))).toBe(true);
+  });
+
   it('hides Jobs without either action', () => {
     expect(jobsReadable(auth([{ action: 'schools:read' }]))).toBe(false);
   });

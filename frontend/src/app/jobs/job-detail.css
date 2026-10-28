@@ -22,6 +22,12 @@
   justify-content: space-between;
   gap: var(--cc-space-sm);
 }
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-sm);
+}
 .banner {
   padding: var(--cc-space-md) var(--cc-card-padding);
   border-radius: var(--cc-radius-control);

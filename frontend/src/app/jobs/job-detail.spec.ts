@@ -480,6 +480,7 @@ interface SetupOptions {
   reconcileError?: string;
   notice?: string;
   grants?: string[];
+  phase?: number;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -512,6 +513,8 @@ function setup(options: SetupOptions = {}) {
     ),
     reconcileError: signal(options.reconcileError ?? ''),
     notice: signal(options.notice ?? ''),
+    cancelling: signal(false),
+    cancelError: signal(''),
     init: vi.fn().mockResolvedValue(undefined),
     leave: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
@@ -519,6 +522,7 @@ function setup(options: SetupOptions = {}) {
     next: vi.fn(),
     previous: vi.fn(),
     reconcile: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn().mockResolvedValue(true),
   };
   const grants = (
     options.grants ?? ['jobs:read', 'devices:read', 'devices:write']
@@ -536,7 +540,7 @@ function setup(options: SetupOptions = {}) {
       {
         provide: AuthStore,
         useValue: {
-          metadata: signal({ phase: 3 }),
+          metadata: signal({ phase: options.phase ?? 3 }),
           session,
         },
       },
@@ -1440,4 +1444,370 @@ it('pages with the operations controls', () => {
       'button[aria-label="Previous operations page"]',
     )?.disabled,
   ).toBe(true);
+});
+
+const runningJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'UPD-001',
+    status: 'running',
+    scope: { kind: 'devices', deviceCount: 48 },
+    progress: {
+      total: 48,
+      succeeded: 36,
+      failed: 0,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      cancelled: 0,
+      pending: 12,
+    },
+    finishedAt: null,
+    ...overrides,
+  });
+
+const request = { at: '2026-10-26T14:42:00.000Z', by: person };
+
+const cancelButton = (element: HTMLElement) =>
+  element.querySelector<HTMLButtonElement>('#cancel-job');
+
+it('offers Cancel pending work to the requester while work remains', () => {
+  const { element } = setup({ job: runningJob() });
+  const cancel = cancelButton(element);
+  expect(cancel).not.toBeNull();
+  expect(cancel?.textContent?.trim()).toBe('Cancel pending work');
+  expect(cancel?.disabled).toBe(false);
+});
+
+it('hides Cancel pending work without the right or without work to stop', () => {
+  const { element, fixture, session, store } = setup({ job: runningJob() });
+  expect(cancelButton(element)).not.toBeNull();
+
+  // Another person holds jobs:read but did not request the job.
+  session.set({
+    identity: {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      grants: [
+        {
+          action: 'jobs:read',
+          scope: { kind: 'district', customerId: 'C0123456' },
+        },
+      ],
+    },
+  });
+  fixture.detectChanges();
+  expect(cancelButton(element)).toBeNull();
+
+  // The requester sees no control once the job awaits devices or has no pending work.
+  session.set({
+    identity: {
+      id: person.id,
+      grants: [
+        {
+          action: 'jobs:read',
+          scope: { kind: 'district', customerId: 'C0123456' },
+        },
+      ],
+    },
+  });
+  store.job.set(runningJob({ status: 'awaiting-devices' }));
+  fixture.detectChanges();
+  expect(cancelButton(element)).toBeNull();
+
+  store.job.set(
+    runningJob({
+      status: 'completed',
+      progress: {
+        total: 48,
+        succeeded: 48,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 0,
+      },
+    }),
+  );
+  fixture.detectChanges();
+  expect(cancelButton(element)).toBeNull();
+});
+
+it('shows the cancel to a jobs:manage holder who did not request the job', () => {
+  const { element, fixture, session } = setup({ job: runningJob() });
+  session.set({
+    identity: {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      grants: [
+        {
+          action: 'jobs:manage',
+          scope: { kind: 'district', customerId: 'C0123456' },
+        },
+      ],
+    },
+  });
+  fixture.detectChanges();
+  expect(cancelButton(element)?.textContent?.trim()).toBe(
+    'Cancel pending work',
+  );
+});
+
+it('asks once with the running question and both paragraphs described', async () => {
+  const { element, fixture } = setup({ job: runningJob() });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]');
+  expect(dialog).not.toBeNull();
+  expect(dialog?.getAttribute('aria-describedby')).toBe(
+    'cancel-question-one cancel-question-two',
+  );
+  expect(dialog?.querySelector('#cancel-job-title')?.textContent?.trim()).toBe(
+    'Cancel pending work on UPD-001?',
+  );
+  expect(
+    dialog?.querySelector('#cancel-question-one')?.textContent?.trim(),
+  ).toBe(
+    '12 of 48 operations are pending. Those that have not reached Google end Cancelled and never run.',
+  );
+  expect(
+    dialog?.querySelector('#cancel-question-two')?.textContent?.trim(),
+  ).toBe(
+    'Requests already sent to Google finish and keep their results. The 36 confirmed updates stay. Nothing rolls back.',
+  );
+  expect(
+    [...(dialog?.querySelectorAll('button') ?? [])].map((candidate) =>
+      candidate.textContent?.trim(),
+    ),
+  ).toEqual(['Keep job running', 'Cancel pending work']);
+});
+
+it('closes the question with Escape and returns focus to the control', async () => {
+  const { element, fixture } = setup({ job: runningJob() });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]') as HTMLElement;
+  dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  expect(element.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(document.activeElement).toBe(cancelButton(element));
+});
+
+it('sends the cancel through the store and returns focus after the answer', async () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]') as HTMLElement;
+  const confirm = [...dialog.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Cancel pending work',
+  );
+  confirm?.click();
+  fixture.detectChanges();
+  await Promise.resolve();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  expect(store.cancel).toHaveBeenCalledTimes(1);
+  expect(element.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(document.activeElement).toBe(cancelButton(element));
+});
+
+it('keeps focus on the confirm control while the cancel answer is held', async () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  let release!: (value: boolean) => void;
+  store.cancel.mockImplementation(() => {
+    store.cancelling.set(true);
+    return new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+  });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]') as HTMLElement;
+  const confirm = [...dialog.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Cancel pending work',
+  ) as HTMLButtonElement;
+  confirm.focus();
+  confirm.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  // The control stays focusable and announces its disabled state during the POST.
+  expect(confirm.disabled).toBe(false);
+  expect(confirm.getAttribute('aria-disabled')).toBe('true');
+  expect(document.activeElement).toBe(confirm);
+
+  release(false);
+  await fixture.whenStable();
+});
+
+it('closes a held question with Escape and returns focus to the control', async () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  let release!: (value: boolean) => void;
+  store.cancel.mockImplementation(() => {
+    store.cancelling.set(true);
+    return new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+  });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]') as HTMLElement;
+  const confirm = [...dialog.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Cancel pending work',
+  ) as HTMLButtonElement;
+  confirm.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  expect(element.querySelector('[role="alertdialog"]')).toBeNull();
+  const cancel = cancelButton(element);
+  expect(cancel?.textContent?.trim()).toBe('Cancelling…');
+  expect(document.activeElement).toBe(cancel);
+
+  release(false);
+  await fixture.whenStable();
+});
+
+it('closes a held question with Keep job running and keeps focus', async () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  let release!: (value: boolean) => void;
+  store.cancel.mockImplementation(() => {
+    store.cancelling.set(true);
+    return new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+  });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]') as HTMLElement;
+  const confirm = [...dialog.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Cancel pending work',
+  ) as HTMLButtonElement;
+  confirm.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  [...dialog.querySelectorAll('button')]
+    .find((candidate) => candidate.textContent?.trim() === 'Keep job running')
+    ?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  expect(element.querySelector('[role="alertdialog"]')).toBeNull();
+  expect(document.activeElement).toBe(cancelButton(element));
+
+  release(false);
+  await fixture.whenStable();
+});
+
+it('focuses Back to jobs when the job disappears after the answer', async () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  store.cancel.mockImplementation(async () => {
+    store.cancelling.set(true);
+    store.job.set(null);
+    store.missing.set(true);
+    store.cancelling.set(false);
+    return false;
+  });
+  cancelButton(element)?.click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  const dialog = element.querySelector('[role="alertdialog"]') as HTMLElement;
+  [...dialog.querySelectorAll('button')]
+    .find(
+      (candidate) => candidate.textContent?.trim() === 'Cancel pending work',
+    )
+    ?.click();
+  fixture.detectChanges();
+  await Promise.resolve();
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  expect(element.querySelector('#job-missing-title')).not.toBeNull();
+  expect(document.activeElement).toBe(
+    element.querySelector('#job-missing-back'),
+  );
+});
+
+it('does not reopen the question while a cancel request is held', () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  store.cancelling.set(true);
+  fixture.detectChanges();
+
+  const cancel = cancelButton(element);
+  expect(cancel?.textContent?.trim()).toBe('Cancelling…');
+  expect(cancel?.disabled).toBe(false);
+  expect(cancel?.getAttribute('aria-disabled')).toBe('true');
+
+  cancel?.click();
+  fixture.detectChanges();
+  expect(element.querySelector('[role="alertdialog"]')).toBeNull();
+});
+
+it('keeps the request visible while the job runs and after it ends', async () => {
+  const { element, fixture, store } = setup({
+    job: runningJob({ cancelRequest: request }),
+  });
+
+  const cancel = cancelButton(element);
+  expect(cancel?.textContent?.trim()).toBe('Cancellation requested');
+  expect(cancel?.getAttribute('aria-disabled')).toBe('true');
+  expect(cancel?.disabled).toBe(false);
+  expect(cancel?.tabIndex).toBe(0);
+  expect(text(element)).toContain(
+    'Cancellation requested · The job stops within 30 seconds',
+  );
+  expect(text(element)).toContain('Cancellation requested by District Admin');
+
+  // The job ends cancelled: the banner goes, the identity line stays, and the control leaves.
+  store.job.set(
+    runningJob({
+      status: 'cancelled',
+      cancelRequest: request,
+      progress: {
+        total: 48,
+        succeeded: 38,
+        failed: 1,
+        unknown: 1,
+        skipped: 0,
+        expired: 0,
+        cancelled: 8,
+        pending: 0,
+      },
+    }),
+  );
+  fixture.detectChanges();
+  await fixture.whenStable();
+  expect(cancelButton(element)).toBeNull();
+  expect(text(element)).not.toContain('The job stops within 30 seconds');
+  expect(text(element)).toContain('Cancellation requested by District Admin');
+  expect(text(element)).toContain('Cancelled');
+});
+
+it('shows the cancel refusal beside the toolbar', () => {
+  const { element, fixture, store } = setup({ job: runningJob() });
+  store.cancelError.set('You do not have permission to cancel this job.');
+  fixture.detectChanges();
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent?.trim()).toBe(
+    'You do not have permission to cancel this job.',
+  );
 });

@@ -24,12 +24,15 @@ export const JOBS_PAGE_SIZE = 50;
 
 export type { JobEventSource } from './job-stream';
 
-/** The Jobs navigation item and route need jobs:read or devices:read (design 2.1). */
+/** The Jobs navigation item and route need jobs:read, jobs:manage, or devices:read (design 2.1). */
 export function jobsReadable(auth: InstanceType<typeof AuthStore>): boolean {
   if (auth.metadata()?.phase !== 3) return false;
   const grants = auth.session()?.identity.grants ?? [];
   return grants.some(
-    (grant) => grant.action === 'jobs:read' || grant.action === 'devices:read',
+    (grant) =>
+      grant.action === 'jobs:read' ||
+      grant.action === 'jobs:manage' ||
+      grant.action === 'devices:read',
   );
 }
 

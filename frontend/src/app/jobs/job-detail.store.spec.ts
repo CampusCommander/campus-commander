@@ -1001,3 +1001,150 @@ describe('Reconcile interruption', () => {
     expect(store.operations()[0].outcome).toBe('unknown');
   });
 });
+
+describe('Cancel', () => {
+  const cancelRequest = async (path: string): Promise<Response> => {
+    if (path.endsWith('/cancel')) return Response.json({});
+    if (path.includes('/operations')) return Response.json(operationsPage());
+    return Response.json(detail());
+  };
+
+  it('posts the request and rereads the job', async () => {
+    const { store, requestMock } = setup(cancelRequest);
+    await store.init('UPD-006');
+    const reads = () =>
+      requestMock.mock.calls.filter(
+        ([path]) =>
+          path === '/api/jobs/UPD-006' ||
+          path === '/api/jobs/UPD-006/operations?limit=6',
+      ).length;
+    expect(reads()).toBe(2);
+
+    expect(await store.cancel()).toBe(true);
+    expect(requestMock).toHaveBeenCalledWith('/api/jobs/UPD-006/cancel', {});
+    expect(reads()).toBe(4);
+    expect(store.cancelling()).toBe(false);
+    expect(store.cancelError()).toBe('');
+  });
+
+  it('shows the permission refusal without a reread', async () => {
+    const { store, requestMock } = setup(async (path) =>
+      path.endsWith('/cancel')
+        ? Response.json({ reason: 'cancel-not-permitted' }, { status: 403 })
+        : path.includes('/operations')
+          ? Response.json(operationsPage())
+          : Response.json(detail()),
+    );
+    await store.init('UPD-006');
+    const before = requestMock.mock.calls.length;
+
+    expect(await store.cancel()).toBe(false);
+    expect(store.cancelError()).toBe(
+      'You do not have permission to cancel this job.',
+    );
+    expect(requestMock.mock.calls.length).toBe(before + 1);
+    expect(store.cancelling()).toBe(false);
+  });
+
+  it('reads again when the job finished before the request', async () => {
+    const { store, requestMock } = setup(async (path) =>
+      path.endsWith('/cancel')
+        ? Response.json({ reason: 'job-finished' }, { status: 409 })
+        : path.includes('/operations')
+          ? Response.json(operationsPage())
+          : Response.json(detail()),
+    );
+    await store.init('UPD-006');
+    const before = requestMock.mock.calls.length;
+
+    expect(await store.cancel()).toBe(false);
+    expect(store.cancelError()).toBe(
+      'The job finished before the cancel arrived.',
+    );
+    // The command, the job read, and its operations read.
+    expect(requestMock.mock.calls.length).toBe(before + 3);
+  });
+
+  it('sends one request while the first answer is held', async () => {
+    let release: (response: Response) => void = () => undefined;
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const { store, requestMock } = setup((path) =>
+      path.endsWith('/cancel')
+        ? held
+        : path.includes('/operations')
+          ? Promise.resolve(Response.json(operationsPage()))
+          : Promise.resolve(Response.json(detail())),
+    );
+    await store.init('UPD-006');
+
+    const first = store.cancel();
+    expect(store.cancelling()).toBe(true);
+    expect(await store.cancel()).toBe(false);
+    expect(
+      requestMock.mock.calls.filter(([path]) => path.endsWith('/cancel')),
+    ).toHaveLength(1);
+
+    release(Response.json({}));
+    expect(await first).toBe(true);
+    expect(store.cancelling()).toBe(false);
+  });
+
+  it('keeps the next job busy when an obsolete cancel answer arrives', async () => {
+    const held = new Map<string, (response: Response) => void>();
+    const { store, requestMock } = setup((path) => {
+      if (path.endsWith('/cancel'))
+        return new Promise<Response>((resolve) => held.set(path, resolve));
+      return path.includes('/operations')
+        ? Promise.resolve(Response.json(operationsPage()))
+        : Promise.resolve(Response.json(detail()));
+    });
+    await store.init('UPD-006');
+    const earlier = store.cancel();
+    expect(store.cancelling()).toBe(true);
+
+    // Back to jobs and open the next job while the first answer is still held.
+    store.leave();
+    await store.init('STS-002');
+    const current = store.cancel();
+    expect(store.cancelling()).toBe(true);
+
+    // The earlier job's answer must not release the newer request's guard.
+    held.get('/api/jobs/UPD-006/cancel')?.(Response.json({}));
+    expect(await earlier).toBe(false);
+    expect(store.cancelling()).toBe(true);
+
+    // A second click during the newer request sends no second POST.
+    expect(await store.cancel()).toBe(false);
+    expect(
+      requestMock.mock.calls.filter(
+        ([path]) => path === '/api/jobs/STS-002/cancel',
+      ),
+    ).toHaveLength(1);
+
+    held.get('/api/jobs/STS-002/cancel')?.(Response.json({}));
+    expect(await current).toBe(true);
+    expect(store.cancelling()).toBe(false);
+  });
+
+  it('clears the previous refusal on a new request', async () => {
+    let refuse = true;
+    const { store } = setup(async (path) => {
+      if (path.endsWith('/cancel'))
+        return refuse
+          ? Response.json({ reason: 'cancel-not-permitted' }, { status: 403 })
+          : Response.json({});
+      return path.includes('/operations')
+        ? Response.json(operationsPage())
+        : Response.json(detail());
+    });
+    await store.init('UPD-006');
+    await store.cancel();
+    expect(store.cancelError()).not.toBe('');
+
+    refuse = false;
+    expect(await store.cancel()).toBe(true);
+    expect(store.cancelError()).toBe('');
+  });
+});

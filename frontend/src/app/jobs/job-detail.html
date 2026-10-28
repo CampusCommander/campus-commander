@@ -9,17 +9,45 @@
   @if (store.job(); as job) {
   <div class="toolbar">
     <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
-    <button
-      mat-stroked-button
-      type="button"
-      [disabled]="store.offline() || store.refreshing()"
-      (click)="refresh()"
-    >
-      Refresh
-    </button>
+    <div class="toolbar-actions">
+      <button
+        id="job-refresh"
+        mat-stroked-button
+        type="button"
+        [disabled]="store.offline() || store.refreshing()"
+        (click)="refresh()"
+      >
+        Refresh
+      </button>
+      @if (cancelControl() === 'request' || cancelControl() === 'requested') {
+      <button
+        id="cancel-job"
+        mat-stroked-button
+        type="button"
+        [disabled]="cancelControl() === 'requested' || store.cancelling()"
+        disabledInteractive
+        (click)="requestCancel()"
+      >
+        {{ cancelControl() === 'requested' ? 'Cancellation requested' :
+        (store.cancelling() ? 'Cancelling…' : 'Cancel pending work') }}
+      </button>
+      }
+    </div>
   </div>
 
-  @if (store.offline()) {
+  @if (store.cancelError()) {
+  <p class="error" role="alert">{{ store.cancelError() }}</p>
+  } @if (showCancelBanner()) {
+  <section class="banner" aria-labelledby="job-cancel-banner-title">
+    <h2 id="job-cancel-banner-title">
+      <strong>Cancellation requested</strong> · The job stops within 30 seconds
+    </h2>
+    <p>
+      Requests already sent to Google finish and keep their results. Pending
+      operations that have not reached Google end Cancelled. Nothing rolls back.
+    </p>
+  </section>
+  } @if (store.offline()) {
   <section class="banner" aria-labelledby="job-offline-title">
     <h2 id="job-offline-title">
       <strong>Offline</strong> · Showing the last received job state
@@ -58,6 +86,8 @@
     <p class="identity-meta">{{ identity() }}</p>
     @if (reason(); as reason) {
     <p class="identity-meta">{{ reason }}</p>
+    } @if (cancelIdentity(); as cancel) {
+    <p class="identity-meta">{{ cancel }}</p>
     }
   </section>
 
@@ -324,7 +354,9 @@
     <h2 id="job-missing-title">Job not found</h2>
     <p>This job does not exist or was removed.</p>
     <div class="actions">
-      <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
+      <a id="job-missing-back" mat-stroked-button routerLink="/jobs"
+        >Back to jobs</a
+      >
     </div>
   </section>
   } @else if (store.offline()) {
@@ -365,5 +397,13 @@
     <div class="skeleton" aria-hidden="true"></div>
     <div class="skeleton short" aria-hidden="true"></div>
   </section>
+  } @if (cancelQuestion(); as question) {
+  <app-job-cancel-dialog
+    [open]="cancelOpen()"
+    [question]="question"
+    [busy]="store.cancelling()"
+    (cancelled)="keepRunning()"
+    (confirmed)="confirmCancel()"
+  />
   }
 </div>
