@@ -588,6 +588,7 @@ try {
       migrator: migrators[0],
       connect,
       issuer,
+      password,
     })),
   );
   results.push(

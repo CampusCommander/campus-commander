@@ -7,6 +7,7 @@ export async function qualifyDeviceWriteJobs({
   migrator,
   connect,
   issuer,
+  password,
 }) {
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
@@ -13342,6 +13343,46 @@ export async function qualifyDeviceWriteJobs({
           await migrator.query(
             'GRANT EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) TO "cc-app"',
           );
+        }
+        // Another schema role holds no EXECUTE, so the database refuses its call (card rule).
+        const outsiderName = `cc-outsider-${randomUUID().slice(0, 8)}`;
+        let outsider;
+        try {
+          await migrator.query(
+            `CREATE ROLE "${outsiderName}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`,
+          );
+          await migrator.query(
+            `GRANT CONNECT ON DATABASE "cc-app" TO "${outsiderName}"`,
+          );
+          await migrator.query(`GRANT USAGE ON SCHEMA cc TO "${outsiderName}"`);
+          outsider = await connect(outsiderName, 'cc-app');
+          for (const [signature, text, values] of [
+            [
+              'cc.request_job_cancel(uuid,integer,text,text,uuid)',
+              'SELECT cc.request_job_cancel($1,$2,$3,$4,$5)',
+              [confirmer, 1, customer, display, randomUUID()],
+            ],
+            [
+              'cc.job_cancel_requested(text,uuid)',
+              'SELECT cc.job_cancel_requested($1,$2)',
+              [customer, job.jobId],
+            ],
+          ]) {
+            await assert.rejects(
+              outsider.query(text, values),
+              (error) => error.code === '42501',
+              `${signature} must refuse a role without EXECUTE.`,
+            );
+            const granted = await outsider.query(
+              `SELECT has_function_privilege(current_user,'cc.${signature}','EXECUTE') AS granted`,
+            );
+            assert.equal(granted.rows[0].granted, false);
+          }
+        } finally {
+          await outsider?.end().catch(() => undefined);
+          await migrator
+            .query(`DROP ROLE IF EXISTS "${outsiderName}"`)
+            .catch(() => undefined);
         }
       },
     );
