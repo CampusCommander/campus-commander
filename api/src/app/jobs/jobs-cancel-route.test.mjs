@@ -367,7 +367,11 @@ test('each cancel refusal answers its status and reason and reads no summary', a
       0,
       `A ${reason} refusal reads no summary.`,
     );
-    assert.deepEqual(auditEvents, [], `A ${reason} refusal writes no audit row.`);
+    assert.deepEqual(
+      auditEvents,
+      [],
+      `A ${reason} refusal writes no audit row.`,
+    );
   }
 });
 

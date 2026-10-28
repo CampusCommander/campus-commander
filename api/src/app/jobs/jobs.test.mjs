@@ -1460,8 +1460,14 @@ test('the detail carries the cancel request of its header', async () => {
 
 test('attention counts a cancelled job only with a failed or Unknown operation', async () => {
   const db = database([
-    ['clock_timestamp() AS now', [{ now: new Date('2026-10-26T12:10:00.000Z') }]],
-    ['SELECT seen_at FROM cc.job_activity_seen WHERE principal_id', [{ seen_at: new Date('2026-10-26T10:00:00.000Z') }]],
+    [
+      'clock_timestamp() AS now',
+      [{ now: new Date('2026-10-26T12:10:00.000Z') }],
+    ],
+    [
+      'SELECT seen_at FROM cc.job_activity_seen WHERE principal_id',
+      [{ seen_at: new Date('2026-10-26T10:00:00.000Z') }],
+    ],
     [
       "j.status IN ('running','awaiting-devices')",
       (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
@@ -1497,8 +1503,14 @@ test('attention counts a cancelled job only with a failed or Unknown operation',
 
 test('a cancelled job counts as finished, not running', async () => {
   const db = database([
-    ['clock_timestamp() AS now', [{ now: new Date('2026-10-26T12:10:00.000Z') }]],
-    ['SELECT seen_at FROM cc.job_activity_seen WHERE principal_id', [{ seen_at: null }]],
+    [
+      'clock_timestamp() AS now',
+      [{ now: new Date('2026-10-26T12:10:00.000Z') }],
+    ],
+    [
+      'SELECT seen_at FROM cc.job_activity_seen WHERE principal_id',
+      [{ seen_at: null }],
+    ],
     [
       "j.status IN ('running','awaiting-devices')",
       (v, text) => (text.includes('count(*)') ? [{ count: 0 }] : []),
@@ -1547,7 +1559,10 @@ test('seesEveryJob accepts jobs:read or jobs:manage at the customer scope', () =
     true,
   );
   // Another customer's manage grant sees nothing here, and so does a caller with no grant.
-  assert.equal(seesEveryJob(district('jobs:manage', 'C-other'), 'C0123456'), false);
+  assert.equal(
+    seesEveryJob(district('jobs:manage', 'C-other'), 'C0123456'),
+    false,
+  );
   assert.equal(seesEveryJob(session(), 'C0123456'), false);
 });
 

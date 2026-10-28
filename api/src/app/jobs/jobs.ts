@@ -842,7 +842,9 @@ export class Jobs {
         ? result.outcome
         : null;
     if (outcome !== 'requested' && outcome !== 'repeated')
-      throw new ServiceUnavailableException({ reason: 'job-store-unavailable' });
+      throw new ServiceUnavailableException({
+        reason: 'job-store-unavailable',
+      });
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
     return jobSummary(job);

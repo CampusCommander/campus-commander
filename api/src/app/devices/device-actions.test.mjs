@@ -847,7 +847,10 @@ test('a jobs:manage-only person reads and reconciles with the manage action', as
     identity: {
       ...session.identity,
       grants: [
-        { action: 'jobs:manage', scope: { kind: 'district', customerId: customer } },
+        {
+          action: 'jobs:manage',
+          scope: { kind: 'district', customerId: customer },
+        },
       ],
     },
   };
@@ -864,7 +867,13 @@ test('a jobs:manage-only person reads and reconciles with the manage action', as
   ]);
   // The device action of each Reconcile stays.
   calls.length = 0;
-  await requireReconcileActions(auth, manager, customer, correlationId, 'update');
+  await requireReconcileActions(
+    auth,
+    manager,
+    customer,
+    correlationId,
+    'update',
+  );
   assert.deepEqual(
     calls.map(([action]) => action),
     ['devices:write'],
