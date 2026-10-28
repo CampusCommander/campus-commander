@@ -2,7 +2,9 @@
 
 Status: proposed. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
-The mockup comes next. The record waits for the owner's confirmation with the mockup.
+
+On 2026-10-26 the owner approved the job cancel mockup. Owner, in the main chat: "Thats fine."
+The CSV slice mockup comes next. The CSV parts of this record wait for the owner's confirmation with that mockup.
 
 Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, and 2026-10-26, quoted under [Owner direction](#owner-direction).
 
@@ -206,6 +208,13 @@ The eng-lead asked five questions about the cancel. The owner answered:
 
 His answer calls the requester the owner of the job.
 
+### 2026-10-26, main chat: the job cancel mockup
+
+The eng-lead asked the owner to approve the job cancel mockup. He also recommended no cancel reason and the 30-second cancel check.
+The owner answered:
+
+> Thats fine.
+
 ## Implementation defaults
 
 The owner settled these points on 2026-10-26:
@@ -221,6 +230,8 @@ The owner settled these points on 2026-10-26:
 9. A cancelled job ends Cancelled, also with an Unknown operation. Its results keep every outcome from before the cancel.
 10. After every command of a command job is issued, Cancel pending work is not offered.
 11. The universal job cancel ships first, as its own slice.
+12. A cancel takes no reason. The job records the person and the time.
+13. The worker reads a cancel request at each batch claim and each lease renewal. A running job stops within 30 seconds.
 
 The remaining defaults are engineering choices for owner review, not owner decisions. Change them when the owner asks.
 The [technical design](../research/batch-update-export-import-technical-design.md#21-owner-decisions-and-engineering-defaults) lists every default. These defaults change visible behavior:
@@ -239,10 +250,9 @@ The [technical design](../research/batch-update-export-import-technical-design.m
 12. Validation reads the organization unit tree from Google once and checks every Organization unit path.
 13. Header matching ignores outer spaces and letter case. Blank rows count nowhere.
 14. The import sheet checks a chosen CSV file for a header row and one data row before the upload.
-15. The worker reads a cancel request at each batch claim and each lease renewal. A running job stops within 30 seconds.
-16. A Sheet export offers no Cancel pending work after its Sheet write starts.
-17. `jobs:manage` includes the job visibility of `jobs:read`.
-18. A cancelled job with a failed or Unknown operation raises the Jobs attention dot.
+15. A Sheet export offers no Cancel pending work after its Sheet write starts.
+16. `jobs:manage` includes the job visibility of `jobs:read`.
+17. A cancelled job with a failed or Unknown operation raises the Jobs attention dot.
 
 ## Design
 
@@ -282,7 +292,9 @@ Design gaps:
 7. No frame shows the Google connection inputs: the Picker API key and the project number. **Open.**
 8. The frames use full pages. The built bulk actions use the side sheet. The mockup places Export and Import in the sheet and the review on the validation job page. **Open.**
 9. The conflict cards and the baseline expiry (`99:145`, `106:514`, `104:479`) contradict D1. **Superseded.** The mockup removes them.
-10. No frame shows the cancel confirmation, Cancellation requested, or a Cancelled job. `228:4524` and `228:4996` show only the control. **Open.**
+10. No frame shows the cancel confirmation, Cancellation requested, or a Cancelled job. `228:4524` and `228:4996` show only the control.
+    **Closed** by the approved [job cancel mockup](../ui/designs/2026-10-26-job-cancel.html) and its [notes](../ui/designs/2026-10-26-job-cancel-notes.md).
+    The import confirmation that names the waiting status jobs stays open. The CSV slice mockup draws it.
 
 ## Exclusions and open decisions
 
