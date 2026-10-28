@@ -538,6 +538,7 @@ CREATE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer 
   p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; pending integer; dispatched integer;
+  stop_now boolean:=false;
 BEGIN
   -- S2: a null identifier never matches a header.
   IF p_actor IS NULL OR p_customer IS NULL OR p_display_id IS NULL OR p_correlation IS NULL THEN
@@ -589,6 +590,16 @@ BEGIN
     IF job.status='awaiting-devices' OR pending+dispatched=0 THEN
       RAISE EXCEPTION 'The job holds no work to stop.' USING DETAIL='nothing-to-stop';
     END IF;
+    -- A job after its first claim changes only its header, and its worker settles the operations
+    -- (section 3). The claim writes first_claimed_at under the header lock, so this read holds.
+    SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
+    stop_now:=job.status<>'running' OR detail.first_claimed_at IS NULL;
+    -- Lock order (section 2 table): the pending operations lock by number before the requester row and
+    -- the connection row. The header lock is held, so the complete set never waits.
+    IF stop_now THEN
+      PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=job.job_id AND o.status='pending'
+        ORDER BY o.operation_number FOR UPDATE;
+    END IF;
   END IF;
   -- The request names the actor and the publication names the connection row. Those rows lock before the
   -- first write, the principal row before the connection row, as the credential functions take them.
@@ -608,11 +619,10 @@ BEGIN
     END IF;
     PERFORM cc.close_refresh_job(job.job_id,NULL);
   ELSE
-    SELECT * INTO detail FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
     -- A job that never claimed stops at once: every pending operation settles Cancelled and the terminal
-    -- rule ends the job. A job after its first claim changes only its header, and its worker settles the
-    -- operations (section 3). The claim writes first_claimed_at under the header lock, so this read holds.
-    IF job.status<>'running' OR detail.first_claimed_at IS NULL THEN
+    -- rule ends the job. The pending set is already locked above, and the skip re-locks rows this call
+    -- holds.
+    IF stop_now THEN
       PERFORM cc.skip_device_update_pending(job.job_id,'cancelled');
       PERFORM cc.refresh_device_update_counters(job.job_id);
       -- The closure clock reads after the operation locks.
