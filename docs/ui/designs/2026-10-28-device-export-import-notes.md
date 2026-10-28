@@ -430,7 +430,7 @@ The HTML also shows interactions that no PNG captures:
 ## Scenario and data
 
 - The person is the review build account, "Review administrator". Times are Wednesday, Oct 28, 2026, US Eastern, in the app time format.
-- The header and the navigation keep the connected domain `easton-consulting.com` and the simulated customer ID of the review build.
+- The header and the navigation keep the connected domain and the simulated customer ID of the review build.
 - The inventory is the 7,000 devices of the update device fields review. The grid shows the devices in serial order, so an edit export of the first 48 devices holds them in rows 2 to 49.
 - The 48 selected devices are the first 48 by serial. The eight visible grid rows are selected.
 - EXP-001 writes `devices-for-editing-EXP-001.csv` at 10:31 AM: 48 rows and the ten template columns. The download expires 30 days later, Nov 27, 10:31 AM.
