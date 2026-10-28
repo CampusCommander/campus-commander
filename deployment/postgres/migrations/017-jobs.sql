@@ -885,6 +885,7 @@ CREATE FUNCTION cc.claim_device_update_batch(p_customer text,p_job uuid,p_token 
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; held cc.device_update_batches; connection cc.google_connection;
   now_at timestamptz; stopped text:=NULL; lost uuid:=NULL; claim jsonb:='[]'::jsonb; readback jsonb:='[]'::jsonb;
+  requested boolean;
 BEGIN
   -- S2 (round 3): a claim records the execution that runs its batch. A null execution rejects before
   -- any lock.
@@ -913,7 +914,9 @@ BEGIN
   -- (B2c ruling 4): the job never dispatches again after the settlement that recorded it.
   stopped:=COALESCE(job.failure,cc.device_update_stop_reason(p_customer,detail.confirmed_by,
         detail.confirmer_permission_version,job.generation,detail.action));
-  IF stopped IS NULL THEN
+  -- A stored cancel request takes the stop branch (section 2). The header lock holds it for this call.
+  requested:=job.cancel_requested_at IS NOT NULL;
+  IF stopped IS NULL AND NOT requested THEN
     -- S1/R6-2: the batch ownership and its lease eligibility read under the header, before the batch
     -- lock. A duplicate claim answers busy instead of waiting on the held batch row.
     SELECT * INTO held FROM cc.device_update_batches b WHERE b.job_id=p_job AND b.batch=p_batch;
@@ -972,7 +975,7 @@ BEGIN
     -- The claim writes read the clock after every wait.
     now_at:=clock_timestamp();
   END IF;
-  IF stopped IS NOT NULL THEN
+  IF stopped IS NOT NULL OR requested THEN
     -- S1 (round 3, R2-F2): the stop skips every pending operation of the job, so that complete set locks
     -- first, in operation_number order, and no write below waits. A stop found at the first decision locks
     -- the set here; a stop found after the batch or detail wait re-locks rows that this call already holds

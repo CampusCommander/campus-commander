@@ -790,6 +790,11 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       'a cancel after the last stage ends the full sync cancelled (S9)',
       async () => {
         const jobId = randomUUID();
+        await migrator.query(
+          `UPDATE cc.device_sync_state SET sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,
+            sync_expires_at=NULL WHERE customer_id=$1`,
+          [customer],
+        );
         const state = await result(
           'SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result',
           [reader, customer, generation, jobId, randomUUID()],

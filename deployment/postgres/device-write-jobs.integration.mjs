@@ -13197,22 +13197,7 @@ export async function qualifyDeviceWriteJobs({
         }
         assert.equal((await jobRow(waiting.jobId)).status, 'cancelled');
         await refuse(cancel(confirmer, 'UPD-999999'), 'job-not-found');
-        const hidden = await makeJob({ devices: ['cn14'] });
-        await refuse(
-          cancel(foreign, (await jobRow(hidden.jobId)).display_id),
-          'job-not-found',
-        );
-        const visible = await makeJob({ devices: ['cn15'] });
-        await refuse(
-          cancel(auditor, (await jobRow(visible.jobId)).display_id),
-          'cancel-not-permitted',
-        );
-        const done = await makeJob({ devices: ['cn16'] });
-        await endJob(done.jobId);
-        await refuse(
-          cancel(confirmer, (await jobRow(done.jobId)).display_id),
-          'job-finished',
-        );
+        // A running job whose only operation settled holds nothing to stop.
         const settled = await makeJob({ devices: ['cn17'] });
         const admitted = await admit(false);
         assert.equal(admitted?.jobId, settled.jobId);
@@ -13237,7 +13222,24 @@ export async function qualifyDeviceWriteJobs({
           cancel(confirmer, (await jobRow(settled.jobId)).display_id),
           'nothing-to-stop',
         );
-        for (const job of [hidden, visible, settled])
+        await endJob(settled.jobId);
+        const done = await makeJob({ devices: ['cn16'] });
+        await endJob(done.jobId);
+        await refuse(
+          cancel(confirmer, (await jobRow(done.jobId)).display_id),
+          'job-finished',
+        );
+        const hidden = await makeJob({ devices: ['cn14'] });
+        await refuse(
+          cancel(foreign, (await jobRow(hidden.jobId)).display_id),
+          'job-not-found',
+        );
+        const visible = await makeJob({ devices: ['cn15'] });
+        await refuse(
+          cancel(auditor, (await jobRow(visible.jobId)).display_id),
+          'cancel-not-permitted',
+        );
+        for (const job of [hidden, visible])
           await endJob(job.jobId).catch(() => undefined);
       },
     );
@@ -13307,7 +13309,7 @@ export async function qualifyDeviceWriteJobs({
         );
         // The runtime call is guarded by its grant, not by PUBLIC.
         await migrator.query(
-          'REVOKE EXECUTE ON FUNCTION cc.request_job_cancel(uuid,integer,text,text,uuid) FROM cc-app',
+          'REVOKE EXECUTE ON FUNCTION cc.request_job_cancel(uuid,integer,text,text,uuid) FROM "cc-app"',
         );
         try {
           await rejects(
@@ -13322,11 +13324,11 @@ export async function qualifyDeviceWriteJobs({
           );
         } finally {
           await migrator.query(
-            'GRANT EXECUTE ON FUNCTION cc.request_job_cancel(uuid,integer,text,text,uuid) TO cc-app',
+            'GRANT EXECUTE ON FUNCTION cc.request_job_cancel(uuid,integer,text,text,uuid) TO "cc-app"',
           );
         }
         await migrator.query(
-          'REVOKE EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) FROM cc-app',
+          'REVOKE EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) FROM "cc-app"',
         );
         try {
           await rejects(
@@ -13338,7 +13340,7 @@ export async function qualifyDeviceWriteJobs({
           );
         } finally {
           await migrator.query(
-            'GRANT EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) TO cc-app',
+            'GRANT EXECUTE ON FUNCTION cc.job_cancel_requested(text,uuid) TO "cc-app"',
           );
         }
       },
