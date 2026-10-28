@@ -44,6 +44,7 @@ const progress = (overrides: Partial<JobProgress> = {}): JobProgress => ({
   unknown: 1,
   skipped: 0,
   expired: 0,
+  cancelled: 0,
   pending: 0,
   ...overrides,
 });
@@ -61,6 +62,7 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   finishedAt: '2026-10-19T10:36:02.000Z',
   progress: progress(),
   failure: null,
+  cancelRequest: null,
   confirmedBy: person,
   previewDisplayId: 'PV-006',
   changes: [

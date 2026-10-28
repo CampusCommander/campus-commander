@@ -38,8 +38,10 @@ function summary(state: State) {
       unknown: 0,
       skipped: 0,
       expired: 0,
+      cancelled: 0,
       pending: 12,
     },
+    cancelRequest: null,
     failure: null,
     ...overrides,
   });
@@ -69,8 +71,10 @@ function summary(state: State) {
             unknown: 0,
             skipped: 0,
             expired: 0,
+            cancelled: 0,
             pending: null,
           },
+          cancelRequest: null,
         }),
       ]
     : [];
@@ -90,8 +94,10 @@ function summary(state: State) {
             unknown: 0,
             skipped: 0,
             expired: 0,
+            cancelled: 0,
             pending: 24,
           },
+          cancelRequest: null,
         }),
       ]
     : [];
@@ -112,8 +118,10 @@ function summary(state: State) {
             unknown: 1,
             skipped: 0,
             expired: 0,
+            cancelled: 0,
             pending: 0,
           },
+          cancelRequest: null,
         }),
         job({
           jobId: '4f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
@@ -130,8 +138,10 @@ function summary(state: State) {
             unknown: 0,
             skipped: 0,
             expired: 0,
+            cancelled: 0,
             pending: null,
           },
+          cancelRequest: null,
         }),
         job({
           jobId: '5f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
@@ -148,8 +158,10 @@ function summary(state: State) {
             unknown: 0,
             skipped: 0,
             expired: 0,
+            cancelled: 0,
             pending: 0,
           },
+          cancelRequest: null,
         }),
       ]
     : [];

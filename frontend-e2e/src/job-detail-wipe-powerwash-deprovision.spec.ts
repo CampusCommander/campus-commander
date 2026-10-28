@@ -138,8 +138,10 @@ const powerwashJob = {
     unknown: 1,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 2,
   },
+  cancelRequest: null,
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-018',
@@ -317,8 +319,10 @@ const deprovisionJob = {
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 0,
   },
+  cancelRequest: null,
   failure: null,
   confirmedBy: person,
   previewDisplayId: 'PV-019',
@@ -363,8 +367,10 @@ const wipeJob = {
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 0,
   },
+  cancelRequest: null,
   commandType: 'WIPE_USERS',
   latestActivity: {
     at: '2026-10-22T18:50:00.000Z',
@@ -403,6 +409,7 @@ const summary = (job: {
     unknown: number;
     skipped: number;
     expired: number;
+    cancelled: number;
     pending: number | null;
   };
 }) => ({
@@ -418,6 +425,7 @@ const summary = (job: {
   finishedAt: job.finishedAt,
   progress: job.progress,
   failure: null,
+  cancelRequest: null,
 });
 
 const jobList = {
@@ -607,6 +615,7 @@ test('shows every Powerwash command state, including a cancelled command', async
           unknown: 1,
           skipped: 0,
           expired: 1,
+          cancelled: 0,
           pending: 2,
         },
         latestActivity: {
