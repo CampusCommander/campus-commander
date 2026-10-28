@@ -41,7 +41,7 @@ export const jobOperationFieldSchema = z.enum([
 ]);
 export type JobOperationField = z.infer<typeof jobOperationFieldSchema>;
 
-/** The nine job statuses of section 1.2. An awaiting-devices command job holds no write slot. */
+/** The ten job statuses of section 1.2. An awaiting-devices command job holds no write slot. */
 export const jobStatusSchema = z.enum([
   'accepted',
   'queued',
@@ -52,6 +52,7 @@ export const jobStatusSchema = z.enum([
   'completed-with-errors',
   'failed',
   'needs-review',
+  'cancelled',
 ]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 
@@ -88,6 +89,8 @@ export const jobProgressSchema = z
     skipped: count,
     /** A command that Google reports EXPIRED (section 1, terminal status). */
     expired: count,
+    /** An operation that never left the worker (design section 1). */
+    cancelled: count,
     pending: count.nullable(),
   })
   .refine(
@@ -112,6 +115,13 @@ export const jobPersonSchema = z.strictObject({
 });
 export type JobPerson = z.infer<typeof jobPersonSchema>;
 
+/** One stored cancel request: when a person asked, and who (design section 1). */
+export const jobCancelRequestSchema = z.strictObject({
+  at: timestamp,
+  by: jobPersonSchema,
+});
+export type JobCancelRequest = z.infer<typeof jobCancelRequestSchema>;
+
 export const jobScopeSchema = z.strictObject({
   kind: z.enum(['devices', 'all-devices']),
   /** The target count. A running full sync holds null. */
@@ -133,8 +143,19 @@ export const jobSummarySchema = z.strictObject({
   finishedAt: timestamp.nullable(),
   progress: jobProgressSchema,
   failure: jobFailureSchema.nullable(),
+  /** The stored cancel request. It stays null until a person asks to cancel the job. */
+  cancelRequest: jobCancelRequestSchema.nullable(),
 });
 export type JobSummary = z.infer<typeof jobSummarySchema>;
+
+/** The four refusals of the cancel route (design section 1). */
+export const jobCancelRefusalSchema = z.enum([
+  'job-not-found',
+  'cancel-not-permitted',
+  'job-finished',
+  'nothing-to-stop',
+]);
+export type JobCancelRefusal = z.infer<typeof jobCancelRefusalSchema>;
 
 /** The operation outcomes that the API shows. A dispatched or issued operation reads pending. */
 export const jobOutcomeSchema = z.enum([
@@ -144,6 +165,8 @@ export const jobOutcomeSchema = z.enum([
   'unknown',
   'skipped',
   'expired',
+  /** An operation that never left the worker (design section 1). */
+  'cancelled',
 ]);
 export type JobOutcome = z.infer<typeof jobOutcomeSchema>;
 

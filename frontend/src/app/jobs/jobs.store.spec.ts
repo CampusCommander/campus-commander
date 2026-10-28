@@ -44,8 +44,10 @@ const job = (overrides: Partial<JobSummary> = {}): JobSummary => ({
     unknown: 0,
     skipped: 0,
     expired: 0,
+    cancelled: 0,
     pending: 12,
   },
+  cancelRequest: null,
   failure: null,
   ...overrides,
 });

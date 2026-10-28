@@ -25,6 +25,7 @@ export const OUTCOME_LABELS: Readonly<Record<JobOutcome, string>> = {
   unknown: 'Unknown',
   skipped: 'Skipped',
   expired: 'Expired',
+  cancelled: 'Cancelled',
 };
 
 export function outcomeTone(outcome: JobOutcome): OutcomeTone {
