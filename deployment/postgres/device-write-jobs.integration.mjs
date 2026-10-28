@@ -13290,6 +13290,14 @@ export async function qualifyDeviceWriteJobs({
           '[]',
         ],
       );
+    // The cancel answer, or its refusal detail. A stale authorization shows the answer it should refuse.
+    const cancelOutcome = async (pending) => {
+      try {
+        return (await pending).rows[0].result;
+      } catch (error) {
+        return error.detail ?? error.code;
+      }
+    };
 
     await check(
       'a cancel refuses when its requester is disabled during the requester-row wait (S7b)',
@@ -13327,7 +13335,11 @@ export async function qualifyDeviceWriteJobs({
           // The disable commits while the cancel waits, after its authorization reads.
           await changeAccess(holder, selfManager, selfManager, false, []);
           await holder.query('COMMIT');
-          await refuse(pending, 'job-not-found');
+          assert.equal(
+            await cancelOutcome(pending),
+            'job-not-found',
+            'The disabled requester is refused after its row wait.',
+          );
         } finally {
           await holder.query('ROLLBACK').catch(() => undefined);
           await Promise.allSettled([holder.end(), writer.end()]);
@@ -13391,7 +13403,11 @@ export async function qualifyDeviceWriteJobs({
           // The grant loss commits while the cancel waits on the connection row.
           await changeAccess(changer, accessAdmin, grantsManager, true, []);
           await holder.query('ROLLBACK');
-          await refuse(pending, 'job-not-found');
+          assert.equal(
+            await cancelOutcome(pending),
+            'job-not-found',
+            'The manager without jobs:manage is refused after its connection-row wait.',
+          );
         } finally {
           await holder.query('ROLLBACK').catch(() => undefined);
           await Promise.allSettled([
