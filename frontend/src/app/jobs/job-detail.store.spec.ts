@@ -1091,6 +1091,43 @@ describe('Cancel', () => {
     expect(store.cancelling()).toBe(false);
   });
 
+  it('keeps the next job busy when an obsolete cancel answer arrives', async () => {
+    const held = new Map<string, (response: Response) => void>();
+    const { store, requestMock } = setup((path) => {
+      if (path.endsWith('/cancel'))
+        return new Promise<Response>((resolve) => held.set(path, resolve));
+      return path.includes('/operations')
+        ? Promise.resolve(Response.json(operationsPage()))
+        : Promise.resolve(Response.json(detail()));
+    });
+    await store.init('UPD-006');
+    const earlier = store.cancel();
+    expect(store.cancelling()).toBe(true);
+
+    // Back to jobs and open the next job while the first answer is still held.
+    store.leave();
+    await store.init('STS-002');
+    const current = store.cancel();
+    expect(store.cancelling()).toBe(true);
+
+    // The earlier job's answer must not release the newer request's guard.
+    held.get('/api/jobs/UPD-006/cancel')?.(Response.json({}));
+    expect(await earlier).toBe(false);
+    expect(store.cancelling()).toBe(true);
+
+    // A second click during the newer request sends no second POST.
+    expect(await store.cancel()).toBe(false);
+    expect(
+      requestMock.mock.calls.filter(
+        ([path]) => path === '/api/jobs/STS-002/cancel',
+      ),
+    ).toHaveLength(1);
+
+    held.get('/api/jobs/STS-002/cancel')?.(Response.json({}));
+    expect(await current).toBe(true);
+    expect(store.cancelling()).toBe(false);
+  });
+
   it('clears the previous refusal on a new request', async () => {
     let refuse = true;
     const { store } = setup(async (path) => {

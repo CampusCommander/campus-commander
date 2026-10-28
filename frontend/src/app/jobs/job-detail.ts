@@ -217,9 +217,9 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     void this.store.reconcile(operation);
   }
 
-  /** Open the question. A stored request or a hidden control opens nothing (choice 8). */
+  /** Open the question. A stored request, a held request, or a hidden control opens nothing. */
   protected requestCancel(): void {
-    if (this.cancelControl() !== 'request') return;
+    if (this.cancelControl() !== 'request' || this.store.cancelling()) return;
     this.cancelOpen.set(true);
   }
 
@@ -239,14 +239,18 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     this.focusCancel();
   }
 
-  /** Focus the cancel control, or Refresh when the job ended and the control left. */
+  /**
+   * Focus the cancel control after the question closes (UI-09). The control stays
+   * focusable while disabled, and a job that disappeared focuses Back to jobs.
+   */
   private focusCancel(): void {
     afterNextRender(
       () => {
         const host = this.host.nativeElement;
         const target =
           host.querySelector<HTMLElement>('#cancel-job') ??
-          host.querySelector<HTMLElement>('#job-refresh');
+          host.querySelector<HTMLElement>('#job-refresh') ??
+          host.querySelector<HTMLElement>('#job-missing-back');
         target?.focus();
       },
       { injector: this.injector },

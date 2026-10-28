@@ -24,7 +24,8 @@
         mat-flat-button
         type="button"
         [disabled]="busy()"
-        (click)="confirmed.emit()"
+        disabledInteractive
+        (click)="confirm()"
       >
         {{ question().confirmLabel }}
       </button>

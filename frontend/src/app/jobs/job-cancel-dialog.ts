@@ -33,4 +33,13 @@ export class JobCancelDialog {
     event.stopPropagation();
     this.cancelled.emit();
   }
+
+  /**
+   * The confirm control keeps focus while the question is open, so the disabled
+   * state must not emit a second request (UI-07, UI-09).
+   */
+  protected confirm(): void {
+    if (this.busy()) return;
+    this.confirmed.emit();
+  }
 }

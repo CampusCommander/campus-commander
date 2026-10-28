@@ -19,25 +19,17 @@
       >
         Refresh
       </button>
-      @if (cancelControl() === 'request') {
+      @if (cancelControl() === 'request' || cancelControl() === 'requested') {
       <button
         id="cancel-job"
         mat-stroked-button
         type="button"
-        [disabled]="store.cancelling()"
+        [disabled]="cancelControl() === 'requested' || store.cancelling()"
+        disabledInteractive
         (click)="requestCancel()"
       >
-        {{ store.cancelling() ? 'Cancelling…' : 'Cancel pending work' }}
-      </button>
-      } @else if (cancelControl() === 'requested') {
-      <button
-        id="cancel-job"
-        mat-stroked-button
-        type="button"
-        [disabled]="true"
-        disabledInteractive
-      >
-        Cancellation requested
+        {{ cancelControl() === 'requested' ? 'Cancellation requested' :
+        (store.cancelling() ? 'Cancelling…' : 'Cancel pending work') }}
       </button>
       }
     </div>
@@ -362,7 +354,9 @@
     <h2 id="job-missing-title">Job not found</h2>
     <p>This job does not exist or was removed.</p>
     <div class="actions">
-      <a mat-stroked-button routerLink="/jobs">Back to jobs</a>
+      <a id="job-missing-back" mat-stroked-button routerLink="/jobs"
+        >Back to jobs</a
+      >
     </div>
   </section>
   } @else if (store.offline()) {

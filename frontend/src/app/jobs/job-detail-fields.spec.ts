@@ -1648,7 +1648,12 @@ describe('cancel', () => {
         },
         now,
       ),
-    ).toBe('Cancellation requested by District Admin · Oct 26, 10:42 AM');
+    ).toBe(
+      `Cancellation requested by District Admin · ${formatTimestamp(
+        '2026-10-26T14:42:00.000Z',
+        now,
+      )}`,
+    );
     expect(cancelLine({ cancelRequest: null }, now)).toBeNull();
   });
 
@@ -1711,7 +1716,7 @@ describe('cancel', () => {
       },
     });
     expect(latestActivityLine(cancelled)).toBe(
-      '10:43 AM · Cancellation stopped 8 operations before they reached Google. Google quota stopped the update for 04XTBHJ. 0727D2E requires reconciliation before any retry.',
+      `${formatTime('2026-10-26T14:43:00.000Z')} · Cancellation stopped 8 operations before they reached Google. Google quota stopped the update for 04XTBHJ. 0727D2E requires reconciliation before any retry.`,
     );
   });
 
@@ -1737,7 +1742,7 @@ describe('cancel', () => {
       },
     });
     expect(latestActivityLine(queued)).toBe(
-      '10:41 AM · Cancellation ended the job before it started. No request reached Google.',
+      `${formatTime('2026-10-26T14:41:00.000Z')} · Cancellation ended the job before it started. No request reached Google.`,
     );
   });
 
@@ -1761,7 +1766,7 @@ describe('cancel', () => {
       },
     });
     expect(latestActivityLine(refresh)).toBe(
-      '10:42 AM · Cancellation ended the refresh. No device was marked removed. 600 devices read.',
+      `${formatTime('2026-10-26T14:42:00.000Z')} · Cancellation ended the refresh. No device was marked removed. 600 devices read.`,
     );
   });
 

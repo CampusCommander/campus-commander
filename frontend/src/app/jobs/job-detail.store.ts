@@ -110,6 +110,11 @@ export class JobDetailStore {
   private readonly pendingReconciles = new Map<string, symbol>();
   /** The operation whose accepted notice is visible. A later read clears that notice. */
   private startedNoticeFor: string | null = null;
+  /**
+   * The live cancel request that owns the busy state. A reset hands the busy state
+   * to the next job, so an obsolete answer must not release the newer request (R3).
+   */
+  private cancelToken: symbol | null = null;
 
   constructor() {
     // The session cookie belongs to one person. Another person starts from no state,
@@ -298,6 +303,8 @@ export class JobDetailStore {
       (this.auth.session()?.identity.id ?? null) === identity;
     this.cancelError.set('');
     this.cancelling.set(true);
+    const token = Symbol(displayId);
+    this.cancelToken = token;
     try {
       const response = await this.auth.request(
         `/api/jobs/${encodeURIComponent(displayId)}/cancel`,
@@ -339,7 +346,12 @@ export class JobDetailStore {
         );
       return false;
     } finally {
-      this.cancelling.set(false);
+      // Only the request that owns the busy state clears it. A reset or a newer
+      // request has already taken ownership, so an obsolete answer leaves it busy.
+      if (this.cancelToken === token) {
+        this.cancelToken = null;
+        this.cancelling.set(false);
+      }
     }
   }
 
@@ -380,6 +392,7 @@ export class JobDetailStore {
     this.navigating.set(false);
     this.cursors.set([null]);
     this.clearReconcileState();
+    this.cancelToken = null;
     this.cancelling.set(false);
     this.cancelError.set('');
     if (reread && this.streamWanted) {
