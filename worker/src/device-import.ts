@@ -432,23 +432,6 @@ function* chunks<T>(items: readonly T[], size: number): Generator<T[]> {
     yield items.slice(start, start + size);
 }
 
-/**
- * The physical lines that one record adds beyond its first: one for each newline inside a quoted
- * cell. The CSV reader counts those lines in `CsvRecord.line` and answers no record for a blank
- * row, so the spreadsheet row of a record is its line less the continuations before it.
- */
-function continuationLinesOf(cells: readonly string[]): number {
-  let count = 0;
-  for (const cell of cells) {
-    let index = cell.indexOf('\n');
-    while (index !== -1) {
-      count += 1;
-      index = cell.indexOf('\n', index + 1);
-    }
-  }
-  return count;
-}
-
 /** A timestamp cell of a device row as ISO 8601 UTC text, or null. */
 function timestampText(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -1056,8 +1039,6 @@ export class DeviceImportJobs {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     const reader = createCsvReader();
     let mapping: Map<DeviceEditColumnKey, number> | null = null;
-    // The physical lines that the records before this one hold inside quoted cells.
-    let continuations = 0;
     const out: FileRow[] = [];
 
     const decode = (chunk: Uint8Array | undefined): string => {
@@ -1092,16 +1073,12 @@ export class DeviceImportJobs {
                 deviceId: null,
                 warning,
               });
-          continuations += continuationLinesOf(record.cells);
           continue;
         }
-        // The spreadsheet row of the record (technical design, "Source row number"): its file line
-        // less the continuation lines that the records before it hold inside quoted cells. The
-        // header is row 1, and a blank record still holds its line, so every later row keeps its
-        // own number. The reader counts records, not lines, so the count itself would drift.
-        const sourceRow = record.line - continuations;
-        continuations += continuationLinesOf(record.cells);
-        out.push({ sourceRow, cells: cellsOf(record, mapping) });
+        // The spreadsheet row of the record (technical design, "Source row number"). The reader
+        // numbers every logical record, so the header is row 1 and a dropped blank record still
+        // holds its row. The physical line would drift on a record that spans lines.
+        out.push({ sourceRow: record.row, cells: cellsOf(record, mapping) });
       }
     };
 
