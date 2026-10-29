@@ -20,6 +20,7 @@ import {
 import {
   DEVICE_IMPORT_BATCH_SIZE,
   DEVICE_IMPORT_LINE_BATCH,
+  DEVICE_IMPORT_LINE_BYTES,
   DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING,
   DeviceImportJobs,
   deviceImportRequestSchema,
@@ -187,6 +188,7 @@ function fakeDatabase(options = {}) {
     upsert: [],
     removed: [],
     transactions: 0,
+    order: [],
   };
   const devices = options.devices ?? new Map();
   const job = { status: null, cancelRequested: false };
@@ -249,6 +251,7 @@ function fakeDatabase(options = {}) {
       if (name === 'store_device_import_lines') {
         const lines = JSON.parse(values[3]);
         calls.lines.push(lines);
+        calls.order.push('lines');
         lineCount += lines.length;
         if (options.linesFenced)
           return { rows: [{ result: { outcome: 'fenced' } }] };
@@ -367,6 +370,7 @@ function fakeDatabase(options = {}) {
       if (sql.includes('FROM cc.devices')) {
         if (options.lookupFailure) throw new Error('The lookup failed.');
         calls.lookup.push(values[1]);
+        calls.order.push('lookup');
         return {
           rows: values[1].flatMap((id) => {
             const row = devices.get(id);
@@ -884,6 +888,73 @@ test('a busy claim, a fenced lease, and an ended job write nothing', async () =>
   assert.deepEqual(ended.database.calls.finish, [
     { counts: null, failure: null, refusal: null, refusalText: null },
   ]);
+});
+
+test('a file of rejected rows stores each call before the next one fills', async () => {
+  // Every row but the last holds no Device ID, so pass 1 writes one rejection line per row.
+  const rows = Array.from({ length: 2_499 }, () =>
+    cellsOf({ orgUnitPath: '/Schools/North' }),
+  );
+  rows.push(cellsOf({ deviceId: 'dev-a', orgUnitPath: '/Schools/North' }));
+  const harnessed = harness({
+    text: csvText(rows),
+    devices: [device('dev-a', { last_entity_sync: fresh() })],
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.counts.rejected, 2_499);
+  assert.equal(answer.counts.noChangeNeeded, 1);
+  assert.deepEqual(
+    harnessed.database.calls.lines.map((batch) => batch.length),
+    [1_000, 1_000, 499],
+  );
+  // The first two calls land during pass 1, before the inventory lookup.
+  assert.deepEqual(harnessed.database.calls.order, [
+    'lines',
+    'lines',
+    'lookup',
+    'lines',
+  ]);
+});
+
+test('a call stays below the 32 MiB that the store accepts', async () => {
+  // Ten full cells make a rejection line of about 82 KB, so the byte limit closes the call.
+  const cell = 'n'.repeat(16_384);
+  const rows = Array.from({ length: 450 }, () =>
+    cellsOf({
+      annotatedLocation: cell,
+      annotatedAssetId: cell,
+      annotatedUser: cell,
+      notes: cell,
+      orgUnitPath: cell,
+    }),
+  );
+  const harnessed = harness({
+    text: csvText(rows),
+    devices: [],
+    store: { chunkSize: 65_536 },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.counts.rejected, 450);
+  assert.ok(
+    harnessed.database.calls.lines.length > 1,
+    'The byte limit closes the call before 1,000 lines.',
+  );
+  for (const batch of harnessed.database.calls.lines)
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(batch), 'utf8') < DEVICE_IMPORT_LINE_BYTES,
+      'A call stays under the document limit of cc.store_device_import_lines.',
+    );
+  assert.equal(
+    harnessed.database.calls.lines.flat().length,
+    450,
+    'Every line is stored once.',
+  );
 });
 
 test('the failure request ends a lost run with interrupted', async () => {

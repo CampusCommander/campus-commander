@@ -66,6 +66,13 @@ export const DEVICE_IMPORT_LINE_BATCH = 1_000;
  */
 export const DEVICE_IMPORT_LINE_BYTES = 32 * 1024 * 1024;
 
+/**
+ * The framing that one call adds around its lines: the brackets, the separator of each of 1,000
+ * lines, and the header of each value. `cc.store_device_import_lines` refuses a document above
+ * 32 MiB, so the buffer closes below that cap and never builds a call that the store refuses.
+ */
+const LINE_ARRAY_FRAMING = 64 * 1024;
+
 /** The warning of a Checksum cell that is not the exported form (`td:496`). */
 export const DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING =
   'The Checksum cell is malformed. The row is checked in full.';
@@ -478,7 +485,7 @@ class ImportLines {
     this.bytes += Buffer.byteLength(JSON.stringify(line), 'utf8');
     if (
       this.open.length >= DEVICE_IMPORT_LINE_BATCH ||
-      this.bytes >= DEVICE_IMPORT_LINE_BYTES
+      this.bytes >= DEVICE_IMPORT_LINE_BYTES - LINE_ARRAY_FRAMING
     )
       this.close();
   }
@@ -991,6 +998,13 @@ export class DeviceImportJobs {
           done: inspection.rowsRead,
           total: null,
         });
+      // Store a closed batch now, so a file of rejected rows never holds every line in memory
+      // (design section 6, step 19).
+      if (lines.full) {
+        const answer = await lines.flush();
+        if (answer === 'fenced') throw new ImportStop({ kind: 'fenced' });
+        if (answer === 'cancelled') throw new ImportStop({ kind: 'cancelled' });
+      }
 
       const deviceIdCell = deviceEditUnescapeCell(cells[DEVICE_ID_COLUMN]);
       // The identity checks of design section 6, step 5. Duplicate detection covers every row,
