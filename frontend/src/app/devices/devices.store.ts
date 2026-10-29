@@ -723,15 +723,20 @@ export class DevicesStore {
     return this.sync() ? 'open' : 'stop';
   }
 
-  /** A shared connection opened. The first open reads the status; a reopen reconciles (D12). */
+  /**
+   * A shared connection opened. The first open reads the status; a reopen reconciles (D12).
+   * A stream that closed before its first open loses events too, so that open is a reopen.
+   */
   private onStreamOpen(): void {
-    if (this.streamOpened) void this.reconcile();
-    else if (this.sync()?.status === 'running') {
+    const first = !this.streamOpened;
+    this.streamOpened = true;
+    // Only a first open with no closed stream behind it has missed no event.
+    if (first && this.dropped === null) {
+      if (this.sync()?.status !== 'running') return;
       // A full sync can end between the gate read and this first open. Reconcile from the gate read.
       this.dropped = { state: this.sync() };
-      void this.reconcile();
-    } else this.dropped = null;
-    this.streamOpened = true;
+    }
+    void this.reconcile();
   }
 
   /** The same person resumed an interrupted session. A stream that a 401 stopped opens again. */
