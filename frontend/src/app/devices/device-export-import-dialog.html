@@ -497,9 +497,7 @@
                     </tr>
                     } @for (line of lines(); track $index) {
                     <tr>
-                      <td class="col-row">
-                        {{ line.row === null ? 'Header row' : line.row }}
-                      </td>
+                      <td class="col-row">{{ line.row ?? '' }}</td>
                       <td class="col-device">
                         @if (line.deviceId) {
                         <span class="device-cell">
@@ -518,6 +516,8 @@
                             >{{ line.serialNumber ?? line.deviceId }}</span
                           >
                         </span>
+                        } @else if (view() === 'warnings') {
+                        <span class="muted">Header row</span>
                         } @else {
                         <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
                         }

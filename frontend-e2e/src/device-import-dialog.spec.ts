@@ -718,6 +718,10 @@ test.describe('Import', () => {
     await expect(dialog(page)).toContainText(
       'The column "Grade" is unknown. It stays out of every write.',
     );
+    // The approved warning row names the header row in the Device cell, not the Row cell.
+    const warningRow = dialog(page).locator('.report-table tbody tr').first();
+    await expect(warningRow.locator('.col-row')).toHaveText('');
+    await expect(warningRow.locator('.col-device')).toHaveText('Header row');
     await shot(page, '15-review-warnings');
   });
 
