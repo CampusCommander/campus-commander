@@ -17,14 +17,13 @@
         <h2 id="export-dialog-title">{{ title() }}</h2>
         @if (subtitleJob(); as job) {
         <p id="export-dialog-sub" class="export-sub">
-          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{ subtitleStatus() }}
+          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
+          subtitleStatus() }}
         </p>
         } @else if (subtitleText(); as line) {
         <p id="export-dialog-sub" class="export-sub">{{ line }}</p>
         } @else {
-        <p id="export-dialog-sub" class="visually-hidden">
-          {{ title() }}
-        </p>
+        <p id="export-dialog-sub" class="visually-hidden">{{ title() }}</p>
         }
       </div>
       <div class="export-tools">
@@ -49,7 +48,9 @@
           matTooltipPosition="below"
           (click)="close()"
         >
-          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
         </button>
       </div>
     </header>
@@ -73,7 +74,11 @@
               <mat-radio-button class="option-card" value="csv">
                 <span class="option-label">{{ CSV_FORMAT_LABEL }}</span>
               </mat-radio-button>
-              <mat-radio-button class="option-card" value="sheet" [disabled]="true">
+              <mat-radio-button
+                class="option-card"
+                value="sheet"
+                [disabled]="true"
+              >
                 <span class="option-label">{{ SHEET_FORMAT_LABEL }}</span>
                 <span class="option-line why">{{ SHEET_FORMAT_NOTE }}</span>
               </mat-radio-button>
@@ -105,7 +110,9 @@
                 [class.is-failed]="phase.state === 'failed'"
                 [class.is-stopped]="phase.state === 'stopped'"
               >
-                <span class="phase-dot" aria-hidden="true">{{ $index + 1 }}</span>
+                <span class="phase-dot" aria-hidden="true"
+                  >{{ $index + 1 }}</span
+                >
                 <span class="phase-label">{{ phase.label }}</span>
                 <span class="phase-detail">{{ phase.detail }}</span>
                 @if (phase.state === 'current' && phase.percent !== null) {
@@ -163,8 +170,7 @@
             </div>
           </div>
         </div>
-        }
-        } @case ('import') {
+        } } @case ('import') {
         <div class="step"></div>
         } }
       </div>
@@ -179,8 +185,7 @@
     }
 
     <div class="export-actions">
-      @switch (step()) { @case ('configure') {
-      @if (submitError(); as error) {
+      @switch (step()) { @case ('configure') { @if (submitError(); as error) {
       <p class="export-state error" role="alert">{{ error }}</p>
       } @else {
       <span class="export-state"></span>
@@ -205,7 +210,9 @@
           <span class="dot" aria-hidden="true"></span>
           {{ statusLabel() }}
         </span>
-        <span>{{ jobCancelled() ? EXPORT_CANCELLED_LINE : failureText() }}</span>
+        <span
+          >{{ jobCancelled() ? EXPORT_CANCELLED_LINE : failureText() }}</span
+        >
         } @else {
         <span class="quiet">
           <span class="material-symbols-outlined" aria-hidden="true">info</span>
@@ -218,11 +225,14 @@
       <span class="export-state"></span>
       <button mat-button type="button" (click)="done()">Done</button>
       @if (file(); as exportFile) { @if (exportFile.expired) {
-      <button mat-flat-button type="button" disabled>{{ DOWNLOAD_CSV_LABEL }}</button>
+      <button mat-flat-button type="button" disabled>
+        {{ DOWNLOAD_CSV_LABEL }}
+      </button>
       } @else {
-      <a mat-flat-button [href]="fileHref()" download>{{ DOWNLOAD_CSV_LABEL }}</a>
-      } }
-      } @case ('import') {
+      <a mat-flat-button [href]="fileHref()" download
+        >{{ DOWNLOAD_CSV_LABEL }}</a
+      >
+      } } } @case ('import') {
       <span class="export-state"></span>
       <button mat-button type="button" (click)="close()">Cancel</button>
       } }

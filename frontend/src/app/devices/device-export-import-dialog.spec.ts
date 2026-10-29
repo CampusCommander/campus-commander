@@ -97,7 +97,10 @@ function setup(detail: JobDetail = exportDetail()) {
     ],
   });
   const fixture = TestBed.createComponent(DeviceExportImportDialog);
-  fixture.componentRef.setInput('tabId', '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10');
+  fixture.componentRef.setInput(
+    'tabId',
+    '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  );
   const store = TestBed.inject(DeviceExportImportStore);
   // The store reads the job through the same request stub, and no stream reaches a server.
   store.eventSource = () =>
@@ -115,7 +118,8 @@ function setup(detail: JobDetail = exportDetail()) {
     await fixture.whenStable();
     fixture.detectChanges();
   };
-  const panel = () => element.querySelector<HTMLElement>('section[role="dialog"]');
+  const panel = () =>
+    element.querySelector<HTMLElement>('section[role="dialog"]');
   const text = () => panel()?.textContent?.replace(/\s+/g, ' ') ?? '';
   return {
     fixture,
@@ -147,9 +151,7 @@ describe('DeviceExportImportDialog', () => {
       'Export devices',
     );
     expect(text()).toContain('48 selected devices · Not submitted');
-    expect(text()).toContain(
-      'Google Drive is not available for your account.',
-    );
+    expect(text()).toContain('Google Drive is not available for your account.');
     const primary = panel()?.querySelector<HTMLButtonElement>(
       '.export-actions button[mat-flat-button]',
     );
@@ -193,13 +195,11 @@ describe('DeviceExportImportDialog', () => {
     expect(text()).toContain('Write rows');
     expect(text()).toContain('32 of 48');
     expect(text()).toContain('Prepare download');
-    expect(
-      text(),
-    ).toContain('Closing this dialog keeps the export running.');
+    expect(text()).toContain('Closing this dialog keeps the export running.');
     expect(panel()?.querySelector('mat-progress-bar')).not.toBeNull();
-    expect(panel()?.querySelector('.export-actions button')?.textContent?.trim()).toBe(
-      'Close',
-    );
+    expect(
+      panel()?.querySelector('.export-actions button')?.textContent?.trim(),
+    ).toBe('Close');
   });
 
   it('shows the ready file with the facts and the download link', async () => {
@@ -254,9 +254,9 @@ describe('DeviceExportImportDialog', () => {
     expect(text()).toContain('Expired');
     expect(text()).toContain('The file expired');
     expect(
-      panel()?.querySelector('.export-actions button[mat-flat-button]')?.hasAttribute(
-        'disabled',
-      ),
+      panel()
+        ?.querySelector('.export-actions button[mat-flat-button]')
+        ?.hasAttribute('disabled'),
     ).toBe(true);
   });
 
@@ -264,7 +264,11 @@ describe('DeviceExportImportDialog', () => {
     const { store, render, element, panel, text } = setup();
     store.openExport(48);
     await render();
-    panel()?.querySelector<HTMLButtonElement>('button[aria-label="Export and import help"]')?.click();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        'button[aria-label="Export and import help"]',
+      )
+      ?.click();
     await render();
     expect(panel()?.classList.contains('has-help')).toBe(true);
     const help = element.querySelector('app-device-export-help');
@@ -273,8 +277,9 @@ describe('DeviceExportImportDialog', () => {
     );
     expect(text()).toContain('Editing rules');
     const toggles = [
-      ...(help?.querySelectorAll<HTMLButtonElement>('mat-button-toggle button') ??
-        []),
+      ...(help?.querySelectorAll<HTMLButtonElement>(
+        'mat-button-toggle button',
+      ) ?? []),
     ];
     expect(toggles.map((toggle) => toggle.textContent?.trim())).toEqual([
       'Export',
@@ -306,14 +311,16 @@ describe('DeviceExportImportDialog', () => {
     const { store, render, request } = setup();
     store.openExport(48);
     await render();
-    expect(await store.submit({
-      gridId: 'devices',
-      tabId: 'tab-1',
-      purpose: 'edit',
-      format: 'csv',
-      sort: { field: 'serialNumber', direction: 'asc' },
-      columns: [],
-    })).toBe(true);
+    expect(
+      await store.submit({
+        gridId: 'devices',
+        tabId: 'tab-1',
+        purpose: 'edit',
+        format: 'csv',
+        sort: { field: 'serialNumber', direction: 'asc' },
+        columns: [],
+      }),
+    ).toBe(true);
     expect(request).toHaveBeenCalledWith(
       '/api/devices/exports',
       expect.objectContaining({ purpose: 'edit', format: 'csv' }),

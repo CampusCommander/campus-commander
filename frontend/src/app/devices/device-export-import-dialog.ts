@@ -106,7 +106,9 @@ export class DeviceExportImportDialog {
   /** The job ID of the subtitle, which links to the job page (states 04, 05, and 08). */
   protected readonly subtitleJob = computed(() => {
     const job = this.store.job();
-    return job ? (this.store.displayId() ?? job.displayId) : this.store.displayId();
+    return job
+      ? (this.store.displayId() ?? job.displayId)
+      : this.store.displayId();
   });
   protected readonly subtitleStatus = computed(() => {
     const job = this.store.job();
@@ -119,7 +121,9 @@ export class DeviceExportImportDialog {
     return `${thousands(count)} selected ${count === 1 ? 'device' : 'devices'} · Not submitted`;
   });
   protected readonly overLimit = this.store.overLimit;
-  protected readonly limitText = computed(() => exportLimitText(this.store.count()));
+  protected readonly limitText = computed(() =>
+    exportLimitText(this.store.count()),
+  );
   protected readonly actionLabel = computed(() =>
     this.store.purpose() === 'report'
       ? CREATE_REPORT_LABEL
@@ -132,7 +136,9 @@ export class DeviceExportImportDialog {
   protected readonly submitError = this.store.submitError;
   protected readonly loadError = this.store.error;
   protected readonly helpOpen = computed(() => this.store.helpTopic() !== null);
-  protected readonly helpTopic = computed(() => this.store.helpTopic() ?? 'export');
+  protected readonly helpTopic = computed(
+    () => this.store.helpTopic() ?? 'export',
+  );
   protected readonly reportColumns = computed(() =>
     this.store.columns().map((id) => DEVICE_REPORT_FIELD_LABELS[id]),
   );
@@ -182,7 +188,10 @@ export class DeviceExportImportDialog {
       cancelled: job?.status === 'cancelled',
       completed: job?.status === 'completed',
     };
-    const written = phase?.name === 'write-rows' ? phase.done : (job?.progress.succeeded ?? 0);
+    const written =
+      phase?.name === 'write-rows'
+        ? phase.done
+        : (job?.progress.succeeded ?? 0);
     const total =
       phase?.name === 'write-rows'
         ? phase.total
@@ -191,7 +200,8 @@ export class DeviceExportImportDialog {
       {
         name: 'write-rows',
         label: 'Write rows',
-        detail: total === null ? '' : `${thousands(written)} of ${thousands(total)}`,
+        detail:
+          total === null ? '' : `${thousands(written)} of ${thousands(total)}`,
         state: phaseState(phase, 'write-rows', outcome),
         percent:
           phaseState(phase, 'write-rows', outcome) === 'current' &&
@@ -256,7 +266,13 @@ function phaseState(
   if (outcome.completed) return 'done';
   if (outcome.failed)
     // A failed export stopped in the phase it reached. Its later phases stay untouched.
-    return phase === null ? (first ? 'failed' : 'later') : first ? 'later' : 'failed';
+    return phase === null
+      ? first
+        ? 'failed'
+        : 'later'
+      : first
+        ? 'later'
+        : 'failed';
   if (outcome.cancelled)
     return phase === null ? (first ? 'stopped' : 'later') : 'done';
   if (phase === null) return first ? 'current' : 'later';

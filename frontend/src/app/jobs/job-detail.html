@@ -109,7 +109,9 @@
         </div>
         <p class="meta-items">{{ file.facts }}</p>
         <p class="until">
-          <span class="material-symbols-outlined" aria-hidden="true">schedule</span>
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >schedule</span
+          >
           {{ file.line }}
         </p>
       </div>
@@ -120,9 +122,7 @@
       }
     </div>
   </section>
-  }
-
-  @if (!isExport() && !isImport()) {
+  } @if (!isExport() && !isImport()) {
 
   <section class="counters-section" aria-labelledby="job-counts-title">
     <h2 id="job-counts-title" class="visually-hidden">Operation counts</h2>
@@ -376,8 +376,7 @@
       </footer>
     </div>
   </section>
-  }
-  }
+  } }
 
   <section class="activity card" aria-labelledby="activity-title">
     <h2 id="activity-title">Latest activity</h2>

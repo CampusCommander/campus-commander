@@ -1208,7 +1208,9 @@ describe('Export, Reports, and Import', () => {
 
   it('returns focus to Bulk Actions after the dialog closes', async () => {
     const { panel, button, fixture } = await openEntry('Export');
-    panel?.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click();
+    panel
+      ?.querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+      ?.click();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();

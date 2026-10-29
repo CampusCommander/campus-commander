@@ -496,7 +496,10 @@ export class DeviceGrid implements OnInit {
   reportColumns(): DeviceReportFieldId[] {
     const fields = new Set<string>(DEVICE_FIELDS.map((field) => field.id));
     const state = this.api?.getColumnState();
-    if (!state) return DEVICE_FIELDS.filter((field) => !field.optional).map((field) => field.id);
+    if (!state)
+      return DEVICE_FIELDS.filter((field) => !field.optional).map(
+        (field) => field.id,
+      );
     return state
       .filter((column) => !column.hide && fields.has(column.colId))
       .map((column) => column.colId as DeviceReportFieldId);

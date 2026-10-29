@@ -38,7 +38,8 @@ export const IMPORT_ENTRY_LABEL = 'Import';
 export const FORMAT_LABEL = 'Format';
 export const CSV_FORMAT_LABEL = 'CSV file';
 export const SHEET_FORMAT_LABEL = 'Google Sheet';
-export const SHEET_FORMAT_NOTE = 'Google Drive is not available for your account.';
+export const SHEET_FORMAT_NOTE =
+  'Google Drive is not available for your account.';
 /** The report columns heading of state 07. */
 export const REPORT_COLUMNS_LABEL = 'Visible grid columns';
 
@@ -57,13 +58,15 @@ export const DOWNLOAD_CSV_LABEL = 'Download CSV';
 export const START_VALIDATION_LABEL = 'Start validation';
 
 /** The two phases of an export (design section 2, state 04). */
-export const EXPORT_PHASE_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  'write-rows': 'Write rows',
-  'prepare-download': 'Prepare download',
-});
+export const EXPORT_PHASE_LABELS: Readonly<Record<string, string>> =
+  Object.freeze({
+    'write-rows': 'Write rows',
+    'prepare-download': 'Prepare download',
+  });
 
 /** The quiet closing line of state 04. */
-export const EXPORT_CLOSING_LINE = 'Closing this dialog keeps the export running.';
+export const EXPORT_CLOSING_LINE =
+  'Closing this dialog keeps the export running.';
 
 /** The quiet state line of a stopped export. */
 export const EXPORT_CANCELLED_LINE =
@@ -136,7 +139,10 @@ export function fileSizeText(sizeBytes: number): string {
 }
 
 /** "Available until Nov 27, 10:31 AM" (state 05). */
-export function exportAvailableText(expiresAt: string, now = new Date()): string {
+export function exportAvailableText(
+  expiresAt: string,
+  now = new Date(),
+): string {
   return `Available until ${formatTimestamp(expiresAt, now)}`;
 }
 
@@ -199,8 +205,9 @@ export const REPORT_HELP_LIMITS: readonly string[] = Object.freeze([
 /** The two help topics that this card builds (states 06 and 07). */
 export const EXPORT_HELP_TOPICS = ['export', 'report'] as const;
 export type ExportHelpTopic = (typeof EXPORT_HELP_TOPICS)[number];
-export const EXPORT_HELP_TOPIC_LABELS: Readonly<Record<ExportHelpTopic, string>> =
-  Object.freeze({ export: 'Export', report: 'Reports' });
+export const EXPORT_HELP_TOPIC_LABELS: Readonly<
+  Record<ExportHelpTopic, string>
+> = Object.freeze({ export: 'Export', report: 'Reports' });
 
 /** The copy of one Bulk Actions entry, in the order of the built notes. */
 interface EntryCopy {
@@ -210,23 +217,24 @@ interface EntryCopy {
   selection: string | null;
 }
 
-const ENTRY_COPY: Readonly<Record<DeviceExportEntry, EntryCopy>> = Object.freeze({
-  export: {
-    offline: 'Export is unavailable while you are offline.',
-    permission: EXPORT_PERMISSION_MESSAGE,
-    selection: 'Select one or more devices to export.',
-  },
-  report: {
-    offline: 'Reports are unavailable while you are offline.',
-    permission: REPORT_PERMISSION_MESSAGE,
-    selection: 'Select one or more devices to create a report.',
-  },
-  import: {
-    offline: 'Import is unavailable while you are offline.',
-    permission: IMPORT_PERMISSION_MESSAGE,
-    selection: null,
-  },
-});
+const ENTRY_COPY: Readonly<Record<DeviceExportEntry, EntryCopy>> =
+  Object.freeze({
+    export: {
+      offline: 'Export is unavailable while you are offline.',
+      permission: EXPORT_PERMISSION_MESSAGE,
+      selection: 'Select one or more devices to export.',
+    },
+    report: {
+      offline: 'Reports are unavailable while you are offline.',
+      permission: REPORT_PERMISSION_MESSAGE,
+      selection: 'Select one or more devices to create a report.',
+    },
+    import: {
+      offline: 'Import is unavailable while you are offline.',
+      permission: IMPORT_PERMISSION_MESSAGE,
+      selection: null,
+    },
+  });
 
 export interface ExportEntryAvailability {
   entry: DeviceExportEntry;

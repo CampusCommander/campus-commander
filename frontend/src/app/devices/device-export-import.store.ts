@@ -99,7 +99,10 @@ export class DeviceExportImportStore {
   }
 
   /** Export opens the configure step, or the tab's own job while it exists (behavior 6). */
-  openExport(count: number, columns: readonly DeviceReportFieldId[] = []): void {
+  openExport(
+    count: number,
+    columns: readonly DeviceReportFieldId[] = [],
+  ): void {
     this.purpose.set('edit');
     this.openFor('edit', count, columns);
   }
@@ -273,7 +276,8 @@ export class DeviceExportImportStore {
     if (!displayId) return [];
     const epoch = this.epoch;
     const path = `/api/jobs/${encodeURIComponent(displayId)}`;
-    const current = () => epoch === this.epoch && this.displayId() === displayId;
+    const current = () =>
+      epoch === this.epoch && this.displayId() === displayId;
     try {
       const response = await this.auth.request(path);
       if (!current()) return [];
@@ -301,7 +305,8 @@ export class DeviceExportImportStore {
       // The job names its own step: a published file opens the file card (behavior 5). An
       // import row opens the import step, which XF2 fills.
       if (this.open()) {
-        if (detail.data.action === 'validate-device-import') this.step.set('import');
+        if (detail.data.action === 'validate-device-import')
+          this.step.set('import');
         else if (detail.data.action === 'export-devices')
           this.step.set(detail.data.exportFile ? 'file' : 'monitor');
       }
@@ -340,7 +345,9 @@ export class DeviceExportImportStore {
     const event = result.data;
     const current = this.job();
     if (
-      current ? event.jobId !== current.jobId : event.displayId !== this.displayId()
+      current
+        ? event.jobId !== current.jobId
+        : event.displayId !== this.displayId()
     )
       return;
     this.reader.changed(event);

@@ -122,7 +122,9 @@ interface MockOptions {
 /** The Devices page needs the session, a published inventory, and the export routes. */
 async function signIn(page: Page, options: MockOptions = {}) {
   const selectedCount = options.selectedCount ?? rows.length;
-  const state = { job: options.state ?? ('running' as 'running' | 'completed') };
+  const state = {
+    job: options.state ?? ('running' as 'running' | 'completed'),
+  };
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/application')
@@ -214,7 +216,10 @@ async function signIn(page: Page, options: MockOptions = {}) {
           checkedAt: observedAt,
         },
       });
-    if (path === '/api/devices/exports' && route.request().method() === 'POST') {
+    if (
+      path === '/api/devices/exports' &&
+      route.request().method() === 'POST'
+    ) {
       const body = route.request().postDataJSON() as { purpose: string };
       const displayId = body.purpose === 'report' ? 'EXP-002' : 'EXP-001';
       return route.fulfill({
@@ -356,9 +361,7 @@ test.describe('Export, Reports, and Import', () => {
       .click();
     await expect(dialog(page)).toBeHidden();
     await openEntry(page, 'Export');
-    await expect(dialog(page)).toContainText(
-      'devices-for-editing-EXP-001.csv',
-    );
+    await expect(dialog(page)).toContainText('devices-for-editing-EXP-001.csv');
     await expect(dialog(page)).toContainText('Ready');
     const download = dialog(page).getByRole('link', { name: 'Download CSV' });
     await expect(download).toHaveAttribute(

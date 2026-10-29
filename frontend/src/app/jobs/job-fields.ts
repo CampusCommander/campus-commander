@@ -288,7 +288,9 @@ function exportProgress(job: JobSummary): [string, string] {
   const rows = (value: number) =>
     `${count(value)} ${value === 1 ? 'row' : 'rows'}`;
   const ready =
-    job.exportSummary?.purpose === 'report' ? 'Report ready' : 'Edit file ready';
+    job.exportSummary?.purpose === 'report'
+      ? 'Report ready'
+      : 'Edit file ready';
   switch (job.status) {
     case 'running':
       return [
