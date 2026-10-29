@@ -50,8 +50,7 @@ export class DeviceExportsController {
     actions: readonly Action[],
   ): Promise<DeviceSyncState> {
     const sync = await this.devices.sync(request.session);
-    if (!sync)
-      throw new ConflictException({ reason: 'connection-required' });
+    if (!sync) throw new ConflictException({ reason: 'connection-required' });
     await requireDeviceActions(
       this.auth,
       request.session,
@@ -88,11 +87,7 @@ export class DeviceExportsController {
     @Res() response: Response,
   ): Promise<void> {
     const current = await this.current(request, DEVICE_EXPORT_FILE_ACTIONS);
-    const file = await this.exports.file(
-      request.session,
-      current,
-      displayId,
-    );
+    const file = await this.exports.file(request.session, current, displayId);
     response.writeHead(200, {
       'content-type': 'text/csv; charset=utf-8',
       'content-disposition': `attachment; filename="${file.name}"`,

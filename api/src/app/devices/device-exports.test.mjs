@@ -481,7 +481,11 @@ test('a selection of 50,001 devices answers 422 for both purposes', async () => 
     assert.equal(answer.status, 422, JSON.stringify(answer.body));
     assert.deepEqual(answer.body, { reason: 'selection-too-large' });
   }
-  assert.equal(createStatement(), undefined, 'The refused scope creates no job.');
+  assert.equal(
+    createStatement(),
+    undefined,
+    'The refused scope creates no job.',
+  );
   assert.equal(starts.length, 0);
 });
 
@@ -578,10 +582,7 @@ test('a report download keeps its stored name, and an unsafe name falls back', a
   );
 
   reset();
-  jobs.set(
-    'EXP-001',
-    finishedJob({ name: 'evil"\r\nx-injected: 1.csv' }),
-  );
+  jobs.set('EXP-001', finishedJob({ name: 'evil"\r\nx-injected: 1.csv' }));
   const unsafe = await get('/api/devices/exports/EXP-001/file');
   assert.equal(
     unsafe.headers.get('content-disposition'),
@@ -648,7 +649,11 @@ test('a display ID of another job kind answers 404 without a query', async () =>
   reset();
   for (const displayId of ['UPD-001', 'IMP-001', 'EXP-1', 'exp-001']) {
     const answer = await get(`/api/devices/exports/${displayId}/file`);
-    assert.equal(answer.status, 404, `${displayId}: ${JSON.stringify(answer.body)}`);
+    assert.equal(
+      answer.status,
+      404,
+      `${displayId}: ${JSON.stringify(answer.body)}`,
+    );
   }
   assert.equal(statementCount(), 0, 'A malformed display ID reads no job.');
 });

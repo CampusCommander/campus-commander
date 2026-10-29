@@ -109,7 +109,9 @@ export function deviceExportInput(body: unknown): DeviceExportRequest {
 }
 
 /** Map one create-function outcome to the status and code of the route. */
-export function deviceExportFunctionError(result: Record<string, unknown>): never {
+export function deviceExportFunctionError(
+  result: Record<string, unknown>,
+): never {
   const outcome = String(result['outcome']);
   if (outcome === 'forbidden')
     throw new ForbiddenException('This action requires additional permission.');
@@ -196,7 +198,8 @@ export class DeviceExports {
         ],
       )
     ).rows[0]?.['result'] as Record<string, unknown> | undefined;
-    if (!result) throw new Error('The device export function returned no result.');
+    if (!result)
+      throw new Error('The device export function returned no result.');
     if (result['outcome'] !== 'created') deviceExportFunctionError(result);
     const receipt = deviceExportReceiptSchema.parse(result['receipt']);
     // A lost start is a lost run, which `cc.recover_device_file_jobs` fails with `interrupted`
