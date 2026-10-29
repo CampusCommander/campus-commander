@@ -163,7 +163,8 @@ const changeSummarySql = `SELECT count(*) FILTER (WHERE change_type='field')::in
         AND status_action='deprovision' GROUP BY deprovision_reason) d),'[]'::jsonb) AS deprovision
   FROM cc.device_import_changes WHERE job_id=$1`;
 
-/** One change line, joined with its device and the operation that runs it (design section 8). */
+/** One change line, joined with its device and the operation that runs it (design section 8). The
+ * statement pages in source-row and ordinal order, so every page of a view is stable. */
 const changeLineSql = `SELECT c.source_row,c.device_id,left(d.serial_number,256) AS serial_number,
   c.change_type,c.field,c.mode,c.status_action,c.deprovision_reason,c.current_value,c.new_value,
   c.not_run_reason,j.display_id AS linked_display_id,c.operation_number,o.status AS operation_status
@@ -172,7 +173,8 @@ const changeLineSql = `SELECT c.source_row,c.device_id,left(d.serial_number,256)
   LEFT JOIN cc.jobs j ON j.job_id=c.linked_job_id
   LEFT JOIN cc.device_update_operations o
     ON o.job_id=c.linked_job_id AND o.operation_number=c.operation_number
-  WHERE c.job_id=$2`;
+  WHERE c.job_id=$2
+  ORDER BY c.source_row,c.ordinal LIMIT $3 OFFSET $4`;
 
 /** The Failed tab joins each change with its operation and lists only the failed outcomes. */
 const failedLineSql = `SELECT c.source_row,c.device_id,left(d.serial_number,256) AS serial_number,
