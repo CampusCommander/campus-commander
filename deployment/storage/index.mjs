@@ -5,6 +5,12 @@ import { resolve } from 'node:path';
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const DAY_MS = 86_400_000;
+const MAX_RETENTION_DAYS = 3660;
+
+/** The retention of an export file, an import upload, a report, and a plan (design section 4). */
+export const ARTIFACT_RETENTION_DAYS = 30;
+
 function identity(value) {
   if (typeof value !== 'string' || !uuid.test(value))
     throw new Error('Invalid artifact identity.');
@@ -30,6 +36,81 @@ function match(row, expected) {
     throw new Error(
       'Artifact publication identity or integrity metadata differs.',
     );
+  }
+}
+
+/**
+ * Resolve the stored retention. The caller passes a day count to keep the artifact that many
+ * days, or an explicit deadline. No retention leaves the column null.
+ */
+function retention({ retentionDays = null, retentionUntil = null }) {
+  if (retentionDays !== null) {
+    if (
+      retentionUntil !== null ||
+      !Number.isInteger(retentionDays) ||
+      retentionDays < 1 ||
+      retentionDays > MAX_RETENTION_DAYS
+    )
+      throw new Error('Invalid artifact retention.');
+    return new Date(Date.now() + retentionDays * DAY_MS).toISOString();
+  }
+  if (retentionUntil === null) return null;
+  if (
+    typeof retentionUntil !== 'string' ||
+    Number.isNaN(Date.parse(retentionUntil))
+  )
+    throw new Error('Invalid artifact retention.');
+  return new Date(retentionUntil).toISOString();
+}
+
+/**
+ * Write one attempt file. The size and the SHA-256 are computed while the chunks arrive.
+ * The cap check runs before the excess chunk reaches the disk.
+ * Any failure closes the file and removes it, so no partial file survives.
+ */
+export async function writeArtifact(path, source, maxBytes) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0)
+    throw new Error('Invalid artifact size limit.');
+  let file;
+  try {
+    file = await open(
+      path,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    const hash = createHash('sha256');
+    let size = 0;
+    for await (const chunk of source) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > maxBytes) throw new Error('Artifact exceeds its size limit.');
+      hash.update(bytes);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const { bytesWritten } = await file.write(
+          bytes,
+          offset,
+          bytes.length - offset,
+        );
+        if (!bytesWritten) throw new Error('Artifact write made no progress.');
+        offset += bytesWritten;
+      }
+    }
+    const sha256 = hash.digest('hex');
+    await file.chmod(0o400);
+    await file.sync();
+    await file.close();
+    file = undefined;
+    return { sizeBytes: size, sha256 };
+  } catch (error) {
+    if (file) {
+      await file.close().catch(() => undefined);
+      await unlink(path).catch(() => undefined);
+    }
+    throw error;
   }
 }
 
@@ -196,6 +277,7 @@ async function initializeStore({ pool, root, backend = 'local' }) {
         expectedSizeBytes,
         expectedSha256,
         retentionUntil = null,
+        retentionDays = null,
       },
       source,
     ) {
@@ -209,6 +291,7 @@ async function initializeStore({ pool, root, backend = 'local' }) {
         !/^[a-f0-9]{64}$/.test(expectedSha256)
       )
         throw new Error('Invalid artifact integrity metadata.');
+      const expires = retention({ retentionDays, retentionUntil });
       const row = {
         id: artifactId,
         attempt_id: attemptId,
@@ -256,7 +339,7 @@ async function initializeStore({ pool, root, backend = 'local' }) {
             schemaVersion,
             expectedSizeBytes,
             expectedSha256,
-            retentionUntil,
+            expires,
           ],
         );
         await client.query('COMMIT');
@@ -316,6 +399,116 @@ async function initializeStore({ pool, root, backend = 'local' }) {
         throw error;
       } finally {
         await file?.close().catch(() => undefined);
+        await client
+          .query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [
+            artifactId,
+          ])
+          .catch((error) => {
+            failure = error;
+          });
+        client.release(failure);
+      }
+    },
+    /**
+     * Stage a stream whose size and SHA-256 are unknown until the last chunk arrives.
+     * The reservation holds null integrity metadata, so no reader can publish it early.
+     * A file past `maxBytes`, a failed write, or a failed metadata update leaves no file.
+     */
+    async stageStream(
+      {
+        artifactId = randomUUID(),
+        attemptId = randomUUID(),
+        schemaVersion,
+        maxBytes,
+        retentionUntil = null,
+        retentionDays = null,
+      },
+      source,
+    ) {
+      identity(artifactId);
+      identity(attemptId);
+      if (
+        !Number.isInteger(schemaVersion) ||
+        schemaVersion < 1 ||
+        !Number.isSafeInteger(maxBytes) ||
+        maxBytes < 0
+      )
+        throw new Error('Invalid artifact stream metadata.');
+      const expires = retention({ retentionDays, retentionUntil });
+      const row = {
+        id: artifactId,
+        attempt_id: attemptId,
+        backend,
+        locator: `${artifactId}.${attemptId}`,
+        schema_version: schemaVersion,
+      };
+      const client = await pool.connect();
+      let reserved = false;
+      let written = false;
+      let failure;
+      try {
+        await lock(client, artifactId, true);
+        await client.query('BEGIN');
+        const {
+          rows: [existing],
+        } = await client.query(
+          'SELECT * FROM cc.artifacts WHERE id=$1 FOR UPDATE',
+          [artifactId],
+        );
+        if (
+          existing &&
+          (existing.publication_state !== 'staging' ||
+            existing.active ||
+            existing.reference_count > 0 ||
+            existing.attempt_id === attemptId)
+        ) {
+          throw new Error(
+            'Artifact already has an active or authoritative attempt.',
+          );
+        }
+        await client.query(
+          `INSERT INTO cc.artifacts(id,attempt_id,backend,locator,schema_version,size_bytes,sha256,retention_until,active)
+          VALUES ($1,$2,$3,$4,$5,NULL,NULL,$6,true)
+          ON CONFLICT (id) DO UPDATE SET attempt_id=EXCLUDED.attempt_id, backend=EXCLUDED.backend, locator=EXCLUDED.locator,
+            schema_version=EXCLUDED.schema_version,size_bytes=NULL,sha256=NULL,
+            retention_until=EXCLUDED.retention_until, active=true`,
+          [artifactId, attemptId, backend, row.locator, schemaVersion, expires],
+        );
+        await client.query('COMMIT');
+        reserved = true;
+        const size = await writeArtifact(location(row), source, maxBytes);
+        written = true;
+        await directory.sync();
+        const updated = await client.query(
+          'UPDATE cc.artifacts SET size_bytes=$3, sha256=$4 WHERE id=$1 AND attempt_id=$2',
+          [artifactId, attemptId, size.sizeBytes, size.sha256],
+        );
+        if (updated.rowCount !== 1)
+          throw new Error('Artifact staging metadata changed.');
+        await client.query(
+          'UPDATE cc.artifacts SET active=false WHERE id=$1 AND attempt_id=$2',
+          [artifactId, attemptId],
+        );
+        return {
+          artifactId,
+          attemptId,
+          schemaVersion,
+          sizeBytes: size.sizeBytes,
+          sha256: size.sha256,
+        };
+      } catch (error) {
+        failure = error;
+        await client.query('ROLLBACK').catch(() => undefined);
+        if (written) await unlink(location(row)).catch(() => undefined);
+        if (reserved)
+          await client
+            .query(
+              'UPDATE cc.artifacts SET active=false WHERE id=$1 AND attempt_id=$2',
+              [artifactId, attemptId],
+            )
+            .catch(() => undefined);
+        throw error;
+      } finally {
         await client
           .query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [
             artifactId,
