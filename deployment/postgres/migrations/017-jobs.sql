@@ -119,7 +119,10 @@ CREATE TABLE cc.device_update_previews (
   -- The number of eligible device-field rows. A command or status preview holds zero.
   field_changes integer NOT NULL DEFAULT 0 CHECK(field_changes>=0),
   oldest_observed_at timestamptz,
-  manifest_digest text NOT NULL,
+  -- The digest of the filled preview. It stays null while the preview holds pages (design section 7,
+  -- "Bounded serialization"), and the seal writes it. The seal and the confirmation check the 64-unit
+  -- hexadecimal form; the column holds a value of 1 to 256 units.
+  manifest_digest text CHECK(manifest_digest IS NULL OR length(manifest_digest) BETWEEN 1 AND 256),
   prepared_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL,
   job_id uuid UNIQUE REFERENCES cc.jobs(job_id),
@@ -190,6 +193,12 @@ CREATE TABLE cc.device_update_target_fields (
 CREATE TABLE cc.device_update_jobs (
   job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
   preview_id uuid NOT NULL UNIQUE REFERENCES cc.device_update_previews(preview_id),
+  -- The validation job that Execute ran this job for (design section 7). It stays null for a job
+  -- that no import produced.
+  import_job_id uuid REFERENCES cc.jobs(job_id) ON DELETE SET NULL,
+  -- The write job that a status job of an import plan waits for (design section 3, "The wait").
+  -- Admission skips a candidate whose awaited job is not final.
+  wait_for_job_id uuid REFERENCES cc.jobs(job_id) ON DELETE SET NULL,
   action text NOT NULL CHECK(action IN ('annotated-location','reboot','wipe-users','powerwash',
     'disable','reenable','deprovision')),
   confirmed_by uuid NOT NULL REFERENCES cc.application_principals(id),
@@ -223,6 +232,12 @@ CREATE TABLE cc.device_update_jobs (
 );
 CREATE INDEX device_update_jobs_scope_observations ON cc.device_update_jobs(job_id)
   WHERE scope_observations>0;
+-- The cancel cascade finds each waiting status job of an import's update job (design section 3).
+CREATE INDEX device_update_jobs_waiting ON cc.device_update_jobs(wait_for_job_id)
+  WHERE wait_for_job_id IS NOT NULL;
+-- The import job page names its plan jobs (design section 8).
+CREATE INDEX device_update_jobs_import ON cc.device_update_jobs(import_job_id)
+  WHERE import_job_id IS NOT NULL;
 
 -- One batch of a write job. The row holds the lease of one attempt.
 CREATE TABLE cc.device_update_batches (
@@ -701,8 +716,10 @@ $$;
 CREATE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer text,p_display_id text,
   p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; pending integer; dispatched integer;
-  stop_now boolean:=false; claimed_at timestamptz;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; request_at timestamptz;
+  pending integer; dispatched integer;
+  stop_now boolean:=false; claimed_at timestamptz; waiting_jobs cc.jobs[]:='{}'; waiting_job cc.jobs;
+  waiting_detail cc.device_update_jobs;
 BEGIN
   -- S2: a null identifier never matches a header.
   IF p_actor IS NULL OR p_customer IS NULL OR p_display_id IS NULL OR p_correlation IS NULL THEN
@@ -778,6 +795,19 @@ BEGIN
       PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=job.job_id AND o.status='pending'
         ORDER BY o.operation_number FOR UPDATE;
     END IF;
+    -- The waiting status jobs of an import's update job (design section 3, "The cancel"). Each waiting
+    -- header locks after the update's operations, in display ID order (cancel design item 8), so a
+    -- later-created job never overtakes an earlier display ID. Its pending operations lock after its
+    -- header.
+    IF job.kind='device-update' AND detail.import_job_id IS NOT NULL THEN
+      FOR waiting_job IN SELECT w.* FROM cc.jobs w JOIN cc.device_update_jobs u ON u.job_id=w.job_id
+          WHERE u.wait_for_job_id=job.job_id AND w.finished_at IS NULL
+          ORDER BY w.display_id FOR UPDATE OF w LOOP
+        waiting_jobs:=waiting_jobs||waiting_job;
+        PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=waiting_job.job_id AND
+          o.status='pending' ORDER BY o.operation_number FOR UPDATE;
+      END LOOP;
+    END IF;
   END IF;
   -- The request names the actor and the publication names the connection row. Those rows lock before the
   -- first write, the principal row before the connection row, as the credential functions take them.
@@ -798,7 +828,10 @@ BEGIN
     RAISE EXCEPTION 'The cancel is not permitted.' USING DETAIL='cancel-not-permitted';
   END IF;
   now_at:=clock_timestamp();
-  UPDATE cc.jobs SET cancel_requested_at=now_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
+  -- The request time stays one value: the update job and each waiting status job store the same
+  -- request, so a reader never sees two requests for one call.
+  request_at:=now_at;
+  UPDATE cc.jobs SET cancel_requested_at=request_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
   IF job.kind IN ('device-export','device-import') THEN
     -- A request that ends a file job before its first claim keeps no report. The cancelled count holds
     -- the rows left, at least 1, as the cancelled finish does (design section 3).
@@ -834,6 +867,25 @@ BEGIN
       UPDATE cc.jobs SET status=cc.device_update_terminal_status(job.job_id),finished_at=now_at
       WHERE job_id=job.job_id;
     END IF;
+    -- The same request lands on each waiting status job of an import's update job. Each one that never
+    -- claimed ends at once with every operation Cancelled, and each affected job keeps one audit row
+    -- for the one request (design section 3, "The cancel").
+    FOREACH waiting_job IN ARRAY waiting_jobs LOOP
+      UPDATE cc.jobs SET cancel_requested_at=request_at,cancel_requested_by=p_actor
+      WHERE job_id=waiting_job.job_id;
+      SELECT * INTO waiting_detail FROM cc.device_update_jobs u WHERE u.job_id=waiting_job.job_id;
+      IF waiting_detail.first_claimed_at IS NULL THEN
+        PERFORM cc.skip_device_update_pending(waiting_job.job_id,'cancelled');
+        PERFORM cc.refresh_device_update_counters(waiting_job.job_id);
+        UPDATE cc.jobs SET status=cc.device_update_terminal_status(waiting_job.job_id),finished_at=now_at
+        WHERE job_id=waiting_job.job_id;
+      END IF;
+      PERFORM cc.record_job_change(waiting_job.job_id,true);
+      -- One audit row for each waiting status job that this request ends or marks, with the request's
+      -- actor and correlation ID, so a reader sees one request across the job group.
+      INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail)
+        VALUES(gen_random_uuid(),p_actor,'job-cancel-requested',p_correlation,waiting_job.display_id);
+    END LOOP;
   END IF;
   PERFORM cc.record_job_change(job.job_id,true);
   -- One audit row per request. The display ID names the job, and the row holds no reason (section 2).
@@ -1443,6 +1495,407 @@ BEGIN
 END;
 $$;
 
+-- The audit row of one Execute names its import job (design section 7 step 12). This file owns the
+-- later grant of the event enumeration of 008.
+ALTER TABLE cc.security_events DROP CONSTRAINT security_events_event_check;
+ALTER TABLE cc.security_events ADD CONSTRAINT security_events_event_check CHECK (event IN (
+  'login-started','login-succeeded','login-denied','logout','access-denied',
+  'session-expired','access-granted','access-revoked','identity-replaced',
+  'diagnostic-started','diagnostic-passed','diagnostic-failed','preferences-changed',
+  'platform-administrator-confirmed','grants-changed','principal-disabled','principal-enabled',
+  'invitation-created','invitation-redeemed','invitation-confirmed','invitation-revoked','invitation-expired',
+  'customer-confirmed','customer-settings-changed','connection-authorized','connection-replaced',
+  'connection-staged','connection-stage-failed','connection-stage-expired',
+  'connection-token-renewed','connection-token-failed',
+  'connection-revoked','connection-checked','credential-key-rotated','school-scope-changed','recovery-required',
+  'job-cancel-requested','device-import-executed'
+));
+
+-- ===== The import plan, the wait, and the cascade (design sections 3 and 7) =====
+-- Every function below runs as SECURITY DEFINER, joins the runtime grant block of
+-- `deployment/postgres/index.mjs`, and joins the PUBLIC revoke list of this file. An import plan
+-- writer keeps the checks of its early read and repeats them after its last blocking lock, before
+-- its first write.
+
+-- The plan cancel of design section 7. It locks the IMP header and then its detail row, then the
+-- requester and connection rows, checks the plan ID and the revision, and cancels an open plan.
+-- Nothing runs, and the report stays. A repeat answers the same plan.
+CREATE FUNCTION cc.cancel_device_import_plan(p_actor uuid,p_version integer,p_customer text,p_job uuid,
+  p_plan_id uuid,p_revision integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; plan jsonb;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_job IS NULL OR
+    p_plan_id IS NULL OR p_revision IS NULL OR p_revision<1 THEN
+    RAISE EXCEPTION 'The plan cancel request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- The early read keeps the built reasons. The header lock follows, and every authority check runs
+  -- again after the last lock, before the first write (design section 3 lock order: header, then
+  -- detail row, then the requester and connection rows).
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer;
+  IF job.job_id IS NULL OR job.kind<>'device-import' OR job.requested_by<>p_actor OR
+    NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:write','devices:bulk-actions') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+        (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))
+      GROUP BY g.principal_id HAVING count(DISTINCT g.action)=3) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  -- The plan_changed_by write takes the requester row through its foreign key, and the publication of
+  -- cc.record_job_change takes the connection row. Both lock here, after the header and the detail row
+  -- and before the final checks, as cc.request_job_cancel takes them (review round 1, R1).
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=p_actor FOR KEY SHARE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  -- The enabled state, the permission version, the visibility, and the grants repeat after the last
+  -- blocking lock and before the first write, so an access change that committed during a wait never
+  -- lets this call write.
+  IF job.requested_by<>p_actor OR NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:write','devices:bulk-actions') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+        (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))
+      GROUP BY g.principal_id HAVING count(DISTINCT g.action)=3) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  -- The clock reads after every lock and every authority check, so a plan that expires during a wait
+  -- answers expired.
+  now_at:=clock_timestamp();
+  IF detail.plan_id IS NULL OR detail.plan_id<>p_plan_id THEN
+    RETURN jsonb_build_object('outcome','conflict');
+  END IF;
+  plan:=jsonb_build_object('planId',detail.plan_id,'revision',detail.plan_revision,
+    'state',detail.plan_state,'expiresAt',detail.plan_expires_at,
+    'changedBy',detail.plan_changed_by,'changedAt',detail.plan_changed_at);
+  IF detail.plan_state='cancelled' THEN
+    RETURN jsonb_build_object('outcome','cancelled','plan',plan);
+  END IF;
+  IF detail.plan_state IS DISTINCT FROM 'open' THEN
+    RETURN jsonb_build_object('outcome','conflict','plan',plan);
+  END IF;
+  -- The clock reads after every lock and every authority check, so a plan that expires during a wait
+  -- answers expired and keeps its state.
+  IF detail.plan_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','expired','plan',plan,'expiresAt',detail.plan_expires_at);
+  END IF;
+  IF detail.plan_revision<>p_revision THEN
+    RETURN jsonb_build_object('outcome','conflict','plan',plan);
+  END IF;
+  UPDATE cc.device_import_jobs SET plan_state='cancelled',plan_revision=plan_revision+1,
+    plan_changed_by=p_actor,plan_changed_at=now_at WHERE job_id=p_job RETURNING * INTO detail;
+  PERFORM cc.record_job_change(p_job,true);
+  RETURN jsonb_build_object('outcome','cancelled','plan',jsonb_build_object(
+    'planId',detail.plan_id,'revision',detail.plan_revision,'state',detail.plan_state,
+    'expiresAt',detail.plan_expires_at,'changedBy',detail.plan_changed_by,'changedAt',detail.plan_changed_at));
+END;
+$$;
+
+-- The plan lock of Execute (design section 7 step 3). It takes the global access lock, the IMP
+-- header, and the detail row, then checks the plan ID, the state, the revision, and the expiry. An
+-- executed plan answers its stored receipts, so a repeated Execute creates no job.
+CREATE FUNCTION cc.lock_device_import_plan(p_actor uuid,p_version integer,p_customer text,p_job uuid,
+  p_plan_id uuid,p_revision integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; plan jsonb;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_job IS NULL OR
+    p_plan_id IS NULL OR p_revision IS NULL OR p_revision<1 THEN
+    RAISE EXCEPTION 'The plan lock request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G: the global access lock comes first, as preview creation and confirmation take it. Every
+  -- access change takes it too, so the checks below hold to the commit.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF job.requested_by<>p_actor OR NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:write','devices:bulk-actions') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+        (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))
+      GROUP BY g.principal_id HAVING count(DISTINCT g.action)=3) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  -- S1: the header locks before the detail row, as every IMP writer takes them.
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF detail.plan_id IS NULL OR detail.plan_id<>p_plan_id THEN
+    RETURN jsonb_build_object('outcome','conflict');
+  END IF;
+  plan:=jsonb_build_object('planId',detail.plan_id,'revision',detail.plan_revision,
+    'state',detail.plan_state,'expiresAt',detail.plan_expires_at,
+    'changedBy',detail.plan_changed_by,'changedAt',detail.plan_changed_at);
+  -- A repeat Execute answers the stored receipts with the jobs they name (design section 7).
+  IF detail.plan_state='executed' THEN
+    RETURN jsonb_build_object('outcome','executed','plan',plan,'receipts',detail.execute_receipts);
+  END IF;
+  IF detail.plan_state IS DISTINCT FROM 'open' THEN
+    RETURN jsonb_build_object('outcome','conflict','plan',plan);
+  END IF;
+  -- The clock reads after the header and detail waits, so a plan that expires under the lock answers
+  -- expired.
+  IF detail.plan_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','expired','plan',plan,'expiresAt',detail.plan_expires_at);
+  END IF;
+  IF detail.plan_revision<>p_revision THEN
+    RETURN jsonb_build_object('outcome','conflict','plan',plan);
+  END IF;
+  RETURN jsonb_build_object('outcome','locked','plan',plan);
+END;
+$$;
+
+-- The disposition writer of Execute (design section 7 steps 5 and 9). It records one page of at most
+-- 250 changes per call, so no call carries the whole plan: `p_devices` marks every change of a conflict
+-- device `changed-after-validation`, and `p_dispositions` stores the `not_run_reason` of each named
+-- ordinal (review round 1, R2). It locks the IMP header, the detail row, then the change rows.
+CREATE FUNCTION cc.mark_device_import_changes(p_actor uuid,p_version integer,p_customer text,p_job uuid,
+  p_plan_id uuid,p_devices jsonb,p_dispositions jsonb DEFAULT '[]'::jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; bad integer; marked integer;
+  disposed integer;
+BEGIN
+  p_dispositions:=COALESCE(p_dispositions,'[]'::jsonb);
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_job IS NULL OR
+    p_plan_id IS NULL OR p_devices IS NULL OR jsonb_typeof(p_devices)<>'array' OR
+    jsonb_array_length(p_devices)>250 OR jsonb_typeof(p_dispositions)<>'array' OR
+    jsonb_array_length(p_dispositions)>250 THEN
+    RAISE EXCEPTION 'The plan marks are invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_devices) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'string' OR char_length(e #>> '{}') NOT BETWEEN 1 AND 128;
+  IF bad>0 OR (SELECT count(DISTINCT e #>> '{}') FROM jsonb_array_elements(p_devices) e)<>
+      jsonb_array_length(p_devices) THEN
+    RAISE EXCEPTION 'The plan marks are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Every disposition names an ordinal of the plan and one stored reason, and one call repeats no
+  -- ordinal.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_dispositions) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
+      CASE WHEN jsonb_typeof(e->'ordinal')='number' AND pg_input_is_valid(e->>'ordinal','integer')
+        THEN (e->>'ordinal')::integer<0 ELSE true END OR
+      COALESCE(e->>'reason','') NOT IN ('changed-after-validation','no-change-needed','removed',
+        'status-unknown','device-deprovisioned','device-active','device-disabled');
+  IF bad>0 OR (SELECT count(DISTINCT (e->>'ordinal')) FROM jsonb_array_elements(p_dispositions) e)<>
+      jsonb_array_length(p_dispositions) THEN
+    RAISE EXCEPTION 'The plan marks are invalid.' USING ERRCODE='22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(7240173008);
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF job.requested_by<>p_actor OR NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:write','devices:bulk-actions') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+        (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))
+      GROUP BY g.principal_id HAVING count(DISTINCT g.action)=3) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF detail.plan_id IS NULL OR detail.plan_id<>p_plan_id THEN
+    RETURN jsonb_build_object('outcome','conflict');
+  END IF;
+  IF detail.plan_state IS DISTINCT FROM 'open' OR detail.plan_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','expired','expiresAt',detail.plan_expires_at);
+  END IF;
+  -- S1: the change rows lock after the header and the detail row, before the first write.
+  PERFORM 1 FROM cc.device_import_changes c WHERE c.job_id=p_job AND
+    (c.device_id IN (SELECT e #>> '{}' FROM jsonb_array_elements(p_devices) e) OR
+      c.ordinal IN (SELECT (e->>'ordinal')::integer FROM jsonb_array_elements(p_dispositions) e))
+    ORDER BY c.ordinal FOR UPDATE;
+  UPDATE cc.device_import_changes c SET not_run_reason='changed-after-validation'
+  WHERE c.job_id=p_job AND c.linked_job_id IS NULL AND c.not_run_reason IS NULL AND
+    c.device_id IN (SELECT e #>> '{}' FROM jsonb_array_elements(p_devices) e);
+  GET DIAGNOSTICS marked=ROW_COUNT;
+  -- The named reasons land on changes that hold neither a link nor a reason yet, so a repeated page
+  -- keeps the first answer.
+  UPDATE cc.device_import_changes c SET not_run_reason=d.reason
+  FROM (SELECT (e->>'ordinal')::integer AS ordinal,e->>'reason' AS reason
+    FROM jsonb_array_elements(p_dispositions) e) d
+  WHERE c.job_id=p_job AND c.ordinal=d.ordinal AND c.linked_job_id IS NULL AND
+    c.not_run_reason IS NULL;
+  GET DIAGNOSTICS disposed=ROW_COUNT;
+  RETURN jsonb_build_object('outcome','marked','marked',marked,'disposed',disposed);
+END;
+$$;
+
+-- The links, the waits, and the executed plan of Execute (design section 7 step 12). It fills the
+-- job and the operation of each change row by device ID, sets the wait of each status job on the
+-- plan's update job, and marks the plan executed with one job change and one audit row. Every change
+-- that runs holds a job and an operation, and every change that does not run holds its reason.
+CREATE FUNCTION cc.link_device_import_jobs(p_actor uuid,p_version integer,p_customer text,p_job uuid,
+  p_plan_id uuid,p_previews jsonb,p_not_run jsonb,p_correlation uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; bad integer;
+  linked integer; plan jsonb;
+BEGIN
+  -- The reasons arrive through cc.mark_device_import_changes in pages of 250, so this list is one page
+  -- at most and no call carries the whole plan (design section 7, "Bounded serialization"; review
+  -- round 1, R2).
+  p_not_run:=COALESCE(p_not_run,'[]'::jsonb);
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_job IS NULL OR p_plan_id IS NULL OR
+    p_correlation IS NULL OR p_previews IS NULL OR jsonb_typeof(p_previews)<>'array' OR
+    jsonb_array_length(p_previews) NOT BETWEEN 1 AND 7 OR jsonb_typeof(p_not_run)<>'array' OR
+    jsonb_array_length(p_not_run)>250 THEN
+    RAISE EXCEPTION 'The plan links are invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_previews) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'string' OR NOT pg_input_is_valid(e #>> '{}','uuid');
+  IF bad>0 OR (SELECT count(DISTINCT e #>> '{}') FROM jsonb_array_elements(p_previews) e)<>
+      jsonb_array_length(p_previews) THEN
+    RAISE EXCEPTION 'The plan links are invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_not_run) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
+      CASE WHEN jsonb_typeof(e->'ordinal')='number' AND pg_input_is_valid(e->>'ordinal','integer')
+        THEN (e->>'ordinal')::integer<0 ELSE true END OR
+      COALESCE(e->>'reason','') NOT IN ('changed-after-validation','no-change-needed','removed',
+        'status-unknown','device-deprovisioned','device-active','device-disabled');
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The plan links are invalid.' USING ERRCODE='22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(7240173008);
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF job.requested_by<>p_actor OR NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:write','devices:bulk-actions') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+        (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))
+      GROUP BY g.principal_id HAVING count(DISTINCT g.action)=3) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF detail.plan_id IS NULL OR detail.plan_id<>p_plan_id THEN
+    RETURN jsonb_build_object('outcome','conflict');
+  END IF;
+  IF detail.plan_state IS DISTINCT FROM 'open' THEN
+    RETURN jsonb_build_object('outcome','conflict');
+  END IF;
+  IF detail.plan_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','expired','expiresAt',detail.plan_expires_at);
+  END IF;
+  -- Every named preview belongs to this caller, this customer, and a confirmed job.
+  SELECT count(*) INTO bad FROM cc.device_update_previews p
+    WHERE p.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+      AND p.customer_id=p_customer AND p.created_by=p_actor AND p.job_id IS NOT NULL;
+  IF bad<>jsonb_array_length(p_previews) THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  -- S1: the change rows lock after the header and the detail row, before the first write.
+  PERFORM 1 FROM cc.device_import_changes c WHERE c.job_id=p_job ORDER BY c.ordinal FOR UPDATE;
+  -- The import links of every job of the plan, and the wait of each status job on the plan's one
+  -- update job. A plan without a field change sets no wait.
+  UPDATE cc.device_update_jobs u SET import_job_id=p_job
+  FROM cc.device_update_previews p
+  WHERE p.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+    AND u.job_id=p.job_id;
+  UPDATE cc.device_update_jobs u SET wait_for_job_id=(
+      SELECT p2.job_id FROM cc.device_update_previews p2
+      WHERE p2.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+        AND p2.action='annotated-location')
+  WHERE u.job_id IN (SELECT p3.job_id FROM cc.device_update_previews p3
+      WHERE p3.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+        AND p3.action IN ('disable','reenable','deprovision'))
+    AND EXISTS(SELECT 1 FROM cc.device_import_changes c WHERE c.job_id=p_job AND c.change_type='field')
+    AND EXISTS(SELECT 1 FROM cc.device_update_previews p2
+      WHERE p2.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+        AND p2.action='annotated-location');
+  -- The reasons of the caller land before the links, and a reason that the caller names wins over the
+  -- derived one. A field change links to its device operation and its field row.
+  UPDATE cc.device_import_changes c SET not_run_reason=n.reason
+  FROM (SELECT (e->>'ordinal')::integer AS ordinal,e->>'reason' AS reason
+    FROM jsonb_array_elements(p_not_run) e) n
+  WHERE c.job_id=p_job AND c.ordinal=n.ordinal AND c.linked_job_id IS NULL AND c.not_run_reason IS NULL;
+  UPDATE cc.device_import_changes c SET linked_job_id=g.job_id,operation_number=g.operation_number
+  FROM (SELECT DISTINCT c2.ordinal,p.job_id,o.operation_number
+    FROM cc.device_import_changes c2
+    JOIN cc.device_update_previews p ON
+      p.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+      AND p.action='annotated-location'
+    JOIN cc.device_update_preview_targets t ON t.preview_id=p.preview_id AND
+      t.device_id=c2.device_id AND t.disposition='eligible'
+    JOIN cc.device_update_target_fields f ON f.preview_id=t.preview_id AND f.ordinal=t.ordinal AND
+      f.field=c2.field AND f.disposition='eligible'
+    JOIN cc.device_update_operations o ON o.job_id=p.job_id AND o.device_id=c2.device_id
+    WHERE c2.job_id=p_job AND c2.change_type='field') g
+  WHERE c.job_id=p_job AND c.ordinal=g.ordinal AND c.linked_job_id IS NULL AND
+    c.not_run_reason IS NULL;
+  -- A status change links to its status job and its device operation.
+  UPDATE cc.device_import_changes c SET linked_job_id=g.job_id,operation_number=g.operation_number
+  FROM (SELECT DISTINCT c2.ordinal,p.job_id,o.operation_number
+    FROM cc.device_import_changes c2
+    JOIN cc.device_update_previews p ON
+      p.preview_id IN (SELECT (e #>> '{}')::uuid FROM jsonb_array_elements(p_previews) e)
+      AND p.action=c2.status_action
+    JOIN cc.device_update_preview_targets t ON t.preview_id=p.preview_id AND
+      t.device_id=c2.device_id AND t.disposition='eligible'
+    JOIN cc.device_update_operations o ON o.job_id=p.job_id AND o.device_id=c2.device_id
+    WHERE c2.job_id=p_job AND c2.change_type='status') g
+  WHERE c.job_id=p_job AND c.ordinal=g.ordinal AND c.linked_job_id IS NULL AND
+    c.not_run_reason IS NULL;
+  -- A change whose device left the inventory reads removed.
+  UPDATE cc.device_import_changes c SET not_run_reason='removed'
+  WHERE c.job_id=p_job AND c.linked_job_id IS NULL AND c.not_run_reason IS NULL AND
+    NOT EXISTS(SELECT 1 FROM cc.devices d WHERE d.customer_id=p_customer AND
+      d.device_id=c.device_id AND d.removed_at IS NULL);
+  SELECT count(*) INTO bad FROM cc.device_import_changes c
+    WHERE c.job_id=p_job AND c.linked_job_id IS NULL AND c.not_run_reason IS NULL;
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The import links are incomplete.' USING ERRCODE='22023';
+  END IF;
+  -- The plan is executed once, with the receipts of its jobs in run order.
+  UPDATE cc.device_import_jobs i SET plan_state='executed',plan_revision=i.plan_revision+1,
+    plan_changed_by=p_actor,plan_changed_at=now_at,
+    execute_receipts=(SELECT COALESCE(jsonb_agg(cc.device_update_receipt(p.job_id) ORDER BY e.ord),'[]'::jsonb)
+      FROM jsonb_array_elements(p_previews) WITH ORDINALITY e(value,ord)
+      JOIN cc.device_update_previews p ON p.preview_id=(e.value #>> '{}')::uuid)
+  WHERE i.job_id=p_job RETURNING * INTO detail;
+  PERFORM cc.record_job_change(p_job,true);
+  -- One audit row names the import job that ran.
+  INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail)
+    VALUES(gen_random_uuid(),p_actor,'device-import-executed',p_correlation,job.display_id);
+  SELECT count(*) INTO linked FROM cc.device_import_changes c
+    WHERE c.job_id=p_job AND c.linked_job_id IS NOT NULL;
+  plan:=jsonb_build_object('planId',detail.plan_id,'revision',detail.plan_revision,
+    'state',detail.plan_state,'expiresAt',detail.plan_expires_at,
+    'changedBy',detail.plan_changed_by,'changedAt',detail.plan_changed_at);
+  RETURN jsonb_build_object('outcome','executed','plan',plan,'receipts',detail.execute_receipts,
+    'linked',linked);
+END;
+$$;
+
 -- The confirmer of a write job still holds both write actions at the connection scope. The job action
 -- names the action permission: an update needs devices:write, Reboot devices:commands, Wipe user data
 -- and Powerwash devices:wipe, Disable and Reenable devices:status, and Deprovision devices:deprovision.
@@ -1490,7 +1943,7 @@ $$;
 CREATE FUNCTION cc.admit_device_update_job(p_customer text,p_held boolean) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; candidates cc.jobs[]:='{}'; admitted jsonb:=NULL; now_at timestamptz; running boolean;
-  token uuid; label text;
+  token uuid; label text; awaited uuid; waiting boolean;
 BEGIN
   -- S2: the admission holds no fence without its customer. A null hold flag rejects before any lock, so an
   -- unknown hold state never admits a job (section 6.5 step 1: admission fails closed).
@@ -1521,7 +1974,21 @@ BEGIN
   END IF;
   label:=CASE WHEN p_held THEN 'held' ELSE 'queued' END;
   FOREACH job IN ARRAY candidates LOOP
-    IF running OR p_held THEN
+    -- A status job of an import plan waits for its update job (design section 3, "The wait"). The
+    -- awaited header reads without a lock, and final means a finished status, cancelled included.
+    -- A candidate that still waits keeps the queue and never takes the write slot or the dispatch.
+    SELECT u.wait_for_job_id INTO awaited FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
+    waiting:=awaited IS NOT NULL AND NOT EXISTS(SELECT 1 FROM cc.jobs w WHERE w.job_id=awaited AND
+      w.finished_at IS NOT NULL);
+    IF waiting THEN
+      -- The unfinished dependency decides before the hold flag: a candidate that still waits keeps the
+      -- queue and never takes the write slot, the dispatch, or the held label (design section 3, "The
+      -- wait"; review round 1, R5).
+      IF job.status<>'queued' THEN
+        UPDATE cc.jobs SET status='queued' WHERE job_id=job.job_id;
+        PERFORM cc.record_job_change(job.job_id,true);
+      END IF;
+    ELSIF running OR p_held THEN
       IF job.status<>label THEN
         UPDATE cc.jobs SET status=label WHERE job_id=job.job_id;
         PERFORM cc.record_job_change(job.job_id,true);
@@ -3179,28 +3646,26 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   FROM cc.jobs j WHERE j.job_id=p_job AND j.kind IN ('device-update','device-command','device-status');
 $$;
 
--- One prepared preview and its frozen targets, in one transaction. The caller resolves the stored
--- selection or the edit list and computes the requests, the baselines, the dispositions, and the
--- digest. This function freezes that result. An annotated-location update carries a change list for
--- a selection preview and a null one for an edit list; every field row stores its own request and
--- baseline either way. A command or status preview carries no change list and no field rows.
--- A Deprovision preview carries its one reason, and no other action carries one (D12).
-CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p_customer text,
-  p_generation integer,p_action text,p_changes jsonb,p_digest text,p_targets jsonb,p_expires_minutes integer,
-  p_reason text DEFAULT NULL)
+-- One open preview of a device write (design section 7, "Bounded serialization"). It freezes the
+-- action, the reason, and the change list. Its target pages arrive through
+-- cc.add_device_update_preview_targets, and cc.seal_device_update_preview writes the counts and the
+-- digest. cc.create_device_update_preview runs the open, the add, and the seal in one call, so one
+-- target check serves both callers. Confirm and both manifest reads refuse an unsealed preview.
+CREATE FUNCTION cc.open_device_update_preview(p_actor uuid,p_version integer,p_customer text,
+  p_generation integer,p_action text,p_changes jsonb,p_expires_minutes integer,p_reason text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE preview cc.device_update_previews; now_at timestamptz; selected integer; eligible integer;
-  unchanged integer; excluded integer; conflicts integer; field_changes integer; oldest timestamptz;
-  bad integer; number bigint;
+DECLARE preview cc.device_update_previews; now_at timestamptz; number bigint; bad integer;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_generation IS NULL OR
     p_action IS NULL OR p_action NOT IN ('annotated-location','reboot','wipe-users','powerwash',
       'disable','reenable','deprovision') OR
-    p_digest IS NULL OR
-    p_digest !~ '^[a-f0-9]{64}$' OR p_targets IS NULL OR jsonb_typeof(p_targets)<>'array' OR
     p_expires_minutes IS NULL OR p_expires_minutes NOT BETWEEN 1 AND 1440 THEN
+    RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- A change list is an array, a JSON null, or absent. Another JSON type rejects before any lock.
+  IF p_changes IS NOT NULL AND jsonb_typeof(p_changes) NOT IN ('array','null') THEN
     RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
   END IF;
   -- S2: the frozen reason of a Deprovision preview. A reason outside Deprovision, a Deprovision
@@ -3218,8 +3683,7 @@ BEGIN
     -- field-mode pairs of section 1. A null change list is an edit list: each target carries its
     -- own requests and baselines, so the preview stores no change row.
     IF p_changes IS NOT NULL THEN
-      IF jsonb_typeof(p_changes)<>'array' OR
-        jsonb_array_length(p_changes) NOT BETWEEN 1 AND 4 THEN
+      IF jsonb_typeof(p_changes)<>'array' OR jsonb_array_length(p_changes) NOT BETWEEN 1 AND 4 THEN
         RAISE EXCEPTION 'The preview changes are invalid.' USING ERRCODE='22023';
       END IF;
       SELECT count(*) INTO bad FROM jsonb_array_elements(p_changes) c
@@ -3250,9 +3714,75 @@ BEGIN
     (jsonb_typeof(p_changes)<>'array' OR jsonb_array_length(p_changes)>0) THEN
     RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
   END IF;
-  IF jsonb_array_length(p_targets)>100000 THEN
-    RAISE EXCEPTION 'The preview selection is too large.' USING ERRCODE='22023';
+  -- Rule G (round 3, R1-F2): advisory lock 7240173008 is the global access lock. Every access change
+  -- takes it first. This function takes it before the person check and before every row lock, so an
+  -- access change cannot commit between the check and the INSERT of the preview row.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  -- The person check of the preview route. A caller without both write actions receives no preview.
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer,p_action) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
   END IF;
+  now_at:=clock_timestamp();
+  number:=nextval('cc.preview_number_pv');
+  INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
+    generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,conflicts,
+    field_changes,oldest_observed_at,manifest_digest,prepared_at,expires_at)
+  VALUES(gen_random_uuid(),cc.job_display_id('PV',number),p_customer,p_actor,p_version,p_generation,
+    p_action,CASE WHEN p_action='annotated-location' THEN 3 ELSE 1 END,
+    p_reason,0,0,0,0,0,0,NULL,NULL,now_at,now_at+make_interval(mins=>p_expires_minutes))
+  RETURNING * INTO preview;
+  -- Only a selection preview stores change rows. An edit list keeps every request on its own row.
+  IF p_action='annotated-location' AND p_changes IS NOT NULL THEN
+    INSERT INTO cc.device_update_changes(preview_id,field,mode,value)
+    SELECT preview.preview_id,c.field,c.mode,c.value
+    FROM jsonb_to_recordset(p_changes) AS c(field text,mode text,value text);
+  END IF;
+  RETURN jsonb_build_object('outcome','opened','preview',to_jsonb(preview));
+END;
+$$;
+
+-- One page of frozen targets of an open preview (design section 7, "Bounded serialization"). A call
+-- carries at most 250 targets, and one check serves cc.create_device_update_preview and Execute. The
+-- check reads the stored change rows, so a selection preview compares each request with its change.
+CREATE FUNCTION cc.add_device_update_preview_targets(p_actor uuid,p_version integer,p_customer text,
+  p_preview uuid,p_targets jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE preview cc.device_update_previews; now_at timestamptz; bad integer; changes jsonb;
+  change_count integer; added integer; total integer;
+BEGIN
+  -- S2: one page holds at most 250 targets of the frozen target domain, or the call rejects before
+  -- any lock or write (design section 7, "Bounded serialization").
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
+    p_targets IS NULL OR jsonb_typeof(p_targets)<>'array' OR jsonb_array_length(p_targets)>250 THEN
+    RAISE EXCEPTION 'The preview targets are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G: the global access lock comes first, as the preview insert and the confirmation take it.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  -- S1: the preview row locks before its target rows, as the seal and the confirmation take it.
+  SELECT * INTO preview FROM cc.device_update_previews p WHERE p.preview_id=p_preview FOR UPDATE;
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer,preview.action) OR preview.permission_version<>p_version THEN
+    RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  now_at:=clock_timestamp();
+  IF preview.manifest_digest IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','preview-sealed');
+  END IF;
+  IF preview.job_id IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  IF preview.expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('field',c.field,'mode',c.mode,'value',c.value)),'[]'::jsonb),
+    count(*) INTO changes,change_count
+  FROM cc.device_update_changes c WHERE c.preview_id=p_preview;
   -- Each target row carries every field of the frozen target domain.
   SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
     WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
@@ -3280,12 +3810,12 @@ BEGIN
   -- An update freezes one field row per change on every target of a selection preview, and one to
   -- five rows on every target of an edit list. A command or status preview holds none, and its
   -- device row keeps the value that statusExclusion read.
-  IF p_action='annotated-location' THEN
-    IF p_changes IS NOT NULL THEN
+  IF preview.action='annotated-location' THEN
+    IF change_count>0 THEN
       -- A selection target holds exactly one row per change.
       SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) e
         WHERE jsonb_typeof(e->'fields') IS DISTINCT FROM 'array' OR
-          jsonb_array_length(e->'fields')<>jsonb_array_length(p_changes);
+          jsonb_array_length(e->'fields')<>change_count;
       IF bad>0 THEN
         RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
       END IF;
@@ -3295,9 +3825,9 @@ BEGIN
           jsonb_array_elements(e->'fields') f
         WHERE jsonb_typeof(f) IS DISTINCT FROM 'object' OR
           COALESCE(f->>'field','') NOT IN
-            (SELECT c->>'field' FROM jsonb_array_elements(p_changes) c) OR
+            (SELECT c->>'field' FROM jsonb_array_elements(changes) c) OR
           (f->>'requested_value') IS DISTINCT FROM
-            (SELECT c->>'value' FROM jsonb_array_elements(p_changes) c
+            (SELECT c->>'value' FROM jsonb_array_elements(changes) c
               WHERE c->>'field'=f->>'field') OR
           (f->>'baseline_value') IS DISTINCT FROM (f->>'observed_value');
       IF bad>0 THEN
@@ -3362,63 +3892,174 @@ BEGIN
       WHERE e->'fields' IS NOT NULL AND e->'fields'<>'[]'::jsonb) THEN
     RAISE EXCEPTION 'The preview target fields are invalid.' USING ERRCODE='22023';
   END IF;
+  -- An ordinal and a device occur once across every page of the preview.
   IF (SELECT count(DISTINCT e->>'ordinal') FROM jsonb_array_elements(p_targets) e)<>jsonb_array_length(p_targets) OR
-    (SELECT count(DISTINCT e->>'device_id') FROM jsonb_array_elements(p_targets) e)<>jsonb_array_length(p_targets) THEN
+    (SELECT count(DISTINCT e->>'device_id') FROM jsonb_array_elements(p_targets) e)<>jsonb_array_length(p_targets) OR
+    EXISTS(SELECT 1 FROM jsonb_array_elements(p_targets) e WHERE EXISTS(SELECT 1 FROM
+      cc.device_update_preview_targets t WHERE t.preview_id=p_preview AND t.ordinal=(e->>'ordinal')::integer)) OR
+    EXISTS(SELECT 1 FROM jsonb_array_elements(p_targets) e WHERE EXISTS(SELECT 1 FROM
+      cc.device_update_preview_targets t WHERE t.preview_id=p_preview AND t.device_id=e->>'device_id')) THEN
     RAISE EXCEPTION 'The preview targets repeat an ordinal or a device.' USING ERRCODE='22023';
-  END IF;
-  -- Rule G (round 3, R1-F2): advisory lock 7240173008 is the global access lock. Every access change
-  -- takes it first. This function takes it before the person check and before every row lock, so an
-  -- access change cannot commit between the check and the INSERT of the preview and its targets.
-  PERFORM pg_advisory_xact_lock(7240173008);
-  -- The person check of the preview route. A caller without both write actions receives no preview.
-  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
-      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT cc.write_capable(p_actor,p_customer,p_action) THEN
-    RETURN jsonb_build_object('outcome','forbidden');
-  END IF;
-  SELECT count(*),count(*) FILTER (WHERE e->>'disposition'='eligible'),
-      count(*) FILTER (WHERE e->>'disposition'='unchanged'),
-      count(*) FILTER (WHERE e->>'disposition'='excluded'),
-      count(*) FILTER (WHERE e->>'disposition'='conflict'),
-      min(CASE WHEN e->>'disposition'='eligible' AND e->>'observed_at' IS NOT NULL
-        THEN (e->>'observed_at')::timestamptz END)
-  INTO selected,eligible,unchanged,excluded,conflicts,oldest FROM jsonb_array_elements(p_targets) e;
-  SELECT count(*) INTO field_changes FROM jsonb_array_elements(p_targets) e,
-      jsonb_array_elements(e->'fields') f WHERE f->>'disposition'='eligible';
-  now_at:=clock_timestamp();
-  number:=nextval('cc.preview_number_pv');
-  INSERT INTO cc.device_update_previews(preview_id,display_id,customer_id,created_by,permission_version,
-    generation,action,action_version,deprovision_reason,selected,eligible,unchanged,excluded,conflicts,
-    field_changes,oldest_observed_at,manifest_digest,prepared_at,expires_at)
-  VALUES(gen_random_uuid(),cc.job_display_id('PV',number),p_customer,p_actor,p_version,p_generation,
-    p_action,CASE WHEN p_action='annotated-location' THEN 3 ELSE 1 END,
-    p_reason,selected,eligible,unchanged,excluded,conflicts,field_changes,oldest,p_digest,now_at,
-    now_at+make_interval(mins=>p_expires_minutes))
-  RETURNING * INTO preview;
-  -- Only a selection preview stores change rows. An edit list keeps every request on its own row.
-  IF p_action='annotated-location' AND p_changes IS NOT NULL THEN
-    INSERT INTO cc.device_update_changes(preview_id,field,mode,value)
-    SELECT preview.preview_id,c.field,c.mode,c.value
-    FROM jsonb_to_recordset(p_changes) AS c(field text,mode text,value text);
   END IF;
   INSERT INTO cc.device_update_preview_targets(preview_id,ordinal,device_id,serial_number,org_unit_path,
     observed_value,observed_at,disposition,exclusion_reason)
-  SELECT preview.preview_id,t.ordinal,t.device_id,t.serial_number,t.org_unit_path,t.observed_value,
+  SELECT p_preview,t.ordinal,t.device_id,t.serial_number,t.org_unit_path,t.observed_value,
     t.observed_at,t.disposition,t.exclusion_reason
   FROM jsonb_to_recordset(p_targets) AS t(ordinal integer,device_id text,serial_number text,
     org_unit_path text,observed_value text,observed_at timestamptz,disposition text,exclusion_reason text)
   ORDER BY t.ordinal;
-  IF p_action='annotated-location' THEN
+  GET DIAGNOSTICS added=ROW_COUNT;
+  IF preview.action='annotated-location' THEN
     INSERT INTO cc.device_update_target_fields(preview_id,ordinal,field,requested_value,baseline_value,
       observed_value,disposition)
-    SELECT preview.preview_id,t.ordinal,f.field,f.requested_value,f.baseline_value,f.observed_value,
+    SELECT p_preview,t.ordinal,f.field,f.requested_value,f.baseline_value,f.observed_value,
       f.disposition
     FROM jsonb_to_recordset(p_targets) AS t(ordinal integer,fields jsonb)
     CROSS JOIN LATERAL jsonb_to_recordset(t.fields) AS f(field text,requested_value text,
       baseline_value text,observed_value text,disposition text)
     ORDER BY t.ordinal;
   END IF;
-  RETURN jsonb_build_object('outcome','created','preview',to_jsonb(preview));
+  SELECT count(*) INTO total FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview;
+  RETURN jsonb_build_object('outcome','added','added',added,'targets',total);
+END;
+$$;
+
+-- The seal of a filled preview (design section 7). It writes the counts, the oldest observation, and
+-- the digest of the pages. The seal keeps the 100,000-target cap. A repeated seal with the same
+-- digest answers the same preview.
+CREATE FUNCTION cc.seal_device_update_preview(p_actor uuid,p_version integer,p_customer text,
+  p_preview uuid,p_digest text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE preview cc.device_update_previews; now_at timestamptz; v_selected integer; v_eligible integer;
+  v_unchanged integer; v_excluded integer; v_conflicts integer; v_field_changes integer; v_oldest timestamptz;
+  total integer;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
+    p_digest IS NULL OR p_digest !~ '^[a-f0-9]{64}$' THEN
+    RAISE EXCEPTION 'The preview seal is invalid.' USING ERRCODE='22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(7240173008);
+  SELECT * INTO preview FROM cc.device_update_previews p WHERE p.preview_id=p_preview FOR UPDATE;
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer,preview.action) OR preview.permission_version<>p_version THEN
+    RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  IF preview.job_id IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  IF preview.manifest_digest IS NOT NULL THEN
+    RETURN CASE WHEN preview.manifest_digest=p_digest
+      THEN jsonb_build_object('outcome','sealed','preview',to_jsonb(preview))
+      ELSE jsonb_build_object('outcome','preview-changed') END;
+  END IF;
+  IF preview.expires_at<=clock_timestamp() THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
+  SELECT count(*) INTO total FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview;
+  IF total>100000 THEN
+    RAISE EXCEPTION 'The preview selection is too large.' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*),count(*) FILTER (WHERE t.disposition='eligible'),
+      count(*) FILTER (WHERE t.disposition='unchanged'),
+      count(*) FILTER (WHERE t.disposition='excluded'),
+      count(*) FILTER (WHERE t.disposition='conflict'),
+      min(CASE WHEN t.disposition='eligible' AND t.observed_at IS NOT NULL THEN t.observed_at END)
+  INTO v_selected,v_eligible,v_unchanged,v_excluded,v_conflicts,v_oldest
+  FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview;
+  SELECT count(*) INTO v_field_changes FROM cc.device_update_target_fields f
+    WHERE f.preview_id=p_preview AND f.disposition='eligible';
+  now_at:=clock_timestamp();
+  UPDATE cc.device_update_previews SET selected=v_selected,eligible=v_eligible,unchanged=v_unchanged,
+    excluded=v_excluded,conflicts=v_conflicts,field_changes=v_field_changes,oldest_observed_at=v_oldest,
+    manifest_digest=p_digest
+  WHERE preview_id=p_preview RETURNING * INTO preview;
+  RETURN jsonb_build_object('outcome','sealed','preview',to_jsonb(preview));
+END;
+$$;
+
+-- One manifest page of a sealed preview (design section 7). A call returns at most 250 targets by
+-- ordinal key. A null digest answers `preview-unsealed`, so an unsealed preview never confirms.
+CREATE FUNCTION cc.read_device_update_preview_manifest_page(p_actor uuid,p_version integer,p_customer text,
+  p_preview uuid,p_after_ordinal integer DEFAULT NULL) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE preview cc.device_update_previews; targets jsonb; next_ordinal integer; total integer;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_preview IS NULL OR
+    (p_after_ordinal IS NOT NULL AND p_after_ordinal<0) THEN
+    RAISE EXCEPTION 'The preview manifest request is invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO preview FROM cc.device_update_previews p WHERE p.preview_id=p_preview;
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR preview.customer_id<>p_customer THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT cc.write_capable(p_actor,p_customer,preview.action) OR preview.permission_version<>p_version THEN
+    RETURN jsonb_build_object('outcome','permission-changed');
+  END IF;
+  IF preview.manifest_digest IS NULL THEN
+    RETURN jsonb_build_object('outcome','preview-unsealed');
+  END IF;
+  SELECT count(*) INTO total FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview;
+  SELECT COALESCE(jsonb_agg(jsonb_set(to_jsonb(t),'{fields}',COALESCE((
+      SELECT jsonb_agg(jsonb_build_object('field',f.field,'requestedValue',f.requested_value,
+          'observedValue',f.observed_value,'baselineValue',f.baseline_value,
+          'disposition',f.disposition)
+        ORDER BY array_position(ARRAY['annotatedLocation','annotatedAssetId','annotatedUser','notes',
+          'orgUnitPath']::text[],f.field))
+      FROM cc.device_update_target_fields f WHERE f.preview_id=t.preview_id AND f.ordinal=t.ordinal),
+      '[]'::jsonb)) ORDER BY t.ordinal),'[]'::jsonb) INTO targets
+  FROM (SELECT * FROM cc.device_update_preview_targets t WHERE t.preview_id=p_preview AND
+      (p_after_ordinal IS NULL OR t.ordinal>p_after_ordinal) ORDER BY t.ordinal LIMIT 250) t;
+  next_ordinal:=CASE WHEN jsonb_array_length(targets)=250
+    THEN (targets->-1->>'ordinal')::integer END;
+  RETURN jsonb_build_object('outcome','page','targets',targets,'nextOrdinal',next_ordinal,
+    'total',total,'manifestDigest',preview.manifest_digest);
+END;
+$$;
+
+-- One prepared preview and its frozen targets, in one transaction. The caller resolves the stored
+-- selection or the edit list and computes the requests, the baselines, the dispositions, and the
+-- digest. This function runs the open, the add, and the seal in one call, so one target check serves
+-- both callers and no call passes more than one page of 250 targets.
+CREATE FUNCTION cc.create_device_update_preview(p_actor uuid,p_version integer,p_customer text,
+  p_generation integer,p_action text,p_changes jsonb,p_digest text,p_targets jsonb,p_expires_minutes integer,
+  p_reason text DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE opened jsonb; sealed jsonb; preview_id uuid; pages jsonb; page_count integer; i integer;
+BEGIN
+  IF p_targets IS NULL OR jsonb_typeof(p_targets)<>'array' THEN
+    RAISE EXCEPTION 'The preview request is invalid.' USING ERRCODE='22023';
+  END IF;
+  opened:=cc.open_device_update_preview(p_actor,p_version,p_customer,p_generation,p_action,p_changes,
+    p_expires_minutes,p_reason);
+  IF opened->>'outcome' IS DISTINCT FROM 'opened' THEN
+    RETURN opened;
+  END IF;
+  preview_id:=(opened->'preview'->>'preview_id')::uuid;
+  -- One pass over the targets groups them into pages of 250. Every add call carries one page.
+  SELECT COALESCE(jsonb_agg(p.targets ORDER BY p.page),'[]'::jsonb) INTO pages
+  FROM (SELECT g.page,jsonb_agg(g.value ORDER BY g.ord) AS targets
+    FROM (SELECT (row_number() OVER (ORDER BY e.ord)-1)/250 AS page,e.value,e.ord
+      FROM jsonb_array_elements(p_targets) WITH ORDINALITY e(value,ord)) g
+    GROUP BY g.page) p;
+  page_count:=COALESCE(jsonb_array_length(pages),0);
+  FOR i IN 0..page_count-1 LOOP
+    sealed:=cc.add_device_update_preview_targets(p_actor,p_version,p_customer,preview_id,pages->i);
+    IF sealed->>'outcome' IS DISTINCT FROM 'added' THEN
+      RETURN sealed;
+    END IF;
+  END LOOP;
+  sealed:=cc.seal_device_update_preview(p_actor,p_version,p_customer,preview_id,p_digest);
+  IF sealed->>'outcome' IS DISTINCT FROM 'sealed' THEN
+    RETURN sealed;
+  END IF;
+  RETURN jsonb_build_object('outcome','created','preview',sealed->'preview');
 END;
 $$;
 
@@ -3449,6 +4090,11 @@ BEGIN
   -- at version 1.
   IF (preview.action_version<>CASE WHEN preview.action='annotated-location' THEN 3 ELSE 1 END) THEN
     RETURN jsonb_build_object('outcome','preview-changed');
+  END IF;
+  -- A preview whose pages are not sealed holds no digest, so it answers no manifest (design section 7,
+  -- "Bounded serialization").
+  IF preview.manifest_digest IS NULL THEN
+    RETURN jsonb_build_object('outcome','preview-unsealed');
   END IF;
   -- A preview that froze a conflict device never confirms, so its manifest is never stored
   -- (addendum section 2).
@@ -3530,6 +4176,11 @@ BEGIN
   IF (preview.action_version<>CASE WHEN preview.action='annotated-location' THEN 3 ELSE 1 END) THEN
     RETURN jsonb_build_object('outcome','preview-changed');
   END IF;
+  -- A null digest names an unsealed preview. No digest matches it, so a preview whose pages are not
+  -- sealed never confirms (design section 7, "Bounded serialization").
+  IF preview.manifest_digest IS NULL THEN
+    RETURN jsonb_build_object('outcome','preview-unsealed');
+  END IF;
   -- A preview that froze a conflict device never confirms, and it creates no job (addendum
   -- section 2).
   IF preview.conflicts>0 THEN
@@ -3543,7 +4194,7 @@ BEGIN
   IF preview.expires_at<=clock_timestamp() THEN
     RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
   END IF;
-  IF p_digest<>preview.manifest_digest THEN
+  IF p_digest IS DISTINCT FROM preview.manifest_digest THEN
     RETURN jsonb_build_object('outcome','preview-changed');
   END IF;
   -- The typed phrase of the action (D7, ruling 3). The action fixes the phrase, so no column stores
@@ -3715,6 +4366,33 @@ BEGIN
     DELETE FROM cc.jobs WHERE job_id=candidate;
     removed:=removed+1;
   END LOOP;
+  -- An import line table and an export target list leave 30 days after the file job ends (design
+  -- section 3). The header, the mode, and the plan state stay with the job; a write job never leaves.
+  -- S1: the header locks before the clock, and the detail row locks after the header.
+  now_at:=clock_timestamp();
+  FOR candidate IN SELECT j.job_id FROM cc.jobs j WHERE j.customer_id=p_customer AND
+      j.kind IN ('device-export','device-import') AND j.finished_at IS NOT NULL AND
+      j.finished_at<now_at-interval '30 days' AND (
+        EXISTS(SELECT 1 FROM cc.device_export_targets t WHERE t.job_id=j.job_id) OR
+        EXISTS(SELECT 1 FROM cc.device_import_changes c WHERE c.job_id=j.job_id) OR
+        EXISTS(SELECT 1 FROM cc.device_import_rejections r WHERE r.job_id=j.job_id) OR
+        EXISTS(SELECT 1 FROM cc.device_import_warnings w WHERE w.job_id=j.job_id))
+      ORDER BY j.finished_at,j.job_id LIMIT p_limit LOOP
+    SELECT * INTO job FROM cc.jobs j WHERE j.job_id=candidate AND j.customer_id=p_customer FOR UPDATE;
+    IF job.job_id IS NULL OR job.finished_at IS NULL THEN CONTINUE; END IF;
+    now_at:=clock_timestamp();
+    IF job.finished_at>=now_at-interval '30 days' THEN CONTINUE; END IF;
+    IF job.kind='device-import' THEN
+      PERFORM 1 FROM cc.device_import_jobs i WHERE i.job_id=job.job_id FOR UPDATE;
+      DELETE FROM cc.device_import_changes WHERE job_id=job.job_id;
+      DELETE FROM cc.device_import_rejections WHERE job_id=job.job_id;
+      DELETE FROM cc.device_import_warnings WHERE job_id=job.job_id;
+    ELSE
+      PERFORM 1 FROM cc.device_export_jobs e WHERE e.job_id=job.job_id FOR UPDATE;
+      DELETE FROM cc.device_export_targets WHERE job_id=job.job_id;
+    END IF;
+    removed:=removed+1;
+  END LOOP;
   -- An unconfirmed preview leaves 24 hours after its expiry, with its targets.
   DELETE FROM cc.device_update_previews WHERE customer_id=p_customer AND job_id IS NULL AND
     expires_at<now_at-interval '24 hours';
@@ -3792,6 +4470,14 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.clean_device_update_hold(text,uuid),
   cc.purge_jobs(text,integer),cc.device_update_receipt(uuid),
   cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer,text),
+  cc.open_device_update_preview(uuid,integer,text,integer,text,jsonb,integer,text),
+  cc.add_device_update_preview_targets(uuid,integer,text,uuid,jsonb),
+  cc.seal_device_update_preview(uuid,integer,text,uuid,text),
+  cc.read_device_update_preview_manifest_page(uuid,integer,text,uuid,integer),
+  cc.cancel_device_import_plan(uuid,integer,text,uuid,uuid,integer),
+  cc.lock_device_import_plan(uuid,integer,text,uuid,uuid,integer),
+  cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb,jsonb),
+  cc.link_device_import_jobs(uuid,integer,text,uuid,uuid,jsonb,jsonb,uuid),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
   cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid,text),
   cc.device_command_poll_delay(integer),cc.complete_device_command_job(uuid,timestamptz),

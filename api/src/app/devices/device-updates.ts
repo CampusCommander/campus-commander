@@ -457,6 +457,9 @@ export function deviceWriteFunctionError(
   // A preview that froze a conflict device never confirms (addendum section 2).
   if (outcome === 'preview-conflict')
     throw new ConflictException({ reason: 'preview-conflict' });
+  // A paged preview holds no digest until the seal writes one, so confirmation refuses it.
+  if (outcome === 'preview-unsealed')
+    throw new ConflictException({ reason: 'preview-unsealed' });
   if (outcome === 'artifact-missing')
     throw new InternalServerErrorException(
       'The manifest artifact is unavailable.',
