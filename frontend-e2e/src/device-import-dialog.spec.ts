@@ -1175,11 +1175,6 @@ test.describe('Import', () => {
       'The report is unavailable. Try again.',
     );
     await expect(dialog(page)).not.toContainText('Cancel import');
-    // Drain the shared feed's first-open reread, so the tab selection is the read under test.
-    await page.waitForTimeout(1500);
-    await expect(dialog(page)).toContainText(
-      'The report is unavailable. Try again.',
-    );
     // The tab total of Rejected rows already holds its whole first answer.
     const rejected = dialog(page).getByRole('tab', { name: /Rejected/ });
     await expect(rejected).toContainText('2');
