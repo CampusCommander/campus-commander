@@ -1,6 +1,7 @@
 import * as z from 'zod';
 import {
   batteryFilterValueSchema,
+  deviceSelectionKeySchema,
   deviceSortFieldSchema,
   deviceStatusFilterValueSchema,
   type DeviceBattery,
@@ -8,6 +9,8 @@ import {
 } from './devices';
 import { jobDisplayIdSchema, jobExportPurposeSchema } from './jobs';
 import type { JobDisplayId, JobExportPurpose } from './jobs';
+
+const count = z.number().int().min(0);
 
 /**
  * The export contracts of the device export and import workflow
@@ -124,12 +127,12 @@ export function deviceReportCellText(
   }
 }
 
-/** The request of `POST /api/devices/exports` (design section 1). `gridId` and `tabId` are the
- * selection key of the browser tab, as the update preview request carries them. */
+/** The request of `POST /api/devices/exports` (design section 1). The selection key is the one of
+ * the update preview request, so a tab names its grid the same way in both. */
 export const deviceExportRequestSchema = z
   .strictObject({
-    gridId: z.literal('devices'),
-    tabId: z.uuid(),
+    gridId: deviceSelectionKeySchema.shape.gridId,
+    tabId: deviceSelectionKeySchema.shape.tabId,
     purpose: jobExportPurposeSchema,
     format: deviceExportFormatSchema,
     /** The grid sort. Rows follow it, and the device ID breaks ties (section 6.2). */
@@ -160,7 +163,7 @@ export const deviceExportReceiptSchema = z.strictObject({
   displayId: jobDisplayIdSchema,
   status: z.literal('accepted'),
   /** The devices in the frozen scope. */
-  rows: z.number().int().min(0),
+  rows: count,
 });
 export type DeviceExportReceipt = z.infer<typeof deviceExportReceiptSchema>;
 
