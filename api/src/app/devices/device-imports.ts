@@ -254,6 +254,13 @@ export function deviceImportUploadInput(
   return parsed.data;
 }
 
+/** The outcomes of `cc.create_device_import_job` that create no job (017-jobs.sql). */
+const CREATE_REFUSALS: readonly string[] = [
+  'forbidden',
+  'connection-changed',
+  'artifact-unavailable',
+];
+
 /** Map one create-function outcome to the status and code of the route. */
 export function deviceImportFunctionError(
   result: Record<string, unknown>,
@@ -445,33 +452,30 @@ export class DeviceImports {
     correlationId: string,
     discard?: StagedUpload,
   ): Promise<DeviceImportReceipt> {
-    let result: Record<string, unknown> | undefined;
-    try {
-      result = (
-        await this.database.connection.query(createImportSql, [
-          session.identity.id,
-          session.identity.permissionVersion,
-          current.customerId,
-          source.mode,
-          'csv',
-          source.name,
-          source.sizeBytes,
-          this.statusPermissions(session, current),
-          correlationId,
-          source.artifactId,
-        ])
-      ).rows[0]?.['result'] as Record<string, unknown> | undefined;
-    } catch (error) {
-      // A refused call leaves no uploaded file behind. A created job keeps its file.
-      await this.discard(discard);
-      throw error;
-    }
-    if (!result) {
-      await this.discard(discard);
+    const result = (
+      await this.database.connection.query(createImportSql, [
+        session.identity.id,
+        session.identity.permissionVersion,
+        current.customerId,
+        source.mode,
+        'csv',
+        source.name,
+        source.sizeBytes,
+        this.statusPermissions(session, current),
+        correlationId,
+        source.artifactId,
+      ])
+    ).rows[0]?.['result'] as Record<string, unknown> | undefined;
+    // A lost or unrecognized answer is not a refusal: the create transaction may have committed,
+    // and the job then owns the file. The link sets no reference count, so the purge removes a file
+    // that no job linked (design section 4).
+    if (!result)
       throw new Error('The device import function returned no result.');
-    }
     if (result['outcome'] !== 'created') {
-      await this.discard(discard);
+      // A known refusal creates no job, so the staged upload goes with it. An outcome that the
+      // route cannot read may hide a committed job, and that file stays for the purge.
+      if (CREATE_REFUSALS.includes(String(result['outcome'])))
+        await this.discard(discard);
       deviceImportFunctionError(result);
     }
     const receipt = deviceImportReceiptSchema.parse(result['receipt']);
