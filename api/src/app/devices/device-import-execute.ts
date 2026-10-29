@@ -39,6 +39,7 @@ import {
   type PreviewTarget,
 } from './device-updates';
 import { importPlanAnswer } from './device-imports';
+import type { StagedArtifact } from '../storage/storage.service';
 
 /**
  * Execute of one import plan
@@ -161,10 +162,20 @@ export interface ExecuteDatabase {
   transaction<T>(run: (client: QueryClient) => Promise<T>): Promise<T>;
 }
 export interface ExecuteStorage {
-  storeJsonStream(
+  /**
+   * Stage one manifest inside the Execute transaction. The caller's client carries the artifact
+   * row, so a plan lock holder never borrows a second connection from the pool.
+   */
+  storeJsonStreamWithin(
+    client: QueryClient,
     source: AsyncIterable<Buffer>,
     maxBytes: number,
-  ): Promise<string>;
+  ): Promise<StagedArtifact>;
+  /** Remove the file of a manifest whose transaction rolled back. */
+  discardStaged(descriptor: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<unknown>;
 }
 export interface ExecuteAdmission {
   admit(customerId: string): Promise<boolean>;
@@ -430,6 +441,8 @@ export class DeviceImportExecute {
   /**
    * Run the thirteen steps of design section 7 in one transaction, then admit the jobs that it
    * created. A document, a result set, and a call of this method never hold more than one page.
+   * Every step reads through the transaction client, so a plan lock holder never borrows a second
+   * connection from the pool (review round 1, R3).
    */
   async execute(
     session: SessionResponse,
@@ -438,14 +451,29 @@ export class DeviceImportExecute {
     input: DeviceImportExecuteRequest,
     correlationId: string,
   ): Promise<DeviceImportExecuteAnswer> {
-    const outcome = await this.database.transaction((client) =>
-      this.locked(client, session, current, displayId, input, correlationId),
-    );
+    // The manifests of a rolled-back transaction lose their artifact rows. Their files leave with
+    // the transaction, so the store removes each attempted file after the rollback.
+    const staged: StagedArtifact[] = [];
+    let outcome: LockedOutcome;
+    try {
+      outcome = await this.database.transaction((client) =>
+        this.locked(client, session, current, displayId, input, correlationId, staged),
+      );
+    } catch (error) {
+      await this.discard(staged);
+      throw error;
+    }
     // After the commit, run admission (design section 7, step 13). A missed run repeats on the tick.
     // A plan that ran before created no job here, so it admits nothing (step 3).
     if (outcome.created)
       await this.jobs.admit(current.customerId).catch(() => undefined);
     return outcome.answer;
+  }
+
+  /** Remove the attempt files that a rolled-back Execute left behind. */
+  private async discard(staged: readonly StagedArtifact[]): Promise<void> {
+    for (const one of staged)
+      await this.storage.discardStaged(one).catch(() => undefined);
   }
 
   private async locked(
@@ -455,6 +483,7 @@ export class DeviceImportExecute {
     displayId: string,
     input: DeviceImportExecuteRequest,
     correlationId: string,
+    staged: StagedArtifact[],
   ): Promise<LockedOutcome> {
     const actor = session.identity.id;
     // The route already rechecked the three device actions and each status permission of the plan.
@@ -501,12 +530,12 @@ export class DeviceImportExecute {
     if (outcome === 'conflict')
       throw new ConflictException({
         reason: 'plan-conflict',
-        plan: await importPlanAnswer(this.database, this.clock, locked['plan']),
+        plan: await importPlanAnswer(client, this.clock, locked['plan']),
       });
     if (outcome === 'expired')
       throw new GoneException({
         reason: 'plan-expired',
-        plan: await importPlanAnswer(this.database, this.clock, locked['plan']),
+        plan: await importPlanAnswer(client, this.clock, locked['plan']),
       });
     if (outcome === 'not-found')
       throw new NotFoundException({ reason: 'job-not-found' });
@@ -519,23 +548,26 @@ export class DeviceImportExecute {
 
     // Steps 4 to 12: the pages, the split, the previews, and the links.
     const previews = new Map<string, PreviewRun>();
-    await this.fill(client, session, current, jobId, input, previews);
+    const plan = locked['plan'];
+    await this.fill(client, session, current, jobId, input, previews, plan);
     const runs = [...previews.values()].sort(previewOrder);
     if (runs.length === 0)
       throw new ConflictException({ reason: 'nothing-to-run' });
     const receipts: Record<string, unknown>[] = [];
     for (const run of runs)
       receipts.push(
-        await this.confirmPreview(client, session, current, input, run),
+        await this.confirmPreview(client, session, current, input, run, staged),
       );
+    // Both link arguments are JSON documents. `pg` encodes a JavaScript array as a PostgreSQL
+    // array, which `$6::jsonb` and `$7::jsonb` reject with 22P02 (review round 1, R1).
     const linked = await this.call<Record<string, unknown>>(client, linkSql, [
       actor,
       session.identity.permissionVersion,
       current.customerId,
       jobId,
       input.planId,
-      runs.map((run) => run.previewId),
-      [],
+      JSON.stringify(runs.map((run) => run.previewId)),
+      JSON.stringify([]),
       correlationId,
     ]);
     return {
@@ -567,18 +599,18 @@ export class DeviceImportExecute {
     if (outcome === 'conflict')
       throw new ConflictException({
         reason: 'plan-conflict',
-        plan: await importPlanAnswer(this.database, this.clock, value['plan']),
+        plan: await importPlanAnswer(client, this.clock, value['plan']),
       });
     if (outcome === 'expired')
       throw new GoneException({
         reason: 'plan-expired',
-        plan: await importPlanAnswer(this.database, this.clock, value['plan']),
+        plan: await importPlanAnswer(client, this.clock, value['plan']),
       });
     if (outcome !== 'executed')
       throw new Error(`The executed plan of an Execute answered ${outcome}.`);
     const counts = (await client.query(countsSql, [jobId])).rows[0];
     return deviceImportExecuteAnswerSchema.parse({
-      plan: await importPlanAnswer(this.database, this.clock, value['plan']),
+      plan: await importPlanAnswer(client, this.clock, value['plan']),
       receipts: await this.receipts(client, current, receipts),
       conflicts: Number(counts?.['conflicts'] ?? 0),
       excluded: Number(counts?.['excluded'] ?? 0),
@@ -626,6 +658,7 @@ export class DeviceImportExecute {
     jobId: string,
     input: DeviceImportExecuteRequest,
     previews: Map<string, PreviewRun>,
+    plan: unknown,
   ): Promise<void> {
     let after: string | null = null;
     for (;;) {
@@ -639,14 +672,18 @@ export class DeviceImportExecute {
       ).rows;
       if (rows.length === 0) return;
       const split = planPage(rows);
-      await this.mark(client, session, current, jobId, input, split);
+      await this.mark(client, session, current, jobId, input, split, plan);
       await this.add(client, session, current, split, previews);
       if (split.devices < PAGE_SIZE) return;
       after = String(rows[rows.length - 1]?.['device_id']);
     }
   }
 
-  /** Step 5: record the conflicts and the exclusions of one page, 250 entries per call. */
+  /**
+   * Step 5: record the conflicts and the exclusions of one page, 250 entries per call. The mark
+   * function reads the clock again, so a plan that expires after the lock answers 410 here and
+   * rolls back every preview of the transaction (review round 1, R2).
+   */
   private async mark(
     client: QueryClient,
     session: SessionResponse,
@@ -654,6 +691,7 @@ export class DeviceImportExecute {
     jobId: string,
     input: DeviceImportExecuteRequest,
     split: PageSplit,
+    plan: unknown,
   ): Promise<void> {
     const devices = paginate(split.conflicts);
     const dispositions = paginate(split.dispositions);
@@ -668,10 +706,25 @@ export class DeviceImportExecute {
         JSON.stringify(devices[index] ?? []),
         JSON.stringify(dispositions[index] ?? []),
       ]);
-      if (String(result['outcome']) !== 'marked')
-        throw new Error(
-          `The plan marks returned ${String(result['outcome'])}.`,
+      const outcome = String(result['outcome']);
+      if (outcome === 'marked') continue;
+      // The mark names only the expiry time, so the plan echo comes from the lock of step 3. It is
+      // the same plan, with the same revision and expiry, and it reads one state with the other
+      // expiry answers.
+      if (outcome === 'expired')
+        throw new GoneException({
+          reason: 'plan-expired',
+          plan: await importPlanAnswer(client, this.clock, plan),
+        });
+      if (outcome === 'conflict')
+        throw new ConflictException({ reason: 'plan-conflict' });
+      if (outcome === 'not-found')
+        throw new NotFoundException({ reason: 'job-not-found' });
+      if (outcome === 'forbidden')
+        throw new ForbiddenException(
+          'This action requires additional permission.',
         );
+      throw new Error(`The plan marks returned ${outcome}.`);
     }
   }
 
@@ -808,6 +861,7 @@ export class DeviceImportExecute {
     current: DeviceSyncState,
     input: DeviceImportExecuteRequest,
     run: PreviewRun,
+    staged: StagedArtifact[],
   ): Promise<Record<string, unknown>> {
     const previewId = run.previewId as string;
     const digest =
@@ -827,7 +881,10 @@ export class DeviceImportExecute {
     // step 2 gate already read it, and a plan without a Deprovision sends none (design section 7).
     const phrase =
       run.action === 'deprovision' ? (input.typedPhrase ?? '').trim() : null;
-    const artifactId = await this.storage.storeJsonStream(
+    // The manifest stages inside this transaction, so the plan lock holder needs no second pool
+    // connection (review round 1, R3). The artifact row commits with the jobs.
+    const artifact = await this.storage.storeJsonStreamWithin(
+      client,
       this.manifest(
         client,
         session,
@@ -836,6 +893,7 @@ export class DeviceImportExecute {
       ),
       MANIFEST_MAX_BYTES,
     );
+    staged.push(artifact);
     const confirmed = await this.call<Record<string, unknown>>(
       client,
       confirmSql,
@@ -845,7 +903,7 @@ export class DeviceImportExecute {
         current.customerId,
         previewId,
         digest,
-        artifactId,
+        artifact.artifactId,
         randomUUID(),
         phrase,
       ],

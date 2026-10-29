@@ -115,11 +115,6 @@ export interface ImportsStorage {
     artifactId: string;
     attemptId: string;
   }): Promise<unknown>;
-  /** Stage one manifest that the caller writes while it reads (design section 7). */
-  storeJsonStream(
-    source: AsyncIterable<Buffer>,
-    maxBytes: number,
-  ): Promise<string>;
 }
 export interface ImportsOrchestration {
   startDeviceImport(input: {
@@ -338,9 +333,11 @@ export function wirePlan(
 /**
  * The plan of one plan function, in the wire shape. The functions store the actor of a change as a
  * principal ID, so the caller resolves the person once. A conflict that names no plan answers null.
+ * The caller passes the connection that runs the plan function: Execute passes the client of its
+ * transaction, so a plan lock holder never borrows a second connection from the pool.
  */
 export async function importPlanAnswer(
-  database: { connection: QueryClient },
+  source: QueryClient,
   clock: () => number,
   value: unknown,
 ): Promise<JobImportPlan | null> {
@@ -349,8 +346,7 @@ export async function importPlanAnswer(
   const changedById = stored['changedBy'];
   let changedBy: JobPerson | null = null;
   if (typeof changedById === 'string') {
-    const row = (await database.connection.query(planPersonSql, [changedById]))
-      .rows[0];
+    const row = (await source.query(planPersonSql, [changedById])).rows[0];
     if (!row)
       throw new Error(
         `The plan names no application principal ${changedById}.`,
@@ -903,7 +899,7 @@ export class DeviceImports {
       case 'cancelled':
         return deviceImportPlanCancelAnswerSchema.parse({
           plan: await importPlanAnswer(
-            this.database,
+            this.database.connection,
             this.clock,
             result['plan'],
           ),
@@ -918,7 +914,7 @@ export class DeviceImports {
         throw new ConflictException({
           reason: 'plan-conflict',
           plan: await importPlanAnswer(
-            this.database,
+            this.database.connection,
             this.clock,
             result['plan'],
           ),
@@ -927,7 +923,7 @@ export class DeviceImports {
         throw new GoneException({
           reason: 'plan-expired',
           plan: await importPlanAnswer(
-            this.database,
+            this.database.connection,
             this.clock,
             result['plan'],
           ),
