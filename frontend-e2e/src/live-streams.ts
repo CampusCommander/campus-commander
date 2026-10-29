@@ -10,14 +10,22 @@ import { type Page } from '@playwright/test';
  * page loads. Each fake opens once and stays open until a test closes it or the page
  * closes, so no stream ends or reopens without a test asking for it.
  *
- * A test sends one event to a stream, closes a stream, and counts the open streams by URL
- * path.
+ * A fake also sends the keepalive `ping` that the server sends every 25 seconds. The app
+ * closes a stream that receives no event for 60 seconds and replaces it 5 seconds later,
+ * so an idle fake that stayed silent would be replaced by the app itself.
+ *
+ * A test sends one event to a stream, closes a stream, counts the open streams by URL
+ * path, and reads the construction history that shows a replaced stream.
  */
 export interface LiveStreams {
   /** The URL path of every open stream, sorted. A path opened twice appears twice. */
   openUrls(): Promise<string[]>;
   /** The number of open streams for one URL path. */
   openCount(path: string): Promise<number>;
+  /** The URL path of every stream that the page constructed, in order. A replacement appears twice. */
+  constructions(): Promise<string[]>;
+  /** The number of streams that the page constructed for one URL path. */
+  constructedCount(path: string): Promise<number>;
   /** Waits until at least one stream of the URL path is open. */
   waitForOpen(path: string, timeoutMs?: number): Promise<void>;
   /** Sends one event to every open stream of one URL path. Throws when none is open. */
@@ -30,6 +38,8 @@ export interface LiveStreams {
 interface StreamControls {
   openUrls(): string[];
   openCount(path: string): number;
+  constructedUrls(): string[];
+  constructedCount(path: string): number;
   send(path: string, type: string, data: string): number;
   close(path: string): number;
 }
@@ -59,7 +69,7 @@ export function liveStreams(page: Page): LiveStreams {
   return streams;
 }
 
-/** Runs in the page before any app script. It holds no timer that reopens a stream. */
+/** Runs in the page before any app script. Its only timer keeps an open stream alive. */
 function installFakeStreams(): void {
   const root = window as unknown as {
     __liveStreams?: StreamControls;
@@ -68,6 +78,8 @@ function installFakeStreams(): void {
   if (root.__liveStreams) return;
 
   const streams: FakeEventSource[] = [];
+  // The server sends this ping every 25 seconds, well inside the app's 60-second timeout.
+  const pingMs = 25_000;
 
   class FakeEventSource extends EventTarget {
     static readonly CONNECTING = 0;
@@ -81,6 +93,8 @@ function installFakeStreams(): void {
     readonly withCredentials: boolean;
     /** The URL path, which is the key that a test counts and sends by. */
     readonly path: string;
+    /** The keepalive timer, which ends with the stream. */
+    private pingTimer: ReturnType<typeof setInterval> | undefined;
 
     constructor(url: string | URL, init?: EventSourceInit) {
       super();
@@ -96,10 +110,18 @@ function installFakeStreams(): void {
         this.readyState = 1;
         this.dispatchEvent(new Event('open'));
       }, 0);
+      // A server keeps an idle stream alive with a ping. Without it the app would count
+      // the stream as dead after 60 seconds and replace it, which no test asked for.
+      this.pingTimer = setInterval(() => {
+        if (this.readyState !== 1) return;
+        this.dispatchEvent(new MessageEvent('ping', { data: '' }));
+      }, pingMs);
     }
 
     close(): void {
       this.readyState = 2;
+      clearInterval(this.pingTimer);
+      this.pingTimer = undefined;
     }
   }
 
@@ -115,6 +137,9 @@ function installFakeStreams(): void {
         .map((stream) => stream.path)
         .sort(),
     openCount: (path) => byPath(path).length,
+    constructedUrls: () => streams.map((stream) => stream.path),
+    constructedCount: (path) =>
+      streams.filter((stream) => stream.path === path).length,
     send: (path, type, data) => {
       const targets = byPath(path);
       for (const stream of targets)
@@ -145,6 +170,20 @@ function controls(page: Page): LiveStreams {
           .__liveStreams;
         if (!state) throw new Error('The fake live streams are not installed');
         return state.openCount(url);
+      }, path),
+    constructions: () =>
+      page.evaluate(() => {
+        const state = (window as unknown as { __liveStreams?: StreamControls })
+          .__liveStreams;
+        if (!state) throw new Error('The fake live streams are not installed');
+        return state.constructedUrls();
+      }),
+    constructedCount: (path) =>
+      page.evaluate((url) => {
+        const state = (window as unknown as { __liveStreams?: StreamControls })
+          .__liveStreams;
+        if (!state) throw new Error('The fake live streams are not installed');
+        return state.constructedCount(url);
       }, path),
     async waitForOpen(path, timeoutMs = 5000) {
       try {

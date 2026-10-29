@@ -31,10 +31,13 @@ test('holds a fake stream open past the reopen delay', async ({ page }) => {
 
   await streams.waitForOpen(path);
   expect(await streams.openCount(path)).toBe(1);
+  // The page constructed one stream and no other.
+  expect(await streams.constructions()).toEqual([path]);
 
   // The app replaces a stream that ends after five seconds. The fake must not end it.
   await page.waitForTimeout(5_500);
   expect(await streams.openCount(path)).toBe(1);
+  expect(await streams.constructedCount(path)).toBe(1);
 
   // One event reaches the page's own listener.
   const delivered = await streams.send(path, 'entity-batch', {
@@ -50,4 +53,5 @@ test('holds a fake stream open past the reopen delay', async ({ page }) => {
   // A closed stream stays closed, and the count drops.
   expect(await streams.close(path)).toBe(1);
   expect(await streams.openCount(path)).toBe(0);
+  expect(await streams.constructedCount(path)).toBe(1);
 });

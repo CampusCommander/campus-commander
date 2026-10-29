@@ -280,3 +280,45 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
     .poll(async () => liveStreams(page).openUrls())
     .toEqual(['/api/devices/events', '/api/jobs/events']);
 });
+
+/**
+ * A real server sends a keepalive `ping` every 25 seconds. The app closes a stream that
+ * receives no event for 60 seconds, pings included, and replaces it 5 seconds later. A
+ * silent fake would therefore be replaced by the app, and a spec that waits past 65
+ * seconds would see another `by-ids` read. The construction history shows that
+ * replacement, which an open-count snapshot alone hides.
+ */
+test('keeps both idle feeds mounted past the app watchdog', async ({ page }) => {
+  test.setTimeout(120_000);
+  const nativeEventRequests: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/devices/events' || path === '/api/jobs/events')
+      nativeEventRequests.push(path);
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installLiveStreams(page);
+  await mockApi(page);
+
+  await page.goto('/devices');
+  await expect(
+    page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => liveStreams(page).openUrls())
+    .toEqual(['/api/devices/events', '/api/jobs/events']);
+
+  // Past the 60-second idle timeout and the 5-second reopen delay that follows it.
+  await page.waitForTimeout(65_500);
+
+  // Both feeds still hold their first stream: one construction each, no native request.
+  expect(await liveStreams(page).openUrls()).toEqual([
+    '/api/devices/events',
+    '/api/jobs/events',
+  ]);
+  expect((await liveStreams(page).constructions()).sort()).toEqual([
+    '/api/devices/events',
+    '/api/jobs/events',
+  ]);
+  expect(nativeEventRequests).toEqual([]);
+});
