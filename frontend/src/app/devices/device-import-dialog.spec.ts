@@ -132,8 +132,10 @@ const proposedLine = {
     type: 'field' as const,
     field: 'orgUnitPath' as const,
     operation: 'move' as const,
-    currentValue: '/Students/Lowell Academy/Grade 9/Advisory A/Homeroom 12/Section 3',
-    newValue: '/Students/Lowell Academy/Grade 10/Advisory B/Homeroom 4/Section 7',
+    currentValue:
+      '/Students/Lowell Academy/Grade 9/Advisory A/Homeroom 12/Section 3',
+    newValue:
+      '/Students/Lowell Academy/Grade 10/Advisory B/Homeroom 4/Section 7',
   },
   column: null,
   submittedValue: null,
@@ -191,9 +193,7 @@ function setup(routes: Routes) {
       const url = new URL(path, 'http://x');
       const view = url.searchParams.get('view') ?? 'proposed';
       const page = Number(url.searchParams.get('page') ?? '0');
-      return response(
-        routes.reports?.(view, page) ?? report({ view, page }),
-      );
+      return response(routes.reports?.(view, page) ?? report({ view, page }));
     }
     if (path.endsWith('/cancel')) return response({});
     if (path.endsWith('/revalidate'))
@@ -219,7 +219,10 @@ function setup(routes: Routes) {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
-      { provide: AuthStore, useValue: { session: () => null, can: () => true, request } },
+      {
+        provide: AuthStore,
+        useValue: { session: () => null, can: () => true, request },
+      },
       {
         provide: LiveFeeds,
         useValue: {
@@ -239,7 +242,10 @@ function setup(routes: Routes) {
     ],
   });
   const fixture = TestBed.createComponent(DeviceExportImportDialog);
-  fixture.componentRef.setInput('tabId', '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10');
+  fixture.componentRef.setInput(
+    'tabId',
+    '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  );
   const store = TestBed.inject(DeviceExportImportStore);
   fixture.detectChanges();
   const element: HTMLElement = fixture.nativeElement;
@@ -250,17 +256,30 @@ function setup(routes: Routes) {
     await fixture.whenStable();
     fixture.detectChanges();
   };
-  const panel = () => element.querySelector<HTMLElement>('section[role="dialog"]');
+  const panel = () =>
+    element.querySelector<HTMLElement>('section[role="dialog"]');
   const text = () => panel()?.textContent?.replace(/\s+/g, ' ') ?? '';
   const tab = (index: number) =>
     panel()?.querySelectorAll<HTMLElement>('button[mat-tab-link]')[index];
   const button = (name: string | RegExp) =>
-    [...(panel()?.querySelectorAll('button, a') ?? [])].find((node) =>
-      typeof name === 'string'
-        ? node.textContent?.replace(/\s+/g, ' ').trim() === name
-        : name.test(node.textContent ?? ''),
-    ) as HTMLElement | undefined;
-  return { fixture, element, store, render, panel, text, button, tab, request, calls, feedUrls };
+    [...(panel()?.querySelectorAll('button, a') ?? [])].find((node) => {
+      // Angular and Prettier put template whitespace around a label.
+      const label = node.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      return typeof name === 'string' ? label === name : name.test(label);
+    }) as HTMLElement | undefined;
+  return {
+    fixture,
+    element,
+    store,
+    render,
+    panel,
+    text,
+    button,
+    tab,
+    request,
+    calls,
+    feedUrls,
+  };
 }
 
 afterEach(() => {
@@ -316,7 +335,9 @@ describe('the Import step of the dialog', () => {
   });
 
   it('refuses a file above 1 GiB and never uploads it', async () => {
-    const { render, text, button, store, calls } = setup({ detail: importDetail() });
+    const { render, text, button, store, calls } = setup({
+      detail: importDetail(),
+    });
     store.openImport();
     await render();
     const big = new File(['a'], 'huge.csv');
@@ -327,7 +348,9 @@ describe('the Import step of the dialog', () => {
     expect(button('Start validation')?.hasAttribute('disabled')).toBe(true);
     button('Start validation')?.click();
     await render();
-    expect(calls.filter((call) => call.path.startsWith('/api/devices/imports'))).toHaveLength(0);
+    expect(
+      calls.filter((call) => call.path.startsWith('/api/devices/imports')),
+    ).toHaveLength(0);
   });
 
   it('uploads the raw file as text/csv and follows the phases and counters', async () => {
@@ -340,7 +363,9 @@ describe('the Import step of the dialog', () => {
     await render();
     await store.startValidation();
     await render();
-    const upload = calls.find((call) => call.path.startsWith('/api/devices/imports?'));
+    const upload = calls.find((call) =>
+      call.path.startsWith('/api/devices/imports?'),
+    );
     expect(upload?.path).toContain('mode=sync-changes');
     expect(upload?.path).toContain('name=devices.csv');
     expect(text()).toContain('Job IMP-001');
@@ -351,7 +376,9 @@ describe('the Import step of the dialog', () => {
     expect(text()).toContain('Rows read');
     expect(text()).toContain('Edited rows');
     expect(text()).toContain('Stop validation');
-    expect(text()).toContain('Closing this dialog keeps the validation running.');
+    expect(text()).toContain(
+      'Closing this dialog keeps the validation running.',
+    );
   });
 
   it('cancels the job when a stop arrives before the receipt', async () => {
@@ -380,7 +407,9 @@ describe('the Import step of the dialog', () => {
     );
     await started;
     await render();
-    const cancel = calls.find((call) => call.path === '/api/jobs/IMP-001/cancel');
+    const cancel = calls.find(
+      (call) => call.path === '/api/jobs/IMP-001/cancel',
+    );
     expect(cancel).toBeDefined();
   });
 
@@ -542,7 +571,8 @@ describe('the Import step of the dialog', () => {
                     row: null,
                     deviceId: null,
                     change: null,
-                    reason: 'The column "Grade" is unknown. It stays out of every write.',
+                    reason:
+                      'The column "Grade" is unknown. It stays out of every write.',
                   },
                 ]
               : [],
@@ -660,8 +690,7 @@ describe('the Import step of the dialog', () => {
           refusal: null,
         },
       }),
-      reports: (view) =>
-        report({ view, total: view === 'proposed' ? 12 : 0 }),
+      reports: (view) => report({ view, total: view === 'proposed' ? 12 : 0 }),
     });
     store.openJob('IMP-001');
     await render();

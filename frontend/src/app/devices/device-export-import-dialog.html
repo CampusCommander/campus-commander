@@ -19,7 +19,8 @@
         @if (subtitleJob(); as job) {
         <p id="export-dialog-sub" class="export-sub">
           Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
-          subtitleStatus() }}@if (wide() && importLine()) { · {{ importLine() }} }
+          subtitleStatus() }}@if (wide() && importLine()) { · {{ importLine() }}
+          }
         </p>
         @if (!wide() && importLine(); as line) {
         <p class="export-sub">{{ line }}</p>
@@ -201,7 +202,11 @@
               <mat-radio-button class="option-card" value="upload">
                 <span class="option-label">{{ UPLOAD_SOURCE_LABEL }}</span>
               </mat-radio-button>
-              <mat-radio-button class="option-card" value="drive" [disabled]="true">
+              <mat-radio-button
+                class="option-card"
+                value="drive"
+                [disabled]="true"
+              >
                 <span class="option-label">{{ DRIVE_SOURCE_LABEL }}</span>
                 <span class="option-line why">{{ DRIVE_SOURCE_NOTE }}</span>
               </mat-radio-button>
@@ -213,9 +218,15 @@
             (dragover)="dragOver($event)"
             (drop)="dropped($event)"
           >
-            <span class="material-symbols-outlined" aria-hidden="true">csv</span>
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >csv</span
+            >
             <span class="drop-label">{{ DROP_LABEL }}</span>
-            <button mat-stroked-button type="button" (click)="fileInput.click()">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="fileInput.click()"
+            >
               {{ BROWSE_LABEL }}
             </button>
             <input
@@ -322,9 +333,7 @@
           <p class="note">{{ line }}</p>
           } } @if (validationFailed()) {
           <p class="note">{{ VALIDATION_FAILED_LINE }}</p>
-          }
-
-          @if (importCounters().length) {
+          } @if (importCounters().length) {
           <dl class="counters">
             @for (counter of importCounters(); track counter.label) {
             <div class="counter">
@@ -387,8 +396,7 @@
               >
                 {{ tab.label }} <span class="tab-count">{{ tab.count }}</span>
               </button>
-              }
-              @if (hasRejected()) {
+              } @if (hasRejected()) {
               <a
                 mat-button
                 class="download-rejected"
@@ -406,9 +414,9 @@
             <mat-tab-nav-panel #reportPanel>
               <div class="report-table-wrap">
                 <table class="report-table">
-                  <caption class="visually-hidden"
-                    >Validation results table</caption
-                  >
+                  <caption class="visually-hidden">
+                    Validation results table
+                  </caption>
                   <thead>
                     @switch (view()) { @case ('warnings') {
                     <tr>
@@ -437,7 +445,9 @@
                   <tbody>
                     @if (lines().length === 0) {
                     <tr class="empty-row">
-                      <td [attr.colspan]="view() === 'warnings' ? 3 : view() === 'rejected' ? 5 : 5">
+                      <td
+                        [attr.colspan]="view() === 'warnings' ? 3 : view() === 'rejected' ? 5 : 5"
+                      >
                         {{ view() === 'proposed' ? NO_UPDATE_VIEW_LINE : '' }}
                       </td>
                     </tr>
@@ -459,14 +469,15 @@
                             >visibility</span
                           >
                         </a>
-                        {{ line.serialNumber ?? line.deviceId }}
-                        } @else {
+                        {{ line.serialNumber ?? line.deviceId }} } @else {
                         <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
                         }
                       </td>
                       @switch (view()) { @case ('warnings') {
                       <td class="col-reason">
-                        <span class="warn-icon" aria-hidden="true">warning</span>
+                        <span class="warn-icon" aria-hidden="true"
+                          >warning</span
+                        >
                         {{ line.reason }}
                       </td>
                       } @case ('rejected') {
@@ -500,9 +511,9 @@
                       </td>
                       <td class="col-value">
                         <span class="value-cell">
-                          <span class="cut" [title]="cells.current.full">{{
-                            cellText(cells.current)
-                          }}</span>
+                          <span class="cut" [title]="cells.current.full"
+                            >{{ cellText(cells.current) }}</span
+                          >
                         </span>
                       </td>
                       <td class="col-value">
@@ -707,7 +718,9 @@
       >
         {{ VALIDATE_AGAIN_LABEL }}
       </button>
-      <button mat-flat-button type="button" disabled>{{ executeLabel() }}</button>
+      <button mat-flat-button type="button" disabled>
+        {{ executeLabel() }}
+      </button>
       } @case ('cancelled') {
       <button mat-stroked-button type="button" (click)="importAgain()">
         {{ IMPORT_AGAIN_LABEL }}
@@ -719,7 +732,9 @@
       } @else {
       <button mat-button type="button" (click)="done()">Done</button>
       }
-      <button mat-flat-button type="button" disabled>{{ executeLabel() }}</button>
+      <button mat-flat-button type="button" disabled>
+        {{ executeLabel() }}
+      </button>
       } } } }
     </div>
   </section>

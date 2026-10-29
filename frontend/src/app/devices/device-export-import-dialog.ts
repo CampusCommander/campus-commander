@@ -214,7 +214,8 @@ export class DeviceExportImportDialog {
   protected readonly importLine = computed(() => {
     if (!this.isImport()) return '';
     const mode = DEVICE_IMPORT_MODE_LABELS[this.store.mode()];
-    const name = this.store.job()?.importSource?.name ?? this.store.importName();
+    const name =
+      this.store.job()?.importSource?.name ?? this.store.importName();
     return name ? `${mode} · ${name}` : mode;
   });
   private readonly isImport = computed(
@@ -454,7 +455,8 @@ export class DeviceExportImportDialog {
     const totals = this.store.reportTotals();
     const counts = this.store.reportCounts();
     return REPORT_TABS.map((view) => {
-      const total = totals[view] ?? (view === 'rejected' ? counts?.rejected : 0);
+      const total =
+        totals[view] ?? (view === 'rejected' ? counts?.rejected : 0);
       return {
         view,
         label: REPORT_TAB_LABELS[view],
@@ -479,7 +481,8 @@ export class DeviceExportImportDialog {
     const plan = this.store.plan();
     const counts = this.store.reportCounts();
     const now = this.planNow();
-    const expired = !!plan && plan.state === 'open' && Date.parse(plan.expiresAt) <= now;
+    const expired =
+      !!plan && plan.state === 'open' && Date.parse(plan.expiresAt) <= now;
     const state = !plan
       ? counts?.rejected
         ? 'no-change'
@@ -613,9 +616,9 @@ export class DeviceExportImportDialog {
   }
 
   /** The cells of one report line (states 13 and 18). */
-  protected values(line: DeviceImportChange): ReturnType<
-    typeof reportChangeValues
-  > {
+  protected values(
+    line: DeviceImportChange,
+  ): ReturnType<typeof reportChangeValues> {
     return reportChangeValues(line);
   }
 

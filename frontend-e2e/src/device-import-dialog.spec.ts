@@ -253,8 +253,7 @@ const importJob = (name: ImportCase) => ({
     rejected: name === 'rejected-only' ? 48 : name === 'no-update' ? 0 : 2,
     refusal: null,
   },
-  cancelRequest:
-    name === 'cancelled' ? { by: person, at: past() } : null,
+  cancelRequest: name === 'cancelled' ? { by: person, at: past() } : null,
   failure: name === 'failed' ? 'storage-unavailable' : null,
   confirmedBy: null,
   previewDisplayId: null,
@@ -277,7 +276,12 @@ const importJob = (name: ImportCase) => ({
     name === 'expired'
       ? { ...openPlan, state: 'open', expiresAt: past() }
       : name === 'cancelled-plan'
-        ? { ...openPlan, state: 'cancelled', changedBy: person, changedAt: past() }
+        ? {
+            ...openPlan,
+            state: 'cancelled',
+            changedBy: person,
+            changedAt: past(),
+          }
         : name === 'completed' || name === 'sync-all-rows'
           ? openPlan
           : null,
@@ -330,14 +334,22 @@ const reportAnswer = (name: ImportCase, view: string, page: number) => {
     pageCount: Math.max(1, Math.ceil(total / 10)),
     counts: viewCounts,
     refresh,
-    changes: noUpdate || rejectedOnly ? { ...changes, fieldChanges: 0, fieldChangeDevices: 0, disable: 0 } : changes,
+    changes:
+      noUpdate || rejectedOnly
+        ? { ...changes, fieldChanges: 0, fieldChangeDevices: 0, disable: 0 }
+        : changes,
     lines: lines.filter(() => total > 0),
     total,
     plan:
       name === 'expired'
         ? { ...openPlan, state: 'open', expiresAt: past() }
         : name === 'cancelled-plan'
-          ? { ...openPlan, state: 'cancelled', changedBy: person, changedAt: past() }
+          ? {
+              ...openPlan,
+              state: 'cancelled',
+              changedBy: person,
+              changedAt: past(),
+            }
           : name === 'completed' || name === 'sync-all-rows'
             ? openPlan
             : null,
@@ -425,7 +437,9 @@ async function signIn(
         },
       });
     if (path === '/api/devices/freshness')
-      return route.fulfill({ json: { freshness: { stale: 0, refreshing: false } } });
+      return route.fulfill({
+        json: { freshness: { stale: 0, refreshing: false } },
+      });
     if (path === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
     if (path === '/api/devices/events' || path === '/api/jobs/events')
@@ -456,9 +470,12 @@ async function signIn(
           sizeBytes: 7_936,
         },
       });
-    if (path === '/api/jobs/IMP-001') return route.fulfill({ json: importJob(name) });
+    if (path === '/api/jobs/IMP-001')
+      return route.fulfill({ json: importJob(name) });
     if (path === '/api/jobs/IMP-001/cancel')
-      return route.fulfill({ json: { cancelRequest: { by: person, at: past() } } });
+      return route.fulfill({
+        json: { cancelRequest: { by: person, at: past() } },
+      });
     if (path === '/api/devices/imports/IMP-001/report')
       return route.fulfill({ json: reportAnswer(name, view, pageIndex) });
     if (path === '/api/devices/imports/IMP-001/rejected')
@@ -595,7 +612,9 @@ test.describe('Import', () => {
     await shot(page, '12-validation-running');
   });
 
-  test('states 13, 14, and 15: the report tabs at 1120 px', async ({ page }) => {
+  test('states 13, 14, and 15: the report tabs at 1120 px', async ({
+    page,
+  }) => {
     await openDevices(page, 'completed');
     await page.goto('/devices?job=IMP-001');
     await expect(dialog(page)).toBeVisible();
@@ -607,14 +626,18 @@ test.describe('Import', () => {
     await expect(dialog(page)).toContainText('Execute 8 changes');
     await shot(page, '13-review-proposed');
 
-    await dialog(page).getByRole('tab', { name: /Rejected/ }).click();
+    await dialog(page)
+      .getByRole('tab', { name: /Rejected/ })
+      .click();
     await expect(dialog(page)).toContainText(
       'The status "Gone" is not a Google status.',
     );
     await expect(dialog(page)).toContainText('Download rejected rows');
     await shot(page, '14-review-rejected');
 
-    await dialog(page).getByRole('tab', { name: /Warnings/ }).click();
+    await dialog(page)
+      .getByRole('tab', { name: /Warnings/ })
+      .click();
     await expect(dialog(page)).toContainText(
       'The column "Grade" is unknown. It stays out of every write.',
     );
@@ -665,7 +688,9 @@ test.describe('Import', () => {
     await expect(dialog(page)).toContainText(
       'Every row matches its export checksum. No update is needed.',
     );
-    await expect(dialog(page).getByRole('button', { name: 'Done' })).toBeVisible();
+    await expect(
+      dialog(page).getByRole('button', { name: 'Done' }),
+    ).toBeVisible();
     await expect(
       dialog(page).getByRole('button', { name: /^Execute/ }),
     ).toBeDisabled();
@@ -740,9 +765,8 @@ test.describe('Import', () => {
     const feeds = await page.evaluate(
       () => (window as unknown as { __feeds: string[] }).__feeds,
     );
-    expect(feeds.filter((url) => url.includes('/api/jobs/events'))).toHaveLength(
-      1,
-    );
+    expect(
+      feeds.filter((url) => url.includes('/api/jobs/events')),
+    ).toHaveLength(1);
   });
 });
-

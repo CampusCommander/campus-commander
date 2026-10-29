@@ -32,10 +32,7 @@ import {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { JobReader, type JobRevisions } from '../jobs/job-reader';
-import {
-  LiveFeeds,
-  type LiveFeedSubscription,
-} from '../jobs/live-feeds';
+import { LiveFeeds, type LiveFeedSubscription } from '../jobs/live-feeds';
 import type { JobEventSource } from '../jobs/job-stream';
 import { EXPORT_ROW_LIMIT } from './device-export-messages';
 import {
@@ -973,7 +970,9 @@ export class DeviceExportImportStore {
       if (this.open()) {
         if (detail.data.action === 'validate-device-import') {
           this.activeImport.set(detail.data.displayId);
-          this.importName.set(detail.data.importSource?.name ?? this.importName());
+          this.importName.set(
+            detail.data.importSource?.name ?? this.importName(),
+          );
           // The job names its own mode, so a report opened from Activity reads its own line.
           if (detail.data.importSummary)
             this.mode.set(detail.data.importSummary.mode);
@@ -1106,10 +1105,8 @@ async function importActionFailureText(response: Response): Promise<string> {
         return 'Your session ended. Sign in again, then import.';
       if (response.status === 403)
         return 'You do not have permission to change this import.';
-      if (response.status === 410)
-        return 'The plan expired. Validate again.';
-      if (response.status === 409)
-        return 'The plan changed. Reload the page.';
+      if (response.status === 410) return 'The plan expired. Validate again.';
+      if (response.status === 409) return 'The plan changed. Reload the page.';
       return 'Campus Commander could not change this import. Try again.';
   }
 }

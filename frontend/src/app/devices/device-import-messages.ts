@@ -70,7 +70,10 @@ export const IMPORT_EMPTY_FILE_REFUSAL =
   'The file holds no rows. Choose a CSV file with a header row and a data row.';
 
 /** The failure of the upload route (design sections 1 and 4). */
-export function importUploadFailureText(status: number, reason: string | null): string {
+export function importUploadFailureText(
+  status: number,
+  reason: string | null,
+): string {
   switch (status) {
     case 413:
       return 'The file is larger than 1 GiB. Split it into smaller files, then import one of them.';
@@ -112,13 +115,14 @@ export const VALIDATION_FAILED_LINE =
 export const NO_REPORT_LABEL = 'No report';
 
 /** The three labels of the phase list (states 12, 23, and 24). */
-export const IMPORT_PHASE_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  upload: 'Upload',
-  'header-check': 'Header check',
-  refresh: 'Refresh stale devices',
-  compare: 'Compare',
-  report: 'Report',
-});
+export const IMPORT_PHASE_LABELS: Readonly<Record<string, string>> =
+  Object.freeze({
+    upload: 'Upload',
+    'header-check': 'Header check',
+    refresh: 'Refresh stale devices',
+    compare: 'Compare',
+    report: 'Report',
+  });
 
 /** The two counters of states 12 and 24. */
 export const ROWS_READ_LABEL = 'Rows read';
@@ -158,11 +162,14 @@ const IMPORT_PHASES = [
  * failed or cancelled job marks the phases before its stopping phase Done, the stopping phase
  * Failed or Stopped, and the phases after it untouched.
  */
-export function importPhases(job: JobDetail | null): readonly ImportPhaseView[] {
+export function importPhases(
+  job: JobDetail | null,
+): readonly ImportPhaseView[] {
   const phase = job?.phase ?? null;
   const failed = job?.status === 'failed' || job?.status === 'needs-review';
   const cancelled = job?.status === 'cancelled';
-  const completed = job?.status === 'completed' || job?.status === 'completed-with-errors';
+  const completed =
+    job?.status === 'completed' || job?.status === 'completed-with-errors';
   const reached = phase
     ? IMPORT_PHASES.indexOf(phase.name as (typeof IMPORT_PHASES)[number])
     : -1;
@@ -262,16 +269,17 @@ export function importFailureText(job: JobDetail | null): string {
   return 'The validation failed before it checked a row. Import the file again.';
 }
 
-const DEVICE_IMPORT_REFUSALS_BY_CODE: Readonly<Record<string, DeviceImportRefusal>> =
-  Object.freeze({
-    'unreadable-file': 'unreadable-file',
-    'ragged-record': 'ragged-record',
-    'unterminated-quote': 'unterminated-quote',
-    'malformed-quote': 'malformed-quote',
-    'cell-too-long': 'cell-too-long',
-    'too-many-rows': 'too-many-rows',
-    'header-refused': 'header-refused',
-  });
+const DEVICE_IMPORT_REFUSALS_BY_CODE: Readonly<
+  Record<string, DeviceImportRefusal>
+> = Object.freeze({
+  'unreadable-file': 'unreadable-file',
+  'ragged-record': 'ragged-record',
+  'unterminated-quote': 'unterminated-quote',
+  'malformed-quote': 'malformed-quote',
+  'cell-too-long': 'cell-too-long',
+  'too-many-rows': 'too-many-rows',
+  'header-refused': 'header-refused',
+});
 
 /** The report step of states 13 to 15 and 18 to 22. */
 export const REPORT_TABS: readonly DeviceImportReportView[] = [
@@ -280,13 +288,14 @@ export const REPORT_TABS: readonly DeviceImportReportView[] = [
   'warnings',
 ];
 
-export const REPORT_TAB_LABELS: Readonly<Record<DeviceImportReportView, string>> =
-  Object.freeze({
-    proposed: 'Proposed changes',
-    rejected: 'Rejected rows',
-    warnings: 'Warnings',
-    failed: 'Failed',
-  });
+export const REPORT_TAB_LABELS: Readonly<
+  Record<DeviceImportReportView, string>
+> = Object.freeze({
+  proposed: 'Proposed changes',
+  rejected: 'Rejected rows',
+  warnings: 'Warnings',
+  failed: 'Failed',
+});
 
 /** The unit of a pager line, per view (states 13, 14, and 15). */
 const REPORT_UNITS: Readonly<Record<DeviceImportReportView, [string, string]>> =
@@ -324,7 +333,9 @@ export interface ReportCountTerm {
   tone: 'rows' | 'success' | 'neutral' | 'info' | 'error';
 }
 
-export function reportCountTerms(counts: DeviceImportCounts): readonly ReportCountTerm[] {
+export function reportCountTerms(
+  counts: DeviceImportCounts,
+): readonly ReportCountTerm[] {
   return [
     { label: 'Rows', value: counts.rows.toLocaleString('en-US'), tone: 'rows' },
     {
@@ -337,7 +348,11 @@ export function reportCountTerms(counts: DeviceImportCounts): readonly ReportCou
       value: counts.noChangeNeeded.toLocaleString('en-US'),
       tone: 'neutral',
     },
-    { label: 'Proposed', value: counts.proposed.toLocaleString('en-US'), tone: 'info' },
+    {
+      label: 'Proposed',
+      value: counts.proposed.toLocaleString('en-US'),
+      tone: 'info',
+    },
     {
       label: 'Rejected',
       value: counts.rejected.toLocaleString('en-US'),
@@ -358,7 +373,8 @@ export function reportChangeLine(summary: DeviceImportChangeSummary): string {
       }`,
     );
   if (summary.disable > 0) terms.push(actionTerm('Disable', summary.disable));
-  if (summary.reenable > 0) terms.push(actionTerm('Re-enable', summary.reenable));
+  if (summary.reenable > 0)
+    terms.push(actionTerm('Re-enable', summary.reenable));
   for (const entry of summary.deprovision) {
     const reason = DEVICE_DEPROVISION_CODES.find(
       (code) => code.reason === entry.reason,
@@ -409,7 +425,8 @@ export const IMPORT_AGAIN_LABEL = 'Import again';
 export const VALIDATE_AGAIN_LABEL = 'Validate again';
 export const DOWNLOAD_REJECTED_LABEL = 'Download rejected rows';
 export const NO_UPDATE_VIEW_LINE = 'No row needs an update.';
-export const NO_UPDATE_LINE = 'Every row matches its export checksum. No update is needed.';
+export const NO_UPDATE_LINE =
+  'Every row matches its export checksum. No update is needed.';
 
 /** "Expires Oct 28, 11:42 AM" (state 13). */
 export function planExpiresText(expiresAt: string, now = new Date()): string {
@@ -422,7 +439,10 @@ export function planExpiredText(expiresAt: string, now = new Date()): string {
 }
 
 /** "Cancelled by Review administrator · Oct 28, 10:51 AM. Nothing ran." (state 20). */
-export function planCancelledText(plan: JobImportPlan, now = new Date()): string {
+export function planCancelledText(
+  plan: JobImportPlan,
+  now = new Date(),
+): string {
   const by = plan.changedBy?.displayName;
   const at = plan.changedAt ? formatTimestamp(plan.changedAt, now) : null;
   return by && at
@@ -511,7 +531,8 @@ function valueOf(value: string | null, path = false): ReportValue {
 
 function deprovisionLabel(reason: string): string {
   return (
-    DEVICE_DEPROVISION_CODES.find((code) => code.reason === reason)?.label ?? reason
+    DEVICE_DEPROVISION_CODES.find((code) => code.reason === reason)?.label ??
+    reason
   );
 }
 
@@ -548,7 +569,9 @@ export const NOT_IN_INVENTORY_LABEL = 'Not in inventory';
 /** The short progress lines of an IMP job in the Jobs grid (design section 9, behavior 7). */
 export function importProgressLines(job: JobDetail): [string, string] {
   const source = job.importSource;
-  const rows = (source?.rowsRead ?? job.progress.total ?? 0).toLocaleString('en-US');
+  const rows = (source?.rowsRead ?? job.progress.total ?? 0).toLocaleString(
+    'en-US',
+  );
   if (job.status === 'running' || job.status === 'awaiting-devices') {
     const phase = job.phase;
     if (phase?.name === 'refresh' && phase.total !== null)
@@ -597,7 +620,8 @@ export function importPlanLine(job: JobDetail): string {
   }
   if (summary.proposed === 0 && summary.rejected > 0)
     return `${summary.rejected.toLocaleString('en-US')} rejected · no changes`;
-  if (summary.proposed === 0 && summary.rejected === 0) return 'No update needed';
+  if (summary.proposed === 0 && summary.rejected === 0)
+    return 'No update needed';
   return 'Validated';
 }
 
