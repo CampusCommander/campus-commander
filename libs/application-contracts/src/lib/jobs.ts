@@ -4,7 +4,10 @@ import {
   deviceSyncFailureSchema,
   deviceUpdateChangesSchema,
 } from './devices';
-import { deviceImportModeSchema } from './device-edit-template';
+import {
+  DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH,
+  deviceImportModeSchema,
+} from './device-edit-template';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -420,8 +423,14 @@ export const jobDetailSchema = jobSummarySchema
         sizeBytes: count,
         rowsRead: count,
         candidateRows: count,
-        /** The refusal text of a failed header check, for states 23 and 26. */
-        refusalText: z.string().min(1).max(1024).nullable(),
+        /** The refusal text of a failed header check, for states 23 and 26. The header refusal of
+         * `matchDeviceEditHeaders` repeats a whole header label, so the bound follows that
+         * producer (`DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH`). */
+        refusalText: z
+          .string()
+          .min(1)
+          .max(DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH)
+          .nullable(),
       })
       .nullable(),
     /** The plan of a validation job (design section 1). It stays null for another job. */

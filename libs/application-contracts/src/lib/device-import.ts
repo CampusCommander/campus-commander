@@ -11,7 +11,10 @@ import {
   DEVICE_ACTION_PERMISSIONS,
   type DeviceStatusAction,
 } from './device-actions';
-import { deviceImportModeSchema } from './device-edit-template';
+import {
+  DEVICE_EDIT_UNKNOWN_HEADER_WARNING_MAX_LENGTH,
+  deviceImportModeSchema,
+} from './device-edit-template';
 import { CSV_MAX_CELL_LENGTH } from './csv';
 import {
   jobDisplayIdSchema,
@@ -56,6 +59,7 @@ export const DEVICE_IMPORT_REFUSALS = [
   'unreadable-file',
   'ragged-record',
   'unterminated-quote',
+  'malformed-quote',
   'cell-too-long',
   'too-many-rows',
   'header-refused',
@@ -79,6 +83,8 @@ export function deviceImportRefusalText(
       return 'A row holds a different number of columns. Correct the row and import the file again.';
     case 'unterminated-quote':
       return 'The file ends inside a quoted cell. Correct the file and import it again.';
+    case 'malformed-quote':
+      return 'A cell holds a misplaced quote. Correct the file and import it again.';
     case 'cell-too-long':
       return `A cell holds more than ${CSV_MAX_CELL_LENGTH.toLocaleString(
         'en-US',
@@ -325,6 +331,18 @@ export type DeviceImportChangeSummary = z.infer<
   typeof deviceImportChangeSummarySchema
 >;
 
+/**
+ * The longest reason of a report line. The unknown-column warning of
+ * `matchDeviceEditHeaders` repeats a whole header cell, and the unit rejection repeats an
+ * organization unit path, which `orgUnitPath` limits to 4,096 characters. The longer producer
+ * sets the bound, so no generated reason fails its own report line.
+ */
+export const DEVICE_IMPORT_REASON_MAX_LENGTH = Math.max(
+  DEVICE_EDIT_UNKNOWN_HEADER_WARNING_MAX_LENGTH,
+  'No organization unit has the path .'.length +
+    DEVICE_UPDATE_FIELD_LIMITS.orgUnitPath,
+);
+
 /** One line of a report view (design section 1, `td:664-666`). */
 export const deviceImportReportLineSchema = z.strictObject({
   /** The source row number. Null names the header row, as a warning on row 1 does. */
@@ -337,7 +355,7 @@ export const deviceImportReportLineSchema = z.strictObject({
   column: z.string().min(1).max(64).nullable(),
   submittedValue: z.string().max(CSV_MAX_CELL_LENGTH).nullable(),
   /** The reason of a rejected line, or the warning of a warnings line. */
-  reason: z.string().min(1).max(1024).nullable(),
+  reason: z.string().min(1).max(DEVICE_IMPORT_REASON_MAX_LENGTH).nullable(),
   /** A change that Execute does not run, with its reason. */
   notRun: deviceImportNotRunSchema.nullable(),
   /** The job and operation of a proposed line after Execute (design section 8). */

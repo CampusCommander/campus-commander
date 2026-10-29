@@ -4,7 +4,8 @@
  *
  * This module holds no I/O and no device rule. The worker streams a stored file through the
  * reader, and the export streams records out of the writer. The reader refuses a file that the
- * contract cannot read: an open quote, a ragged record, or a cell past the cell limit.
+ * contract cannot read: an open quote, a misplaced quote, a ragged record, or a cell past the
+ * cell limit.
  */
 
 /** The byte order mark of an exported file (section 6.4). */
@@ -17,9 +18,11 @@ export const CSV_RECORD_END = '\r\n';
  * points, as the device field limits count them. */
 export const CSV_MAX_CELL_LENGTH = 16384;
 
-/** The three faults that stop a file before any row check (section 9.2). */
+/** The four faults that stop a file before any row check (section 9.2). A quote outside its
+ * RFC 4180 place refuses the file, so a malformed cell never turns into another writable value. */
 export const CSV_ERROR_CODES = [
   'unterminated-quote',
+  'malformed-quote',
   'ragged-record',
   'cell-too-long',
 ] as const;
@@ -144,12 +147,8 @@ export function createCsvReader(): CsvReader {
         if (char === '\r' || char === '\n') {
           // Fall through to the record end below.
         } else {
-          // Text after a closing quote stays literal text of the cell.
-          field += char;
-          quoted = true;
-          quoteClosed = false;
-          countCell();
-          continue;
+          // RFC 4180 allows no text between a closing quote and the next comma or record end.
+          throw new CsvError('malformed-quote');
         }
       }
       if (char === ',') {
@@ -163,7 +162,9 @@ export function createCsvReader(): CsvReader {
         line += 1;
         continue;
       }
-      if (char === '"' && field === '') {
+      if (char === '"') {
+        // A quote opens a cell only as its first character. Anywhere else it is a fault.
+        if (field !== '') throw new CsvError('malformed-quote');
         startRecord();
         quoted = true;
         continue;

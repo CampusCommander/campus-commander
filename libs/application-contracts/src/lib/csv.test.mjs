@@ -120,6 +120,32 @@ test('an open quote refuses the file', () => {
   assert.equal(faultOf(['a,b\nc,"d""']), 'unterminated-quote');
 });
 
+test('a quote outside its RFC 4180 place refuses the file', () => {
+  // Text after a closing quote would otherwise change the cell text.
+  const afterClose = 'Device ID,Notes\r\nexample-device,"North"lab"\r\n';
+  assert.equal(faultOf([afterClose]), 'malformed-quote');
+  // A quote inside an unquoted cell is not literal text either.
+  const insideUnquoted = 'Device ID,Notes\r\nexample-device,North"lab\r\n';
+  assert.equal(faultOf([insideUnquoted]), 'malformed-quote');
+  // Every chunk split refuses the same way and answers no record first.
+  for (const text of [afterClose, insideUnquoted]) {
+    for (let split = 0; split <= text.length; split += 1) {
+      assert.equal(
+        faultOf([text.slice(0, split), text.slice(split)]),
+        'malformed-quote',
+        `split at ${split}`,
+      );
+    }
+    assert.equal(faultOf(Array.from(text)), 'malformed-quote');
+  }
+  // A quote after a space of an unquoted cell is outside its place too.
+  assert.equal(faultOf(['a, "b"\n']), 'malformed-quote');
+  // A doubled quote, a quoted line feed, and a quoted comma still read.
+  assert.deepEqual(readAll(['"x""y","line one\nline two"\n']), [
+    { line: 1, cells: ['x"y', 'line one\nline two'] },
+  ]);
+});
+
 test('the cell limit counts code points and refuses a longer cell', () => {
   const longest = 'x'.repeat(CSV_MAX_CELL_LENGTH);
   assert.deepEqual(readAll([`a,${longest}\n`]), [

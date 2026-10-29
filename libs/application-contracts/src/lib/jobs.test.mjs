@@ -33,6 +33,13 @@ import {
   jobStatusSchema,
   jobSummarySchema,
 } from './jobs.ts';
+import {
+  DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH,
+  DEVICE_EDIT_TEMPLATE_COLUMNS,
+  matchDeviceEditHeaders,
+} from './device-edit-template.ts';
+import { deviceImportRefusalText } from './device-import.ts';
+import { CSV_MAX_CELL_LENGTH } from './csv.ts';
 
 const jobId = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
 const requesterId = '1a2b3c4d-5e6f-7081-92a3-b4c5d6e7f809';
@@ -990,6 +997,64 @@ test('a validation job carries its phase, its summary, the plan, and the counts'
       `${term} is required.`,
     );
   }
+});
+
+test('the longest header refusal fits the import source of a validation job', () => {
+  // A duplicate unknown header of the longest cell refuses the file, and the refusal repeats
+  // that whole header label.
+  const header = 'x'.repeat(CSV_MAX_CELL_LENGTH);
+  const refused = matchDeviceEditHeaders([
+    ...DEVICE_EDIT_TEMPLATE_COLUMNS.map((column) => column.header),
+    header,
+    header,
+  ]);
+  assert.equal(refused.ok, false);
+  if (refused.ok) throw new Error('The header must refuse.');
+  assert.match(refused.reason, /^The file holds two /);
+  const refusalText = deviceImportRefusalText('header-refused', refused.reason);
+  assert.equal(refusalText, refused.reason);
+  assert.ok(refusalText.length > 1024, 'The refusal passes the old cap.');
+  assert.ok(
+    refusalText.length <= DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH,
+  );
+  const validation = detailOf({
+    ...summary,
+    displayId: 'IMP-001',
+    action: 'validate-device-import',
+    scope: { kind: 'rows', deviceCount: 0 },
+  });
+  const detail = {
+    ...validation,
+    importSource: {
+      name: 'devices-for-editing-EXP-001.csv',
+      sizeBytes: 7987,
+      rowsRead: 0,
+      candidateRows: 0,
+      refusalText,
+    },
+  };
+  assert.deepEqual(jobDetailSchema.parse(detail), detail);
+  // The domain holds the longest refusal, and one character more is refused.
+  const atLimit = {
+    ...detail,
+    importSource: {
+      ...detail.importSource,
+      refusalText: 'x'.repeat(DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH),
+    },
+  };
+  assert.equal(jobDetailSchema.safeParse(atLimit).success, true);
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...atLimit,
+      importSource: {
+        ...atLimit.importSource,
+        refusalText: 'x'.repeat(
+          DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH + 1,
+        ),
+      },
+    }).success,
+    false,
+  );
 });
 
 test('each new block stays null for another kind of job', () => {

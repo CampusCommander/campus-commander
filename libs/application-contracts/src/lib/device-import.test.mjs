@@ -4,6 +4,7 @@ import {
   DEVICE_IMPORT_FAILED_OUTCOMES,
   DEVICE_IMPORT_NOT_RUN_REASONS,
   DEVICE_IMPORT_NOT_RUN_TEXTS,
+  DEVICE_IMPORT_REASON_MAX_LENGTH,
   DEVICE_IMPORT_REFUSALS,
   DEVICE_IMPORT_REJECTIONS,
   DEVICE_IMPORT_REJECTION_TEXTS,
@@ -30,7 +31,16 @@ import {
   deviceImportUnitRejectionText,
 } from './device-import.ts';
 import { jobOutcomeSchema } from './jobs.ts';
-import { matchDeviceEditHeaders } from './device-edit-template.ts';
+import {
+  DEVICE_EDIT_TEMPLATE_COLUMNS,
+  DEVICE_EDIT_UNKNOWN_HEADER_WARNING_MAX_LENGTH,
+  matchDeviceEditHeaders,
+} from './device-edit-template.ts';
+import {
+  CSV_ERROR_CODES,
+  CSV_MAX_CELL_LENGTH,
+  createCsvReader,
+} from './csv.ts';
 
 const at = '2026-10-28T14:31:00.000Z';
 const jobId = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
@@ -484,6 +494,7 @@ test('each refusal code answers the text of states 23 and 26', () => {
     'unreadable-file',
     'ragged-record',
     'unterminated-quote',
+    'malformed-quote',
     'cell-too-long',
     'too-many-rows',
     'header-refused',
@@ -501,11 +512,22 @@ test('each refusal code answers the text of states 23 and 26', () => {
       'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.',
       'A row holds a different number of columns. Correct the row and import the file again.',
       'The file ends inside a quoted cell. Correct the file and import it again.',
+      'A cell holds a misplaced quote. Correct the file and import it again.',
       'A cell holds more than 16,384 characters.',
       'A file holds at most 50,000 rows.',
       'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
     ],
   );
+  // Every fault of the CSV reader answers an import refusal, so a worker never meets an
+  // unmapped code.
+  for (const code of CSV_ERROR_CODES) {
+    assert.equal(
+      DEVICE_IMPORT_REFUSALS.includes(code),
+      true,
+      `${code} has an import refusal.`,
+    );
+    assert.equal(typeof deviceImportRefusalText(code), 'string');
+  }
   // A header refusal keeps the sentence of the template module, so the contract copies no text.
   const refused = matchDeviceEditHeaders(
     ['Device ID', 'Serial number', 'Model', 'Status', 'Asset tag'],
@@ -578,6 +600,55 @@ test('each rejected row reason and each warning names the rule of the design', (
   assert.equal(
     deviceImportExportOnlyStatusWarning('PRE_PROVISIONED', 'ACTIVE'),
     'Status PRE_PROVISIONED is export-only and differs from the current status ACTIVE. It requests nothing.',
+  );
+});
+
+test('the longest generated reason fits its report line', () => {
+  // The unit rejection repeats an organization unit path at its accepted limit.
+  const path = `/${'x'.repeat(4095)}`;
+  const unitLine = {
+    ...rejectedLine,
+    column: 'Organization unit',
+    submittedValue: path,
+    reason: deviceImportUnitRejectionText(path),
+  };
+  assert.equal(unitLine.reason.length, 4131);
+  assert.deepEqual(deviceImportReportLineSchema.parse(unitLine), unitLine);
+  // The unknown-column warning repeats a header cell at the CSV cell limit.
+  const header = 'x'.repeat(CSV_MAX_CELL_LENGTH);
+  const reader = createCsvReader();
+  const headers = [
+    ...DEVICE_EDIT_TEMPLATE_COLUMNS.map((column) => column.header),
+    header,
+  ];
+  const [headerRecord] = [
+    ...reader.push(`${headers.join(',')}\r\n`),
+    ...reader.end(),
+  ];
+  assert.equal(headerRecord.cells.at(-1).length, CSV_MAX_CELL_LENGTH);
+  const matched = matchDeviceEditHeaders(headerRecord.cells);
+  assert.equal(matched.ok, true);
+  if (!matched.ok) throw new Error('The header must match.');
+  const warning = matched.match.warnings[0];
+  assert.equal(warning.length, DEVICE_EDIT_UNKNOWN_HEADER_WARNING_MAX_LENGTH);
+  const warningAtLimit = { ...warningLine, row: 1, reason: warning };
+  assert.deepEqual(
+    deviceImportReportLineSchema.parse(warningAtLimit),
+    warningAtLimit,
+  );
+  // The domain is the longest producer, and one character more is refused.
+  assert.equal(DEVICE_IMPORT_REASON_MAX_LENGTH, warning.length);
+  const atLimit = {
+    ...rejectedLine,
+    reason: 'x'.repeat(DEVICE_IMPORT_REASON_MAX_LENGTH),
+  };
+  assert.equal(deviceImportReportLineSchema.safeParse(atLimit).success, true);
+  assert.equal(
+    deviceImportReportLineSchema.safeParse({
+      ...atLimit,
+      reason: 'x'.repeat(DEVICE_IMPORT_REASON_MAX_LENGTH + 1),
+    }).success,
+    false,
   );
 });
 
