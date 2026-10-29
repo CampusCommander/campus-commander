@@ -48,7 +48,17 @@ Map the public district HTTPS port to that listener.
 One listener serves HTTP/2 and HTTP/1.1 with the same routes, limits, and timeouts.
 Only HTTP/2 shares one connection among concurrent requests and event streams.
 An HTTP/1.1 fallback opens one connection per concurrent request instead.
+An HTTP/2 session that holds no open stream closes after the five-second keep-alive timeout.
+The edge applies the same timeout to an idle HTTP/1.1 connection.
+A session with an open stream, such as an event stream, stays open.
 The edge removes every connection-specific header from an upstream answer.
+
+On SIGINT or SIGTERM the edge sends GOAWAY to every open HTTP/2 session at once.
+The browser then opens a new connection for each later request.
+The edge ends every HTTP/1.1 connection and destroys the remaining sockets after five seconds.
+That grace ends before the ten-second Docker stop timeout.
+An open stream keeps its HTTP/2 session until the grace ends.
+
 The upstream receives its configured endpoint name in `host`.
 Mount the configured certificate and private key read-only.
 Kubernetes secret references resolve under `/run/secrets/<name>/<key>`.
