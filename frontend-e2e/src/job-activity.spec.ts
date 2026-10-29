@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import type { JobSummary } from '@campus/application-contracts';
+import { installLiveStreams, liveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const person = {
@@ -200,59 +201,6 @@ function summary(state: State) {
   };
 }
 
-/**
- * The stream is replaced because Playwright cannot hold an SSE response open with
- * `route.fulfill`. The fake opens once and relays `job-changed` events on command.
- */
-async function fakeStream(page: Page) {
-  await page.addInitScript(() => {
-    const state = window as unknown as {
-      __jobSources: {
-        readyState: number;
-        emit: (type: string, event: Event) => void;
-      }[];
-      __emitJobChanged: (payload: unknown) => void;
-    };
-    state.__jobSources = [];
-    class FakeEventSource {
-      readyState = 0;
-      private readonly listeners = new Map<
-        string,
-        ((event: Event) => void)[]
-      >();
-      constructor() {
-        setTimeout(() => {
-          this.readyState = 1;
-          this.emit('open', new Event('open'));
-        }, 0);
-        state.__jobSources.push(this);
-      }
-      addEventListener(type: string, listener: (event: Event) => void) {
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(listener);
-        this.listeners.set(type, listeners);
-      }
-      close() {
-        this.readyState = 2;
-      }
-      emit(type: string, event: Event) {
-        for (const listener of this.listeners.get(type) ?? []) listener(event);
-      }
-    }
-    (window as unknown as { EventSource: unknown }).EventSource =
-      FakeEventSource;
-    state.__emitJobChanged = (payload: unknown) => {
-      for (const source of state.__jobSources) {
-        if (source.readyState === 2) continue;
-        source.emit(
-          'job-changed',
-          new MessageEvent('job-changed', { data: JSON.stringify(payload) }),
-        );
-      }
-    };
-  });
-}
-
 async function signIn(page: Page, state: State) {
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
@@ -291,12 +239,6 @@ async function signIn(page: Page, state: State) {
     }
     if (path === '/api/jobs/activity')
       return route.fulfill({ json: summary(state) });
-    if (path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (path === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     return route.fulfill({ json: {} });
@@ -309,13 +251,9 @@ const never = () => new Promise<void>(() => undefined);
 const bell = (page: Page) => page.getByRole('button', { name: /^Activity:/ });
 const dot = (page: Page) => page.locator('.attention-dot');
 
-/** Relays one job-changed event through the fake stream. */
+/** Relays one job-changed event through the page's own stream handler. */
 async function relay(page: Page, payload: Record<string, unknown>) {
-  await page.evaluate((data) => {
-    (
-      window as unknown as { __emitJobChanged: (value: unknown) => void }
-    ).__emitJobChanged(data);
-  }, payload);
+  await liveStreams(page).send('/api/jobs/events', 'job-changed', payload);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -332,7 +270,7 @@ test('shows the idle, running, and attention states and the open panel', async (
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   await page.goto('/account');
 
@@ -454,7 +392,7 @@ test('keeps the whole panel inside the viewport above the breakpoint', async ({
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   await page.goto('/account');
   const panel = page.getByRole('dialog', { name: 'Activity' });
@@ -489,7 +427,7 @@ test('shows the loading sentence while the first summary is pending', async ({
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   // Hold the first read open. The request ends when the test closes the page.
   await page.route('**/api/jobs/activity', never);
@@ -513,7 +451,7 @@ test('shows the offline message when the summary cannot reach the server', async
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   await page.route('**/api/jobs/activity', (route) => route.abort('failed'));
   await page.goto('/account');
@@ -543,7 +481,7 @@ test('clears the dot after the panel opens and seen succeeds', async ({
     attention: true,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   const seen: string[] = [];
   page.on('request', (request) => {
@@ -578,7 +516,7 @@ test('keeps the dot when seen fails and sends it again on the next opening', asy
     attention: true,
     failSeen: true,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   let sent = 0;
   page.on('request', (request) => {
@@ -608,7 +546,7 @@ test('opens a job detail and the Jobs page from the panel', async ({
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   await page.goto('/account');
 
@@ -634,7 +572,7 @@ test('moves the badge after a relayed terminal job-changed event', async ({
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   await page.goto('/account');
   await expect(bell(page)).toHaveAttribute(
@@ -666,7 +604,7 @@ test('opens the Devices dialog from an own export row', async ({ page }) => {
     attention: false,
     failSeen: false,
   };
-  await fakeStream(page);
+  await installLiveStreams(page);
   await signIn(page, state);
   const now = Date.now();
   // The export row returns to its dialog on the Devices page (design section 9, behavior 5).

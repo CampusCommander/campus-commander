@@ -17,6 +17,7 @@ import {
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { orgUnitTree } from './device-update-u6-simulator';
+import { installLiveStreams, liveStreams } from './live-streams';
 
 /**
  * Completion steps 4, 5, and 6 of `docs/workflows/in-grid-editing.md`: save one pending
@@ -471,18 +472,6 @@ async function mockApi(
     }
     if (pathname === `/api/jobs/${jobDisplayId}`)
       return route.fulfill({ json: sim.jobDetail() });
-    if (pathname === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
-    if (pathname === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (pathname === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     if (pathname === '/api/google-connection')
@@ -602,56 +591,14 @@ async function openEditor(
   await input.press('Backspace');
 }
 
-/**
- * Replace the device event stream with a fake, so a test dispatches production-shaped
- * `entity-batch` events through the real page handler. Every API answer stays mocked.
- */
-async function fakeDeviceEvents(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const root = window as unknown as {
-      __reviewStreams: { url: string; dispatchEvent(event: Event): boolean }[];
-      EventSource: unknown;
-    };
-    root.__reviewStreams = [];
-    root.EventSource = class extends EventTarget {
-      readyState = 1;
-      constructor(readonly url: string) {
-        super();
-        root.__reviewStreams.push(this);
-        setTimeout(() => this.dispatchEvent(new Event('open')), 0);
-      }
-      close() {
-        this.readyState = 2;
-      }
-    };
-  });
-}
-
 /** Dispatch one device refresh through the page's own stream handler. */
 async function emitDevices(page: Page, ids: string[]): Promise<void> {
-  await page.evaluate((deviceIds) => {
-    const root = window as unknown as {
-      __reviewStreams: {
-        url: string;
-        dispatchEvent(event: Event): boolean;
-      }[];
-    };
-    const streams = root.__reviewStreams.filter(
-      (candidate) => candidate.url === '/api/devices/events',
-    );
-    const stream = streams[streams.length - 1];
-    if (!stream) throw new Error('Devices did not subscribe');
-    stream.dispatchEvent(
-      new MessageEvent('entity-batch', {
-        data: JSON.stringify({
-          type: 'entity-batch',
-          entityType: 'device',
-          deviceIds,
-          removedIds: [],
-        }),
-      }),
-    );
-  }, ids);
+  await liveStreams(page).send('/api/devices/events', 'entity-batch', {
+    type: 'entity-batch',
+    entityType: 'device',
+    deviceIds: ids,
+    removedIds: [],
+  });
 }
 
 test('step 4: one pending change saves without Review or Confirm', async ({
@@ -787,7 +734,7 @@ test('step 6: a failed device returns to its old value without a reload', async 
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
   await editText(page, 'C0A1-0002', 'assetTag', 'CB-NEW-2');
@@ -1026,7 +973,7 @@ test('an unrelated refresh keeps the accepted mark while the job runs', async ({
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'PENDING-WRITE');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -1059,7 +1006,7 @@ test('a record that arrives before the receipt settles the accepted cell', async
     release = resolve;
   });
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim, { holdConfirm: held });
   await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
   const confirming = page.waitForRequest((request) =>
@@ -1094,7 +1041,7 @@ test('a one-cell unchanged answer leaves the draft and creates no job', async ({
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   const confirms = await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'GOOGLE-ALREADY-HOLDS');
   // Google already holds the value when the edit route reads the device, and the grid
@@ -1283,7 +1230,7 @@ test('a successful read before a delayed receipt updates the displayed row', asy
     release = resolve;
   });
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim, { holdConfirm: held });
   await editText(page, 'C0A1-0001', 'assetTag', 'WRITTEN-BEFORE-RECEIPT');
   const confirming = page.waitForRequest((request) =>
@@ -1334,7 +1281,7 @@ test('an all-failed job settles after its job event without a device publication
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim);
   let jobReads = 0;
   page.on('request', (request) => {
@@ -1352,36 +1299,7 @@ test('an all-failed job settles after its job event without a device publication
   const before = jobReads;
 
   // The worker publishes no device row for a failed write. The jobs channel carries it.
-  await page.evaluate(
-    ({ jobId, displayId, requestedBy }) => {
-      const streams = (
-        window as unknown as {
-          __reviewStreams: {
-            url: string;
-            dispatchEvent(event: Event): boolean;
-          }[];
-        }
-      ).__reviewStreams.filter((stream) => stream.url === '/api/jobs/events');
-      if (!streams.length) throw new Error('No jobs stream subscribed');
-      for (const stream of streams)
-        stream.dispatchEvent(
-          new MessageEvent('job-changed', {
-            data: JSON.stringify({
-              type: 'job-changed',
-              jobId,
-              displayId,
-              revision: 2,
-              requestedBy,
-            }),
-          }),
-        );
-    },
-    {
-      jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      displayId: jobDisplayId,
-      requestedBy: principal,
-    },
-  );
+  await emitJobChanged(page);
   await page.waitForTimeout(500);
   expect(jobReads).toBeGreaterThan(before);
   const tag = cell(page, 'C0A1-0001', 'assetTag');
@@ -1556,7 +1474,7 @@ test('a successful terminal job keeps its value until its row read recovers (B4)
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'WRITTEN-BUT-READ-UNAVAILABLE');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -1571,36 +1489,7 @@ test('a successful terminal job keeps its value until its row read recovers (B4)
   await page.route('**/api/devices/by-ids', (route) =>
     route.fulfill({ status: 503, json: { code: 'network-failure' } }),
   );
-  const changed = () =>
-    page.evaluate(
-      ({ jobId, displayId, requestedBy }) => {
-        const streams = (
-          window as unknown as {
-            __reviewStreams: {
-              url: string;
-              dispatchEvent(event: Event): boolean;
-            }[];
-          }
-        ).__reviewStreams.filter((stream) => stream.url === '/api/jobs/events');
-        for (const stream of streams)
-          stream.dispatchEvent(
-            new MessageEvent('job-changed', {
-              data: JSON.stringify({
-                type: 'job-changed',
-                jobId,
-                displayId,
-                revision: 2,
-                requestedBy,
-              }),
-            }),
-          );
-      },
-      {
-        jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-        displayId: jobDisplayId,
-        requestedBy: principal,
-      },
-    );
+  const changed = () => emitJobChanged(page);
   await changed();
   await page.waitForTimeout(500);
 
@@ -1630,35 +1519,13 @@ test('a successful terminal job keeps its value until its row read recovers (B4)
  * answer stays mocked; this is the test EventSource boundary that the application opens.
  */
 async function emitJobChanged(page: Page): Promise<void> {
-  await page.evaluate(
-    ({ jobId, displayId, requestedBy }) => {
-      const streams = (
-        window as unknown as {
-          __reviewStreams: {
-            url: string;
-            dispatchEvent(event: Event): boolean;
-          }[];
-        }
-      ).__reviewStreams.filter((stream) => stream.url === '/api/jobs/events');
-      for (const stream of streams)
-        stream.dispatchEvent(
-          new MessageEvent('job-changed', {
-            data: JSON.stringify({
-              type: 'job-changed',
-              jobId,
-              displayId,
-              revision: 2,
-              requestedBy,
-            }),
-          }),
-        );
-    },
-    {
-      jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      displayId: jobDisplayId,
-      requestedBy: principal,
-    },
-  );
+  await liveStreams(page).send('/api/jobs/events', 'job-changed', {
+    type: 'job-changed',
+    jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    displayId: jobDisplayId,
+    revision: 2,
+    requestedBy: principal,
+  });
 }
 
 /**
@@ -1672,7 +1539,7 @@ async function settlePartialValueDiffers(
   sim: SaveChangesSimulator,
   read: 'failed' | 'missing',
 ): Promise<void> {
-  await fakeDeviceEvents(page);
+  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'REQUESTED-TAG');
   await stageMove(page, 'C0A1-0001');

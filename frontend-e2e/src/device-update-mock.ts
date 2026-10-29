@@ -5,6 +5,7 @@ import {
   orgUnitTree,
   type SimulatedDevice,
 } from './device-update-u6-simulator';
+import { installLiveStreams, liveStreams } from './live-streams';
 
 /**
  * The simulated API of the Update device completion checks. The preview, the target rows, and
@@ -51,7 +52,7 @@ export async function mockApi(
 ): Promise<Mock> {
   const sim = new U6Simulator(devices);
   const posted: { changes?: DeviceUpdateChange[] } = {};
-  await fakeDeviceStream(page);
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const routePath = new URL(request.url()).pathname;
@@ -181,12 +182,6 @@ export async function mockApi(
           ],
         },
       });
-    if (routePath === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (routePath === '/api/devices/updates/access')
       return route.fulfill({
         json: {
@@ -212,80 +207,14 @@ export async function mockApi(
     posted,
     settle: async () => {
       const changed = sim.settle();
-      await page.waitForFunction(
-        () =>
-          (window as unknown as { __deviceSources?: unknown[] }).__deviceSources
-            ?.length,
-      );
-      await page.evaluate(
-        (deviceIds) =>
-          (
-            window as unknown as {
-              __emitEntityBatch: (ids: string[]) => void;
-            }
-          ).__emitEntityBatch(deviceIds),
-        changed,
-      );
+      const streams = liveStreams(page);
+      await streams.waitForOpen('/api/devices/events');
+      await streams.send('/api/devices/events', 'entity-batch', {
+        type: 'entity-batch',
+        entityType: 'device',
+        deviceIds: changed,
+        removedIds: [],
+      });
     },
   };
-}
-
-/**
- * Playwright cannot hold an SSE response open with `route.fulfill`. The fake opens once and
- * relays the `entity-batch` event that a settled update job publishes.
- */
-export async function fakeDeviceStream(page: Page) {
-  await page.addInitScript(() => {
-    const state = window as unknown as {
-      __deviceSources: {
-        readyState: number;
-        emit: (type: string, event: Event) => void;
-      }[];
-      __emitEntityBatch: (deviceIds: string[]) => void;
-    };
-    state.__deviceSources = [];
-    class FakeEventSource {
-      readyState = 0;
-      private readonly listeners = new Map<
-        string,
-        ((event: Event) => void)[]
-      >();
-      constructor() {
-        setTimeout(() => {
-          this.readyState = 1;
-          this.emit('open', new Event('open'));
-        }, 0);
-        state.__deviceSources.push(this);
-      }
-      addEventListener(type: string, listener: (event: Event) => void) {
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(listener);
-        this.listeners.set(type, listeners);
-      }
-      close() {
-        this.readyState = 2;
-      }
-      emit(type: string, event: Event) {
-        for (const listener of this.listeners.get(type) ?? []) listener(event);
-      }
-    }
-    (window as unknown as { EventSource: unknown }).EventSource =
-      FakeEventSource;
-    state.__emitEntityBatch = (deviceIds: string[]) => {
-      for (const source of state.__deviceSources) {
-        if (source.readyState === 2) continue;
-        source.emit(
-          'entity-batch',
-          new MessageEvent('entity-batch', {
-            data: JSON.stringify({
-              type: 'entity-batch',
-              entityType: 'device',
-              deviceIds,
-              removedIds: [],
-            }),
-          }),
-        );
-      }
-    };
-  });
 }

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { installLiveStreams, liveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const now = Date.now();
@@ -98,45 +99,6 @@ const deviceRows = [
   },
 ];
 
-/**
- * Counts the EventSource objects that the page has not closed. The service holds
- * one object per feed URL, so the count is the number of live connections.
- */
-async function trackEventSources(page: Page) {
-  await page.addInitScript(() => {
-    const Native = window.EventSource;
-    const instances: { url: string; closed: () => boolean }[] = [];
-    function Tracked(url: string | URL, init?: EventSourceInit) {
-      const source = new Native(url, init);
-      const close = source.close.bind(source);
-      let closed = false;
-      source.close = () => {
-        closed = true;
-        close();
-      };
-      instances.push({ url: source.url, closed: () => closed });
-      return source;
-    }
-    Tracked.prototype = Native.prototype;
-    Tracked.CONNECTING = Native.CONNECTING;
-    Tracked.OPEN = Native.OPEN;
-    Tracked.CLOSED = Native.CLOSED;
-    window.EventSource = Tracked as unknown as typeof EventSource;
-    (window as unknown as { liveSourceUrls: () => string[] }).liveSourceUrls =
-      () =>
-        instances
-          .filter((item) => !item.closed())
-          .map((item) => new URL(item.url).pathname);
-  });
-}
-
-async function openFeeds(page: Page): Promise<string[]> {
-  const urls = await page.evaluate(() =>
-    (window as unknown as { liveSourceUrls: () => string[] }).liveSourceUrls(),
-  );
-  return urls.sort();
-}
-
 /** Every answer that the shell, the Jobs pages, and the Devices page request. */
 async function mockApi(page: Page) {
   await page.route('**/api/**', async (route) => {
@@ -168,12 +130,6 @@ async function mockApi(page: Page) {
       });
     if (path === '/api/auth/preferences')
       return route.fulfill({ json: route.request().postDataJSON() });
-    if (path === '/api/jobs/events' || path === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (path === '/api/jobs/activity')
       return route.fulfill({
         json: {
@@ -274,19 +230,19 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await trackEventSources(page);
+  await installLiveStreams(page);
   await mockApi(page);
 
   await page.goto('/jobs');
   await expect(page.getByRole('cell', { name: /UPD-014/ })).toBeVisible();
-  await expect.poll(() => openFeeds(page)).toEqual(['/api/jobs/events']);
+  await expect.poll(async () => liveStreams(page).openUrls()).toEqual(['/api/jobs/events']);
   await shot(page, testInfo, 'live-feeds-jobs.png');
 
   await page.goto('/jobs/UPD-014');
   await expect(
     page.getByRole('heading', { name: 'UPD-014 · 48 devices', exact: true }),
   ).toBeVisible();
-  await expect.poll(() => openFeeds(page)).toEqual(['/api/jobs/events']);
+  await expect.poll(async () => liveStreams(page).openUrls()).toEqual(['/api/jobs/events']);
   await shot(page, testInfo, 'live-feeds-job-detail.png');
 
   await page.goto('/devices');
@@ -294,7 +250,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
     page.getByRole('gridcell', { name: 'C0A1-0001', exact: true }),
   ).toBeVisible();
   await expect
-    .poll(() => openFeeds(page))
+    .poll(async () => liveStreams(page).openUrls())
     .toEqual(['/api/devices/events', '/api/jobs/events']);
   await shot(page, testInfo, 'live-feeds-devices.png');
 
@@ -306,7 +262,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
     });
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  await expect.poll(() => openFeeds(page)).toEqual([]);
+  await expect.poll(async () => liveStreams(page).openUrls()).toEqual([]);
 
   // A visible tab opens each feed again.
   await page.evaluate(() => {
@@ -317,6 +273,6 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect
-    .poll(() => openFeeds(page))
+    .poll(async () => liveStreams(page).openUrls())
     .toEqual(['/api/devices/events', '/api/jobs/events']);
 });
