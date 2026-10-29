@@ -630,11 +630,9 @@ export class DeviceImports {
 
   /** The person behind one plan change. The plan columns keep the principal ID alone. */
   private async planPerson(id: string): Promise<JobPerson> {
-    const row = (
-      await this.database.connection.query(planPersonSql, [id])
-    ).rows[0];
-    if (!row)
-      throw new Error(`The plan names no application principal ${id}.`);
+    const row = (await this.database.connection.query(planPersonSql, [id]))
+      .rows[0];
+    if (!row) throw new Error(`The plan names no application principal ${id}.`);
     return { id: String(row['id']), displayName: String(row['display_name']) };
   }
 
@@ -840,11 +838,9 @@ export class DeviceImports {
         // text in a spreadsheet (design section 6.4). Every template column takes the same rule.
         yield Buffer.from(
           writer.row(
-            [
-              ...cells,
-              String(row['source_row']),
-              String(row['reasons']),
-            ].map((cell) => deviceEditEscapeCell(cell)),
+            [...cells, String(row['source_row']), String(row['reasons'])].map(
+              (cell) => deviceEditEscapeCell(cell),
+            ),
           ),
         );
       }

@@ -1242,19 +1242,16 @@ test('the rejected file keeps the formula protection of a cell', async () => {
   const answer = await request('/api/devices/imports/IMP-001/rejected');
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   const reader = createCsvReader();
-  const records = [
-    ...reader.push(String(answer.body)),
-    ...reader.end(),
-  ];
+  const records = [...reader.push(String(answer.body)), ...reader.end()];
   assert.equal(records.length, 2, 'The file holds a header and one row.');
   assert.deepEqual(
     records[0].cells.slice(0, DEVICE_EDIT_TEMPLATE_HEADERS.length),
     [...DEVICE_EDIT_TEMPLATE_HEADERS],
   );
-  assert.deepEqual(records[0].cells.slice(DEVICE_EDIT_TEMPLATE_HEADERS.length), [
-    'Row',
-    'Reason',
-  ]);
+  assert.deepEqual(
+    records[0].cells.slice(DEVICE_EDIT_TEMPLATE_HEADERS.length),
+    ['Row', 'Reason'],
+  );
   const row = records[1].cells;
   assert.equal(row.length, DEVICE_EDIT_TEMPLATE_HEADERS.length + 2);
   for (const [index, value] of stored.entries()) {
