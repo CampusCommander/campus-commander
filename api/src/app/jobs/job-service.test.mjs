@@ -405,14 +405,7 @@ test('the recovery fails a lost export and a lost validation run', async () => {
   assert.deepEqual(orchestration.calls, []);
 });
 
-test('the tick visits a customer with a running export or validation run and publishes its end', async () => {
-  const row = {
-    publication_id: '7',
-    job_id: JOB,
-    display_id: 'EXP-001',
-    revision: '5',
-    requested_by: REQUESTER,
-  };
+test('the tick visits a customer with a running export or validation run and recovers it', async () => {
   const database = databaseOf([
     [
       'SELECT DISTINCT j.customer_id FROM cc.jobs j',
@@ -421,7 +414,7 @@ test('the tick visits a customer with a running export or validation run and pub
     ['SELECT cc.accept_device_update_hold', () => []],
     ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
     ['SELECT cc.admit_device_update_job', () => []],
-    ['SELECT p.publication_id,p.job_id', () => [row]],
+    ['SELECT p.publication_id,p.job_id', () => []],
     [
       'SELECT cc.recover_device_update_jobs',
       () => [{ result: { starts: [], reconciles: [] } }],
@@ -436,15 +429,14 @@ test('the tick visits a customer with a running export or validation run and pub
         },
       ],
     ],
-    ['SELECT cc.complete_job_publications', () => [{ result: 1 }]],
     ['SELECT j.job_id FROM cc.jobs j JOIN', () => []],
     ['SELECT cc.due_device_command_polls', () => [{ result: [] }]],
   ]);
-  const cache = cacheOf();
+  const orchestration = orchestrationOf();
   const service = serviceOf({
     database,
-    cache,
-    orchestration: orchestrationOf(),
+    cache: cacheOf(),
+    orchestration,
   });
   await service.tick();
   const customers = database.calls.find(({ text }) =>
@@ -459,21 +451,8 @@ test('the tick visits a customer with a running export or validation run and pub
     text.includes('cc.recover_device_file_jobs'),
   );
   assert.deepEqual(recovered.values, [CUSTOMER]);
-  // The end of the recovered run reaches the browsers through the publication path.
-  const completed = database.calls.find(({ text }) =>
-    text.includes('cc.complete_job_publications'),
-  );
-  assert.deepEqual(completed.values, [CUSTOMER, '[7]']);
-  const published = cache.calls.filter((call) => call.name === 'publish');
-  assert.ok(published.length >= 1);
-  for (const call of published)
-    assert.deepEqual(JSON.parse(call.values[1]), {
-      type: 'job-changed',
-      jobId: JOB,
-      displayId: 'EXP-001',
-      revision: 5,
-      requestedBy: REQUESTER,
-    });
+  // The recovered run ends in the function. It starts no flow.
+  assert.deepEqual(orchestration.calls, []);
 });
 
 test('a failed publication after admission leaves the row for the relay and still starts the job', async () => {

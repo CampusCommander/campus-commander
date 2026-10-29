@@ -461,15 +461,13 @@ export class JobService {
 
   /**
    * Publish the rows that one job service call committed, at once, and complete them
-   * (design sections 3.2 and 6.5). A refresh row and a worker row stay for the relay. The recovery
-   * of a lost export or validation run publishes through the same path (design section 5).
+   * (design sections 3.2 and 6.5). A refresh row and a worker row stay for the relay.
    */
   private async publishRows(customerId: string, after: string): Promise<void> {
     const rows = await this.rows(
       `SELECT p.publication_id,p.job_id,j.display_id,j.revision,j.requested_by
         FROM cc.job_publications p JOIN cc.jobs j ON j.job_id=p.job_id
-        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint
-          AND j.kind IN ('device-update','device-command','device-status','device-export','device-import')
+        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status')
           AND p.status_changed AND jsonb_array_length(p.device_ids)=0 AND jsonb_array_length(p.removed_ids)=0
         ORDER BY p.publication_id`,
       [customerId, after],
