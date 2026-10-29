@@ -9,8 +9,8 @@ import { pathToFileURL } from 'node:url';
 import type { Pool } from 'pg';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
-import { startArtifactPurge } from './purge-timer';
 import { storeJsonDocument } from './json-artifact';
+import { startArtifactPurge } from './purge-timer';
 
 interface ArtifactManifest {
   artifactId: string;

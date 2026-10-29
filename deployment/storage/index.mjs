@@ -292,6 +292,7 @@ async function initializeStore({ pool, root, backend = 'local' }) {
     });
   }
   async function purgeExpired() {
+    if (closed) return 0;
     const { rows } = await pool.query(
       `SELECT id, attempt_id FROM cc.artifacts
         WHERE retention_until <= now() ORDER BY retention_until`,
