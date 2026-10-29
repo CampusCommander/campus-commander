@@ -619,6 +619,21 @@ test("another customer's file answers 404", async () => {
   const answer = await get('/api/devices/exports/EXP-001/file');
   assert.equal(answer.status, 404, JSON.stringify(answer.body));
   assert.deepEqual(answer.body, { reason: 'job-not-found' });
+  const statement = statements.find((one) =>
+    one.text.includes('JOIN cc.device_export_jobs'),
+  );
+  assert.ok(statement, 'The route looks the job up.');
+  assert.match(
+    statement.text,
+    /WHERE j\.customer_id=\$3 AND j\.display_id=\$4 AND j\.kind='device-export'/,
+    'The statement filters the connected customer and the export kind.',
+  );
+  assert.equal(
+    statement.values[2],
+    customer,
+    'The route binds the connected customer, never a customer of the request.',
+  );
+  assert.equal(statement.values[3], 'EXP-001');
 });
 
 test('a job that the person cannot see answers 404', async () => {
