@@ -49,6 +49,30 @@ function cellsOf(fields = {}) {
   return cells;
 }
 
+/** The failure codes that `cc.job_failure_known` accepts, as the migration lists them. */
+const JOB_FAILURES = new Set([
+  'credential-rejected',
+  'delegation-not-authorized',
+  'api-not-enabled',
+  'policy-restricted',
+  'network-failure',
+  'scope-mismatch',
+  'permission-denied',
+  'quota',
+  'provider-unavailable',
+  'invalid-response',
+  'wrong-customer',
+  'request-failed',
+  'key-unavailable',
+  'interrupted',
+  'orchestration-unavailable',
+  'permission-changed',
+  'connection-changed',
+  'storage-unavailable',
+  'inventory-unavailable',
+  'export-too-large',
+]);
+
 /** One CSV file with its header row. */
 function csvText(rows, headers = DEVICE_EDIT_TEMPLATE_HEADERS) {
   const quote = (cell) =>
@@ -269,6 +293,9 @@ function fakeDatabase(options = {}) {
         const refusal = values[5] ?? null;
         const refusalText = values[6] ?? null;
         calls.finish.push({ counts, failure, refusal, refusalText });
+        // `cc.finish_device_import_job` refuses a code that `cc.job_failure_known` misses.
+        if (failure !== null && !JOB_FAILURES.has(failure))
+          throw new Error('The import finish is invalid.');
         if (options.finish)
           return { rows: [{ result: options.finish(values) }] };
         if (job.status !== null)
@@ -979,6 +1006,23 @@ test('a call stays below the 32 MiB that the store accepts', async () => {
     harnessed.database.calls.lines.flat().length,
     450,
     'Every line is stored once.',
+  );
+});
+
+test('a store fault fails the job with storage-unavailable', async () => {
+  const harnessed = harness({
+    devices: [device('dev-a')],
+    database: { stampFailure: true },
+  });
+
+  const answer = await harnessed.run();
+
+  // A storage fault fails the job, and the job header accepts the code (section 6).
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'storage-unavailable');
+  assert.deepEqual(
+    harnessed.database.calls.finish.map((call) => call.failure),
+    ['storage-unavailable'],
   );
 });
 

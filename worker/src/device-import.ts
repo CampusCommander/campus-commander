@@ -22,6 +22,7 @@ import {
   freshnessCutoff,
   googleCustomerIdSchema,
   jobDisplayIdSchema,
+  jobFailureSchema,
   matchDeviceEditHeaders,
   type CsvRecord,
   type DeviceEditColumnKey,
@@ -852,7 +853,12 @@ export class DeviceImportJobs {
       }
       // A storage fault fails the job. A lost worker writes nothing.
       if (signal.aborted) return { outcome: 'stopped' };
-      if (error instanceof DeviceSyncError)
+      // A storage fault fails the job with `storage-unavailable`. A code that the job header
+      // accepts is stored as it is (design section 6, the failures table).
+      if (
+        error instanceof DeviceSyncError &&
+        jobFailureSchema.safeParse(error.code).success
+      )
         return this.end(lease, displayId, { failure: error.code });
       return this.end(lease, displayId, { failure: 'storage-unavailable' });
     } finally {
