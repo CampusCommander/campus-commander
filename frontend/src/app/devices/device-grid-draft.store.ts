@@ -26,7 +26,8 @@ import {
   type JobStatus,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
-import { JobStream, type JobEventSource } from '../jobs/job-stream';
+import { LiveFeeds, type LiveFeedSubscription } from '../jobs/live-feeds';
+import { type JobEventSource } from '../jobs/job-stream';
 import type { OrgUnitTreeRow } from './device-org-unit-tree.store';
 import { readDraftPart, writeDraftPart } from './device-draft-storage';
 import {
@@ -319,6 +320,7 @@ function restoredEntry(
 @Injectable({ providedIn: 'root' })
 export class DeviceGridDraftStore {
   private readonly auth = inject(AuthStore);
+  private readonly feeds = inject(LiveFeeds);
   private readonly entriesSignal = signal<DeviceGridDraftEntry[]>([]);
   private readonly acceptedSignal = signal<DeviceGridAcceptedEntry[]>([]);
   private readonly liveSignal = signal<DeviceGridLiveEdit | null>(null);
@@ -341,13 +343,8 @@ export class DeviceGridDraftStore {
    */
   jobEventSource: ((url: string) => JobEventSource) | null =
     typeof EventSource === 'undefined' ? null : (url) => new EventSource(url);
-  private readonly jobEvents = new JobStream({
-    open: () => this.jobEventSource!('/api/jobs/events'),
-    reopenDelay: () => 5000,
-    timeout: () => 60_000,
-    opened: () => void this.reconcileAccepted(),
-    changed: (data) => this.onJobEvent(data),
-  });
+  /** The tab's shared jobs connection while an accepted cell waits. */
+  private jobEvents: LiveFeedSubscription | null = null;
   /** A restore warning stays until the next restore, so one write never hides lost entries. */
   readonly storageError = computed(
     () => this.restoreErrorSignal() || this.writeErrorSignal(),
@@ -433,9 +430,19 @@ export class DeviceGridDraftStore {
 
   /** Follow the jobs channel while an accepted cell waits for its owning job (B4). */
   private syncJobStream(): void {
-    if (this.acceptedSignal().length && this.jobEventSource)
-      this.jobEvents.start();
-    else this.jobEvents.stop();
+    if (this.acceptedSignal().length && this.jobEventSource) {
+      this.jobEvents ??= this.feeds.subscribe('/api/jobs/events', {
+        open: () => this.jobEventSource!('/api/jobs/events'),
+        reopenDelay: () => 5000,
+        timeout: () => 60_000,
+        events: ['job-changed'],
+        opened: () => void this.reconcileAccepted(),
+        changed: (data) => this.onJobEvent(data),
+      });
+    } else {
+      this.jobEvents?.close();
+      this.jobEvents = null;
+    }
   }
 
   /** One job event names the job that owns the next settlement pass. */
@@ -1088,7 +1095,8 @@ export class DeviceGridDraftStore {
     // Accepted values belong to the person who confirmed them. Another principal must
     // never see them over their own rows (B5).
     this.acceptedEpoch++;
-    this.jobEvents.stop();
+    this.jobEvents?.close();
+    this.jobEvents = null;
     this.acceptedSignal.set([]);
     this.reconciling = false;
     this.reconciled = false;

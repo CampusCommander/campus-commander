@@ -16,7 +16,8 @@ import {
 import { AuthStore } from '../auth.store';
 import { operationNumber } from './job-detail-fields';
 import { JobReader, type JobRevisions } from './job-reader';
-import { JobStream, type JobEventSource } from './job-stream';
+import { LiveFeeds, type LiveFeedSubscription } from './live-feeds';
+import { type JobEventSource } from './job-stream';
 
 /** Operations per page. The frames show six rows and "Rows 1–6 of 48". */
 export const OPERATIONS_PAGE_SIZE = 6;
@@ -29,6 +30,7 @@ export const OPERATIONS_PAGE_SIZE = 6;
 @Injectable({ providedIn: 'root' })
 export class JobDetailStore {
   private readonly auth = inject(AuthStore);
+  private readonly feeds = inject(LiveFeeds);
   /** Opens the jobs event stream. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
   /** Milliseconds before a closed stream reopens. */
@@ -77,13 +79,8 @@ export class JobDetailStore {
   readonly cancelError = signal('');
 
   private readonly reader = new JobReader(() => this.read());
-  private readonly events = new JobStream({
-    open: () => this.eventSource('/api/jobs/events'),
-    reopenDelay: () => this.reopenDelay,
-    timeout: () => this.streamTimeout,
-    opened: () => this.reader.opened(),
-    changed: (data) => this.onEvent(data),
-  });
+  /** The tab's shared jobs connection. The last store to leave closes it. */
+  private subscription: LiveFeedSubscription | null = null;
   /** The page is mounted. A late Reconcile answer changes nothing after leave. */
   private mounted = false;
   /** Increments at every mount and leave. A continuation from an earlier mount is dropped. */
@@ -141,7 +138,7 @@ export class JobDetailStore {
     this.mountGeneration++;
     if (this.displayId() !== displayId) this.reset(displayId, false);
     this.streamWanted = true;
-    this.events.start();
+    this.follow();
     if (!this.loaded()) this.loading.set(true);
     await this.reader.request();
   }
@@ -152,7 +149,8 @@ export class JobDetailStore {
     this.mountGeneration++;
     this.streamWanted = false;
     this.reader.stop();
-    this.events.stop();
+    this.subscription?.close();
+    this.subscription = null;
     // No request outlives the page. A mark without a held answer would never clear.
     this.clearReconcileState();
   }
@@ -396,7 +394,7 @@ export class JobDetailStore {
     this.cancelling.set(false);
     this.cancelError.set('');
     if (reread && this.streamWanted) {
-      this.events.restart();
+      this.subscription?.restart();
       // Do not wait for the stream open to remove the previous person's data.
       void this.reader.request();
     }
@@ -404,8 +402,22 @@ export class JobDetailStore {
 
   /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
   private resume(): void {
-    if (!this.streamWanted || this.events.active) return;
-    this.events.start();
+    if (!this.streamWanted) return;
+    if (!this.subscription) this.follow();
+    else this.subscription.resume();
+  }
+
+  /** Subscribes to the tab's jobs connection. The subscription is shared with every store. */
+  private follow(): void {
+    if (this.subscription) return;
+    this.subscription = this.feeds.subscribe('/api/jobs/events', {
+      open: () => this.eventSource('/api/jobs/events'),
+      reopenDelay: () => this.reopenDelay,
+      timeout: () => this.streamTimeout,
+      events: ['job-changed'],
+      opened: () => this.reader.opened(),
+      changed: (data) => this.onEvent(data),
+    });
   }
 
   private clearReconcileState(): void {

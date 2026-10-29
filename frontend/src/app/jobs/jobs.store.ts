@@ -17,7 +17,8 @@ import {
 import { AuthStore } from '../auth.store';
 import { jobFilterQuery, sameFilters, type JobFilter } from './job-fields';
 import { JobReader, type JobRevisions } from './job-reader';
-import { JobStream, type JobEventSource } from './job-stream';
+import { LiveFeeds, type LiveFeedSubscription } from './live-feeds';
+import { type JobEventSource } from './job-stream';
 
 /** Rows per page. The API caps a page at 100. */
 export const JOBS_PAGE_SIZE = 50;
@@ -43,6 +44,7 @@ export function jobsReadable(auth: InstanceType<typeof AuthStore>): boolean {
 @Injectable({ providedIn: 'root' })
 export class JobsStore {
   private readonly auth = inject(AuthStore);
+  private readonly feeds = inject(LiveFeeds);
   /** Opens the jobs event stream. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
   /** Milliseconds before a closed stream reopens. */
@@ -74,14 +76,8 @@ export class JobsStore {
   readonly hasNext = computed(() => !!this.page()?.nextCursor);
 
   private readonly reader = new JobReader(() => this.read());
-  private readonly events = new JobStream({
-    open: () => this.eventSource('/api/jobs/events'),
-    reopenDelay: () => this.reopenDelay,
-    timeout: () => this.streamTimeout,
-    // Every stream open marks the reader dirty (section 3.4).
-    opened: () => this.reader.opened(),
-    changed: (data) => this.onEvent(data),
-  });
+  /** The tab's shared jobs connection. The last store to leave closes it. */
+  private subscription: LiveFeedSubscription | null = null;
   private streamWanted = false;
   /** Increments on a query change. A late answer for the old query is dropped. */
   private queryRevision = 0;
@@ -111,7 +107,7 @@ export class JobsStore {
   /** Jobs mounted: open the stream and read the current page. */
   async init(): Promise<void> {
     this.streamWanted = true;
-    this.events.start();
+    this.follow();
     if (!this.loaded()) this.loading.set(true);
     await this.reader.request();
   }
@@ -120,7 +116,8 @@ export class JobsStore {
   leave(): void {
     this.streamWanted = false;
     this.reader.stop();
-    this.events.stop();
+    this.subscription?.close();
+    this.subscription = null;
   }
 
   /** Refresh rereads job state only. It never dispatches provider work. */
@@ -217,7 +214,7 @@ export class JobsStore {
     this.cursors.set([null]);
     // The stream carries the session cookie. A new person needs a new stream.
     if (this.streamWanted) {
-      this.events.restart();
+      this.subscription?.restart();
       // Do not wait for the stream open to remove the previous person's rows.
       void this.reader.request();
     }
@@ -225,8 +222,23 @@ export class JobsStore {
 
   /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
   private resume(): void {
-    if (!this.streamWanted || this.events.active) return;
-    this.events.start();
+    if (!this.streamWanted) return;
+    if (!this.subscription) this.follow();
+    else this.subscription.resume();
+  }
+
+  /** Subscribes to the tab's jobs connection. The subscription is shared with every store. */
+  private follow(): void {
+    if (this.subscription) return;
+    this.subscription = this.feeds.subscribe('/api/jobs/events', {
+      open: () => this.eventSource('/api/jobs/events'),
+      reopenDelay: () => this.reopenDelay,
+      timeout: () => this.streamTimeout,
+      events: ['job-changed'],
+      // Every stream open marks the reader dirty (section 3.4).
+      opened: () => this.reader.opened(),
+      changed: (data) => this.onEvent(data),
+    });
   }
 
   /** One read of the current query. Returns the revisions of a successful answer. */

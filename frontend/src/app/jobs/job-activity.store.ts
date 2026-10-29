@@ -16,7 +16,8 @@ import {
 import { AuthStore } from '../auth.store';
 import { jobsReadable } from './jobs.store';
 import { JobReader, type JobRevisions } from './job-reader';
-import { JobStream, type JobEventSource } from './job-stream';
+import { LiveFeeds, type LiveFeedSubscription } from './live-feeds';
+import { type JobEventSource } from './job-stream';
 
 /** The shortest delay between timed rereads (design 3.4). */
 export const ACTIVITY_EXPIRY_FLOOR_MS = 60_000;
@@ -32,6 +33,7 @@ export const ACTIVITY_EXPIRY_FLOOR_MS = 60_000;
 @Injectable({ providedIn: 'root' })
 export class JobActivityStore {
   private readonly auth = inject(AuthStore);
+  private readonly feeds = inject(LiveFeeds);
   /** Opens the jobs event stream. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
   /** Milliseconds before a closed stream reopens. */
@@ -53,18 +55,8 @@ export class JobActivityStore {
   readonly attention = computed(() => this.summary()?.attention ?? false);
 
   private readonly reader = new JobReader(() => this.read());
-  private readonly events = new JobStream({
-    open: () => this.eventSource('/api/jobs/events'),
-    reopenDelay: () => this.reopenDelay,
-    timeout: () => this.streamTimeout,
-    // Every stream open marks the reader dirty (section 3.4).
-    opened: () => {
-      this.live.set(true);
-      this.reader.opened();
-    },
-    changed: (data) => this.onEvent(data),
-    closed: () => this.live.set(false),
-  });
+  /** The tab's shared jobs connection. The last store to leave closes it. */
+  private subscription: LiveFeedSubscription | null = null;
   /** The shell shows the button. The summary, stream, and timers run only then. */
   private started = false;
   /** The person of the current state. Another person clears it. */
@@ -128,7 +120,8 @@ export class JobActivityStore {
     this.started = false;
     this.epoch++;
     this.reader.clear();
-    this.events.stop();
+    this.subscription?.close();
+    this.subscription = null;
     this.clearExpiry();
     this.live.set(false);
     this.summary.set(null);
@@ -139,9 +132,27 @@ export class JobActivityStore {
 
   private start(): void {
     this.started = true;
-    this.events.start();
+    this.follow();
     if (!this.loaded()) this.loading.set(true);
     void this.reader.request();
+  }
+
+  /** Subscribes to the tab's jobs connection. The subscription is shared with every store. */
+  private follow(): void {
+    if (this.subscription) return;
+    this.subscription = this.feeds.subscribe('/api/jobs/events', {
+      open: () => this.eventSource('/api/jobs/events'),
+      reopenDelay: () => this.reopenDelay,
+      timeout: () => this.streamTimeout,
+      events: ['job-changed'],
+      // Every stream open marks the reader dirty (section 3.4).
+      opened: () => {
+        this.live.set(true);
+        this.reader.opened();
+      },
+      changed: (data) => this.onEvent(data),
+      closed: () => this.live.set(false),
+    });
   }
 
   /** Clears the previous person's state before the next person's answers arrive. */
@@ -154,7 +165,7 @@ export class JobActivityStore {
     this.loaded.set(false);
     this.error.set('');
     // The stream carries the session cookie. A new person needs a new stream.
-    this.events.restart();
+    this.subscription?.restart();
     // Do not wait for the stream open to remove the previous person's state.
     void this.reader.request();
   }
