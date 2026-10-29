@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   symlink,
   unlink,
   writeFile,
@@ -13,8 +14,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
+import { purgeExpiredArtifacts } from '../../api/src/app/storage/artifact-purge.ts';
 import { migrate, provision } from '../postgres/index.mjs';
-import { createArtifactStore } from './index.mjs';
+import { ARTIFACT_RETENTION_DAYS, createArtifactStore } from './index.mjs';
 
 const qualification = JSON.parse(
   await readFile(
@@ -45,6 +47,7 @@ const collect = async (stream) => {
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks);
 };
+const exists = (path) => stat(path).then(() => true, () => false);
 const results = [];
 let admin;
 let pool;
@@ -447,6 +450,122 @@ try {
   assert.equal(await store.remove(removal), true);
   results.push(
     'cleanup rollback preserves a hidden tombstone; retry completes deletion; new references fail: pass',
+  );
+  const streamedBytes = Buffer.from('Synthetic streamed export École\n');
+  const streamed = await store.stageStream(
+    {
+      schemaVersion: 1,
+      maxBytes: 64 * 1024,
+      retentionDays: ARTIFACT_RETENTION_DAYS,
+    },
+    (async function* () {
+      yield streamedBytes.subarray(0, 7);
+      yield streamedBytes.subarray(7);
+    })(),
+  );
+  const streamedRow = (
+    await pool.query(
+      'SELECT size_bytes, sha256, retention_until, active FROM cc.artifacts WHERE id=$1',
+      [streamed.artifactId],
+    )
+  ).rows[0];
+  assert.equal(streamed.sizeBytes, streamedBytes.length);
+  assert.equal(streamed.sha256, hash(streamedBytes));
+  assert.equal(Number(streamedRow.size_bytes), streamedBytes.length);
+  assert.equal(streamedRow.sha256, hash(streamedBytes));
+  assert.equal(streamedRow.active, false);
+  const retainedDays =
+    (new Date(streamedRow.retention_until).getTime() - Date.now()) / 86400000;
+  assert.ok(retainedDays > 29.9 && retainedDays <= 30, retainedDays);
+  await store.publish(streamed);
+  assert.deepEqual(
+    await collect(await store.openRead(streamed.artifactId)),
+    streamedBytes,
+  );
+  results.push(
+    'streamed staging records the size, the digest, and 30-day retention: pass',
+  );
+  const overCap = {
+    artifactId: randomUUID(),
+    attemptId: randomUUID(),
+    schemaVersion: 1,
+    maxBytes: streamedBytes.length - 1,
+  };
+  await assert.rejects(store.stageStream(overCap, [streamedBytes]));
+  assert.equal(
+    await exists(join(root, `${overCap.artifactId}.${overCap.attemptId}`)),
+    false,
+  );
+  const overCapRow = (
+    await pool.query('SELECT sha256, active FROM cc.artifacts WHERE id=$1', [
+      overCap.artifactId,
+    ])
+  ).rows[0];
+  assert.equal(overCapRow.sha256, null);
+  assert.equal(overCapRow.active, false);
+  results.push(
+    'a streamed stage above its cap removes the partial file and stays unpublished: pass',
+  );
+  const expiredArtifact = await store.stageStream(
+    {
+      schemaVersion: 1,
+      maxBytes: 1024,
+      retentionUntil: new Date(Date.now() - 60000).toISOString(),
+    },
+    [streamedBytes],
+  );
+  await store.publish(expiredArtifact);
+  const retainedArtifact = await store.stageStream(
+    {
+      schemaVersion: 1,
+      maxBytes: 1024,
+      retentionDays: ARTIFACT_RETENTION_DAYS,
+    },
+    [streamedBytes],
+  );
+  await store.publish(retainedArtifact);
+  const expiredReference = await store.stageStream(
+    {
+      schemaVersion: 1,
+      maxBytes: 1024,
+      retentionUntil: new Date(Date.now() - 60000).toISOString(),
+    },
+    [streamedBytes],
+  );
+  await store.publish(expiredReference);
+  await pool.query('UPDATE cc.artifacts SET reference_count=1 WHERE id=$1', [
+    expiredReference.artifactId,
+  ]);
+  assert.equal(await purgeExpiredArtifacts(pool, store), 1);
+  assert.equal(
+    await exists(
+      join(root, `${expiredArtifact.artifactId}.${expiredArtifact.attemptId}`),
+    ),
+    false,
+  );
+  assert.equal(
+    (
+      await pool.query('SELECT 1 FROM cc.artifacts WHERE id=$1', [
+        expiredArtifact.artifactId,
+      ])
+    ).rowCount,
+    0,
+  );
+  assert.deepEqual(
+    await collect(await store.openRead(retainedArtifact.artifactId)),
+    streamedBytes,
+  );
+  assert.equal(
+    (
+      await pool.query('SELECT 1 FROM cc.artifacts WHERE id=$1', [
+        expiredReference.artifactId,
+      ])
+    ).rowCount,
+    1,
+  );
+  assert.equal(await purgeExpiredArtifacts(pool, store), 0);
+  results.push(
+    'the hourly purge removes an expired artifact and keeps a retained or referenced one: pass',
   );
   console.log(
     JSON.stringify(
