@@ -64,7 +64,7 @@ const session = {
     grants: [],
     preferences: {},
   },
-  expiresAt: '2026-10-29T12:00:00.000Z',
+  expiresAt: at(HOUR),
   csrfToken: 'a'.repeat(64),
 };
 
