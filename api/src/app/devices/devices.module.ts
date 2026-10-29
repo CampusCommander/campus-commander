@@ -7,6 +7,8 @@ import { JobServiceModule } from '../jobs/job-service.module';
 import { OrchestrationModule } from '../orchestration/orchestration.module';
 import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
+import { DeviceExportsController } from './device-exports.controller';
+import { DeviceExportsService } from './device-exports.service';
 import { DeviceFreshReadService } from './device-fresh-read.service';
 import {
   DeviceCommandsController,
@@ -30,6 +32,7 @@ import { DevicesService } from './devices.service';
     StorageModule,
   ],
   controllers: [
+    DeviceExportsController,
     DeviceUpdatesController,
     DeviceCommandsController,
     DeviceStatusChangesController,
@@ -38,6 +41,7 @@ import { DevicesService } from './devices.service';
   providers: [
     DevicesService,
     DeviceEventsService,
+    DeviceExportsService,
     DeviceUpdatesService,
     DeviceActionsService,
     DeviceWriteAccessService,
