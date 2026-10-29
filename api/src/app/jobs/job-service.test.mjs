@@ -405,6 +405,36 @@ test('the recovery fails a lost export and a lost validation run', async () => {
   assert.deepEqual(orchestration.calls, []);
 });
 
+test('a failed file recovery never blocks the write recovery', async () => {
+  const database = databaseOf([
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    [
+      'SELECT cc.recover_device_update_jobs',
+      () => [{ result: { starts: [admitted()], reconciles: [] } }],
+    ],
+    [
+      'SELECT cc.recover_device_file_jobs',
+      () => {
+        throw new Error('permission denied');
+      },
+    ],
+    [
+      'SELECT batch_count FROM cc.device_update_jobs',
+      () => [{ batch_count: 1 }],
+    ],
+    ['SELECT cc.record_device_update_start', () => [{ result: null }]],
+    ['SELECT p.publication_id', () => []],
+  ]);
+  const orchestration = orchestrationOf();
+  const service = serviceOf({
+    database,
+    cache: cacheOf(),
+    orchestration,
+  });
+  assert.equal(await service.recover(CUSTOMER), true);
+  assert.equal(orchestration.calls[0].name, 'startDeviceUpdate');
+});
+
 test('the tick visits a customer with a running export or validation run and recovers it', async () => {
   const database = databaseOf([
     [

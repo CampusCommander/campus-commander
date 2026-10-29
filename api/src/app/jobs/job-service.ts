@@ -374,9 +374,11 @@ export class JobService {
         [customerId],
       )) ?? {};
     const files =
-      (await this.result<{ failed?: unknown[] } | null>(
-        'SELECT cc.recover_device_file_jobs($1) AS result',
-        [customerId],
+      (await this.step(() =>
+        this.result<{ failed?: unknown[] } | null>(
+          'SELECT cc.recover_device_file_jobs($1) AS result',
+          [customerId],
+        ),
       )) ?? {};
     const starts = Array.isArray(recovered.starts) ? recovered.starts : [];
     const reconciles = Array.isArray(recovered.reconciles)
