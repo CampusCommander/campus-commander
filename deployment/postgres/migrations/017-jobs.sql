@@ -796,11 +796,13 @@ BEGIN
         ORDER BY o.operation_number FOR UPDATE;
     END IF;
     -- The waiting status jobs of an import's update job (design section 3, "The cancel"). Each waiting
-    -- header locks after the update's operations, and its pending operations lock after its header.
+    -- header locks after the update's operations, in display ID order (cancel design item 8), so a
+    -- later-created job never overtakes an earlier display ID. Its pending operations lock after its
+    -- header.
     IF job.kind='device-update' AND detail.import_job_id IS NOT NULL THEN
       FOR waiting_job IN SELECT w.* FROM cc.jobs w JOIN cc.device_update_jobs u ON u.job_id=w.job_id
           WHERE u.wait_for_job_id=job.job_id AND w.finished_at IS NULL
-          ORDER BY w.created_at,w.display_id FOR UPDATE OF w LOOP
+          ORDER BY w.display_id FOR UPDATE OF w LOOP
         waiting_jobs:=waiting_jobs||waiting_job;
         PERFORM 1 FROM cc.device_update_operations o WHERE o.job_id=waiting_job.job_id AND
           o.status='pending' ORDER BY o.operation_number FOR UPDATE;
@@ -866,7 +868,8 @@ BEGIN
       WHERE job_id=job.job_id;
     END IF;
     -- The same request lands on each waiting status job of an import's update job. Each one that never
-    -- claimed ends at once with every operation Cancelled, and the one request keeps one audit row.
+    -- claimed ends at once with every operation Cancelled, and each affected job keeps one audit row
+    -- for the one request (design section 3, "The cancel").
     FOREACH waiting_job IN ARRAY waiting_jobs LOOP
       UPDATE cc.jobs SET cancel_requested_at=request_at,cancel_requested_by=p_actor
       WHERE job_id=waiting_job.job_id;
@@ -878,6 +881,10 @@ BEGIN
         WHERE job_id=waiting_job.job_id;
       END IF;
       PERFORM cc.record_job_change(waiting_job.job_id,true);
+      -- One audit row for each waiting status job that this request ends or marks, with the request's
+      -- actor and correlation ID, so a reader sees one request across the job group.
+      INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail)
+        VALUES(gen_random_uuid(),p_actor,'job-cancel-requested',p_correlation,waiting_job.display_id);
     END LOOP;
   END IF;
   PERFORM cc.record_job_change(job.job_id,true);
@@ -1510,9 +1517,9 @@ ALTER TABLE cc.security_events ADD CONSTRAINT security_events_event_check CHECK 
 -- writer keeps the checks of its early read and repeats them after its last blocking lock, before
 -- its first write.
 
--- The plan cancel of design section 7. It locks the IMP header and then its detail row, checks the
--- plan ID and the revision, and cancels an open plan. Nothing runs, and the report stays. A repeat
--- answers the same plan.
+-- The plan cancel of design section 7. It locks the IMP header and then its detail row, then the
+-- requester and connection rows, checks the plan ID and the revision, and cancels an open plan.
+-- Nothing runs, and the report stays. A repeat answers the same plan.
 CREATE FUNCTION cc.cancel_device_import_plan(p_actor uuid,p_version integer,p_customer text,p_job uuid,
   p_plan_id uuid,p_revision integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -1523,7 +1530,8 @@ BEGIN
     RAISE EXCEPTION 'The plan cancel request is invalid.' USING ERRCODE='22023';
   END IF;
   -- The early read keeps the built reasons. The header lock follows, and every authority check runs
-  -- again after it, before the first write (design section 3 lock order: header, then detail row).
+  -- again after the last lock, before the first write (design section 3 lock order: header, then
+  -- detail row, then the requester and connection rows).
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer;
   IF job.job_id IS NULL OR job.kind<>'device-import' OR job.requested_by<>p_actor OR
     NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
@@ -1543,7 +1551,11 @@ BEGIN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
   SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
-  now_at:=clock_timestamp();
+  -- The plan_changed_by write takes the requester row through its foreign key, and the publication of
+  -- cc.record_job_change takes the connection row. Both lock here, after the header and the detail row
+  -- and before the final checks, as cc.request_job_cancel takes them (review round 1, R1).
+  PERFORM 1 FROM cc.application_principals p WHERE p.id=p_actor FOR KEY SHARE;
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   -- The enabled state, the permission version, the visibility, and the grants repeat after the last
   -- blocking lock and before the first write, so an access change that committed during a wait never
   -- lets this call write.
@@ -1559,6 +1571,9 @@ BEGIN
       GROUP BY g.principal_id HAVING count(DISTINCT g.action)=3) THEN
     RETURN jsonb_build_object('outcome','forbidden');
   END IF;
+  -- The clock reads after every lock and every authority check, so a plan that expires during a wait
+  -- answers expired.
+  now_at:=clock_timestamp();
   IF detail.plan_id IS NULL OR detail.plan_id<>p_plan_id THEN
     RETURN jsonb_build_object('outcome','conflict');
   END IF;
@@ -1571,8 +1586,8 @@ BEGIN
   IF detail.plan_state IS DISTINCT FROM 'open' THEN
     RETURN jsonb_build_object('outcome','conflict','plan',plan);
   END IF;
-  -- The clock reads after both row locks, so a plan that expires during a wait answers expired and
-  -- keeps its state.
+  -- The clock reads after every lock and every authority check, so a plan that expires during a wait
+  -- answers expired and keeps its state.
   IF detail.plan_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','expired','plan',plan,'expiresAt',detail.plan_expires_at);
   END IF;
@@ -1647,23 +1662,39 @@ BEGIN
 END;
 $$;
 
--- The conflict marks of Execute (design section 7 step 5). A device whose current value differs from
--- both its baseline and its request never reaches a preview, so every change of that device reads
--- `changed-after-validation`. It locks the IMP header, the detail row, then the change rows.
+-- The disposition writer of Execute (design section 7 steps 5 and 9). It records one page of at most
+-- 250 changes per call, so no call carries the whole plan: `p_devices` marks every change of a conflict
+-- device `changed-after-validation`, and `p_dispositions` stores the `not_run_reason` of each named
+-- ordinal (review round 1, R2). It locks the IMP header, the detail row, then the change rows.
 CREATE FUNCTION cc.mark_device_import_changes(p_actor uuid,p_version integer,p_customer text,p_job uuid,
-  p_plan_id uuid,p_devices jsonb) RETURNS jsonb
+  p_plan_id uuid,p_devices jsonb,p_dispositions jsonb DEFAULT '[]'::jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; bad integer; marked integer;
+  disposed integer;
 BEGIN
+  p_dispositions:=COALESCE(p_dispositions,'[]'::jsonb);
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_job IS NULL OR
     p_plan_id IS NULL OR p_devices IS NULL OR jsonb_typeof(p_devices)<>'array' OR
-    jsonb_array_length(p_devices)>250 THEN
+    jsonb_array_length(p_devices)>250 OR jsonb_typeof(p_dispositions)<>'array' OR
+    jsonb_array_length(p_dispositions)>250 THEN
     RAISE EXCEPTION 'The plan marks are invalid.' USING ERRCODE='22023';
   END IF;
   SELECT count(*) INTO bad FROM jsonb_array_elements(p_devices) e
     WHERE jsonb_typeof(e) IS DISTINCT FROM 'string' OR char_length(e #>> '{}') NOT BETWEEN 1 AND 128;
   IF bad>0 OR (SELECT count(DISTINCT e #>> '{}') FROM jsonb_array_elements(p_devices) e)<>
       jsonb_array_length(p_devices) THEN
+    RAISE EXCEPTION 'The plan marks are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Every disposition names an ordinal of the plan and one stored reason, and one call repeats no
+  -- ordinal.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_dispositions) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
+      CASE WHEN jsonb_typeof(e->'ordinal')='number' AND pg_input_is_valid(e->>'ordinal','integer')
+        THEN (e->>'ordinal')::integer<0 ELSE true END OR
+      COALESCE(e->>'reason','') NOT IN ('changed-after-validation','no-change-needed','removed',
+        'status-unknown','device-deprovisioned','device-active','device-disabled');
+  IF bad>0 OR (SELECT count(DISTINCT (e->>'ordinal')) FROM jsonb_array_elements(p_dispositions) e)<>
+      jsonb_array_length(p_dispositions) THEN
     RAISE EXCEPTION 'The plan marks are invalid.' USING ERRCODE='22023';
   END IF;
   PERFORM pg_advisory_xact_lock(7240173008);
@@ -1693,13 +1724,22 @@ BEGIN
   END IF;
   -- S1: the change rows lock after the header and the detail row, before the first write.
   PERFORM 1 FROM cc.device_import_changes c WHERE c.job_id=p_job AND
-    c.device_id IN (SELECT e #>> '{}' FROM jsonb_array_elements(p_devices) e)
+    (c.device_id IN (SELECT e #>> '{}' FROM jsonb_array_elements(p_devices) e) OR
+      c.ordinal IN (SELECT (e->>'ordinal')::integer FROM jsonb_array_elements(p_dispositions) e))
     ORDER BY c.ordinal FOR UPDATE;
   UPDATE cc.device_import_changes c SET not_run_reason='changed-after-validation'
   WHERE c.job_id=p_job AND c.linked_job_id IS NULL AND c.not_run_reason IS NULL AND
     c.device_id IN (SELECT e #>> '{}' FROM jsonb_array_elements(p_devices) e);
   GET DIAGNOSTICS marked=ROW_COUNT;
-  RETURN jsonb_build_object('outcome','marked','marked',marked);
+  -- The named reasons land on changes that hold neither a link nor a reason yet, so a repeated page
+  -- keeps the first answer.
+  UPDATE cc.device_import_changes c SET not_run_reason=d.reason
+  FROM (SELECT (e->>'ordinal')::integer AS ordinal,e->>'reason' AS reason
+    FROM jsonb_array_elements(p_dispositions) e) d
+  WHERE c.job_id=p_job AND c.ordinal=d.ordinal AND c.linked_job_id IS NULL AND
+    c.not_run_reason IS NULL;
+  GET DIAGNOSTICS disposed=ROW_COUNT;
+  RETURN jsonb_build_object('outcome','marked','marked',marked,'disposed',disposed);
 END;
 $$;
 
@@ -1713,11 +1753,14 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; bad integer;
   linked integer; plan jsonb;
 BEGIN
+  -- The reasons arrive through cc.mark_device_import_changes in pages of 250, so this list is one page
+  -- at most and no call carries the whole plan (design section 7, "Bounded serialization"; review
+  -- round 1, R2).
   p_not_run:=COALESCE(p_not_run,'[]'::jsonb);
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_job IS NULL OR p_plan_id IS NULL OR
     p_correlation IS NULL OR p_previews IS NULL OR jsonb_typeof(p_previews)<>'array' OR
     jsonb_array_length(p_previews) NOT BETWEEN 1 AND 7 OR jsonb_typeof(p_not_run)<>'array' OR
-    jsonb_array_length(p_not_run)>50000 THEN
+    jsonb_array_length(p_not_run)>250 THEN
     RAISE EXCEPTION 'The plan links are invalid.' USING ERRCODE='22023';
   END IF;
   SELECT count(*) INTO bad FROM jsonb_array_elements(p_previews) e
@@ -1937,12 +1980,20 @@ BEGIN
     SELECT u.wait_for_job_id INTO awaited FROM cc.device_update_jobs u WHERE u.job_id=job.job_id;
     waiting:=awaited IS NOT NULL AND NOT EXISTS(SELECT 1 FROM cc.jobs w WHERE w.job_id=awaited AND
       w.finished_at IS NOT NULL);
-    IF running OR p_held THEN
+    IF waiting THEN
+      -- The unfinished dependency decides before the hold flag: a candidate that still waits keeps the
+      -- queue and never takes the write slot, the dispatch, or the held label (design section 3, "The
+      -- wait"; review round 1, R5).
+      IF job.status<>'queued' THEN
+        UPDATE cc.jobs SET status='queued' WHERE job_id=job.job_id;
+        PERFORM cc.record_job_change(job.job_id,true);
+      END IF;
+    ELSIF running OR p_held THEN
       IF job.status<>label THEN
         UPDATE cc.jobs SET status=label WHERE job_id=job.job_id;
         PERFORM cc.record_job_change(job.job_id,true);
       END IF;
-    ELSIF admitted IS NULL AND NOT waiting THEN
+    ELSIF admitted IS NULL THEN
       -- S1: the detail row locks after the validation. The clock reads again after the header, connection, and
       -- detail waits, so a long wait never consumes the start window (round 2, round 3).
       PERFORM 1 FROM cc.device_update_jobs u WHERE u.job_id=job.job_id FOR UPDATE;
@@ -4425,7 +4476,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.read_device_update_preview_manifest_page(uuid,integer,text,uuid,integer),
   cc.cancel_device_import_plan(uuid,integer,text,uuid,uuid,integer),
   cc.lock_device_import_plan(uuid,integer,text,uuid,uuid,integer),
-  cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb),
+  cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb,jsonb),
   cc.link_device_import_jobs(uuid,integer,text,uuid,uuid,jsonb,jsonb,uuid),
   cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
   cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid,text),

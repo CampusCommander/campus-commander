@@ -306,7 +306,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.read_device_update_preview_manifest_page(uuid,integer,text,uuid,integer),
         cc.cancel_device_import_plan(uuid,integer,text,uuid,uuid,integer),
         cc.lock_device_import_plan(uuid,integer,text,uuid,uuid,integer),
-        cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb),
+        cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb,jsonb),
         cc.link_device_import_jobs(uuid,integer,text,uuid,uuid,jsonb,jsonb,uuid),
         cc.read_device_update_preview_manifest(uuid,integer,text,uuid),
         cc.confirm_device_update_preview(uuid,integer,text,uuid,text,text,uuid,text),
