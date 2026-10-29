@@ -309,7 +309,9 @@ export class ManifestDigest {
       if (this.lastDeviceId !== null && target.deviceId < this.lastDeviceId)
         throw new Error('The digest pages arrive out of device ID order.');
       this.lastDeviceId = target.deviceId;
-      this.hash.update(`${this.count === 0 ? '' : ','}${canonicalTarget(target)}`);
+      this.hash.update(
+        `${this.count === 0 ? '' : ','}${canonicalTarget(target)}`,
+      );
       this.count += 1;
     }
     return this;
@@ -317,10 +319,7 @@ export class ManifestDigest {
 
   /** The digest of every target that the pages held. A second call answers the same value. */
   digest(): string {
-    this.value ??= this.hash
-      .copy()
-      .update(']}')
-      .digest('hex');
+    this.value ??= this.hash.copy().update(']}').digest('hex');
     return this.value;
   }
 }
@@ -349,9 +348,7 @@ function canonicalTarget(target: PreviewTarget): string {
  * text through `ManifestDigest`, one page at a time.
  */
 export function manifestDigest(targets: readonly PreviewTarget[]): string {
-  return new ManifestDigest()
-    .add([...targets].sort(byDeviceId))
-    .digest();
+  return new ManifestDigest().add([...targets].sort(byDeviceId)).digest();
 }
 
 /** The frozen targets, as the preview function freezes them. */

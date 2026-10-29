@@ -116,7 +116,10 @@ export interface ImportsStorage {
     attemptId: string;
   }): Promise<unknown>;
   /** Stage one manifest that the caller writes while it reads (design section 7). */
-  storeJsonStream(source: AsyncIterable<Buffer>, maxBytes: number): Promise<string>;
+  storeJsonStream(
+    source: AsyncIterable<Buffer>,
+    maxBytes: number,
+  ): Promise<string>;
 }
 export interface ImportsOrchestration {
   startDeviceImport(input: {
@@ -349,7 +352,9 @@ export async function importPlanAnswer(
     const row = (await database.connection.query(planPersonSql, [changedById]))
       .rows[0];
     if (!row)
-      throw new Error(`The plan names no application principal ${changedById}.`);
+      throw new Error(
+        `The plan names no application principal ${changedById}.`,
+      );
     changedBy = {
       id: String(row['id']),
       displayName: String(row['display_name']),
@@ -897,7 +902,11 @@ export class DeviceImports {
     switch (String(result['outcome'])) {
       case 'cancelled':
         return deviceImportPlanCancelAnswerSchema.parse({
-          plan: await importPlanAnswer(this.database, this.clock, result['plan']),
+          plan: await importPlanAnswer(
+            this.database,
+            this.clock,
+            result['plan'],
+          ),
         });
       case 'not-found':
         throw new NotFoundException({ reason: 'job-not-found' });
@@ -908,12 +917,20 @@ export class DeviceImports {
       case 'conflict':
         throw new ConflictException({
           reason: 'plan-conflict',
-          plan: await importPlanAnswer(this.database, this.clock, result['plan']),
+          plan: await importPlanAnswer(
+            this.database,
+            this.clock,
+            result['plan'],
+          ),
         });
       case 'expired':
         throw new GoneException({
           reason: 'plan-expired',
-          plan: await importPlanAnswer(this.database, this.clock, result['plan']),
+          plan: await importPlanAnswer(
+            this.database,
+            this.clock,
+            result['plan'],
+          ),
         });
       default:
         throw new Error(

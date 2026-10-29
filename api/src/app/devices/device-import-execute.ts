@@ -161,7 +161,10 @@ export interface ExecuteDatabase {
   transaction<T>(run: (client: QueryClient) => Promise<T>): Promise<T>;
 }
 export interface ExecuteStorage {
-  storeJsonStream(source: AsyncIterable<Buffer>, maxBytes: number): Promise<string>;
+  storeJsonStream(
+    source: AsyncIterable<Buffer>,
+    maxBytes: number,
+  ): Promise<string>;
 }
 export interface ExecuteAdmission {
   admit(customerId: string): Promise<boolean>;
@@ -272,7 +275,9 @@ export function planPage(rows: readonly Record<string, unknown>[]): PageSplit {
       const seen = new Set<string>();
       const edits = fieldRows
         .slice()
-        .sort((left, right) => Number(left['ordinal']) - Number(right['ordinal']))
+        .sort(
+          (left, right) => Number(left['ordinal']) - Number(right['ordinal']),
+        )
         .filter((row) => {
           const field = String(row['field']);
           if (seen.has(field)) return false;
@@ -283,7 +288,9 @@ export function planPage(rows: readonly Record<string, unknown>[]): PageSplit {
           deviceId,
           field: row['field'] as PreviewTarget['fields'][number]['field'],
           mode: row['mode'] as 'replace' | 'clear' | 'move',
-          ...(row['mode'] === 'clear' ? {} : { value: String(row['new_value']) }),
+          ...(row['mode'] === 'clear'
+            ? {}
+            : { value: String(row['new_value']) }),
           baselineValue: textOrNull(row['current_value']),
         }));
       const target = editPreviewTargets([device], edits)[0] as PreviewTarget;
@@ -301,9 +308,7 @@ export function planPage(rows: readonly Record<string, unknown>[]): PageSplit {
         continue;
       }
       for (const row of fieldRows) {
-        const field = target.fields.find(
-          (one) => one.field === row['field'],
-        );
+        const field = target.fields.find((one) => one.field === row['field']);
         if (!field || field.disposition === 'unchanged')
           split.dispositions.push({
             ordinal: Number(row['ordinal']),
@@ -334,7 +339,10 @@ export function planPage(rows: readonly Record<string, unknown>[]): PageSplit {
 }
 
 /** The status action and reason of one preview, as its key. */
-function previewKey(action: PreviewAction, reason: DeprovisionReason | null): string {
+function previewKey(
+  action: PreviewAction,
+  reason: DeprovisionReason | null,
+): string {
   return `${action}\u0000${reason ?? ''}`;
 }
 
@@ -462,22 +470,20 @@ export class DeviceImportExecute {
     const jobId = String(job['job_id']);
     // Step 2: a plan with a Deprovision needs the typed phrase, trimmed and compared exactly.
     if (this.needsPhrase(await client.query(phraseSql, [jobId]))) {
-      if ((input.typedPhrase ?? '').trim() !== DEVICE_ACTION_PHRASES.deprovision)
+      if (
+        (input.typedPhrase ?? '').trim() !== DEVICE_ACTION_PHRASES.deprovision
+      )
         throw new UnprocessableEntityException({ reason: 'phrase-mismatch' });
     }
     // Step 3: the plan lock. It takes the global access lock, the IMP header, and the detail row.
-    const locked = await this.call<Record<string, unknown>>(
-      client,
-      lockSql,
-      [
-        actor,
-        session.identity.permissionVersion,
-        current.customerId,
-        jobId,
-        input.planId,
-        input.planRevision,
-      ],
-    );
+    const locked = await this.call<Record<string, unknown>>(client, lockSql, [
+      actor,
+      session.identity.permissionVersion,
+      current.customerId,
+      jobId,
+      input.planId,
+      input.planRevision,
+    ]);
     const outcome = String(locked['outcome']);
     if (outcome === 'executed')
       return {
@@ -555,7 +561,9 @@ export class DeviceImportExecute {
     if (outcome === 'not-found')
       throw new NotFoundException({ reason: 'job-not-found' });
     if (outcome === 'forbidden')
-      throw new ForbiddenException('This action requires additional permission.');
+      throw new ForbiddenException(
+        'This action requires additional permission.',
+      );
     if (outcome === 'conflict')
       throw new ConflictException({
         reason: 'plan-conflict',
@@ -595,7 +603,9 @@ export class DeviceImportExecute {
     );
     return stored.map((receipt) => {
       const action = actions.get(String(receipt['jobId']));
-      const jobAction = action ? JOB_ACTION[action as PreviewAction] : undefined;
+      const jobAction = action
+        ? JOB_ACTION[action as PreviewAction]
+        : undefined;
       if (!jobAction)
         throw new Error(`The receipt names no job action for ${action}.`);
       return deviceImportJobReceiptSchema.parse({
@@ -659,7 +669,9 @@ export class DeviceImportExecute {
         JSON.stringify(dispositions[index] ?? []),
       ]);
       if (String(result['outcome']) !== 'marked')
-        throw new Error(`The plan marks returned ${String(result['outcome'])}.`);
+        throw new Error(
+          `The plan marks returned ${String(result['outcome'])}.`,
+        );
     }
   }
 
@@ -760,7 +772,8 @@ export class DeviceImportExecute {
       PREVIEW_MINUTES,
       run.reason,
     ]);
-    if (String(opened['outcome']) !== 'opened') deviceWriteFunctionError(opened);
+    if (String(opened['outcome']) !== 'opened')
+      deviceWriteFunctionError(opened);
     const preview = opened['preview'] as Record<string, unknown>;
     run.previewId = String(preview['preview_id']);
   }
@@ -808,7 +821,8 @@ export class DeviceImportExecute {
       previewId,
       digest,
     ]);
-    if (String(sealed['outcome']) !== 'sealed') deviceWriteFunctionError(sealed);
+    if (String(sealed['outcome']) !== 'sealed')
+      deviceWriteFunctionError(sealed);
     // A Deprovision preview receives the phrase of its action, so the confirm checks it again. The
     // step 2 gate already read it, and a plan without a Deprovision sends none (design section 7).
     const phrase =
@@ -853,27 +867,23 @@ export class DeviceImportExecute {
   ): AsyncIterable<Buffer> {
     const actor = session.identity.id;
     const preview = { ...manifestPreview(sealed), manifestDigest: digest };
-    yield Buffer.from(
-      `{"preview":${JSON.stringify(preview)},"targets":[`,
-    );
+    yield Buffer.from(`{"preview":${JSON.stringify(preview)},"targets":[`);
     let after: number | null = null;
     let first = true;
     for (;;) {
       const page: Record<string, unknown> = await this.call<
         Record<string, unknown>
-      >(
-        client,
-        manifestPageSql,
-        [
-          actor,
-          session.identity.permissionVersion,
-          String(sealed['customer_id']),
-          sealed['preview_id'],
-          after,
-        ],
-      );
+      >(client, manifestPageSql, [
+        actor,
+        session.identity.permissionVersion,
+        String(sealed['customer_id']),
+        sealed['preview_id'],
+        after,
+      ]);
       if (String(page['outcome']) !== 'page')
-        throw new Error(`The preview manifest returned ${String(page['outcome'])}.`);
+        throw new Error(
+          `The preview manifest returned ${String(page['outcome'])}.`,
+        );
       for (const target of page['targets'] as unknown[]) {
         yield Buffer.from(`${first ? '' : ','}${JSON.stringify(target)}`);
         first = false;

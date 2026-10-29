@@ -203,9 +203,7 @@ function statusChange(ordinal, deviceId, action, overrides = {}) {
     mode: null,
     status_action: action,
     deprovision_reason:
-      action === 'deprovision'
-        ? 'DEPROVISION_REASON_RETIRING_DEVICE'
-        : null,
+      action === 'deprovision' ? 'DEPROVISION_REASON_RETIRING_DEVICE' : null,
     current_value: 'ACTIVE',
     new_value: action === 'disable' ? 'DISABLED' : 'ACTIVE',
     not_run_reason: null,
@@ -377,8 +375,7 @@ function previewRow(preview) {
 
 /** The preview that the open call creates, as `cc.open_device_update_preview` creates it. */
 function openAnswer(values) {
-  const [, version, customerId, generation, action, , minutes, reason] =
-    values;
+  const [, version, customerId, generation, action, , minutes, reason] = values;
   const preview = {
     preview_id: randomUUID(),
     display_id: `PV-${String(previews.size + 1).padStart(3, '0')}`,
@@ -456,8 +453,7 @@ function manifestAnswer(values) {
         disposition: field.disposition,
       })),
     })),
-    nextOrdinal:
-      page.length === 250 ? page[page.length - 1].ordinal : null,
+    nextOrdinal: page.length === 250 ? page[page.length - 1].ordinal : null,
     total: preview.targets.length,
     manifestDigest: preview.manifest_digest,
   };
@@ -468,7 +464,11 @@ function confirmAnswer(values) {
   const [, , customerId, previewId, digest, artifactId, , phrase] = values;
   const preview = previews.get(previewId);
   assert.ok(preview, 'A confirmation names one preview of this Execute.');
-  assert.equal(digest, preview.manifest_digest, 'The seal digest is confirmed.');
+  assert.equal(
+    digest,
+    preview.manifest_digest,
+    'The seal digest is confirmed.',
+  );
   assert.ok(artifactId, 'The confirmation names a stored manifest.');
   assert.equal(
     phrase,
@@ -584,7 +584,12 @@ function jobAnswer(customerId, displayId, width) {
   return {
     rows: [
       width === 'wide'
-        ? { ...row, status: 'completed', visible: true, status_permissions: recorded }
+        ? {
+            ...row,
+            status: 'completed',
+            visible: true,
+            status_permissions: recorded,
+          }
         : row,
     ],
   };
@@ -628,8 +633,7 @@ before(async () => {
 
   const answer = (text, values) => {
     if (text.includes('cc.lock_device_import_plan')) {
-      if (lockResult.outcome === 'locked')
-        lockResult = { ...lockResult, plan };
+      if (lockResult.outcome === 'locked') lockResult = { ...lockResult, plan };
       return { rows: [{ result: lockResult }] };
     }
     if (text.includes('cc.mark_device_import_changes'))
@@ -873,26 +877,40 @@ test('an execute fills one edit preview, links each change, and answers its rece
   assert.equal(answer.body.plan.revision, 2);
   assert.equal(answer.body.conflicts, 0);
   assert.equal(answer.body.excluded, 0);
-  assert.deepEqual(answer.body.receipts.map((one) => one.action), [
-    'update-device-annotations',
-  ]);
+  assert.deepEqual(
+    answer.body.receipts.map((one) => one.action),
+    ['update-device-annotations'],
+  );
   assert.equal(answer.body.receipts[0].deviceCount, 1);
   assert.equal(answer.body.receipts[0].status, 'accepted');
   assert.equal(createdJobs.length, 1, 'One Execute creates one job here.');
   assert.equal(planState, 'executed');
   assert.equal(changes[0].linked_job_id, createdJobs[0].jobId);
-  assert.deepEqual(transactions, ['commit'], 'Every step runs in one transaction.');
-  assert.deepEqual(admissions, [customer], 'The handler admits after the commit.');
+  assert.deepEqual(
+    transactions,
+    ['commit'],
+    'Every step runs in one transaction.',
+  );
+  assert.deepEqual(
+    admissions,
+    [customer],
+    'The handler admits after the commit.',
+  );
   // The steps of design section 7 run in order, and the link comes after every confirmation.
   assert.deepEqual(
     statements.map((statement) => {
       if (statement.text.includes('cc.lock_device_import_plan')) return 'lock';
-      if (statement.text.includes('cc.mark_device_import_changes')) return 'mark';
-      if (statement.text.includes('cc.open_device_update_preview')) return 'open';
+      if (statement.text.includes('cc.mark_device_import_changes'))
+        return 'mark';
+      if (statement.text.includes('cc.open_device_update_preview'))
+        return 'open';
       if (statement.text.includes('cc.add_device_update_preview_targets'))
         return 'add';
-      if (statement.text.includes('cc.seal_device_update_preview')) return 'seal';
-      if (statement.text.includes('cc.read_device_update_preview_manifest_page'))
+      if (statement.text.includes('cc.seal_device_update_preview'))
+        return 'seal';
+      if (
+        statement.text.includes('cc.read_device_update_preview_manifest_page')
+      )
         return 'manifest';
       if (statement.text.includes('cc.confirm_device_update_preview'))
         return 'confirm';
@@ -902,7 +920,8 @@ test('an execute fills one edit preview, links each change, and answers its rece
         statement.text.includes('WHERE j.customer_id=$1 AND j.display_id=$2')
       )
         return 'job';
-      if (statement.text.includes("status_action='deprovision'")) return 'phrase';
+      if (statement.text.includes("status_action='deprovision'"))
+        return 'phrase';
       if (statement.text.includes('FROM page p')) return 'page';
       if (statement.text.includes('AS conflicts')) return 'counts';
       if (statement.text.includes('FROM cc.application_principals p WHERE'))
@@ -939,7 +958,10 @@ test('an execute fills one edit preview, links each change, and answers its rece
   const document = JSON.parse(artifacts[0].toString('utf8'));
   assert.equal(document.preview.previewId, [...previews.keys()][0]);
   assert.equal(document.preview.action, 'annotated-location');
-  assert.equal(document.preview.manifestDigest, sealedDigests.values().next().value);
+  assert.equal(
+    document.preview.manifestDigest,
+    sealedDigests.values().next().value,
+  );
   assert.equal(document.preview.eligible, 1);
   assert.equal(document.targets.length, 1);
   assert.equal(document.targets[0].device_id, 'dev-a');
@@ -1031,7 +1053,11 @@ test('one conflict device never reaches a job, and the split lands first', async
   ]);
   const answer = await execute();
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
-  assert.equal(answer.body.conflicts, 1, 'One change reads changed-after-validation.');
+  assert.equal(
+    answer.body.conflicts,
+    1,
+    'One change reads changed-after-validation.',
+  );
   assert.equal(answer.body.excluded, 0);
   const conflict = changes.find((row) => row.device_id === 'dev-b');
   assert.equal(conflict.not_run_reason, 'changed-after-validation');
@@ -1042,10 +1068,7 @@ test('one conflict device never reaches a job, and the split lands first', async
   // The preview holds the one eligible device, and no conflict device reaches a job.
   const targets = [...previews.values()].flatMap((preview) => preview.targets);
   assert.deepEqual(ids(targets.map((target) => target.device_id)), ['dev-a']);
-  assert.deepEqual(
-    ids(createdJobs.map((job) => job.displayId)),
-    ['UPD-001'],
-  );
+  assert.deepEqual(ids(createdJobs.map((job) => job.displayId)), ['UPD-001']);
   assert.equal(createdJobs[0].deviceCount, 1);
   const marked = statementsOf('cc.mark_device_import_changes');
   assert.equal(marked.length, 1, 'One page marks once.');
@@ -1056,9 +1079,7 @@ test('one conflict device never reaches a job, and the split lands first', async
   );
   assert.deepEqual(
     jsonb(marked[0].values[6]),
-    [
-      { ordinal: 2, reason: 'no-change-needed' },
-    ],
+    [{ ordinal: 2, reason: 'no-change-needed' }],
     'The mark names the reason of each change that does not run.',
   );
 });
@@ -1085,20 +1106,31 @@ test('a removed device and an ineligible status change never reach a job', async
   );
   const removed = changes.filter((row) => row.device_id === 'dev-b');
   for (const row of removed)
-    assert.equal(row.not_run_reason, 'removed', 'A removed device does not run.');
+    assert.equal(
+      row.not_run_reason,
+      'removed',
+      'A removed device does not run.',
+    );
   const ineligible = changes.find((row) => row.device_id === 'dev-c');
   assert.equal(ineligible.not_run_reason, 'device-disabled');
   assert.equal(ineligible.linked_job_id, null);
   assert.equal(answer.body.receipts.length, 1, 'Only the edit job exists.');
   assert.deepEqual(
-    ids([...previews.values()].flatMap((preview) => preview.targets.map((target) => target.device_id))),
+    ids(
+      [...previews.values()].flatMap((preview) =>
+        preview.targets.map((target) => target.device_id),
+      ),
+    ),
     ['dev-a'],
   );
 });
 
 test('a plan of 260 devices fills its preview in pages of 250 and keeps the built digest', async () => {
   reset();
-  const names = Array.from({ length: 260 }, (_, index) => `dev-${String(index).padStart(3, '0')}`);
+  const names = Array.from(
+    { length: 260 },
+    (_, index) => `dev-${String(index).padStart(3, '0')}`,
+  );
   changes = names.map((deviceId, index) => fieldChange(index, deviceId));
   devices = new Map(names.map((deviceId) => [deviceId, deviceRow(deviceId)]));
   const answer = await execute();
@@ -1147,7 +1179,11 @@ test('a Deprovision plan needs the typed phrase, trimmed and compared exactly', 
   const wrong = await execute();
   assert.equal(wrong.status, 422, JSON.stringify(wrong.body));
   assert.deepEqual(wrong.body, { reason: 'phrase-mismatch' });
-  assert.equal(statementsOf('cc.lock_device_import_plan').length, 0, 'The phrase comes first.');
+  assert.equal(
+    statementsOf('cc.lock_device_import_plan').length,
+    0,
+    'The phrase comes first.',
+  );
   assert.equal(createdJobs.length, 0);
 
   const partial = await execute({ typedPhrase: 'DEPROVISIO' });
@@ -1173,7 +1209,11 @@ test('a plan without a Deprovision ignores a typed phrase', async () => {
   reset();
   const answer = await execute({ typedPhrase: 'DEPROVISION' });
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
-  assert.equal(confirmations[0].phrase, null, 'Another action sends no phrase.');
+  assert.equal(
+    confirmations[0].phrase,
+    null,
+    'Another action sends no phrase.',
+  );
 });
 
 test('a status plan fills one preview per action and reason, and every job waits', async () => {
@@ -1320,7 +1360,9 @@ test('a cancelled plan answers 409 and no plan answers the same conflict', async
 test('a plan with no change left answers 409 nothing-to-run and stays open', async () => {
   reset();
   changes = [fieldChange(0, 'dev-a')];
-  devices = new Map([['dev-a', deviceRow('dev-a', { removed_at: at(-HOUR).toISOString() })]]);
+  devices = new Map([
+    ['dev-a', deviceRow('dev-a', { removed_at: at(-HOUR).toISOString() })],
+  ]);
   const answer = await execute();
   assert.equal(answer.status, 409, JSON.stringify(answer.body));
   assert.deepEqual(answer.body, { reason: 'nothing-to-run' });
@@ -1351,7 +1393,12 @@ test('a refused link rolls back every job of the plan', async () => {
 
 test('the route rechecks each status permission that the plan recorded', async () => {
   reset({ recordedStatuses: ['disable', 'deprovision'] });
-  allowed = new Set(['devices:read', 'devices:write', 'devices:bulk-actions', 'devices:status']);
+  allowed = new Set([
+    'devices:read',
+    'devices:write',
+    'devices:bulk-actions',
+    'devices:status',
+  ]);
   const answer = await execute({ typedPhrase: 'DEPROVISION' });
   assert.equal(answer.status, 403, JSON.stringify(answer.body));
   assert.deepEqual(checks, [
@@ -1361,7 +1408,11 @@ test('the route rechecks each status permission that the plan recorded', async (
     'devices:status',
     'devices:deprovision',
   ]);
-  assert.equal(statementsOf('cc.lock_device_import_plan').length, 0, 'A refusal never locks.');
+  assert.equal(
+    statementsOf('cc.lock_device_import_plan').length,
+    0,
+    'A refusal never locks.',
+  );
   assert.equal(createdJobs.length, 0);
 });
 
@@ -1376,10 +1427,11 @@ test('the route asks for the three import actions before it reads the plan', asy
 test('another customer reads 404 and Execute accepts the requester only', async () => {
   reset();
   devices = new Map();
-  const foreign = await post(
-    '/api/devices/imports/EXP-001/execute',
-    { planId, planRevision: 1, typedPhrase: null },
-  );
+  const foreign = await post('/api/devices/imports/EXP-001/execute', {
+    planId,
+    planRevision: 1,
+    typedPhrase: null,
+  });
   assert.equal(foreign.status, 404, JSON.stringify(foreign.body));
 
   jobVisible = false;
@@ -1404,7 +1456,11 @@ test('an invalid execute body answers 400 before any person check', async () => 
     { planId, planRevision: 1, typedPhrase: null, extra: true },
   ]) {
     const answer = await post(executePath, body);
-    assert.equal(answer.status, 400, `${JSON.stringify(body)}: ${JSON.stringify(answer.body)}`);
+    assert.equal(
+      answer.status,
+      400,
+      `${JSON.stringify(body)}: ${JSON.stringify(answer.body)}`,
+    );
   }
   assert.deepEqual(checks, []);
   assert.equal(statements.length, 0);
@@ -1412,22 +1468,36 @@ test('an invalid execute body answers 400 before any person check', async () => 
 
 test('no call of Execute passes more than one page', async () => {
   reset();
-  const names = Array.from({ length: 600 }, (_, index) => `dev-${String(index).padStart(3, '0')}`);
+  const names = Array.from(
+    { length: 600 },
+    (_, index) => `dev-${String(index).padStart(3, '0')}`,
+  );
   changes = names.map((deviceId, index) => fieldChange(index, deviceId));
   devices = new Map(names.map((deviceId) => [deviceId, deviceRow(deviceId)]));
   const answer = await execute();
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   for (const page of addedPages)
-    assert.ok(page.page.length <= 250, `An add call carries ${page.page.length} targets.`);
+    assert.ok(
+      page.page.length <= 250,
+      `An add call carries ${page.page.length} targets.`,
+    );
   for (const statement of statementsOf('cc.mark_device_import_changes')) {
-    assert.ok(statement.values[5].length <= 250, 'A mark call names 250 devices.');
-    assert.ok(statement.values[6].length <= 250, 'A mark call names 250 reasons.');
+    assert.ok(
+      statement.values[5].length <= 250,
+      'A mark call names 250 devices.',
+    );
+    assert.ok(
+      statement.values[6].length <= 250,
+      'A mark call names 250 reasons.',
+    );
   }
   const reads = statementsOf('cc.read_device_update_preview_manifest_page');
   assert.ok(reads.length >= 3, 'The manifest arrives in pages.');
   const link = statementsOf('cc.link_device_import_jobs')[0];
-  assert.ok(link.values[5].length <= 7, 'A link call names seven previews at most.');
+  assert.ok(
+    link.values[5].length <= 7,
+    'A link call names seven previews at most.',
+  );
   const document = JSON.parse(artifacts[0].toString('utf8'));
   assert.equal(document.targets.length, 600);
 });
-
