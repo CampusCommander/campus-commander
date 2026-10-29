@@ -637,6 +637,7 @@ export class Jobs {
           e.purpose AS export_purpose,
           e.file_name, e.file_size_bytes, e.file_row_count, e.file_column_count, e.file_expires_at,
           i.mode AS import_mode, i.source_name, i.source_size_bytes, i.rows_read, i.candidate_rows,
+          i.proposed, i.rejected,
           i.refusal, i.refusal_text, i.plan_id, i.plan_revision, i.plan_state, i.plan_expires_at,
           i.plan_changed_by, i.plan_changed_at, pc.display_name AS plan_changed_by_name,
           impj.display_id AS import_display_id, waitj.display_id AS waits_for_display_id,

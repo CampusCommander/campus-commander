@@ -101,6 +101,53 @@ function database(routes) {
   };
 }
 
+/** The columns `j.*` expands in a job statement. */
+const jobColumns = new Set([
+  'job_id',
+  'display_id',
+  'customer_id',
+  'kind',
+  'scope_kind',
+  'status',
+  'requested_by',
+  'generation',
+  'target_count',
+  'target_org_unit_paths',
+  'succeeded',
+  'failed',
+  'unknown',
+  'skipped',
+  'expired',
+  'cancelled',
+  'cancel_requested_at',
+  'cancel_requested_by',
+  'phase',
+  'phase_done',
+  'phase_total',
+  'failure',
+  'revision',
+  'changed_at',
+  'correlation_id',
+  'created_at',
+  'admitted_at',
+  'started_at',
+  'finished_at',
+]);
+
+/**
+ * One header row as PostgreSQL returns it. Every column of `j.*` arrives. Any other column arrives
+ * only when the statement names it. A database double that answers every column whatever the
+ * statement selects hides a missing projection (review R1).
+ */
+function headerRow(text, stored) {
+  return Object.fromEntries(
+    Object.entries(stored).filter(
+      ([column]) =>
+        jobColumns.has(column) || new RegExp(`\\b${column}\\b`).test(text),
+    ),
+  );
+}
+
 test('a refresh summary reads the REF- action, its requester, and its counters', () => {
   const summary = jobSummary(jobRow());
   assert.equal(summary.action, 'refresh-inventory');
@@ -751,6 +798,63 @@ test('the detail carries the source and the open plan of a validation job', asyn
     false,
     'An open plan reads no execution counts.',
   );
+});
+
+test('the import detail and cancel answer carry both stored summary counts', async () => {
+  // The counts are nonzero and differ, so a missing projection reads 0 in place of each one.
+  const stored = jobRow({
+    kind: 'device-import',
+    display_id: 'IMP-008',
+    scope_kind: 'rows',
+    status: 'completed',
+    target_count: 48,
+    succeeded: 39,
+    failed: 2,
+    phase: 'report',
+    phase_done: 11,
+    phase_total: 11,
+    import_mode: 'sync-changes',
+    source_name: 'devices-for-editing-EXP-001.csv',
+    source_size_bytes: 7987,
+    rows_read: 48,
+    candidate_rows: 11,
+    refusal: null,
+    refusal_text: null,
+    plan_id: null,
+    plan_revision: null,
+    plan_state: null,
+    plan_expires_at: null,
+    plan_changed_by: null,
+    plan_changed_at: null,
+    proposed: 7,
+    rejected: 2,
+  });
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      (values, text) => [headerRow(text, stored)],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+    ['cc.request_job_cancel', [{ result: { outcome: 'requested' } }]],
+  ]);
+  const jobs = new Jobs(db);
+  // The detail route of design section 1.
+  const detail = await jobs.detail(session(), 'C0123456', 'IMP-008');
+  assert.equal(detail.importSummary.proposed, 7);
+  assert.equal(detail.importSummary.rejected, 2);
+  // The cancel route builds its summary from the same header.
+  const cancelled = await jobs.cancel(
+    session(),
+    'C0123456',
+    'IMP-008',
+    '55555555-5555-4555-8555-555555555555',
+  );
+  assert.equal(cancelled.importSummary.proposed, 7);
+  assert.equal(cancelled.importSummary.rejected, 2);
+  const headers = db.calls.filter(([text]) =>
+    text.includes('LEFT JOIN cc.device_update_jobs u'),
+  );
+  assert.equal(headers.length, 2, 'Detail and cancel each read one header.');
 });
 
 test('the detail of an executed plan carries its jobs and the counts of state 17b', async () => {
