@@ -1416,6 +1416,42 @@ it('shows the counter line for a job with no samples', () => {
   expect(text(element)).toContain('Latest activity');
 });
 
+it('flips an open export file to Expired at its deadline', async () => {
+  const exportJob = job({
+    displayId: 'EXP-001',
+    action: 'export-devices',
+    status: 'completed',
+    scope: { kind: 'devices', deviceCount: 6 },
+    phase: null,
+    exportSummary: { purpose: 'edit' },
+    exportFile: {
+      name: 'devices-for-editing-EXP-001.csv',
+      sizeBytes: 7987,
+      rows: 6,
+      columns: 10,
+      expiresAt: new Date(Date.now() + 300).toISOString(),
+    },
+    changes: null,
+    finishedAt: new Date().toISOString(),
+  });
+  const { fixture, element } = setup({ job: exportJob, operations: [] });
+  expect(text(element)).toContain('Ready');
+  expect(
+    [...element.querySelectorAll('a')].some(
+      (candidate) => candidate.textContent?.trim() === 'Download CSV',
+    ),
+  ).toBe(true);
+  // The deadline passes without a job event or a manual read.
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  fixture.detectChanges();
+  expect(text(element)).toContain('Expired');
+  expect(text(element)).toContain('The file expired');
+  const download = [...element.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === 'Download CSV',
+  );
+  expect(download?.disabled).toBe(true);
+});
+
 it('shows a refresh job with counters and Latest activity only', () => {
   const refresh = job({
     displayId: 'REF-004',

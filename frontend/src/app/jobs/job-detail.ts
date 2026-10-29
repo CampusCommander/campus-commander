@@ -17,6 +17,7 @@ import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import type { JobOperation } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
+import { expiryClock } from '../expiry-clock';
 import { devicesReadable } from '../devices/devices.store';
 import {
   exportExpiredText,
@@ -79,6 +80,10 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   /** The job and person whose data the open panel belongs to. */
   private shownJobId: string | null = null;
   private shownIdentity: string | null = null;
+  /** The clock that flips a ready file to Expired at its deadline (UI-08). */
+  private readonly now = expiryClock(
+    () => this.store.job()?.exportFile?.expiresAt ?? null,
+  );
 
   constructor() {
     // Another job or another person must not show the previous failure panel.
@@ -193,7 +198,7 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     if (!job) return null;
     const file = job.exportFile;
     if (!file) return null;
-    const expired = Date.parse(file.expiresAt) <= Date.now();
+    const expired = Date.parse(file.expiresAt) <= this.now();
     return {
       name: file.name,
       facts: exportFileFactList(file).join(' · '),

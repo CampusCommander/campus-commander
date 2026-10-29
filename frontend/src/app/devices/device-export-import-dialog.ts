@@ -22,6 +22,7 @@ import {
   exportRows,
   formatTimestamp,
 } from '../jobs/job-fields';
+import { expiryClock } from '../expiry-clock';
 import { DeviceExportImportStore } from './device-export-import.store';
 import { DeviceExportHelp } from './device-export-help';
 import {
@@ -80,6 +81,10 @@ const thousands = (value: number) => value.toLocaleString('en-US');
 })
 export class DeviceExportImportDialog {
   protected readonly store = inject(DeviceExportImportStore);
+  /** The clock that flips a ready file to Expired at its deadline (UI-08). */
+  private readonly now = expiryClock(
+    () => this.store.job()?.exportFile?.expiresAt ?? null,
+  );
   /** The grid that the selection belongs to, and its tab (design section 1). */
   readonly gridId = input<DeviceExportRequest['gridId']>('devices');
   readonly tabId = input.required<string>();
@@ -168,7 +173,7 @@ export class DeviceExportImportDialog {
   protected readonly file = computed(() => {
     const file = this.store.job()?.exportFile ?? null;
     if (!file) return null;
-    const expired = Date.parse(file.expiresAt) <= Date.now();
+    const expired = Date.parse(file.expiresAt) <= this.now();
     return {
       ...file,
       expired,

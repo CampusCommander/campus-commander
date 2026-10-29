@@ -278,6 +278,39 @@ describe('DeviceExportImportDialog', () => {
     ).toBe(true);
   });
 
+  it('expires an open ready file at its deadline', async () => {
+    const { store, render, panel, text } = setup(
+      exportDetail({
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        phase: null,
+        exportFile: {
+          name: 'devices-for-editing-EXP-001.csv',
+          sizeBytes: 7987,
+          rows: 48,
+          columns: 10,
+          expiresAt: new Date(Date.now() + 300).toISOString(),
+        },
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(text()).toContain('Ready');
+    expect(
+      panel()?.querySelector('.export-actions a[mat-flat-button]'),
+    ).not.toBeNull();
+    // The deadline passes without a job event or a manual read.
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await render();
+    expect(text()).toContain('Expired');
+    expect(panel()?.querySelector('.export-actions a[mat-flat-button]')).toBeNull();
+    expect(
+      panel()
+        ?.querySelector('.export-actions button[mat-flat-button]')
+        ?.hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
   it('docks the help pane and switches its topic', async () => {
     const { store, render, element, panel, text } = setup();
     store.openExport(48);
