@@ -484,7 +484,11 @@ test('a caller without devices:read receives the job feed alone when the sync re
   assert.deepEqual(auditEvents, []);
   // The Devices stream still refuses this caller, as its open rule decides today.
   assert.equal((await answer('/api/devices/events')).status, 403);
-  assert.equal(stream.ended, false, 'The refused device open leaves the stream open.');
+  assert.equal(
+    stream.ended,
+    false,
+    'The refused device open leaves the stream open.',
+  );
 
   // An entity event reaches no caller on this stream. The job event after it still arrives.
   fanout.publish(entityEventsChannel(CUSTOMER), entityBatch);
