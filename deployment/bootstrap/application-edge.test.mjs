@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { proxyApplication } from './application-edge.mjs';
+import { importUploadLimit, proxyApplication } from './application-edge.mjs';
 
 test('application routes require Phase 3 and exact methods and paths', async () => {
   const listen = (server) =>
@@ -160,6 +160,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/devices/events', 'api'],
       ['GET', '/api/devices/synthetic-device-1', 'api'],
       ['GET', '/api/devices/org-units', 'api'],
+      // A single device segment still reads as a device route, and only a POST to it streams.
+      ['GET', '/api/devices/imports', 'api'],
       ['GET', '/devices', 'frontend'],
       ['GET', '/devices/synthetic-device-1', 'frontend'],
       ['GET', '/api/jobs', 'api'],
@@ -195,6 +197,28 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', `/api/devices/status-changes/previews/${id}/confirm`, 'api'],
       ['GET', '/jobs', 'frontend'],
       ['GET', '/jobs/UPD-001', 'frontend'],
+      // The export and import paths of design section 1.
+      ['POST', '/api/devices/exports', 'api'],
+      ['GET', '/api/devices/exports/EXP-001/file', 'api'],
+      [
+        'POST',
+        '/api/devices/imports?mode=sync-all&name=devices-2026-10-29.csv',
+        'api',
+      ],
+      ['POST', '/api/devices/imports/IMP-001/revalidate', 'api'],
+      ['GET', '/api/devices/imports/IMP-001/report', 'api'],
+      ['GET', '/api/devices/imports/IMP-001/rejected', 'api'],
+      ['POST', '/api/devices/imports/IMP-001/execute', 'api'],
+      ['POST', '/api/devices/imports/IMP-001/cancel', 'api'],
+      // Job routes and job pages carry both file kinds.
+      ['GET', '/api/jobs/EXP-001', 'api'],
+      ['GET', '/api/jobs/EXP-001/operations', 'api'],
+      ['POST', '/api/jobs/EXP-001/cancel', 'api'],
+      ['GET', '/api/jobs/IMP-001', 'api'],
+      ['GET', '/api/jobs/IMP-001/operations', 'api'],
+      ['POST', '/api/jobs/IMP-001/cancel', 'api'],
+      ['GET', '/jobs/EXP-001', 'frontend'],
+      ['GET', '/jobs/IMP-001', 'frontend'],
     ];
     for (const [method, path, expected] of routes) {
       const response = await fetch(`${origin(edge)}${path}`, { method });
@@ -278,6 +302,23 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', `/api/devices/status-changes/previews/${id}/targets`, 405],
       ['GET', '/api/devices/status-changes/previews/not-a-uuid', 404],
       ['PUT', '/api/devices/commands/previews', 405],
+      // The file routes are reads, and the other new paths keep one method each.
+      ['POST', '/api/devices/exports/EXP-001/file', 405],
+      ['GET', '/api/devices/imports/IMP-001/execute', 405],
+      ['GET', '/api/devices/imports/IMP-001/cancel', 405],
+      ['GET', '/api/devices/imports/IMP-001/revalidate', 405],
+      ['POST', '/api/devices/imports/IMP-001/report', 405],
+      ['POST', '/api/devices/imports/IMP-001/rejected', 405],
+      // A file path names the job kind of its own route, so another kind answers 404.
+      ['GET', '/api/devices/exports/UPD-001/file', 404],
+      ['GET', '/api/devices/imports/UPD-001/report', 404],
+      ['POST', '/api/devices/imports/EXP-001/cancel', 404],
+      ['GET', '/api/devices/exports/EXP-001', 404],
+      ['POST', '/api/devices/imports/IMP-001', 404],
+      ['GET', '/api/devices/imports/IMP-1/report', 404],
+      ['POST', '/api/devices/imports/IMP-001/execute/extra', 404],
+      ['GET', '/api/jobs/EXP-1', 404],
+      ['GET', '/api/jobs/IMP-1/operations', 404],
     ]) {
       assert.equal(
         (await fetch(`${origin(edge)}${path}`, { method })).status,
@@ -353,6 +394,21 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         ).status,
         413,
         `${path} 4097 bytes`,
+      );
+    // Every import path but the upload keeps the 4,096-byte buffered cap.
+    for (const [size, status] of [
+      [4096, 200],
+      [4097, 413],
+    ])
+      assert.equal(
+        (
+          await fetch(
+            `${origin(edge)}/api/devices/imports/IMP-001/revalidate`,
+            { method: 'POST', body: 'x'.repeat(size) },
+          )
+        ).status,
+        status,
+        `revalidate ${size} bytes`,
       );
     phase = 2;
     for (const [method, path] of routes) {
@@ -458,6 +514,253 @@ test('the device event stream outlives the request timeout while pings flow', as
     );
   } finally {
     for (const server of [edge, frontend, api])
+      if (server) {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
+  }
+});
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait for a condition and fail with the message when it stays false. */
+async function until(condition, message, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await delay(10);
+  }
+  assert.fail(message);
+}
+
+/**
+ * Write a body of `bytes` bytes to the client request. The first `first` bytes arrive before the
+ * callback runs, so a test reads the upstream while the body is still open.
+ */
+async function writeStream(
+  request,
+  bytes,
+  { chunk = 65536, first = 0, between = async () => undefined },
+) {
+  const block = Buffer.alloc(chunk, 0x61);
+  const write = (size) =>
+    new Promise((resolve) => {
+      if (request.write(size === chunk ? block : block.subarray(0, size)))
+        resolve();
+      else request.once('drain', resolve);
+    });
+  let sent = 0;
+  const more = async (limit) => {
+    while (sent < limit) {
+      const size = Math.min(chunk, limit - sent);
+      sent += size;
+      await write(size);
+    }
+  };
+  await more(Math.min(first, bytes));
+  if (first > 0) await between();
+  await more(bytes);
+  request.end();
+}
+
+/** Post a body of `bytes` bytes to the edge and settle with its answer. */
+function streamPost(origin, path, bytes, options = {}) {
+  return new Promise((resolve) => {
+    const request = http.request(
+      `${origin}${path}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'text/csv', 'content-length': bytes },
+        agent: false,
+      },
+      (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode,
+            body: Buffer.concat(chunks).toString('utf8'),
+            headers: response.headers,
+          }),
+        );
+        response.on('aborted', () =>
+          resolve({ status: response.statusCode, aborted: true }),
+        );
+      },
+    );
+    request.on('error', (error) =>
+      resolve({ error: error.code ?? error.message }),
+    );
+    // The refused upload closes the connection under the writer.
+    writeStream(request, bytes, options).catch(() => undefined);
+  });
+}
+
+test(
+  'the import upload streams its body and answers 413 above 1 GiB',
+  { timeout: 180000 },
+  async () => {
+    const listen = (server) =>
+      new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const origin = (server) => `http://127.0.0.1:${server.address().port}`;
+    const received = [];
+    const api = http.createServer((request, response) => {
+      const entry = {
+        url: request.url,
+        headers: { ...request.headers },
+        size: 0,
+        complete: false,
+      };
+      received.push(entry);
+      request.on('data', (chunk) => (entry.size += chunk.length));
+      request.on('end', () => {
+        entry.complete = true;
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('api');
+      });
+    });
+    const frontend = http.createServer((request, response) =>
+      response.end('frontend'),
+    );
+    let edge;
+    try {
+      await listen(api);
+      await listen(frontend);
+      edge = http.createServer((request, response) =>
+        proxyApplication(
+          request,
+          response,
+          {
+            frontend: { url: new URL(origin(frontend)) },
+            api: { url: new URL(origin(api)) },
+          },
+          origin(edge),
+          3,
+        ),
+      );
+      await listen(edge);
+      const query = '?mode=sync-changes&name=devices-2026-10-29.csv';
+      // The accepted upload carries its query, and the API reads bytes before the body ends.
+      const accepted = await streamPost(
+        origin(edge),
+        `/api/devices/imports${query}`,
+        importUploadLimit,
+        {
+          first: 65536,
+          between: () =>
+            until(
+              () => received.at(-1)?.size > 0,
+              'The API received no byte before the upload ended.',
+            ),
+        },
+      );
+      assert.equal(accepted.status, 200);
+      const upload = received.at(-1);
+      assert.equal(upload.url, `/api/devices/imports${query}`);
+      assert.equal(upload.headers['content-type'], 'text/csv');
+      // The edge forwards the file as it arrives, so it never learns the length first.
+      assert.equal(upload.headers['content-length'], undefined);
+      assert.equal(upload.headers['transfer-encoding'], 'chunked');
+      assert.equal(upload.complete, true);
+      assert.equal(
+        upload.size,
+        importUploadLimit,
+        'The API received every byte of the accepted file.',
+      );
+      // One more byte than the cap answers 413, and the API gets no byte past the cap.
+      const refused = await streamPost(
+        origin(edge),
+        `/api/devices/imports${query}`,
+        importUploadLimit + 1,
+      );
+      assert.equal(refused.status, 413);
+      assert.equal(refused.body, 'The request exceeds the size limit.\n');
+      const partial = received.at(-1);
+      assert.ok(
+        partial.size <= importUploadLimit,
+        `The API received ${partial.size} bytes of the refused upload.`,
+      );
+      assert.equal(partial.complete, false);
+    } finally {
+      for (const server of [edge, api, frontend])
+        if (server) {
+          server.closeAllConnections();
+          await new Promise((resolve) => server.close(resolve));
+        }
+    }
+  },
+);
+
+test('the two file routes pass the attachment header and every other route drops it', async () => {
+  const listen = (server) =>
+    new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = (server) => `http://127.0.0.1:${server.address().port}`;
+  const attachment = 'attachment; filename="devices-2026-10-29.csv"';
+  const api = http.createServer((request, response) => {
+    response.writeHead(200, {
+      'content-type': 'text/csv',
+      'content-disposition': attachment,
+    });
+    response.end('api');
+  });
+  const frontend = http.createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end('frontend');
+  });
+  let edge;
+  try {
+    await listen(api);
+    await listen(frontend);
+    edge = http.createServer((request, response) =>
+      proxyApplication(
+        request,
+        response,
+        {
+          frontend: { url: new URL(origin(frontend)) },
+          api: { url: new URL(origin(api)) },
+        },
+        origin(edge),
+        3,
+      ),
+    );
+    await listen(edge);
+    for (const path of [
+      '/api/devices/exports/EXP-001/file',
+      '/api/devices/imports/IMP-001/rejected',
+    ]) {
+      const response = await fetch(`${origin(edge)}${path}`);
+      assert.equal(response.status, 200, path);
+      assert.equal(
+        response.headers.get('content-disposition'),
+        attachment,
+        path,
+      );
+    }
+    for (const [method, path] of [
+      ['GET', '/api/jobs'],
+      ['GET', '/api/devices/imports/IMP-001/report'],
+      ['GET', '/api/jobs/IMP-001'],
+      ['POST', '/api/devices/exports'],
+      ['POST', '/api/devices/imports/IMP-001/cancel'],
+      ['GET', '/api/devices/synthetic-device-1'],
+      ['GET', '/devices'],
+    ]) {
+      const response = await fetch(`${origin(edge)}${path}`, { method });
+      assert.equal(response.status, 200, `${method} ${path}`);
+      assert.equal(
+        response.headers.get('content-disposition'),
+        null,
+        `${method} ${path}`,
+      );
+    }
+    // The edge keeps dropping the header on its own answers.
+    const missing = await fetch(
+      `${origin(edge)}/api/devices/exports/EXP-001/file/extra`,
+    );
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers.get('content-disposition'), null);
+  } finally {
+    for (const server of [edge, api, frontend])
       if (server) {
         server.closeAllConnections();
         await new Promise((resolve) => server.close(resolve));
