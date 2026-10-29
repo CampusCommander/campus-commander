@@ -1,0 +1,73 @@
+id: device_export
+namespace: campus.application
+# Two export jobs run at a time. Later jobs wait in the queue (design section 5).
+concurrency:
+  limit: 2
+  behavior: QUEUE
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  - id: leaseId
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  # One request runs the whole job: the claim, every batch, the publication, and the finish
+  # (design section 5).
+  - id: export
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-export'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "leaseId": inputs.leaseId,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    # Only a failed worker request retries here. Every job outcome returns 200.
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false
+errors:
+  # A lost run still fails its job. The worker claims the job and ends it with `interrupted`
+  # (design section 5).
+  - id: fail_on_error
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/device-export'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "leaseId": inputs.leaseId,
+        "correlationId": inputs.correlationId,
+        "failure": "interrupted"
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false

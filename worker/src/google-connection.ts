@@ -30,6 +30,15 @@ import {
   type DeviceUpdateFinishRequest,
   type DeviceUpdateReconcileRequest,
 } from './device-update';
+import {
+  DeviceExportJobs,
+  type DeviceExportAnswer,
+  type DeviceExportRequest,
+} from './device-export';
+import {
+  createDeviceExportStore,
+  type DeviceExportStore,
+} from './device-export-store';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -47,6 +56,7 @@ export class GoogleWorker {
   private pool?: Pool;
   private config?: DeploymentConfig;
   private redis?: WorkerRedis;
+  private artifacts?: Promise<DeviceExportStore>;
   /** Section 9: reject a value outside 1 to 250 when the process starts. */
   private readonly batchSize = resolveDeviceUpdateBatchSize(
     process.env['CC_DEVICE_UPDATE_BATCH_SIZE'],
@@ -212,7 +222,43 @@ export class GoogleWorker {
     return this.updates(pool, cipher).runPoll(input, signal);
   }
 
+  /**
+   * The artifact store of the export handler (design section 4, "Worker access"). The worker
+   * container mounts the artifacts volume, so it imports the store module as the API does.
+   */
+  private exportStore(pool: Pool): Promise<DeviceExportStore> {
+    this.artifacts ??= (async () => {
+      const config = this.config;
+      if (!config) throw new Error('connection-store-unavailable');
+      return createDeviceExportStore({
+        pool,
+        location: config.artifacts.location,
+        backend:
+          config.artifacts.kind === 'shared-filesystem'
+            ? 'shared-filesystem'
+            : 'local',
+      });
+    })().catch((error: unknown) => {
+      this.artifacts = undefined;
+      throw error;
+    });
+    return this.artifacts;
+  }
+
+  /** One export job, from its claim to its published file (design section 5). */
+  async exportDevices(
+    input: DeviceExportRequest,
+    signal: AbortSignal,
+  ): Promise<DeviceExportAnswer> {
+    const { pool } = this.resources();
+    return new DeviceExportJobs(pool, await this.exportStore(pool)).run(
+      input,
+      signal,
+    );
+  }
+
   async close() {
+    await this.artifacts?.then((store) => store.close()).catch(() => undefined);
     await Promise.all([this.pool?.end(), this.redis?.close()]);
   }
 }
