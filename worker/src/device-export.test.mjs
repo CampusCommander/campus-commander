@@ -301,7 +301,7 @@ test('the export runs rows in ordinal batches and records the published file', a
 test('the edit file holds the template header, the escaped cells, and the row checksum', async () => {
   const row = deviceRow(0, {
     device_id: '+15551234567',
-    serial_number: 'serial-0',
+    serial_number: 'se,rial"0',
     notes: '=SUM(A1:A2)',
     annotated_user: '@person',
   });
@@ -316,12 +316,14 @@ test('the edit file holds the template header, the escaped cells, and the row ch
     'the file starts with a byte order mark',
   );
   assert.equal(text.includes('\r\n'), true, 'the records end with CRLF');
+  // A comma and a quote take the RFC 4180 form of `ac/csv.ts` (design section 5, item 5).
+  assert.equal(text.includes('"se,rial""0"'), true);
 
   const [header, data] = recordsOf(store.staged);
   assert.deepEqual(header.cells, [...DEVICE_EDIT_TEMPLATE_HEADERS]);
   assert.deepEqual(data.cells.slice(0, 9), [
     '\t+15551234567',
-    'serial-0',
+    'se,rial"0',
     'Chromebook 300e',
     'ACTIVE',
     'ASSET-0',
@@ -333,7 +335,7 @@ test('the edit file holds the template header, the escaped cells, and the row ch
   // The escape is reversible, and the checksum covers the unescaped values (design section 5).
   for (const cell of data.cells)
     assert.equal(
-      deviceEditUnescapeCell(cell),
+      cell.startsWith('\t') ? deviceEditUnescapeCell(cell) : cell,
       cell.startsWith('\t') ? cell.slice(1) : cell,
     );
   const expected = await deviceEditRowChecksum({
@@ -355,46 +357,74 @@ test('the file holds the byte order mark, CRLF records, and the 1,000-row batch'
 });
 
 test('a worst row takes 19,390 bytes at most and every limit writes', async () => {
-  /** One device row at every contract limit, in characters of `character` UTF-8 bytes. */
-  const atEveryLimit = (ordinal, character) => {
-    const fill = (units) => character.repeat(units / character.length);
-    return deviceRow(ordinal, {
-      device_id: fill(128),
-      serial_number: fill(256),
-      model: fill(256),
-      status: fill(64),
-      asset_tag: fill(DEVICE_UPDATE_FIELD_LIMITS.annotatedAssetId),
-      annotated_location: fill(DEVICE_UPDATE_FIELD_LIMITS.annotatedLocation),
-      annotated_user: fill(DEVICE_UPDATE_FIELD_LIMITS.annotatedUser),
-      notes: fill(DEVICE_UPDATE_FIELD_LIMITS.notes),
-      org_unit_path: `/${character.repeat(2047)}a`,
-    });
-  };
+  // The bound of the design (section 4): at most 4 UTF-8 bytes per code point in the eight
+  // fields, and a 4,096-unit organization unit path of 3-byte characters.
+  const wide = '\u{1F600}'; // four UTF-8 bytes and two UTF-16 units
+  const path = `/${'\u20AC'.repeat(4095)}`; // three UTF-8 bytes per unit
+  const worst = deviceRow(0, {
+    device_id: wide.repeat(128),
+    serial_number: wide.repeat(256),
+    model: wide.repeat(256),
+    status: wide.repeat(64),
+    asset_tag: wide.repeat(DEVICE_UPDATE_FIELD_LIMITS.annotatedAssetId),
+    annotated_location: wide.repeat(
+      DEVICE_UPDATE_FIELD_LIMITS.annotatedLocation,
+    ),
+    annotated_user: wide.repeat(DEVICE_UPDATE_FIELD_LIMITS.annotatedUser),
+    notes: wide.repeat(DEVICE_UPDATE_FIELD_LIMITS.notes),
+    org_unit_path: path,
+  });
+  const first = harness({ devices: [worst] });
+  assert.equal((await first.run()).outcome, 'completed');
+  const [record] = dataRecordsOf(first.store.staged);
+  assert.equal(record.cells.length, 10);
+  const bytes = csvTextBytes(csvRecordText(record.cells));
+  assert.ok(bytes <= 19_390, `a worst row takes ${bytes} bytes`);
+  // The row still holds every value, so the bound is not met by dropping a cell.
+  assert.equal(deviceEditUnescapeCell(record.cells[8]), path);
+  assert.equal(deviceEditUnescapeCell(record.cells[7]), wide.repeat(500));
+  assert.equal(deviceEditUnescapeCell(record.cells[4]), wide.repeat(256));
 
-  for (const character of ['\u{1F600}', '\u20AC']) {
-    const row = atEveryLimit(0, character);
-    const { run, store } = harness({ devices: [row] });
-    const answer = await run();
-    assert.equal(answer.outcome, 'completed', character);
-    const [record] = dataRecordsOf(store.staged);
-    assert.equal(record.cells.length, 10);
-    const bytes = csvTextBytes(csvRecordText(record.cells));
-    assert.ok(
-      bytes <= 19_390,
-      `a row at every limit in ${character} takes ${bytes} bytes`,
-    );
-    // The row still holds every value, so the bound is not met by dropping a cell.
+  // A row at every limit in 4-byte characters writes, and each cell keeps its value.
+  /** A value of `units` UTF-16 units, each character `character`. */
+  const atLimit = (units, character) =>
+    character.repeat(units / character.length);
+  const everyLimit = deviceRow(1, {
+    device_id: atLimit(128, wide),
+    serial_number: atLimit(256, wide),
+    model: atLimit(256, wide),
+    status: atLimit(64, wide),
+    asset_tag: atLimit(DEVICE_UPDATE_FIELD_LIMITS.annotatedAssetId, wide),
+    annotated_location: atLimit(
+      DEVICE_UPDATE_FIELD_LIMITS.annotatedLocation,
+      wide,
+    ),
+    annotated_user: atLimit(DEVICE_UPDATE_FIELD_LIMITS.annotatedUser, wide),
+    notes: atLimit(DEVICE_UPDATE_FIELD_LIMITS.notes, wide),
+    org_unit_path: `${wide.repeat(2047)}a`,
+  });
+  const second = harness({ devices: [everyLimit] });
+  assert.equal((await second.run()).outcome, 'completed');
+  const [row] = dataRecordsOf(second.store.staged);
+  assert.equal(row.cells.length, 10);
+  for (const index of [0, 1, 2, 3, 4, 5, 6, 7, 8])
     assert.equal(
-      deviceEditUnescapeCell(record.cells[8]),
-      row.org_unit_path,
-      'the organization unit cell holds the whole path',
+      deviceEditUnescapeCell(row.cells[index]),
+      everyLimit[
+        [
+          'device_id',
+          'serial_number',
+          'model',
+          'status',
+          'asset_tag',
+          'annotated_location',
+          'annotated_user',
+          'notes',
+          'org_unit_path',
+        ][index]
+      ],
+      `cell ${index} holds its whole value`,
     );
-    assert.equal(
-      deviceEditUnescapeCell(record.cells[4]),
-      row.asset_tag,
-      'the asset tag cell holds the whole tag',
-    );
-  }
 });
 
 test('an empty scope writes the header row only', async () => {
@@ -413,7 +443,7 @@ test('an empty scope writes the header row only', async () => {
 test('a report writes the stored columns, the grid text, and an ISO 8601 contact time', async () => {
   const { run, store, database } = harness({
     purpose: 'report',
-    devices: [deviceRow(0, { serial_number: 'serial-0' })],
+    devices: [deviceRow(0, { serial_number: '=serial-0' })],
   });
   const answer = await run();
 
@@ -425,8 +455,9 @@ test('a report writes the stored columns, the grid text, and an ISO 8601 contact
     'Device contact',
     'Battery',
   ]);
+  // The report cells carry the same escape as the edit cells (design section 5, item 4).
   assert.deepEqual(data.cells, [
-    'serial-0',
+    '\t=serial-0',
     'Active',
     '2026-10-01T10:00:00.000Z',
     'Normal',
@@ -527,6 +558,55 @@ test('a fenced lease stops the run without a finish', async () => {
   assert.equal(store.removed, true);
   assert.equal(store.calls.published.length, 0);
   assert.equal(database.calls.finish.length, 0);
+});
+
+test('a fenced lease read by the tick removes the staged file', async () => {
+  // The tick reads the lease while the first batch is still in the database, and the stream
+  // then completes. The run removes the file that it staged (design section 5).
+  let renewals = 0;
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    renew: () => (++renewals === 1 ? 'fenced' : 'renewed'),
+    onRead: async (after) => {
+      if (after !== 0) return;
+      await harnessed.timers.fire();
+      // The tick runs on its own promise chain. The fake calls settle on microtasks.
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+  });
+  const answer = await harnessed.run();
+
+  assert.deepEqual(answer, { outcome: 'fenced' });
+  assert.equal(harnessed.store.staged.length > 0, true, 'the file staged');
+  assert.equal(harnessed.store.calls.removed.length, 1);
+  assert.equal(harnessed.store.calls.published.length, 0);
+  assert.equal(harnessed.database.calls.finish.length, 0);
+});
+
+test('a lease lost at prepare-download removes the staged file', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    renew: (phase) => (phase === 'prepare-download' ? 'fenced' : 'renewed'),
+  });
+  const answer = await harnessed.run();
+
+  assert.deepEqual(answer, { outcome: 'fenced' });
+  assert.equal(harnessed.store.calls.removed.length, 1);
+  assert.equal(harnessed.store.calls.published.length, 0);
+  assert.equal(harnessed.database.calls.finish.length, 0);
+});
+
+test('a failed cancel read after the stage removes the file and retries', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    cancel: () => {
+      throw new Error('The database failed.');
+    },
+  });
+  await assert.rejects(harnessed.run());
+  assert.equal(harnessed.store.calls.removed.length, 1);
+  assert.equal(harnessed.store.calls.published.length, 0);
+  assert.equal(harnessed.database.calls.finish.length, 0);
 });
 
 test('a claimed job with a stored cancel writes nothing', async () => {

@@ -629,32 +629,45 @@ export class DeviceExportJobs {
     }
 
     await ticker.close();
-    // A request stored while the file staged leaves no file and ends Cancelled (design
-    // section 5).
-    if (
-      ticker.cancelled ||
-      (await this.cancelRequested(input.customerId, input.jobId))
-    ) {
-      await this.remove(descriptor);
-      return this.end(lease, claim.displayId, null, null);
-    }
-    if (ticker.fenced) return { outcome: 'fenced' };
-
-    state.phase = 'prepare-download';
-    state.done = 0;
-    state.total = null;
-    const prepared = await writePhase(state);
-    if (prepared === 'cancelled') {
-      await this.remove(descriptor);
-      return this.end(lease, claim.displayId, null, null);
-    }
-    if (prepared === 'lost') return { outcome: 'fenced' };
-
     try {
-      await this.store.publish(descriptor);
-    } catch {
+      // A request stored while the file staged leaves no file and ends Cancelled (design
+      // section 5).
+      if (
+        ticker.cancelled ||
+        (await this.cancelRequested(input.customerId, input.jobId))
+      ) {
+        await this.remove(descriptor);
+        return this.end(lease, claim.displayId, null, null);
+      }
+      if (ticker.fenced) {
+        await this.remove(descriptor);
+        return { outcome: 'fenced' };
+      }
+
+      state.phase = 'prepare-download';
+      state.done = 0;
+      state.total = null;
+      const prepared = await writePhase(state);
+      if (prepared === 'cancelled') {
+        await this.remove(descriptor);
+        return this.end(lease, claim.displayId, null, null);
+      }
+      if (prepared === 'lost') {
+        await this.remove(descriptor);
+        return { outcome: 'fenced' };
+      }
+
+      try {
+        await this.store.publish(descriptor);
+      } catch {
+        await this.remove(descriptor);
+        return this.end(lease, claim.displayId, null, 'storage-unavailable');
+      }
+    } catch (error) {
+      // A staged file never outlives a refused request (design section 5). Once the file
+      // publishes, the finish owns it, so a failed finish keeps it for the purge instead.
       await this.remove(descriptor);
-      return this.end(lease, claim.displayId, null, 'storage-unavailable');
+      throw error;
     }
     return this.end(
       lease,

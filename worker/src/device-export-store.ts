@@ -9,9 +9,7 @@ import type { Pool } from 'pg';
  * calls it makes, so a test supplies a fake store.
  */
 
-/** The retention of an export file (design section 4). */
-export const DEVICE_EXPORT_RETENTION_DAYS = 30;
-
+/** The retention of an export file comes from the store (design section 4). */
 const DAY_MS = 86_400_000;
 
 /** One streamed stage. The size and the digest are computed while the chunks arrive. */
@@ -59,6 +57,8 @@ interface ArtifactStore {
 }
 
 interface StorageModule {
+  /** The retention of an export file, an import upload, a report, and a plan. */
+  ARTIFACT_RETENTION_DAYS: number;
   createArtifactStore(options: {
     pool: Pool;
     root: string;
@@ -92,7 +92,7 @@ export async function createDeviceExportStore(
   return {
     async stageStream(manifest, source) {
       const expiresAt = new Date(
-        Date.now() + DEVICE_EXPORT_RETENTION_DAYS * DAY_MS,
+        Date.now() + module.ARTIFACT_RETENTION_DAYS * DAY_MS,
       ).toISOString();
       const descriptor = await store.stageStream(
         { ...manifest, retentionUntil: expiresAt },
