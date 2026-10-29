@@ -16,6 +16,7 @@ import {
   DEVICE_IMPORT_REPORT_PAGE_SIZE,
   createCsvWriter,
   deprovisionReasonSchema,
+  deviceEditEscapeCell,
   deviceEditUnescapeCell,
   deviceImportChangeSummarySchema,
   deviceImportCountsSchema,
@@ -831,12 +832,16 @@ export class DeviceImports {
           .map((cell) => deviceEditUnescapeCell(String(cell)));
         while (cells.length < DEVICE_EDIT_TEMPLATE_HEADERS.length)
           cells.push('');
+        // The download escapes every cell again, so a stored value that starts a formula stays
+        // text in a spreadsheet (design section 6.4). Every template column takes the same rule.
         yield Buffer.from(
-          writer.row([
-            ...cells,
-            String(row['source_row']),
-            String(row['reasons']),
-          ]),
+          writer.row(
+            [
+              ...cells,
+              String(row['source_row']),
+              String(row['reasons']),
+            ].map((cell) => deviceEditEscapeCell(cell)),
+          ),
         );
       }
       if (rows.length < REJECTED_FILE_PAGE) return;
