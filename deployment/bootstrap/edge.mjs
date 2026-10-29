@@ -4,11 +4,18 @@ import { readFile } from 'node:fs/promises';
 import { credentialFromAuthorization } from './access.mjs';
 import { secretPath } from '../redis/runtime.mjs';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
-import { proxyApplication } from './application-edge.mjs';
+import {
+  proxyApplication,
+  requestDeadline,
+  requestDeadlines,
+} from './application-edge.mjs';
 
 const assetPath =
   /^\/(?:assets\/)?[A-Za-z0-9_/-]+\.(?:js|css|ico|png|svg|woff2?)$/;
 const finish = (response, status, message) => {
+  // The request deadline can answer a slow body first. That answer owns the connection, so a
+  // later refusal must not write a second status line.
+  if (response.headersSent) return response.destroy();
   response.writeHead(status, {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
@@ -16,12 +23,55 @@ const finish = (response, status, message) => {
   response.end(message);
 };
 
+/**
+ * Bound the input of one HTTP/1.1 request. The listener raises `requestTimeout` to the upload
+ * deadline, and Node applies that value to every request of the server, so this timer restores
+ * the ordinary ten-second deadline. The deadline covers the request body only. A request whose
+ * framing declares no body returns at once. A request whose body arrived keeps its answer and
+ * its open event stream whatever the method, because the parser reports the complete message.
+ */
+function enforceRequestDeadline(request, response, deadlines) {
+  // Only a framed body waits for input. The method proves nothing: GET, HEAD, and DELETE can
+  // carry one. A message that already arrived needs no timer even when nothing reads it.
+  const declaresBody =
+    request.headers['transfer-encoding'] !== undefined ||
+    Number(request.headers['content-length'] ?? 0) > 0;
+  if (!declaresBody || request.complete) return;
+  const timer = setTimeout(
+    () => {
+      // The parser read the whole framed body before the deadline. The answer itself may take
+      // longer than the deadline, as an event stream does.
+      if (request.complete) return;
+      if (!response.headersSent) {
+        response.writeHead(408, {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': 'no-store',
+          connection: 'close',
+        });
+        response.end('The request timed out.\n');
+      } else response.destroy();
+      // An unfinished request ends at its deadline. Closing the connection stops a client from
+      // sending the rest of a body that already answered 408, or that no longer has a reader.
+      request.socket.destroy();
+    },
+    requestDeadline(request.method, request.url, deadlines),
+  );
+  timer.unref();
+  const clear = () => clearTimeout(timer);
+  // Only the end of the input clears the deadline. A finished answer does not prove that the
+  // request body arrived, so the timer closes an unfinished body even after its answer.
+  request.once('end', clear);
+  request.once('close', clear);
+  request.once('aborted', clear);
+}
+
 /** Serve application routes and protected installer checks through the TLS edge. */
 export async function createBootstrapEdge({
   config: input,
   verify,
   getStatus = async () => ({ status: 'not-ready', checks: [] }),
   resolveSecret = (ref) => readFile(secretPath(ref)),
+  deadlines = requestDeadlines,
 }) {
   const config = parseDeploymentConfig(input);
   const edge = config.services.edge;
@@ -44,6 +94,7 @@ export async function createBootstrapEdge({
     };
   }
   const server = https.createServer(material, async (request, response) => {
+    enforceRequestDeadline(request, response, deadlines);
     response.setHeader('strict-transport-security', 'max-age=31536000');
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');
@@ -147,7 +198,9 @@ export async function createBootstrapEdge({
     response.once('close', () => upstream.destroy());
     upstream.end();
   });
-  server.requestTimeout = 10000;
+  // Node applies this value to every HTTP/1.1 request of the server, so it takes the longest
+  // body deadline. The per-request timer bounds every other path to its own deadline.
+  server.requestTimeout = deadlines.importUpload;
   server.headersTimeout = 10000;
   server.keepAliveTimeout = 5000;
   return server;
