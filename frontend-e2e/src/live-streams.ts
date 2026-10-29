@@ -110,7 +110,10 @@ function installFakeStreams(): void {
 
   root.EventSource = FakeEventSource;
   root.__liveStreams = {
-    openUrls: () => open().map((stream) => stream.path).sort(),
+    openUrls: () =>
+      open()
+        .map((stream) => stream.path)
+        .sort(),
     openCount: (path) => byPath(path).length,
     send: (path, type, data) => {
       const targets = byPath(path);
@@ -144,37 +147,41 @@ function controls(page: Page): LiveStreams {
         return state.openCount(url);
       }, path),
     async waitForOpen(path, timeoutMs = 5000) {
-      const deadline = Date.now() + timeoutMs;
-      for (;;) {
-        const count = await page.evaluate((url) => {
-          const state = (window as unknown as { __liveStreams?: StreamControls })
-            .__liveStreams;
-          if (!state) throw new Error('The fake live streams are not installed');
-          return state.openCount(url);
-        }, path);
-        if (count > 0) return;
-        if (Date.now() > deadline) {
-          throw new Error(`No open stream for ${path} after ${timeoutMs} ms`);
-        }
-        await page.waitForTimeout(50);
+      try {
+        await page.waitForFunction(
+          (url) => {
+            const state = (
+              window as unknown as { __liveStreams?: StreamControls }
+            ).__liveStreams;
+            return (state?.openCount(url) ?? 0) > 0;
+          },
+          path,
+          { timeout: timeoutMs, polling: 50 },
+        );
+      } catch {
+        throw new Error(`No open stream for ${path} after ${timeoutMs} ms`);
       }
     },
     async send(path, type, data) {
       // A string body stays as written. Every other value travels as JSON.
-      const body = typeof data === 'string' ? data : JSON.stringify(data ?? null);
+      const body =
+        typeof data === 'string' ? data : JSON.stringify(data ?? null);
       const delivered = await page.evaluate(
         ({ url, name, payload }) => {
-          const state = (window as unknown as { __liveStreams?: StreamControls })
-            .__liveStreams;
-          if (!state) throw new Error('The fake live streams are not installed');
+          const state = (
+            window as unknown as { __liveStreams?: StreamControls }
+          ).__liveStreams;
+          if (!state)
+            throw new Error('The fake live streams are not installed');
           return state.send(url, name, payload);
         },
         { url: path, name: type, payload: body },
       );
       if (delivered === 0) {
         const open = await page.evaluate(() => {
-          const state = (window as unknown as { __liveStreams?: StreamControls })
-            .__liveStreams;
+          const state = (
+            window as unknown as { __liveStreams?: StreamControls }
+          ).__liveStreams;
           return state ? state.openUrls() : [];
         });
         throw new Error(
