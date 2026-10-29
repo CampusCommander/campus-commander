@@ -161,10 +161,9 @@ function deviceWhere(
 }
 
 /** The grid order: the sort column with nulls last, then the device ID in the same direction. */
-function orderBy(query: DeviceQuery): string {
-  const order =
-    query.sort.field === 'battery' ? batteryOrder : columns[query.sort.field];
-  const direction = query.sort.direction === 'desc' ? 'DESC' : 'ASC';
+function orderBy(sort: DeviceQuery['sort']): string {
+  const order = sort.field === 'battery' ? batteryOrder : columns[sort.field];
+  const direction = sort.direction === 'desc' ? 'DESC' : 'ASC';
   return `ORDER BY ${order} ${direction} NULLS LAST,d.device_id ${direction}`;
 }
 
@@ -177,7 +176,7 @@ export function devicePageSql(
   const where = deviceWhere(query.predicates, values, selection, query.group);
   return {
     rows: {
-      text: `SELECT ${deviceColumns} ${from} WHERE ${where} ${orderBy(query)} OFFSET $${values.length + 1} LIMIT $${values.length + 2}`,
+      text: `SELECT ${deviceColumns} ${from} WHERE ${where} ${orderBy(query.sort)} OFFSET $${values.length + 1} LIMIT $${values.length + 2}`,
       values: [...values, query.offset, query.limit],
     },
     count: {
@@ -213,7 +212,7 @@ export function deviceIdsSql(
   const where = deviceWhere(query.predicates, values, null, query.group);
   values.push(limit);
   return {
-    text: `SELECT d.device_id ${from} WHERE ${where} ${orderBy(query)} LIMIT $${values.length}`,
+    text: `SELECT d.device_id ${from} WHERE ${where} ${orderBy(query.sort)} LIMIT $${values.length}`,
     values,
   };
 }
@@ -363,6 +362,26 @@ export function selectionCountSql(
   const where = deviceWhere([], values, selection);
   return {
     text: `SELECT count(*)::integer AS selected ${from} WHERE ${where}`,
+    values,
+  };
+}
+
+/**
+ * Every selected device in grid order, with the device ID as the tie (design section 5). The export
+ * freezes this list, so the caller asks for one row above its limit and refuses the scope without a
+ * second query.
+ */
+export function selectionOrderedIdsSql(
+  customerId: string,
+  selection: SelectionState,
+  sort: DeviceQuery['sort'],
+  limit: number,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const where = deviceWhere([], values, selection);
+  values.push(limit);
+  return {
+    text: `SELECT d.device_id ${from} WHERE ${where} ${orderBy(sort)} LIMIT $${values.length}`,
     values,
   };
 }
