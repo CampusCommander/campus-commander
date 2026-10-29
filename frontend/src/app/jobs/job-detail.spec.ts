@@ -2,7 +2,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, type Routes } from '@angular/router';
 import type { JobDetail, JobOperation } from '@campus/application-contracts';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { routes } from '../app.routes';
 import { AuthStore } from '../auth.store';
 import { JobDetailPage } from './job-detail';
@@ -621,6 +621,11 @@ const link = (element: HTMLElement, name: string) =>
   [...element.querySelectorAll('a')].find(
     (candidate) => candidate.getAttribute('aria-label') === name,
   ) as HTMLAnchorElement | undefined;
+
+/** A failed case must not leave the fake clock for the next case. */
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 it('registers the job detail route under the jobs path', () => {
   const shell = routes.find((route) => route.path === '') as
@@ -1450,6 +1455,43 @@ it('flips an open export file to Expired at its deadline', async () => {
     (candidate) => candidate.textContent?.trim() === 'Download CSV',
   );
   expect(download?.disabled).toBe(true);
+});
+
+it('expires a 30-day file at its deadline on the job page', async () => {
+  vi.useFakeTimers();
+  const start = Date.now();
+  const retention = 30 * 24 * 60 * 60 * 1000;
+  const exportJob = job({
+    displayId: 'EXP-030',
+    action: 'export-devices',
+    status: 'completed',
+    scope: { kind: 'devices', deviceCount: 6 },
+    phase: null,
+    exportSummary: { purpose: 'report' },
+    exportFile: {
+      name: 'device-report-EXP-030.csv',
+      sizeBytes: 4096,
+      rows: 6,
+      columns: 10,
+      expiresAt: new Date(start + retention).toISOString(),
+    },
+    changes: null,
+    finishedAt: new Date().toISOString(),
+  });
+  const { fixture, element } = setup({ job: exportJob, operations: [] });
+  const download = () =>
+    [...element.querySelectorAll('a, button')].find(
+      (candidate) => candidate.textContent?.trim() === 'Download CSV',
+    );
+  expect(text(element)).toContain('Ready');
+  expect(download()?.tagName).toBe('A');
+  // The retention is longer than one native timer, and the file still flips.
+  await vi.advanceTimersByTimeAsync(retention + 60_000);
+  fixture.detectChanges();
+  expect(text(element)).toContain('Expired');
+  expect(text(element)).toContain('The file expired');
+  expect(download()?.tagName).toBe('BUTTON');
+  expect((download() as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('shows a refresh job with counters and Latest activity only', () => {

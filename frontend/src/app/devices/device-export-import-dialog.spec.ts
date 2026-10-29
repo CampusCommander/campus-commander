@@ -162,6 +162,7 @@ function setup(
 
 afterEach(() => {
   TestBed.resetTestingModule();
+  vi.useRealTimers();
 });
 
 /** The dialog is closed before every case, so one case never borrows another's job. */
@@ -365,6 +366,45 @@ describe('DeviceExportImportDialog', () => {
     // The deadline passes without a job event or a manual read.
     await new Promise((resolve) => setTimeout(resolve, 450));
     await render();
+    expect(text()).toContain('Expired');
+    expect(
+      panel()?.querySelector('.export-actions a[mat-flat-button]'),
+    ).toBeNull();
+    expect(
+      panel()
+        ?.querySelector('.export-actions button[mat-flat-button]')
+        ?.hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('expires an open ready file at its 30-day deadline', async () => {
+    vi.useFakeTimers();
+    const deadline = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const { store, fixture, panel, text } = setup(
+      exportDetail({
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        phase: null,
+        exportFile: {
+          name: 'devices-for-editing-EXP-001.csv',
+          sizeBytes: 7987,
+          rows: 48,
+          columns: 10,
+          expiresAt: new Date(deadline).toISOString(),
+        },
+      }),
+    );
+    store.openJob('EXP-001');
+    // The read settles on microtasks, so the fake clock stays at its start.
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    fixture.detectChanges();
+    expect(text()).toContain('Ready');
+    expect(
+      panel()?.querySelector('.export-actions a[mat-flat-button]'),
+    ).not.toBeNull();
+    // The retention is longer than one native timer, and the file still flips.
+    await vi.advanceTimersByTimeAsync(30 * 24 * 60 * 60 * 1000 + 60_000);
+    fixture.detectChanges();
     expect(text()).toContain('Expired');
     expect(
       panel()?.querySelector('.export-actions a[mat-flat-button]'),
