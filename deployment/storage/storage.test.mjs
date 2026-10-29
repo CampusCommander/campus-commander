@@ -1,20 +1,17 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import {
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  symlink,
-} from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { purgeExpiredArtifacts } from '../../api/src/app/storage/artifact-purge.ts';
-import { createArtifactStore, writeArtifact } from './index.mjs';
+import { createArtifactStore, purgeRows, writeArtifact } from './index.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const exists = (path) => stat(path).then(() => true, () => false);
+const exists = (path) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
 
 test('storage rejects symbolic-link roots and unsupported backends without database access', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cc-storage-unit-'));
@@ -120,9 +117,14 @@ test('streamed staging rejects invalid metadata', async () => {
     await assert.rejects(
       store.stageStream({ schemaVersion: 1, maxBytes: 1.5 }, []),
     );
-    await assert.rejects(store.stageStream({ schemaVersion: 0, maxBytes: 1 }, []));
     await assert.rejects(
-      store.stageStream({ schemaVersion: 1, maxBytes: 1, retentionDays: 0 }, []),
+      store.stageStream({ schemaVersion: 0, maxBytes: 1 }, []),
+    );
+    await assert.rejects(
+      store.stageStream(
+        { schemaVersion: 1, maxBytes: 1, retentionDays: 0 },
+        [],
+      ),
     );
     await assert.rejects(
       store.stageStream(
@@ -150,4 +152,26 @@ test('streamed staging rejects invalid metadata', async () => {
     await store.close();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('the sweep removes each expired artifact that the store accepts', async () => {
+  const removals = [];
+  const removed = await purgeRows(
+    [
+      { id: '0f0e0d0c-0000-4000-8000-00000000a001', attempt_id: 'a' },
+      { id: '0f0e0d0c-0000-4000-8000-00000000a002', attempt_id: 'b' },
+      { id: '0f0e0d0c-0000-4000-8000-00000000a003', attempt_id: 'c' },
+    ],
+    async (manifest) => {
+      removals.push(manifest);
+      if (manifest.attemptId === 'a') throw new Error('Synthetic failure.');
+      return manifest.attemptId !== 'b';
+    },
+  );
+  assert.equal(removed, 1);
+  assert.deepEqual(removals, [
+    { artifactId: '0f0e0d0c-0000-4000-8000-00000000a001', attemptId: 'a' },
+    { artifactId: '0f0e0d0c-0000-4000-8000-00000000a002', attemptId: 'b' },
+    { artifactId: '0f0e0d0c-0000-4000-8000-00000000a003', attemptId: 'c' },
+  ]);
 });

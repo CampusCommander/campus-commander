@@ -64,6 +64,23 @@ function retention({ retentionDays = null, retentionUntil = null }) {
 }
 
 /**
+ * Remove each expired artifact that the store accepts. A referenced artifact, a current writer,
+ * and a failed removal wait for the next sweep. Returns the number of removed artifacts.
+ */
+export async function purgeRows(rows, remove) {
+  let removed = 0;
+  for (const row of rows) {
+    try {
+      if (await remove({ artifactId: row.id, attemptId: row.attempt_id }))
+        removed += 1;
+    } catch {
+      // A racing writer or a failed removal leaves the artifact for the next sweep.
+    }
+  }
+  return removed;
+}
+
+/**
  * Write one attempt file. The size and the SHA-256 are computed while the chunks arrive.
  * The cap check runs before the excess chunk reaches the disk.
  * Any failure closes the file and removes it, so no partial file survives.
@@ -232,6 +249,54 @@ async function initializeStore({ pool, root, backend = 'local' }) {
       await file.close();
       throw error;
     }
+  }
+  async function remove({ artifactId, attemptId }) {
+    identity(attemptId);
+    const permitted = await transaction(
+      artifactId,
+      async (client, row) => {
+        if (!row) return false;
+        if (row.attempt_id !== attemptId)
+          throw new Error('Artifact removal attempt is stale.');
+        if (row.active || row.reference_count > 0) return false;
+        await client.query(
+          "UPDATE cc.artifacts SET publication_state='deleting' WHERE id=$1",
+          [artifactId],
+        );
+        return true;
+      },
+      true,
+    );
+    if (!permitted) return false;
+    return transaction(artifactId, async (client, row) => {
+      if (!row) return false;
+      if (
+        row.attempt_id !== attemptId ||
+        row.publication_state !== 'deleting' ||
+        row.active ||
+        row.reference_count > 0
+      )
+        return false;
+      const details = await lstat(location(row)).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+        return undefined;
+      });
+      if (details && (!details.isFile() || details.nlink !== 1))
+        throw new Error('Artifact removal requires a regular file.');
+      await unlink(location(row)).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+      await directory.sync();
+      await client.query('DELETE FROM cc.artifacts WHERE id=$1', [artifactId]);
+      return true;
+    });
+  }
+  async function purgeExpired() {
+    const { rows } = await pool.query(
+      `SELECT id, attempt_id FROM cc.artifacts
+        WHERE retention_until <= now() ORDER BY retention_until`,
+    );
+    return purgeRows(rows, remove);
   }
 
   return {
@@ -556,49 +621,8 @@ async function initializeStore({ pool, root, backend = 'local' }) {
         return file.createReadStream({ start: 0, autoClose: true });
       });
     },
-    async remove({ artifactId, attemptId }) {
-      identity(attemptId);
-      const permitted = await transaction(
-        artifactId,
-        async (client, row) => {
-          if (!row) return false;
-          if (row.attempt_id !== attemptId)
-            throw new Error('Artifact removal attempt is stale.');
-          if (row.active || row.reference_count > 0) return false;
-          await client.query(
-            "UPDATE cc.artifacts SET publication_state='deleting' WHERE id=$1",
-            [artifactId],
-          );
-          return true;
-        },
-        true,
-      );
-      if (!permitted) return false;
-      return transaction(artifactId, async (client, row) => {
-        if (!row) return false;
-        if (
-          row.attempt_id !== attemptId ||
-          row.publication_state !== 'deleting' ||
-          row.active ||
-          row.reference_count > 0
-        )
-          return false;
-        const details = await lstat(location(row)).catch((error) => {
-          if (error.code !== 'ENOENT') throw error;
-          return undefined;
-        });
-        if (details && (!details.isFile() || details.nlink !== 1))
-          throw new Error('Artifact removal requires a regular file.');
-        await unlink(location(row)).catch((error) => {
-          if (error.code !== 'ENOENT') throw error;
-        });
-        await directory.sync();
-        await client.query('DELETE FROM cc.artifacts WHERE id=$1', [
-          artifactId,
-        ]);
-        return true;
-      });
-    },
+    remove,
+    purgeExpired,
     async close() {
       if (!closed) {
         closed = true;

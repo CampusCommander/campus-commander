@@ -14,7 +14,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
-import { purgeExpiredArtifacts } from '../../api/src/app/storage/artifact-purge.ts';
 import { migrate, provision } from '../postgres/index.mjs';
 import { ARTIFACT_RETENTION_DAYS, createArtifactStore } from './index.mjs';
 
@@ -47,7 +46,11 @@ const collect = async (stream) => {
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks);
 };
-const exists = (path) => stat(path).then(() => true, () => false);
+const exists = (path) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
 const results = [];
 let admin;
 let pool;
@@ -536,7 +539,7 @@ try {
   await pool.query('UPDATE cc.artifacts SET reference_count=1 WHERE id=$1', [
     expiredReference.artifactId,
   ]);
-  assert.equal(await purgeExpiredArtifacts(pool, store), 1);
+  assert.equal(await store.purgeExpired(), 1);
   assert.equal(
     await exists(
       join(root, `${expiredArtifact.artifactId}.${expiredArtifact.attemptId}`),
@@ -563,7 +566,7 @@ try {
     ).rowCount,
     1,
   );
-  assert.equal(await purgeExpiredArtifacts(pool, store), 0);
+  assert.equal(await store.purgeExpired(), 0);
   results.push(
     'the hourly purge removes an expired artifact and keeps a retained or referenced one: pass',
   );

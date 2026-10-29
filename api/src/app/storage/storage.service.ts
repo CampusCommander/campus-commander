@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import type { Pool } from 'pg';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
-import { purgeExpiredArtifacts, startArtifactPurge } from './artifact-purge';
+import { startArtifactPurge } from './purge-timer';
 import { storeJsonDocument } from './json-artifact';
 
 interface ArtifactManifest {
@@ -49,6 +49,8 @@ interface ArtifactStore {
   publish(manifest: ArtifactDescriptor): Promise<unknown>;
   openRead(artifactId: string): Promise<AsyncIterable<Buffer>>;
   remove(manifest: { artifactId: string; attemptId: string }): Promise<boolean>;
+  /** Remove each artifact whose retention passed. Returns the number removed. */
+  purgeExpired(): Promise<number>;
   close(): Promise<void>;
 }
 interface StorageModule {
@@ -167,7 +169,7 @@ export class StorageService
   private async purge() {
     try {
       const store = await this.connection();
-      await purgeExpiredArtifacts(this.database.connection, store);
+      await store.purgeExpired();
     } catch {
       // The next hourly sweep retries an unavailable store or database.
     }
