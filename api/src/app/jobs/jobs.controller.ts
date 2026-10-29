@@ -84,7 +84,7 @@ const requestersQuerySchema = z.strictObject({
 const cancelBodySchema = z.strictObject({});
 
 /** The job channel and its schema. The Jobs stream sends `job-changed` only. */
-const jobListener = {
+export const jobListener = {
   channel: jobEventsChannel,
   parse: (message: string): JobEvent | null => {
     try {
@@ -158,7 +158,22 @@ export class JobsController {
     const started = await streamEvents<JobEvent>(response, {
       customerId,
       fanout: this.deviceEvents.fanout,
-      listener: jobListener,
+      feeds: [
+        {
+          listener: jobListener,
+          forward: async (event, failed) => {
+            if (failed || event.type !== 'job-changed') return null;
+            if (everyJob) return { event };
+            // The same predicate as every job read decides the event of another person's job.
+            const visible = await this.jobs.visible(
+              request.session,
+              customerId,
+              event.requestedBy,
+            );
+            return visible ? { event } : null;
+          },
+        },
+      ],
       begin: () => {
         response.writeHead(200, {
           'content-type': 'text/event-stream; charset=utf-8',
@@ -178,17 +193,6 @@ export class JobsController {
         });
         if (checked.session) request.session = checked.session;
         return checked.allowed;
-      },
-      forward: async (event, failed) => {
-        if (failed || event.type !== 'job-changed') return null;
-        if (everyJob) return { event };
-        // The same predicate as every job read decides the event of another person's job.
-        const visible = await this.jobs.visible(
-          request.session,
-          customerId,
-          event.requestedBy,
-        );
-        return visible ? { event } : null;
       },
     });
     if (!started && !response.headersSent)

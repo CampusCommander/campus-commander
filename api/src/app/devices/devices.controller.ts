@@ -40,7 +40,7 @@ import { DevicesService } from './devices.service';
 const deviceIdSchema = z.string().min(1).max(128);
 
 /** The entity channel and its schema. The Devices stream forwards the events of section 3.1. */
-const entityListener = {
+export const entityListener = {
   channel: entityEventsChannel,
   parse: (message: string): EntityEvent | null => {
     try {
@@ -276,7 +276,17 @@ export class DevicesController {
     const started = await streamEvents<EntityEvent>(response, {
       customerId: current.customerId,
       fanout: this.deviceEvents.fanout,
-      listener: entityListener,
+      feeds: [
+        {
+          listener: entityListener,
+          // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
+          forward: deviceForward(seesEveryJob, {
+            jobFailure: (jobId) =>
+              this.devices.jobFailure(request.session, current.customerId, jobId),
+            sync: () => this.devices.sync(request.session),
+          }),
+        },
+      ],
       begin: () => {
         response.writeHead(200, {
           'content-type': 'text/event-stream; charset=utf-8',
@@ -304,12 +314,6 @@ export class DevicesController {
         if (checked.session) request.session = checked.session;
         return checked.allowed;
       },
-      // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
-      forward: deviceForward(seesEveryJob, {
-        jobFailure: (jobId) =>
-          this.devices.jobFailure(request.session, current.customerId, jobId),
-        sync: () => this.devices.sync(request.session),
-      }),
     });
     if (!started && !response.headersSent)
       throw new ServiceUnavailableException({ reason: 'events-unavailable' });

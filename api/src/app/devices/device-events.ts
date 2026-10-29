@@ -209,29 +209,38 @@ export interface Forwarded {
   end?: boolean;
 }
 
+/** One feed of one stream: the channel it reads, its parser, and its event mapping. */
+export interface StreamFeed<Event> {
+  /** The Redis channel of this feed for the customer of the stream. */
+  listener: Pick<EventListener<Event>, 'channel' | 'parse'>;
+  /** Maps one channel event to the stream event for this caller, or to none. */
+  forward: (
+    event: Event,
+    failed: boolean,
+  ) => Forwarded | null | Promise<Forwarded | null>;
+}
+
 /** A forward read that runs longer than this counts as failed. */
 export const FORWARD_READ_MS = 5_000;
 
 /**
- * Stream one customer's events to one browser (D6, D12). The stream starts after the subscription is active,
- * so a reconnect that reads state afterwards misses nothing. Each ping re-checks the session first.
+ * Stream one customer's events to one browser (D6, D12). The stream starts after the subscription of
+ * every feed is active, so a reconnect that reads state afterwards misses nothing. Each ping
+ * re-checks the session first.
  *
- * `forward` maps one channel event to the stream event for this caller, or to none. It handles the events
- * of one stream one at a time, in arrival order. A read times out after `readMs` and counts as failed; the
- * stream then sends the event that `forward(event, true)` returns and ends.
+ * Each feed names its channel, its parser, and its `forward` mapping. The stream handles the events
+ * of every feed one at a time, in arrival order. A read times out after `readMs` and counts as
+ * failed; the stream then sends the event that `forward(event, true)` returns and ends. A failed
+ * read in any feed ends the whole stream, and `MAX_BUFFERED_BYTES` applies to the whole stream.
  */
 export async function streamEvents<Event>(
   sink: EventSink,
   options: {
     customerId: string;
     fanout: Pick<EventFanout, 'listen'>;
-    listener: Pick<EventListener<Event>, 'channel' | 'parse'>;
+    feeds: readonly StreamFeed<Event>[];
     begin: () => void;
     recheck: () => Promise<boolean>;
-    forward: (
-      event: Event,
-      failed: boolean,
-    ) => Forwarded | null | Promise<Forwarded | null>;
     pingMs?: number;
     readMs?: number;
   },
@@ -241,13 +250,17 @@ export async function streamEvents<Event>(
   // Assigned after the subscription resolves, and read by finish() earlier.
   // eslint-disable-next-line prefer-const
   let timer: ReturnType<typeof setInterval> | undefined;
-  let unlisten: (() => Promise<void>) | undefined;
+  const subscribed: (() => Promise<void>)[] = [];
   let pending: Promise<void> = Promise.resolve();
+  const leave = async () => {
+    const unlisten = subscribed.splice(0);
+    await Promise.all(unlisten.map((one) => one().catch(() => undefined)));
+  };
   const finish = () => {
     if (closed) return;
     closed = true;
     clearInterval(timer);
-    void unlisten?.().catch(() => undefined);
+    void leave();
     // Before the stream starts, nothing was written and the caller still owns the response.
     if (started) sink.end();
   };
@@ -256,26 +269,26 @@ export async function streamEvents<Event>(
     sink.write(chunk);
     if (sink.writableLength > MAX_BUFFERED_BYTES) finish();
   };
-  const fail = async (event: Event) => {
+  const fail = async (feed: StreamFeed<Event>, event: Event) => {
     let forwarded: Forwarded | null;
     try {
-      forwarded = await options.forward(event, true);
+      forwarded = await feed.forward(event, true);
     } catch {
       forwarded = null;
     }
     if (forwarded?.event) send(streamFrame(forwarded.event));
     finish();
   };
-  const handle = async (event: Event) => {
+  const handle = async (feed: StreamFeed<Event>, event: Event) => {
     if (closed) return;
     let forwarded: Forwarded | null;
     try {
       forwarded = await deadline(
-        Promise.resolve(options.forward(event, false)),
+        Promise.resolve(feed.forward(event, false)),
         options.readMs ?? FORWARD_READ_MS,
       );
     } catch {
-      await fail(event);
+      await fail(feed, event);
       return;
     }
     if (closed) return;
@@ -284,20 +297,28 @@ export async function streamEvents<Event>(
   };
   sink.once('close', finish);
   try {
-    unlisten = await options.fanout.listen(options.customerId, {
-      channel: options.listener.channel,
-      parse: options.listener.parse,
-      event: (event) => {
-        // One read at a time, in arrival order. A pending read delays only the later events of this stream.
-        pending = pending.then(() => handle(event)).catch(() => undefined);
-      },
-      close: finish,
-    });
+    for (const feed of options.feeds)
+      subscribed.push(
+        await options.fanout.listen(options.customerId, {
+          channel: feed.listener.channel,
+          parse: feed.listener.parse,
+          event: (event) => {
+            // One read at a time across every feed, in arrival order. A pending read delays only
+            // the later events of this stream.
+            pending = pending
+              .then(() => handle(feed, event))
+              .catch(() => undefined);
+          },
+          close: finish,
+        }),
+      );
   } catch {
+    closed = true;
+    await leave();
     return false;
   }
   if (closed) {
-    await unlisten().catch(() => undefined);
+    await leave();
     return false;
   }
   options.begin();

@@ -260,7 +260,7 @@ test('a stream starts after the subscription and sends named events and pings', 
   const started = await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => {
       response.began += 1;
     },
@@ -268,7 +268,6 @@ test('a stream starts after the subscription and sends named events and pings', 
       checks += 1;
       return true;
     },
-    forward: (event) => ({ event }),
     pingMs: 10,
   });
   assert.equal(started, true);
@@ -293,10 +292,9 @@ test('a failed session check ends the stream', async (t) => {
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => undefined,
     recheck: async () => false,
-    forward: (event) => ({ event }),
     pingMs: 10,
   });
   await until(() => response.ended);
@@ -311,10 +309,9 @@ test('a slow browser loses its stream instead of buffering without bound', async
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => undefined,
     recheck: async () => true,
-    forward: (event) => ({ event }),
     pingMs: 60_000,
   });
   response.writableLength = MAX_BUFFERED_BYTES + 1;
@@ -333,12 +330,11 @@ test('a stream whose subscription fails writes nothing', async () => {
         throw new Error('redis down');
       },
     },
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
-    forward: (event) => ({ event }),
   });
   assert.equal(started, false);
   assert.equal(response.began, 0);
@@ -360,12 +356,11 @@ test('a browser that leaves during the subscription unsubscribes', async () => {
             });
         }),
     },
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
-    forward: (event) => ({ event }),
   });
   response.disconnect();
   release();
@@ -383,12 +378,11 @@ test('a loss before the stream starts returns false and does not end the sink', 
   const started = await streamEvents(response, {
     customerId: 'C0123456',
     fanout,
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
-    forward: (event) => ({ event }),
   });
   assert.equal(started, false);
   assert.equal(response.began, 0);
@@ -414,12 +408,11 @@ test('a loss during a pending subscribe ends the attempt and unsubscribes', asyn
         });
       },
     },
-    listener: entityListener,
+    feeds: [{ listener: entityListener, forward: (event) => ({ event }) }],
     begin: () => {
       response.began += 1;
     },
     recheck: async () => true,
-    forward: (event) => ({ event }),
   });
   close();
   release();
@@ -452,21 +445,25 @@ test('forward maps one channel event to one stream event or to none', async (t) 
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
     begin: () => undefined,
     recheck: async () => true,
     pingMs: 60_000,
-    forward: (event) =>
-      event.type === 'entity-batch'
-        ? {
-            event: {
-              type: 'entity-batch',
-              entityType: event.entityType,
-              deviceIds: event.deviceIds,
-              removedIds: event.removedIds,
-            },
-          }
-        : null,
+    feeds: [
+      {
+        listener: entityListener,
+        forward: (event) =>
+          event.type === 'entity-batch'
+            ? {
+                event: {
+                  type: 'entity-batch',
+                  entityType: event.entityType,
+                  deviceIds: event.deviceIds,
+                  removedIds: event.removedIds,
+                },
+              }
+            : null,
+      },
+    ],
   });
   listeners[0].listener.event(finishedJob);
   listeners[0].listener.event(batch());
@@ -491,15 +488,19 @@ test('a failed forward read sends the null-failure event and ends the stream', a
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
     begin: () => undefined,
     recheck: async () => true,
     pingMs: 60_000,
-    forward: (event, failed) => {
-      if (failed)
-        return { event: { type: 'job-finished', failure: null }, end: true };
-      throw new Error('store down');
-    },
+    feeds: [
+      {
+        listener: entityListener,
+        forward: (event, failed) => {
+          if (failed)
+            return { event: { type: 'job-finished', failure: null }, end: true };
+          throw new Error('store down');
+        },
+      },
+    ],
   });
   listeners[0].listener.event(finishedJob);
   await until(() => response.ended);
@@ -518,16 +519,20 @@ test('a forward read that outlives its deadline counts as failed', async (t) => 
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
     begin: () => undefined,
     recheck: async () => true,
     pingMs: 60_000,
     readMs: 20,
-    forward: (event, failed) => {
-      if (failed)
-        return { event: { type: 'job-finished', failure: null }, end: true };
-      return new Promise(() => undefined);
-    },
+    feeds: [
+      {
+        listener: entityListener,
+        forward: (event, failed) => {
+          if (failed)
+            return { event: { type: 'job-finished', failure: null }, end: true };
+          return new Promise(() => undefined);
+        },
+      },
+    ],
   });
   listeners[0].listener.event(finishedJob);
   await until(() => response.ended);
@@ -547,15 +552,19 @@ test('a slow read delays only the later events of the stream', async (t) => {
   await streamEvents(response, {
     customerId: 'C0123456',
     fanout: fanoutWith(listeners),
-    listener: entityListener,
     begin: () => undefined,
     recheck: async () => true,
     pingMs: 60_000,
-    forward: async (event) => {
-      if (event.type === 'full-sync') await wait(40);
-      order.push(event.type);
-      return { event };
-    },
+    feeds: [
+      {
+        listener: entityListener,
+        forward: async (event) => {
+          if (event.type === 'full-sync') await wait(40);
+          order.push(event.type);
+          return { event };
+        },
+      },
+    ],
   });
   listeners[0].listener.event({
     type: 'full-sync',
