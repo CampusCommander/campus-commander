@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { devicePageSchema } from '@campus/application-contracts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { installLiveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const observedAt = '2026-10-19T12:00:00.000Z';
@@ -156,6 +157,7 @@ type ConfirmAnswer =
 
 /** The Devices page and the update routes needed by the sheet. */
 async function mockApi(page: Page, options: ApiOptions = {}) {
+  await installLiveStreams(page);
   const confirmAnswers = [...(options.confirmAnswers ?? [])];
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -291,12 +293,6 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
       });
     if (routePath === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
-    if (routePath === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (routePath === '/api/devices/updates/access')
       return route.fulfill({
         json: {

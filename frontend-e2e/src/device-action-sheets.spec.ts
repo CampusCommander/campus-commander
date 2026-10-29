@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { installLiveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const observedAt = '2026-10-21T12:00:00.000Z';
@@ -272,6 +273,7 @@ interface ApiOptions {
 
 /** The Devices page and the command and status routes the sheets read. */
 async function mockApi(page: Page, options: ApiOptions = {}) {
+  await installLiveStreams(page);
   const actions = options.actions ?? grants.map((grant) => grant.action);
   const scenario = options.scenario ?? regressionScenario;
   const previewFor = (requested: {
@@ -570,12 +572,6 @@ async function mockApi(page: Page, options: ApiOptions = {}) {
       });
     if (routePath === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
-    if (routePath === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (routePath === '/api/devices/updates/access')
       return route.fulfill({
         json: {

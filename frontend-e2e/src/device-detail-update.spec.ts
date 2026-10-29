@@ -6,6 +6,7 @@ import type {
   DeviceUpdateEdit,
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
+import { installLiveStreams } from './live-streams';
 // The edit-list rules of the mock are the production rules: C is the current value, B the
 // baseline of the edit, and R the request (addendum section 4).
 // eslint-disable-next-line @nx/enforce-module-boundaries
@@ -328,6 +329,7 @@ async function mockApi(
   sim: SingleDeviceSimulator,
   grants: unknown[],
 ): Promise<void> {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
@@ -460,18 +462,6 @@ async function mockApi(
         ? route.fulfill({ json: { device: detail } })
         : route.fulfill({ status: 404, json: { reason: 'unknown-device' } });
     }
-    if (pathname === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
-    if (pathname === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (pathname === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     if (pathname === '/api/google-connection')
