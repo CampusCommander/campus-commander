@@ -101,11 +101,19 @@ const fileSql = `SELECT e.purpose,e.file_artifact_id,e.file_name,e.file_size_byt
  */
 export function deviceExportInput(body: unknown): DeviceExportRequest {
   const parsed = deviceExportRequestSchema.safeParse(body);
-  if (parsed.success) return parsed.data;
-  throw new BadRequestException({
-    reason: 'invalid-export',
-    message: parsed.error.issues[0]?.message ?? 'The request is invalid.',
-  });
+  if (!parsed.success)
+    throw new BadRequestException({
+      reason: 'invalid-export',
+      message: parsed.error.issues[0]?.message ?? 'The request is invalid.',
+    });
+  // A report names each visible column once. The store refuses a repeat, so the route names it.
+  const { columns } = parsed.data;
+  if (new Set(columns).size !== columns.length)
+    throw new BadRequestException({
+      reason: 'invalid-export',
+      message: 'A report column appears twice.',
+    });
+  return parsed.data;
 }
 
 /** Map one create-function outcome to the status and code of the route. */

@@ -526,6 +526,18 @@ test('an invalid body answers 400 before any person check', async () => {
   assert.equal(starts.length, 0);
 });
 
+test('a report that names one column twice answers 400', async () => {
+  reset();
+  const answer = await post(
+    '/api/devices/exports',
+    reportRequest({ columns: ['status', 'status'] }),
+  );
+  assert.equal(answer.status, 400, JSON.stringify(answer.body));
+  assert.equal(answer.body.reason, 'invalid-export');
+  assert.deepEqual(checks, [], 'A repeated column reaches no person check.');
+  assert.equal(starts.length, 0);
+});
+
 test('a create function that refuses the person answers 403', async () => {
   reset();
   createResult = { outcome: 'forbidden' };
