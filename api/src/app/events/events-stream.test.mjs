@@ -205,6 +205,11 @@ test('the device open rule needs the deployment phase and devices:read for the c
     deviceReadable(3, session([district('jobs:read')]), CUSTOMER),
     false,
   );
+  // jobs:manage does not open the device feed either.
+  assert.equal(
+    deviceReadable(3, session([district('jobs:manage')]), CUSTOMER),
+    false,
+  );
   // Authorization applies in phase 3 only, as `authorizeAction` decides it.
   assert.equal(deviceReadable(2, reader, CUSTOMER), false);
   assert.equal(deviceReadable(undefined, reader, CUSTOMER), false);
