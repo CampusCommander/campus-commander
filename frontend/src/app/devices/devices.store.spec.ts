@@ -637,6 +637,43 @@ it('refetches a fresh held row after a hidden tab returns', async () => {
   });
 });
 
+it('refetches a fresh held row when the tab hides before the first open', async () => {
+  const doc = new FakeDocument();
+  const request = routes({
+    '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+    '/api/devices/by-ids': () =>
+      Response.json({ rows: [rowFor('d1', false, { assetTag: 'after' })] }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale: 0, refreshing: false } }),
+  });
+  const store = setup(request, undefined, doc);
+  const opened = streams(store);
+  const { nodes, api } = grid([rowFor('d1', false, { assetTag: 'before' })]);
+  store.gridRows.attach(api);
+  await store.init();
+  // The source exists, but the browser has not opened it yet.
+  expect(opened).toHaveLength(1);
+  expect(opened[0].readyState).toBe(0);
+
+  // The tab loses its connection before that first open, and its events with it.
+  doc.hide();
+  expect(opened[0].closed).toBe(true);
+
+  // The authoritative value changed while the tab was hidden.
+  doc.show();
+  await vi.waitFor(() => expect(opened).toHaveLength(2));
+  opened[1].open();
+
+  await vi.waitFor(() =>
+    expect(nodes[0].updateData).toHaveBeenCalledWith(
+      rowFor('d1', false, { assetTag: 'after' }),
+    ),
+  );
+  expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
+    deviceIds: ['d1'],
+  });
+});
+
 it('reopens a closed stream after a status read and stays closed after the session ends', async () => {
   let signedIn = true;
   const request = routes({
@@ -878,30 +915,30 @@ describe('reopen after a failed status read', () => {
     await vi.waitFor(() => expect(opened).toHaveLength(2));
   });
 
-  it('a first stream that closes before it opens leaves no baseline behind', async () => {
-    let current = state('ready');
+  it('keeps the baseline of a first stream that closes before it opens', async () => {
+    const current = state('ready');
     const request = routes({
       '/api/devices/sync': () => Response.json({ sync: current }),
+      '/api/devices/by-ids': () =>
+        Response.json({ rows: [rowFor('d1', false)] }),
       '/api/devices/freshness': () =>
         Response.json({ freshness: { stale: 0, refreshing: false } }),
     });
     const store = setup(request);
     store.reopenDelay = 0;
     const opened = streams(store);
+    const { api } = grid([rowFor('d1', false)]);
+    store.gridRows.attach(api);
     await store.init();
+    // The source closes before it ever opens, so its events are lost.
     opened[0].fail(2);
     await vi.waitFor(() => expect(opened).toHaveLength(2));
-    opened[1].open();
-    current = state('ready', { observedAt: '2026-10-06T12:00:00.000Z' });
-    opened[1].send('full-sync', { type: 'full-sync', sync: current });
     const before = store.revision();
-    // The browser retries by itself while the stream is CONNECTING.
-    opened[1].fail(0);
     opened[1].open();
+    // The next open recovers the held rows, and the unchanged status bumps no revision.
     await vi.waitFor(() =>
-      expect(request).toHaveBeenCalledWith('/api/devices/freshness', {
-        predicates: [],
-        selection: null,
+      expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
+        deviceIds: ['d1'],
       }),
     );
     expect(store.revision()).toBe(before);
