@@ -4,6 +4,7 @@ import type { DeviceRow } from '@campus/application-contracts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { deniedOrgUnitTree, orgUnitTree } from './device-update-u6-simulator';
+import { installLiveStreams } from './live-streams';
 
 /**
  * IF1 completion steps 1 and 3 of `docs/workflows/in-grid-editing.md`: in-grid editors,
@@ -54,6 +55,7 @@ async function mockApi(
   grantList = grants,
   tree: unknown = orgUnitTree,
 ): Promise<void> {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === '/api/application')
@@ -148,12 +150,6 @@ async function mockApi(
           failure: null,
           checkedAt: '2026-10-19T12:00:00.000Z',
         },
-      });
-    if (pathname === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
       });
     if (pathname === '/api/customer')
       return route.fulfill({ json: { customer: null } });

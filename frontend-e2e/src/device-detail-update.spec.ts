@@ -17,6 +17,7 @@ import {
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { orgUnitTree } from './device-update-u6-simulator';
+import { installLiveStreams } from './live-streams';
 
 /**
  * Completion step 7 of `docs/workflows/in-grid-editing.md`: update one device from device
@@ -328,6 +329,7 @@ async function mockApi(
   sim: SingleDeviceSimulator,
   grants: unknown[],
 ): Promise<void> {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
@@ -460,18 +462,6 @@ async function mockApi(
         ? route.fulfill({ json: { device: detail } })
         : route.fulfill({ status: 404, json: { reason: 'unknown-device' } });
     }
-    if (pathname === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
-    if (pathname === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (pathname === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     if (pathname === '/api/google-connection')
