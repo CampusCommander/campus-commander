@@ -244,6 +244,18 @@ describe('DeviceExportImportDialog', () => {
     expect(panel()?.textContent).toContain('12 of 48');
   });
 
+  it('keeps the completed Write rows while the file prepares', async () => {
+    const { store, render, panel, text } = setup(
+      exportDetail({
+        phase: { name: 'prepare-download', done: 0, total: null },
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(text()).toContain('48 of 48');
+    expect(phaseStates(panel)).toEqual([['is-done'], ['is-current']]);
+  });
+
   it('marks Write rows done when Prepare download fails', async () => {
     const { store, render, panel } = setup(
       exportDetail({
