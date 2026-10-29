@@ -1667,9 +1667,9 @@ export async function qualifyDeviceExportImport({
             [importer, 1, customer, randomUUID(), randomUUID(), 1],
           ],
           [
-            'cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb)',
-            'SELECT cc.mark_device_import_changes($1,$2,$3,$4,$5,$6)',
-            [importer, 1, customer, randomUUID(), randomUUID(), '[]'],
+            'cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb,jsonb)',
+            'SELECT cc.mark_device_import_changes($1,$2,$3,$4,$5,$6,$7)',
+            [importer, 1, customer, randomUUID(), randomUUID(), '[]', '[]'],
           ],
           [
             'cc.link_device_import_jobs(uuid,integer,text,uuid,uuid,jsonb,jsonb,uuid)',
@@ -1887,11 +1887,29 @@ export async function qualifyDeviceExportImport({
           [actor, version, customer, jobId, planId, revision],
         )
         .then((r) => r.rows[0].result);
-    const markChanges = (actor, version, jobId, planId, devices) =>
-      result(
-        'SELECT cc.mark_device_import_changes($1,$2,$3,$4,$5,$6) AS result',
-        [actor, version, customer, jobId, planId, JSON.stringify(devices)],
-      );
+    const markChanges = (
+      actor,
+      version,
+      jobId,
+      planId,
+      devices,
+      dispositions = [],
+      client = runtime,
+    ) =>
+      client
+        .query(
+          'SELECT cc.mark_device_import_changes($1,$2,$3,$4,$5,$6,$7) AS result',
+          [
+            actor,
+            version,
+            customer,
+            jobId,
+            planId,
+            JSON.stringify(devices),
+            JSON.stringify(dispositions),
+          ],
+        )
+        .then((r) => r.rows[0].result);
     const linkJobs = (
       actor,
       version,
@@ -2055,8 +2073,15 @@ export async function qualifyDeviceExportImport({
         );
         assert.equal(stored.outcome, 'stored');
       }
-      const proposed = lines.filter((line) => line.kind === 'change').length;
-      const rejected = lines.filter((line) => line.kind === 'rejection').length;
+      // The counts of the finish count source rows, not change lines: one row may hold several changes.
+      const sourceRows = (kind) =>
+        new Set(
+          lines
+            .filter((line) => line.kind === kind)
+            .map((line) => line.sourceRow),
+        ).size;
+      const proposed = sourceRows('change');
+      const rejected = sourceRows('rejection');
       const finished = await finishImport(
         imported.receipt.jobId,
         lease,
@@ -2753,6 +2778,123 @@ export async function qualifyDeviceExportImport({
       );
 
       await check(
+        'S2 a valid multi-field plan links above 50,000 Not run changes in bounded pages',
+        async () => {
+          // 25,002 source rows of two field changes each: 50,004 change lines, and 50,003 of them never
+          // run. The disposition call stores them in pages of 250, so no call carries the whole plan.
+          const rows = 25002;
+          const devices = Array.from({ length: rows }, (_, index) => `S2M-${index}`);
+          const lines = [];
+          devices.forEach((deviceId, index) => {
+            lines.push(
+              fieldChange(index * 2 + 2, deviceId, {
+                field: 'notes',
+                newValue: `new-${deviceId}`,
+              }),
+              fieldChange(index * 2 + 2, deviceId, {
+                field: 'annotatedAssetId',
+                newValue: `asset-${deviceId}`,
+              }),
+            );
+          });
+          assert.equal(lines.length, 50004);
+          const plan = await importPlan({ lines });
+          const eligible = devices.at(-1);
+          await deviceFixture(eligible);
+          // Every change holds `no-change-needed` except the last device's notes change.
+          const dispositions = lines
+            .map((_, index) => ({ ordinal: index }))
+            .filter(({ ordinal }) => ordinal !== lines.length - 2)
+            .map(({ ordinal }) => ({ ordinal, reason: 'no-change-needed' }));
+          assert.equal(dispositions.length, 50003);
+          let pages = 0;
+          for (let start = 0; start < dispositions.length; start += 250) {
+            const page = dispositions.slice(start, start + 250);
+            assert.ok(page.length <= 250, 'one disposition call carries one page');
+            const marked = await markChanges(
+              planActor,
+              1,
+              plan.jobId,
+              plan.planId,
+              [],
+              page,
+            );
+            assert.equal(marked.outcome, 'marked');
+            assert.equal(marked.marked, 0);
+            assert.equal(marked.disposed, page.length);
+            pages += 1;
+          }
+          assert.equal(pages, 201);
+          // A second page for one ordinal keeps the first reason.
+          const repeated = await markChanges(
+            planActor,
+            1,
+            plan.jobId,
+            plan.planId,
+            [],
+            [{ ordinal: 0, reason: 'removed' }],
+          );
+          assert.equal(repeated.disposed, 0);
+          assert.deepEqual(
+            (
+              await admin(
+                'SELECT not_run_reason FROM cc.device_import_changes WHERE job_id=$1 AND ordinal=0',
+                [plan.jobId],
+              )
+            ).map((row) => row.not_run_reason),
+            ['no-change-needed'],
+          );
+          // The remaining eligible device executes, and every reason stays.
+          const session = await connect('cc-app', 'cc-app');
+          let executed;
+          try {
+            await session.query("SET statement_timeout='300s'");
+            await session.query('BEGIN');
+            executed = await executePlan(session, {
+              jobId: plan.jobId,
+              planId: plan.planId,
+              revision: plan.revision,
+              fieldDevices: [eligible],
+            });
+            await session.query('COMMIT');
+          } catch (error) {
+            await session.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            await close(session);
+          }
+          assert.equal(
+            executed.plan.outcome,
+            'executed',
+            JSON.stringify(executed.plan),
+          );
+          assert.equal(executed.plan.linked, 1);
+          jobs.push(executed.fieldJob.jobId);
+          const counted = (
+            await admin(
+              `SELECT count(*) FILTER (WHERE linked_job_id IS NOT NULL)::integer AS linked,
+                 count(*) FILTER (WHERE not_run_reason='no-change-needed')::integer AS not_run,
+                 count(*) FILTER (WHERE linked_job_id IS NULL AND not_run_reason IS NULL)::integer AS open
+               FROM cc.device_import_changes WHERE job_id=$1`,
+              [plan.jobId],
+            )
+          )[0];
+          assert.deepEqual(counted, { linked: 1, not_run: 50003, open: 0 });
+          assert.equal(
+            (
+              await admin(
+                `SELECT c.device_id,c.field,c.linked_job_id FROM cc.device_import_changes c
+                 WHERE c.job_id=$1 AND c.linked_job_id IS NOT NULL`,
+                [plan.jobId],
+              )
+            )[0].device_id,
+            eligible,
+          );
+          await retire(executed.fieldJob.displayId);
+        },
+      );
+
+      await check(
         'S3 the wait keeps a status job queued and admission takes the update job',
         async () => {
           const plan = await importPlan({
@@ -2809,6 +2951,15 @@ export async function qualifyDeviceExportImport({
                AND finished_at IS NULL AND job_id<>ALL($2::uuid[])`,
             [customer, [update.job_id, status.job_id]],
           );
+          // A quota hold never overrides the required queued state of a waiting job. The status job keeps
+          // the queue, and the update job takes the held label alone.
+          const held = await result(
+            'SELECT cc.admit_device_update_job($1,$2) AS result',
+            [customer, true],
+          );
+          assert.equal(held, null, 'a held admission admits no job');
+          assert.equal((await jobRow(status.job_id)).status, 'queued');
+          assert.equal((await jobRow(update.job_id)).status, 'held');
           // The status job orders first and still waits, so the update job takes the write slot.
           const admitted = await result(
             'SELECT cc.admit_device_update_job($1,$2) AS result',
@@ -2821,7 +2972,19 @@ export async function qualifyDeviceExportImport({
           assert.equal(updateRow.status, 'running');
           assert.notEqual(updateRow.admitted_at, null);
           assert.equal(updateRow.finished_at, null);
-          await retire(update.display_id);
+          // The awaited job becomes final. The cancel route ends its waiting jobs in the same call, so
+          // the fixture finishes this one directly to observe the release.
+          await migrator.query(
+            "UPDATE cc.jobs SET status='completed',finished_at=clock_timestamp() WHERE job_id=$1",
+            [update.job_id],
+          );
+          const released = await result(
+            'SELECT cc.admit_device_update_job($1,$2) AS result',
+            [customer, false],
+          );
+          assert.equal(released.jobId, status.job_id, 'the status job runs after its wait ends');
+          assert.equal((await jobRow(status.job_id)).status, 'running');
+          await retire(status.display_id);
           assert.equal((await jobRow(status.job_id)).status, 'cancelled');
         },
       );
@@ -2882,25 +3045,112 @@ export async function qualifyDeviceExportImport({
               ).map((row) => row.status),
               ['cancelled'],
             );
+          // One audit row per affected job, with the same actor and correlation ID, and no duplicate
+          // when the same request repeats.
+          const audits = () =>
+            admin(
+              `SELECT detail,actor_id,correlation_id FROM cc.security_events
+               WHERE event=$1 AND detail=ANY($2::text[])`,
+              ['job-cancel-requested', [update.displayId, status.displayId]],
+            );
+          const first = await audits();
+          assert.equal(first.length, 2, 'one audit row per affected job');
+          const byDetail = new Map(first.map((row) => [row.detail, row]));
+          assert.equal(byDetail.get(update.displayId).actor_id, planActor);
+          assert.equal(byDetail.get(status.displayId).actor_id, planActor);
           assert.equal(
-            (
-              await admin(
-                'SELECT count(*)::integer AS rows FROM cc.security_events WHERE event=$1 AND detail=$2',
-                ['job-cancel-requested', update.displayId],
-              )
-            )[0].rows,
-            1,
+            byDetail.get(update.displayId).correlation_id,
+            byDetail.get(status.displayId).correlation_id,
           );
-          assert.equal(
-            (
-              await admin(
-                'SELECT count(*)::integer AS rows FROM cc.security_events WHERE event=$1 AND detail=$2',
-                ['job-cancel-requested', status.displayId],
-              )
-            )[0].rows,
-            0,
-            'one request keeps one audit row',
+          const repeated = await cancelAs(planActor, update.displayId);
+          assert.equal(repeated.outcome, 'repeated');
+          assert.equal((await audits()).length, 2, 'a repeat writes no audit row');
+        },
+      );
+
+      await check(
+        'S3 the cancel locks each waiting status header in display ID order across the rollover',
+        async () => {
+          const taken = (
+            await admin(
+              "SELECT count(*)::integer AS rows FROM cc.jobs WHERE display_id IN ('STS-999','STS-1000')",
+            )
+          )[0].rows;
+          assert.equal(taken, 0, 'the rollover display IDs are free');
+          const plan = await importPlan({
+            lines: [
+              fieldChange(2, 'S3D-1'),
+              statusChange(3, 'S3D-1', 'disable'),
+              statusChange(4, 'S3D-1', 'reenable'),
+            ],
+          });
+          await deviceFixture('S3D-1');
+          await migrator.query("SELECT setval('cc.job_number_sts',998,true)");
+          const session = await connect('cc-app', 'cc-app');
+          let executed;
+          try {
+            await session.query('BEGIN');
+            executed = await executePlan(session, {
+              jobId: plan.jobId,
+              planId: plan.planId,
+              revision: plan.revision,
+              fieldDevices: ['S3D-1'],
+              statusDevices: { disable: ['S3D-1'], reenable: ['S3D-1'] },
+            });
+            await session.query('COMMIT');
+          } catch (error) {
+            await session.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            await close(session);
+          }
+          assert.equal(executed.plan.outcome, 'executed');
+          const update = executed.fieldJob;
+          const statuses = executed.statusJobs;
+          assert.deepEqual(
+            statuses.map((entry) => entry.displayId),
+            ['STS-999', 'STS-1000'],
+            'the rollover display IDs',
           );
+          jobs.push(update.jobId, ...statuses.map((entry) => entry.jobId));
+          const holder = await connect('postgres', 'cc-app');
+          const waiter = await connect('cc-app', 'cc-app');
+          const probe = await connect('cc-app', 'cc-app');
+          try {
+            await holder.query('BEGIN');
+            await holder.query(
+              "SELECT 1 FROM cc.jobs WHERE display_id='STS-999' FOR UPDATE",
+            );
+            const holderPid = await backendPid(holder);
+            const waiterPid = await backendPid(waiter);
+            const pending = waiter
+              .query('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
+                planActor,
+                1,
+                customer,
+                update.displayId,
+                randomUUID(),
+              ])
+              .then((r) => r.rows[0].result);
+            await waitBlocked(waiterPid, holderPid, 'the cascade cancel');
+            // Display ID order locks STS-1000 before STS-999, so the canceller holds STS-1000 while it
+            // waits for the holder of STS-999. Creation order would leave STS-1000 unlocked.
+            await rejects(
+              probe.query(
+                "SELECT 1 FROM cc.jobs WHERE display_id='STS-1000' FOR UPDATE NOWAIT",
+              ),
+              '55P03',
+            );
+            await holder.query('COMMIT');
+            assert.equal((await pending).outcome, 'requested');
+          } finally {
+            await holder.query('ROLLBACK').catch(() => undefined);
+            await close(holder);
+            await close(waiter);
+            await close(probe);
+          }
+          for (const entry of statuses)
+            assert.equal((await jobRow(entry.jobId)).status, 'cancelled');
         },
       );
 
@@ -3146,6 +3396,190 @@ export async function qualifyDeviceExportImport({
             await close(holder);
             await close(waiter);
           }
+        },
+      );
+
+      await check(
+        'S2 the plan cancel repeats its authority after the requester and connection waits',
+        async () => {
+          const platformAdmin = (
+            await admin(
+              `SELECT p.id,p.permission_version FROM cc.application_principals p
+               WHERE cc.full_platform_administrator(p.id) ORDER BY p.created_at,p.id LIMIT 1`,
+            )
+          )[0];
+          assert.ok(platformAdmin, 'a platform administrator exists');
+          const grants = [
+            { action: 'devices:read', scope: district() },
+            { action: 'devices:write', scope: district() },
+            { action: 'devices:bulk-actions', scope: district() },
+          ];
+          const changeAccess = (
+            client,
+            target,
+            version,
+            enabled,
+            next = grants,
+          ) =>
+            client.query(
+              'SELECT cc.change_platform_access($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+              [
+                platformAdmin.id,
+                platformAdmin.permission_version,
+                target,
+                version,
+                enabled,
+                JSON.stringify(next),
+                randomUUID(),
+                '[]',
+              ],
+            );
+          const target = await principal(
+            grants.map(({ action, scope }) => [action, scope]),
+          );
+          // The plan state, the header revision, the publications, and the audit rows of one plan.
+          const snapshot = async (plan) => {
+            const detail = await planDetail(plan.jobId);
+            const header = (
+              await admin('SELECT revision FROM cc.jobs WHERE job_id=$1', [
+                plan.jobId,
+              ])
+            )[0];
+            const publications = (
+              await admin(
+                'SELECT count(*)::integer AS rows FROM cc.job_publications WHERE job_id=$1',
+                [plan.jobId],
+              )
+            )[0].rows;
+            const audits = (
+              await admin(
+                "SELECT count(*)::integer AS rows FROM cc.security_events WHERE event='job-cancel-requested' AND detail=$1",
+                [plan.displayId],
+              )
+            )[0].rows;
+            return {
+              state: detail.plan_state,
+              planRevision: detail.plan_revision,
+              revision: header.revision,
+              publications,
+              audits,
+            };
+          };
+          const lockRequester = (client) =>
+            client.query(
+              'SELECT 1 FROM cc.application_principals WHERE id=$1 FOR UPDATE',
+              [target],
+            );
+          const lockConnection = (client) =>
+            client.query(
+              'SELECT 1 FROM cc.google_connection WHERE customer_id=$1 FOR UPDATE',
+              [customer],
+            );
+          // One case: the holder locks one row, the cancel waits on it, the case changes access or
+          // waits for the plan to expire, and the holder commits.
+          const caseRun = async ({
+            label,
+            lock,
+            during,
+            expected,
+            version,
+            interval = '1 hour',
+          }) => {
+            const plan = await importPlan({
+              actor: target,
+              lines: [fieldChange(2, `S2W-${label.length}`)],
+            });
+            await migrator.query(
+              `UPDATE cc.device_import_jobs
+               SET plan_expires_at=clock_timestamp()+$2::interval WHERE job_id=$1`,
+              [plan.jobId, interval],
+            );
+            const before = await snapshot(plan);
+            assert.equal(before.state, 'open', label);
+            const holder = await connect('postgres', 'cc-app');
+            const waiter = await connect('cc-app', 'cc-app');
+            let answer;
+            try {
+              await holder.query('BEGIN');
+              await lock(holder);
+              const holderPid = await backendPid(holder);
+              const waiterPid = await backendPid(waiter);
+              const pending = planCancel(
+                target,
+                version,
+                plan.jobId,
+                plan.planId,
+                plan.revision,
+                waiter,
+              );
+              await waitBlocked(waiterPid, holderPid, `the plan cancel at ${label}`);
+              if (during) await during({ holder, waiter, plan });
+              await holder.query('COMMIT');
+              answer = await pending;
+            } finally {
+              await holder.query('ROLLBACK').catch(() => undefined);
+              await close(holder);
+              await close(waiter);
+            }
+            assert.equal(
+              answer.outcome,
+              expected,
+              `${label}: ${JSON.stringify(answer)}`,
+            );
+            const after = await snapshot(plan);
+            if (expected === 'cancelled') {
+              assert.equal(after.state, 'cancelled', label);
+              assert.equal(after.planRevision, before.planRevision + 1, label);
+              assert.equal(after.publications, before.publications + 1, label);
+              assert.equal(after.audits, before.audits, label);
+            } else {
+              assert.deepEqual(after, before, `${label} writes nothing`);
+            }
+          };
+          // A disable that commits during the requester wait refuses the call and writes nothing.
+          await caseRun({
+            label: 'the requester wait',
+            lock: lockRequester,
+            during: ({ holder }) => changeAccess(holder, target, 1, false),
+            expected: 'not-found',
+            version: 1,
+          });
+          // Enable the person again, so the next cases reach the connection wait.
+          await changeAccess(migrator, target, 2, true);
+          // A permission version that changes during the connection wait refuses the call.
+          await caseRun({
+            label: 'the connection wait',
+            lock: lockConnection,
+            during: () =>
+              changeAccess(migrator, target, 3, true, [
+                ...grants,
+                { action: 'devices:status', scope: district() },
+              ]),
+            expected: 'not-found',
+            version: 3,
+          });
+          // A plan that expires during the connection wait answers expired and stays open.
+          await caseRun({
+            label: 'the connection wait expiry',
+            lock: lockConnection,
+            during: ({ holder }) => holder.query('SELECT pg_sleep(2.5)'),
+            expected: 'expired',
+            version: 4,
+            interval: '2 seconds',
+          });
+          // Controls: unchanged access through both waits cancels the plan.
+          await caseRun({
+            label: 'the requester wait control',
+            lock: lockRequester,
+            expected: 'cancelled',
+            version: 4,
+          });
+          await caseRun({
+            label: 'the connection wait control',
+            lock: lockConnection,
+            expected: 'cancelled',
+            version: 4,
+          });
         },
       );
 
