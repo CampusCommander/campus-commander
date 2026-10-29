@@ -1114,6 +1114,167 @@ describe('the Import entry ownership and report facts', () => {
     expect(store.stopRequested()).toBe(false);
   });
 
+  /** A finished export of another flow, at the step whose Done releases it. */
+  const finishedExport = (
+    purpose: 'edit' | 'report',
+    surface: 'file' | 'monitor',
+  ): JobDetail =>
+    importDetail({
+      jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a11',
+      displayId: 'EXP-001',
+      action: 'export-devices',
+      status: 'completed',
+      phase: null,
+      exportSummary: { purpose },
+      exportFile:
+        surface === 'file'
+          ? {
+              name: 'devices-for-editing-EXP-001.csv',
+              sizeBytes: 7_987,
+              rows: 48,
+              columns: 10,
+              expiresAt: future(),
+            }
+          : null,
+      importSummary: null,
+      importSource: null,
+      plan: null,
+      finishedAt: past(),
+    });
+
+  for (const purpose of ['edit', 'report'] as const) {
+    for (const surface of ['file', 'monitor'] as const) {
+      it(`restores the retained report after a ${purpose} ${surface} Done (R3)`, async () => {
+        const routes: Routes = {
+          detail: reportDetail(),
+          reports: () => report({ plan: openPlan(), counts }),
+        };
+        const { render, store, text, button, calls } = setup(routes);
+        store.openImport();
+        store.activeImport.set('IMP-001');
+        store.openImport();
+        await render();
+        expect(store.step()).toBe('report');
+        const reportReads = () =>
+          calls.filter((call) => call.path.includes('/report?')).length;
+        const before = reportReads();
+        // Close Import and finish another flow of the same dialog.
+        store.close();
+        routes.detail = finishedExport(purpose, surface);
+        store.openJob('EXP-001');
+        await render();
+        expect(store.step()).toBe(surface);
+        store.done();
+        await render();
+        expect(store.open()).toBe(false);
+        expect(store.activeImport()).toBe('IMP-001');
+        // Import returns to the retained report, even when its job revision did not move.
+        routes.detail = reportDetail();
+        store.openImport();
+        await render();
+        expect(store.step()).toBe('report');
+        expect(store.reportCounts()).toEqual(counts);
+        expect(store.plan()?.state).toBe('open');
+        expect(store.reportLines()).toEqual([proposedLine]);
+        expect(reportReads()).toBe(before);
+        expect(text()).toContain('7 field changes on 6 devices');
+        expect(button('Cancel import')).toBeDefined();
+      });
+    }
+  }
+
+  it('restores the retained report when its Activity row opens it again (R3)', async () => {
+    const routes: Routes = {
+      detail: reportDetail(),
+      reports: () => report({ plan: openPlan(), counts }),
+    };
+    const { render, store, button } = setup(routes);
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(store.step()).toBe('report');
+    // The same skip condition serves reentry through another job's row.
+    store.close();
+    routes.detail = finishedExport('edit', 'monitor');
+    store.openJob('EXP-001');
+    await render();
+    routes.detail = reportDetail();
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('report');
+    expect(store.reportCounts()).toEqual(counts);
+    expect(store.plan()?.state).toBe('open');
+    expect(button('Cancel import')).toBeDefined();
+  });
+
+  for (const view of ['rejected', 'warnings'] as const) {
+    it(`recovers the facts and error state of a cached ${view} view (R4)`, async () => {
+      let proposedFailed = false;
+      const line =
+        view === 'rejected'
+          ? {
+              ...proposedLine,
+              change: null,
+              column: 'Status',
+              submittedValue: 'Gone',
+              reason: 'The status "Gone" is not a Google status.',
+            }
+          : {
+              ...proposedLine,
+              row: null,
+              deviceId: null,
+              change: null,
+              reason:
+                'The column "Grade" is unknown. It stays out of every write.',
+            };
+      const { render, store, text, button } = setup({
+        detail: reportDetail(),
+        reports: (reportView, page) =>
+          report({
+            view: reportView,
+            page,
+            plan: openPlan(),
+            counts,
+            total: reportView === view ? 1 : 0,
+            lines: reportView === view ? [line] : [],
+            pageCount: 1,
+          }),
+        answer: (path) => {
+          if (!path.includes('/report?')) return undefined;
+          const url = new URL(path, 'http://x');
+          if (
+            !proposedFailed &&
+            url.searchParams.get('view') === 'proposed'
+          ) {
+            proposedFailed = true;
+            return Promise.resolve(response({}, 503));
+          }
+          return undefined;
+        },
+      });
+      store.openImport();
+      store.activeImport.set('IMP-001');
+      store.openImport();
+      await render();
+      await render();
+      // The initial Proposed page failed, and the tab totals kept their own answers.
+      expect(store.reportCounts()).toBeNull();
+      expect(store.reportError()).toBe('The report is unavailable. Try again.');
+      await store.setReportView(view);
+      await render();
+      // A cached view restores the counts, the plan, and the actions of its own answer.
+      expect(store.reportView()).toBe(view);
+      expect(store.reportCounts()).toEqual(counts);
+      expect(store.plan()?.state).toBe('open');
+      expect(store.reportError()).toBe('');
+      expect(store.reportLines()).toEqual([line]);
+      expect(text()).toContain(view === 'rejected' ? 'Download rejected rows' : 'Header row');
+      expect(button('Cancel import')).toBeDefined();
+      expect(button(/^Execute/)?.hasAttribute('disabled')).toBe(false);
+    });
+  }
+
   for (const status of ['running', 'failed', 'cancelled'] as const) {
     it(`clears the report of a finished job when a ${status} successor opens (R4)`, async () => {
       const routes: Routes = {

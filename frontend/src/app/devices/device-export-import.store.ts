@@ -205,10 +205,13 @@ export class DeviceExportImportStore {
   private chosenFile: File | null = null;
   /** Each file choice invalidates the header check of the earlier one. */
   private fileCheck = 0;
-  /** The pages that this dialog already read, by job, view, and page. */
+  /**
+   * The pages that this dialog already read, by job, view, and page. A page keeps the answer
+   * that produced it, so showing it again restores the report facts that answer carried (R4).
+   */
   private readonly cache = new Map<
     string,
-    Map<DeviceImportReportView, Map<number, readonly DeviceImportReportLine[]>>
+    Map<DeviceImportReportView, Map<number, DeviceImportReport>>
   >();
   /** Increments on another person. A late answer is dropped. */
   private epoch = 0;
@@ -270,8 +273,11 @@ export class DeviceExportImportStore {
     this.error.set('');
     const active = this.activeImport();
     if (active) {
-      // The dialog returns to the tab's own import, so the read lands on its own step.
-      this.step.set(this.step() === 'report' ? 'report' : 'validation');
+      // The retained report of this import owns its screen. Another flow's Done resets the
+      // shared step, so reentry restores the report from its own facts (R3).
+      const report =
+        this.reportJob === active && this.reportCounts() !== null;
+      this.step.set(report || this.step() === 'report' ? 'report' : 'validation');
       this.openJob(active);
       return;
     }
@@ -857,9 +863,13 @@ export class DeviceExportImportStore {
       const cached = this.cache.get(displayId)?.get(view)?.get(page);
       if (cached) {
         if (!current()) return;
-        this.reportView.set(view);
-        this.reportPage.set(page);
-        this.reportLines.set(cached);
+        // A cached page owns the facts of its own answer. Showing it again restores the counts,
+        // the change line, the plan, and the pager, and clears the error of the page that it
+        // replaces (R4). The accepted-plan fence still rejects an older plan (R4).
+        this.reportError.set('');
+        if (this.reportJob === displayId && this.job()?.displayId === displayId)
+          this.reportRevision = this.job()!.revision;
+        this.applyReport(cached, true);
         return;
       }
       const outcome = await this.fetchReport(displayId, view, page);
@@ -958,30 +968,14 @@ export class DeviceExportImportStore {
     }
   }
 
-  private applyReport(
-    answer: {
-      view: DeviceImportReportView;
-      page: number;
-      lines: readonly DeviceImportReportLine[];
-      total: number;
-      pageCount: number;
-      counts: DeviceImportCounts;
-      refresh: DeviceImportRefresh;
-      changes: DeviceImportChangeSummary;
-      plan: JobImportPlan | null;
-    },
-    show: boolean,
-  ): void {
+  private applyReport(answer: DeviceImportReport, show: boolean): void {
     const displayId = this.reportJob;
     if (!displayId || displayId !== this.displayId()) return;
     const pages =
       this.cache.get(displayId) ??
-      new Map<
-        DeviceImportReportView,
-        Map<number, readonly DeviceImportReportLine[]>
-      >();
-    const views = pages.get(answer.view) ?? new Map();
-    views.set(answer.page, answer.lines);
+      new Map<DeviceImportReportView, Map<number, DeviceImportReport>>();
+    const views = pages.get(answer.view) ?? new Map<number, DeviceImportReport>();
+    views.set(answer.page, answer);
     pages.set(answer.view, views);
     this.cache.set(displayId, pages);
     this.reportTotals.update((totals) => ({
@@ -1214,10 +1208,21 @@ export class DeviceExportImportStore {
             if (this.reportJob !== detail.data.displayId) {
               // The report belongs to this job, not to the one that the dialog showed before.
               void this.openImportReport();
-            } else if (this.reportRevision !== detail.data.revision) {
-              // A newer revision may change the plan, so the shown page reads again (R4).
-              this.reportRevision = detail.data.revision;
-              void this.refreshReportFacts();
+            } else {
+              // The retained report owns this job's screen, even when its facts need no
+              // read. Another flow's Done resets the shared step, so restore it here (R3).
+              this.step.set('report');
+              if (this.reportRevision !== detail.data.revision) {
+                // A newer revision may change the plan, so the shown page reads again (R4).
+                this.reportRevision = detail.data.revision;
+                void this.refreshReportFacts();
+              } else if (
+                this.reportCounts() === null &&
+                !this.reportLoading()
+              ) {
+                // A report that never loaded is read again on reentry (R4).
+                void this.openImportReport();
+              }
             }
           } else {
             // A running, failed, or cancelled successor is not the report that the dialog
