@@ -203,6 +203,39 @@ it('clears browsing state when a different person signs in', () => {
   expect(store.view().predicates).toEqual([]);
 });
 
+it('starts the next person with a first stream and nothing to recover', async () => {
+  const session = signal(sessionFor('actor'));
+  const request = routes({
+    '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+    '/api/devices/by-ids': () => Response.json({ rows: [rowFor('d1', false)] }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale: 0, refreshing: false } }),
+  });
+  const store = setup(request, session);
+  const opened = streams(store);
+  const { api } = grid([rowFor('d1', false)]);
+  store.gridRows.attach(api);
+  TestBed.tick();
+  await store.init();
+  opened[0].open();
+
+  session.set(sessionFor('someone-else'));
+  TestBed.tick();
+  await vi.waitFor(() => expect(opened).toHaveLength(2));
+  const before = store.revision();
+  const reads = statusReads(request);
+  opened[1].open();
+
+  // The next person's first open recovers no row of the person before.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(statusReads(request)).toBe(reads);
+  expect(request).not.toHaveBeenCalledWith(
+    '/api/devices/by-ids',
+    expect.anything(),
+  );
+  expect(store.revision()).toBe(before);
+});
+
 const groupBody = {
   groups: [{ key: '/School A', devices: 150 }],
   groupCount: 2,
