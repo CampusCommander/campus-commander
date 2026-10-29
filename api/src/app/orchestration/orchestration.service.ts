@@ -195,6 +195,33 @@ export class OrchestrationService {
     });
   }
 
+  /**
+   * Start one validation job. The flow claims the job with this lease and ends it with
+   * `interrupted` from its `errors` block when the run is lost (design section 6).
+   */
+  async startDeviceImport(input: {
+    customerId: string;
+    jobId: string;
+    leaseId: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        leaseId: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('device-import.yaml', 'device_import');
+    return this.execute('device_import', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      leaseId: values.leaseId,
+      correlationId: values.correlationId,
+    });
+  }
+
   async startDeviceUpdateReconcile(input: {
     customerId: string;
     jobId: string;

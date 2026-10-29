@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-28.
+Updated: 2026-10-29.
 
 ## Authorized now
 
@@ -21,10 +21,22 @@ On 2026-10-26 the owner supplied his reference design, answered decisions D1 to 
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
 On 2026-10-26 the owner approved the job cancel mockup. Owner: "Thats fine." The approved mockup is [2026-10-26-job-cancel.html](ui/designs/2026-10-26-job-cancel.html).
 On 2026-10-28 the owner signed off the universal job cancel. He asked "What do 2 and 6 reresent?" and then replied: "Agreed I sign off on that."
-On 2026-10-28 the owner kept HTTP/2 at the edge. Owner: "Yea keep with http/2 if it wont turn into a development blocker." PR #156 serves the app over HTTP/2.
+
+On 2026-10-28 the owner kept HTTP/2 at the edge. Owner: "Yea keep with http/2 if it wont turn into a development blocker."
+Push runs on `main` then failed the all-Docker restart test while the edge served HTTP/2. After diagnosis `t_a4e965a3`, the owner picked option 2, the edge fix. Owner: "2". Option 2 said to revert if `main` was not green after one round.
+
+PR #163 changed the edge sessions and merged as `3262e6a`. The gated full run of PR #164 then failed twice on the same restart test (`api-e2e/all-docker.test.mjs`).
+Under that fallback, PR #165 reverted PRs #156 and #163. It merged as `567c602` on 2026-10-29. The edge serves HTTP/1.1 again, and finding 7 is open again.
+
+On 2026-10-29 the owner chose option 1 for finding 7, the page freeze with many tabs open. Option 1 pauses the live updates of a background tab, and the tab catches up when the person switches back. Point 2 was one live connection per tab, as Firestore does. Owner: "1 for now, but persue point 2".
+Card `t_51ec6f43` builds option 1 and the frontend part of point 2. Each tab opens each feed once, and a background tab holds no feed.
+
 Early on 2026-10-28 the owner directed the export and import build. Owner: "Go ahead and execute on the import and export work."
 On 2026-10-28 the owner sent UI changes for export and import. Owner: "Seperate the export for editing and export for reporting as two bulk edit actions. Call one export and the other reports." He asked for a dialog instead of a sidebar, a validation progress indicator and its report in the same dialog, and a help icon button for instructions outside the normal flow. Owner: "Go ahead and make those changes then we will do the next polish pass on the design." The [record](workflows/batch-update-export-import.md#2026-10-28-main-chat-ui-changes-for-export-and-import) holds the full message.
 On 2026-10-28 the owner approved version 4 of the CSV slice mockup. Owner: "This is perfect. Please go ahead and execute on this." He also approved a Failed tab on the execution results: "yes".
+
+On 2026-10-28 the owner approved an Unknown outcome on the Failed tab. Owner: "Unknown yes".
+
 The approved mockup is [2026-10-28-device-export-import.html](ui/designs/2026-10-28-device-export-import.html).
 The CSV slice of the [batch update through export and import record](workflows/batch-update-export-import.md) builds from it. Its design addendum comes first.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
@@ -86,7 +98,8 @@ The sign-off accepts the drafted wording in the package's `owner-review-wording.
 Two examples are "This job no longer exists." for a missing job and "Cancellation stopped 1 operation before it reached Google." for a single operation.
 
 Findings 1, 3, 4, and 5 stay as built.
-Finding 7 stays as the HTTP/2 edge of card `t_82e670d2`. The owner kept HTTP/2, and PR #156 merged it.
+PR #156 fixed finding 7 at the edge (card `t_82e670d2`), and revert PR #165 reopened it.
+Card `t_51ec6f43` fixes it: each tab opens each feed once, and a background tab holds no feed.
 
 Three runs support the sign-off:
 

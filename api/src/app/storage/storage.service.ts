@@ -61,6 +61,20 @@ interface StorageModule {
   }): Promise<ArtifactStore>;
 }
 
+/** One stored upload, with the size and the digest that the store computed while it wrote. */
+export interface StagedUpload {
+  artifactId: string;
+  attemptId: string;
+  sizeBytes: number;
+  sha256: string;
+}
+
+/** The largest uploaded file. The edge refuses above it, and the store refuses a second time. */
+const UPLOAD_MAX_BYTES = 1_073_741_824;
+
+/** The upload and the export file stay for 30 days (design section 4). */
+const FILE_RETENTION_DAYS = 30;
+
 @Injectable()
 export class StorageService
   implements OnApplicationBootstrap, OnApplicationShutdown
@@ -115,6 +129,33 @@ export class StorageService
    */
   async openRead(artifactId: string): Promise<AsyncIterable<Buffer>> {
     return (await this.connection()).openRead(artifactId);
+  }
+
+  /**
+   * Stage and publish one uploaded file (design section 4). The store computes the size and the
+   * SHA-256 while it writes, so the caller never holds the file. The staged file stays 30 days,
+   * unless the caller discards it first.
+   */
+  async stageUpload(source: AsyncIterable<Buffer>): Promise<StagedUpload> {
+    const store = await this.connection();
+    const descriptor = await store.stageStream(
+      {
+        schemaVersion: 1,
+        maxBytes: UPLOAD_MAX_BYTES,
+        retentionDays: FILE_RETENTION_DAYS,
+      },
+      source,
+    );
+    await store.publish(descriptor);
+    return descriptor;
+  }
+
+  /** Remove one staged upload that a refused request leaves behind. */
+  async discardUpload(descriptor: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<unknown> {
+    return (await this.connection()).remove(descriptor);
   }
 
   async check(correlationId: string) {

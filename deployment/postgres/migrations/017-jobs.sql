@@ -974,12 +974,16 @@ END;
 $$;
 
 -- One validation job and its detail row, after the upload. A caller without the three import actions
--- receives no job. The row count stays null until the header check reads the file.
+-- receives no job. The row count stays null until the header check reads the file. The optional
+-- artifact is the uploaded file: the same transaction links it to the new job through
+-- `cc.artifacts.job_id`, so the claim of design section 6 answers it. A revalidation calls this
+-- function again with the stored file, which moves the link to the new job.
 CREATE FUNCTION cc.create_device_import_job(p_actor uuid,p_version integer,p_customer text,p_mode text,
-  p_source_type text,p_source_name text,p_source_size bigint,p_status_permissions text[],p_correlation uuid)
+  p_source_type text,p_source_name text,p_source_size bigint,p_status_permissions text[],p_correlation uuid,
+  p_artifact_id text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; connection cc.google_connection; now_at timestamptz; number bigint;
+DECLARE job cc.jobs; connection cc.google_connection; artifact cc.artifacts; now_at timestamptz; number bigint;
 BEGIN
   p_status_permissions:=COALESCE(p_status_permissions,'{}'::text[]);
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
@@ -988,6 +992,7 @@ BEGIN
     p_source_type IS NULL OR p_source_type NOT IN ('csv') OR
     p_source_name IS NULL OR char_length(p_source_name) NOT BETWEEN 1 AND 255 OR
     p_source_size IS NULL OR p_source_size NOT BETWEEN 0 AND 1073741824 OR
+    (p_artifact_id IS NOT NULL AND char_length(p_artifact_id) NOT BETWEEN 1 AND 128) OR
     EXISTS(SELECT 1 FROM unnest(p_status_permissions) s WHERE s NOT IN ('disable','reenable','deprovision')) THEN
     RAISE EXCEPTION 'The import request is invalid.' USING ERRCODE='22023';
   END IF;
@@ -1004,6 +1009,21 @@ BEGIN
       (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)))<>3 THEN
     RETURN jsonb_build_object('outcome','forbidden');
   END IF;
+  -- The link to the uploaded file (design section 6). Only a published upload of the caller's
+  -- customer that this job may own fits: a file of another customer, an unfinished upload, a
+  -- purged file, a file past its retention, and a file of another size answer no link. The row
+  -- lock precedes the insert, so two calls cannot link the same file at once.
+  IF p_artifact_id IS NOT NULL THEN
+    SELECT * INTO artifact FROM cc.artifacts a WHERE a.id=p_artifact_id
+      AND a.publication_state='ready' AND a.size_bytes=p_source_size
+      AND (a.retention_until IS NULL OR a.retention_until>clock_timestamp())
+      AND (a.job_id IS NULL OR EXISTS(SELECT 1 FROM cc.jobs j WHERE j.job_id::text=a.job_id
+        AND j.customer_id=p_customer))
+      FOR UPDATE;
+    IF artifact.id IS NULL THEN
+      RETURN jsonb_build_object('outcome','artifact-unavailable');
+    END IF;
+  END IF;
   now_at:=clock_timestamp();
   number:=nextval('cc.job_number_imp');
   INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
@@ -1013,6 +1033,11 @@ BEGIN
   RETURNING * INTO job;
   INSERT INTO cc.device_import_jobs(job_id,mode,source_type,source_name,source_size_bytes,status_permissions)
     VALUES(job.job_id,p_mode,p_source_type,p_source_name,p_source_size,p_status_permissions);
+  -- The link sets no reference count, so the purge still removes the file after 30 days (design
+  -- section 4). A revalidation moves the same link from the stored job to this one.
+  IF p_artifact_id IS NOT NULL THEN
+    UPDATE cc.artifacts SET job_id=job.job_id::text WHERE id=p_artifact_id;
+  END IF;
   PERFORM cc.record_job_change(job.job_id,true);
   RETURN jsonb_build_object('outcome','created','receipt',jsonb_build_object('jobId',job.job_id,
     'displayId',job.display_id,'status','accepted','mode',p_mode,'name',p_source_name,
@@ -4515,7 +4540,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer),
   cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid),
   cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid),
-  cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid),
+  cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text),
   cc.claim_device_export_job(text,uuid,uuid),cc.claim_device_import_job(text,uuid,uuid),
   cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
   cc.renew_device_import_job(text,uuid,uuid,integer,text,integer,integer),
