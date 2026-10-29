@@ -410,6 +410,13 @@ export function cancelState(
     return 'none';
   // A refresh has no operations, and no waiting status exists (design O1 ruling).
   if (job.action === 'refresh-inventory') return 'request';
+  // An export or a validation has no per-device operations either. Cancel stops its worker
+  // (design section 9, built behavior 8).
+  if (
+    job.action === 'export-devices' ||
+    job.action === 'validate-device-import'
+  )
+    return 'request';
   return (job.progress.pending ?? 0) > 0 ? 'request' : 'none';
 }
 

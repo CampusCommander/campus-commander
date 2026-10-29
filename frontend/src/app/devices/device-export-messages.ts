@@ -96,26 +96,6 @@ export function exportFailureText(failure: JobFailure | null): string {
   }
 }
 
-/** The short failure of the Jobs grid line (state 26). */
-export function exportFailureLabel(failure: JobFailure | null): string {
-  switch (failure) {
-    case 'export-too-large':
-      return 'Export too large';
-    case 'storage-unavailable':
-      return 'Storage unavailable';
-    case 'inventory-unavailable':
-      return 'Inventory unavailable';
-    case 'interrupted':
-      return 'The export stopped';
-    case 'permission-changed':
-      return 'Permission changed';
-    case 'connection-changed':
-      return 'Connection changed';
-    default:
-      return 'Export failed';
-  }
-}
-
 /** The file line of a ready export (states 05 and 08). */
 export function exportFileFactList(file: {
   sizeBytes: number;

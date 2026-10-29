@@ -19,6 +19,11 @@ import type { JobOperation } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { devicesReadable } from '../devices/devices.store';
 import {
+  exportExpiredText,
+  exportFileFactList,
+  exportFileHref,
+} from '../devices/device-export-messages';
+import {
   JOB_STATUS_LABELS,
   actionLabel,
   formatTimestamp,
@@ -175,6 +180,30 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly isRefresh = computed(
     () => this.store.job()?.action === 'refresh-inventory',
   );
+  /** An export and a validation hide the counters and operation results (behavior 9). */
+  protected readonly isExport = computed(
+    () => this.store.job()?.action === 'export-devices',
+  );
+  protected readonly isImport = computed(
+    () => this.store.job()?.action === 'validate-device-import',
+  );
+  /** The file card of a finished export. Notes answer 24 keeps it on the job page. */
+  protected readonly exportFile = computed(() => {
+    const job = this.store.job();
+    if (!job) return null;
+    const file = job.exportFile;
+    if (!file) return null;
+    const expired = Date.parse(file.expiresAt) <= Date.now();
+    return {
+      name: file.name,
+      facts: exportFileFactList(file).join(' · '),
+      expired,
+      line: expired
+        ? exportExpiredText(file.expiresAt)
+        : `Available until ${formatTimestamp(file.expiresAt)}`,
+      href: exportFileHref(job.displayId),
+    };
+  });
   protected readonly activity = computed(() => {
     const job = this.store.job();
     return job ? latestActivityLine(job) : '';
