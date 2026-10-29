@@ -52,6 +52,6 @@ import { DevicesService } from './devices.service';
     DeviceFreshReadService,
   ],
   // One subscriber connection serves the devices stream and the jobs stream.
-  exports: [DeviceEventsService],
+  exports: [DeviceEventsService, DevicesService],
 })
 export class DevicesModule {}
