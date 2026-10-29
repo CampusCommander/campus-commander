@@ -114,6 +114,8 @@ let people;
 let lockResult;
 /** Whether the job reads as visible to the signed-in person. */
 let jobVisible;
+/** Whether the confirmation answers the receipt of an existing job. */
+let confirmExisting;
 /** Whether the link call refuses, as an incomplete link refuses in 017-jobs.sql. */
 let linkRefuses;
 /** The previews of the current test, by preview ID. */
@@ -252,6 +254,7 @@ function reset({ actions, recordedStatuses = null } = {}) {
   people = new Map([[actor, { id: actor, display_name: 'Test person' }]]);
   lockResult = { outcome: 'locked', plan: sqlPlan() };
   jobVisible = true;
+  confirmExisting = false;
   linkRefuses = false;
   previews = new Map();
   createdJobs = [];
@@ -490,6 +493,8 @@ function confirmAnswer(values) {
   createdJobs.push(job);
   preview.job = job;
   confirmations.push({ previewId, phrase, digest });
+  if (confirmExisting)
+    return { outcome: 'existing', receipt: storedReceipt(job) };
   return {
     outcome: 'created',
     // The stored receipt of `cc.device_update_receipt` holds no action, and the route adds it.
@@ -1277,6 +1282,23 @@ test('a status plan fills one preview per action and reason, and every job waits
       actionTargets([deviceRow('dev-a')], 'disable'),
     ),
     'The status digest equals the built one.',
+  );
+});
+
+test('a confirmation that finds the job answers its receipt', async () => {
+  reset();
+  confirmExisting = true;
+  const answer = await execute();
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.deepEqual(
+    answer.body.receipts.map((one) => one.action),
+    ['update-device-annotations'],
+  );
+  assert.equal(createdJobs.length, 1);
+  assert.equal(
+    planState,
+    'executed',
+    'The link still marks the plan executed.',
   );
 });
 

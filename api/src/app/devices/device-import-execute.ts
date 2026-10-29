@@ -850,6 +850,9 @@ export class DeviceImportExecute {
         phrase,
       ],
     );
+    if (String(confirmed['outcome']) === 'existing')
+      // Confirm is idempotent: a preview that holds a job answers its receipt.
+      return confirmed['receipt'] as Record<string, unknown>;
     if (String(confirmed['outcome']) !== 'created')
       deviceWriteFunctionError(confirmed);
     return confirmed['receipt'] as Record<string, unknown>;
