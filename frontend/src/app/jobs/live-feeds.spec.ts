@@ -262,6 +262,31 @@ it('registers the event names of a late subscriber on the shared connection', ()
   expect(first.changed).not.toHaveBeenCalled();
 });
 
+it('settles the first attempt when its subscriber leaves during the gate', async () => {
+  const { feeds } = setup();
+  const sources: FakeSource[] = [];
+  let answer!: (value: StreamGate) => void;
+  const gate = () =>
+    new Promise<StreamGate>((resolve) => {
+      answer = resolve;
+    });
+  const one = follower(sources, ['job-changed'], gate);
+  const feed = feeds.subscribe('/api/jobs/events', one.handlers);
+  feed.close();
+
+  answer('open');
+  await Promise.race([
+    feed.ready,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error('the ready promise did not settle')),
+        1000,
+      ),
+    ),
+  ]);
+  expect(sources).toHaveLength(0);
+});
+
 it('keeps a stopped feed closed until a resume', async () => {
   const { feeds } = setup();
   const sources: FakeSource[] = [];

@@ -127,7 +127,11 @@ export class JobStream {
   ): Promise<void> {
     const result = await answer;
     // A close or another open replaced this attempt. Its answer changes nothing.
-    if (attempt !== this.attempt) return;
+    if (attempt !== this.attempt) {
+      // A subscriber that left while the gate read was pending must not wait forever.
+      this.options.settled?.();
+      return;
+    }
     this.opening = false;
     this.decide(result);
     this.options.settled?.();
