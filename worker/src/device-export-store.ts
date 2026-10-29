@@ -43,6 +43,19 @@ export interface DeviceExportStore {
   close(): Promise<void>;
 }
 
+/**
+ * One stored artifact that the worker reads. The validation job streams its uploaded file through
+ * this call (design section 6).
+ */
+export interface DeviceArtifactReader {
+  openRead(artifactId: string): Promise<AsyncIterable<Uint8Array>>;
+}
+
+/** The store of a process that both writes export files and reads uploaded files. */
+export interface DeviceArtifactStore
+  extends DeviceExportStore,
+    DeviceArtifactReader {}
+
 interface ArtifactStore {
   stageStream(
     manifest: DeviceExportStreamManifest & { retentionUntil: string },
@@ -53,6 +66,7 @@ interface ArtifactStore {
     artifactId: string;
     attemptId: string;
   }): Promise<boolean>;
+  openRead(artifactId: string): Promise<AsyncIterable<Uint8Array>>;
   close(): Promise<void>;
 }
 
@@ -79,7 +93,7 @@ export interface DeviceExportStoreOptions {
  */
 export async function createDeviceExportStore(
   options: DeviceExportStoreOptions,
-): Promise<DeviceExportStore> {
+): Promise<DeviceArtifactStore> {
   const url = pathToFileURL(
     resolve(process.cwd(), 'deployment/storage/index.mjs'),
   ).href;
@@ -102,6 +116,7 @@ export async function createDeviceExportStore(
     },
     publish: (descriptor) => store.publish(descriptor),
     remove: (descriptor) => store.remove(descriptor),
+    openRead: (artifactId) => store.openRead(artifactId),
     close: () => store.close(),
   };
 }

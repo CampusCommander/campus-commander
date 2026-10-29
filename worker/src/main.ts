@@ -15,6 +15,7 @@ import {
   handleDeviceUpdateReconcileDispatch,
   handleDeviceCommandPollDispatch,
   handleDeviceExportDispatch,
+  handleDeviceImportDispatch,
   readDispatchSecret,
 } from './dispatch';
 import { GoogleWorker } from './google-connection';
@@ -129,6 +130,15 @@ const handleRequest: RequestListener = async (request, response) => {
     return;
   if (
     await handleDeviceExportDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleDeviceImportDispatch(
       request,
       response,
       { secret: dispatchSecret, signal: stopping.signal },

@@ -42,6 +42,11 @@ export class CsvError extends Error {
 export interface CsvRecord {
   /** The 1-based line where the record starts. A quoted cell may span lines. */
   line: number;
+  /**
+   * The 1-based spreadsheet row of the record. A blank record is dropped, but it still holds its
+   * row, so this number counts it (technical design, "Source row number").
+   */
+  row: number;
   /** The cell text of the record, unquoted and unescaped. */
   cells: string[];
 }
@@ -60,12 +65,17 @@ const LOW_SURROGATE_FIRST = 0xdc00;
 /**
  * An incremental RFC 4180 reader. A chunk may split any character pair, any CRLF pair, and any
  * quoted cell. A byte order mark at the start of the file is dropped. A blank record is dropped
- * and counts nowhere (section 9.2). The first record that it answers sets the column count, and a
- * later record with another count refuses the file.
+ * and counts in no data count (section 9.2). The first record that it answers sets the column
+ * count, and a later record with another count refuses the file.
+ *
+ * Every logical record carries its spreadsheet row, the blank records included. A blank record
+ * holds a row of the sheet even though the reader answers no record for it, so a later record
+ * keeps the row that the person sees (technical design, "Source row number").
  */
 export function createCsvReader(): CsvReader {
   let line = 1;
   let recordLine = 1;
+  let recordRow = 0;
   let cells: string[] = [];
   let field = '';
   let fieldLength = 0;
@@ -86,7 +96,8 @@ export function createCsvReader(): CsvReader {
 
   function endRecord(out: CsvRecord[]): void {
     endField();
-    const record: CsvRecord = { line: recordLine, cells };
+    recordRow += 1;
+    const record: CsvRecord = { line: recordLine, row: recordRow, cells };
     const blank = record.cells.every((cell) => cell.trim() === '');
     cells = [];
     recordStarted = false;
