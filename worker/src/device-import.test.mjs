@@ -142,7 +142,7 @@ function fakeTimers() {
 /** A store that serves the uploaded file in byte chunks that break pairs and quoted cells. */
 function fakeStore(text, options = {}) {
   const calls = [];
-  const bytes = Buffer.from(text, 'utf8');
+  const bytes = options.bytes ?? Buffer.from(text, 'utf8');
   let chunks = 0;
   const size = options.chunkSize ?? 7;
   return {
@@ -835,7 +835,7 @@ test('a refused file fails the job with its code and the module text', async () 
   assert.equal(harnessed.database.calls.transactions, 0);
 });
 
-test('a file that is not UTF-8 is refused as unreadable', async () => {
+test('a store read fault fails the job with storage-unavailable', async () => {
   const harnessed = harness({
     store: { readFailure: true },
     devices: [device('dev-a')],
@@ -846,6 +846,30 @@ test('a file that is not UTF-8 is refused as unreadable', async () => {
   // A store read fault is a storage failure, not a file refusal (design section 6).
   assert.equal(answer.outcome, 'failed');
   assert.equal(answer.failure, 'storage-unavailable');
+  assert.equal(harnessed.database.calls.lines.length, 0);
+});
+
+test('a file that is not UTF-8 is refused as unreadable', async () => {
+  const harnessed = harness({
+    // A header of well-formed bytes, then a sequence that no UTF-8 decoder accepts.
+    store: { bytes: Buffer.from([0x44, 0x65, 0x76, 0x2c, 0xff, 0xfe, 0x0a]) },
+    devices: [device('dev-a')],
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'invalid-response');
+  assert.equal(answer.refusal, 'unreadable-file');
+  assert.deepEqual(harnessed.database.calls.finish, [
+    {
+      attempt: 1,
+      counts: null,
+      failure: 'invalid-response',
+      refusal: 'unreadable-file',
+      refusalText: deviceImportRefusalText('unreadable-file'),
+    },
+  ]);
   assert.equal(harnessed.database.calls.lines.length, 0);
 });
 

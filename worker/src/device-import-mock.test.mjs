@@ -106,6 +106,7 @@ function fakeDatabase(stored, events) {
             {
               result: {
                 outcome: 'claimed',
+                attempt: 1,
                 displayId: 'IMP-001',
                 mode: 'sync-changes',
                 sourceArtifactId: artifactId,
@@ -120,14 +121,24 @@ function fakeDatabase(stored, events) {
       if (name === 'renew_device_import_job')
         return { rows: [{ result: { outcome: 'renewed' } }] };
       if (name === 'store_device_import_lines') {
-        const lines = JSON.parse(values[3]);
+        assert.equal(
+          values[3],
+          1,
+          'The store carries the attempt of the claim.',
+        );
+        const lines = JSON.parse(values[4]);
         calls.lines.push(lines);
         lineCount += lines.length;
         return { rows: [{ result: { outcome: 'stored' } }] };
       }
       if (name === 'finish_device_import_job') {
-        const counts = values[3] === null ? null : JSON.parse(values[3]);
-        calls.finish.push({ counts, failure: values[4] ?? null });
+        assert.equal(
+          values[3],
+          1,
+          'The finish carries the attempt of the claim.',
+        );
+        const counts = values[4] === null ? null : JSON.parse(values[4]);
+        calls.finish.push({ counts, failure: values[5] ?? null });
         assert.notEqual(counts, null, 'A completed run stores its counts.');
         assert.equal(
           counts.rows,
@@ -340,7 +351,7 @@ test('the refresh reads the stale devices and the tree, and the compare uses the
     lines
       .filter((line) => line.kind === 'rejection')
       .map((line) => [line.sourceRow, line.reason]),
-    [[2, deviceImportUnitRejectionText(mistypedUnit)]],
+    [[3, deviceImportUnitRejectionText(mistypedUnit)]],
   );
   // The change holds the value that Google answered, which only the refresh could supply.
   assert.deepEqual(

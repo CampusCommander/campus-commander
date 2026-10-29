@@ -697,13 +697,26 @@ export async function qualifyDeviceExportImport({
           'busy',
         );
         assert.deepEqual(await lineCounts(), [1, 1, 1]);
-        // A claim by the same owner keeps the output of that owner.
+        // A claim by the same owner starts a new attempt of the whole validation. The partial report of
+        // the attempt before it goes, and that attempt can store nothing more, so a retried request
+        // cannot duplicate the report (design section 6, step 1).
         await expire('device_import_jobs', imported.receipt.jobId);
+        const replay = await claimImport(imported.receipt.jobId, leaseA);
+        assert.equal(replay.outcome, 'claimed');
+        assert.equal(replay.attempt, 2);
+        assert.deepEqual(await lineCounts(), [0, 0, 0]);
         assert.equal(
-          (await claimImport(imported.receipt.jobId, leaseA)).outcome,
-          'claimed',
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              leaseA,
+              lines(),
+              replay.attempt - 1,
+            )
+          ).outcome,
+          'fenced',
         );
-        assert.deepEqual(await lineCounts(), [1, 1, 1]);
+        assert.deepEqual(await lineCounts(), [0, 0, 0]);
         // A new owner restarts the whole validation, so the replaced output cannot double the report.
         await expire('device_import_jobs', imported.receipt.jobId);
         assert.equal(
