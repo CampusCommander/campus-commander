@@ -56,6 +56,7 @@ let admin;
 let pool;
 let store;
 let shared;
+let solitary;
 try {
   await writeFile(
     join(root, 'postgres.env'),
@@ -570,6 +571,71 @@ try {
   results.push(
     'the hourly purge removes an expired artifact and keeps a retained or referenced one: pass',
   );
+  // A plan lock holder stages its manifest on the connection it already holds. The pool holds one
+  // connection, so a second lease cannot happen: the stage would wait until it fails (review R3).
+  solitary = new pg.Pool({ ...connection, max: 1 });
+  const solitaryStore = await createArtifactStore({
+    pool: solitary,
+    root,
+    backend,
+  });
+  const stagedBytes = Buffer.from('[{"deviceId":"D-1","ordinal":1}]');
+  const holder = await solitary.connect();
+  let staged;
+  try {
+    await holder.query('BEGIN');
+    staged = await solitaryStore.stageStreamWithin(
+      holder,
+      { schemaVersion: 3, maxBytes: 1024 },
+      [stagedBytes],
+    );
+    await holder.query('COMMIT');
+  } catch (error) {
+    await holder.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    holder.release();
+  }
+  assert.deepEqual(
+    { sizeBytes: staged.sizeBytes, sha256: staged.sha256 },
+    { sizeBytes: stagedBytes.length, sha256: hash(stagedBytes) },
+  );
+  assert.equal((await solitaryStore.inspect(staged)).publicationState, 'ready');
+  assert.deepEqual(
+    await collect(await solitaryStore.openRead(staged.artifactId)),
+    stagedBytes,
+  );
+  assert.equal(await solitaryStore.discardStaged(staged), false);
+  const rolled = await solitary.connect();
+  let discarded;
+  try {
+    await rolled.query('BEGIN');
+    discarded = await solitaryStore.stageStreamWithin(
+      rolled,
+      { schemaVersion: 3, maxBytes: 1024 },
+      [Buffer.from('[]')],
+    );
+    await rolled.query('ROLLBACK');
+  } finally {
+    rolled.release();
+  }
+  assert.equal(await solitaryStore.discardStaged(discarded), true);
+  assert.equal(
+    (
+      await pool.query('SELECT 1 FROM cc.artifacts WHERE id=$1', [
+        discarded.artifactId,
+      ])
+    ).rowCount,
+    0,
+  );
+  assert.equal(
+    await exists(join(root, `${discarded.artifactId}.${discarded.attemptId}`)),
+    false,
+  );
+  await solitaryStore.close();
+  results.push(
+    'a caller transaction stages on its one connection; a committed manifest reads; a rolled-back attempt discards its bytes: pass',
+  );
   console.log(
     JSON.stringify(
       {
@@ -583,6 +649,7 @@ try {
   );
 } finally {
   await shared?.close();
+  await solitary?.end();
   await store?.close();
   await pool?.end();
   await admin?.end();
