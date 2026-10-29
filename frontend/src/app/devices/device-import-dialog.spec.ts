@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
@@ -180,12 +181,18 @@ interface Routes {
   reports?: (view: string, page: number) => unknown;
   upload?: () => Promise<Response>;
   receipt?: unknown;
+  /** The session of the signed-in person. A switch runs the store reset. */
+  session?: () => { identity: { id: string } } | null;
+  /** A held answer for one route, so a test controls the moment of the result. */
+  answer?: (path: string, call: number) => Promise<Response> | undefined;
 }
 
 function setup(routes: Routes) {
   const calls: { path: string; body?: unknown }[] = [];
   const request = vi.fn(async (path: string, body?: unknown) => {
     calls.push({ path, body });
+    const held = routes.answer?.(path, calls.length);
+    if (held) return held;
     if (path.startsWith('/api/jobs/') && path.endsWith('/cancel'))
       return response({});
     if (path.startsWith('/api/jobs/')) return response(routes.detail);
@@ -221,7 +228,11 @@ function setup(routes: Routes) {
       provideRouter([]),
       {
         provide: AuthStore,
-        useValue: { session: () => null, can: () => true, request },
+        useValue: {
+          session: routes.session ?? (() => null),
+          can: () => true,
+          request,
+        },
       },
       {
         provide: LiveFeeds,
@@ -736,5 +747,472 @@ describe('the Import step of the dialog', () => {
     } finally {
       globalThis.EventSource = original;
     }
+  });
+});
+
+/** An open plan of the report (state 13). */
+const openPlan = (overrides: Record<string, unknown> = {}) => ({
+  planId,
+  revision: 2,
+  state: 'open',
+  expiresAt: future(),
+  changedBy: null,
+  changedAt: null,
+  ...overrides,
+});
+
+/** A validation that finished with a report and an open plan. */
+const reportDetail = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  importDetail({
+    status: 'completed',
+    phase: { name: 'report', done: 0, total: null },
+    progress: {
+      total: 48,
+      succeeded: 48,
+      failed: 0,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      cancelled: 0,
+      pending: 0,
+    },
+    importSummary: {
+      mode: 'sync-changes',
+      planState: 'open',
+      proposed: 12,
+      rejected: 2,
+      refusal: null,
+    },
+    importSource: {
+      name: 'devices.csv',
+      sizeBytes: 7_936,
+      rowsRead: 48,
+      candidateRows: 48,
+      refusalText: null,
+    },
+    plan: openPlan() as JobDetail['plan'],
+    ...overrides,
+  });
+
+const personB = { identity: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } };
+const personA = { identity: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } };
+
+describe('the Import entry ownership and report facts', () => {
+  it('drops a held plan-cancel answer after a principal switch (R1)', async () => {
+    const held = deferred<Response>();
+    const session = signal<{ identity: { id: string } } | null>(personA);
+    const { render, store } = setup({
+      detail: reportDetail(),
+      reports: () => report({ plan: openPlan() }),
+      session: () => session(),
+      answer: (path) => (path.endsWith('/cancel') ? held.promise : undefined),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(store.plan()?.state).toBe('open');
+    const done = store.cancelImport();
+    session.set(personB);
+    TestBed.tick();
+    await render();
+    held.resolve(response({ plan: openPlan({ state: 'cancelled' }) }));
+    await done;
+    await render();
+    // Person B keeps none of person A's report, plan, or busy state.
+    expect(store.plan()).toBeNull();
+    expect(store.activeImport()).toBeNull();
+    expect(store.actionError()).toBe('');
+    expect(store.actionBusy()).toBe(false);
+  });
+
+  it('does not clear a newer action of the successor (R1)', async () => {
+    const heldCancel = deferred<Response>();
+    const heldStop = deferred<Response>();
+    let heldCancelUsed = false;
+    const session = signal<{ identity: { id: string } } | null>(personA);
+    const { render, store } = setup({
+      detail: reportDetail(),
+      reports: () => report({ plan: openPlan() }),
+      session: () => session(),
+      answer: (path) => {
+        if (!path.endsWith('/cancel')) return undefined;
+        if (!heldCancelUsed) {
+          heldCancelUsed = true;
+          return heldCancel.promise;
+        }
+        return heldStop.promise;
+      },
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    const first = store.cancelImport();
+    session.set(personB);
+    TestBed.tick();
+    await render();
+    // The successor starts its own stop on a job that it owns.
+    store.activeImport.set('IMP-002');
+    store.openJob('IMP-002');
+    await render();
+    const second = store.stopValidation();
+    expect(store.actionBusy()).toBe(true);
+    heldCancel.resolve(response({ plan: openPlan({ state: 'cancelled' }) }));
+    await first;
+    await render();
+    expect(store.actionBusy()).toBe(true);
+    heldStop.resolve(response({}));
+    await second;
+    await render();
+    expect(store.actionBusy()).toBe(false);
+  });
+
+  it('drops a held revalidation receipt after a principal switch (R1)', async () => {
+    const held = deferred<Response>();
+    const session = signal<{ identity: { id: string } } | null>(personA);
+    const { render, store } = setup({
+      detail: reportDetail({
+        plan: openPlan({
+          state: 'expired',
+          expiresAt: past(),
+        }) as JobDetail['plan'],
+      }),
+      reports: () =>
+        report({ plan: openPlan({ state: 'expired', expiresAt: past() }) }),
+      session: () => session(),
+      answer: (path) =>
+        path.endsWith('/revalidate') ? held.promise : undefined,
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    const done = store.revalidate();
+    session.set(personB);
+    TestBed.tick();
+    await render();
+    held.resolve(response({ jobId, displayId: 'IMP-001', status: 'accepted' }));
+    await done;
+    await render();
+    expect(store.importName()).toBe('');
+    expect(store.displayId()).toBeNull();
+    expect(store.step()).not.toBe('validation');
+    expect(store.actionError()).toBe('');
+  });
+
+  it('drops a held file read after the import resets (R2)', async () => {
+    const held = deferred<ArrayBuffer>();
+    const session = signal<{ identity: { id: string } } | null>(personA);
+    const { render, store } = setup({
+      detail: importDetail(),
+      session: () => session(),
+    });
+    store.openImport();
+    await render();
+    const file = new File([csv(goodHeader)], 'devices.csv', {
+      type: 'text/csv',
+    });
+    vi.spyOn(file, 'slice').mockReturnValue({
+      arrayBuffer: () => held.promise,
+    } as unknown as Blob);
+    const read = store.chooseImportFile(file);
+    session.set(personB);
+    TestBed.tick();
+    await render();
+    held.resolve(new TextEncoder().encode(csv(goodHeader)).buffer);
+    await read;
+    await render();
+    expect(store.importFile()).toBeNull();
+    expect(store.importReady()).toBe(false);
+  });
+
+  it('selects the file of a read that belongs to the open entry (R2 control)', async () => {
+    const { render, store } = setup({ detail: importDetail() });
+    store.openImport();
+    await render();
+    const file = new File([csv(goodHeader)], 'devices.csv', {
+      type: 'text/csv',
+    });
+    await store.chooseImportFile(file);
+    await render();
+    expect(store.importFile()?.check).toBe('passed');
+    expect(store.importReady()).toBe(true);
+  });
+
+  it('keeps the Stop intent of a pending upload and cancels the job that it receives (R3)', async () => {
+    const held = deferred<Response>();
+    const { render, store, calls } = setup({
+      detail: importDetail(),
+      upload: () => held.promise,
+    });
+    store.openImport();
+    await render();
+    const file = new File([csv(goodHeader)], 'devices.csv', {
+      type: 'text/csv',
+    });
+    await store.chooseImportFile(file);
+    await render();
+    const upload = store.startValidation();
+    expect(store.uploading()).toBe(true);
+    await store.stopValidation();
+    store.close();
+    // Import returns to the upload that this tab still owns, not to a fresh setup (R3).
+    store.openImport();
+    await render();
+    expect(store.step()).toBe('validation');
+    expect(store.importName()).toBe('devices.csv');
+    held.resolve(
+      response({
+        jobId,
+        displayId: 'IMP-001',
+        status: 'accepted',
+        mode: 'sync-changes',
+        name: 'devices.csv',
+        sizeBytes: 7_936,
+      }),
+    );
+    await upload;
+    await render();
+    expect(
+      calls.filter((call) => call.path.startsWith('/api/devices/imports')),
+    ).toHaveLength(1);
+    expect(calls.some((call) => call.path === '/api/jobs/IMP-001/cancel')).toBe(
+      true,
+    );
+    expect(store.uploading()).toBe(false);
+  });
+
+  it('keeps the report facts of the job that produced them (R4)', async () => {
+    const held = deferred<Response>();
+    let firstPage = true;
+    const { render, store } = setup({
+      detail: reportDetail(),
+      reports: () => report({ plan: openPlan() }),
+      answer: (path) => {
+        if (!path.includes('/report?')) return undefined;
+        if (!firstPage) return undefined;
+        firstPage = false;
+        return held.promise;
+      },
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    // The first report answer is still held while the job ends its entry.
+    store.importAgain();
+    await render();
+    held.resolve(response(report({ plan: openPlan(), counts })));
+    await render();
+    expect(store.reportCounts()).toBeNull();
+    expect(store.plan()).toBeNull();
+    expect(store.step()).toBe('import');
+  });
+
+  it('refreshes the shown page when the job revision changes (R4)', async () => {
+    let planState = 'open';
+    const detail = reportDetail({ revision: 4 });
+    const { render, store } = setup({
+      detail,
+      reports: () =>
+        report({
+          plan: openPlan({ state: planState }),
+          counts,
+        }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(store.plan()?.state).toBe('open');
+    planState = 'cancelled';
+    detail.revision = 5;
+    store.openImport();
+    await render();
+    await render();
+    expect(store.plan()?.state).toBe('cancelled');
+  });
+
+  it('detaches the old job read when a fresh Import starts (R5)', async () => {
+    const held = deferred<Response>();
+    const { render, store } = setup({
+      detail: importDetail({ displayId: 'IMP-009' }),
+      answer: (path) =>
+        path === '/api/jobs/IMP-009' ? held.promise : undefined,
+    });
+    store.openImport();
+    store.activeImport.set('IMP-009');
+    store.openImport();
+    await render();
+    store.importAgain();
+    await render();
+    held.resolve(response(importDetail({ displayId: 'IMP-009' })));
+    await render();
+    expect(store.job()).toBeNull();
+    expect(store.displayId()).toBeNull();
+  });
+});
+
+describe('the approved Import composition', () => {
+  it('renders one bounded report panel with the pager inside it (R6)', async () => {
+    const { render, store, element } = setup({
+      detail: reportDetail(),
+      reports: (view, page) =>
+        report({
+          view,
+          page,
+          plan: openPlan(),
+          lines: Array.from({ length: 10 }, (_, index) => ({
+            ...proposedLine,
+            row: index + 1,
+          })),
+          total: 12,
+          pageCount: 2,
+        }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    const panel = element.querySelector('.report-panel');
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector('.report-pager')).not.toBeNull();
+    expect(panel?.querySelectorAll('table.report-table col')).toHaveLength(5);
+    expect(panel?.querySelector('table.report-table')?.classList).toContain(
+      'rv',
+    );
+    expect(element.querySelector('.report-body')).toBeNull();
+    expect(element.querySelectorAll('table.report-table tbody tr').length).toBe(
+      10,
+    );
+  });
+
+  it('offers the compact drop zone of state 09 (R7)', async () => {
+    const { render, store, element } = setup({ detail: importDetail() });
+    store.openImport();
+    await render();
+    const zone = element.querySelector('.file-block .drop-zone');
+    expect(zone).not.toBeNull();
+    expect(zone?.textContent).toContain('upload_file');
+    expect(element.querySelector('.drop-label')).toBeNull();
+  });
+
+  it('offers Done on a cancelled plan and releases the entry (R8)', async () => {
+    const { render, store, text, button } = setup({
+      detail: reportDetail({
+        plan: openPlan({ state: 'cancelled' }) as JobDetail['plan'],
+      }),
+      reports: () => report({ plan: openPlan({ state: 'cancelled' }) }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(text()).toContain('Import again');
+    const done = button('Done');
+    expect(done).toBeDefined();
+    done?.click();
+    await render();
+    expect(store.open()).toBe(false);
+    expect(store.activeImport()).toBeNull();
+  });
+
+  it('explains a late failure with its own reason and rows read (R10)', async () => {
+    const { render, store, text } = setup({
+      detail: importDetail({
+        status: 'failed',
+        failure: 'storage-unavailable',
+        phase: { name: 'compare', done: 1000, total: 2000 },
+        importSource: {
+          name: 'devices.csv',
+          sizeBytes: 7_936,
+          rowsRead: 3000,
+          candidateRows: 3000,
+          refusalText: null,
+        },
+      }),
+    });
+    store.openJob('IMP-001');
+    await render();
+    expect(text()).toContain(
+      'Campus Commander could not store the validation report.',
+    );
+    expect(text()).toContain('Import the file again.');
+    expect(text()).toContain('Validation stopped after it read 3,000 rows.');
+    expect(text()).not.toContain('before any row check');
+  });
+
+  it('states the Sync all rows no-change line (R10)', async () => {
+    const { render, store, text } = setup({
+      detail: reportDetail({
+        importSummary: {
+          mode: 'sync-all-rows',
+          planState: null,
+          proposed: 0,
+          rejected: 0,
+          refusal: null,
+        },
+        plan: null,
+      }),
+      reports: () =>
+        report({
+          counts: {
+            rows: 48,
+            unchanged: 0,
+            noChangeNeeded: 48,
+            proposed: 0,
+            rejected: 0,
+          },
+          lines: [],
+          total: 0,
+        }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(text()).toContain('Every row already matches the file.');
+  });
+
+  it('reads the stored reads of a stopped validation from its refresh phase (R11)', async () => {
+    const { render, store, text } = setup({
+      detail: reportDetail({
+        status: 'cancelled',
+        phase: { name: 'refresh', done: 4, total: 12 },
+        importSource: {
+          name: 'devices.csv',
+          sizeBytes: 7_936,
+          rowsRead: 30,
+          candidateRows: 30,
+          refusalText: null,
+        },
+        plan: null,
+      }),
+      reports: () =>
+        report({ refresh: { staleDevicesRead: 9, oldestObservedAt: past() } }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(text()).toContain(
+      'The 4 device reads that finished before the stop stay stored.',
+    );
+    expect(text()).not.toContain('The 9 device reads');
+  });
+
+  it('lists the field limits of the import template in the help (R12)', async () => {
+    const { render, store, text } = setup({ detail: importDetail() });
+    store.openImport();
+    store.toggleHelp();
+    await render();
+    expect(text()).toContain('Field limits');
+    expect(text()).toContain('Annotated location');
+    expect(text()).toContain('200 characters');
+    expect(text()).toContain('Organization unit');
+    expect(text()).toContain('4,096 characters');
+    expect(text()).toContain('Asset tag');
+    expect(text()).toContain('256 characters');
   });
 });

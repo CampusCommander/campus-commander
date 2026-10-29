@@ -488,11 +488,7 @@ export class DeviceExportImportDialog {
     const now = this.planNow();
     const expired =
       !!plan && plan.state === 'open' && Date.parse(plan.expiresAt) <= now;
-    const state = !plan
-      ? 'no-change'
-      : expired
-        ? 'expired'
-        : plan.state;
+    const state = !plan ? 'no-change' : expired ? 'expired' : plan.state;
     return {
       state,
       chip:
