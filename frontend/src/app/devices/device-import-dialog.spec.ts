@@ -10,6 +10,7 @@ import { AuthStore } from '../auth.store';
 import { LiveFeeds, type LiveFeedHandlers } from '../jobs/live-feeds';
 import { DeviceExportImportDialog } from './device-export-import-dialog';
 import { DeviceExportImportStore } from './device-export-import.store';
+import { importFailureText } from './device-import-messages';
 
 /**
  * The unit-test DOM has no `Blob.arrayBuffer`, and every browser that runs the app has one. The
@@ -1200,6 +1201,52 @@ describe('the approved Import composition', () => {
       'The 4 device reads that finished before the stop stay stored.',
     );
     expect(text()).not.toContain('The 9 device reads');
+  });
+
+  it('names a failed validation from its stored facts', () => {
+    // A header refusal without a stored sentence still reads as a header refusal, not a crash.
+    expect(
+      importFailureText(
+        importDetail({
+          status: 'failed',
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'header-refused',
+          },
+          importSource: {
+            name: 'devices.csv',
+            sizeBytes: 7_936,
+            rowsRead: 0,
+            candidateRows: 0,
+            refusalText: null,
+          },
+        }),
+      ),
+    ).toBe('The header check failed. Correct the file and import it again.');
+    expect(
+      importFailureText(
+        importDetail({
+          status: 'failed',
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'header-refused',
+          },
+          importSource: {
+            name: 'devices.csv',
+            sizeBytes: 7_936,
+            rowsRead: 0,
+            candidateRows: 0,
+            refusalText: 'The Checksum column is missing.',
+          },
+        }),
+      ),
+    ).toBe('The Checksum column is missing.');
   });
 
   it('lists the field limits of the import template in the help (R12)', async () => {

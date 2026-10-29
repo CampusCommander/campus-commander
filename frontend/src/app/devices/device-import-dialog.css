@@ -236,9 +236,8 @@
 
 /* One text line: the refresh sentence, then the oldest observation, in the mockup order. */
 .meta-line {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: var(--cc-space-lg);
+  /* The global prose measure is narrower than the dialog body. */
+  max-width: none;
   margin: var(--cc-space-xs) 0 0;
   color: var(--cc-text-secondary);
   font-size: 12px;
@@ -401,12 +400,27 @@
   text-align: center;
 }
 
+.device-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+  /* The 24 px glyph keeps the compact row height of the approved table. */
+  margin-block: -4px;
+}
+
+.device-cell .nw {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .device-link {
   display: inline-grid;
   place-items: center;
+  flex: none;
   width: 24px;
   height: 24px;
-  margin-inline-end: var(--cc-space-xs);
   border-radius: 50%;
   color: var(--cc-text-link);
   vertical-align: middle;
@@ -464,6 +478,8 @@
   align-items: center;
   gap: var(--cc-space-sm);
   min-height: 24px;
+  /* The chip keeps the compact 34 px row of the approved table. */
+  margin-block: -2px;
   padding-inline: var(--cc-space-md);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-chip);

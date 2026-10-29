@@ -344,7 +344,8 @@ export function importRefusalLabel(summary: JobImportSummary | null): string {
     case 'header-refused':
       return 'Header check failed';
     default:
-      return 'Validation failed';
+      // The summary may carry the short reason of the stored refusal instead of a code.
+      return summary?.refusal ?? 'Validation failed';
   }
 }
 

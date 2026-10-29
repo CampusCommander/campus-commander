@@ -15,7 +15,9 @@
   >
     <header class="export-head">
       <div class="export-titles">
-        <h2 id="export-dialog-title">{{ title() }}</h2>
+        <h2 id="export-dialog-title" tabindex="-1" cdkFocusInitial>
+          {{ title() }}
+        </h2>
         @if (subtitleJob(); as job) {
         <p id="export-dialog-sub" class="export-sub">
           Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
@@ -365,8 +367,8 @@
           @if (counts(); as rowCounts) {
           <section class="report-counts" aria-label="Row counts">
             <dl class="count-equation" aria-label="Rows">
-              @for (term of countTerms(); track term.label; let first = $first) {
-              @if ($index === 1) {
+              @for (term of countTerms(); track term.label; let first = $first)
+              { @if ($index === 1) {
               <span class="count-sign" aria-hidden="true">=</span>
               } @else if (!first) {
               <span class="count-sign" aria-hidden="true">+</span>
@@ -442,11 +444,21 @@
                   </caption>
                   <colgroup>
                     @switch (view()) { @case ('warnings') {
-                    <col /><col /><col />
+                    <col />
+                    <col />
+                    <col />
                     } @case ('rejected') {
-                    <col /><col /><col /><col /><col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
                     } @default {
-                    <col /><col /><col /><col /><col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
                     } }
                   </colgroup>
                   <thead>
@@ -490,18 +502,23 @@
                       </td>
                       <td class="col-device">
                         @if (line.deviceId) {
-                        <a
-                          class="device-link"
-                          [routerLink]="['/devices', line.deviceId]"
-                          [attr.aria-label]="'Open device ' + line.deviceId"
-                        >
-                          <span
-                            class="material-symbols-outlined"
-                            aria-hidden="true"
-                            >visibility</span
+                        <span class="device-cell">
+                          <a
+                            class="device-link"
+                            [routerLink]="['/devices', line.deviceId]"
+                            [attr.aria-label]="'Open device ' + line.deviceId"
                           >
-                        </a>
-                        {{ line.serialNumber ?? line.deviceId }} } @else {
+                            <span
+                              class="material-symbols-outlined"
+                              aria-hidden="true"
+                              >visibility</span
+                            >
+                          </a>
+                          <span class="nw"
+                            >{{ line.serialNumber ?? line.deviceId }}</span
+                          >
+                        </span>
+                        } @else {
                         <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
                         }
                       </td>

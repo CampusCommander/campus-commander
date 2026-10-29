@@ -564,7 +564,14 @@ export const NOT_IN_INVENTORY_LABEL = 'Not in inventory';
  */
 export function importFailureText(job: JobDetail | null): string {
   const refusal = job?.importSummary?.refusal ?? null;
+  const headerReason = job?.importSource?.refusalText ?? null;
   const known = refusal ? DEVICE_IMPORT_REFUSALS_BY_CODE[refusal] : undefined;
+  // A header refusal carries the sentence of matchDeviceEditHeaders, which names the columns.
+  if (known === 'header-refused')
+    return (
+      headerReason ??
+      'The header check failed. Correct the file and import it again.'
+    );
   if (known) return deviceImportRefusalText(known);
   switch (job?.failure) {
     case 'storage-unavailable':

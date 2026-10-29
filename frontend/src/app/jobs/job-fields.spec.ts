@@ -872,6 +872,24 @@ describe('progressLines of a validation job', () => {
     ).toEqual(['6 rows checked', '4 rejected · no changes']);
   });
 
+  it('shows the stored short reason of a refusal that is not a code', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'failed',
+          scope: { kind: 'rows', deviceCount: 0 },
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'Checksum column missing',
+          },
+        }),
+      ),
+    ).toEqual(['0 rows checked', 'Checksum column missing']);
+  });
+
   it('states that a finished validation needs no update', () => {
     expect(
       progressLines(

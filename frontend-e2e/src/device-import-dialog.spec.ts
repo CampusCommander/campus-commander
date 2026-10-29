@@ -192,13 +192,27 @@ const warningLines = [
 type ImportCase =
   | 'running'
   | 'completed'
+  | 'full-page'
   | 'sync-all-rows'
+  | 'sync-all-rows-no-update'
   | 'expired'
   | 'cancelled-plan'
   | 'no-update'
   | 'rejected-only'
   | 'failed'
+  | 'late-failure'
   | 'cancelled';
+
+/** One page of ten proposed changes, so the bounded page fills (R6, UI-03). */
+const tenLines = Array.from({ length: 10 }, (_, index) => ({
+  ...proposedLines[index % proposedLines.length],
+  row: index + 2,
+  deviceId: `C0A1-00${String(index + 1).padStart(2, '0')}`,
+  serialNumber: `C0A1-00${String(index + 1).padStart(2, '0')}`,
+}));
+
+const noUpdateCase = (name: ImportCase) =>
+  name === 'no-update' || name === 'sync-all-rows-no-update';
 
 const importJob = (name: ImportCase) => ({
   jobId: impJobId,
@@ -208,7 +222,7 @@ const importJob = (name: ImportCase) => ({
   status:
     name === 'running'
       ? 'running'
-      : name === 'failed'
+      : name === 'failed' || name === 'late-failure'
         ? 'failed'
         : name === 'cancelled'
           ? 'cancelled'
@@ -234,27 +248,37 @@ const importJob = (name: ImportCase) => ({
       ? { name: 'refresh', done: 5, total: 48 }
       : name === 'failed'
         ? { name: 'header-check', done: 0, total: null }
-        : name === 'cancelled'
-          ? { name: 'refresh', done: 4, total: 12 }
-          : { name: 'report', done: 48, total: 48 },
+        : name === 'late-failure'
+          ? { name: 'compare', done: 1000, total: 2000 }
+          : name === 'cancelled'
+            ? { name: 'refresh', done: 4, total: 12 }
+            : { name: 'report', done: 48, total: 48 },
   exportSummary: null,
   exportFile: null,
   importSummary: {
-    mode: name === 'sync-all-rows' ? 'sync-all-rows' : 'sync-changes',
+    mode:
+      name === 'sync-all-rows' || name === 'sync-all-rows-no-update'
+        ? 'sync-all-rows'
+        : 'sync-changes',
     planState:
-      name === 'completed' || name === 'sync-all-rows'
+      name === 'completed' || name === 'full-page' || name === 'sync-all-rows'
         ? 'open'
         : name === 'expired'
           ? 'expired'
           : name === 'cancelled-plan'
             ? 'cancelled'
             : null,
-    proposed: name === 'rejected-only' || name === 'no-update' ? 0 : 12,
-    rejected: name === 'rejected-only' ? 48 : name === 'no-update' ? 0 : 2,
+    proposed: name === 'rejected-only' || noUpdateCase(name) ? 0 : 12,
+    rejected: name === 'rejected-only' ? 48 : noUpdateCase(name) ? 0 : 2,
     refusal: null,
   },
   cancelRequest: name === 'cancelled' ? { by: person, at: past() } : null,
-  failure: name === 'failed' ? 'storage-unavailable' : null,
+  failure:
+    name === 'failed'
+      ? 'storage-unavailable'
+      : name === 'late-failure'
+        ? 'storage-unavailable'
+        : null,
   confirmedBy: null,
   previewDisplayId: null,
   changes: null,
@@ -265,7 +289,14 @@ const importJob = (name: ImportCase) => ({
   importSource: {
     name: 'devices.csv',
     sizeBytes: 7_936,
-    rowsRead: name === 'running' ? 5 : name === 'failed' ? 0 : 30,
+    rowsRead:
+      name === 'running'
+        ? 5
+        : name === 'failed'
+          ? 0
+          : name === 'late-failure'
+            ? 3000
+            : 30,
     candidateRows: name === 'failed' ? 0 : 30,
     refusalText:
       name === 'failed'
@@ -282,7 +313,9 @@ const importJob = (name: ImportCase) => ({
             changedBy: person,
             changedAt: past(),
           }
-        : name === 'completed' || name === 'sync-all-rows'
+        : name === 'completed' ||
+            name === 'full-page' ||
+            name === 'sync-all-rows'
           ? openPlan
           : null,
   importDisplayId: null,
@@ -299,8 +332,9 @@ const importJob = (name: ImportCase) => ({
 });
 
 const reportAnswer = (name: ImportCase, view: string, page: number) => {
-  const noUpdate = name === 'no-update';
+  const noUpdate = noUpdateCase(name);
   const rejectedOnly = name === 'rejected-only';
+  const fullPage = name === 'full-page';
   const viewCounts = noUpdate
     ? { rows: 48, unchanged: 48, noChangeNeeded: 0, proposed: 0, rejected: 0 }
     : rejectedOnly
@@ -310,17 +344,19 @@ const reportAnswer = (name: ImportCase, view: string, page: number) => {
     view === 'proposed'
       ? noUpdate || rejectedOnly
         ? []
-        : proposedLines
+        : fullPage
+          ? tenLines
+          : proposedLines
       : view === 'rejected'
-        ? rejectedOnly
-          ? rejectedLines
-          : rejectedLines
+        ? rejectedLines
         : view === 'warnings'
           ? warningLines
           : [];
   const total =
     view === 'proposed'
-      ? viewCounts.proposed
+      ? fullPage
+        ? 12
+        : viewCounts.proposed
       : view === 'rejected'
         ? viewCounts.rejected
         : view === 'warnings'
@@ -350,7 +386,9 @@ const reportAnswer = (name: ImportCase, view: string, page: number) => {
               changedBy: person,
               changedAt: past(),
             }
-          : name === 'completed' || name === 'sync-all-rows'
+          : name === 'completed' ||
+              name === 'full-page' ||
+              name === 'sync-all-rows'
             ? openPlan
             : null,
   };
@@ -535,6 +573,8 @@ async function chooseFile(page: Page, content: string, name = 'devices.csv') {
 async function shot(page: Page, name: string) {
   // The pointer leaves the control that opened the step, so no hover state shows.
   await page.mouse.move(4, 4);
+  // A tooltip hides after its delay, so the capture carries no hover text.
+  await page.waitForTimeout(250);
   await page.evaluate(() => document.fonts.ready);
   const dir = 'dist/e2e-evidence/export-import';
   await mkdir(dir, { recursive: true });
@@ -551,6 +591,8 @@ test.describe('Import', () => {
     await openDevices(page);
     await openImport(page);
     await expect(dialog(page)).toHaveCSS('width', '480px');
+    // Opening focus lands on the title, so a screen reader reads the dialog name.
+    await expect(dialog(page).locator('#export-dialog-title')).toBeFocused();
     for (const text of [
       'Import mode',
       'Sync changes',
@@ -564,6 +606,15 @@ test.describe('Import', () => {
     await expect(
       dialog(page).getByRole('button', { name: 'Start validation' }),
     ).toBeDisabled();
+    // The approved drop zone is one compact row: the glyph, the label, and Browse (R7).
+    const zone = dialog(page).locator('.drop-zone');
+    const zoneBox = await zone.boundingBox();
+    expect(zoneBox?.height).toBeLessThan(80);
+    const labelBox = await zone.locator('.drop-text').boundingBox();
+    const browseBox = await zone
+      .getByRole('button', { name: 'Choose CSV file' })
+      .boundingBox();
+    expect(Math.abs((labelBox?.y ?? 0) - (browseBox?.y ?? 0))).toBeLessThan(40);
     await chooseFile(page, goodCsv);
     await expect(dialog(page)).toContainText('devices.csv');
     await expect(dialog(page)).toContainText('Header check passed.');
@@ -605,6 +656,12 @@ test.describe('Import', () => {
     await expect(help).toContainText(
       'Codes match in upper case, for example DEPROVISION:RETIRING_DEVICE.',
     );
+    // The approved Field limits table comes from the contract that enforces it (R12).
+    await expect(help).toContainText('Field limits');
+    await expect(help).toContainText('Annotated location');
+    await expect(help).toContainText('200 characters');
+    await expect(help).toContainText('Organization unit');
+    await expect(help).toContainText('4,096 characters');
     await expect(dialog(page)).toHaveClass(/has-help/);
     await shot(page, '11-import-help');
   });
@@ -697,7 +754,13 @@ test.describe('Import', () => {
     await expect(
       dialog(page).getByRole('button', { name: 'Import again' }),
     ).toBeVisible();
+    // Done releases the entry, and the plan stays cancelled on the Devices page (R8).
+    await expect(
+      dialog(page).getByRole('button', { name: 'Done' }),
+    ).toBeVisible();
     await shot(page, '20-plan-cancelled');
+    await dialog(page).getByRole('button', { name: 'Done' }).click();
+    await expect(dialog(page)).toBeHidden();
   });
 
   test('state 21: no row needs an update', async ({ page }) => {
@@ -752,7 +815,112 @@ test.describe('Import', () => {
     await expect(dialog(page)).toContainText('No report');
     await expect(dialog(page)).toContainText('Cancelled');
     await expect(dialog(page)).toContainText('District operator');
+    // The stored reads come from the refresh phase where the stop happened (R11).
+    await expect(dialog(page)).toContainText(
+      'The 4 device reads that finished before the stop stay stored.',
+    );
     await shot(page, '24-validation-cancelled');
+  });
+
+  test('state 13: a full page of ten rows keeps the pager above the action bar (R6)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'full-page');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    const rows = dialog(page).locator('.report-table tbody tr');
+    await expect(rows).toHaveCount(10);
+    await expect(dialog(page)).toContainText('Rows 1–10 of 12');
+    const pager = await dialog(page).locator('.report-pager').boundingBox();
+    const actions = await dialog(page).locator('.export-actions').boundingBox();
+    const wrap = await dialog(page).locator('.report-table-wrap').boundingBox();
+    // The panel holds one page: the pager stays above the action bar, and the table ends in it.
+    expect((pager?.y ?? 0) + (pager?.height ?? 0)).toBeLessThanOrEqual(
+      (actions?.y ?? 0) + 1,
+    );
+    expect((wrap?.y ?? 0) + (wrap?.height ?? 0)).toBeLessThanOrEqual(
+      (pager?.y ?? 0) + 1,
+    );
+    // Ten rows fit whole, so the page never scrolls inside the panel (UI-03).
+    const box = await dialog(page)
+      .locator('.report-table-wrap')
+      .evaluate((node) => ({
+        client: node.clientHeight,
+        scroll: node.scrollHeight,
+      }));
+    expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
+    await shot(page, '13-review-proposed-full-page');
+  });
+
+  test('state 13: the wide help lies over the body above the action bar (R6)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'completed');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page)
+      .getByRole('button', { name: 'Export and import help' })
+      .click();
+    const help = page.locator('app-device-export-help');
+    await expect(help).toBeVisible();
+    const pane = await help.boundingBox();
+    const sheet = await dialog(page).boundingBox();
+    const actions = await dialog(page).locator('.export-actions').boundingBox();
+    expect(Math.round(pane?.width ?? 0)).toBe(520);
+    expect(Math.round((pane?.x ?? 0) + (pane?.width ?? 0))).toBe(
+      Math.round((sheet?.x ?? 0) + (sheet?.width ?? 0)),
+    );
+    expect((pane?.y ?? 0) + (pane?.height ?? 0)).toBeLessThanOrEqual(
+      (actions?.y ?? 0) + 1,
+    );
+    // The pane is opaque, so the report never shows through it.
+    const background = await help.evaluate(
+      (node) => getComputedStyle(node).backgroundColor,
+    );
+    expect(background).not.toBe('rgba(0, 0, 0, 0)');
+    await shot(page, '13-review-proposed-help');
+  });
+
+  test('state 23: a fault after the header check names its own reason (R10)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'late-failure');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText(
+      'Campus Commander could not store the validation report.',
+    );
+    await expect(dialog(page)).toContainText(
+      'Validation stopped after it read 3,000 rows.',
+    );
+    await expect(dialog(page)).not.toContainText('before any row check');
+    await shot(page, '23b-validation-failed-late');
+  });
+
+  test('state 21: a Sync all rows report names its own no-change line (R10)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'sync-all-rows-no-update');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText(
+      'Every row already matches the file. No update is needed.',
+    );
+    await shot(page, '21b-sync-all-rows-no-update');
+  });
+
+  test('the Devices page names the open plan of its import (R9)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'completed');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await expect(dialog(page)).toBeHidden();
+    await expect(page.locator('.action-note')).toContainText(
+      'Import IMP-001 is validated and waits for Execute.',
+    );
+    await shot(page, '25-devices-open-plan-line');
   });
 
   test('state 13 in the dark theme', async ({ page }) => {
