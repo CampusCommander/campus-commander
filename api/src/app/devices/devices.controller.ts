@@ -282,7 +282,11 @@ export class DevicesController {
           // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
           forward: deviceForward(seesEveryJob, {
             jobFailure: (jobId) =>
-              this.devices.jobFailure(request.session, current.customerId, jobId),
+              this.devices.jobFailure(
+                request.session,
+                current.customerId,
+                jobId,
+              ),
             sync: () => this.devices.sync(request.session),
           }),
         },

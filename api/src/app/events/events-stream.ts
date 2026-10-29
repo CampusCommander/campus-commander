@@ -1,4 +1,7 @@
-import { isAuthorized, type SessionResponse } from '@campus/application-contracts';
+import {
+  isAuthorized,
+  type SessionResponse,
+} from '@campus/application-contracts';
 import {
   recheckDeviceStream,
   type DeviceStreamPingReads,
@@ -10,7 +13,9 @@ import {
 } from '../jobs/jobs-stream';
 
 /** The open device feed of one stream, with the job visibility of its caller. */
-export type EventStreamDevice = DeviceStreamPingReads & { seesEveryJob: boolean };
+export type EventStreamDevice = DeviceStreamPingReads & {
+  seesEveryJob: boolean;
+};
 
 export interface EventStreamRecheck {
   /** False ends the stream, so the browser reconnects and reads the state it may no longer see. */

@@ -142,7 +142,11 @@ const session = (actions) => ({
 const fanout = {
   feeds: [],
   listen(customerId, listener) {
-    const feed = { customerId, listener, channel: listener.channel(customerId) };
+    const feed = {
+      customerId,
+      listener,
+      channel: listener.channel(customerId),
+    };
     fanout.feeds.push(feed);
     return Promise.resolve(async () => {
       const index = fanout.feeds.indexOf(feed);

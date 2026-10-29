@@ -496,7 +496,10 @@ test('a failed forward read sends the null-failure event and ends the stream', a
         listener: entityListener,
         forward: (event, failed) => {
           if (failed)
-            return { event: { type: 'job-finished', failure: null }, end: true };
+            return {
+              event: { type: 'job-finished', failure: null },
+              end: true,
+            };
           throw new Error('store down');
         },
       },
@@ -528,7 +531,10 @@ test('a forward read that outlives its deadline counts as failed', async (t) => 
         listener: entityListener,
         forward: (event, failed) => {
           if (failed)
-            return { event: { type: 'job-finished', failure: null }, end: true };
+            return {
+              event: { type: 'job-finished', failure: null },
+              end: true,
+            };
           return new Promise(() => undefined);
         },
       },

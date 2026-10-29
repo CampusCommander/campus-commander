@@ -314,9 +314,7 @@ export async function proxyApplication(
       headers,
       ca: target.ca,
       rejectUnauthorized: true,
-      timeout: eventStreams.has(pathname)
-        ? timeouts.events
-        : timeouts.request,
+      timeout: eventStreams.has(pathname) ? timeouts.events : timeouts.request,
     },
     (incoming) => {
       response.writeHead(

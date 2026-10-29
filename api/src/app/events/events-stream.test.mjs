@@ -112,7 +112,9 @@ test('a ping keeps one stream open while the session and both feeds hold', async
   ]);
   assert.equal(probe.calls.customer.length, 1);
   assert.equal(probe.calls.current.length, 1);
-  assert.deepEqual(probe.calls.jobVisibility, [[probe.calls.current[0], CUSTOMER]]);
+  assert.deepEqual(probe.calls.jobVisibility, [
+    [probe.calls.current[0], CUSTOMER],
+  ]);
   // The device feed is open, so the probe of the left-out feed never runs.
   assert.deepEqual(probe.calls.canOpen, []);
 });
@@ -199,7 +201,10 @@ test('the device open rule needs the deployment phase and devices:read for the c
   );
   // A grant for another customer does not open this customer's device feed.
   assert.equal(deviceReadable(3, reader, OTHER), false);
-  assert.equal(deviceReadable(3, session([district('jobs:read')]), CUSTOMER), false);
+  assert.equal(
+    deviceReadable(3, session([district('jobs:read')]), CUSTOMER),
+    false,
+  );
   // Authorization applies in phase 3 only, as `authorizeAction` decides it.
   assert.equal(deviceReadable(2, reader, CUSTOMER), false);
   assert.equal(deviceReadable(undefined, reader, CUSTOMER), false);
@@ -270,7 +275,8 @@ async function until(done) {
 }
 
 const pings = (response) =>
-  response.chunks.filter((chunk) => chunk === 'event: ping\ndata: {}\n\n').length;
+  response.chunks.filter((chunk) => chunk === 'event: ping\ndata: {}\n\n')
+    .length;
 
 test('a job-only stream stays open across pings and closes when devices:read arrives', async (t) => {
   const listeners = [];
@@ -351,7 +357,10 @@ test('one stream carries two feeds and one failed read ends both', async (t) => 
   );
   assert.equal(listeners[0].customerId, CUSTOMER);
   assert.equal(listeners[1].customerId, CUSTOMER);
-  assert.equal(listeners[0].listener.channel(CUSTOMER), jobEventsChannel(CUSTOMER));
+  assert.equal(
+    listeners[0].listener.channel(CUSTOMER),
+    jobEventsChannel(CUSTOMER),
+  );
   assert.equal(
     listeners[1].listener.channel(CUSTOMER),
     entityEventsChannel(CUSTOMER),

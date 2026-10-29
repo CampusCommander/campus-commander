@@ -25,10 +25,7 @@ import { DevicesService } from '../devices/devices.service';
 import { seesEveryJob } from '../jobs/jobs';
 import { jobListener } from '../jobs/jobs.controller';
 import { JobsService } from '../jobs/jobs.service';
-import {
-  deviceReadable,
-  recheckEventStream,
-} from './events-stream';
+import { deviceReadable, recheckEventStream } from './events-stream';
 
 /** One event of the one stream. The two feeds read disjoint channel schemas. */
 type StreamEvent = JobEvent | EntityEvent;
@@ -173,7 +170,9 @@ export class EventsController {
     session: SessionResponse,
     customerId: string,
   ): Promise<boolean> {
-    if (!deviceReadable(this.configuration.deployment?.phase, session, customerId))
+    if (
+      !deviceReadable(this.configuration.deployment?.phase, session, customerId)
+    )
       return false;
     const sync = await this.devices.sync(session);
     return sync?.customerId === customerId;
