@@ -947,6 +947,7 @@ test('every confirmation outcome maps to its status and code', async () => {
     ],
     [{ outcome: 'preview-changed' }, 409, 'preview-changed'],
     [{ outcome: 'preview-conflict' }, 409, 'preview-conflict'],
+    [{ outcome: 'preview-unsealed' }, 409, 'preview-unsealed'],
     [{ outcome: 'connection-changed' }, 409, 'connection-changed'],
     [{ outcome: 'nothing-to-update' }, 422, 'nothing-to-update'],
     [{ outcome: 'not-found' }, 404, 'preview-not-found'],

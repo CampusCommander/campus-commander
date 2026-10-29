@@ -2125,14 +2125,16 @@ export async function qualifyDeviceExportImport({
     };
     const backendPid = async (client) =>
       (await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-    const waitBlocked = async (pid, holderPid) => {
+    const waitBlocked = async (pid, holderPid, label = 'the call') => {
+      let last = null;
       for (let attempt = 0; attempt < 200; attempt += 1) {
         const row = (
           await migrator.query(
-            'SELECT wait_event_type,pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE pid=$1',
+            'SELECT wait_event_type,wait_event,pg_blocking_pids(pid) AS blockers FROM pg_stat_activity WHERE pid=$1',
             [pid],
           )
         ).rows[0];
+        last = row ?? null;
         if (
           row &&
           (row.wait_event_type === 'Lock' ||
@@ -2141,7 +2143,7 @@ export async function qualifyDeviceExportImport({
           return;
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
-      throw new Error('the call never blocked');
+      throw new Error(`${label} never blocked: ${JSON.stringify(last)}`);
     };
     try {
       await check(
@@ -2991,7 +2993,11 @@ export async function qualifyDeviceExportImport({
               plan.revision,
               waiter,
             );
-            await waitBlocked(waiterPid, holderPid);
+            await waitBlocked(
+              waiterPid,
+              holderPid,
+              `plan cancel at version ${version}`,
+            );
             // A returned thenable would adopt the blocked query in the async helper.
             return { pending };
           };
@@ -3002,25 +3008,36 @@ export async function qualifyDeviceExportImport({
             await holder.query('COMMIT');
             assert.equal((await first.pending).outcome, 'not-found');
             assert.equal((await planDetail(plan.jobId)).plan_state, 'open');
-            // The permission version changes during the wait.
-            const second = await duringWait(2);
+            // Enable the person again, so the next call reaches the header wait.
             await changeAccess(target, 2, true, [
               ...grants,
               { action: 'devices:status', scope: district() },
             ]);
+            // The permission version changes during the wait.
+            const second = await duringWait(3);
+            await changeAccess(target, 3, true, [
+              ...grants,
+              { action: 'devices:status', scope: district() },
+              { action: 'devices:commands', scope: district() },
+            ]);
             await holder.query('COMMIT');
             assert.equal((await second.pending).outcome, 'not-found');
             assert.equal((await planDetail(plan.jobId)).plan_state, 'open');
-            // A grant leaves. Any grant change bumps the version, so the version check answers a
-            // change during a wait; the grant check itself answers a caller that holds the current
-            // version behind the same header wait.
-            await changeAccess(target, 3, true, [
+            // A grant leaves and the caller holds the current version. Any grant change bumps the
+            // version as well, so a grant change during a wait refuses through the version check.
+            // The grant check answers a caller whose version is current.
+            await changeAccess(target, 4, true, [
               { action: 'devices:read', scope: district() },
               { action: 'devices:write', scope: district() },
             ]);
-            const third = await duringWait(4);
-            await holder.query('COMMIT');
-            assert.equal((await third.pending).outcome, 'forbidden');
+            const withoutGrant = await planCancel(
+              target,
+              5,
+              plan.jobId,
+              plan.planId,
+              plan.revision,
+            );
+            assert.equal(withoutGrant.outcome, 'forbidden');
             assert.equal((await planDetail(plan.jobId)).plan_state, 'open');
             // The visibility check refuses a person who does not request the plan.
             assert.equal(
@@ -3036,10 +3053,10 @@ export async function qualifyDeviceExportImport({
               'not-found',
             );
             // Control: the authority stays valid, and the plan cancels.
-            await changeAccess(target, 4, true, grants);
+            await changeAccess(target, 5, true, grants);
             const control = await planCancel(
               target,
-              5,
+              6,
               plan.jobId,
               plan.planId,
               plan.revision,
