@@ -23,6 +23,7 @@ import {
   type JobCancelRefusal,
   type JobDetail,
   type JobFailedActivityOperation,
+  type JobImportSummary,
   type JobLatestActivity,
   type JobList,
   type JobOperation,
@@ -214,8 +215,26 @@ const operationWords: Readonly<
   'deprovision-devices': 'deprovision',
 };
 
+/**
+ * The plan state of a validation job. The API derives `expired` from the expiry, because no writer
+ * changes a stale open plan (design section 1). The state stays as stored for every other value.
+ */
+function planStateOf(
+  row: Record<string, unknown>,
+  now: number,
+): JobImportSummary['planState'] {
+  const state = (row['plan_state'] as JobImportSummary['planState']) ?? null;
+  if (state !== 'open' || row['plan_expires_at'] == null) return state;
+  return Date.parse(measuredAt(row['plan_expires_at'])) <= now
+    ? 'expired'
+    : 'open';
+}
+
 /** One job header row as a summary of section 2.5. */
-export function jobSummary(row: Record<string, unknown>): JobSummary {
+export function jobSummary(
+  row: Record<string, unknown>,
+  now: number = Date.now(),
+): JobSummary {
   const total =
     row['target_count'] == null ? null : Number(row['target_count']);
   const succeeded = counted(row['succeeded']);
@@ -224,6 +243,30 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
   const skipped = counted(row['skipped']);
   const expired = counted(row['expired']);
   const cancelled = counted(row['cancelled']);
+  // The phase of an export or a validation job (design section 2). A finished job keeps the phase
+  // of its last batch, its refusal, or its stop.
+  const phase =
+    row['phase'] == null
+      ? null
+      : {
+          name: row['phase'],
+          done: counted(row['phase_done']),
+          total: row['phase_total'] == null ? null : Number(row['phase_total']),
+        };
+  // The blocks of design section 1, from the export and import detail rows. Each stays null for
+  // another kind of job.
+  const exportSummary =
+    row['export_purpose'] == null ? null : { purpose: row['export_purpose'] };
+  const importSummary =
+    row['import_mode'] == null
+      ? null
+      : {
+          mode: row['import_mode'],
+          planState: planStateOf(row, now),
+          proposed: counted(row['proposed']),
+          rejected: counted(row['rejected']),
+          refusal: (row['refusal'] as string | null) ?? null,
+        };
   return jobSummarySchema.parse({
     jobId: row['job_id'],
     displayId: row['display_id'],
@@ -269,11 +312,10 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
                 cancelled,
             ),
     },
-    // The blocks of design section 1 that XBB fills from the detail tables and the phase columns.
-    // Until XBB, every job answers null.
-    phase: null,
-    exportSummary: null,
-    importSummary: null,
+    // The blocks of design section 1, from the phase columns and the detail tables.
+    phase,
+    exportSummary,
+    importSummary,
     failure: row['failure'],
     // The stored request, with the person in the shape of requestedBy (design section 5).
     cancelRequest:
@@ -553,18 +595,24 @@ export class Jobs {
     const rows = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
         cb.display_name AS cancel_requested_by_name,
+        e.purpose AS export_purpose,
+        i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal,
         to_char(j.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
         FROM cc.jobs j JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
+        LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${pageQuery.where}
         ORDER BY j.created_at DESC, j.display_id DESC
         LIMIT $${pageQuery.values.length + 1}`,
       [...pageQuery.values, pageSize + 1],
     );
     const page = rows.slice(0, pageSize);
+    // One clock read gives every row of the page one plan-expiry decision.
+    const now = Date.now();
     return jobListSchema.parse({
-      jobs: page.map(jobSummary),
+      jobs: page.map((row) => jobSummary(row, now)),
       matching: counted(countedRow?.['matching']),
       nextCursor:
         rows.length > pageSize && page.length > 0
@@ -585,11 +633,25 @@ export class Jobs {
         `SELECT j.*, p.display_name AS requested_by_name,
           cb.display_name AS cancel_requested_by_name,
           u.confirmed_by, u.action, c.changes, pr.deprovision_reason,
-          cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id
+          cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id,
+          e.purpose AS export_purpose,
+          e.file_name, e.file_size_bytes, e.file_row_count, e.file_column_count, e.file_expires_at,
+          i.mode AS import_mode, i.source_name, i.source_size_bytes, i.rows_read, i.candidate_rows,
+          i.refusal, i.refusal_text, i.plan_id, i.plan_revision, i.plan_state, i.plan_expires_at,
+          i.plan_changed_by, i.plan_changed_at, pc.display_name AS plan_changed_by_name,
+          impj.display_id AS import_display_id, waitj.display_id AS waits_for_display_id,
+          (SELECT array_agg(w.display_id ORDER BY w.display_id)
+            FROM cc.device_update_jobs wu JOIN cc.jobs w ON w.job_id=wu.job_id
+            WHERE wu.wait_for_job_id=j.job_id) AS waiting_display_ids
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
+        LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
+        LEFT JOIN cc.application_principals pc ON pc.id=i.plan_changed_by
+        LEFT JOIN cc.jobs impj ON impj.job_id=u.import_job_id
+        LEFT JOIN cc.jobs waitj ON waitj.job_id=u.wait_for_job_id
         LEFT JOIN LATERAL (
           SELECT jsonb_agg(
             jsonb_strip_nulls(jsonb_build_object('field',ch.field,'mode',ch.mode,'value',ch.value))
@@ -617,6 +679,51 @@ export class Jobs {
     );
   }
 
+  /**
+   * The jobs of an executed import plan (design section 8). The update job ran first, and the
+   * status jobs follow it. Each row holds the header fields of one summary.
+   */
+  private async planJobs(jobId: unknown): Promise<Record<string, unknown>[]> {
+    return this.rows(
+      `SELECT j.*, u.action, p.display_name AS requested_by_name,
+        cb.display_name AS cancel_requested_by_name
+      FROM cc.device_update_jobs u
+      JOIN cc.jobs j ON j.job_id=u.job_id
+      JOIN cc.application_principals p ON p.id=j.requested_by
+      LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
+      WHERE u.import_job_id=$1
+      ORDER BY CASE WHEN j.kind='device-update' THEN 0 ELSE 1 END, j.display_id`,
+      [jobId],
+    );
+  }
+
+  /**
+   * The changes of an executed plan by outcome (design section 8). One aggregate query joins each
+   * change with its operation. A change that Execute never ran holds no link and counts as not run.
+   */
+  private async executionCounts(
+    jobId: unknown,
+  ): Promise<Record<string, unknown> | undefined> {
+    return (
+      await this.rows(
+        `SELECT
+          count(*) FILTER (WHERE c.linked_job_id IS NULL)::int AS not_run,
+          count(*) FILTER (WHERE o.status='succeeded')::int AS succeeded,
+          count(*) FILTER (WHERE o.status='failed')::int AS failed,
+          count(*) FILTER (WHERE o.status='unknown')::int AS unknown,
+          count(*) FILTER (WHERE o.status='skipped')::int AS skipped,
+          count(*) FILTER (WHERE o.status='expired')::int AS expired,
+          count(*) FILTER (WHERE o.status='cancelled')::int AS cancelled,
+          count(*) FILTER (WHERE o.status IN ('pending','dispatched','issued'))::int AS pending
+        FROM cc.device_import_changes c
+        LEFT JOIN cc.device_update_operations o
+          ON o.job_id=c.linked_job_id AND o.operation_number=c.operation_number
+        WHERE c.job_id=$1`,
+        [jobId],
+      )
+    )[0];
+  }
+
   async detail(
     session: SessionResponse,
     customerId: string,
@@ -624,12 +731,19 @@ export class Jobs {
   ): Promise<JobDetail> {
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
-    const [failed, unknown] = await Promise.all([
+    const now = Date.now();
+    const planState = planStateOf(job, now);
+    // Only an executed plan holds jobs and results. An open, cancelled, or expired plan holds none.
+    const executed =
+      job['kind'] === 'device-import' && planState === 'executed';
+    const [failed, unknown, planJobs, counts] = await Promise.all([
       this.samples(job['job_id'], 'failed'),
       this.samples(job['job_id'], 'unknown'),
+      executed ? this.planJobs(job['job_id']) : Promise.resolve(null),
+      executed ? this.executionCounts(job['job_id']) : Promise.resolve(null),
     ]);
     return jobDetailSchema.parse({
-      ...jobSummary(job),
+      ...jobSummary(job, now),
       confirmedBy:
         job['confirmed_by'] == null
           ? null
@@ -655,16 +769,62 @@ export class Jobs {
           : null,
       deprovisionReason: job['deprovision_reason'] ?? null,
       targetOrgUnitPaths: job['target_org_unit_paths'] ?? null,
-      // The detail blocks of design section 1 that XBB fills from the export and import detail
-      // tables. Until XBB, every job answers null.
-      exportFile: null,
-      importSource: null,
-      plan: null,
-      importDisplayId: null,
-      waitsForDisplayId: null,
-      waitingDisplayIds: null,
-      planJobs: null,
-      executionCounts: null,
+      // The detail blocks of design section 1, from the export and import detail rows.
+      exportFile:
+        job['file_name'] == null
+          ? null
+          : {
+              name: job['file_name'],
+              sizeBytes: counted(job['file_size_bytes']),
+              rows: counted(job['file_row_count']),
+              columns: counted(job['file_column_count']),
+              expiresAt: measuredAt(job['file_expires_at']),
+            },
+      importSource:
+        job['source_name'] == null
+          ? null
+          : {
+              name: job['source_name'],
+              sizeBytes: counted(job['source_size_bytes']),
+              rowsRead: counted(job['rows_read']),
+              candidateRows: counted(job['candidate_rows']),
+              refusalText: (job['refusal_text'] as string | null) ?? null,
+            },
+      plan:
+        job['plan_id'] == null || planState === null
+          ? null
+          : {
+              planId: job['plan_id'],
+              revision: Number(job['plan_revision']),
+              state: planState,
+              expiresAt: measuredAt(job['plan_expires_at']),
+              changedBy:
+                job['plan_changed_by'] == null
+                  ? null
+                  : {
+                      id: job['plan_changed_by'],
+                      displayName: job['plan_changed_by_name'],
+                    },
+              changedAt: measuredAtOrNull(job['plan_changed_at']),
+            },
+      importDisplayId: job['import_display_id'] ?? null,
+      waitsForDisplayId: job['waits_for_display_id'] ?? null,
+      waitingDisplayIds: job['waiting_display_ids'] ?? null,
+      planJobs:
+        planJobs === null ? null : planJobs.map((row) => jobSummary(row, now)),
+      executionCounts:
+        counts == null
+          ? null
+          : {
+              succeeded: counted(counts['succeeded']),
+              failed: counted(counts['failed']),
+              unknown: counted(counts['unknown']),
+              skipped: counted(counts['skipped']),
+              expired: counted(counts['expired']),
+              cancelled: counted(counts['cancelled']),
+              pending: counted(counts['pending']),
+              notRun: counted(counts['not_run']),
+            },
       correlationId: job['correlation_id'],
       latestActivity: latestActivity(
         job,
@@ -682,6 +842,7 @@ export class Jobs {
     attention: boolean,
     cursor: string | undefined,
     limit: number | undefined,
+    numbers: number[] | undefined = undefined,
   ): Promise<JobOperationsPage> {
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
@@ -704,6 +865,7 @@ export class Jobs {
         WHERE j.customer_id=$3 AND j.display_id=$4
           AND cc.job_visible($1,$2,$3,j.requested_by)
           AND ($5::boolean IS NOT TRUE OR o.status IN ('failed','unknown','expired'))
+          AND ($10::integer[] IS NULL OR o.operation_number=ANY($10::integer[]))
           AND ($6::integer IS NULL OR (o.operation_number,
             CASE WHEN f.field IS NULL THEN 0 ELSE array_position($7::text[],f.field) END)
             > ($6::integer,$8::integer))
@@ -717,6 +879,7 @@ export class Jobs {
         operationFieldOrder,
         after?.position ?? null,
         pageSize + 1,
+        numbers ?? null,
       ],
     );
     const page = rows.slice(0, pageSize);
@@ -895,10 +1058,15 @@ export class Jobs {
     )[0];
     const running = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
-        cb.display_name AS cancel_requested_by_name FROM cc.jobs j
+        cb.display_name AS cancel_requested_by_name,
+        e.purpose AS export_purpose,
+        i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal
+        FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
+        LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('running','awaiting-devices')
         ORDER BY j.created_at DESC, j.display_id DESC LIMIT ${ACTIVITY_RUNNING_ROWS}`,
       [...actor, customerId],
@@ -912,10 +1080,15 @@ export class Jobs {
     )[0];
     const waiting = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
-        cb.display_name AS cancel_requested_by_name FROM cc.jobs j
+        cb.display_name AS cancel_requested_by_name,
+        e.purpose AS export_purpose,
+        i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal
+        FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
+        LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('accepted','queued','held')
         ORDER BY j.target_count ASC NULLS LAST, j.created_at ASC, j.display_id ASC
         LIMIT ${ACTIVITY_WAITING_ROWS}`,
@@ -933,10 +1106,15 @@ export class Jobs {
     )[0];
     const recent = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
-        cb.display_name AS cancel_requested_by_name FROM cc.jobs j
+        cb.display_name AS cancel_requested_by_name,
+        e.purpose AS export_purpose,
+        i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal
+        FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
+        LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${visible} AND j.finished_at IS NOT NULL
           AND j.finished_at >= clock_timestamp() - interval '${ACTIVITY_WINDOW}'
         ORDER BY j.finished_at DESC LIMIT ${ACTIVITY_RECENT_ROWS}`,

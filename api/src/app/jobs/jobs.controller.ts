@@ -32,7 +32,7 @@ import { operationCursorSchema, seesEveryJob } from './jobs';
 import { recheckJobStream } from './jobs-stream';
 
 /** A repeated query key or a comma-separated value. */
-const many = <Schema extends z.ZodTypeAny>(schema: Schema) =>
+const many = <Schema extends z.ZodTypeAny>(schema: Schema, max = 100) =>
   z
     .preprocess(
       (value) =>
@@ -41,7 +41,7 @@ const many = <Schema extends z.ZodTypeAny>(schema: Schema) =>
           : Array.isArray(value)
             ? value
             : String(value).split(','),
-      z.array(schema).max(100),
+      z.array(schema).max(max),
     )
     .optional();
 
@@ -59,18 +59,21 @@ const listQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
+/** One operation number names one stored operation. `all` belongs to the flow, never to this route. */
+const operationNumberSchema = z.coerce.number().int().min(1).max(2_147_483_647);
+
 const operationsQuerySchema = z.strictObject({
   attention: z
     .enum(['true', 'false'])
     .transform((value) => value === 'true')
     .optional(),
+  // The operation numbers of the changes on one results page. The dialog reads them in one call
+  // (design section 8), so the route bounds the list at ten.
+  number: many(operationNumberSchema, 10),
   // The route answers "<operation>:<fieldPosition>", so it accepts the cursor that it returned.
   cursor: operationCursorSchema.optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
-
-/** One operation number names one stored operation. `all` belongs to the flow, never to this route. */
-const operationNumberSchema = z.coerce.number().int().min(1).max(2_147_483_647);
 
 const requestersQuerySchema = z.strictObject({
   query: z.string().max(200).optional(),
@@ -218,6 +221,7 @@ export class JobsController {
       input.attention === true,
       input.cursor,
       input.limit,
+      input.number,
     );
   }
 

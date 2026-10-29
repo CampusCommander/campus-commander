@@ -153,14 +153,16 @@ export class JobService {
 
   /**
    * The customers with work. The job service reads them from the rows that need work through the
-   * existing SELECT grants (eng-lead ruling 4).
+   * existing SELECT grants (eng-lead ruling 4). A running export or validation job needs the
+   * recovery of design section 5.
    */
   async customers(): Promise<string[]> {
     const rows = await this.rows(
       `SELECT DISTINCT j.customer_id FROM cc.jobs j
-        WHERE j.kind IN ('device-update','device-command','device-status') AND (j.status IN ('accepted','queued','held','running','awaiting-devices')
+        WHERE (j.kind IN ('device-update','device-command','device-status') AND (j.status IN ('accepted','queued','held','running','awaiting-devices')
           OR EXISTS(SELECT 1 FROM cc.device_update_jobs u WHERE u.job_id=j.job_id
-            AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL))
+            AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL)))
+          OR (j.kind IN ('device-export','device-import') AND j.status='running')
         ORDER BY j.customer_id`,
     );
     return rows.map((row) => String(row['customer_id']));
@@ -355,7 +357,11 @@ export class JobService {
     return false;
   }
 
-  /** Run the recovery function and start what it asks for (design sections 5.3 and 5.10). */
+  /**
+   * Run the recovery functions and start what they ask for (design sections 5.3, 5.10, and 5).
+   * `cc.recover_device_update_jobs` repairs the write jobs. `cc.recover_device_file_jobs` fails a
+   * lost export or validation run with `interrupted`.
+   */
   async recover(customerId: string): Promise<boolean> {
     return this.exclusive(() => this.recoverLocked(customerId));
   }
@@ -367,10 +373,17 @@ export class JobService {
         'SELECT cc.recover_device_update_jobs($1) AS result',
         [customerId],
       )) ?? {};
+    const files =
+      (await this.result<{ failed?: unknown[] } | null>(
+        'SELECT cc.recover_device_file_jobs($1) AS result',
+        [customerId],
+      )) ?? {};
     const starts = Array.isArray(recovered.starts) ? recovered.starts : [];
     const reconciles = Array.isArray(recovered.reconciles)
       ? recovered.reconciles
       : [];
+    // A recovered file run needs no start and no reconcile: it ends Failed or Cancelled.
+    const failedFiles = Array.isArray(files.failed) ? files.failed : [];
     for (const start of starts)
       await this.startLocked(customerId, start as AdmittedJob);
     // The recovery result is committed. A publication failure leaves its rows for the relay and never
@@ -389,7 +402,7 @@ export class JobService {
         // After a reaper run the job service does not retry the flow for `all` (eng-lead ruling 6).
       }
     }
-    return starts.length > 0 || reconciles.length > 0;
+    return starts.length > 0 || reconciles.length > 0 || failedFiles.length > 0;
   }
 
   /** Delete the hold of every terminal job through the compare-and-delete script (design section 6.4). */
@@ -448,13 +461,15 @@ export class JobService {
 
   /**
    * Publish the rows that one job service call committed, at once, and complete them
-   * (design sections 3.2 and 6.5). A refresh row and a worker row stay for the relay.
+   * (design sections 3.2 and 6.5). A refresh row and a worker row stay for the relay. The recovery
+   * of a lost export or validation run publishes through the same path (design section 5).
    */
   private async publishRows(customerId: string, after: string): Promise<void> {
     const rows = await this.rows(
       `SELECT p.publication_id,p.job_id,j.display_id,j.revision,j.requested_by
         FROM cc.job_publications p JOIN cc.jobs j ON j.job_id=p.job_id
-        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status')
+        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint
+          AND j.kind IN ('device-update','device-command','device-status','device-export','device-import')
           AND p.status_changed AND jsonb_array_length(p.device_ids)=0 AND jsonb_array_length(p.removed_ids)=0
         ORDER BY p.publication_id`,
       [customerId, after],

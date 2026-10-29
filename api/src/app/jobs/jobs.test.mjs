@@ -150,6 +150,251 @@ test('a write summary reads the UPD- action', () => {
   assert.equal(summary.action, 'update-device-annotations');
 });
 
+/** The clock of the state 26 fixtures. Each plan expiry is compared against it. */
+const STATE_26_NOW = Date.parse('2026-10-28T15:12:00.000Z');
+
+test('an export summary carries its phase and its purpose', () => {
+  const running = jobSummary(
+    jobRow({
+      kind: 'device-export',
+      display_id: 'EXP-001',
+      scope_kind: 'rows',
+      status: 'running',
+      target_count: 48,
+      succeeded: 32,
+      finished_at: null,
+      phase: 'write-rows',
+      phase_done: 32,
+      phase_total: 48,
+      export_purpose: 'edit',
+    }),
+    STATE_26_NOW,
+  );
+  assert.equal(running.action, 'export-devices');
+  assert.deepEqual(running.phase, { name: 'write-rows', done: 32, total: 48 });
+  assert.deepEqual(running.exportSummary, { purpose: 'edit' });
+  assert.equal(running.importSummary, null);
+  assert.deepEqual(running.scope, { kind: 'rows', deviceCount: 48 });
+
+  const ready = jobSummary(
+    jobRow({
+      kind: 'device-export',
+      display_id: 'EXP-002',
+      scope_kind: 'rows',
+      status: 'completed',
+      target_count: 48,
+      succeeded: 48,
+      phase: 'prepare-download',
+      phase_done: 0,
+      phase_total: null,
+      export_purpose: 'report',
+    }),
+    STATE_26_NOW,
+  );
+  assert.deepEqual(ready.phase, {
+    name: 'prepare-download',
+    done: 0,
+    total: null,
+  });
+  assert.deepEqual(ready.exportSummary, { purpose: 'report' });
+});
+
+test('each new import row of state 26 carries the data it shows', () => {
+  const rows = [
+    {
+      display_id: 'IMP-001',
+      status: 'completed',
+      target_count: 48,
+      phase: 'report',
+      phase_done: 11,
+      phase_total: 11,
+      import_mode: 'sync-changes',
+      plan_state: 'executed',
+      proposed: 7,
+      rejected: 0,
+      refusal: null,
+      expected: {
+        mode: 'sync-changes',
+        planState: 'executed',
+        proposed: 7,
+        rejected: 0,
+        refusal: null,
+      },
+    },
+    {
+      // The plan stays open in the store. The API derives its expiry (design section 1).
+      display_id: 'IMP-002',
+      status: 'completed',
+      target_count: 30,
+      phase: 'report',
+      phase_done: 11,
+      phase_total: 11,
+      import_mode: 'sync-all-rows',
+      plan_state: 'open',
+      plan_expires_at: new Date('2026-10-28T10:15:00.000Z'),
+      proposed: 11,
+      rejected: 0,
+      refusal: null,
+      expected: {
+        mode: 'sync-all-rows',
+        planState: 'expired',
+        proposed: 11,
+        rejected: 0,
+        refusal: null,
+      },
+    },
+    {
+      display_id: 'IMP-003',
+      status: 'completed',
+      target_count: 5,
+      phase: 'report',
+      phase_done: 1,
+      phase_total: 1,
+      import_mode: 'sync-changes',
+      plan_state: 'cancelled',
+      proposed: 1,
+      rejected: 0,
+      refusal: null,
+      expected: {
+        mode: 'sync-changes',
+        planState: 'cancelled',
+        proposed: 1,
+        rejected: 0,
+        refusal: null,
+      },
+    },
+    {
+      display_id: 'IMP-004',
+      status: 'completed',
+      target_count: 48,
+      phase: 'report',
+      phase_done: 0,
+      phase_total: 0,
+      import_mode: 'sync-changes',
+      plan_state: null,
+      proposed: 0,
+      rejected: 0,
+      refusal: null,
+      expected: {
+        mode: 'sync-changes',
+        planState: null,
+        proposed: 0,
+        rejected: 0,
+        refusal: null,
+      },
+    },
+    {
+      display_id: 'IMP-005',
+      status: 'completed-with-errors',
+      target_count: 6,
+      phase: 'report',
+      phase_done: 0,
+      phase_total: 0,
+      import_mode: 'sync-changes',
+      plan_state: null,
+      proposed: 0,
+      rejected: 4,
+      refusal: null,
+      expected: {
+        mode: 'sync-changes',
+        planState: null,
+        proposed: 0,
+        rejected: 4,
+        refusal: null,
+      },
+    },
+    {
+      display_id: 'IMP-006',
+      status: 'failed',
+      target_count: null,
+      phase: 'header-check',
+      phase_done: 0,
+      phase_total: null,
+      import_mode: 'sync-changes',
+      plan_state: null,
+      proposed: 0,
+      rejected: 0,
+      refusal: 'checksum-column-missing',
+      expected: {
+        mode: 'sync-changes',
+        planState: null,
+        proposed: 0,
+        rejected: 0,
+        refusal: 'checksum-column-missing',
+      },
+    },
+    {
+      display_id: 'IMP-007',
+      status: 'cancelled',
+      target_count: 30,
+      cancelled: 30,
+      phase: 'refresh',
+      phase_done: 4,
+      phase_total: 12,
+      import_mode: 'sync-all-rows',
+      plan_state: null,
+      proposed: 0,
+      rejected: 0,
+      refusal: null,
+      expected: {
+        mode: 'sync-all-rows',
+        planState: null,
+        proposed: 0,
+        rejected: 0,
+        refusal: null,
+      },
+    },
+  ];
+  for (const { display_id, expected, ...row } of rows) {
+    const summary = jobSummary(
+      jobRow({ kind: 'device-import', scope_kind: 'rows', display_id, ...row }),
+      STATE_26_NOW,
+    );
+    assert.equal(summary.action, 'validate-device-import');
+    assert.deepEqual(
+      summary.importSummary,
+      expected,
+      `${display_id} carries its import block.`,
+    );
+    assert.deepEqual(
+      summary.phase,
+      {
+        name: row.phase,
+        done: row.phase_done,
+        total: row.phase_total,
+      },
+      `${display_id} carries its phase.`,
+    );
+    assert.equal(summary.exportSummary, null);
+    assert.deepEqual(summary.scope, {
+      kind: 'rows',
+      deviceCount: row.target_count,
+    });
+  }
+});
+
+test('an open plan reads expired at its expiry and open before it', () => {
+  const row = jobRow({
+    kind: 'device-import',
+    scope_kind: 'rows',
+    display_id: 'IMP-002',
+    import_mode: 'sync-all-rows',
+    plan_state: 'open',
+    plan_expires_at: new Date('2026-10-28T11:42:00.000Z'),
+  });
+  const at = (iso) => jobSummary(row, Date.parse(iso)).importSummary.planState;
+  assert.equal(at('2026-10-28T11:41:59.999Z'), 'open');
+  assert.equal(at('2026-10-28T11:42:00.000Z'), 'expired');
+  // Execute keeps the state after the expiry, so a finished plan never reopens.
+  assert.equal(
+    jobSummary(
+      { ...row, plan_state: 'executed' },
+      Date.parse('2026-10-31T00:00:00.000Z'),
+    ).importSummary.planState,
+    'executed',
+  );
+});
+
 test('a cursor round-trips the created time and the display ID', () => {
   const cursor = encodeCursor({
     created_at: new Date('2026-10-06T12:00:00.000Z'),
@@ -246,6 +491,81 @@ test('the list answers a next cursor when more rows exist', async () => {
   });
 });
 
+test('the list filters both new actions and carries their blocks', async () => {
+  const db = database([
+    [
+      'AS matching',
+      [{ matching: 2, observed_at: new Date('2026-10-28T15:12:00.000Z') }],
+    ],
+    [
+      'ORDER BY j.created_at DESC',
+      [
+        jobRow({
+          kind: 'device-import',
+          display_id: 'IMP-002',
+          scope_kind: 'rows',
+          status: 'completed',
+          target_count: 30,
+          phase: 'report',
+          phase_done: 11,
+          phase_total: 11,
+          import_mode: 'sync-all-rows',
+          // The plan stays open in the store and expired on the read clock.
+          plan_state: 'open',
+          plan_expires_at: new Date(Date.now() - 60_000),
+          proposed: 11,
+          rejected: 0,
+          refusal: null,
+        }),
+        jobRow({
+          kind: 'device-export',
+          display_id: 'EXP-001',
+          scope_kind: 'rows',
+          status: 'completed',
+          target_count: 48,
+          succeeded: 48,
+          phase: 'prepare-download',
+          phase_done: 0,
+          phase_total: null,
+          export_purpose: 'edit',
+        }),
+      ],
+    ],
+  ]);
+  const page = await new Jobs(db).list(
+    session(),
+    'C0123456',
+    { action: ['export-devices', 'validate-device-import'] },
+    undefined,
+    50,
+  );
+  assert.deepEqual(
+    page.jobs.map((job) => job.displayId),
+    ['IMP-002', 'EXP-001'],
+  );
+  assert.deepEqual(page.jobs[0].importSummary, {
+    mode: 'sync-all-rows',
+    planState: 'expired',
+    proposed: 11,
+    rejected: 0,
+    refusal: null,
+  });
+  assert.deepEqual(page.jobs[1].exportSummary, { purpose: 'edit' });
+  const [counted, countedValues] = db.calls[0];
+  assert.ok(counted.includes('j.kind=ANY($4::text[])'));
+  assert.deepEqual(countedValues[3], ['device-export', 'device-import']);
+  const [paged, pagedValues] = db.calls[1];
+  assert.ok(
+    paged.includes('LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id'),
+  );
+  assert.ok(
+    paged.includes('LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id'),
+  );
+  assert.ok(paged.includes('e.purpose AS export_purpose'));
+  assert.ok(paged.includes('i.mode AS import_mode'));
+  assert.deepEqual(pagedValues[3], ['device-export', 'device-import']);
+});
+
 test('the detail joins the write fields and derives Latest activity from every operation', async () => {
   const db = database([
     [
@@ -318,6 +638,333 @@ test('the detail joins the write fields and derives Latest activity from every o
     detail.latestActivity.unknown.operations[0].operationId,
     'UPD-006-7',
   );
+});
+
+test('the detail carries the file of a completed export', async () => {
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      [
+        jobRow({
+          kind: 'device-export',
+          display_id: 'EXP-001',
+          scope_kind: 'rows',
+          status: 'completed',
+          target_count: 48,
+          succeeded: 48,
+          phase: 'prepare-download',
+          phase_done: 0,
+          phase_total: null,
+          export_purpose: 'edit',
+          file_name: 'devices-for-editing-EXP-001.csv',
+          file_size_bytes: 7987,
+          file_row_count: 48,
+          file_column_count: 10,
+          file_expires_at: new Date('2026-11-27T15:31:00.000Z'),
+        }),
+      ],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'EXP-001');
+  assert.deepEqual(detail.exportFile, {
+    name: 'devices-for-editing-EXP-001.csv',
+    sizeBytes: 7987,
+    rows: 48,
+    columns: 10,
+    expiresAt: '2026-11-27T15:31:00.000Z',
+  });
+  assert.deepEqual(detail.exportSummary, { purpose: 'edit' });
+  assert.deepEqual(detail.phase, {
+    name: 'prepare-download',
+    done: 0,
+    total: null,
+  });
+  assert.equal(detail.importSource, null);
+  assert.equal(detail.plan, null);
+  assert.equal(detail.planJobs, null);
+  assert.equal(detail.executionCounts, null);
+});
+
+test('the detail carries the source and the open plan of a validation job', async () => {
+  const planId = '77777777-7777-4777-8777-777777777777';
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      [
+        jobRow({
+          kind: 'device-import',
+          display_id: 'IMP-001',
+          scope_kind: 'rows',
+          status: 'completed',
+          target_count: 48,
+          phase: 'report',
+          phase_done: 11,
+          phase_total: 11,
+          import_mode: 'sync-changes',
+          source_name: 'devices-for-editing-EXP-001.csv',
+          source_size_bytes: 7987,
+          rows_read: 48,
+          candidate_rows: 13,
+          refusal: null,
+          refusal_text: null,
+          plan_id: planId,
+          plan_revision: 1,
+          plan_state: 'open',
+          // The plan is still open on the read clock.
+          plan_expires_at: new Date(Date.now() + 3_600_000),
+          plan_changed_by: null,
+          plan_changed_at: null,
+          proposed: 7,
+          rejected: 0,
+        }),
+      ],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'IMP-001');
+  assert.deepEqual(detail.importSummary, {
+    mode: 'sync-changes',
+    planState: 'open',
+    proposed: 7,
+    rejected: 0,
+    refusal: null,
+  });
+  assert.deepEqual(detail.importSource, {
+    name: 'devices-for-editing-EXP-001.csv',
+    sizeBytes: 7987,
+    rowsRead: 48,
+    candidateRows: 13,
+    refusalText: null,
+  });
+  assert.equal(detail.plan.planId, planId);
+  assert.equal(detail.plan.revision, 1);
+  assert.equal(detail.plan.state, 'open');
+  assert.deepEqual(detail.plan.changedBy, null);
+  assert.equal(detail.plan.changedAt, null);
+  assert.equal(detail.exportFile, null);
+  // An open plan holds no job and no result yet.
+  assert.equal(detail.planJobs, null);
+  assert.equal(detail.executionCounts, null);
+  assert.equal(
+    db.calls.some(([text]) => text.includes('FROM cc.device_import_changes c')),
+    false,
+    'An open plan reads no execution counts.',
+  );
+});
+
+test('the detail of an executed plan carries its jobs and the counts of state 17b', async () => {
+  const planJob = (overrides) =>
+    jobRow({
+      requested_by: REQUESTER,
+      requested_by_name: 'Ada Lovelace',
+      revision: 3,
+      scope_kind: 'devices',
+      failure: null,
+      cancel_requested_at: null,
+      cancel_requested_by: null,
+      cancel_requested_by_name: null,
+      ...overrides,
+    });
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      [
+        jobRow({
+          kind: 'device-import',
+          display_id: 'IMP-001',
+          scope_kind: 'rows',
+          status: 'completed',
+          target_count: 48,
+          phase: 'report',
+          phase_done: 11,
+          phase_total: 11,
+          import_mode: 'sync-changes',
+          source_name: 'devices-for-editing-EXP-001.csv',
+          source_size_bytes: 7987,
+          rows_read: 48,
+          candidate_rows: 13,
+          refusal: null,
+          refusal_text: null,
+          plan_id: '77777777-7777-4777-8777-777777777777',
+          plan_revision: 2,
+          plan_state: 'executed',
+          plan_expires_at: new Date(Date.now() - 3_600_000),
+          plan_changed_by: ACTOR,
+          plan_changed_by_name: 'Review administrator',
+          plan_changed_at: new Date(Date.now() - 3_600_000),
+          proposed: 7,
+          rejected: 0,
+        }),
+      ],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+    [
+      'FROM cc.device_update_jobs u',
+      [
+        planJob({
+          job_id: '88888888-8888-4888-8888-888888888881',
+          display_id: 'UPD-001',
+          kind: 'device-update',
+          action: 'annotated-location',
+          status: 'completed',
+          target_count: 6,
+          succeeded: 6,
+          finished_at: new Date('2026-10-28T14:44:00.000Z'),
+        }),
+        planJob({
+          job_id: '88888888-8888-4888-8888-888888888882',
+          display_id: 'STS-001',
+          kind: 'device-status',
+          action: 'disable',
+          status: 'completed',
+          target_count: 1,
+          succeeded: 1,
+          finished_at: new Date('2026-10-28T14:44:00.000Z'),
+        }),
+        planJob({
+          job_id: '88888888-8888-4888-8888-888888888883',
+          display_id: 'STS-002',
+          kind: 'device-status',
+          action: 'reenable',
+          status: 'failed',
+          target_count: 1,
+          succeeded: 0,
+          failed: 1,
+          finished_at: new Date('2026-10-28T14:44:00.000Z'),
+        }),
+        planJob({
+          job_id: '88888888-8888-4888-8888-888888888884',
+          display_id: 'STS-003',
+          kind: 'device-status',
+          action: 'deprovision',
+          status: 'completed',
+          target_count: 1,
+          succeeded: 1,
+          finished_at: new Date('2026-10-28T14:44:00.000Z'),
+        }),
+      ],
+    ],
+    [
+      'FROM cc.device_import_changes c',
+      [
+        {
+          not_run: 0,
+          succeeded: 10,
+          failed: 1,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: 0,
+        },
+      ],
+    ],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'IMP-001');
+  assert.equal(detail.plan.state, 'executed');
+  assert.deepEqual(
+    detail.planJobs.map((job) => [job.displayId, job.action, job.status]),
+    [
+      ['UPD-001', 'update-device-annotations', 'completed'],
+      ['STS-001', 'disable-devices', 'completed'],
+      ['STS-002', 'reenable-devices', 'failed'],
+      ['STS-003', 'deprovision-devices', 'completed'],
+    ],
+  );
+  assert.deepEqual(detail.executionCounts, {
+    succeeded: 10,
+    failed: 1,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+    notRun: 0,
+  });
+  // State 17b: 11 changes = 10 Succeeded + 1 Failed.
+  const counts = detail.executionCounts;
+  assert.equal(
+    counts.succeeded +
+      counts.failed +
+      counts.unknown +
+      counts.skipped +
+      counts.expired +
+      counts.cancelled +
+      counts.pending +
+      counts.notRun,
+    11,
+    'The eight terms sum to the 11 changes of state 17b.',
+  );
+  const queries = db.calls.filter(([text]) =>
+    text.includes('FROM cc.device_import_changes c'),
+  );
+  assert.equal(queries.length, 1, 'One aggregate query fills the counts.');
+  for (const term of [
+    'c.linked_job_id IS NULL',
+    "o.status='succeeded'",
+    "o.status='failed'",
+    "o.status='unknown'",
+    "o.status='skipped'",
+    "o.status='expired'",
+    "o.status='cancelled'",
+    "o.status IN ('pending','dispatched','issued')",
+  ])
+    assert.ok(queries[0][0].includes(term), `The aggregate counts ${term}.`);
+});
+
+test('a write job of an import names its import and the job it waits for', async () => {
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      [
+        jobRow({
+          kind: 'device-status',
+          display_id: 'STS-002',
+          action: 'reenable',
+          status: 'failed',
+          target_count: 1,
+          succeeded: 0,
+          failed: 1,
+          import_display_id: 'IMP-001',
+          waits_for_display_id: 'UPD-001',
+        }),
+      ],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'STS-002');
+  assert.equal(detail.importDisplayId, 'IMP-001');
+  assert.equal(detail.waitsForDisplayId, 'UPD-001');
+  assert.equal(detail.waitingDisplayIds, null);
+  assert.equal(detail.planJobs, null);
+  assert.equal(detail.executionCounts, null);
+});
+
+test('an update job of an import names the status jobs that wait for it', async () => {
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      [
+        jobRow({
+          kind: 'device-update',
+          display_id: 'UPD-001',
+          action: 'annotated-location',
+          status: 'completed',
+          target_count: 6,
+          succeeded: 6,
+          import_display_id: 'IMP-001',
+          waits_for_display_id: null,
+          waiting_display_ids: ['STS-001', 'STS-002', 'STS-003'],
+        }),
+      ],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'UPD-001');
+  assert.equal(detail.importDisplayId, 'IMP-001');
+  assert.equal(detail.waitsForDisplayId, null);
+  assert.deepEqual(detail.waitingDisplayIds, ['STS-001', 'STS-002', 'STS-003']);
 });
 
 test('an unknown or purged job answers 404', async () => {
@@ -480,6 +1127,39 @@ test('an operation cursor that is not two positions answers job-not-found', asyn
       `The cursor ${cursor} must be refused.`,
     );
   }
+});
+
+test('the operations page reads the numbers of one results page', async () => {
+  const routes = () => [
+    ['FROM cc.device_update_operations o', []],
+    ['LEFT JOIN cc.device_update_jobs u', [jobRow({ kind: 'device-update' })]],
+  ];
+  const filtered = database(routes());
+  const page = await new Jobs(filtered).operations(
+    session(),
+    'C0123456',
+    'UPD-006',
+    false,
+    undefined,
+    100,
+    [3, 7, 8],
+  );
+  assert.deepEqual(page.operations, []);
+  const [sql, values] = filtered.calls[1];
+  assert.ok(sql.includes('o.operation_number=ANY($10::integer[])'));
+  assert.deepEqual(values[9], [3, 7, 8]);
+
+  // A call without numbers reads every operation of the job.
+  const whole = database(routes());
+  await new Jobs(whole).operations(
+    session(),
+    'C0123456',
+    'UPD-006',
+    false,
+    undefined,
+    100,
+  );
+  assert.equal(whole.calls[1][1][9], null);
 });
 
 test('the operations route schema accepts the cursor format the route answers', () => {
