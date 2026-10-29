@@ -100,7 +100,11 @@ export async function createBootstrapEdge({
     };
   }
   const server = https.createServer(material, async (request, response) => {
-    const deadlineExpired = enforceRequestDeadline(request, response, deadlines);
+    const deadlineExpired = enforceRequestDeadline(
+      request,
+      response,
+      deadlines,
+    );
     response.setHeader('strict-transport-security', 'max-age=31536000');
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');

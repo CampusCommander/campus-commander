@@ -29,7 +29,11 @@ async function close(server) {
  * Start a Phase 3 edge in front of a stub API and a stub frontend. The stub API answers each
  * request through `answer(request, response)`, so a test holds an answer past a deadline.
  */
-async function startEdge({ answer, deadlines, verify = async () => true } = {}) {
+async function startEdge({
+  answer,
+  deadlines,
+  verify = async () => true,
+} = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'cc-edge-deadline-'));
   execFileSync(
     'openssl',
