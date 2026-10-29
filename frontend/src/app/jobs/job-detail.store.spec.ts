@@ -54,6 +54,17 @@ const detail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
     failed: { count: 1, operations: [] },
     unknown: { count: 1, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
   ...overrides,
 });
 

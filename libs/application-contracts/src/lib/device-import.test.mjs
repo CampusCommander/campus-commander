@@ -477,15 +477,17 @@ test('each rejected row reason and each warning names the rule of the design', (
   );
 });
 
-test('the Failed tab holds failed only until the owner answers on Unknown', () => {
-  assert.deepEqual(DEVICE_IMPORT_FAILED_OUTCOMES, ['failed']);
+test('the Failed tab holds failed and unknown until the owner rules out Unknown', () => {
+  // The owner answered the proposal on Unknown with "Unknown yes" on 2026-10-28.
+  assert.deepEqual(DEVICE_IMPORT_FAILED_OUTCOMES, ['failed', 'unknown']);
   for (const outcome of DEVICE_IMPORT_FAILED_OUTCOMES)
     assert.equal(
       jobOutcomeSchema.safeParse(outcome).success,
       true,
       `${outcome} is a job outcome.`,
     );
-  // The proposal that Unknown joins the tab has no answer, so it stays out.
-  assert.equal(DEVICE_IMPORT_FAILED_OUTCOMES.includes('unknown'), false);
+  // Expired stays out of the tab.
   assert.equal(DEVICE_IMPORT_FAILED_OUTCOMES.includes('expired'), false);
+  assert.equal(DEVICE_IMPORT_FAILED_OUTCOMES.includes('cancelled'), false);
+  assert.equal(DEVICE_IMPORT_FAILED_OUTCOMES.includes('succeeded'), false);
 });

@@ -202,10 +202,14 @@ export const deviceImportNotRunSchema = z.strictObject({
 export type DeviceImportNotRun = z.infer<typeof deviceImportNotRunSchema>;
 
 /**
- * The outcomes of the Failed tab (design section 8, ruling 4). The proposal that Unknown joins the
- * tab waits for the owner, so the constant holds `failed` only.
+ * The outcomes of the Failed tab (design section 8, ruling 4). The owner answered the proposal on
+ * Unknown with "Unknown yes" on 2026-10-28, so the tab holds `failed` and `unknown`. Expired stays
+ * out, because a device that answered the command keeps its own term in the counts.
  */
-export const DEVICE_IMPORT_FAILED_OUTCOMES: readonly JobOutcome[] = ['failed'];
+export const DEVICE_IMPORT_FAILED_OUTCOMES: readonly JobOutcome[] = [
+  'failed',
+  'unknown',
+];
 
 /** One proposed change of a report line: a field write or a status action. */
 export const deviceImportChangeSchema = z.discriminatedUnion('type', [

@@ -292,6 +292,17 @@ const job: JobDetail = {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 /** The job of the several-field receipt: 5 devices and 15 field changes. */

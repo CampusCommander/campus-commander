@@ -57,6 +57,9 @@ const job = (overrides: Partial<JobSummary> = {}): JobSummary => ({
   },
   cancelRequest: null,
   failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
   ...overrides,
 });
 
