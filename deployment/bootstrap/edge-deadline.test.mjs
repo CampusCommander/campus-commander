@@ -170,8 +170,25 @@ function sendKeepAliveTrickle(
     let writes = 0;
     let answeredAt = null;
     let settled = false;
-    let ticker;
     let guard;
+    const socket = tls.connect(
+      { port, host: 'localhost', servername: 'localhost', ca: cert },
+      () => {
+        const lines = [
+          `POST ${path} HTTP/1.1`,
+          'Host: localhost',
+          'Connection: keep-alive',
+        ];
+        for (const [name, value] of Object.entries(headers))
+          lines.push(`${name}: ${value}`);
+        socket.write(`${lines.join('\r\n')}\r\n\r\n${body}`);
+      },
+    );
+    const ticker = setInterval(() => {
+      if (socket.destroyed) return;
+      writes += 1;
+      socket.write('y');
+    }, interval);
     const settle = (closedByPeer) => {
       if (settled) return;
       settled = true;
@@ -187,24 +204,6 @@ function sendKeepAliveTrickle(
         closedAfterAnswer: answeredAt === null ? null : Date.now() - answeredAt,
       });
     };
-    const socket = tls.connect(
-      { port, host: 'localhost', servername: 'localhost', ca: cert },
-      () => {
-        const lines = [
-          `POST ${path} HTTP/1.1`,
-          'Host: localhost',
-          'Connection: keep-alive',
-        ];
-        for (const [name, value] of Object.entries(headers))
-          lines.push(`${name}: ${value}`);
-        socket.write(`${lines.join('\r\n')}\r\n\r\n${body}`);
-      },
-    );
-    ticker = setInterval(() => {
-      if (socket.destroyed) return;
-      writes += 1;
-      socket.write('y');
-    }, interval);
     socket.on('data', (chunk) => {
       data += chunk.toString('latin1');
       if (answeredAt !== null || !/^HTTP\/1\.1 408/.test(data)) return;
