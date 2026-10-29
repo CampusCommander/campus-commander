@@ -1615,6 +1615,76 @@ export async function qualifyDeviceExportImport({
             'SELECT cc.recover_device_file_jobs($1)',
             [customer],
           ],
+          [
+            'cc.create_device_update_preview(uuid,integer,text,integer,text,jsonb,text,jsonb,integer,text)',
+            'SELECT cc.create_device_update_preview($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+            [
+              importer,
+              1,
+              customer,
+              1,
+              'annotated-location',
+              '[]',
+              'x',
+              '[]',
+              30,
+              null,
+            ],
+          ],
+          [
+            'cc.open_device_update_preview(uuid,integer,text,integer,text,jsonb,integer,text)',
+            'SELECT cc.open_device_update_preview($1,$2,$3,$4,$5,$6,$7,$8)',
+            [importer, 1, customer, 1, 'annotated-location', '[]', 30, null],
+          ],
+          [
+            'cc.add_device_update_preview_targets(uuid,integer,text,uuid,jsonb)',
+            'SELECT cc.add_device_update_preview_targets($1,$2,$3,$4,$5)',
+            [importer, 1, customer, randomUUID(), '[]'],
+          ],
+          [
+            'cc.seal_device_update_preview(uuid,integer,text,uuid,text)',
+            'SELECT cc.seal_device_update_preview($1,$2,$3,$4,$5)',
+            [importer, 1, customer, randomUUID(), 'x'],
+          ],
+          [
+            'cc.read_device_update_preview_manifest_page(uuid,integer,text,uuid,integer)',
+            'SELECT cc.read_device_update_preview_manifest_page($1,$2,$3,$4,$5)',
+            [importer, 1, customer, randomUUID(), 250],
+          ],
+          [
+            'cc.read_device_update_preview_manifest(uuid,integer,text,uuid)',
+            'SELECT cc.read_device_update_preview_manifest($1,$2,$3,$4)',
+            [importer, 1, customer, randomUUID()],
+          ],
+          [
+            'cc.cancel_device_import_plan(uuid,integer,text,uuid,uuid,integer)',
+            'SELECT cc.cancel_device_import_plan($1,$2,$3,$4,$5,$6)',
+            [importer, 1, customer, randomUUID(), randomUUID(), 1],
+          ],
+          [
+            'cc.lock_device_import_plan(uuid,integer,text,uuid,uuid,integer)',
+            'SELECT cc.lock_device_import_plan($1,$2,$3,$4,$5,$6)',
+            [importer, 1, customer, randomUUID(), randomUUID(), 1],
+          ],
+          [
+            'cc.mark_device_import_changes(uuid,integer,text,uuid,uuid,jsonb)',
+            'SELECT cc.mark_device_import_changes($1,$2,$3,$4,$5,$6)',
+            [importer, 1, customer, randomUUID(), randomUUID(), '[]'],
+          ],
+          [
+            'cc.link_device_import_jobs(uuid,integer,text,uuid,uuid,jsonb,jsonb,uuid)',
+            'SELECT cc.link_device_import_jobs($1,$2,$3,$4,$5,$6,$7,$8)',
+            [
+              importer,
+              1,
+              customer,
+              randomUUID(),
+              randomUUID(),
+              '[]',
+              '[]',
+              randomUUID(),
+            ],
+          ],
         ];
         for (const [signature] of signatures) {
           const granted = await migrator.query(
