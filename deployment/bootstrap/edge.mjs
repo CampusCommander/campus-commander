@@ -195,6 +195,9 @@ export async function createBootstrapEdge({
   // node:http2 has no closeAllConnections. Keep the teardown that process shutdown and the
   // callers use, and reach both protocols through the TLS socket of each connection.
   const sockets = new Set();
+  // The server accepts a TCP connection before its TLS handshake. A peer that never sends a
+  // ClientHello has no TLS socket, so the forced teardown tracks the accepted transport too.
+  const transports = new Set();
   /** Each HTTP/2 session with its open stream count, last stream, and idle timer. */
   const sessions = new Map();
   let stopping = false;
@@ -234,12 +237,18 @@ export async function createBootstrapEdge({
     // A new session with no request is idle, as an idle HTTP/1.1 connection is.
     closeIdleSession(session, entry);
   });
+  server.on('connection', (socket) => {
+    transports.add(socket);
+    socket.once('close', () => transports.delete(socket));
+  });
   server.on('secureConnection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
   });
   server.closeAllConnections = () => {
     for (const socket of sockets) socket.destroy();
+    // A connection that never finished its handshake exists only here.
+    for (const socket of transports) socket.destroy();
   };
   /**
    * Begin the stop. GOAWAY tells every HTTP/2 client to open a new connection for later

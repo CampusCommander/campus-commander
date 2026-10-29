@@ -56,6 +56,7 @@ The edge removes every connection-specific header from an upstream answer.
 On SIGINT or SIGTERM the edge sends GOAWAY to every open HTTP/2 session at once.
 The browser then opens a new connection for each later request.
 The edge ends every HTTP/1.1 connection and destroys the remaining sockets after five seconds.
+A connection that has not finished its TLS handshake is one of those remaining sockets.
 That grace ends before the ten-second Docker stop timeout.
 An open stream keeps its HTTP/2 session until the grace ends.
 
