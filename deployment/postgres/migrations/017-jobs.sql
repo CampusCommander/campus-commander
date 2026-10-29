@@ -374,6 +374,10 @@ CREATE TABLE cc.device_import_jobs (
   lease_id uuid,
   lease_expires_at timestamptz,
   first_claimed_at timestamptz,
+  -- The claim counter. Each claim of this job starts a new attempt of the whole validation, so a
+  -- repeated request replaces its partial report instead of appending to it, and only the newest
+  -- attempt may store a line or finish (design section 6).
+  attempt integer NOT NULL DEFAULT 0 CHECK(attempt>=0),
   -- The counts of `td:663`. Rows equal the four row results (design section 6, `td:674`).
   rows_read integer NOT NULL DEFAULT 0 CHECK(rows_read BETWEEN 0 AND 50000),
   candidate_rows integer NOT NULL DEFAULT 0 CHECK(candidate_rows BETWEEN 0 AND 50000),
@@ -1052,10 +1056,17 @@ BEGIN
 END;
 $$;
 
--- The claim of one validation run, with the same lease, fence, and answers as the export claim.
+-- The claim of one validation run, with the same lease, fence, and answers as the export claim. It
+-- also answers the source artifact of the upload and the connection credential, because the worker
+-- reads the file and Google with them (design section 6). The claim opens a new attempt and clears
+-- the partial report, so a retried request cannot store its lines twice. The artifact is the ready
+-- artifact that the upload linked to this job through `cc.artifacts.job_id`, newest first. Both
+-- reads take no lock,
+-- so the claim keeps the lock order of the header and the detail row (design section 3).
 CREATE FUNCTION cc.claim_device_import_job(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz;
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; connection cc.google_connection;
+  source_artifact text;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL THEN
     RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
@@ -1067,28 +1078,37 @@ BEGIN
   SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
-    RETURN jsonb_build_object('outcome','done');
+    RETURN jsonb_build_object('outcome','done','attempt',detail.attempt);
   END IF;
   IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease AND detail.lease_expires_at>now_at THEN
     RETURN jsonb_build_object('outcome','busy','leaseExpiresAt',detail.lease_expires_at);
   END IF;
-  -- A new owner restarts the whole validation (design section 6). A replaced run cannot resume its
-  -- partial report, so its lines go before the new lease lands. The same owner keeps its output.
-  IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease THEN
-    DELETE FROM cc.device_import_changes WHERE job_id=p_job;
-    DELETE FROM cc.device_import_rejections WHERE job_id=p_job;
-    DELETE FROM cc.device_import_warnings WHERE job_id=p_job;
-  END IF;
+  -- Every claim starts a new attempt of the whole validation (design section 6). A retried request
+  -- repeats the run from the start, so the partial report of the previous attempt goes before this
+  -- attempt lands, and only the newest attempt may store a line or finish. A stale attempt of the
+  -- same lease cannot append to the report of the attempt that replaced it.
+  DELETE FROM cc.device_import_changes WHERE job_id=p_job;
+  DELETE FROM cc.device_import_rejections WHERE job_id=p_job;
+  DELETE FROM cc.device_import_warnings WHERE job_id=p_job;
   UPDATE cc.device_import_jobs SET lease_id=p_lease,lease_expires_at=now_at+interval '120 seconds',
-    first_claimed_at=COALESCE(first_claimed_at,now_at) WHERE job_id=p_job;
+    attempt=detail.attempt+1,first_claimed_at=COALESCE(first_claimed_at,now_at) WHERE job_id=p_job;
   IF job.started_at IS NULL THEN
     UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
   END IF;
   PERFORM cc.record_job_change(p_job,false);
+  -- The source artifact and the credential are read after the claim decides, so a refused claim
+  -- writes nothing and answers nothing about them.
+  SELECT a.id INTO source_artifact FROM cc.artifacts a WHERE a.job_id=p_job::text
+    AND a.publication_state='ready' ORDER BY a.created_at DESC LIMIT 1;
+  SELECT * INTO connection FROM cc.google_connection WHERE singleton;
   RETURN jsonb_build_object('outcome','claimed','leaseExpiresAt',now_at+interval '120 seconds',
+    'attempt',detail.attempt+1,
     'displayId',job.display_id,'targetCount',job.target_count,'mode',detail.mode,
     'sourceType',detail.source_type,'sourceName',detail.source_name,
-    'sourceSizeBytes',detail.source_size_bytes,'statusPermissions',detail.status_permissions);
+    'sourceSizeBytes',detail.source_size_bytes,'statusPermissions',detail.status_permissions,
+    'sourceArtifactId',source_artifact,'generation',connection.generation,
+    'credentialId',connection.credential_id,
+    'envelope',(SELECT envelope FROM cc.google_credentials WHERE id=connection.credential_id));
 END;
 $$;
 
@@ -1128,13 +1148,15 @@ $$;
 -- The renewal of one validation run, with the same fence. The header check writes the row count of
 -- the file, so target_count takes the done count of that phase (design section 3). The report phase
 -- counts report lines, and one source row yields several lines, so it carries no 50,000 row cap
--- (design section 2). Every other phase counts source rows or devices.
-CREATE FUNCTION cc.renew_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_phase text,
-  p_done integer,p_total integer) RETURNS jsonb
+-- (design section 2). Every other phase counts source rows or devices. A stale attempt of the same
+-- lease is fenced, because the claim that replaced it owns the report.
+CREATE FUNCTION cc.renew_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_attempt integer,
+  p_phase text,p_done integer,p_total integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; rows_count integer;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_phase IS NULL OR p_done IS NULL OR
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_attempt IS NULL OR p_attempt<0 OR
+    p_phase IS NULL OR p_done IS NULL OR
     p_phase NOT IN ('header-check','refresh','compare','report') OR p_done<0 OR
     (p_total IS NOT NULL AND p_total<p_done) OR
     (p_phase<>'report' AND (p_done>50000 OR (p_total IS NOT NULL AND p_total>50000))) THEN
@@ -1149,8 +1171,8 @@ BEGIN
     RETURN jsonb_build_object('outcome','done');
   END IF;
   now_at:=clock_timestamp();
-  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
-    detail.lease_expires_at<=now_at THEN
+  IF detail.attempt<>p_attempt OR detail.lease_id IS DISTINCT FROM p_lease OR
+    detail.lease_expires_at IS NULL OR detail.lease_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   UPDATE cc.device_import_jobs SET lease_expires_at=now_at+interval '120 seconds' WHERE job_id=p_job;
@@ -1162,18 +1184,21 @@ BEGIN
 END;
 $$;
 
--- One batch of report lines under the caller's lease (design section 6 step 19). A call stores at most
--- 1,000 lines and 32 MiB of JSON, and it numbers them itself, so a page follows the stored order. A
--- lapsed or replaced lease writes nothing, and neither does a stopped job. Each line carries one
--- `kind`: `change`, `rejection`, or `warning`.
-CREATE FUNCTION cc.store_device_import_lines(p_customer text,p_job uuid,p_lease uuid,p_lines jsonb)
+-- One batch of report lines under the caller's lease and attempt (design section 6 step 19). A call
+-- stores at most 1,000 lines and 32 MiB of JSON, and it numbers them itself, so a page follows the
+-- stored order. A lapsed or replaced lease writes nothing, and neither does a stopped job, nor an
+-- attempt that a newer claim replaced. Each line carries one `kind`: `change`, `rejection`, or
+-- `warning`.
+CREATE FUNCTION cc.store_device_import_lines(p_customer text,p_job uuid,p_lease uuid,p_attempt integer,
+  p_lines jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; bad integer;
   changes integer:=0; rejections integer:=0; warnings integer:=0;
   next_change integer; next_rejection integer; next_warning integer;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_lines IS NULL OR
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_attempt IS NULL OR p_attempt<0 OR
+    p_lines IS NULL OR
     jsonb_typeof(p_lines)<>'array' OR jsonb_array_length(p_lines) NOT BETWEEN 1 AND 1000 OR
     pg_column_size(p_lines)>33554432 THEN
     RAISE EXCEPTION 'The import lines are invalid.' USING ERRCODE='22023';
@@ -1215,8 +1240,8 @@ BEGIN
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','done','changes',0,'rejections',0,'warnings',0);
   END IF;
-  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
-    detail.lease_expires_at<=now_at THEN
+  IF detail.attempt<>p_attempt OR detail.lease_id IS DISTINCT FROM p_lease OR
+    detail.lease_expires_at IS NULL OR detail.lease_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced','changes',0,'rejections',0,'warnings',0);
   END IF;
   SELECT COALESCE(max(ordinal)+1,0) INTO next_change FROM cc.device_import_changes WHERE job_id=p_job;
@@ -1341,15 +1366,17 @@ $$;
 -- The finish of one validation run. It ends the job under the header lock and its detail row, stores
 -- the counts, and creates an open plan that expires one hour after the finish when a change is
 -- proposed. A stored cancel request, or a failure, ends the job and keeps no report and no plan. A
--- repeated call answers the stored status.
-CREATE FUNCTION cc.finish_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_counts jsonb DEFAULT NULL,
+-- repeated call answers the stored status. An attempt that a newer claim replaced is fenced, so a
+-- replayed request cannot publish the report of the attempt before it.
+CREATE FUNCTION cc.finish_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_attempt integer,
+  p_counts jsonb DEFAULT NULL,
   p_failure text DEFAULT NULL,p_refusal text DEFAULT NULL,p_refusal_text text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz;
   rows_count integer; unchanged_count integer; no_change_count integer; proposed_count integer;
   rejected_count integer; stale_count integer; oldest timestamptz; final_status text; plan jsonb;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_attempt IS NULL OR p_attempt<0 OR
     (p_failure IS NOT NULL AND NOT COALESCE(cc.job_failure_known(p_failure),false)) OR
     (p_refusal IS NULL)<>(p_refusal_text IS NULL) OR
     (p_refusal IS NOT NULL AND p_failure IS NULL) OR
@@ -1401,8 +1428,8 @@ BEGIN
   IF job.finished_at IS NOT NULL THEN
     RETURN jsonb_build_object('outcome','finished','status',job.status);
   END IF;
-  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
-    detail.lease_expires_at<=now_at THEN
+  IF detail.attempt<>p_attempt OR detail.lease_id IS DISTINCT FROM p_lease OR
+    detail.lease_expires_at IS NULL OR detail.lease_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   IF job.cancel_requested_at IS NOT NULL OR p_failure IS NOT NULL THEN
@@ -4491,8 +4518,8 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid),
   cc.claim_device_export_job(text,uuid,uuid),cc.claim_device_import_job(text,uuid,uuid),
   cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
-  cc.renew_device_import_job(text,uuid,uuid,text,integer,integer),
-  cc.store_device_import_lines(text,uuid,uuid,jsonb),
+  cc.renew_device_import_job(text,uuid,uuid,integer,text,integer,integer),
+  cc.store_device_import_lines(text,uuid,uuid,integer,jsonb),
   cc.finish_device_export_job(text,uuid,uuid,jsonb,text),
-  cc.finish_device_import_job(text,uuid,uuid,jsonb,text,text,text),
+  cc.finish_device_import_job(text,uuid,uuid,integer,jsonb,text,text,text),
   cc.recover_device_file_jobs(text) FROM PUBLIC;

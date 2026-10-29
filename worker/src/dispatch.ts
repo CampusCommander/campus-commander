@@ -18,6 +18,7 @@ import {
   deviceUpdateReconcileRequestSchema,
 } from './device-update';
 import { DeviceExportError, deviceExportRequestSchema } from './device-export';
+import { DeviceImportError, deviceImportRequestSchema } from './device-import';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -269,6 +270,10 @@ const deviceExportDispatchSchema = deviceExportRequestSchema.extend({
   executionId: executionIdSchema,
 });
 
+const deviceImportDispatchSchema = deviceImportRequestSchema.extend({
+  executionId: executionIdSchema,
+});
+
 /**
  * One export run, or the failure of a lost run (design section 5). Every outcome of the job
  * answers 200, so only a failed request retries.
@@ -304,6 +309,45 @@ export async function handleDeviceExportDispatch(
     )
       respond(response, 503, { error: error.code });
     else respond(response, 503, { error: 'device-export-unavailable' });
+  }
+  return true;
+}
+
+/**
+ * One validation run, or the failure of a lost run (design section 6). Every outcome of the job
+ * answers 200, so only a failed request retries.
+ */
+export async function handleDeviceImportDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (request.method !== 'POST' || request.url !== '/dispatch/device-import')
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = deviceImportDispatchSchema.parse(
+      await readJson(request),
+    );
+    const answer = await google.importDevices(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: answer.outcome,
+      ...answer,
+    });
+  } catch (error) {
+    if (error instanceof DispatchError)
+      respond(response, error.statusCode, { error: error.code });
+    else if (error instanceof z.ZodError)
+      respond(response, 400, { error: 'invalid-payload' });
+    else if (
+      error instanceof DeviceImportError ||
+      error instanceof DeviceSyncError
+    )
+      respond(response, 503, { error: error.code });
+    else respond(response, 503, { error: 'device-import-unavailable' });
   }
   return true;
 }

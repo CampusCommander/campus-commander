@@ -79,6 +79,8 @@ export async function qualifyDeviceExportImport({
     ['devices:write', district()],
     ['devices:bulk-actions', district()],
   ];
+  /** The attempt that each claim of a job and lease answered (design section 6, step 1). */
+  const importAttempts = new Map();
   const createExport = async ({
     actor,
     purpose = 'edit',
@@ -138,12 +140,19 @@ export async function qualifyDeviceExportImport({
       jobId,
       lease,
     ]);
-  const claimImport = (jobId, lease) =>
-    result('SELECT cc.claim_device_import_job($1,$2,$3) AS result', [
-      customer,
-      jobId,
-      lease,
-    ]);
+  const claimImport = async (jobId, lease) => {
+    const answer = await result(
+      'SELECT cc.claim_device_import_job($1,$2,$3) AS result',
+      [customer, jobId, lease],
+    );
+    // A claim starts an attempt. Every later call of that run carries it.
+    if (answer.outcome === 'claimed')
+      importAttempts.set(`${jobId}:${lease}`, answer.attempt);
+    return answer;
+  };
+  /** The attempt that a claim answered, unless the caller names another one. */
+  const importAttempt = (jobId, lease, attempt) =>
+    attempt ?? importAttempts.get(`${jobId}:${lease}`) ?? 0;
   const renewExport = (jobId, lease, phase, done, total) =>
     result('SELECT cc.renew_device_export_job($1,$2,$3,$4,$5,$6) AS result', [
       customer,
@@ -153,15 +162,19 @@ export async function qualifyDeviceExportImport({
       done,
       total,
     ]);
-  const renewImport = (jobId, lease, phase, done, total) =>
-    result('SELECT cc.renew_device_import_job($1,$2,$3,$4,$5,$6) AS result', [
-      customer,
-      jobId,
-      lease,
-      phase,
-      done,
-      total,
-    ]);
+  const renewImport = (jobId, lease, phase, done, total, attempt = null) =>
+    result(
+      'SELECT cc.renew_device_import_job($1,$2,$3,$4,$5,$6,$7) AS result',
+      [
+        customer,
+        jobId,
+        lease,
+        importAttempt(jobId, lease, attempt),
+        phase,
+        done,
+        total,
+      ],
+    );
   const lineChange = (sourceRow, deviceId, extra = {}) => ({
     kind: 'change',
     sourceRow,
@@ -173,11 +186,12 @@ export async function qualifyDeviceExportImport({
     newValue: 'new',
     ...extra,
   });
-  const storeLines = (jobId, lease, lines) =>
-    result('SELECT cc.store_device_import_lines($1,$2,$3,$4) AS result', [
+  const storeLines = (jobId, lease, lines, attempt = null) =>
+    result('SELECT cc.store_device_import_lines($1,$2,$3,$4,$5) AS result', [
       customer,
       jobId,
       lease,
+      importAttempt(jobId, lease, attempt),
       JSON.stringify(lines),
     ]);
   const finishExport = (jobId, lease, file = null, failure = null) =>
@@ -195,13 +209,15 @@ export async function qualifyDeviceExportImport({
     failure = null,
     refusal = null,
     refusalText = null,
+    attempt = null,
   ) =>
     result(
-      'SELECT cc.finish_device_import_job($1,$2,$3,$4,$5,$6,$7) AS result',
+      'SELECT cc.finish_device_import_job($1,$2,$3,$4,$5,$6,$7,$8) AS result',
       [
         customer,
         jobId,
         lease,
+        importAttempt(jobId, lease, attempt),
         counts === null ? null : JSON.stringify(counts),
         failure,
         refusal,
@@ -681,13 +697,26 @@ export async function qualifyDeviceExportImport({
           'busy',
         );
         assert.deepEqual(await lineCounts(), [1, 1, 1]);
-        // A claim by the same owner keeps the output of that owner.
+        // A claim by the same owner starts a new attempt of the whole validation. The partial report of
+        // the attempt before it goes, and that attempt can store nothing more, so a retried request
+        // cannot duplicate the report (design section 6, step 1).
         await expire('device_import_jobs', imported.receipt.jobId);
+        const replay = await claimImport(imported.receipt.jobId, leaseA);
+        assert.equal(replay.outcome, 'claimed');
+        assert.equal(replay.attempt, 2);
+        assert.deepEqual(await lineCounts(), [0, 0, 0]);
         assert.equal(
-          (await claimImport(imported.receipt.jobId, leaseA)).outcome,
-          'claimed',
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              leaseA,
+              lines(),
+              replay.attempt - 1,
+            )
+          ).outcome,
+          'fenced',
         );
-        assert.deepEqual(await lineCounts(), [1, 1, 1]);
+        assert.deepEqual(await lineCounts(), [0, 0, 0]);
         // A new owner restarts the whole validation, so the replaced output cannot double the report.
         await expire('device_import_jobs', imported.receipt.jobId);
         assert.equal(
@@ -945,6 +974,243 @@ export async function qualifyDeviceExportImport({
         0,
       );
     });
+
+    await check(
+      'the client batch limit covers the stored size of maximum cells',
+      async () => {
+        const imported = await createImport({ actor: importer });
+        jobs.push(imported.receipt.jobId);
+        const lease = randomUUID();
+        await claimImport(imported.receipt.jobId, lease);
+        // The rule of the handler: a line counts its JSON bytes plus 256 bytes of jsonb overhead,
+        // and a call keeps 4 KiB for the array framing. The largest legal row holds ten cells of
+        // 16,384 supplementary characters, and it still fits one call (design section 6, step 19).
+        const cell = '\u{1f600}'.repeat(16384);
+        const line = {
+          kind: 'rejection',
+          sourceRow: 2,
+          deviceId: 'D-1',
+          column: 'Notes',
+          submittedValue: 'value',
+          reason: 'The Notes cell is invalid.',
+          templateCells: Array.from({ length: 10 }, () => cell),
+        };
+        const storedLineBytes = (entry) =>
+          Buffer.byteLength(JSON.stringify(entry), 'utf8') + 256;
+        const limit = 33554432;
+        const batch = [];
+        let estimate = 4096;
+        while (
+          batch.length < 1000 &&
+          estimate + storedLineBytes(line) <= limit
+        ) {
+          batch.push({ ...line, sourceRow: batch.length + 2 });
+          estimate += storedLineBytes(line);
+        }
+        assert.ok(batch.length > 1);
+        // The client estimate is never smaller than the size that SQL stores, so the handler never
+        // builds a call that the guard refuses.
+        const actual = (
+          await admin('SELECT pg_column_size($1::jsonb) AS size', [
+            JSON.stringify(batch),
+          ])
+        )[0].size;
+        assert.ok(actual <= limit, `The stored size is ${actual} bytes.`);
+        assert.ok(
+          actual <= estimate,
+          `The stored size ${actual} is above the estimate ${estimate}.`,
+        );
+        const stored = await storeLines(imported.receipt.jobId, lease, batch);
+        assert.equal(stored.outcome, 'stored');
+        assert.equal(stored.rejections, batch.length);
+      },
+    );
+
+    await check(
+      'a claim attempt owns the report, and a replay replaces it',
+      async () => {
+        const imported = await createImport({ actor: importer });
+        jobs.push(imported.receipt.jobId);
+        const lease = randomUUID();
+        const first = await claimImport(imported.receipt.jobId, lease);
+        assert.equal(first.outcome, 'claimed');
+        const lines = [
+          lineChange(2, 'D-1'),
+          {
+            kind: 'rejection',
+            sourceRow: 3,
+            deviceId: 'D-2',
+            column: 'Notes',
+            submittedValue: 'value',
+            reason: 'The Notes cell is invalid.',
+            templateCells: Array.from({ length: 10 }, () => 'cell'),
+          },
+          {
+            kind: 'warning',
+            sourceRow: 2,
+            deviceId: 'D-1',
+            warning: 'The Notes cell is malformed.',
+          },
+          {
+            kind: 'warning',
+            sourceRow: 3,
+            deviceId: 'D-2',
+            warning: 'The Notes cell is malformed.',
+          },
+        ];
+        assert.equal(
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              lease,
+              lines,
+              first.attempt,
+            )
+          ).outcome,
+          'stored',
+        );
+        // The worker dies before either finish call reaches SQL, and the flow retries the same
+        // request with the same lease (design section 6, step 1).
+        const replay = await claimImport(imported.receipt.jobId, lease);
+        assert.equal(replay.outcome, 'claimed');
+        assert.equal(replay.attempt, first.attempt + 1);
+        // The attempt that the replay replaced appends nothing and finishes nothing.
+        assert.equal(
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              lease,
+              [lineChange(9, 'D-9')],
+              first.attempt,
+            )
+          ).outcome,
+          'fenced',
+        );
+        assert.equal(
+          (
+            await finishImport(
+              imported.receipt.jobId,
+              lease,
+              counts(),
+              null,
+              null,
+              null,
+              first.attempt,
+            )
+          ).outcome,
+          'fenced',
+        );
+        // The replay stores one report and opens one plan.
+        assert.equal(
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              lease,
+              lines,
+              replay.attempt,
+            )
+          ).outcome,
+          'stored',
+        );
+        const finished = await finishImport(
+          imported.receipt.jobId,
+          lease,
+          counts(),
+          null,
+          null,
+          null,
+          replay.attempt,
+        );
+        assert.equal(finished.outcome, 'finished');
+        assert.equal(finished.status, 'completed');
+        assert.equal(finished.plan.state, 'open');
+        const stored = (
+          await admin(
+            `SELECT (SELECT count(*) FROM cc.device_import_changes WHERE job_id=$1)::integer AS changes,
+              (SELECT count(*) FROM cc.device_import_rejections WHERE job_id=$1)::integer AS rejections,
+              (SELECT count(*) FROM cc.device_import_warnings WHERE job_id=$1)::integer AS warnings`,
+            [imported.receipt.jobId],
+          )
+        )[0];
+        assert.deepEqual(stored, { changes: 1, rejections: 1, warnings: 2 });
+        assert.equal(
+          (
+            await admin(
+              'SELECT count(*)::integer AS rows FROM cc.device_import_jobs WHERE job_id=$1 AND plan_id IS NOT NULL',
+              [imported.receipt.jobId],
+            )
+          )[0].rows,
+          1,
+        );
+      },
+    );
+
+    await check(
+      'a second claim of one live lease takes the attempt, not the report',
+      async () => {
+        const imported = await createImport({ actor: importer });
+        jobs.push(imported.receipt.jobId);
+        const lease = randomUUID();
+        const first = await claimImport(imported.receipt.jobId, lease);
+        assert.equal(first.outcome, 'claimed');
+        await storeLines(
+          imported.receipt.jobId,
+          lease,
+          [lineChange(2, 'D-1')],
+          first.attempt,
+        );
+        const rowsOf = async () =>
+          (
+            await admin(
+              'SELECT count(*)::integer AS rows FROM cc.device_import_changes WHERE job_id=$1',
+              [imported.receipt.jobId],
+            )
+          )[0].rows;
+        assert.equal(await rowsOf(), 1);
+        // A second claim of the same live lease answers claimed, and the claim that replaces the
+        // attempt owns the report.
+        const second = await claimImport(imported.receipt.jobId, lease);
+        assert.equal(second.outcome, 'claimed');
+        assert.equal(second.attempt, first.attempt + 1);
+        assert.equal(await rowsOf(), 0);
+        assert.equal(
+          (
+            await renewImport(
+              imported.receipt.jobId,
+              lease,
+              'compare',
+              1,
+              1,
+              first.attempt,
+            )
+          ).outcome,
+          'fenced',
+        );
+        assert.equal(
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              lease,
+              [lineChange(2, 'D-1')],
+              first.attempt,
+            )
+          ).outcome,
+          'fenced',
+        );
+        assert.equal(
+          (
+            await storeLines(
+              imported.receipt.jobId,
+              lease,
+              [lineChange(2, 'D-1')],
+              second.attempt,
+            )
+          ).outcome,
+          'stored',
+        );
+        assert.equal(await rowsOf(), 1);
+      },
+    );
 
     await check(
       'an export finish publishes the file and ends completed once',
@@ -1591,14 +1857,14 @@ export async function qualifyDeviceExportImport({
             [customer, randomUUID(), randomUUID(), 'write-rows', 1, 1],
           ],
           [
-            'cc.renew_device_import_job(text,uuid,uuid,text,integer,integer)',
-            'SELECT cc.renew_device_import_job($1,$2,$3,$4,$5,$6)',
-            [customer, randomUUID(), randomUUID(), 'refresh', 1, 1],
+            'cc.renew_device_import_job(text,uuid,uuid,integer,text,integer,integer)',
+            'SELECT cc.renew_device_import_job($1,$2,$3,$4,$5,$6,$7)',
+            [customer, randomUUID(), randomUUID(), 0, 'refresh', 1, 1],
           ],
           [
-            'cc.store_device_import_lines(text,uuid,uuid,jsonb)',
-            'SELECT cc.store_device_import_lines($1,$2,$3,$4)',
-            [customer, randomUUID(), randomUUID(), '[]'],
+            'cc.store_device_import_lines(text,uuid,uuid,integer,jsonb)',
+            'SELECT cc.store_device_import_lines($1,$2,$3,$4,$5)',
+            [customer, randomUUID(), randomUUID(), 0, '[]'],
           ],
           [
             'cc.finish_device_export_job(text,uuid,uuid,jsonb,text)',
@@ -1606,9 +1872,9 @@ export async function qualifyDeviceExportImport({
             [customer, randomUUID(), randomUUID(), null, null],
           ],
           [
-            'cc.finish_device_import_job(text,uuid,uuid,jsonb,text,text,text)',
-            'SELECT cc.finish_device_import_job($1,$2,$3,$4,$5,$6,$7)',
-            [customer, randomUUID(), randomUUID(), null, null, null, null],
+            'cc.finish_device_import_job(text,uuid,uuid,integer,jsonb,text,text,text)',
+            'SELECT cc.finish_device_import_job($1,$2,$3,$4,$5,$6,$7,$8)',
+            [customer, randomUUID(), randomUUID(), 0, null, null, null, null],
           ],
           [
             'cc.recover_device_file_jobs(text)',
