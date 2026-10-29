@@ -6,7 +6,6 @@ import type {
   DeviceUpdateEdit,
   DeviceUpdateTarget,
 } from '@campus/application-contracts';
-import { installLiveStreams } from './live-streams';
 // The edit-list rules of the mock are the production rules: C is the current value, B the
 // baseline of the edit, and R the request (addendum section 4).
 // eslint-disable-next-line @nx/enforce-module-boundaries
@@ -18,6 +17,7 @@ import {
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { orgUnitTree } from './device-update-u6-simulator';
+import { installLiveStreams } from './live-streams';
 
 /**
  * Completion step 7 of `docs/workflows/in-grid-editing.md`: update one device from device
