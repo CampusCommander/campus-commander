@@ -11,6 +11,7 @@ import { qualifyEntityEntries } from './entity-entries.integration.mjs';
 import { qualifyWorkerWrites } from './worker-write.integration.mjs';
 import { qualifyJobsApi } from './jobs-api.integration.mjs';
 import { qualifyJobService } from './job-service.integration.mjs';
+import { qualifyDeviceExportImport } from './device-export-import.integration.mjs';
 import { qualifyRestoredAccess } from './restore-access.integration.mjs';
 import { qualifyGoogleLifecycle } from './google-lifecycle.integration.mjs';
 import { qualifyGoogleHealth } from './google-health.integration.mjs';
@@ -664,6 +665,16 @@ try {
       runtime,
       migrator: migrators[0],
       issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyDeviceExportImport({
+      runtime,
+      migrator: migrators[0],
+      connect,
+      close,
+      issuer,
+      password,
     })),
   );
   const broken = [
