@@ -73,10 +73,12 @@ import {
   PLAN_EXPIRED_LABEL,
   PLAN_NO_CHANGE_LABEL,
   PLAN_OPEN_LABEL,
+  REPORT_EMPTY_LINES,
   REPORT_SYNC_ALL_ROWS_LINE,
   REPORT_TABS,
   REPORT_TAB_LABELS,
   STOP_VALIDATION_LABEL,
+  SYNC_ALL_ROWS_NO_UPDATE_LINE,
   VALIDATE_AGAIN_LABEL,
   VALIDATION_CLOSING_LINE,
   VALIDATION_FAILED_LINE,
@@ -85,9 +87,8 @@ import {
   formatBytes,
   importColumnCountText,
   importCounterRows,
-  importFailureText,
+  importFailureView,
   importPhases,
-  importRefusalParagraphs,
   importStoppedReadsLine,
   nothingCanRunText,
   planCancelledText,
@@ -388,9 +389,10 @@ export class DeviceExportImportDialog {
   protected readonly VALIDATION_FAILED_LINE = VALIDATION_FAILED_LINE;
   protected readonly NO_REPORT_LABEL = NO_REPORT_LABEL;
   protected readonly IMPORT_AGAIN_LABEL = IMPORT_AGAIN_LABEL;
-  protected readonly refusalParagraphs = computed(() => {
-    if (!this.jobFailed()) return [];
-    return importRefusalParagraphs(importFailureText(this.store.job()));
+  /** The reason and the note of a failed validation (states 23 and 26). */
+  protected readonly failureView = computed(() => {
+    if (!this.jobFailed()) return null;
+    return importFailureView(this.store.job());
   });
   /** The cancel request of a stopped validation, and the reads that stay stored (state 24). */
   protected readonly cancelledLine = computed(() => {
@@ -400,10 +402,13 @@ export class DeviceExportImportDialog {
       request.at,
     )}`;
   });
-  /** The stored reads of a stopped validation, or nothing when the answer holds none. */
+  /** The stored reads of a stopped validation, from the refresh phase that it stopped in (state 24). */
   protected readonly stoppedReads = computed(() => {
-    const reads = this.store.reportRefresh()?.staleDevicesRead ?? 0;
-    return reads > 0 ? importStoppedReadsLine(reads) : '';
+    const job = this.store.job();
+    if (job?.status !== 'cancelled') return '';
+    const phase = job.phase;
+    if (phase?.name !== 'refresh' || phase.done <= 0) return '';
+    return importStoppedReadsLine(phase.done);
   });
 
   /** The report step of states 13 to 15 and 18 to 22. */
@@ -484,9 +489,7 @@ export class DeviceExportImportDialog {
     const expired =
       !!plan && plan.state === 'open' && Date.parse(plan.expiresAt) <= now;
     const state = !plan
-      ? counts?.rejected
-        ? 'no-change'
-        : 'no-change'
+      ? 'no-change'
       : expired
         ? 'expired'
         : plan.state;
@@ -519,7 +522,9 @@ export class DeviceExportImportDialog {
               ? planCancelledText(plan)
               : counts?.rejected
                 ? nothingCanRunText(counts.rejected)
-                : NO_UPDATE_LINE,
+                : this.store.job()?.importSummary?.mode === 'sync-all-rows'
+                  ? SYNC_ALL_ROWS_NO_UPDATE_LINE
+                  : NO_UPDATE_LINE,
     };
   });
   protected readonly executeLabel = computed(() =>
@@ -536,6 +541,10 @@ export class DeviceExportImportDialog {
       ),
   );
   protected readonly NO_UPDATE_VIEW_LINE = NO_UPDATE_VIEW_LINE;
+  /** The empty line of the shown view (states 14 and 15). */
+  protected readonly emptyViewLine = computed(
+    () => REPORT_EMPTY_LINES[this.view()] ?? '',
+  );
   protected readonly pageSize = DEVICE_IMPORT_REPORT_PAGE_SIZE;
 
   protected close(): void {

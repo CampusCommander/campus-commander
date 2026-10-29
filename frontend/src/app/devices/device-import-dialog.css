@@ -35,15 +35,15 @@
   width: 1120px;
 }
 
-.export-dialog.is-wide.has-help app-device-export-help {
+.export-main > app-device-export-help {
   position: absolute;
-  z-index: 1;
-  inset-block: 88px var(--cc-space-xl);
-  inset-inline-end: 0;
+  z-index: 2;
+  inset: 0 0 0 auto;
   width: 520px;
   border-block-start: 1px solid var(--cc-border);
   border-inline-start: 1px solid var(--cc-border);
   border-end-start-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
   box-shadow: -8px 0 24px rgb(32 33 36 / 8%);
 }
 
@@ -52,25 +52,32 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* The drop zone: a dashed target for the native picker and a drop (states 09 and 10). */
-.drop-zone {
+/* The file choice of states 09 and 10: a compact drop zone and the chosen file as one item. */
+.file-block {
   display: flex;
   flex-direction: column;
+  gap: var(--cc-space-sm);
+  margin-block-start: var(--cc-space-sm);
+}
+
+.drop-zone {
+  display: flex;
   align-items: center;
   gap: var(--cc-space-md);
-  padding: var(--cc-space-xl) var(--cc-space-lg);
-  border: 1px dashed var(--cc-border);
+  min-height: 64px;
+  padding: var(--cc-space-sm) var(--cc-space-lg);
+  border: 1px dashed var(--cc-border-control);
   border-radius: var(--cc-radius-control);
   background: var(--cc-surface-app);
-  text-align: center;
 }
 
 .drop-zone > .material-symbols-outlined {
-  font-size: 32px;
   color: var(--cc-text-secondary);
 }
 
-.drop-label {
+.drop-text {
+  flex: 1;
+  min-width: 0;
   color: var(--cc-text-secondary);
 }
 
@@ -79,20 +86,29 @@
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
   column-gap: var(--cc-space-md);
-  padding: var(--cc-space-md) var(--cc-space-lg) var(--cc-space-md)
-    var(--cc-space-md);
+  align-items: start;
+  padding: var(--cc-space-md) var(--cc-space-lg);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-control);
   background: var(--cc-surface-card);
 }
 
-.file-item.has-error {
+.file-item.is-error {
   border-color: var(--cc-status-error-text);
 }
 
-.file-glyph.small {
+.file-item .file-glyph {
+  display: grid;
+  place-items: center;
   width: 40px;
   height: 40px;
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+}
+
+.file-text {
+  min-width: 0;
 }
 
 .file-item .file-name {
@@ -101,21 +117,21 @@
   font-weight: 500;
 }
 
-.file-check {
+.check-line {
   display: flex;
-  align-items: flex-start;
   gap: var(--cc-space-xs);
+  align-items: flex-start;
   margin: var(--cc-space-sm) 0 0;
   font-size: 12px;
   line-height: 16px;
 }
 
-.file-check .material-symbols-outlined {
+.check-line .material-symbols-outlined {
   flex: none;
   font-size: 16px;
 }
 
-.file-check.ok {
+.check-line.ok {
   color: var(--cc-status-success-text);
 }
 
@@ -155,9 +171,15 @@
   border-color: var(--cc-border);
 }
 
-/* The report of states 13 to 15 and 18 to 22. */
+/* The report of states 13 to 15 and 18 to 22: the counts, then one bordered panel. */
 .step.report {
+  flex: 1;
+  min-height: 0;
   gap: var(--cc-space-lg);
+}
+
+.report-counts {
+  flex: none;
 }
 
 /* The count equation: one line of `48 Rows = 35 Unchanged + 7 Proposed`, in reading order. */
@@ -207,30 +229,56 @@
 }
 
 .change-line {
-  margin: 0;
+  max-width: none;
+  margin: var(--cc-space-xs) 0 0;
   font-weight: 500;
 }
 
 /* One text line: the refresh sentence, then the oldest observation, in the mockup order. */
 .meta-line {
-  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--cc-space-lg);
+  margin: var(--cc-space-xs) 0 0;
   color: var(--cc-text-secondary);
   font-size: 12px;
   line-height: 16px;
 }
 
-/* The report body takes the remaining height, with the table scrolling under the tabs. */
-.report-body {
+/* One bounded panel: the views, one page of rows, and the pager (UI-03). */
+.report-panel {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.report-views {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  padding-inline-end: var(--cc-space-sm);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.report-panel > mat-tab-nav-panel {
+  display: flex;
+  flex: 1;
   min-height: 0;
 }
 
 .report-tabs {
   display: flex;
+  flex: none;
   align-items: center;
-  border-block-end: 1px solid var(--cc-border);
+  --mat-tab-container-height: 44px;
+  --mat-tab-divider-height: 0;
 }
 
 .report-tabs .download-rejected {
@@ -250,25 +298,35 @@
   padding-inline: var(--cc-space-lg);
 }
 
-/* The count of a tab: the bordered chip of the approved mockup (states 13 to 15). */
+/* The count of a tab: the surface chip of the approved mockup (states 13 to 15). */
 .tab-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
+  min-width: 24px;
   height: 20px;
   margin-inline-start: var(--cc-space-sm);
-  padding-inline: 6px;
-  border: 1px solid var(--cc-border);
+  padding: 0 6px;
   border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-hover);
   color: var(--cc-text-secondary);
   font-size: 12px;
   line-height: 16px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.tab-count.tone-error {
+  color: var(--cc-status-error-text);
+}
+
+.tab-count.tone-warning {
+  color: var(--cc-status-warning-text);
 }
 
 .report-table-wrap {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
 }
@@ -283,7 +341,8 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: var(--cc-space-sm) var(--cc-space-md);
+  height: 36px;
+  padding: 0 var(--cc-space-md);
   border-block-end: 1px solid var(--cc-border);
   background: var(--cc-surface-card);
   color: var(--cc-text-secondary);
@@ -294,29 +353,50 @@
 }
 
 .report-table td {
-  padding: var(--cc-space-sm) var(--cc-space-md);
-  border-block-end: 1px solid var(--cc-border);
+  height: 34px;
+  padding: 7px var(--cc-space-md);
+  border-block-start: 1px solid var(--cc-border);
   vertical-align: top;
 }
 
-.report-table .col-row {
-  width: 96px;
-  font-variant-numeric: tabular-nums;
+.report-table tbody tr:first-child td {
+  border-block-start: 0;
 }
 
-.report-table .col-device {
-  width: 200px;
+/* The approved column widths, so the columns stay in place across the three views. */
+.report-table col:nth-child(1) {
+  width: 48px;
 }
 
-.report-table .col-change {
+.report-table col:nth-child(2) {
+  width: 124px;
+}
+
+.report-table.rv col:nth-child(3) {
+  width: 172px;
+}
+
+.report-table.rv col:nth-child(4) {
+  width: 408px;
+}
+
+.report-table.rj col:nth-child(3) {
   width: 160px;
 }
 
-.report-table .col-reason {
-  width: 240px;
+.report-table.rj col:nth-child(4) {
+  width: 300px;
 }
 
-.empty-row td {
+.report-table .col-row {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty view: the message in the middle of the bounded table (states 14 and 15). */
+.report-table .message-row td {
+  height: auto;
+  padding: var(--cc-space-xxxl) var(--cc-space-md);
+  border-block-start: 0;
   color: var(--cc-text-secondary);
   text-align: center;
 }
@@ -416,21 +496,25 @@
   color: var(--cc-status-error-text);
 }
 
-/* The pager of the report: 10 lines a page, with the page text at the start. */
+/* The pager of the report: 10 lines a page, with the page text at the start (UI-03). */
 .report-pager {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--cc-space-md);
-  padding-block-start: var(--cc-space-sm);
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  min-height: 48px;
+  padding: var(--cc-space-xs) var(--cc-space-md) var(--cc-space-xs)
+    var(--cc-space-lg);
   border-block-start: 1px solid var(--cc-border);
 }
 
 .pager-text {
   flex: 1;
   color: var(--cc-text-secondary);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
 }
 

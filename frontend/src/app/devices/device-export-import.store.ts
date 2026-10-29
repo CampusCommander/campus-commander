@@ -186,10 +186,10 @@ export class DeviceExportImportStore {
   private chosenFile: File | null = null;
   /** Each file choice invalidates the header check of the earlier one. */
   private fileCheck = 0;
-  /** The pages that this dialog already read, by view and page. */
+  /** The pages that this dialog already read, by job, view, and page. */
   private readonly cache = new Map<
-    DeviceImportReportView,
-    Map<number, readonly DeviceImportReportLine[]>
+    string,
+    Map<DeviceImportReportView, Map<number, readonly DeviceImportReportLine[]>>
   >();
   /** Increments on another person. A late answer is dropped. */
   private epoch = 0;
@@ -197,6 +197,19 @@ export class DeviceExportImportStore {
   /** The one live submit. A late answer of an earlier request never touches this one. */
   private nextRequest = 0;
   private activeRequest: number | null = null;
+  /** The import entry on screen. A late answer of an earlier entry is dropped. */
+  private importEntry = 0;
+  /** The one upload before its receipt. A late receipt of an earlier upload is dropped. */
+  private uploadToken = 0;
+  private uploadPending = false;
+  /** The one plan or stop action. Only its own request clears its busy state. */
+  private actionRequest = 0;
+  /** The job whose report facts the signals hold, and the revision that they reflect. */
+  private reportJob: string | null = null;
+  private reportRevision: number | null = null;
+  /** The page and tab-total reads that may still write (R4). */
+  private reportPageRequest = 0;
+  private reportTotalsRequest = 0;
 
   constructor() {
     effect(() => {
@@ -225,7 +238,8 @@ export class DeviceExportImportStore {
 
   /**
    * Import opens its setup step, or the tab's own import while its validation runs or its plan
-   * stays open (notes choice 14, eng-lead answer 3).
+   * stays open (notes choice 14, eng-lead answer 3). A pending upload returns with its Stop
+   * intent, so closing the dialog never starts a second upload (R3).
    */
   openImport(): void {
     this.purpose.set('edit');
@@ -235,11 +249,19 @@ export class DeviceExportImportStore {
     this.error.set('');
     const active = this.activeImport();
     if (active) {
-      // The dialog stays on the import it was showing, so the read lands on its own step.
-      this.step.set('validation');
+      // The dialog returns to the tab's own import, so the read lands on its own step.
+      this.step.set(this.step() === 'report' ? 'report' : 'validation');
       this.openJob(active);
       return;
     }
+    if (this.uploadPending || this.uploadError()) {
+      // The upload that this tab started is still the one on screen. Its Stop intent stays.
+      this.step.set(this.uploadPending ? 'validation' : 'import');
+      this.startFeed();
+      return;
+    }
+    // A fresh setup shows no earlier job, so a held read of that job cannot change this step (R5).
+    this.detachImport();
     this.resetImport();
     this.step.set('import');
   }
@@ -397,6 +419,9 @@ export class DeviceExportImportStore {
    */
   async chooseImportFile(file: File): Promise<void> {
     const check = ++this.fileCheck;
+    const entry = this.importEntry;
+    /** The answer belongs to the current entry and the current file choice. */
+    const current = () => check === this.fileCheck && entry === this.importEntry;
     this.chosenFile = file;
     this.importError.set('');
     this.uploadError.set('');
@@ -412,7 +437,7 @@ export class DeviceExportImportStore {
     };
     try {
       if (file.size > IMPORT_FILE_LIMIT_BYTES) {
-        if (check === this.fileCheck)
+        if (current())
           this.importFile.set({
             ...base,
             check: 'too-large',
@@ -421,7 +446,7 @@ export class DeviceExportImportStore {
         return;
       }
       const header = await readFileHeader(file);
-      if (check !== this.fileCheck) return;
+      if (!current()) return;
       if (header === null) {
         this.importFile.set({
           ...base,
@@ -450,14 +475,14 @@ export class DeviceExportImportStore {
             },
       );
     } catch {
-      if (check === this.fileCheck)
+      if (current())
         this.importFile.set({
           ...base,
           check: 'refused',
           refusal: IMPORT_READ_FAILURE,
         });
     } finally {
-      if (check === this.fileCheck) this.readingFile.set(false);
+      if (current()) this.readingFile.set(false);
     }
   }
 
@@ -467,12 +492,24 @@ export class DeviceExportImportStore {
    */
   async startValidation(): Promise<boolean> {
     const chosen = this.importFile();
-    if (!chosen || !this.importReady()) return false;
+    if (!chosen || !this.importReady() || this.uploadPending) return false;
     const requestId = ++this.nextRequest;
-    this.activeRequest = requestId;
+    const token = ++this.uploadToken;
+    const entry = this.importEntry;
     const epoch = this.epoch;
     const identity = this.identity;
+    /** The answer belongs to the current principal, entry, and upload. */
     const owned = () => epoch === this.epoch && identity === this.identity;
+    const sameUpload = () =>
+      owned() && token === this.uploadToken && entry === this.importEntry;
+    /** The dialog still shows this upload, so an answer may change its step. */
+    const showing = () =>
+      sameUpload() &&
+      this.open() &&
+      this.purpose() === 'edit' &&
+      (this.step() === 'validation' || this.step() === 'import');
+    this.uploadPending = true;
+    this.activeRequest = requestId;
     this.uploading.set(true);
     this.uploadError.set('');
     this.stopRequested.set(false);
@@ -483,6 +520,8 @@ export class DeviceExportImportStore {
     this.error.set('');
     this.importName.set(chosen.name);
     this.step.set('validation');
+    // The report of the entry before this upload is not this upload's report (R4).
+    this.resetReportFacts();
     try {
       const response = await this.auth.request(
         importUploadPath(this.mode(), chosen.name),
@@ -493,36 +532,40 @@ export class DeviceExportImportStore {
           timeoutMs: UPLOAD_TIMEOUT_MS,
         },
       );
-      if (!owned()) return false;
+      if (!sameUpload()) return false;
       if (!response.ok) {
         const reason = await refusalReason(response);
-        if (!owned()) return false;
+        if (!sameUpload()) return false;
+        this.uploadPending = false;
+        // The owning upload always releases its busy state, even when another entry shows (R3).
         this.uploading.set(false);
         this.uploadError.set(importUploadFailureText(response.status, reason));
-        this.step.set('import');
+        if (showing()) this.step.set('import');
         return false;
       }
       const receipt = deviceImportReceiptSchema.safeParse(
         await response.json().catch(() => null),
       );
-      if (!owned()) return false;
+      if (!sameUpload()) return false;
       if (!receipt.success) {
+        this.uploadPending = false;
         this.uploading.set(false);
         this.uploadError.set(
           'Campus Commander answered an unexpected import receipt. Try again.',
         );
-        this.step.set('import');
+        if (showing()) this.step.set('import');
         return false;
       }
-      this.accepted(receipt.data);
+      this.accepted(receipt.data, showing());
       return true;
     } catch {
-      if (owned()) {
+      if (sameUpload()) {
+        this.uploadPending = false;
         this.uploading.set(false);
         this.uploadError.set(
           'Cannot reach Campus Commander. The file did not upload.',
         );
-        this.step.set('import');
+        if (showing()) this.step.set('import');
       }
       return false;
     } finally {
@@ -542,29 +585,26 @@ export class DeviceExportImportStore {
 
   /** One read of each view and page that the report shows (states 13 to 15 and 18 to 22). */
   async openImportReport(): Promise<void> {
+    const displayId = this.displayId();
+    const job = this.job();
+    if (!displayId || !job) return;
+    // A report belongs to one job. Another job replaces every fact and every cached page (R4).
     this.step.set('report');
     this.helpTopic.set(null);
-    this.cache.clear();
-    this.reportLines.set([]);
-    this.reportCounts.set(null);
-    this.reportRefresh.set(null);
-    this.reportChanges.set(null);
-    this.plan.set(null);
-    this.reportTotals.set({
-      proposed: null,
-      rejected: null,
-      warnings: null,
-      failed: null,
-    });
-    this.reportPages.set({ proposed: 1, rejected: 1, warnings: 1, failed: 1 });
-    this.reportError.set('');
+    this.resetReportFacts();
+    this.reportJob = displayId;
+    this.reportRevision = job.revision;
+    this.cache.delete(displayId);
     // A file whose every row was rejected opens on its rejected rows (state 22).
-    const summary = this.job()?.importSummary;
+    const summary = job.importSummary;
     const first: DeviceImportReportView =
       summary && summary.proposed === 0 && summary.rejected > 0
         ? 'rejected'
         : 'proposed';
-    await Promise.all([this.showReportPage(first, 0), this.readTabTotals()]);
+    await Promise.all([
+      this.showReportPage(first, 0),
+      this.readTabTotals(displayId),
+    ]);
   }
 
   async setReportView(view: DeviceImportReportView): Promise<void> {
@@ -589,6 +629,16 @@ export class DeviceExportImportStore {
     const displayId = this.displayId();
     if (!plan || !displayId || plan.state !== 'open' || this.actionBusy())
       return false;
+    const requestId = ++this.actionRequest;
+    const entry = this.importEntry;
+    const epoch = this.epoch;
+    const identity = this.identity;
+    /** The answer belongs to the current principal and the report entry on screen. */
+    const owned = () =>
+      epoch === this.epoch &&
+      identity === this.identity &&
+      entry === this.importEntry &&
+      this.displayId() === displayId;
     this.actionBusy.set(true);
     this.actionError.set('');
     try {
@@ -596,13 +646,16 @@ export class DeviceExportImportStore {
         `${importBase(displayId)}/cancel`,
         { planId: plan.planId, planRevision: plan.revision },
       );
+      if (!owned()) return false;
       if (!response.ok) {
-        this.actionError.set(await importActionFailureText(response));
+        const message = await importActionFailureText(response);
+        if (owned()) this.actionError.set(message);
         return false;
       }
       const answer = deviceImportPlanCancelAnswerSchema.safeParse(
         await response.json().catch(() => null),
       );
+      if (!owned()) return false;
       if (!answer.success) {
         this.actionError.set(
           'Campus Commander answered an unexpected plan. Try again.',
@@ -613,12 +666,14 @@ export class DeviceExportImportStore {
       this.activeImport.set(displayId);
       return true;
     } catch {
-      this.actionError.set(
-        'Cannot reach Campus Commander. The plan stays open.',
-      );
+      if (owned())
+        this.actionError.set(
+          'Cannot reach Campus Commander. The plan stays open.',
+        );
       return false;
     } finally {
-      this.actionBusy.set(false);
+      // Only the owning request clears its own busy state, never a successor's (R1).
+      if (this.actionRequest === requestId) this.actionBusy.set(false);
     }
   }
 
@@ -626,6 +681,15 @@ export class DeviceExportImportStore {
   async revalidate(): Promise<boolean> {
     const displayId = this.displayId();
     if (!displayId || this.actionBusy()) return false;
+    const requestId = ++this.actionRequest;
+    const entry = this.importEntry;
+    const epoch = this.epoch;
+    const identity = this.identity;
+    const owned = () =>
+      epoch === this.epoch &&
+      identity === this.identity &&
+      entry === this.importEntry &&
+      this.displayId() === displayId;
     this.actionBusy.set(true);
     this.actionError.set('');
     try {
@@ -633,34 +697,33 @@ export class DeviceExportImportStore {
         `${importBase(displayId)}/revalidate`,
         {},
       );
+      if (!owned()) return false;
       if (!response.ok) {
-        this.actionError.set(await importActionFailureText(response));
+        const message = await importActionFailureText(response);
+        if (owned()) this.actionError.set(message);
         return false;
       }
       const receipt = deviceImportReceiptSchema.safeParse(
         await response.json().catch(() => null),
       );
+      if (!owned()) return false;
       if (!receipt.success) {
         this.actionError.set(
           'Campus Commander answered an unexpected import receipt. Try again.',
         );
         return false;
       }
-      this.cache.clear();
-      this.reportLines.set([]);
-      this.reportCounts.set(null);
-      this.reportRefresh.set(null);
-      this.reportChanges.set(null);
-      this.plan.set(null);
-      this.accepted(receipt.data);
+      this.resetReportFacts();
+      this.accepted(receipt.data, true);
       return true;
     } catch {
-      this.actionError.set(
-        'Cannot reach Campus Commander. The plan stays expired.',
-      );
+      if (owned())
+        this.actionError.set(
+          'Cannot reach Campus Commander. The plan stays expired.',
+        );
       return false;
     } finally {
-      this.actionBusy.set(false);
+      if (this.actionRequest === requestId) this.actionBusy.set(false);
     }
   }
 
@@ -670,27 +733,48 @@ export class DeviceExportImportStore {
     return displayId ? `${importBase(displayId)}/rejected` : '';
   });
 
-  /** The report answer accepted a running job: follow it with the shared feed. */
-  private accepted(receipt: DeviceImportReceipt): void {
+  /**
+   * A receipt accepted the upload. The job belongs to the tab's Import entry even when the dialog
+   * moved to another entry, but only its own entry changes step (R3).
+   */
+  private accepted(receipt: DeviceImportReceipt, apply: boolean): void {
+    this.uploadPending = false;
+    // The owning upload ends here, whether or not the dialog still shows its entry (R3).
     this.uploading.set(false);
-    this.uploadError.set('');
-    this.mode.set(receipt.mode);
-    this.importName.set(receipt.name);
-    this.displayId.set(receipt.displayId);
     this.activeImport.set(receipt.displayId);
-    this.job.set(null);
-    this.error.set('');
-    this.loading.set(false);
-    this.step.set('validation');
-    this.startFeed();
-    void this.reader.request();
-    // The person asked to stop before the job existed (design section 9, td:760).
-    if (this.stopRequested()) void this.cancelJob();
+    if (apply) {
+      this.uploadError.set('');
+      this.mode.set(receipt.mode);
+      this.importName.set(receipt.name);
+      this.displayId.set(receipt.displayId);
+      this.job.set(null);
+      this.error.set('');
+      this.loading.set(false);
+      this.step.set('validation');
+      this.startFeed();
+      void this.reader.request();
+    }
+    // The person asked to stop before the job existed (design section 9, td:760). The intent
+    // survives a close, so the job that this upload created is the one that it cancels.
+    if (this.stopRequested()) {
+      this.stopRequested.set(false);
+      void this.cancelJob(receipt.displayId);
+    }
   }
 
-  private async cancelJob(): Promise<boolean> {
-    const displayId = this.displayId();
+  private async cancelJob(displayId = this.displayId()): Promise<boolean> {
     if (!displayId || this.actionBusy()) return false;
+    const requestId = ++this.actionRequest;
+    const entry = this.importEntry;
+    const epoch = this.epoch;
+    const identity = this.identity;
+    /** The answer belongs to the current principal and the import entry that asked. */
+    const owned = () =>
+      epoch === this.epoch &&
+      identity === this.identity &&
+      entry === this.importEntry;
+    /** The dialog still shows the import of this stop request. */
+    const showing = () => owned() && this.displayId() === displayId;
     this.actionBusy.set(true);
     this.actionError.set('');
     try {
@@ -698,19 +782,22 @@ export class DeviceExportImportStore {
         `/api/jobs/${encodeURIComponent(displayId)}/cancel`,
         {},
       );
+      if (!owned()) return false;
       if (!response.ok) {
-        this.actionError.set(await importActionFailureText(response));
+        const message = await importActionFailureText(response);
+        if (showing()) this.actionError.set(message);
         return false;
       }
-      void this.reader.request();
+      if (showing()) void this.reader.request();
       return true;
     } catch {
-      this.actionError.set(
-        'Cannot reach Campus Commander. The validation keeps running.',
-      );
+      if (showing())
+        this.actionError.set(
+          'Cannot reach Campus Commander. The validation keeps running.',
+        );
       return false;
     } finally {
-      this.actionBusy.set(false);
+      if (this.actionRequest === requestId) this.actionBusy.set(false);
     }
   }
 
@@ -718,42 +805,77 @@ export class DeviceExportImportStore {
     view: DeviceImportReportView,
     page: number,
   ): Promise<void> {
+    const displayId = this.reportJob;
+    if (!displayId || displayId !== this.displayId()) return;
+    const requestId = ++this.reportPageRequest;
+    /** The answer may still write: same job, same request (R4). */
+    const current = () =>
+      requestId === this.reportPageRequest &&
+      displayId === this.reportJob &&
+      displayId === this.displayId();
     this.reportLoading.set(true);
     try {
-      const cached = this.cache.get(view)?.get(page);
+      const cached = this.cache
+        .get(displayId)
+        ?.get(view)
+        ?.get(page);
       if (cached) {
+        if (!current()) return;
         this.reportView.set(view);
         this.reportPage.set(page);
         this.reportLines.set(cached);
         return;
       }
-      const answer = await this.fetchReport(view, page);
-      if (answer) this.applyReport(answer, true);
+      const answer = await this.fetchReport(displayId, view, page);
+      if (!answer || !current()) return;
+      this.applyReport(answer, true);
     } finally {
-      this.reportLoading.set(false);
+      if (requestId === this.reportPageRequest) this.reportLoading.set(false);
     }
   }
 
   /** The tab counts of the rejected and warnings views need one page each (states 13 to 15). */
-  private async readTabTotals(): Promise<void> {
+  private async readTabTotals(displayId: string): Promise<void> {
+    const requestId = ++this.reportTotalsRequest;
     for (const view of ['rejected', 'warnings'] as const) {
-      const answer = await this.fetchReport(view, 0);
+      const answer = await this.fetchReport(displayId, view, 0);
+      if (requestId !== this.reportTotalsRequest) return;
+      if (displayId !== this.reportJob || displayId !== this.displayId()) return;
       if (answer) this.applyReport(answer, false);
     }
   }
 
+  /** A newer revision of the same job refreshes the facts of the page on screen (R4). */
+  private async refreshReportFacts(): Promise<void> {
+    const displayId = this.reportJob;
+    if (!displayId || displayId !== this.displayId()) return;
+    const view = this.reportView();
+    const page = this.reportPage();
+    this.cache.delete(displayId);
+    await Promise.all([
+      this.showReportPage(view, page),
+      this.readTabTotals(displayId),
+    ]);
+  }
+
   private async fetchReport(
+    displayId: string,
     view: DeviceImportReportView,
     page: number,
   ): Promise<DeviceImportReport | null> {
-    const displayId = this.displayId();
-    if (!displayId) return null;
     const epoch = this.epoch;
+    const entry = this.importEntry;
+    /** A late page of another job, entry, or principal is dropped. */
+    const current = () =>
+      epoch === this.epoch &&
+      entry === this.importEntry &&
+      displayId === this.reportJob &&
+      displayId === this.displayId();
     try {
       const response = await this.auth.request(
         `${importBase(displayId)}/report?view=${view}&page=${page}`,
       );
-      if (epoch !== this.epoch) return null;
+      if (!current()) return null;
       if (response.status === 404) {
         this.reportError.set('This import no longer exists.');
         return null;
@@ -765,7 +887,7 @@ export class DeviceExportImportStore {
       const answer = deviceImportReportSchema.safeParse(
         await response.json().catch(() => null),
       );
-      if (epoch !== this.epoch) return null;
+      if (!current()) return null;
       if (!answer.success) {
         this.reportError.set(
           'Campus Commander answered an unexpected report. Try again.',
@@ -775,7 +897,7 @@ export class DeviceExportImportStore {
       this.reportError.set('');
       return answer.data;
     } catch {
-      if (epoch === this.epoch)
+      if (current())
         this.reportError.set(
           'Cannot reach Campus Commander. The report may be out of date.',
         );
@@ -797,9 +919,18 @@ export class DeviceExportImportStore {
     },
     show: boolean,
   ): void {
-    const pages = this.cache.get(answer.view) ?? new Map();
-    pages.set(answer.page, answer.lines);
-    this.cache.set(answer.view, pages);
+    const displayId = this.reportJob;
+    if (!displayId || displayId !== this.displayId()) return;
+    const pages =
+      this.cache.get(displayId) ??
+      new Map<
+        DeviceImportReportView,
+        Map<number, readonly DeviceImportReportLine[]>
+      >();
+    const views = pages.get(answer.view) ?? new Map();
+    views.set(answer.page, answer.lines);
+    pages.set(answer.view, views);
+    this.cache.set(displayId, pages);
     this.reportTotals.update((totals) => ({
       ...totals,
       [answer.view]: answer.total,
@@ -820,6 +951,14 @@ export class DeviceExportImportStore {
   }
 
   private resetImport(): void {
+    // Every import state reset invalidates the reads and actions of the entry before it (R2, R3).
+    this.importEntry++;
+    this.fileCheck++;
+    this.uploadToken++;
+    this.actionRequest++;
+    this.reportPageRequest++;
+    this.reportTotalsRequest++;
+    this.uploadPending = false;
     this.mode.set(DEVICE_IMPORT_MODE_DEFAULT);
     this.importFile.set(null);
     this.chosenFile = null;
@@ -829,6 +968,16 @@ export class DeviceExportImportStore {
     this.uploadError.set('');
     this.stopRequested.set(false);
     this.importName.set('');
+    this.resetReportFacts();
+    this.actionBusy.set(false);
+    this.actionError.set('');
+    this.cache.clear();
+  }
+
+  /** The facts and the page of a report, without touching the job that owns them. */
+  private resetReportFacts(): void {
+    this.reportJob = null;
+    this.reportRevision = null;
     this.reportCounts.set(null);
     this.reportRefresh.set(null);
     this.reportChanges.set(null);
@@ -845,9 +994,15 @@ export class DeviceExportImportStore {
     this.reportPages.set({ proposed: 1, rejected: 1, warnings: 1, failed: 1 });
     this.reportLoading.set(false);
     this.reportError.set('');
-    this.actionBusy.set(false);
-    this.actionError.set('');
-    this.cache.clear();
+  }
+
+  /** Drop the job and its reads when fresh Import setup replaces them (R5). */
+  private detachImport(): void {
+    this.reader.stop();
+    this.stopFeed();
+    this.displayId.set(null);
+    this.job.set(null);
+    this.loading.set(false);
   }
 
   private openFor(
@@ -989,8 +1144,14 @@ export class DeviceExportImportStore {
             detail.data.status === 'completed' ||
             detail.data.status === 'completed-with-errors';
           if (report) {
-            // A report keeps its view and page while the dialog stays on it.
-            if (this.step() !== 'report') void this.openImportReport();
+            if (this.reportJob !== detail.data.displayId) {
+              // The report belongs to this job, not to the one that the dialog showed before.
+              void this.openImportReport();
+            } else if (this.reportRevision !== detail.data.revision) {
+              // A newer revision may change the plan, so the shown page reads again (R4).
+              this.reportRevision = detail.data.revision;
+              void this.refreshReportFacts();
+            }
           } else if (this.step() !== 'report') {
             this.step.set('validation');
           }

@@ -35,6 +35,12 @@ import { DeviceGridRevertDialog } from './device-grid-revert-dialog';
 import { DeviceExportImportDialog } from './device-export-import-dialog';
 import { DeviceExportImportStore } from './device-export-import.store';
 import { exportEntryNote } from './device-export-messages';
+import {
+  gridImportRefusalLine,
+  gridOpenPlanLine,
+  importFailureText,
+} from './device-import-messages';
+import { formatTimestamp } from '../jobs/job-fields';
 import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { deviceActionNote } from './device-action-messages';
@@ -377,6 +383,25 @@ export class DevicesPage implements OnInit, OnDestroy {
   });
   /** The Bulk Actions trigger references the note of Update device. */
   protected readonly note = computed(() => this.actionNotes().update);
+
+  /**
+   * The grid line of this tab's import (design section 9, behavior 7): an open plan that waits for
+   * Execute, or the reason of the last refused validation. It reads the dialog's job detail, so no
+   * second read is needed.
+   */
+  protected readonly importLine = computed(() => {
+    const displayId = this.exportDialog.activeImport();
+    const job = this.exportDialog.job();
+    if (!displayId || job?.displayId !== displayId) return '';
+    const plan = job.plan;
+    if (plan?.state === 'open') {
+      return gridOpenPlanLine(displayId, formatTimestamp(plan.expiresAt));
+    }
+    if (job.status === 'failed' || job.status === 'needs-review') {
+      return gridImportRefusalLine(importFailureText(job));
+    }
+    return '';
+  });
 
   /** The actions authorize at the connected customer's district scope (design 2.1). */
   private authorized(action: Action): boolean {

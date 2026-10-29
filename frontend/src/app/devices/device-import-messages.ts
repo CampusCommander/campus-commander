@@ -3,6 +3,7 @@ import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
   DEVICE_IMPORT_REPORT_PAGE_SIZE,
   DEVICE_UPDATE_FIELD_LABELS,
+  DEVICE_UPDATE_FIELD_LIMITS,
   deviceImportRefusalText,
   statusText,
   type DeviceImportChange,
@@ -13,11 +14,12 @@ import {
   type DeviceImportRefusal,
   type DeviceImportReportLine,
   type DeviceImportReportView,
+  type DeviceUpdateField,
   type JobDetail,
   type JobImportPlan,
   type JobPhase,
 } from '@campus/application-contracts';
-import { formatTimestamp } from '../jobs/job-fields';
+import { formatTimestamp, IMPORT_PHASE_LABELS } from '../jobs/job-fields';
 
 /**
  * The copy of the Import, validation, and report steps
@@ -114,17 +116,7 @@ export const VALIDATION_FAILED_LINE =
   'Validation stopped before any row check. No report and no plan exist. Nothing reached Google.';
 export const NO_REPORT_LABEL = 'No report';
 
-/** The three labels of the phase list (states 12, 23, and 24). */
-export const IMPORT_PHASE_LABELS: Readonly<Record<string, string>> =
-  Object.freeze({
-    upload: 'Upload',
-    'header-check': 'Header check',
-    refresh: 'Refresh stale devices',
-    compare: 'Compare',
-    report: 'Report',
-  });
-
-/** The two counters of states 12 and 24. */
+/** The three counters of states 12 and 24. */
 export const ROWS_READ_LABEL = 'Rows read';
 export const EDITED_ROWS_LABEL = 'Edited rows';
 export const ROWS_TO_COMPARE_LABEL = 'Rows to compare';
@@ -255,18 +247,6 @@ export function importRefusalParagraphs(text: string): readonly string[] {
     .split(/(?<=\.)\s+(?=[A-Z])/)
     .map((part) => part.trim())
     .filter((part) => part !== '');
-}
-
-/** The refusal text of a failed validation, from its stored code and module sentence. */
-export function importFailureText(job: JobDetail | null): string {
-  const source = job?.importSource;
-  if (source?.refusalText) return source.refusalText;
-  const code = job?.importSummary?.refusal;
-  if (code) {
-    const refusal = DEVICE_IMPORT_REFUSALS_BY_CODE[code];
-    if (refusal) return deviceImportRefusalText(refusal);
-  }
-  return 'The validation failed before it checked a row. Import the file again.';
 }
 
 const DEVICE_IMPORT_REFUSALS_BY_CODE: Readonly<
@@ -425,8 +405,20 @@ export const IMPORT_AGAIN_LABEL = 'Import again';
 export const VALIDATE_AGAIN_LABEL = 'Validate again';
 export const DOWNLOAD_REJECTED_LABEL = 'Download rejected rows';
 export const NO_UPDATE_VIEW_LINE = 'No row needs an update.';
+/** The empty line of each report view (states 14 and 15). XF3 owns the Failed tab. */
+export const REPORT_EMPTY_LINES: Readonly<
+  Record<DeviceImportReportView, string>
+> = Object.freeze({
+  proposed: NO_UPDATE_VIEW_LINE,
+  rejected: 'No row was rejected.',
+  warnings: 'No warnings.',
+  failed: '',
+});
 export const NO_UPDATE_LINE =
   'Every row matches its export checksum. No update is needed.';
+/** The same line for the Sync changes mode: every row already matches the file (state 21). */
+export const SYNC_ALL_ROWS_NO_UPDATE_LINE =
+  'Every row already matches the file. No update is needed.';
 
 /** "Expires Oct 28, 11:42 AM" (state 13). */
 export function planExpiresText(expiresAt: string, now = new Date()): string {
@@ -566,85 +558,52 @@ export const REPORT_REJECTED_COLUMNS = DEVICE_EDIT_TEMPLATE_HEADERS;
 /** The "Not in inventory" device cell of a rejected line (state 14). */
 export const NOT_IN_INVENTORY_LABEL = 'Not in inventory';
 
-/** The short progress lines of an IMP job in the Jobs grid (design section 9, behavior 7). */
-export function importProgressLines(job: JobDetail): [string, string] {
-  const source = job.importSource;
-  const rows = (source?.rowsRead ?? job.progress.total ?? 0).toLocaleString(
-    'en-US',
-  );
-  if (job.status === 'running' || job.status === 'awaiting-devices') {
-    const phase = job.phase;
-    if (phase?.name === 'refresh' && phase.total !== null)
-      return [
-        `${phase.done.toLocaleString('en-US')} of ${phase.total.toLocaleString('en-US')} stale devices read`,
-        IMPORT_PHASE_LABELS['refresh'],
-      ];
-    if (phase?.name === 'compare' && phase.total !== null)
-      return [
-        `${phase.done.toLocaleString('en-US')} of ${phase.total.toLocaleString('en-US')} rows checked`,
-        IMPORT_PHASE_LABELS['compare'],
-      ];
-    if (phase?.name === 'report')
-      return [`${rows} rows checked`, IMPORT_PHASE_LABELS['report']];
-    return [`${rows} rows read`, IMPORT_PHASE_LABELS['header-check']];
+/**
+ * The reason of a failed validation (states 23 and 26). A refusal states the module sentence of
+ * its code. A stored failure states its own sentence, so a fault never reads as a refusal.
+ */
+export function importFailureText(job: JobDetail | null): string {
+  const refusal = job?.importSummary?.refusal ?? null;
+  const known = refusal ? DEVICE_IMPORT_REFUSALS_BY_CODE[refusal] : undefined;
+  if (known) return deviceImportRefusalText(known);
+  switch (job?.failure) {
+    case 'storage-unavailable':
+      return 'Campus Commander could not store the validation report. Import the file again.';
+    case 'inventory-unavailable':
+      return 'Campus Commander could not read the device inventory. Import the file again.';
+    case 'permission-changed':
+      return 'Your permission to import devices changed. Import the file again when it is restored.';
+    case 'connection-changed':
+      return 'The Google connection changed. Reconnect Google, then import the file again.';
+    default:
+      return 'The validation stopped before it finished. Import the file again.';
   }
-  if (job.status === 'failed' || job.status === 'needs-review')
-    return [`${rows} rows checked`, importRefusalLabel(job)];
-  if (job.status === 'cancelled') {
-    const phase = job.phase;
-    return [
-      phase?.name === 'refresh' && phase.total !== null
-        ? `${phase.done.toLocaleString('en-US')} of ${phase.total.toLocaleString('en-US')} stale devices read`
-        : `${rows} rows read`,
-      '—',
-    ];
-  }
-  return [`${rows} rows checked`, importPlanLine(job)];
 }
 
-/** The grid line of the plan state (design section 9, behavior 7). */
-export function importPlanLine(job: JobDetail): string {
-  const summary = job.importSummary;
-  if (!summary) return 'Validated';
-  switch (summary.planState) {
-    case 'executed':
-      return 'Plan executed';
-    case 'cancelled':
-      return 'Plan cancelled';
-    case 'expired':
-      return 'Plan expired';
-    case 'open':
-      return 'Plan open';
-    default:
-      break;
-  }
-  if (summary.proposed === 0 && summary.rejected > 0)
-    return `${summary.rejected.toLocaleString('en-US')} rejected · no changes`;
-  if (summary.proposed === 0 && summary.rejected === 0)
-    return 'No update needed';
-  return 'Validated';
+/** The two parts of a failed validation: the reason and the note that follows it. */
+export interface ImportFailureView {
+  readonly paragraphs: readonly string[];
+  readonly note: string;
 }
 
-/** The short grid line of a failed validation (design section 9, behavior 7). */
-export function importRefusalLabel(job: JobDetail): string {
-  switch (job.importSummary?.refusal) {
-    case 'unreadable-file':
-      return 'File is not UTF-8';
-    case 'ragged-record':
-      return 'A row has too many columns';
-    case 'unterminated-quote':
-      return 'An open quote';
-    case 'malformed-quote':
-      return 'A misplaced quote';
-    case 'cell-too-long':
-      return 'A cell is too long';
-    case 'too-many-rows':
-      return 'Too many rows';
-    case 'header-refused':
-      return 'Header check failed';
-    default:
-      return 'Validation failed';
-  }
+/**
+ * The failure of a validation (states 23 and 26). The note reports where the run stopped. A fault
+ * after the header check reports the rows that it read, so it never reads as an initial refusal.
+ */
+export function importFailureView(job: JobDetail | null): ImportFailureView {
+  const rows = job?.importSource?.rowsRead ?? 0;
+  const reason = job?.importSource?.refusalText
+    ? job.importSource.refusalText
+    : importFailureText(job);
+  return {
+    paragraphs: importRefusalParagraphs(reason),
+    note:
+      rows === 0
+        ? VALIDATION_FAILED_LINE
+        : `Validation stopped after it read ${rows.toLocaleString('en-US')} ${
+            rows === 1 ? 'row' : 'rows'
+          }. No report and no plan exist.`,
+  };
 }
 
 /**
@@ -704,6 +663,19 @@ export const IMPORT_HELP_MODES: readonly HelpMode[] = Object.freeze([
   },
 ]);
 export const IMPORT_HELP_RULES_HEAD = 'Rules';
+/** The field limits of the import template, from the contract that enforces them (help, R12). */
+export const IMPORT_HELP_LIMITS_HEAD = 'Field limits';
+export const IMPORT_HELP_LIMITS: readonly {
+  readonly field: string;
+  readonly limit: string;
+}[] = Object.freeze(
+  (Object.keys(DEVICE_UPDATE_FIELD_LIMITS) as DeviceUpdateField[]).map(
+    (field) => ({
+      field: DEVICE_UPDATE_FIELD_LABELS[field],
+      limit: `${DEVICE_UPDATE_FIELD_LIMITS[field].toLocaleString('en-US')} characters`,
+    }),
+  ),
+);
 export const IMPORT_HELP_RULES: readonly string[] = Object.freeze([
   'A blank cell keeps the current value.',
   '[clear] empties Annotated location, Annotated user, or Notes.',

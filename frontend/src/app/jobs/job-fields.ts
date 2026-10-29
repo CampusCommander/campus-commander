@@ -3,6 +3,7 @@ import {
   jobDisplayIdSchema,
   type JobAction,
   type JobFailure,
+  type JobImportSummary,
   type JobPerson,
   type JobPhase,
   type JobProgress,
@@ -248,7 +249,103 @@ export function progressLines(job: JobSummary): [string, string] {
   if (job.action === 'refresh-inventory') return refreshProgress(job);
   // An export counts the rows that it wrote (design section 9, state 26).
   if (job.action === 'export-devices') return exportProgress(job);
+  // A validation names its phase, its refusal, or its plan (state 26, behavior 7).
+  if (job.action === 'validate-device-import') return importProgress(job);
   return updateProgress(job);
+}
+
+/** The five phase labels of a validation job (states 12, 23, 24, and 26). */
+export const IMPORT_PHASE_LABELS: Readonly<Record<string, string>> =
+  Object.freeze({
+    upload: 'Upload',
+    'header-check': 'Header check',
+    refresh: 'Refresh stale devices',
+    compare: 'Compare',
+    report: 'Report',
+  });
+
+/** The rows of a validation job: the row scope when it exists, else its progress. */
+function importRows(job: JobSummary): number {
+  const scoped = job.scope.kind === 'rows' ? job.scope.deviceCount : null;
+  return scoped ?? job.progress.total ?? job.progress.succeeded;
+}
+
+/**
+ * The Progress cell of a validation job (design section 9, state 26). The first line counts the
+ * rows that the job read or checked, and the second names the phase, the refusal, or the plan.
+ */
+export function importProgress(job: JobSummary): [string, string] {
+  const rows = count(importRows(job));
+  const phase = job.phase;
+  if (job.status === 'running' || job.status === 'awaiting-devices') {
+    if (phase?.name === 'refresh' && phase.total !== null)
+      return [
+        `${count(phase.done)} of ${count(phase.total)} stale devices read`,
+        IMPORT_PHASE_LABELS['refresh'],
+      ];
+    if (phase?.name === 'compare' && phase.total !== null)
+      return [
+        `${count(phase.done)} of ${count(phase.total)} rows checked`,
+        IMPORT_PHASE_LABELS['compare'],
+      ];
+    if (phase?.name === 'report')
+      return [`${rows} rows checked`, IMPORT_PHASE_LABELS['report']];
+    return [`${rows} rows read`, IMPORT_PHASE_LABELS['header-check']];
+  }
+  if (job.status === 'failed' || job.status === 'needs-review')
+    return [`${rows} rows checked`, importRefusalLabel(job.importSummary)];
+  if (job.status === 'cancelled')
+    return [
+      phase?.name === 'refresh' && phase.total !== null
+        ? `${count(phase.done)} of ${count(phase.total)} stale devices read`
+        : `${rows} rows read`,
+      'No report',
+    ];
+  return [`${rows} rows checked`, importPlanLine(job.importSummary)];
+}
+
+/** The grid line of the plan state of a finished validation (state 26, behavior 7). */
+export function importPlanLine(summary: JobImportSummary | null): string {
+  if (!summary) return 'Validated';
+  switch (summary.planState) {
+    case 'executed':
+      return 'Plan executed';
+    case 'cancelled':
+      return 'Plan cancelled';
+    case 'expired':
+      return 'Plan expired';
+    case 'open':
+      return 'Plan open';
+    default:
+      break;
+  }
+  if (summary.proposed === 0 && summary.rejected > 0)
+    return `${count(summary.rejected)} rejected · no changes`;
+  if (summary.proposed === 0 && summary.rejected === 0)
+    return 'No update needed';
+  return 'Validated';
+}
+
+/** The short grid line of a refused validation (state 26, behavior 7). */
+export function importRefusalLabel(summary: JobImportSummary | null): string {
+  switch (summary?.refusal) {
+    case 'unreadable-file':
+      return 'File is not UTF-8';
+    case 'ragged-record':
+      return 'A row has too many columns';
+    case 'unterminated-quote':
+      return 'An open quote';
+    case 'malformed-quote':
+      return 'A misplaced quote';
+    case 'cell-too-long':
+      return 'A cell is too long';
+    case 'too-many-rows':
+      return 'Too many rows';
+    case 'header-refused':
+      return 'Header check failed';
+    default:
+      return 'Validation failed';
+  }
 }
 
 /** The short failure of an export row (design section 9, state 26). */

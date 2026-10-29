@@ -251,8 +251,13 @@
       </mat-menu>
     </div>
   </div>
-  @if (notes().length) {
-  <div class="action-note" [class.error]="notes()[0].error">
+  @if (notes().length || importLine()) {
+  <div class="action-note" [class.error]="notes()[0]?.error">
+    @if (importLine(); as line) {
+    <div class="action-note-group">
+      <p role="status">{{ line }}</p>
+    </div>
+    }
     @for (group of notes(); track group.id) {
     <div class="action-note-group" [class.error]="group.error">
       <p [id]="group.id">{{ group.text }}</p>

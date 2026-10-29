@@ -74,6 +74,23 @@
       <li>{{ rule }}</li>
       }
     </ul>
+    <h4>{{ IMPORT_HELP_LIMITS_HEAD }}</h4>
+    <table class="help-table">
+      <thead>
+        <tr>
+          <th scope="col">Field</th>
+          <th scope="col">Limit</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of IMPORT_HELP_LIMITS; track row.field) {
+        <tr>
+          <th scope="row">{{ row.field }}</th>
+          <td>{{ row.limit }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
     <h4>{{ IMPORT_HELP_STATUS_HEAD }}</h4>
     <table class="help-table">
       <thead>

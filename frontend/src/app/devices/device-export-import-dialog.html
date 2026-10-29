@@ -213,67 +213,73 @@
             </mat-radio-group>
           </section>
 
-          <div
-            class="drop-zone"
-            (dragover)="dragOver($event)"
-            (drop)="dropped($event)"
-          >
-            <span class="material-symbols-outlined" aria-hidden="true"
-              >csv</span
+          <div class="file-block">
+            <div
+              class="drop-zone"
+              (dragover)="dragOver($event)"
+              (drop)="dropped($event)"
             >
-            <span class="drop-label">{{ DROP_LABEL }}</span>
-            <button
-              mat-stroked-button
-              type="button"
-              (click)="fileInput.click()"
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >upload_file</span
+              >
+              <span class="drop-text">{{ DROP_LABEL }}</span>
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="fileInput.click()"
+              >
+                {{ BROWSE_LABEL }}
+              </button>
+              <input
+                #fileInput
+                class="visually-hidden"
+                type="file"
+                accept=".csv,text/csv"
+                tabindex="-1"
+                aria-hidden="true"
+                (change)="picked($event)"
+              />
+            </div>
+
+            @if (importFile(); as chosen) {
+            <div
+              class="file-item"
+              [class.is-error]="chosen.check !== 'passed'"
+              role="group"
+              [attr.aria-label]="SELECTED_FILE_LABEL"
+              aria-live="polite"
             >
-              {{ BROWSE_LABEL }}
-            </button>
-            <input
-              #fileInput
-              class="visually-hidden"
-              type="file"
-              accept=".csv,text/csv"
-              tabindex="-1"
-              aria-hidden="true"
-              (change)="picked($event)"
-            />
+              <span class="file-glyph" aria-hidden="true">
+                <span class="material-symbols-outlined">csv</span>
+              </span>
+              <div class="file-text">
+                <p class="file-name">{{ chosen.name }}</p>
+                <ul class="meta-items">
+                  @for (fact of importFacts(); track fact) {
+                  <li>{{ fact }}</li>
+                  }
+                </ul>
+                @if (chosen.check === 'passed') {
+                <p class="check-line ok" role="status">
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >check_circle</span
+                  >
+                  <span>{{ HEADER_PASSED_LINE }}</span>
+                </p>
+                } @else {
+                <p class="check-line bad" role="alert">
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >error</span
+                  >
+                  <span>{{ chosen.refusal }}</span>
+                </p>
+                }
+              </div>
+            </div>
+            }
           </div>
 
-          @if (importFile(); as chosen) {
-          <div
-            class="file-item"
-            [class.has-error]="chosen.check !== 'passed'"
-            [attr.aria-label]="SELECTED_FILE_LABEL"
-          >
-            <span class="file-glyph small" aria-hidden="true">
-              <span class="material-symbols-outlined">csv</span>
-            </span>
-            <div class="file-main">
-              <p class="file-name">{{ chosen.name }}</p>
-              <ul class="meta-items">
-                @for (fact of importFacts(); track fact) {
-                <li>{{ fact }}</li>
-                }
-              </ul>
-              @if (chosen.check === 'passed') {
-              <p class="file-check ok">
-                <span class="material-symbols-outlined" aria-hidden="true"
-                  >check_circle</span
-                >
-                {{ HEADER_PASSED_LINE }}
-              </p>
-              } @else {
-              <p class="file-check bad" role="alert">
-                <span class="material-symbols-outlined" aria-hidden="true"
-                  >error</span
-                >
-                {{ chosen.refusal }}
-              </p>
-              }
-            </div>
-          </div>
-          } @if (uploadError(); as error) {
+          @if (uploadError(); as error) {
           <div class="action-note error" role="alert">
             <p>{{ error }}</p>
           </div>
@@ -321,9 +327,9 @@
             </ol>
           </section>
 
-          @if (validationFailed()) {
+          @if (failureView(); as failure) {
           <div class="action-note error" role="alert">
-            @for (paragraph of refusalParagraphs(); track paragraph) {
+            @for (paragraph of failure.paragraphs; track paragraph) {
             <p>{{ paragraph }}</p>
             }
           </div>
@@ -331,8 +337,8 @@
           <p class="action-note stopped">{{ VALIDATION_STOPPED_LINE }}</p>
           @if (cancelledLine(); as line) {
           <p class="note">{{ line }}</p>
-          } } @if (validationFailed()) {
-          <p class="note">{{ VALIDATION_FAILED_LINE }}</p>
+          } } @if (failureView(); as failure) {
+          <p class="note">{{ failure.note }}</p>
           } @if (importCounters().length) {
           <dl class="counters">
             @for (counter of importCounters(); track counter.label) {
@@ -357,46 +363,58 @@
         } @case ('report') {
         <div class="step report">
           @if (counts(); as rowCounts) {
-          <dl class="count-equation" aria-label="Rows">
-            @for (term of countTerms(); track term.label; let first = $first) {
-            @if ($index === 1) {
-            <span class="count-sign" aria-hidden="true">=</span>
-            } @else if (!first) {
-            <span class="count-sign" aria-hidden="true">+</span>
-            }
-            <div
-              class="count-term"
-              [class.tone-success]="term.tone === 'success'"
-              [class.tone-info]="term.tone === 'info'"
-              [class.tone-error]="term.tone === 'error'"
-            >
-              <dd>{{ term.value }}</dd>
-              <dt>{{ term.label }}</dt>
-            </div>
-            }
-          </dl>
-          } @if (changeLine(); as line) {
-          <p class="change-line">Proposed changes: {{ line }}</p>
-          }
-          <p class="meta-line">{{ metaLine() }}</p>
-
-          <div class="report-body">
-            <nav
-              mat-tab-nav-bar
-              class="report-tabs"
-              [tabPanel]="reportPanel"
-              aria-label="Validation results view"
-            >
-              @for (tab of tabs(); track tab.view) {
-              <button
-                mat-tab-link
-                type="button"
-                [active]="tab.view === view()"
-                (click)="setView(tab.view)"
+          <section class="report-counts" aria-label="Row counts">
+            <dl class="count-equation" aria-label="Rows">
+              @for (term of countTerms(); track term.label; let first = $first) {
+              @if ($index === 1) {
+              <span class="count-sign" aria-hidden="true">=</span>
+              } @else if (!first) {
+              <span class="count-sign" aria-hidden="true">+</span>
+              }
+              <div
+                class="count-term"
+                [class.tone-success]="term.tone === 'success'"
+                [class.tone-info]="term.tone === 'info'"
+                [class.tone-error]="term.tone === 'error'"
               >
-                {{ tab.label }} <span class="tab-count">{{ tab.count }}</span>
-              </button>
-              } @if (hasRejected()) {
+                <dd>{{ term.value }}</dd>
+                <dt>{{ term.label }}</dt>
+              </div>
+              }
+            </dl>
+            @if (changeLine(); as line) {
+            <p class="change-line">Proposed changes: {{ line }}</p>
+            }
+            <p class="meta-line">{{ metaLine() }}</p>
+          </section>
+          }
+
+          <section class="report-panel" aria-label="Validation results">
+            <div class="report-views">
+              <nav
+                mat-tab-nav-bar
+                class="report-tabs"
+                [tabPanel]="reportPanel"
+                aria-label="Validation results view"
+              >
+                @for (tab of tabs(); track tab.view) {
+                <button
+                  mat-tab-link
+                  type="button"
+                  [active]="tab.view === view()"
+                  (click)="setView(tab.view)"
+                >
+                  {{ tab.label }}
+                  <span
+                    class="tab-count"
+                    [class.tone-error]="tab.view === 'rejected' && tab.count !== '0'"
+                    [class.tone-warning]="tab.view === 'warnings' && tab.count !== '0'"
+                    >{{ tab.count }}</span
+                  >
+                </button>
+                }
+              </nav>
+              @if (hasRejected()) {
               <a
                 mat-button
                 class="download-rejected"
@@ -409,14 +427,28 @@
                 {{ DOWNLOAD_REJECTED_LABEL }}
               </a>
               }
-            </nav>
+            </div>
 
             <mat-tab-nav-panel #reportPanel>
               <div class="report-table-wrap">
-                <table class="report-table">
+                <table
+                  class="report-table"
+                  [class.rv]="view() === 'proposed'"
+                  [class.rj]="view() === 'rejected'"
+                  [class.wn]="view() === 'warnings'"
+                >
                   <caption class="visually-hidden">
                     Validation results table
                   </caption>
+                  <colgroup>
+                    @switch (view()) { @case ('warnings') {
+                    <col /><col /><col />
+                    } @case ('rejected') {
+                    <col /><col /><col /><col /><col />
+                    } @default {
+                    <col /><col /><col /><col /><col />
+                    } }
+                  </colgroup>
                   <thead>
                     @switch (view()) { @case ('warnings') {
                     <tr>
@@ -444,11 +476,11 @@
                   </thead>
                   <tbody>
                     @if (lines().length === 0) {
-                    <tr class="empty-row">
-                      <td
-                        [attr.colspan]="view() === 'warnings' ? 3 : view() === 'rejected' ? 5 : 5"
-                      >
-                        {{ view() === 'proposed' ? NO_UPDATE_VIEW_LINE : '' }}
+                    <tr class="message-row">
+                      <td [attr.colspan]="view() === 'warnings' ? 3 : 5">
+                        <div role="status">
+                          <p>{{ emptyViewLine() }}</p>
+                        </div>
                       </td>
                     </tr>
                     } @for (line of lines(); track $index) {
@@ -569,7 +601,7 @@
                 </button>
               </span>
             </div>
-          </div>
+          </section>
 
           @if (reportError(); as error) {
           <div class="action-note error" role="alert">
@@ -579,9 +611,16 @@
         </div>
         } }
       </div>
+      @if (helpOpen() && wide()) {
+      <app-device-export-help
+        id="export-help"
+        [topic]="helpTopic()"
+        (topicChange)="store.setHelpTopic($event)"
+      ></app-device-export-help>
+      }
     </div>
 
-    @if (helpOpen()) {
+    @if (helpOpen() && !wide()) {
     <app-device-export-help
       id="export-help"
       [topic]="helpTopic()"
@@ -725,6 +764,7 @@
       <button mat-stroked-button type="button" (click)="importAgain()">
         {{ IMPORT_AGAIN_LABEL }}
       </button>
+      <button mat-flat-button type="button" (click)="done()">Done</button>
       } @default { @if (counts()?.rejected) {
       <button mat-stroked-button type="button" (click)="importAgain()">
         {{ IMPORT_AGAIN_LABEL }}
