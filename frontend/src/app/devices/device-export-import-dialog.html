@@ -292,6 +292,8 @@
                   <span class="material-symbols-outlined">check</span>
                   } @else if (phase.state === 'failed') {
                   <span class="material-symbols-outlined">priority_high</span>
+                  } @else if (phase.state === 'stopped') {
+                  <span class="material-symbols-outlined">stop</span>
                   } @else { {{ $index + 1 }} }
                 </span>
                 <span class="phase-label">{{ phase.label }}</span>
@@ -331,8 +333,8 @@
             </div>
             }
           </dl>
-          } @if (validationCancelled()) {
-          <p class="note">{{ stoppedReads() }}</p>
+          } @if (stoppedReads(); as reads) {
+          <p class="note">{{ reads }}</p>
           } @if (loadError(); as error) {
           <div class="action-note error" role="alert">
             <p>{{ error }}</p>
@@ -348,8 +350,10 @@
           @if (counts(); as rowCounts) {
           <dl class="count-equation" aria-label="Rows">
             @for (term of countTerms(); track term.label; let first = $first) {
-            @if (!first) {
-            <span class="count-plus" aria-hidden="true">+</span>
+            @if ($index === 1) {
+            <span class="count-sign" aria-hidden="true">=</span>
+            } @else if (!first) {
+            <span class="count-sign" aria-hidden="true">+</span>
             }
             <div
               class="count-term"
@@ -365,15 +369,7 @@
           } @if (changeLine(); as line) {
           <p class="change-line">Proposed changes: {{ line }}</p>
           }
-          <p class="meta-line">
-            @if (syncAllRows()) {
-            <span>{{ SYNC_ALL_ROWS_LINE }}</span>
-            } @if (refreshLine(); as line) {
-            <span>{{ line }}</span>
-            } @if (oldestLine(); as line) {
-            <span>{{ line }}</span>
-            }
-          </p>
+          <p class="meta-line">{{ metaLine() }}</p>
 
           <div class="report-body">
             <nav
@@ -463,7 +459,7 @@
                             >visibility</span
                           >
                         </a>
-                        {{ line.deviceId }}
+                        {{ line.serialNumber ?? line.deviceId }}
                         } @else {
                         <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
                         }
@@ -503,17 +499,22 @@
                         </span>
                       </td>
                       <td class="col-value">
-                        <span class="cut" [title]="cells.current.full">{{
-                          cellText(cells.current)
-                        }}</span>
+                        <span class="value-cell">
+                          <span class="cut" [title]="cells.current.full">{{
+                            cellText(cells.current)
+                          }}</span>
+                        </span>
                       </td>
                       <td class="col-value">
-                        <span
-                          class="cut"
-                          [class.clear]="cells.next.clear"
-                          [title]="cells.next.full"
-                          >{{ cellText(cells.next) }}</span
-                        >
+                        <span class="value-cell">
+                          <span class="arrow" aria-hidden="true">→</span>
+                          <span
+                            class="cut"
+                            [class.clear]="cells.next.clear"
+                            [title]="cells.next.full"
+                            >{{ cellText(cells.next) }}</span
+                          >
+                        </span>
                         @if (cells.note) {
                         <span class="value-note">{{ cells.note }}</span>
                         }

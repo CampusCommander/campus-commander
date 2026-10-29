@@ -356,9 +356,11 @@ export class DeviceExportImportDialog {
   protected readonly importPhases = computed(() =>
     importPhases(this.store.job()),
   );
-  protected readonly importCounters = computed(() =>
-    importCounterRows(this.store.job()),
-  );
+  protected readonly importCounters = computed(() => {
+    // A run that stopped at the header check read no row, so it shows no counter (state 23).
+    if (this.store.job()?.importSource?.refusalText) return [];
+    return importCounterRows(this.store.job());
+  });
   protected readonly validationRunning = computed(() => {
     const job = this.store.job();
     return !job || (!this.validationEnded() && !this.store.uploading());
@@ -397,9 +399,11 @@ export class DeviceExportImportDialog {
       request.at,
     )}`;
   });
-  protected readonly stoppedReads = computed(() =>
-    importStoppedReadsLine(this.store.reportRefresh()?.staleDevicesRead ?? 0),
-  );
+  /** The stored reads of a stopped validation, or nothing when the answer holds none. */
+  protected readonly stoppedReads = computed(() => {
+    const reads = this.store.reportRefresh()?.staleDevicesRead ?? 0;
+    return reads > 0 ? importStoppedReadsLine(reads) : '';
+  });
 
   /** The report step of states 13 to 15 and 18 to 22. */
   protected readonly counts = this.store.reportCounts;
@@ -417,6 +421,16 @@ export class DeviceExportImportDialog {
   });
   protected readonly oldestLine = computed(() =>
     reportOldestLine(this.store.reportRefresh()?.oldestObservedAt ?? null),
+  );
+  /** The meta line of the report: the mode note, the refresh, and the oldest observation. */
+  protected readonly metaLine = computed(() =>
+    [
+      this.syncAllRows() ? REPORT_SYNC_ALL_ROWS_LINE : '',
+      this.refreshLine(),
+      this.oldestLine(),
+    ]
+      .filter((part) => part !== '')
+      .join('\u00a0\u00a0\u00a0'),
   );
   protected readonly syncAllRows = computed(
     () => this.store.mode() === 'sync-all-rows',

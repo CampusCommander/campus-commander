@@ -12,6 +12,15 @@
   background: var(--cc-accent);
 }
 
+/* The stopping phase of a stopped validation reads with the stop glyph (state 24). */
+.phase.is-stopped .phase-dot {
+  background: var(--cc-text-secondary);
+}
+
+.phase-dot .material-symbols-outlined {
+  font-size: 16px;
+}
+
 /* The 1120 px steps: the report of states 13 to 15 and 18 to 22. The dialog takes the full area
    under the header less the 16 px wrap padding, so the action bar stays in place (notes, choice 3). */
 .export-dialog.is-wide {
@@ -114,7 +123,7 @@
   color: var(--cc-status-error-text);
 }
 
-/* The counters of states 12 and 24: one label and one value for each read total. */
+/* The counters of states 12 and 24: a value over its label, in plain columns (mockup). */
 .counters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -126,16 +135,12 @@
   display: flex;
   flex-direction: column-reverse;
   gap: 2px;
-  padding: var(--cc-space-md) var(--cc-card-padding);
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-control);
-  background: var(--cc-surface-card);
 }
 
 .counter dt {
   color: var(--cc-text-secondary);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .counter dd {
@@ -155,32 +160,32 @@
   gap: var(--cc-space-lg);
 }
 
-/* The count equation: the terms in reading order, joined by a plus sign. */
+/* The count equation: one line of `48 Rows = 35 Unchanged + 7 Proposed`, in reading order. */
 .count-equation {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--cc-space-lg);
+  align-items: baseline;
+  gap: var(--cc-space-md);
   margin: 0;
 }
 
 .count-term {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 2px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cc-space-xs);
 }
 
 .count-term dd {
   margin: 0;
-  font-size: 28px;
-  line-height: 36px;
+  font-size: 20px;
+  line-height: 28px;
   font-variant-numeric: tabular-nums;
 }
 
 .count-term dt {
   color: var(--cc-text-secondary);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .count-term.tone-success dd {
@@ -195,10 +200,10 @@
   color: var(--cc-status-error-text);
 }
 
-.count-plus {
+.count-sign {
   color: var(--cc-text-secondary);
   font-size: 20px;
-  line-height: 36px;
+  line-height: 28px;
 }
 
 .change-line {
@@ -206,10 +211,8 @@
   font-weight: 500;
 }
 
+/* One text line: the refresh sentence, then the oldest observation, in the mockup order. */
 .meta-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--cc-space-lg);
   margin: 0;
   color: var(--cc-text-secondary);
   font-size: 12px;
@@ -234,9 +237,33 @@
   margin-inline-start: auto;
 }
 
+/* The tabs sit at the start of the row, next to each other, each as wide as its label. The
+   stretch class of the tab bar grows every link, so the link keeps its own width here. */
+.report-tabs ::ng-deep .mat-mdc-tab-links {
+  justify-content: flex-start;
+}
+
+.report-tabs ::ng-deep .mat-mdc-tab-links .mat-mdc-tab-link {
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-inline: var(--cc-space-lg);
+}
+
+/* The count of a tab: the bordered chip of the approved mockup (states 13 to 15). */
 .tab-count {
-  margin-inline-start: var(--cc-space-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-inline-start: var(--cc-space-sm);
+  padding-inline: 6px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
   color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -333,6 +360,23 @@
   color: var(--cc-text-secondary);
   font-size: 12px;
   line-height: 16px;
+}
+
+/* A value cell keeps its cut on one line, with the arrow of the New value before it. */
+.value-cell {
+  display: flex;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+}
+
+.value-cell .cut {
+  flex: 1;
+  min-width: 0;
+}
+
+.arrow {
+  flex: none;
+  color: var(--cc-text-secondary);
 }
 
 .change-chip {

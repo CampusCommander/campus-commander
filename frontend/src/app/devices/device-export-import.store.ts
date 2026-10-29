@@ -552,7 +552,13 @@ export class DeviceExportImportStore {
     });
     this.reportPages.set({ proposed: 1, rejected: 1, warnings: 1, failed: 1 });
     this.reportError.set('');
-    await Promise.all([this.showReportPage('proposed', 0), this.readTabTotals()]);
+    // A file whose every row was rejected opens on its rejected rows (state 22).
+    const summary = this.job()?.importSummary;
+    const first: DeviceImportReportView =
+      summary && summary.proposed === 0 && summary.rejected > 0
+        ? 'rejected'
+        : 'proposed';
+    await Promise.all([this.showReportPage(first, 0), this.readTabTotals()]);
   }
 
   async setReportView(view: DeviceImportReportView): Promise<void> {
