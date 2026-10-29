@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
-import { devicePageSchema } from '@campus/application-contracts';
+import {
+  devicePageSchema,
+  type JobSummary,
+} from '@campus/application-contracts';
 
 /**
  * States 01 to 08 of the Export, Reports, and Import dialog
@@ -45,6 +48,35 @@ const rows = Array.from({ length: 6 }, (_, index) => ({
 const expiry = () =>
   new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
+/** The own running export row of the Activity panel (behavior 5). */
+const activityJob: JobSummary = {
+  jobId: expJobId,
+  displayId: 'EXP-001',
+  revision: 2,
+  action: 'export-devices',
+  status: 'running',
+  scope: { kind: 'devices', deviceCount: rows.length },
+  requestedBy: person,
+  createdAt: new Date(Date.now() - 60_000).toISOString(),
+  startedAt: new Date(Date.now() - 50_000).toISOString(),
+  finishedAt: null,
+  progress: {
+    total: rows.length,
+    succeeded: 0,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: rows.length,
+  },
+  phase: { name: 'write-rows', done: 3, total: rows.length },
+  exportSummary: { purpose: 'edit' },
+  importSummary: null,
+  failure: null,
+  cancelRequest: null,
+};
+
 const exportJob = (
   displayId: string,
   purpose: 'edit' | 'report',
@@ -62,13 +94,14 @@ const exportJob = (
   finishedAt: state === 'running' ? null : new Date().toISOString(),
   progress: {
     total: rows.length,
-    succeeded: state === 'running' ? 3 : rows.length,
+    // Production writes the phase counters; the outcome counters stay zero while it runs.
+    succeeded: state === 'running' ? 0 : rows.length,
     failed: 0,
     unknown: 0,
     skipped: 0,
     expired: 0,
     cancelled: 0,
-    pending: state === 'running' ? rows.length - 3 : 0,
+    pending: state === 'running' ? rows.length : 0,
   },
   phase:
     state === 'running'
@@ -239,6 +272,19 @@ async function signIn(page: Page, options: MockOptions = {}) {
       return route.fulfill({
         json: exportJob('EXP-002', 'report', 'completed'),
       });
+    if (path === '/api/jobs/activity/seen')
+      return route.fulfill({ json: { seenAt: new Date().toISOString() } });
+    if (path === '/api/jobs/activity')
+      return route.fulfill({
+        json: {
+          running: { count: 1, jobs: [activityJob] },
+          waiting: { count: 0, jobs: [] },
+          recent: { count: 0, jobs: [], nextExpiryAt: null },
+          attention: false,
+          seenAt: null,
+          observedAt: new Date().toISOString(),
+        },
+      });
     if (path === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     if (path === '/api/google-connection')
@@ -266,6 +312,9 @@ async function openDevices(page: Page, options: MockOptions = {}) {
 }
 
 const dialog = (page: Page) => page.getByRole('dialog');
+/** The export dialog alone, while the Activity panel is also open. */
+const exportDialog = (page: Page) =>
+  page.locator('section[role="dialog"][aria-labelledby="export-dialog-title"]');
 const bulk = (page: Page) =>
   page.getByRole('button', { name: 'Bulk Actions', exact: true });
 
@@ -326,6 +375,10 @@ test.describe('Export, Reports, and Import', () => {
     await expect(
       dialog(page).getByRole('button', { name: 'Export 6 devices' }),
     ).toBeEnabled();
+    // The checked CSV card carries the approved accent border and selected surface (state 02).
+    await expect(
+      dialog(page).locator('mat-radio-button.option-card').first(),
+    ).toHaveCSS('border-color', 'rgb(26, 115, 232)');
     await shot(page, '02-export-dialog');
   });
 
@@ -344,9 +397,7 @@ test.describe('Export, Reports, and Import', () => {
     await shot(page, '03-export-over-limit');
   });
 
-  test('state 04, 05, and 06: running, ready, and the help pane', async ({
-    page,
-  }) => {
+  test('state 04 and 05: running and ready', async ({ page }) => {
     const state = await openDevices(page);
     await openEntry(page, 'Export');
     await dialog(page)
@@ -356,6 +407,15 @@ test.describe('Export, Reports, and Import', () => {
     await expect(dialog(page)).toContainText('3 of 6');
     await expect(dialog(page)).toContainText(
       'Closing this dialog keeps the export running.',
+    );
+    // The phase heading stays in the accessibility tree and takes no visible space (state 04).
+    await expect(dialog(page).locator('#phases-label')).toHaveCSS(
+      'position',
+      'absolute',
+    );
+    await expect(dialog(page).locator('#phases-label')).toHaveCSS(
+      'width',
+      '1px',
     );
     await shot(page, '04-export-running');
 
@@ -375,7 +435,11 @@ test.describe('Export, Reports, and Import', () => {
       '/api/devices/exports/EXP-001/file',
     );
     await shot(page, '05-export-ready');
+  });
 
+  test('state 06: the help pane docks beside Configure', async ({ page }) => {
+    await openDevices(page);
+    await openEntry(page, 'Export');
     await dialog(page)
       .getByRole('button', { name: 'Export and import help' })
       .click();
@@ -384,6 +448,14 @@ test.describe('Export, Reports, and Import', () => {
       page.getByRole('heading', { name: 'Export and import help' }),
     ).toBeVisible();
     await expect(dialog(page)).toContainText('Editing rules');
+    // The left surface stays the approved Configure step with its action bar.
+    await expect(
+      dialog(page).getByRole('button', { name: 'Export 6 devices' }),
+    ).toBeVisible();
+    await expect(
+      dialog(page).getByRole('button', { name: 'Cancel' }),
+    ).toBeVisible();
+    await expect(dialog(page).getByText('Write rows')).toHaveCount(0);
     await shot(page, '06-export-help');
   });
 
@@ -412,6 +484,29 @@ test.describe('Export, Reports, and Import', () => {
     await expect(dialog(page)).toContainText('Create a report');
     await expect(dialog(page)).toContainText('device-report-EXP-002.csv');
     await expect(dialog(page)).toContainText('Ready');
+  });
+
+  test('the same Activity row reopens its export after Close', async ({
+    page,
+  }) => {
+    await openDevices(page);
+    const bell = page.getByRole('button', { name: /^Activity:/ });
+    const activity = page.getByRole('dialog', { name: 'Activity' });
+    await bell.click();
+    await activity.getByRole('link', { name: /EXP-001/ }).click();
+    await expect(exportDialog(page)).toContainText('Job EXP-001 · Running');
+    await expect(page).toHaveURL(/\/devices\?job=EXP-001$/);
+    await exportDialog(page)
+      .locator('.export-actions')
+      .getByRole('button', { name: 'Close' })
+      .click();
+    await expect(exportDialog(page)).toBeHidden();
+    await expect(page).toHaveURL(/\/devices$/);
+
+    // Closing dropped ?job=. The same row must open the dialog again (R3).
+    await bell.click();
+    await activity.getByRole('link', { name: /EXP-001/ }).click();
+    await expect(exportDialog(page)).toContainText('Job EXP-001 · Running');
   });
 
   test('the dialog holds focus and returns it to Bulk Actions on close', async ({

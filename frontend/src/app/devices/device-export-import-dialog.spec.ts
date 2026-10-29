@@ -303,7 +303,9 @@ describe('DeviceExportImportDialog', () => {
     await new Promise((resolve) => setTimeout(resolve, 450));
     await render();
     expect(text()).toContain('Expired');
-    expect(panel()?.querySelector('.export-actions a[mat-flat-button]')).toBeNull();
+    expect(
+      panel()?.querySelector('.export-actions a[mat-flat-button]'),
+    ).toBeNull();
     expect(
       panel()
         ?.querySelector('.export-actions button[mat-flat-button]')
@@ -537,11 +539,7 @@ describe('DeviceExportImportDialog', () => {
     const held = deferred<Response>();
     const request = async (path: string) =>
       path === '/api/devices/exports' ? held.promise : response(exportDetail());
-    const { store, render, fixture } = setup(
-      exportDetail(),
-      request,
-      session,
-    );
+    const { store, render, fixture } = setup(exportDetail(), request, session);
     store.openExport(48);
     await render();
     const pending = store.submit({
@@ -575,11 +573,7 @@ describe('DeviceExportImportDialog', () => {
       calls += 1;
       return calls === 1 ? first.promise : second.promise;
     };
-    const { store, render, fixture } = setup(
-      exportDetail(),
-      request,
-      session,
-    );
+    const { store, render, fixture } = setup(exportDetail(), request, session);
     const submit = () =>
       store.submit({
         gridId: 'devices',

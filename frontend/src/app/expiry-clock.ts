@@ -1,10 +1,4 @@
-import {
-  DestroyRef,
-  effect,
-  inject,
-  signal,
-  type Signal,
-} from '@angular/core';
+import { DestroyRef, effect, inject, signal, type Signal } from '@angular/core';
 
 /**
  * A clock that changes when an ISO deadline passes (design section 9, states 05 and 08).

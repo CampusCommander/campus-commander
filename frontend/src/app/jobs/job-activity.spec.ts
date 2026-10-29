@@ -404,9 +404,9 @@ it('sends only the requester own export and import rows to the dialog', async ()
   const fixture = await render();
   await open(fixture);
 
-  const hrefs = [
-    ...(dialog(fixture)?.querySelectorAll('a.row') ?? []),
-  ].map((row) => row.getAttribute('href'));
+  const hrefs = [...(dialog(fixture)?.querySelectorAll('a.row') ?? [])].map(
+    (row) => row.getAttribute('href'),
+  );
   expect(hrefs).toEqual([
     '/devices?job=EXP-001',
     '/jobs/EXP-002',
