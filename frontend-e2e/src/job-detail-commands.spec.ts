@@ -186,6 +186,17 @@ const commandJob = {
       ],
     },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const statusOperations: OperationFixture[] = [
@@ -291,6 +302,17 @@ const statusJob = {
       ],
     },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const summary = (job: {
@@ -323,6 +345,9 @@ const summary = (job: {
   },
   cancelRequest: null,
   failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
 });
 
 const jobList = {
@@ -777,6 +802,17 @@ test('does not call a refused command issue an execution failure', async ({
           },
           unknown: { count: 0, operations: [] },
         },
+        phase: null,
+        exportSummary: null,
+        importSummary: null,
+        exportFile: null,
+        importSource: null,
+        plan: null,
+        importDisplayId: null,
+        waitsForDisplayId: null,
+        waitingDisplayIds: null,
+        planJobs: null,
+        executionCounts: null,
       },
     }),
   );

@@ -246,6 +246,17 @@ const job = (options: {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 });
 
 interface ApiOptions {

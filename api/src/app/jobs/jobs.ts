@@ -173,6 +173,8 @@ const actionKinds: Readonly<Record<JobAction, string>> = {
   'disable-devices': 'device-status',
   'reenable-devices': 'device-status',
   'deprovision-devices': 'device-status',
+  'export-devices': 'device-export',
+  'validate-device-import': 'device-import',
 };
 
 /** The job action of one write row. A missing action reads as the annotated-location update. */
@@ -229,7 +231,12 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
     action:
       row['kind'] === 'inventory-refresh'
         ? 'refresh-inventory'
-        : (writeActions[String(row['action'])] ?? 'update-device-annotations'),
+        : row['kind'] === 'device-export'
+          ? 'export-devices'
+          : row['kind'] === 'device-import'
+            ? 'validate-device-import'
+            : (writeActions[String(row['action'])] ??
+              'update-device-annotations'),
     status: row['status'],
     scope: { kind: row['scope_kind'], deviceCount: total },
     requestedBy: {
@@ -262,6 +269,11 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
                 cancelled,
             ),
     },
+    // The blocks of design section 1 that XBB fills from the detail tables and the phase columns.
+    // Until XBB, every job answers null.
+    phase: null,
+    exportSummary: null,
+    importSummary: null,
     failure: row['failure'],
     // The stored request, with the person in the shape of requestedBy (design section 5).
     cancelRequest:
@@ -643,6 +655,16 @@ export class Jobs {
           : null,
       deprovisionReason: job['deprovision_reason'] ?? null,
       targetOrgUnitPaths: job['target_org_unit_paths'] ?? null,
+      // The detail blocks of design section 1 that XBB fills from the export and import detail
+      // tables. Until XBB, every job answers null.
+      exportFile: null,
+      importSource: null,
+      plan: null,
+      importDisplayId: null,
+      waitsForDisplayId: null,
+      waitingDisplayIds: null,
+      planJobs: null,
+      executionCounts: null,
       correlationId: job['correlation_id'],
       latestActivity: latestActivity(
         job,

@@ -1,8 +1,12 @@
 import {
+  BATTERY_LABELS,
+  DEVICE_REPORT_FIELD_LABELS,
+  DEVICE_STATUS_LABELS,
   GOOGLE_CAPABILITIES,
   batteryFilterValueSchema,
+  batteryText,
   deviceStatusFilterValueSchema,
-  type DeviceBattery,
+  statusText,
   type DeviceGroupField,
   type DeviceOrgUnit,
   type DevicePredicate,
@@ -10,6 +14,9 @@ import {
   type DeviceSyncFailure,
   type GoogleFailure,
 } from '@campus/application-contracts';
+
+// The grid and the export share one copy of the battery text, the status text, and the labels.
+export { BATTERY_LABELS, DEVICE_STATUS_LABELS, batteryText, statusText };
 
 export type DeviceSortField = DeviceQuery['sort']['field'];
 export type BatteryFilterValue =
@@ -37,35 +44,33 @@ export interface OrgUnitOption {
   depth: number;
 }
 
-/** Grid column and filter order from the field contract, without the School column. */
+/** Grid column and filter order from the field contract, without the School column. The label of
+ * each column is the report header of `DEVICE_REPORT_FIELD_LABELS`, so the grid and the export
+ * share one copy. */
+const gridField = (
+  id: DeviceSortField,
+  kind: DeviceFieldKind,
+  optional: boolean,
+): DeviceField => ({
+  id,
+  label: DEVICE_REPORT_FIELD_LABELS[id],
+  kind,
+  optional,
+});
+
 export const DEVICE_FIELDS: readonly DeviceField[] = [
-  { id: 'serialNumber', label: 'Serial', kind: 'text', optional: false },
+  gridField('serialNumber', 'text', false),
   // The mockup puts Status directly after Serial (device-commands record, default 7).
-  { id: 'status', label: 'Status', kind: 'status', optional: true },
-  { id: 'model', label: 'Model', kind: 'text', optional: false },
-  { id: 'assetTag', label: 'Asset tag', kind: 'text', optional: false },
+  gridField('status', 'status', true),
+  gridField('model', 'text', false),
+  gridField('assetTag', 'text', false),
   // The approved mockup shows this optional column after Asset tag (notes line 105).
-  {
-    id: 'annotatedUser',
-    label: 'Annotated user',
-    kind: 'text',
-    optional: true,
-  },
-  {
-    id: 'orgUnitPath',
-    label: 'Organization unit',
-    kind: 'orgUnit',
-    optional: false,
-  },
-  { id: 'battery', label: 'Battery', kind: 'battery', optional: false },
-  { id: 'lastContact', label: 'Device contact', kind: 'date', optional: false },
-  {
-    id: 'annotatedLocation',
-    label: 'Annotated location',
-    kind: 'text',
-    optional: true,
-  },
-  { id: 'notes', label: 'Notes', kind: 'text', optional: true },
+  gridField('annotatedUser', 'text', true),
+  gridField('orgUnitPath', 'orgUnit', false),
+  gridField('battery', 'battery', false),
+  gridField('lastContact', 'date', false),
+  gridField('annotatedLocation', 'text', true),
+  gridField('notes', 'text', true),
 ];
 
 export const TEXT_OPERATORS = [
@@ -78,22 +83,6 @@ export const DATE_OPERATORS = [
   { id: 'before', label: 'Before' },
   { id: 'after', label: 'On or after' },
 ] as const;
-export const BATTERY_LABELS: Readonly<Record<BatteryFilterValue, string>> = {
-  normal: 'Normal',
-  'replace-soon': 'Replace soon',
-  'replace-now': 'Replace now',
-  'no-report': 'No battery report',
-  unavailable: 'Unavailable',
-};
-/** The three Google device states the filter offers, in the record's order. */
-export const DEVICE_STATUS_LABELS: Readonly<
-  Record<DeviceStatusFilterValue, string>
-> = {
-  ACTIVE: 'Active',
-  DISABLED: 'Disabled',
-  DEPROVISIONED: 'Deprovisioned',
-};
-
 export function fieldFor(id: DeviceSortField): DeviceField {
   const field = DEVICE_FIELDS.find((candidate) => candidate.id === id);
   if (!field) throw new Error(`Unknown device field ${id}`);
@@ -236,22 +225,6 @@ export function withUnit(
   return (checked ? [...rest, ...inside] : rest).sort((a, b) =>
     a.localeCompare(b),
   );
-}
-
-export function batteryText(battery: DeviceBattery): string {
-  return battery.status === 'reported'
-    ? BATTERY_LABELS[battery.health]
-    : BATTERY_LABELS[battery.status];
-}
-
-/**
- * The three known Google states read as labels. Another Google value shows as Google sends it.
- * A null status shows the grid's empty value.
- */
-export function statusText(status: string | null): string {
-  if (status === null) return '';
-  const labels: Readonly<Record<string, string>> = DEVICE_STATUS_LABELS;
-  return labels[status] ?? status;
 }
 
 export function relativeTime(iso: string | null, now = Date.now()): string {

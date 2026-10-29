@@ -43,6 +43,9 @@ function summary(state: State) {
     },
     cancelRequest: null,
     failure: null,
+    phase: null,
+    exportSummary: null,
+    importSummary: null,
     ...overrides,
   });
   const running = state.running
@@ -75,6 +78,9 @@ function summary(state: State) {
             pending: null,
           },
           cancelRequest: null,
+          phase: null,
+          exportSummary: null,
+          importSummary: null,
         }),
       ]
     : [];
@@ -98,6 +104,9 @@ function summary(state: State) {
             pending: 24,
           },
           cancelRequest: null,
+          phase: null,
+          exportSummary: null,
+          importSummary: null,
         }),
       ]
     : [];
@@ -122,6 +131,9 @@ function summary(state: State) {
             pending: 0,
           },
           cancelRequest: null,
+          phase: null,
+          exportSummary: null,
+          importSummary: null,
         }),
         job({
           jobId: '4f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
@@ -142,6 +154,9 @@ function summary(state: State) {
             pending: null,
           },
           cancelRequest: null,
+          phase: null,
+          exportSummary: null,
+          importSummary: null,
         }),
         job({
           jobId: '5f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
@@ -162,6 +177,9 @@ function summary(state: State) {
             pending: 0,
           },
           cancelRequest: null,
+          phase: null,
+          exportSummary: null,
+          importSummary: null,
         }),
       ]
     : [];

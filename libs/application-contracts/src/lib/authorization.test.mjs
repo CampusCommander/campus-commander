@@ -84,6 +84,7 @@ test('the device write actions take platform and district scopes', () => {
     'devices:commands',
     'devices:status',
     'devices:bulk-actions',
+    'devices:export',
     'jobs:read',
   ]) {
     assert.ok(
@@ -155,6 +156,58 @@ test('a session with a jobs:manage grant parses', () => {
   assert.deepEqual(session.identity.grants, [
     { action: 'jobs:manage', scope: district },
   ]);
+});
+
+test('a session with a devices:export grant parses', () => {
+  const session = sessionResponseSchema.parse({
+    identity: {
+      id: '00000000-0000-4000-8000-000000000010',
+      displayName: 'Alex Rivera',
+      permissions: ['identity:read'],
+      permissionVersion: 1,
+      grants: [{ action: 'devices:export', scope: district }],
+      preferences: { theme: 'system', navigationCollapsed: false },
+    },
+    expiresAt: '2026-10-17T12:00:00.000Z',
+    csrfToken: 'a'.repeat(64),
+  });
+  assert.deepEqual(session.identity.grants, [
+    { action: 'devices:export', scope: district },
+  ]);
+  // Reports need devices:export, so a district grant authorizes the district.
+  assert.equal(
+    isAuthorized(session.identity.grants, 'devices:export', district),
+    true,
+  );
+  assert.equal(
+    isAuthorized(session.identity.grants, 'devices:export', {
+      ...district,
+      customerId: 'Cother',
+    }),
+    false,
+  );
+  // A platform grant reaches every customer, and a school scope never carries it.
+  assert.equal(
+    isAuthorized(
+      [{ action: 'devices:export', scope: platform }],
+      'devices:export',
+      district,
+    ),
+    true,
+  );
+  assert.equal(
+    grantSchema.safeParse({ action: 'devices:export', scope: school }).success,
+    false,
+  );
+  assert.equal(
+    isAuthorized(
+      grantsForPreset('district-administrator', district),
+      'devices:export',
+      district,
+    ),
+    false,
+    'The district preset holds no devices:export.',
+  );
 });
 
 test('wipe and deprovision take platform and district scopes but not the district preset', () => {

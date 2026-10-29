@@ -8,6 +8,7 @@ import {
   type DeviceUpdateChange,
   type DeviceUpdateField,
 } from './devices';
+import { CSV_MAX_CELL_LENGTH } from './csv';
 
 /**
  * The edit template of the batch update workflow
@@ -567,6 +568,25 @@ function listNames(names: readonly string[]): string {
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
+
+/**
+ * The longest warning that an unknown file column produces. The warning repeats the whole header
+ * cell, which the CSV reader limits to `CSV_MAX_CELL_LENGTH` code points. The fixed words add 54
+ * characters.
+ */
+export const DEVICE_EDIT_UNKNOWN_HEADER_WARNING_MAX_LENGTH =
+  'The column "" is unknown. It stays out of every write.'.length +
+  CSV_MAX_CELL_LENGTH;
+
+/**
+ * The longest refusal that a duplicate file header produces. The refusal repeats the whole label
+ * of the first column and both 1-based positions. Each position holds 10 digits at most, the
+ * length of the largest JavaScript array index.
+ */
+export const DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH =
+  'The file holds two "" columns, at positions  and . Remove one.'.length +
+  CSV_MAX_CELL_LENGTH +
+  20;
 
 function duplicateHeaderReason(
   label: string,
