@@ -109,9 +109,10 @@ export async function qualifyDeviceExportImport({
     name = 'devices.csv',
     sizeBytes = 2048,
     permissions = ['disable'],
+    artifactId = null,
   }) =>
     result(
-      'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9) AS result',
+      'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
       [
         actor,
         1,
@@ -122,6 +123,7 @@ export async function qualifyDeviceExportImport({
         sizeBytes,
         permissions,
         randomUUID(),
+        artifactId,
       ],
     );
   const jobRow = (jobId) =>
@@ -1827,8 +1829,8 @@ export async function qualifyDeviceExportImport({
             ],
           ],
           [
-            'cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid)',
-            'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+            'cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text)',
+            'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
             [
               importer,
               1,
@@ -1839,6 +1841,7 @@ export async function qualifyDeviceExportImport({
               10,
               [],
               randomUUID(),
+              null,
             ],
           ],
           [
@@ -4158,6 +4161,182 @@ export async function qualifyDeviceExportImport({
         await swallow(
           migrator.query('UPDATE cc.google_connection SET active=false'),
         );
+    }
+
+    // ===== XB9: the uploaded file, its link to the job, and the claim of an upload or revalidation =====
+    // `cc.claim_device_import_job` answers the newest ready artifact of the job, and the worker reads
+    // the file from that answer (design section 6). The upload links the staged file in the same
+    // transaction that creates the job; a revalidation moves the link to its new job.
+    const linkedArtifacts = [];
+    try {
+      const seedArtifact = async ({
+        sizeBytes = 2048,
+        state = 'ready',
+        retention = '30 days',
+        jobId = null,
+      } = {}) => {
+        const id = randomUUID();
+        const attempt = randomUUID();
+        await migrator.query(
+          `INSERT INTO cc.artifacts(id,backend,locator,schema_version,attempt_id,sha256,size_bytes,
+             publication_state,active,reference_count,retention_until,job_id)
+           VALUES($1,'local',$2,1,$3,$4,$5,$6,false,0,clock_timestamp()+$7::interval,$8)`,
+          [
+            id,
+            `${id}.${attempt}`,
+            attempt,
+            'b'.repeat(64),
+            sizeBytes,
+            state,
+            retention,
+            jobId,
+          ],
+        );
+        linkedArtifacts.push(id);
+        return id;
+      };
+      const artifactRow = (id) =>
+        admin(
+          'SELECT job_id,reference_count,publication_state FROM cc.artifacts WHERE id=$1',
+          [id],
+        ).then((rows) => rows[0]);
+      const jobCount = () =>
+        admin('SELECT count(*)::integer AS rows FROM cc.jobs').then(
+          (rows) => rows[0].rows,
+        );
+
+      await check(
+        'an upload links its file, and the claim of the job answers it',
+        async () => {
+          const importer = await principal(importGrants());
+          const artifact = await seedArtifact();
+          const created = await createImport({
+            actor: importer,
+            artifactId: artifact,
+          });
+          assert.equal(created.outcome, 'created');
+          jobs.push(created.receipt.jobId);
+          const claimed = await claimImport(
+            created.receipt.jobId,
+            randomUUID(),
+          );
+          assert.equal(claimed.outcome, 'claimed');
+          assert.equal(claimed.sourceArtifactId, artifact);
+          const row = await artifactRow(artifact);
+          assert.equal(row.job_id, created.receipt.jobId);
+          assert.equal(
+            row.reference_count,
+            0,
+            'the link holds no reference, so the purge may remove the file',
+          );
+          assert.equal(row.publication_state, 'ready');
+        },
+      );
+
+      await check(
+        'a revalidation moves the link, and both claims answer the file',
+        async () => {
+          const importer = await principal(importGrants());
+          const artifact = await seedArtifact();
+          const first = await createImport({
+            actor: importer,
+            artifactId: artifact,
+          });
+          jobs.push(first.receipt.jobId);
+          const firstLease = randomUUID();
+          const before = await claimImport(first.receipt.jobId, firstLease);
+          assert.equal(before.sourceArtifactId, artifact);
+          const second = await createImport({
+            actor: importer,
+            artifactId: artifact,
+          });
+          jobs.push(second.receipt.jobId);
+          assert.notEqual(second.receipt.jobId, first.receipt.jobId);
+          assert.match(second.receipt.displayId, /^IMP-\d{3,}$/);
+          assert.equal(
+            (await claimImport(second.receipt.jobId, randomUUID()))
+              .sourceArtifactId,
+            artifact,
+          );
+          assert.equal(
+            (await artifactRow(artifact)).job_id,
+            second.receipt.jobId,
+          );
+          const stale = await claimImport(first.receipt.jobId, firstLease);
+          assert.equal(
+            stale.sourceArtifactId,
+            null,
+            'the named job no longer links the file',
+          );
+        },
+      );
+
+      await check(
+        'a file that is unfinished, stale, missing, or another size answers no link',
+        async () => {
+          const importer = await principal(importGrants());
+          const before = await jobCount();
+          const cases = [
+            [
+              'an unfinished upload',
+              await seedArtifact({ state: 'staging' }),
+              2048,
+            ],
+            [
+              'a file past its retention',
+              await seedArtifact({ retention: '-1 day' }),
+              2048,
+            ],
+            ['a missing file', randomUUID(), 2048],
+            ['another size', await seedArtifact(), 4096],
+          ];
+          for (const [name, artifact, sizeBytes] of cases) {
+            const answer = await createImport({
+              actor: importer,
+              artifactId: artifact,
+              sizeBytes,
+            });
+            assert.equal(answer.outcome, 'artifact-unavailable', name);
+            const row = await artifactRow(artifact);
+            if (row) assert.equal(row.job_id, null, `${name} links nothing`);
+          }
+          assert.equal(
+            await jobCount(),
+            before,
+            'a refused link creates no job',
+          );
+        },
+      );
+
+      await check('a file id of another length refuses the call', async () => {
+        const importer = await principal(importGrants());
+        await rejects(
+          result(
+            'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
+            [
+              importer,
+              1,
+              customer,
+              'sync-changes',
+              'csv',
+              'devices.csv',
+              2048,
+              [],
+              randomUUID(),
+              'x'.repeat(129),
+            ],
+          ),
+          '22023',
+        );
+      });
+    } finally {
+      // The module leaves no fixture behind for the modules that follow it.
+      if (linkedArtifacts.length)
+        await migrator
+          .query('DELETE FROM cc.artifacts WHERE id=ANY($1::text[])', [
+            linkedArtifacts,
+          ])
+          .catch(() => undefined);
     }
   } finally {
     // The module leaves no fixture behind for the modules that follow it.

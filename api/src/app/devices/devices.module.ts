@@ -9,6 +9,8 @@ import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
 import { DeviceExportsController } from './device-exports.controller';
 import { DeviceExportsService } from './device-exports.service';
+import { DeviceImportsController } from './device-imports.controller';
+import { DeviceImportsService } from './device-imports.service';
 import { DeviceFreshReadService } from './device-fresh-read.service';
 import {
   DeviceCommandsController,
@@ -33,6 +35,7 @@ import { DevicesService } from './devices.service';
   ],
   controllers: [
     DeviceExportsController,
+    DeviceImportsController,
     DeviceUpdatesController,
     DeviceCommandsController,
     DeviceStatusChangesController,
@@ -42,6 +45,7 @@ import { DevicesService } from './devices.service';
     DevicesService,
     DeviceEventsService,
     DeviceExportsService,
+    DeviceImportsService,
     DeviceUpdatesService,
     DeviceActionsService,
     DeviceWriteAccessService,
