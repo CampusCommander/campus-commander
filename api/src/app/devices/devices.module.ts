@@ -9,6 +9,7 @@ import { StorageModule } from '../storage/storage.module';
 import { DeviceEventsService } from './device-events.service';
 import { DeviceExportsController } from './device-exports.controller';
 import { DeviceExportsService } from './device-exports.service';
+import { DeviceImportExecuteService } from './device-import-execute.service';
 import { DeviceImportsController } from './device-imports.controller';
 import { DeviceImportsService } from './device-imports.service';
 import { DeviceFreshReadService } from './device-fresh-read.service';
@@ -46,6 +47,7 @@ import { DevicesService } from './devices.service';
     DeviceEventsService,
     DeviceExportsService,
     DeviceImportsService,
+    DeviceImportExecuteService,
     DeviceUpdatesService,
     DeviceActionsService,
     DeviceWriteAccessService,
