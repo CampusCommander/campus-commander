@@ -75,7 +75,10 @@ export type DeviceExportAnswer =
   | { outcome: 'completed'; displayId: string; file: DeviceExportFile }
   | { outcome: 'cancelled'; displayId: string }
   | { outcome: 'failed'; displayId: string; failure: string }
-  /** The job holds a stored cancel request or already ended. This run writes nothing. */
+  /**
+   * The job already ended, or this request ended its stored cancel request. This run writes no
+   * file.
+   */
   | { outcome: 'done' }
   /** Another run holds a live lease. This run writes nothing. */
   | { outcome: 'busy' }
@@ -227,8 +230,10 @@ class ExportTicker {
   }
 
   start(): void {
+    // The callback returns the tick, so a fake timer can await it. `setInterval` ignores the
+    // value.
     this.handle = this.timers.setInterval(
-      () => void this.fire(),
+      () => this.fire(),
       CANCEL_POLL_MILLISECONDS,
     );
   }
@@ -414,7 +419,14 @@ export class DeviceExportJobs {
         ...lease,
       ]),
     );
-    if (claim.outcome !== 'claimed') return { outcome: claim.outcome };
+    if (claim.outcome !== 'claimed') {
+      // The claim answers `done` for an ended job and for a running job that holds a stored
+      // cancel request. The finish repeats an ended job's stored answer and writes nothing. It
+      // ends the stored cancellation, so a retry leaves no running header (design section 5).
+      if (claim.outcome === 'done')
+        return this.endDone(lease, input.failure ?? null);
+      return { outcome: claim.outcome };
+    }
     if (input.failure !== undefined)
       return this.end(lease, claim.displayId, null, input.failure);
     return this.write(input, lease, claim, signal);
@@ -516,19 +528,48 @@ export class DeviceExportJobs {
     }
   }
 
-  /** Finish one run and answer what the job header holds. */
+  /**
+   * End a job that the claim answered `done` for. An ended job repeats its stored answer and
+   * writes nothing. A job that still runs holds a stored cancel request, and this finish ends it
+   * Cancelled under this run's lease. A lapsed or replaced lease answers `fenced` and writes
+   * nothing (design section 5).
+   */
+  private async endDone(
+    lease: readonly [string, string, string],
+    failure: string | null,
+  ): Promise<DeviceExportAnswer> {
+    const answer = await this.finish(lease, null, failure);
+    return answer.outcome === 'fenced'
+      ? { outcome: 'fenced' }
+      : { outcome: 'done' };
+  }
+
+  /**
+   * Finish one run and answer what the job header holds. A definitive refusal keeps no published
+   * file, so this run removes the file it published. A failed call is ambiguous: the commit may
+   * have landed, so the file stays, and the purge removes an unreferenced artifact (design
+   * section 4).
+   */
   private async end(
     lease: readonly [string, string, string],
     displayId: string,
     file: DeviceExportFile | null,
     failure: string | null,
+    published: DeviceExportDescriptor | null = null,
   ): Promise<DeviceExportAnswer> {
     const answer = await this.finish(lease, file, failure);
-    if (answer.outcome === 'fenced') return { outcome: 'fenced' };
-    if (answer.status === 'cancelled')
+    if (answer.outcome === 'fenced') {
+      if (published !== null) await this.remove(published);
+      return { outcome: 'fenced' };
+    }
+    if (answer.status === 'cancelled') {
+      if (published !== null) await this.remove(published);
       return { outcome: 'cancelled', displayId };
+    }
     if (answer.status === 'completed' && file !== null)
       return { outcome: 'completed', displayId, file };
+    // A stored failed status declined this run's file.
+    if (published !== null) await this.remove(published);
     return {
       outcome: 'failed',
       displayId,
@@ -563,7 +604,16 @@ export class DeviceExportJobs {
       purpose === 'report'
         ? Promise.resolve(reportCells(columns, record, cutoff))
         : editCells(record);
-    const writePhase = (phase: PhaseState) => this.writePhase(lease, phase);
+    // The tick and the write loop share one renewal queue. A renewal that read the write-rows
+    // phase lands before the prepare-download phase, so the header keeps the later phase and its
+    // counts (design section 2).
+    let renewals: Promise<unknown> = Promise.resolve();
+    const writePhase = (phase: PhaseState) => {
+      const snapshot = { ...phase };
+      const renewal = renewals.then(() => this.writePhase(lease, snapshot));
+      renewals = renewal.catch(() => undefined);
+      return renewal;
+    };
 
     const ticker = new ExportTicker(async () => {
       const answer = await writePhase(state);
@@ -624,21 +674,23 @@ export class DeviceExportJobs {
         source(),
       );
     } catch {
-      await ticker.close();
-      return this.stopped(lease, claim.displayId, stop);
+      // The ticker stays alive through the finish of a refused run (design section 5).
+      try {
+        return await this.stopped(lease, claim.displayId, stop);
+      } finally {
+        await ticker.close();
+      }
     }
 
-    await ticker.close();
+    let published = false;
     try {
       // A request stored while the file staged leaves no file and ends Cancelled (design
       // section 5).
       if (
         ticker.cancelled ||
         (await this.cancelRequested(input.customerId, input.jobId))
-      ) {
-        await this.remove(descriptor);
-        return this.end(lease, claim.displayId, null, null);
-      }
+      )
+        return await this.end(lease, claim.displayId, null, null, descriptor);
       if (ticker.fenced) {
         await this.remove(descriptor);
         return { outcome: 'fenced' };
@@ -648,10 +700,8 @@ export class DeviceExportJobs {
       state.done = 0;
       state.total = null;
       const prepared = await writePhase(state);
-      if (prepared === 'cancelled') {
-        await this.remove(descriptor);
-        return this.end(lease, claim.displayId, null, null);
-      }
+      if (prepared === 'cancelled')
+        return await this.end(lease, claim.displayId, null, null, descriptor);
       if (prepared === 'lost') {
         await this.remove(descriptor);
         return { outcome: 'fenced' };
@@ -659,29 +709,42 @@ export class DeviceExportJobs {
 
       try {
         await this.store.publish(descriptor);
+        published = true;
       } catch {
         await this.remove(descriptor);
-        return this.end(lease, claim.displayId, null, 'storage-unavailable');
+        return await this.end(
+          lease,
+          claim.displayId,
+          null,
+          'storage-unavailable',
+        );
       }
+
+      // The ticker keeps the lease alive through publication, and the finish ends the job under
+      // that lease. A cancel stored in between leaves no published file (design section 5).
+      return await this.end(
+        lease,
+        claim.displayId,
+        {
+          artifactId: descriptor.artifactId,
+          name: deviceExportFileName(purpose, claim.displayId),
+          sizeBytes: descriptor.sizeBytes,
+          rows: writer.rows - 1,
+          columns: headers.length,
+          expiresAt: descriptor.expiresAt,
+        },
+        null,
+        descriptor,
+      );
     } catch (error) {
-      // A staged file never outlives a refused request (design section 5). Once the file
-      // publishes, the finish owns it, so a failed finish keeps it for the purge instead.
-      await this.remove(descriptor);
+      // A staged file never outlives a refused request (design section 5). A published file
+      // stays when the finish call itself failed, because the commit may have landed, and the
+      // purge removes an unreferenced artifact (design section 4).
+      if (!published) await this.remove(descriptor);
       throw error;
+    } finally {
+      await ticker.close();
     }
-    return this.end(
-      lease,
-      claim.displayId,
-      {
-        artifactId: descriptor.artifactId,
-        name: deviceExportFileName(purpose, claim.displayId),
-        sizeBytes: descriptor.sizeBytes,
-        rows: writer.rows - 1,
-        columns: headers.length,
-        expiresAt: descriptor.expiresAt,
-      },
-      null,
-    );
   }
 
   /** Answer a run that stopped before its file was staged. */
