@@ -172,6 +172,17 @@ async function packaged(layout, relative) {
   }
 }
 
+/** Read each flow file that the service passes to deployFlow. */
+async function deployedFlows() {
+  const source = await readFile(
+    join(repo, 'api/src/app/orchestration/orchestration.service.ts'),
+    'utf8',
+  );
+  return [...source.matchAll(/deployFlow\(\s*'([^']+\.ya?ml)'/g)].map(
+    (match) => match[1],
+  );
+}
+
 test('the API image packages the update and export flows', async () => {
   const layout = await packagedLayout();
   // The parser must see the kestra COPY line, so a missing match fails here.
@@ -179,6 +190,19 @@ test('the API image packages the update and export flows', async () => {
   await packaged(layout, 'deployment/kestra/device-update.yaml');
   await packaged(layout, 'deployment/kestra/device-update-reconcile.yaml');
   await packaged(layout, 'deployment/kestra/device-export.yaml');
+});
+
+test('the API image copies every flow that the service deploys', async () => {
+  const flows = await deployedFlows();
+  // The service holds one single-line and one multi-line deployFlow call.
+  assert.ok(
+    flows.includes('device-import.yaml') &&
+      flows.includes('device-update-reconcile.yaml'),
+    `The flow reader found both call shapes: ${flows.join(', ')}`,
+  );
+  const layout = await packagedLayout();
+  for (const flow of flows)
+    await packaged(layout, `deployment/kestra/${flow}`);
 });
 
 test('startDeviceUpdate deploys and starts the packaged device_update flow', async () => {
