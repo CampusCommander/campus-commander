@@ -331,6 +331,9 @@ async function mockApi(
   let frozen: unknown = null;
   /** Every confirm body that the client sent, in order (IF3 replay evidence). */
   const confirms: ConfirmedRequest[] = [];
+  // Every case of this file reaches the page through this startup, so the fake feeds are
+  // installed here and before the first navigation.
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route: Route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === '/api/application')
@@ -601,6 +604,41 @@ async function emitDevices(page: Page, ids: string[]): Promise<void> {
   });
 }
 
+/**
+ * The ordinary startup of this file holds both feeds with the fake streams. No case that
+ * navigates through `openDevices` may fall back to a native EventSource: that stream would
+ * answer with a complete 404 body, end, and reopen with another `by-ids` read.
+ */
+test('the ordinary Devices startup holds both feeds without a native stream', async ({
+  page,
+}) => {
+  const nativeEventRequests: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === '/api/devices/events' || path === '/api/jobs/events')
+      nativeEventRequests.push(path);
+  });
+
+  await openDevices(page, new SaveChangesSimulator(seedDevices()));
+
+  // The startup installed the fake before navigation, and the app's own feeds use it.
+  await expect
+    .poll(async () => liveStreams(page).openUrls())
+    .toEqual(['/api/devices/events', '/api/jobs/events']);
+  expect(nativeEventRequests).toEqual([]);
+
+  // Past the app's five-second reopen delay each feed still holds its first stream, so no
+  // stream ended and no stream was replaced.
+  await page.waitForTimeout(5_500);
+  expect(await liveStreams(page).openUrls()).toEqual([
+    '/api/devices/events',
+    '/api/jobs/events',
+  ]);
+  expect(await liveStreams(page).constructedCount('/api/devices/events')).toBe(1);
+  expect(await liveStreams(page).constructedCount('/api/jobs/events')).toBe(1);
+  expect(nativeEventRequests).toEqual([]);
+});
+
 test('step 4: one pending change saves without Review or Confirm', async ({
   page,
 }) => {
@@ -734,7 +772,6 @@ test('step 6: a failed device returns to its old value without a reload', async 
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
   await editText(page, 'C0A1-0002', 'assetTag', 'CB-NEW-2');
@@ -973,7 +1010,6 @@ test('an unrelated refresh keeps the accepted mark while the job runs', async ({
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'PENDING-WRITE');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -1006,7 +1042,6 @@ test('a record that arrives before the receipt settles the accepted cell', async
     release = resolve;
   });
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   await openDevices(page, sim, { holdConfirm: held });
   await editText(page, 'C0A1-0001', 'assetTag', 'CB-NEW-1');
   const confirming = page.waitForRequest((request) =>
@@ -1041,7 +1076,6 @@ test('a one-cell unchanged answer leaves the draft and creates no job', async ({
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   const confirms = await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'GOOGLE-ALREADY-HOLDS');
   // Google already holds the value when the edit route reads the device, and the grid
@@ -1230,7 +1264,6 @@ test('a successful read before a delayed receipt updates the displayed row', asy
     release = resolve;
   });
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   await openDevices(page, sim, { holdConfirm: held });
   await editText(page, 'C0A1-0001', 'assetTag', 'WRITTEN-BEFORE-RECEIPT');
   const confirming = page.waitForRequest((request) =>
@@ -1281,7 +1314,6 @@ test('an all-failed job settles after its job event without a device publication
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   await openDevices(page, sim);
   let jobReads = 0;
   page.on('request', (request) => {
@@ -1474,7 +1506,6 @@ test('a successful terminal job keeps its value until its row read recovers (B4)
   page,
 }) => {
   const sim = new SaveChangesSimulator(seedDevices());
-  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'WRITTEN-BUT-READ-UNAVAILABLE');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -1539,7 +1570,6 @@ async function settlePartialValueDiffers(
   sim: SaveChangesSimulator,
   read: 'failed' | 'missing',
 ): Promise<void> {
-  await installLiveStreams(page);
   await openDevices(page, sim);
   await editText(page, 'C0A1-0001', 'assetTag', 'REQUESTED-TAG');
   await stageMove(page, 'C0A1-0001');
