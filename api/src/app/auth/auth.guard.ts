@@ -16,6 +16,14 @@ import { ConfigurationService } from '../configuration/configuration.service';
 
 export const RequirePermission = (permission: Permission) =>
   SetMetadata('permission', permission);
+
+/**
+ * The body media types of one route. A POST route without this metadata takes JSON only. The
+ * upload route names `text/csv`, because its body is the raw file (design section 4).
+ */
+export const AcceptBody = (...mediaTypes: string[]) =>
+  SetMetadata('bodyMediaTypes', mediaTypes);
+
 export interface AuthenticatedRequest extends Request {
   correlationId: string;
   session: SessionResponse;
@@ -36,6 +44,10 @@ export class AuthGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]) ?? 'identity:read';
+    const bodyTypes = this.reflector.getAllAndOverride<string[]>(
+      'bodyMediaTypes',
+      [context.getHandler(), context.getClass()],
+    ) ?? ['application/json'];
     request.session = await this.auth.authenticate(
       request.headers.cookie,
       permission,
@@ -45,7 +57,7 @@ export class AuthGuard implements CanActivate {
       if (
         request.headers.origin !== this.configuration.auth.publicOrigin ||
         !equalToken(request.get('x-csrf-token'), request.session.csrfToken) ||
-        !request.is('application/json')
+        !bodyTypes.some((mediaType) => request.is(mediaType))
       ) {
         await this.auth.recordDeniedRequest(
           request.correlationId,
