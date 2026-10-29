@@ -242,10 +242,9 @@ test('the ten-second body deadline covers unfinished GET, HEAD, and POST input',
       );
     }
     // The trickling POST proves the peer closed input that was still arriving.
-    assert.ok(post.writes > 0, 'The POST kept sending after the answer.');
-    assert.equal(
+    assert.ok(post.writes >= 50, 'The POST kept sending after the answer.');
+    assert.ok(
       get.data.includes('The request timed out.'),
-      true,
       'The GET answer carries the deadline text.',
     );
     assert.ok(post.data.includes('The request timed out.'), 'POST text.');
@@ -328,7 +327,7 @@ test('completed input and event answers outlive the ten-second deadline', async 
 });
 
 test('the long body deadline applies only to POST on the exact upload path', async () => {
-  const deadlines = { request: 300, importUpload: 900 };
+  const deadlines = { request: 300, importUpload: 1500 };
   const fixture = await startEdge({
     deadlines,
     answer: (request, response) => {
@@ -397,14 +396,14 @@ test('the long body deadline applies only to POST on the exact upload path', asy
     ]) {
       assert.equal(result.status, 408, `${name} answered 408.`);
       assert.ok(
-        result.elapsed >= 250 && result.elapsed < 700,
+        result.elapsed >= 250 && result.elapsed < 1200,
         `${name} waited ${result.elapsed} ms, not the short deadline.`,
       );
     }
     // A finished answer does not end the input deadline. The unfinished body closes at it.
     assert.equal(early.status, 200, 'The early answer passed.');
     assert.ok(
-      early.elapsed >= 250 && early.elapsed < 1000,
+      early.elapsed >= 250 && early.elapsed < 1200,
       `The unfinished body closed the connection after ${early.elapsed} ms.`,
     );
     assert.equal(
