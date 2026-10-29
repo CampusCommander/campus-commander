@@ -46,12 +46,29 @@ interface ArtifactStore {
     manifest: ArtifactStreamManifest,
     source: AsyncIterable<Buffer>,
   ): Promise<ArtifactDescriptor>;
+  /** Stage one stream inside the caller's transaction, and answer its ready descriptor. */
+  stageStreamWithin(
+    client: QueryClient,
+    manifest: ArtifactStreamManifest,
+    source: AsyncIterable<Buffer>,
+  ): Promise<ArtifactDescriptor>;
+  /** Remove the attempt file of a stage whose caller's transaction rolled back. */
+  discardStaged(manifest: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<boolean>;
   publish(manifest: ArtifactDescriptor): Promise<unknown>;
   openRead(artifactId: string): Promise<AsyncIterable<Buffer>>;
   remove(manifest: { artifactId: string; attemptId: string }): Promise<boolean>;
   /** Remove each artifact whose retention passed. Returns the number removed. */
   purgeExpired(): Promise<number>;
   close(): Promise<void>;
+}
+interface QueryClient {
+  query(
+    text: string,
+    values?: unknown[],
+  ): Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null }>;
 }
 interface StorageModule {
   createArtifactStore(options: {
@@ -63,6 +80,14 @@ interface StorageModule {
 
 /** One stored upload, with the size and the digest that the store computed while it wrote. */
 export interface StagedUpload {
+  artifactId: string;
+  attemptId: string;
+  sizeBytes: number;
+  sha256: string;
+}
+
+/** One artifact that a caller staged inside its own transaction. */
+export interface StagedArtifact {
   artifactId: string;
   attemptId: string;
   sizeBytes: number;
@@ -121,6 +146,33 @@ export class StorageService
   /** Store one JSON document as an artifact and publish it. Returns the artifact ID. */
   async storeJson(document: unknown): Promise<string> {
     return storeJsonDocument(await this.connection(), document);
+  }
+
+  /**
+   * Stage and publish one JSON document inside the caller's transaction (design section 7,
+   * "Bounded serialization"). The caller's client carries the artifact row, so an Execute that
+   * holds the plan lock never borrows a second pool connection. The store computes the size and
+   * the SHA-256 while it writes, so the document never exists as one string.
+   */
+  async storeJsonStreamWithin(
+    client: QueryClient,
+    source: AsyncIterable<Buffer>,
+    maxBytes: number,
+  ): Promise<StagedArtifact> {
+    const store = await this.connection();
+    return store.stageStreamWithin(
+      client,
+      { schemaVersion: 1, maxBytes },
+      source,
+    );
+  }
+
+  /** Remove the attempt file of a stage whose transaction rolled back. */
+  async discardStaged(descriptor: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<boolean> {
+    return (await this.connection()).discardStaged(descriptor);
   }
 
   /**

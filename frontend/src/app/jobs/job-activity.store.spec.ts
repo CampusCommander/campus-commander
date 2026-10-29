@@ -7,6 +7,7 @@ import {
   ACTIVITY_EXPIRY_FLOOR_MS,
   JobActivityStore,
 } from './job-activity.store';
+import { LiveFeeds } from './live-feeds';
 import type { JobEventSource } from './job-stream';
 
 const customerId = 'C0123456';
@@ -245,6 +246,43 @@ it('ends live updates while the stream reconnects and rereads on the next open',
   await flush();
   expect(requestMock).toHaveBeenCalledTimes(reads + 1);
   expect(openSource).toHaveBeenCalledTimes(1);
+});
+
+it('stays non-live while the shared connection reconnects', async () => {
+  const { store, stream, session } = setup();
+  await vi.waitFor(() => expect(store.loaded()).toBe(true));
+  stream.readyState = 1;
+  stream.emit('open');
+  expect(store.live()).toBe(true);
+
+  // Another store follows the same feed, so this store's leave keeps the connection.
+  const feeds = TestBed.inject(LiveFeeds);
+  feeds.subscribe('/api/jobs/events', {
+    open: () => stream as unknown as JobEventSource,
+    reopenDelay: () => 5000,
+    timeout: () => 60_000,
+    events: ['job-changed'],
+    opened: () => undefined,
+    changed: () => undefined,
+  });
+
+  // The connection drops to CONNECTING and the browser retries it.
+  stream.readyState = 0;
+  stream.emit('error');
+  expect(store.live()).toBe(false);
+
+  // The session is interrupted and restored before the connection opens again.
+  session.set(null);
+  TestBed.tick();
+  session.set(sessionFor(maya));
+  TestBed.tick();
+  await flush();
+  expect(store.live()).toBe(false);
+
+  // Only the next real open restores live updates.
+  stream.readyState = 1;
+  stream.emit('open');
+  expect(store.live()).toBe(true);
 });
 
 it('clears the dot after seen succeeds, without an event or a reconnect', async () => {

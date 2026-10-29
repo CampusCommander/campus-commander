@@ -3,6 +3,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -14,9 +15,12 @@ import type { Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
+  DEVICE_ACTION_PERMISSIONS,
+  deviceImportExecuteRequestSchema,
   deviceImportPlanCancelRequestSchema,
   deviceImportReportQuerySchema,
   type Action,
+  type DeviceImportExecuteAnswer,
   type DeviceImportPlanCancelAnswer,
   type DeviceImportReceipt,
   type DeviceImportReport,
@@ -34,6 +38,7 @@ import {
   deviceImportEmptyBodySchema,
   deviceImportUploadInput,
 } from './device-imports';
+import { DeviceImportExecuteService } from './device-import-execute.service';
 import { DeviceImportsService } from './device-imports.service';
 import { requireDeviceActions } from './device-updates-actions';
 import { DevicesService } from './devices.service';
@@ -50,6 +55,7 @@ export class DeviceImportsController {
   constructor(
     private readonly devices: DevicesService,
     private readonly imports: DeviceImportsService,
+    private readonly executeFlow: DeviceImportExecuteService,
     private readonly auth: AuthService,
   ) {}
 
@@ -145,6 +151,42 @@ export class DeviceImportsController {
     const input = deviceImportPlanCancelRequestSchema.parse(body);
     const current = await this.current(request, DEVICE_IMPORT_ACTIONS);
     return this.imports.cancel(request.session, current, displayId, input);
+  }
+
+  /**
+   * Execute the open plan of the named job (design section 7). The route rechecks the three import
+   * actions and each status permission that the plan recorded, then one transaction runs the phrase,
+   * the plan lock, the paged previews, and the links. A repeated Execute answers 200 with the stored
+   * receipts of its jobs.
+   */
+  @Post(':displayId/execute')
+  @HttpCode(200)
+  async execute(
+    @Req() request: AuthenticatedRequest,
+    @Param('displayId') displayId: string,
+    @Body() body: unknown,
+  ): Promise<DeviceImportExecuteAnswer> {
+    const input = deviceImportExecuteRequestSchema.parse(body);
+    const current = await this.current(request, DEVICE_IMPORT_ACTIONS);
+    const statuses = await this.imports.statusActions(
+      request.session,
+      current,
+      displayId,
+    );
+    await requireDeviceActions(
+      this.auth,
+      request.session,
+      current.customerId,
+      request.correlationId,
+      statuses.map((action) => DEVICE_ACTION_PERMISSIONS[action]),
+    );
+    return this.executeFlow.execute(
+      request.session,
+      current,
+      displayId,
+      input,
+      request.correlationId,
+    );
   }
 
   /** Validate the stored file of the named job again (state 19). */

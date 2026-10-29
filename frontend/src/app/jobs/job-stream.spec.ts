@@ -55,9 +55,12 @@ it('ends live updates while the browser reconnects the stream', () => {
   fake.emit('error');
   expect(closed).toHaveBeenCalledTimes(closes + 1);
   expect(stream.active).toBe(true);
+  // Live updates ended with the error. The connection is not open again yet.
+  expect(stream.connected).toBe(false);
 
   fake.readyState = 1;
   fake.emit('open');
+  expect(stream.connected).toBe(true);
   expect(opened).toHaveBeenCalledTimes(2);
   stream.stop();
 });

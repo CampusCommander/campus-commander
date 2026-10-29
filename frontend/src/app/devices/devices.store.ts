@@ -34,6 +34,8 @@ import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
+import { LiveFeeds, type LiveFeedSubscription } from '../jobs/live-feeds';
+import { type StreamGate } from '../jobs/job-stream';
 import { GROUP_LIMIT, type DeviceView } from './device-datasource';
 import { samePredicates } from './device-filter-model';
 import {
@@ -79,7 +81,6 @@ export type DeviceEventSource = Pick<
   EventSource,
   'addEventListener' | 'close' | 'readyState'
 >;
-const CLOSED = 2;
 
 /** An instant as whole seconds from the epoch and the fraction digits that follow. */
 interface Instant {
@@ -181,6 +182,7 @@ export class DevicesStore {
   private readonly auth = inject(AuthStore);
   private readonly customer = inject(CustomerStore);
   private readonly connection = inject(ConnectionStore);
+  private readonly feeds = inject(LiveFeeds);
   /** Opens the device event stream. Tests replace it. */
   eventSource: (url: string) => DeviceEventSource = (url) =>
     new EventSource(url);
@@ -260,15 +262,12 @@ export class DevicesStore {
   /** The next refresh request replaces the answer of an earlier one. */
   private refreshSequence = 0;
   readonly readable = computed(() => devicesReadable(this.auth));
-  private stream: DeviceEventSource | null = null;
+  /** The tab's shared devices connection. The last store to leave closes it. */
+  private feed: LiveFeedSubscription | null = null;
   /** Devices is mounted. */
   private streamWanted = false;
   /** A stream opened once since mount. The next open is a reconnect. */
   private streamOpened = false;
-  private watchdog?: ReturnType<typeof setTimeout>;
-  private reopenTimer?: ReturnType<typeof setTimeout>;
-  /** Failed reopen attempts since the last open. Each one doubles the wait. */
-  private reopenAttempts = 0;
   private recountTimer?: ReturnType<typeof setTimeout>;
   /** The status from before the stream dropped. The reconcile after the next open compares against it. */
   private dropped: { state: DeviceSyncState | null } | null = null;
@@ -323,7 +322,10 @@ export class DevicesStore {
     this.position.set(null);
     this.revision.update((value) => value + 1);
     // The stream carries the session cookie. A new person needs a new stream.
-    if (this.stream) this.openStream();
+    if (this.feed) this.feed.restart();
+    // The new person's stream is a first stream. Its open recovers nothing.
+    this.streamOpened = false;
+    this.dropped = null;
   }
 
   private async call(path: string, body?: unknown): Promise<Response | null> {
@@ -340,22 +342,35 @@ export class DevicesStore {
   /** Devices mounted: read the status and open the event stream (D12). */
   async init(): Promise<void> {
     this.streamWanted = true;
-    if (this.stream) return;
+    if (this.feed) return;
     this.streamOpened = false;
     this.dropped = null;
-    await this.reopen();
+    this.feed = this.feeds.subscribe('/api/devices/events', {
+      open: () => this.eventSource('/api/devices/events'),
+      reopenDelay: () => this.reopenDelay,
+      reopenCap: () => this.reopenCap,
+      timeout: () => this.streamTimeout,
+      events: ['entity-batch', 'job-finished', 'full-sync'],
+      // A status read gates every open, first and reconnect (S1 to S5).
+      gate: () => this.reopenGate(),
+      opened: () => this.onStreamOpen(),
+      changed: (data) => this.onEvent(data),
+      closed: () => {
+        this.dropped ??= { state: this.sync() };
+      },
+    });
+    await this.feed.ready;
   }
 
   /** Devices left: close the stream and drop pending timers. */
   leave(): void {
     this.streamWanted = false;
+    this.feed?.close();
+    this.feed = null;
     this.dropped = null;
-    this.reopenAttempts = 0;
     // A late refresh answer must not reach the footer after the page closes.
     this.refreshSequence++;
     this.refreshStatus.set('');
-    this.closeStream();
-    clearTimeout(this.reopenTimer);
     clearTimeout(this.recountTimer);
   }
 
@@ -554,10 +569,8 @@ export class DevicesStore {
   async reconnect(): Promise<void> {
     if (!(await this.loadSync())) return;
     this.revision.update((value) => value + 1);
-    if (this.streamWanted && !this.stream && this.sync()) {
-      clearTimeout(this.reopenTimer);
-      this.openStream();
-    }
+    if (this.streamWanted && !this.feed?.active && this.sync())
+      this.feed?.resume();
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
@@ -702,85 +715,39 @@ export class DevicesStore {
     this.recountTimer = setTimeout(() => void this.recount(), delay);
   }
 
-  private openStream(): void {
-    this.closeStream();
-    const stream = this.eventSource('/api/devices/events');
-    this.stream = stream;
-    const epoch = this.epoch;
-    const current = () => this.stream === stream && epoch === this.epoch;
-    stream.addEventListener('open', () => {
-      if (!current()) return;
-      this.reopenAttempts = 0;
-      this.watch();
-      if (this.streamOpened) void this.reconcile();
-      else if (this.sync()?.status === 'running') {
-        // A full sync can end between the gate read and this first open. Reconcile from the gate read.
-        this.dropped = { state: this.sync() };
-        void this.reconcile();
-      } else this.dropped = null;
-      this.streamOpened = true;
-    });
-    stream.addEventListener('error', () => {
-      // EventSource retries by itself while CONNECTING. A closed stream reopens after a status read.
-      if (current() && stream.readyState === CLOSED) this.scheduleReopen();
-    });
-    for (const name of ['ping', 'entity-batch', 'job-finished', 'full-sync'])
-      stream.addEventListener(name, (message) => {
-        if (!current()) return;
-        this.watch();
-        if (name !== 'ping')
-          this.onEvent((message as MessageEvent<string>).data);
-      });
-  }
-
-  private closeStream(): void {
-    clearTimeout(this.watchdog);
-    this.stream?.close();
-    this.stream = null;
-  }
-
-  /** A stream without events past the timeout counts as dead. */
-  private watch(): void {
-    clearTimeout(this.watchdog);
-    if (this.streamTimeout > 0)
-      this.watchdog = setTimeout(() => {
-        if (this.streamWanted) this.scheduleReopen();
-      }, this.streamTimeout);
-  }
-
-  /** Close the stream and reopen it later. Each failed attempt doubles the wait, up to the cap. */
-  private scheduleReopen(): void {
-    this.dropped ??= { state: this.sync() };
-    this.closeStream();
-    clearTimeout(this.reopenTimer);
-    const delay = Math.min(
-      this.reopenDelay * 2 ** this.reopenAttempts,
-      this.reopenCap,
-    );
-    this.reopenAttempts++;
-    this.reopenTimer = setTimeout(() => {
-      if (this.streamWanted) void this.reopen();
-    }, delay);
+  /**
+   * A status read gates every open. A denied session stays closed until a resume.
+   * A failed read waits for the shared connection's next attempt.
+   */
+  private async reopenGate(): Promise<StreamGate> {
+    const result = await this.readSync();
+    if (result === 'denied') return 'stop';
+    if (result === 'failed') return 'retry';
+    return this.sync() ? 'open' : 'stop';
   }
 
   /**
-   * Read the status, then open the stream. AuthStore handles an ended session through this read.
-   * 401 and 403 leave the stream closed. A server error or a network failure tries again later.
+   * A shared connection opened. The first open reads the status; a reopen reconciles (D12).
+   * A stream that closed before its first open loses events too, so that open is a reopen.
    */
-  private async reopen(): Promise<void> {
-    const result = await this.readSync();
-    if (!this.streamWanted || this.stream) return;
-    if (result === 'failed') this.scheduleReopen();
-    else if (result === 'read' && this.sync()) this.openStream();
+  private onStreamOpen(): void {
+    const first = !this.streamOpened;
+    this.streamOpened = true;
+    // Only a first open with no closed stream behind it has missed no event.
+    if (first && this.dropped === null) {
+      if (this.sync()?.status !== 'running') return;
+      // A full sync can end between the gate read and this first open. Reconcile from the gate read.
+      this.dropped = { state: this.sync() };
+    }
+    void this.reconcile();
   }
 
-  /** The same person resumed an interrupted session. A stream that a 401 closed opens again. */
+  /** The same person resumed an interrupted session. A stream that a 401 stopped opens again. */
   private resume(): void {
     // The grid retries the blocks whose loads failed while the session was interrupted (S5).
     this.resumeRevision.update((value) => value + 1);
-    if (!this.streamWanted || this.stream) return;
-    clearTimeout(this.reopenTimer);
-    void this.reopen();
+    if (!this.streamWanted) return;
+    this.feed?.resume();
   }
 
   private onEvent(data: string): void {
@@ -808,7 +775,10 @@ export class DevicesStore {
     }
   }
 
-  /** After a reconnect: a status read after the open, the rows still tagged stale, and the counts (D12). */
+  /**
+   * After a reconnect: a status read after the open, every held row, and the counts (D12).
+   * A closed feed loses events, so any held row can have changed. Its stale tag is not enough.
+   */
   private async reconcile(): Promise<void> {
     // The reopen read ran before this stream subscribed, so a full sync can end unseen in between.
     // This read runs after the open. It compares against the status from before the drop.
@@ -837,15 +807,15 @@ export class DevicesStore {
       this.revision.update((value) => value + 1);
       return;
     }
-    await this.refreshRows('stale');
+    await this.refreshRows('all');
     await this.recount();
   }
 
-  /** Refetch held rows among `ids`, or every held row still tagged stale (D7, D12). */
-  private async refreshRows(ids: readonly string[] | 'stale'): Promise<void> {
-    const wanted = new Set(ids === 'stale' ? [] : ids);
+  /** Refetch the held rows among `ids`, or every held row (D7, D12). */
+  private async refreshRows(ids: readonly string[] | 'all'): Promise<void> {
+    const wanted = new Set(ids === 'all' ? [] : ids);
     const held = this.gridRows.held((row) =>
-      ids === 'stale' ? row.stale : wanted.has(row.deviceId),
+      ids === 'all' ? true : wanted.has(row.deviceId),
     );
     const epoch = this.epoch;
     for (let start = 0; start < held.length; start += DEVICE_BY_IDS_LIMIT) {
