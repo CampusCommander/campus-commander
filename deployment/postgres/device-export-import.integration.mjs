@@ -1075,8 +1075,29 @@ export async function qualifyDeviceExportImport({
           outcome: 'finished',
           status: 'cancelled',
         });
+        // A header that holds a request answers `repeated`. One that finished without a request refuses.
+        assert.deepEqual(await cancelAs(importer, imported.receipt.displayId), {
+          outcome: 'repeated',
+        });
+        const completed = await createImport({ actor: importer });
+        jobs.push(completed.receipt.jobId);
+        const completedLease = randomUUID();
+        await claimImport(completed.receipt.jobId, completedLease);
+        await finishImport(
+          completed.receipt.jobId,
+          completedLease,
+          counts({
+            rows: 1,
+            unchanged: 1,
+            noChangeNeeded: 0,
+            proposed: 0,
+            rejected: 0,
+            candidateRows: 1,
+            staleDevicesRead: 0,
+          }),
+        );
         await rejects(
-          cancelAs(importer, imported.receipt.displayId),
+          cancelAs(importer, completed.receipt.displayId),
           null,
           'job-finished',
         );
