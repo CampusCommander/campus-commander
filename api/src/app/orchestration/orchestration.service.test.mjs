@@ -172,12 +172,13 @@ async function packaged(layout, relative) {
   }
 }
 
-test('the API image packages both device update flows', async () => {
+test('the API image packages the update and export flows', async () => {
   const layout = await packagedLayout();
   // The parser must see the kestra COPY line, so a missing match fails here.
   await packaged(layout, 'deployment/kestra/entity-sync.yaml');
   await packaged(layout, 'deployment/kestra/device-update.yaml');
   await packaged(layout, 'deployment/kestra/device-update-reconcile.yaml');
+  await packaged(layout, 'deployment/kestra/device-export.yaml');
 });
 
 test('startDeviceUpdate deploys and starts the packaged device_update flow', async () => {
@@ -222,6 +223,54 @@ test('startDeviceUpdate deploys and starts the packaged device_update flow', asy
       identity.correlationId,
     );
     assert.deepEqual(JSON.parse(field(execution.body, 'batches')), [0, 1, 2]);
+    assert.equal(executionId, execution.executionId);
+  } finally {
+    process.chdir(repo);
+    await stub.close();
+  }
+});
+
+test('startDeviceExport deploys and starts the packaged export flow', async () => {
+  const layout = await packagedLayout();
+  const stub = await kestraStub();
+  try {
+    const orchestration = await starter(stub);
+    process.chdir(layout);
+    let executionId;
+    try {
+      executionId = await orchestration.startDeviceExport({
+        customerId: identity.customerId,
+        jobId: identity.jobId,
+        leaseId: identity.dispatchToken,
+        correlationId: identity.correlationId,
+      });
+    } catch (error) {
+      assert.fail(`startDeviceExport failed: ${error.message}`);
+    }
+    const flow = stub.requests.find(
+      (request) =>
+        request.method === 'POST' && request.url === '/api/v1/main/flows',
+    );
+    assert.ok(flow, 'The starter deployed the flow.');
+    assert.match(flow.body, /^id: device_export$/m);
+    const [execution] = executionRequests(stub.requests);
+    assert.ok(execution, 'The starter started an execution.');
+    assert.equal(
+      execution.url,
+      '/api/v1/main/executions/campus.application/device_export',
+    );
+    assert.equal(field(execution.body, 'customerId'), identity.customerId);
+    assert.equal(field(execution.body, 'jobId'), identity.jobId);
+    assert.equal(field(execution.body, 'leaseId'), identity.dispatchToken);
+    assert.equal(
+      field(execution.body, 'correlationId'),
+      identity.correlationId,
+    );
+    assert.equal(
+      /name="batches"/.test(execution.body),
+      false,
+      'An export flow carries no batch list.',
+    );
     assert.equal(executionId, execution.executionId);
   } finally {
     process.chdir(repo);
