@@ -92,6 +92,16 @@ export class JobActivity {
   protected readonly waitingLine = waitingLine;
   protected readonly recentLine = recentLine;
   protected readonly progressPercent = progressPercent;
+  /**
+   * An export or import row returns to its dialog on the Devices page (design section 9, built
+   * behavior 5). Another kind of row keeps the job page.
+   */
+  protected readonly rowLink = (job: JobSummary): string[] =>
+    rowOpensDialog(job) ? ['/devices'] : ['/jobs', job.displayId];
+  protected readonly rowQuery = (
+    job: JobSummary,
+  ): Record<string, string> | undefined =>
+    rowOpensDialog(job) ? { job: job.displayId } : undefined;
   protected readonly formatTimestamp = formatTimestamp;
   protected readonly clockTime = formatClockTime;
 
@@ -169,4 +179,11 @@ export class JobActivity {
     if (!this.element.nativeElement.contains(event.target as Node))
       this.close(false);
   }
+}
+
+/** The two job kinds whose row opens the Devices dialog (design section 9, behavior 5). */
+function rowOpensDialog(job: JobSummary): boolean {
+  return (
+    job.action === 'export-devices' || job.action === 'validate-device-import'
+  );
 }
