@@ -1114,33 +1114,34 @@ describe('the Import entry ownership and report facts', () => {
     expect(store.stopRequested()).toBe(false);
   });
 
-  it('clears the report of a finished job when a running successor opens (R4)', async () => {
-    const routes: Routes = {
-      detail: reportDetail(),
-      reports: () => report({ plan: openPlan(), counts }),
-    };
-    const { render, store } = setup(routes);
-    store.openImport();
-    store.activeImport.set('IMP-001');
-    store.openImport();
-    await render();
-    expect(store.step()).toBe('report');
-    expect(store.reportCounts()).not.toBeNull();
-    expect(store.plan()?.state).toBe('open');
-    routes.detail = importDetail({
-      jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a12',
-      displayId: 'IMP-002',
-      status: 'running',
-      phase: { name: 'refresh', done: 5, total: 48 },
+  for (const status of ['running', 'failed', 'cancelled'] as const) {
+    it(`clears the report of a finished job when a ${status} successor opens (R4)`, async () => {
+      const routes: Routes = {
+        detail: reportDetail(),
+        reports: () => report({ plan: openPlan(), counts }),
+      };
+      const { render, store } = setup(routes);
+      store.openImport();
+      store.activeImport.set('IMP-001');
+      store.openImport();
+      await render();
+      expect(store.step()).toBe('report');
+      expect(store.reportCounts()).not.toBeNull();
+      expect(store.plan()?.state).toBe('open');
+      routes.detail = importDetail({
+        jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a12',
+        displayId: 'IMP-002',
+        status,
+      });
+      store.openJob('IMP-002');
+      await render();
+      // The successor is not the report of the completed job before it (R4).
+      expect(store.step()).toBe('validation');
+      expect(store.reportCounts()).toBeNull();
+      expect(store.plan()).toBeNull();
+      expect(store.reportLines()).toEqual([]);
     });
-    store.openJob('IMP-002');
-    await render();
-    // The running successor is not the report of the completed job before it.
-    expect(store.step()).toBe('validation');
-    expect(store.reportCounts()).toBeNull();
-    expect(store.plan()).toBeNull();
-    expect(store.reportLines()).toEqual([]);
-  });
+  }
 
   it('keeps a cancelled plan when a page that left before it arrives (R4)', async () => {
     const held = deferred<Response>();
@@ -1312,6 +1313,8 @@ describe('the Import entry ownership and report facts', () => {
     expect(text()).toContain('The report is unavailable. Try again.');
     expect(text()).not.toContain('No changes');
     expect(text()).not.toContain('Every row matches its export checksum.');
+    // A missing total is not a total of zero (R4).
+    expect(text()).not.toContain('Proposed changes 0');
   });
 });
 

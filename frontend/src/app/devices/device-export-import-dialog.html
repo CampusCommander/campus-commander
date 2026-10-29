@@ -406,13 +406,14 @@
                   [active]="tab.view === view()"
                   (click)="setView(tab.view)"
                 >
-                  {{ tab.label }}
+                  {{ tab.label }} @if (tab.count) {
                   <span
                     class="tab-count"
                     [class.tone-error]="tab.view === 'rejected' && tab.count !== '0'"
                     [class.tone-warning]="tab.view === 'warnings' && tab.count !== '0'"
                     >{{ tab.count }}</span
                   >
+                  }
                 </button>
                 }
               </nav>

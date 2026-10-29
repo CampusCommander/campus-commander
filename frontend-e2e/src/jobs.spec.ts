@@ -372,6 +372,11 @@ test('shows the IMP progress lines of state 26 in the Jobs grid', async ({
   const noUpdate = page.getByRole('row', { name: /IMP-002/ });
   await expect(noUpdate).toContainText('48 rows checked');
   await expect(noUpdate).toContainText('No update needed');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: 'dist/e2e-evidence/export-import/26-jobs-imp-lines.png',
+  });
 });
 
 test('filters by status, edits the chip, and clears the filter', async ({
