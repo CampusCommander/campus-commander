@@ -15,6 +15,8 @@ Close the store and pool after active operations finish.
 | -------------- | ------------------------------------------------- | ----------------------------------------------------------- |
 | `stage`        | Manifest and async iterable of byte chunks        | Verified descriptor with unpublished metadata               |
 | `stageStream`  | Stream manifest and async iterable of byte chunks | Descriptor with the size and the SHA-256 computed on write  |
+| `stageStreamWithin` | Transaction client, stream manifest, and async iterable | Ready descriptor in the caller's transaction           |
+| `discardStaged` | `{ artifactId, attemptId }`                      | Boolean indicating removal of a rolled-back attempt file    |
 | `inspect`      | `{ artifactId, attemptId }`                       | Verified descriptor and `publicationState`                  |
 | `publish`      | Descriptor                                        | Descriptor after the ready-state transaction commits        |
 | `openRead`     | `artifactId`                                      | Read stream for verified ready bytes                        |
@@ -46,6 +48,10 @@ It stops above `maxBytes` and removes the file when the write or the metadata up
 It makes the file read-only, syncs the file, closes it, and syncs the containing directory.
 It then clears the active-upload flag.
 Staging metadata remains invisible to readers.
+`stageStreamWithin` stages inside a caller's transaction. The caller's client holds the reservation,
+the bytes, and the ready state, so a caller that holds another lock never needs a second connection.
+The caller's transaction commits the row with its work. A rolled-back stage leaves an attempt file
+that `discardStaged` removes after the row is gone; a committed row keeps its file.
 
 Publication obtains the same artifact lock and locks the metadata row.
 It compares attempt identity, schema version, size, and checksum against the supplied descriptor.

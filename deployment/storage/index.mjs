@@ -585,6 +585,95 @@ async function initializeStore({ pool, root, backend = 'local' }) {
         client.release(failure);
       }
     },
+    /**
+     * Stage a stream inside the caller's database transaction. The caller's client holds the
+     * artifact lock, the reservation, the bytes, and the ready state, so a caller that already
+     * holds a plan lock never waits for a second pool connection. The caller removes the file of a
+     * rolled-back attempt with `discardStaged`.
+     */
+    async stageStreamWithin(
+      client,
+      {
+        artifactId = randomUUID(),
+        attemptId = randomUUID(),
+        schemaVersion,
+        maxBytes,
+        retentionUntil = null,
+        retentionDays = null,
+      },
+      source,
+    ) {
+      identity(artifactId);
+      identity(attemptId);
+      if (typeof client?.query !== 'function')
+        throw new Error('Invalid artifact transaction client.');
+      if (
+        !Number.isInteger(schemaVersion) ||
+        schemaVersion < 1 ||
+        !Number.isSafeInteger(maxBytes) ||
+        maxBytes < 0
+      )
+        throw new Error('Invalid artifact stream metadata.');
+      const expires = retention({ retentionDays, retentionUntil });
+      const row = {
+        id: artifactId,
+        attempt_id: attemptId,
+        backend,
+        locator: `${artifactId}.${attemptId}`,
+        schema_version: schemaVersion,
+      };
+      await lock(client, artifactId);
+      const {
+        rows: [existing],
+      } = await client.query('SELECT * FROM cc.artifacts WHERE id=$1 FOR UPDATE', [
+        artifactId,
+      ]);
+      if (
+        existing &&
+        (existing.publication_state !== 'staging' ||
+          existing.active ||
+          existing.reference_count > 0 ||
+          existing.attempt_id === attemptId)
+      ) {
+        throw new Error(
+          'Artifact already has an active or authoritative attempt.',
+        );
+      }
+      await client.query(
+        `INSERT INTO cc.artifacts(id,attempt_id,backend,locator,schema_version,size_bytes,sha256,retention_until,active)
+          VALUES ($1,$2,$3,$4,$5,NULL,NULL,$6,true)
+          ON CONFLICT (id) DO UPDATE SET attempt_id=EXCLUDED.attempt_id, backend=EXCLUDED.backend, locator=EXCLUDED.locator,
+            schema_version=EXCLUDED.schema_version,size_bytes=NULL,sha256=NULL,
+            retention_until=EXCLUDED.retention_until, active=true`,
+        [artifactId, attemptId, backend, row.locator, schemaVersion, expires],
+      );
+      let written = false;
+      try {
+        const size = await writeArtifact(location(row), source, maxBytes);
+        written = true;
+        await directory.sync();
+        const updated = await client.query(
+          'UPDATE cc.artifacts SET size_bytes=$3, sha256=$4 WHERE id=$1 AND attempt_id=$2',
+          [artifactId, attemptId, size.sizeBytes, size.sha256],
+        );
+        if (updated.rowCount !== 1)
+          throw new Error('Artifact staging metadata changed.');
+        await client.query(
+          "UPDATE cc.artifacts SET publication_state='ready', active=false WHERE id=$1 AND attempt_id=$2",
+          [artifactId, attemptId],
+        );
+        return {
+          artifactId,
+          attemptId,
+          schemaVersion,
+          sizeBytes: size.sizeBytes,
+          sha256: size.sha256,
+        };
+      } catch (error) {
+        if (written) await unlink(location(row)).catch(() => undefined);
+        throw error;
+      }
+    },
     async inspect({ artifactId, attemptId }) {
       identity(attemptId);
       return transaction(artifactId, async (_client, row) => {
@@ -623,6 +712,37 @@ async function initializeStore({ pool, root, backend = 'local' }) {
       });
     },
     remove,
+    /**
+     * Remove the attempt file of a stage whose caller's transaction rolled back. A committed row
+     * keeps its bytes, so this answers false when the artifact row survives.
+     */
+    async discardStaged({ artifactId, attemptId }) {
+      identity(artifactId);
+      identity(attemptId);
+      const { rows } = await pool.query(
+        'SELECT publication_state FROM cc.artifacts WHERE id=$1 AND attempt_id=$2',
+        [artifactId, attemptId],
+      );
+      if (rows.length > 0) return false;
+      const path = location({
+        id: artifactId,
+        attempt_id: attemptId,
+        backend,
+        locator: `${artifactId}.${attemptId}`,
+      });
+      const details = await lstat(path).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+        return undefined;
+      });
+      if (!details) return false;
+      if (!details.isFile() || details.nlink !== 1)
+        throw new Error(
+          'Staged artifact removal requires a regular file.',
+        );
+      await unlink(path);
+      await directory.sync();
+      return true;
+    },
     purgeExpired,
     async close() {
       if (!closed) {

@@ -175,3 +175,108 @@ test('the sweep removes each expired artifact that the store accepts', async () 
     { artifactId: '0f0e0d0c-0000-4000-8000-00000000a003', attemptId: 'c' },
   ]);
 });
+
+/** The client of a caller transaction: it records the statements and answers the store query. */
+function transactionClient() {
+  const queries = [];
+  return {
+    queries,
+    async query(text, values = []) {
+      queries.push({ text, values });
+      if (text.includes('SELECT * FROM cc.artifacts')) return { rows: [] };
+      return { rows: [], rowCount: 1 };
+    },
+  };
+}
+
+test('a caller transaction stages a stream to ready without a pool connection', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cc-storage-unit-'));
+  const pool = {
+    query: async () => ({ rows: [] }),
+    connect: async () => {
+      throw new Error('The stage took a second connection.');
+    },
+  };
+  const store = await createArtifactStore({ root: directory, pool });
+  try {
+    const client = transactionClient();
+    const bytes = Buffer.from('Synthetic manifest é\n');
+    const artifactId = '0f0e0d0c-0000-4000-8000-00000000b001';
+    const attemptId = '0f0e0d0c-0000-4000-8000-00000000b002';
+    const descriptor = await store.stageStreamWithin(
+      client,
+      { artifactId, attemptId, schemaVersion: 1, maxBytes: 1024 },
+      [bytes],
+    );
+    assert.deepEqual(descriptor, {
+      artifactId,
+      attemptId,
+      schemaVersion: 1,
+      sizeBytes: bytes.length,
+      sha256: hash(bytes),
+    });
+    assert.deepEqual(
+      await readFile(join(directory, `${artifactId}.${attemptId}`)),
+      bytes,
+    );
+    const statements = client.queries.map((one) => one.text);
+    assert.ok(
+      statements.some((text) => text.includes('pg_advisory_xact_lock')),
+      'The artifact lock belongs to the caller transaction.',
+    );
+    assert.ok(
+      statements.some((text) => text.includes('INSERT INTO cc.artifacts')),
+      'The reservation belongs to the caller transaction.',
+    );
+    assert.ok(
+      statements.some((text) => text.includes("publication_state='ready'")),
+      'The ready state belongs to the caller transaction.',
+    );
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('a rolled-back stage removes its attempt file and a committed one keeps it', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cc-storage-unit-'));
+  let committed = [];
+  const pool = { query: async () => ({ rows: committed }) };
+  const store = await createArtifactStore({ root: directory, pool });
+  try {
+    const bytes = Buffer.from('Synthetic manifest\n');
+    const rolledBack = {
+      artifactId: '0f0e0d0c-0000-4000-8000-00000000c001',
+      attemptId: '0f0e0d0c-0000-4000-8000-00000000c002',
+    };
+    await store.stageStreamWithin(
+      transactionClient(),
+      { ...rolledBack, schemaVersion: 1, maxBytes: 1024 },
+      [bytes],
+    );
+    const path = join(directory, `${rolledBack.artifactId}.${rolledBack.attemptId}`);
+    assert.equal(await exists(path), true);
+    assert.equal(await store.discardStaged(rolledBack), true);
+    assert.equal(await exists(path), false);
+
+    const committedStage = {
+      artifactId: '0f0e0d0c-0000-4000-8000-00000000c003',
+      attemptId: '0f0e0d0c-0000-4000-8000-00000000c004',
+    };
+    await store.stageStreamWithin(
+      transactionClient(),
+      { ...committedStage, schemaVersion: 1, maxBytes: 1024 },
+      [bytes],
+    );
+    const kept = join(
+      directory,
+      `${committedStage.artifactId}.${committedStage.attemptId}`,
+    );
+    committed = [{ publication_state: 'ready' }];
+    assert.equal(await store.discardStaged(committedStage), false);
+    assert.equal(await exists(kept), true);
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
