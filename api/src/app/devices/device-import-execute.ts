@@ -349,6 +349,14 @@ export function planPage(rows: readonly Record<string, unknown>[]): PageSplit {
   return split;
 }
 
+/**
+ * The plan echo of an expiry that the mark function reported. The function read the stored clock,
+ * so the state is `expired` even when the caller host clock is behind the database clock.
+ */
+function expiredPlan(plan: unknown): Record<string, unknown> {
+  return { ...((plan ?? {}) as Record<string, unknown>), state: 'expired' };
+}
+
 /** The status action and reason of one preview, as its key. */
 function previewKey(
   action: PreviewAction,
@@ -714,7 +722,7 @@ export class DeviceImportExecute {
       if (outcome === 'expired')
         throw new GoneException({
           reason: 'plan-expired',
-          plan: await importPlanAnswer(client, this.clock, plan),
+          plan: await importPlanAnswer(client, this.clock, expiredPlan(plan)),
         });
       if (outcome === 'conflict')
         throw new ConflictException({ reason: 'plan-conflict' });
