@@ -16,12 +16,17 @@ import {
   jobDisplayIdSchema,
   jobEventSchema,
   jobEventsChannel,
+  jobExecutionCountsSchema,
+  jobExportPurposeSchema,
+  jobImportPlanStateSchema,
   jobLatestActivitySchema,
   jobListSchema,
   jobOperationIdSchema,
   jobOperationSchema,
   jobOperationsPageSchema,
   jobOutcomeSchema,
+  jobPhaseNameSchema,
+  jobPhaseSchema,
   jobProgressSchema,
   jobRequestersSchema,
   jobSeenSchema,
@@ -54,6 +59,9 @@ const summary = {
     cancelled: 0,
     pending: 7,
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
   failure: null,
   cancelRequest: null,
 };
@@ -88,9 +96,21 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'CMD-001',
     'STS-001',
     'CMD-1000',
+    'EXP-001',
+    'IMP-007',
+    'EXP-1000',
   ])
     assert.equal(jobDisplayIdSchema.safeParse(id).success, true);
-  for (const id of ['PV-006', 'UPD-06', 'UPD-006-3', 'upd-006', 'UPD'])
+  for (const id of [
+    'PV-006',
+    'UPD-06',
+    'UPD-006-3',
+    'upd-006',
+    'UPD',
+    'EXP-01',
+    'IMPORT-001',
+    'exp-001',
+  ])
     assert.equal(jobDisplayIdSchema.safeParse(id).success, false);
   assert.deepEqual(jobStatusSchema.options, [
     'accepted',
@@ -113,6 +133,8 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'disable-devices',
     'reenable-devices',
     'deprovision-devices',
+    'export-devices',
+    'validate-device-import',
   ]);
   assert.deepEqual(JOB_ACTION_LABELS, {
     'update-device-annotations': 'Update device annotations',
@@ -123,6 +145,8 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'disable-devices': 'Disable devices',
     'reenable-devices': 'Re-enable devices',
     'deprovision-devices': 'Deprovision devices',
+    'export-devices': 'Export devices',
+    'validate-device-import': 'Validate device import',
   });
 });
 
@@ -425,6 +449,14 @@ test('a cancel request names one person and one time', () => {
     statusAction: null,
     deprovisionReason: null,
     targetOrgUnitPaths: null,
+    exportFile: null,
+    importSource: null,
+    plan: null,
+    importDisplayId: null,
+    waitsForDisplayId: null,
+    waitingDisplayIds: null,
+    planJobs: null,
+    executionCounts: null,
     correlationId: jobId,
     latestActivity: {
       at,
@@ -493,6 +525,14 @@ test('job detail extends the summary with the write fields', () => {
     statusAction: null,
     deprovisionReason: null,
     targetOrgUnitPaths: ['/School A'],
+    exportFile: null,
+    importSource: null,
+    plan: null,
+    importDisplayId: null,
+    waitsForDisplayId: null,
+    waitingDisplayIds: null,
+    planJobs: null,
+    executionCounts: null,
     correlationId: jobId,
     latestActivity: {
       at,
@@ -778,4 +818,263 @@ test('the requesters answer caps at 20 people', () => {
 test('the seen answer carries the stored time', () => {
   assert.deepEqual(jobSeenSchema.parse({ seenAt: at }), { seenAt: at });
   assert.equal(jobSeenSchema.safeParse({}).success, false);
+});
+
+const detailOf = (row) => ({
+  ...row,
+  confirmedBy: null,
+  previewDisplayId: null,
+  changes: null,
+  commandType: null,
+  statusAction: null,
+  deprovisionReason: null,
+  targetOrgUnitPaths: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
+  correlationId: jobId,
+  latestActivity: {
+    at,
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+});
+
+test('the export phases and purpose parse', () => {
+  assert.deepEqual(jobPhaseNameSchema.options, [
+    'write-rows',
+    'prepare-download',
+    'header-check',
+    'refresh',
+    'compare',
+    'report',
+  ]);
+  assert.deepEqual(jobExportPurposeSchema.options, ['edit', 'report']);
+  const phase = { name: 'write-rows', done: 32, total: 48 };
+  assert.deepEqual(jobPhaseSchema.parse(phase), phase);
+  // A phase without a total parses, and one outside the six names fails.
+  assert.equal(
+    jobPhaseSchema.safeParse({ name: 'prepare-download', done: 0, total: null })
+      .success,
+    true,
+  );
+  assert.equal(
+    jobPhaseSchema.safeParse({ name: 'upload', done: 0, total: null }).success,
+    false,
+  );
+  assert.equal(
+    jobPhaseSchema.safeParse({ ...phase, extra: true }).success,
+    false,
+  );
+  assert.equal(
+    jobPhaseSchema.safeParse({ ...phase, done: -1 }).success,
+    false,
+  );
+});
+
+test('an export job carries its phase, its summary, and its file', () => {
+  const row = {
+    ...summary,
+    displayId: 'EXP-001',
+    action: 'export-devices',
+    scope: { kind: 'rows', deviceCount: 48 },
+    phase: { name: 'write-rows', done: 32, total: 48 },
+    exportSummary: { purpose: 'edit' },
+  };
+  assert.deepEqual(jobSummarySchema.parse(row), row);
+  const detail = {
+    ...detailOf(row),
+    exportFile: {
+      name: 'devices-for-editing-EXP-001.csv',
+      sizeBytes: 7987,
+      rows: 48,
+      columns: 10,
+      expiresAt: at,
+    },
+  };
+  assert.deepEqual(jobDetailSchema.parse(detail), detail);
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...detail,
+      exportFile: { ...detail.exportFile, columns: -1 },
+    }).success,
+    false,
+  );
+});
+
+test('a validation job carries its phase, its summary, the plan, and the counts', () => {
+  const row = {
+    ...summary,
+    displayId: 'IMP-001',
+    action: 'validate-device-import',
+    scope: { kind: 'rows', deviceCount: 48 },
+    phase: { name: 'refresh', done: 6, total: 9 },
+    importSummary: {
+      mode: 'sync-changes',
+      planState: 'open',
+      proposed: 11,
+      rejected: 4,
+      refusal: null,
+    },
+  };
+  assert.deepEqual(jobSummarySchema.parse(row), row);
+  const detail = {
+    ...detailOf(row),
+    importSource: {
+      name: 'devices-for-editing-EXP-001.csv',
+      sizeBytes: 7987,
+      rowsRead: 48,
+      candidateRows: 13,
+      refusalText: null,
+    },
+    plan: {
+      planId: jobId,
+      revision: 1,
+      state: 'open',
+      expiresAt: at,
+      changedBy: null,
+      changedAt: null,
+    },
+    planJobs: [{ ...row, displayId: 'UPD-001', exportSummary: null, importSummary: null, phase: null }],
+    executionCounts: {
+      succeeded: 4,
+      failed: 1,
+      unknown: 0,
+      skipped: 0,
+      expired: 0,
+      cancelled: 0,
+      pending: 6,
+      notRun: 2,
+    },
+  };
+  assert.deepEqual(jobDetailSchema.parse(detail), detail);
+  // The plan states of design section 1.
+  for (const state of ['open', 'executed', 'cancelled', 'expired'])
+    assert.equal(
+      jobImportPlanStateSchema.safeParse(state).success,
+      true,
+      `${state} must parse.`,
+    );
+  assert.equal(jobImportPlanStateSchema.safeParse('draft').success, false);
+  // A refused validation stores its code and its text for states 23 and 26.
+  const refused = {
+    ...row,
+    importSummary: { ...row.importSummary, refusal: 'header-refused' },
+  };
+  assert.equal(jobSummarySchema.safeParse(refused).success, true);
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...row,
+      importSummary: { ...row.importSummary, refusal: 'x'.repeat(65) },
+    }).success,
+    false,
+  );
+  // The execution counts name every term of design section 8.
+  const counts = detail.executionCounts;
+  for (const term of Object.keys(counts)) {
+    const missing = { ...counts };
+    delete missing[term];
+    assert.equal(
+      jobExecutionCountsSchema.safeParse(missing).success,
+      false,
+      `${term} is required.`,
+    );
+  }
+});
+
+test('each new block stays null for another kind of job', () => {
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      exportSummary: { purpose: 'edit' },
+    }).success,
+    false,
+    'An update job carries no export summary.',
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      importSummary: {
+        mode: 'sync-changes',
+        planState: null,
+        proposed: 0,
+        rejected: 0,
+        refusal: null,
+      },
+    }).success,
+    false,
+    'An update job carries no import summary.',
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      phase: { name: 'compare', done: 1, total: 2 },
+    }).success,
+    false,
+    'An update job carries no phase.',
+  );
+  // A validation job answers no export summary, and an export job no import summary.
+  const validation = {
+    ...summary,
+    displayId: 'IMP-001',
+    action: 'validate-device-import',
+  };
+  assert.equal(
+    jobSummarySchema.safeParse({ ...validation, exportSummary: { purpose: 'report' } })
+      .success,
+    false,
+  );
+  const exported = { ...summary, displayId: 'EXP-001', action: 'export-devices' };
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...exported,
+      importSummary: {
+        mode: 'sync-changes',
+        planState: null,
+        proposed: 0,
+        rejected: 0,
+        refusal: null,
+      },
+    }).success,
+    false,
+  );
+});
+
+test('the export and import failure codes parse', () => {
+  for (const failure of [
+    'storage-unavailable',
+    'inventory-unavailable',
+    'export-too-large',
+  ])
+    assert.equal(
+      jobSummarySchema.safeParse({ ...summary, failure }).success,
+      true,
+      `${failure} must parse.`,
+    );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, failure: 'disk-full' }).success,
+    false,
+  );
+  // A failed validation keeps the phase of its refusal.
+  const failed = {
+    ...summary,
+    displayId: 'IMP-006',
+    action: 'validate-device-import',
+    status: 'failed',
+    failure: 'storage-unavailable',
+    phase: { name: 'header-check', done: 0, total: null },
+    importSummary: {
+      mode: 'sync-changes',
+      planState: null,
+      proposed: 0,
+      rejected: 0,
+      refusal: 'header-refused',
+    },
+  };
+  assert.equal(jobSummarySchema.safeParse(failed).success, true);
 });

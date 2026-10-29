@@ -19,6 +19,7 @@ export const actionLabels: Record<Action, string> = {
   'devices:status': 'Change device status',
   'devices:deprovision': 'Device Deprovision',
   'devices:bulk-actions': 'Run device bulk actions',
+  'devices:export': 'Export and report devices',
   'jobs:read': 'View jobs',
   'jobs:manage': 'Manage jobs',
 };

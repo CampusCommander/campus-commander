@@ -4,6 +4,7 @@ import {
   deviceSyncFailureSchema,
   deviceUpdateChangesSchema,
 } from './devices';
+import { deviceImportModeSchema } from './device-edit-template';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -15,10 +16,11 @@ const displayName = z.string().min(1).max(200);
 /** Product codes of operations. The vocabulary stays open (section 1.4). */
 const productCode = z.string().min(1).max(64);
 
-/** The display IDs of sections 1.4 and 1.6. The number carries at least three digits. */
+/** The display IDs of sections 1.4 and 1.6, and of the export and import kinds (design section 1).
+ * The number carries at least three digits. */
 export const jobDisplayIdSchema = z
   .string()
-  .regex(/^(UPD|REF|CMD|STS)-\d{3,}$/);
+  .regex(/^(UPD|REF|CMD|STS|EXP|IMP)-\d{3,}$/);
 export type JobDisplayId = z.infer<typeof jobDisplayIdSchema>;
 export const previewDisplayIdSchema = z.string().regex(/^PV-\d{3,}$/);
 export type PreviewDisplayId = z.infer<typeof previewDisplayIdSchema>;
@@ -56,7 +58,9 @@ export const jobStatusSchema = z.enum([
 ]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 
-/** The eight job actions of section 1. A status job holds disable, re-enable, or deprovision. */
+/** The ten job actions of section 1 and design section 1. A status job holds disable, re-enable, or
+ * deprovision. An export job holds `export-devices`, and a validation job holds
+ * `validate-device-import`. */
 export const jobActionSchema = z.enum([
   'update-device-annotations',
   'refresh-inventory',
@@ -66,6 +70,8 @@ export const jobActionSchema = z.enum([
   'disable-devices',
   'reenable-devices',
   'deprovision-devices',
+  'export-devices',
+  'validate-device-import',
 ]);
 export type JobAction = z.infer<typeof jobActionSchema>;
 export const JOB_ACTION_LABELS: Readonly<Record<JobAction, string>> = {
@@ -77,6 +83,8 @@ export const JOB_ACTION_LABELS: Readonly<Record<JobAction, string>> = {
   'disable-devices': 'Disable devices',
   'reenable-devices': 'Re-enable devices',
   'deprovision-devices': 'Deprovision devices',
+  'export-devices': 'Export devices',
+  'validate-device-import': 'Validate device import',
 };
 
 /** A running full sync knows no total. Its pending count stays unknown. */
@@ -101,12 +109,54 @@ export const jobProgressSchema = z
   );
 export type JobProgress = z.infer<typeof jobProgressSchema>;
 
-/** The job failure codes of section 1.2: the sync codes plus the two revalidation codes. */
+/** The job failure codes of section 1.2: the sync codes, the two revalidation codes, and the three
+ * export and import codes of design section 1. */
 export const jobFailureSchema = z.union([
   deviceSyncFailureSchema,
-  z.enum(['permission-changed', 'connection-changed']),
+  z.enum([
+    'permission-changed',
+    'connection-changed',
+    'storage-unavailable',
+    'inventory-unavailable',
+    'export-too-large',
+  ]),
 ]);
 export type JobFailure = z.infer<typeof jobFailureSchema>;
+
+/** The progress phases of design section 2, in job order. An export writes rows and prepares a
+ * download. A validation reads a header, refreshes, compares, and writes a report. */
+export const JOB_PHASES = [
+  'write-rows',
+  'prepare-download',
+  'header-check',
+  'refresh',
+  'compare',
+  'report',
+] as const;
+export const jobPhaseNameSchema = z.enum(JOB_PHASES);
+export type JobPhaseName = z.infer<typeof jobPhaseNameSchema>;
+
+/** One phase of an export or a validation job (design sections 1 and 2). */
+export const jobPhaseSchema = z.strictObject({
+  name: jobPhaseNameSchema,
+  /** Rows or devices that the phase finished. */
+  done: count,
+  /** The phase total, or null when the phase counts no total, as Prepare download does. */
+  total: count.nullable(),
+});
+export type JobPhase = z.infer<typeof jobPhaseSchema>;
+
+/** The two export purposes of design sections 1 and 5. An edit export writes the template. A report
+ * export writes the visible grid columns. */
+export const JOB_EXPORT_PURPOSES = ['edit', 'report'] as const;
+export const jobExportPurposeSchema = z.enum(JOB_EXPORT_PURPOSES);
+export type JobExportPurpose = z.infer<typeof jobExportPurposeSchema>;
+
+/** The export summary block of the Jobs grid (state 26). It stays null for another kind of job. */
+export const jobExportSummarySchema = z.strictObject({
+  purpose: jobExportPurposeSchema,
+});
+export type JobExportSummary = z.infer<typeof jobExportSummarySchema>;
 
 /** One person behind a job: its requester or its confirmer. */
 export const jobPersonSchema = z.strictObject({
@@ -123,29 +173,104 @@ export const jobCancelRequestSchema = z.strictObject({
 export type JobCancelRequest = z.infer<typeof jobCancelRequestSchema>;
 
 export const jobScopeSchema = z.strictObject({
-  kind: z.enum(['devices', 'all-devices']),
-  /** The target count. A running full sync holds null. */
+  kind: z.enum(['devices', 'all-devices', 'rows']),
+  /** The target count. A running full sync holds null. A rows scope holds the row count. */
   deviceCount: count.nullable(),
 });
 export type JobScope = z.infer<typeof jobScopeSchema>;
 
-/** One job row of the Jobs grid (section 2.5). */
-export const jobSummarySchema = z.strictObject({
-  jobId: z.uuid(),
-  displayId: jobDisplayIdSchema,
+/** The plan states of design section 1. The API derives `expired` from the expiry. */
+export const JOB_IMPORT_PLAN_STATES = [
+  'open',
+  'executed',
+  'cancelled',
+  'expired',
+] as const;
+export const jobImportPlanStateSchema = z.enum(JOB_IMPORT_PLAN_STATES);
+export type JobImportPlanState = z.infer<typeof jobImportPlanStateSchema>;
+
+/** The plan facts of a validation job (design section 1, `td:667`). */
+export const jobImportPlanSchema = z.strictObject({
+  planId: z.uuid(),
   revision,
-  action: jobActionSchema,
-  status: jobStatusSchema,
-  scope: jobScopeSchema,
-  requestedBy: jobPersonSchema,
-  createdAt: timestamp,
-  startedAt: timestamp.nullable(),
-  finishedAt: timestamp.nullable(),
-  progress: jobProgressSchema,
-  failure: jobFailureSchema.nullable(),
-  /** The stored cancel request. It stays null until a person asks to cancel the job. */
-  cancelRequest: jobCancelRequestSchema.nullable(),
+  state: jobImportPlanStateSchema,
+  expiresAt: timestamp,
+  /** The person and the time of the state change. An open plan carries neither. */
+  changedBy: jobPersonSchema.nullable(),
+  changedAt: timestamp.nullable(),
 });
+export type JobImportPlan = z.infer<typeof jobImportPlanSchema>;
+
+/** The import summary block of the Jobs grid (state 26). It stays null for another kind of job. */
+export const jobImportSummarySchema = z.strictObject({
+  mode: deviceImportModeSchema,
+  /** The plan state, or null before the report creates a plan. */
+  planState: jobImportPlanStateSchema.nullable(),
+  proposed: count,
+  rejected: count,
+  /** The refusal code of a failed header check (design section 6). */
+  refusal: z.string().min(1).max(64).nullable(),
+});
+export type JobImportSummary = z.infer<typeof jobImportSummarySchema>;
+
+/** The changes of an executed import plan by outcome (design section 8). A change that Execute
+ * never ran counts under `notRun`. */
+export const jobExecutionCountsSchema = z.strictObject({
+  succeeded: count,
+  failed: count,
+  unknown: count,
+  skipped: count,
+  expired: count,
+  cancelled: count,
+  pending: count,
+  notRun: count,
+});
+export type JobExecutionCounts = z.infer<typeof jobExecutionCountsSchema>;
+
+/** One job row of the Jobs grid (section 2.5). */
+export const jobSummarySchema = z
+  .strictObject({
+    jobId: z.uuid(),
+    displayId: jobDisplayIdSchema,
+    revision,
+    action: jobActionSchema,
+    status: jobStatusSchema,
+    scope: jobScopeSchema,
+    requestedBy: jobPersonSchema,
+    createdAt: timestamp,
+    startedAt: timestamp.nullable(),
+    finishedAt: timestamp.nullable(),
+    progress: jobProgressSchema,
+    /** The phase of an export or a validation job (design section 2). It stays null for another
+     * kind of job, and before the worker writes the first phase. */
+    phase: jobPhaseSchema.nullable(),
+    /** The export summary of the Jobs grid (state 26). It stays null for another kind of job. */
+    exportSummary: jobExportSummarySchema.nullable(),
+    /** The import summary of the Jobs grid (state 26). It stays null for another kind of job. */
+    importSummary: jobImportSummarySchema.nullable(),
+    failure: jobFailureSchema.nullable(),
+    /** The stored cancel request. It stays null until a person asks to cancel the job. */
+    cancelRequest: jobCancelRequestSchema.nullable(),
+  })
+  .refine(
+    (summary) =>
+      summary.exportSummary === null ||
+      summary.action === 'export-devices',
+    { message: 'Only an export job carries an export summary.' },
+  )
+  .refine(
+    (summary) =>
+      summary.importSummary === null ||
+      summary.action === 'validate-device-import',
+    { message: 'Only a validation job carries an import summary.' },
+  )
+  .refine(
+    (summary) =>
+      summary.phase === null ||
+      summary.action === 'export-devices' ||
+      summary.action === 'validate-device-import',
+    { message: 'Only an export or a validation job carries a phase.' },
+  );
 export type JobSummary = z.infer<typeof jobSummarySchema>;
 
 /** The four refusals of the cancel route (design section 1). */
@@ -277,6 +402,41 @@ export const jobDetailSchema = jobSummarySchema
     /** The frozen reason of a Deprovision job. It stays null for another job. */
     deprovisionReason: deprovisionReasonSchema.nullable(),
     targetOrgUnitPaths: z.array(orgUnitPath).max(10000).nullable(),
+    /** The published file of an export job (design sections 1 and 5). It stays null for another
+     * job. */
+    exportFile: z
+      .strictObject({
+        name: z.string().min(1).max(255),
+        sizeBytes: count,
+        rows: count,
+        columns: count,
+        expiresAt: timestamp,
+      })
+      .nullable(),
+    /** The uploaded file of a validation job (design sections 1 and 6). It stays null for another
+     * job. */
+    importSource: z
+      .strictObject({
+        name: z.string().min(1).max(255),
+        sizeBytes: count,
+        rowsRead: count,
+        candidateRows: count,
+        /** The refusal text of a failed header check, for states 23 and 26. */
+        refusalText: z.string().min(1).max(1024).nullable(),
+      })
+      .nullable(),
+    /** The plan of a validation job (design section 1). It stays null for another job. */
+    plan: jobImportPlanSchema.nullable(),
+    /** The validation job that created this write job (design section 8). */
+    importDisplayId: jobDisplayIdSchema.nullable(),
+    /** The update job that this status job of an import waits for (design section 3). */
+    waitsForDisplayId: jobDisplayIdSchema.nullable(),
+    /** The status jobs that wait for this update job (design section 3). */
+    waitingDisplayIds: z.array(jobDisplayIdSchema).max(6).nullable(),
+    /** The jobs of an executed plan (design section 8). */
+    planJobs: z.array(jobSummarySchema).max(7).nullable(),
+    /** The changes of an executed plan by outcome (design section 8). */
+    executionCounts: jobExecutionCountsSchema.nullable(),
     correlationId: z.uuid(),
     latestActivity: jobLatestActivitySchema,
   })
