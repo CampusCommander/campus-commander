@@ -244,6 +244,10 @@ export async function proxyApplication(
         jobPage.test(pathname)));
   if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
+  // The one event stream answers GET alone. A HEAD request would open an upstream event stream,
+  // so it is refused here before any upstream request starts.
+  if (pathname === '/api/events' && request.method !== 'GET')
+    return finish(response, 405, 'Method unavailable.\n');
   const methodAllowed =
     request.method === 'POST'
       ? writable

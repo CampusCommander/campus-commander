@@ -276,6 +276,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/jobs/UPD-001/operations/1/reconcile', 405],
       ['POST', '/api/jobs/events', 405],
       ['POST', '/api/events', 405],
+      // The one stream answers GET alone. Its HEAD request answers 405, not the upstream.
+      ['HEAD', '/api/events', 405],
       ['POST', '/api/jobs/requesters', 405],
       ['GET', '/api/jobs/not-a-display-id', 404],
       ['GET', '/api/jobs/UPD-001/private', 404],
