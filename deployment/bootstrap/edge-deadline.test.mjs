@@ -124,6 +124,7 @@ function send(
     const started = Date.now();
     let data = '';
     let writes = 0;
+    let timer;
     const socket = tls.connect(
       { port, host: 'localhost', servername: 'localhost', ca: cert },
       () => {
@@ -132,15 +133,16 @@ function send(
           lines.push(`${name}: ${value}`);
         if (!keepAlive) lines.push('Connection: close');
         socket.write(`${lines.join('\r\n')}\r\n\r\n${body}`);
+        // Trickle only after the request head. A body byte that lands before the request line
+        // makes the parser read it as an invalid method and answer 400.
+        if (trickle)
+          timer = setInterval(() => {
+            if (socket.destroyed) return;
+            writes += 1;
+            socket.write('y');
+          }, 50);
       },
     );
-    let timer;
-    if (trickle)
-      timer = setInterval(() => {
-        if (socket.destroyed) return;
-        writes += 1;
-        socket.write('y');
-      }, 50);
     socket.on('data', (chunk) => {
       data += chunk.toString('latin1');
     });
@@ -175,6 +177,7 @@ function sendKeepAliveTrickle(
     let answeredAt = null;
     let settled = false;
     let guard;
+    let ticker;
     const socket = tls.connect(
       { port, host: 'localhost', servername: 'localhost', ca: cert },
       () => {
@@ -186,13 +189,15 @@ function sendKeepAliveTrickle(
         for (const [name, value] of Object.entries(headers))
           lines.push(`${name}: ${value}`);
         socket.write(`${lines.join('\r\n')}\r\n\r\n${body}`);
+        // Trickle only after the request head. A body byte that lands before the request line
+        // makes the parser read it as an invalid method and answer 400.
+        ticker = setInterval(() => {
+          if (socket.destroyed) return;
+          writes += 1;
+          socket.write('y');
+        }, interval);
       },
     );
-    const ticker = setInterval(() => {
-      if (socket.destroyed) return;
-      writes += 1;
-      socket.write('y');
-    }, interval);
     const settle = (closedByPeer) => {
       if (settled) return;
       settled = true;
