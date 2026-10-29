@@ -37,8 +37,14 @@ import {
 } from './device-export';
 import {
   createDeviceExportStore,
-  type DeviceExportStore,
+  type DeviceArtifactStore,
 } from './device-export-store';
+import {
+  DeviceImportJobs,
+  type DeviceImportAnswer,
+  type DeviceImportDatabase,
+  type DeviceImportRequest,
+} from './device-import';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -56,7 +62,7 @@ export class GoogleWorker {
   private pool?: Pool;
   private config?: DeploymentConfig;
   private redis?: WorkerRedis;
-  private artifacts?: Promise<DeviceExportStore>;
+  private artifacts?: Promise<DeviceArtifactStore>;
   /** Section 9: reject a value outside 1 to 250 when the process starts. */
   private readonly batchSize = resolveDeviceUpdateBatchSize(
     process.env['CC_DEVICE_UPDATE_BATCH_SIZE'],
@@ -223,10 +229,11 @@ export class GoogleWorker {
   }
 
   /**
-   * The artifact store of the export handler (design section 4, "Worker access"). The worker
-   * container mounts the artifacts volume, so it imports the store module as the API does.
+   * The artifact store of the export and validation handlers (design section 4, "Worker access").
+   * The worker container mounts the artifacts volume, so it imports the store module as the API
+   * does.
    */
-  private exportStore(pool: Pool): Promise<DeviceExportStore> {
+  private exportStore(pool: Pool): Promise<DeviceArtifactStore> {
     this.artifacts ??= (async () => {
       const config = this.config;
       if (!config) throw new Error('connection-store-unavailable');
@@ -255,6 +262,50 @@ export class GoogleWorker {
       input,
       signal,
     );
+  }
+
+  /**
+   * The database of the validation job. The refresh read stores its found devices and its missing
+   * devices in one transaction (design section 6, step 10), so this port adds `transaction` to the
+   * pool's query call.
+   */
+  private importDatabase(pool: Pool): DeviceImportDatabase {
+    return {
+      query: (sql, values) => pool.query(sql, values),
+      transaction: async (run) => {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const answer = await run({
+            query: (sql, values) => client.query(sql, values),
+          });
+          await client.query('COMMIT');
+          return answer;
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          client.release();
+        }
+      },
+    };
+  }
+
+  /**
+   * One validation job, from its claim to its report and plan (design section 6). The store reads
+   * the uploaded file through the same artifact module that the export writes with.
+   */
+  async importDevices(
+    input: DeviceImportRequest,
+    signal: AbortSignal,
+  ): Promise<DeviceImportAnswer> {
+    const { pool, cipher } = this.resources();
+    return new DeviceImportJobs(
+      this.importDatabase(pool),
+      await this.exportStore(pool),
+      new GoogleDeviceReader(),
+      cipher,
+    ).run(input, signal);
   }
 
   async close() {

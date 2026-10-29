@@ -1000,10 +1000,15 @@ BEGIN
 END;
 $$;
 
--- The claim of one validation run, with the same lease, fence, and answers as the export claim.
+-- The claim of one validation run, with the same lease, fence, and answers as the export claim. It
+-- also answers the source artifact of the upload and the connection credential, because the worker
+-- reads the file and Google with them (design section 6). The artifact is the ready artifact that
+-- the upload linked to this job through `cc.artifacts.job_id`, newest first. Both reads take no lock,
+-- so the claim keeps the lock order of the header and the detail row (design section 3).
 CREATE FUNCTION cc.claim_device_import_job(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz;
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; connection cc.google_connection;
+  source_artifact text;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL THEN
     RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
@@ -1033,10 +1038,18 @@ BEGIN
     UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
   END IF;
   PERFORM cc.record_job_change(p_job,false);
+  -- The source artifact and the credential are read after the claim decides, so a refused claim
+  -- writes nothing and answers nothing about them.
+  SELECT a.id INTO source_artifact FROM cc.artifacts a WHERE a.job_id=p_job::text
+    AND a.publication_state='ready' ORDER BY a.created_at DESC LIMIT 1;
+  SELECT * INTO connection FROM cc.google_connection WHERE singleton;
   RETURN jsonb_build_object('outcome','claimed','leaseExpiresAt',now_at+interval '120 seconds',
     'displayId',job.display_id,'targetCount',job.target_count,'mode',detail.mode,
     'sourceType',detail.source_type,'sourceName',detail.source_name,
-    'sourceSizeBytes',detail.source_size_bytes,'statusPermissions',detail.status_permissions);
+    'sourceSizeBytes',detail.source_size_bytes,'statusPermissions',detail.status_permissions,
+    'sourceArtifactId',source_artifact,'generation',connection.generation,
+    'credentialId',connection.credential_id,
+    'envelope',(SELECT envelope FROM cc.google_credentials WHERE id=connection.credential_id));
 END;
 $$;
 
