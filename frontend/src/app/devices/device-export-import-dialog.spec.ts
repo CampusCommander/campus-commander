@@ -1,0 +1,327 @@
+import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import type { JobDetail } from '@campus/application-contracts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthStore } from '../auth.store';
+import { DeviceExportImportDialog } from './device-export-import-dialog';
+import { DeviceExportImportStore } from './device-export-import.store';
+
+const jobId = '0f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
+const person = {
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  displayName: 'District Admin',
+};
+/** A future expiry, so a ready file stays ready whenever the suite runs. */
+const futureExpiry = () =>
+  new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+const exportDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
+  jobId,
+  displayId: 'EXP-001',
+  revision: 3,
+  action: 'export-devices',
+  status: 'running',
+  scope: { kind: 'devices', deviceCount: 48 },
+  requestedBy: person,
+  createdAt: new Date(Date.now() - 60_000).toISOString(),
+  startedAt: new Date(Date.now() - 50_000).toISOString(),
+  finishedAt: null,
+  progress: {
+    total: 48,
+    succeeded: 32,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 16,
+  },
+  phase: { name: 'write-rows', done: 32, total: 48 },
+  exportSummary: { purpose: 'edit' },
+  exportFile: null,
+  importSummary: null,
+  cancelRequest: null,
+  failure: null,
+  confirmedBy: null,
+  previewDisplayId: null,
+  changes: null,
+  commandType: null,
+  statusAction: null,
+  deprovisionReason: null,
+  targetOrgUnitPaths: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
+  correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  latestActivity: {
+    at: new Date().toISOString(),
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+  ...overrides,
+});
+
+const response = (body: unknown, status = 200) =>
+  ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  }) as unknown as Response;
+
+function setup(detail: JobDetail = exportDetail()) {
+  const request = vi.fn(async (path: string) =>
+    path.startsWith('/api/jobs/')
+      ? response(detail)
+      : response({
+          jobId,
+          displayId: 'EXP-001',
+          status: 'accepted',
+          rows: 48,
+        }),
+  );
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([]),
+      {
+        provide: AuthStore,
+        useValue: {
+          session: () => null,
+          can: () => true,
+          request,
+        },
+      },
+    ],
+  });
+  const fixture = TestBed.createComponent(DeviceExportImportDialog);
+  fixture.componentRef.setInput('tabId', '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10');
+  const store = TestBed.inject(DeviceExportImportStore);
+  // The store reads the job through the same request stub, and no stream reaches a server.
+  store.eventSource = () =>
+    ({
+      addEventListener: () => undefined,
+      close: () => undefined,
+    }) as never;
+  fixture.detectChanges();
+  const element: HTMLElement = fixture.nativeElement;
+  const render = async () => {
+    // The job read settles on a microtask and a timer, outside the fixture's own stability.
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const panel = () => element.querySelector<HTMLElement>('section[role="dialog"]');
+  const text = () => panel()?.textContent?.replace(/\s+/g, ' ') ?? '';
+  return {
+    fixture,
+    element,
+    store,
+    render,
+    panel,
+    text,
+    request,
+    component: fixture.componentInstance,
+  };
+}
+
+afterEach(() => {
+  TestBed.resetTestingModule();
+});
+
+/** The dialog is closed before every case, so one case never borrows another's job. */
+beforeEach(() => {
+  TestBed.resetTestingModule();
+});
+
+describe('DeviceExportImportDialog', () => {
+  it('shows the configure step with the count and the disabled Sheet card', async () => {
+    const { store, render, panel, text } = setup();
+    store.openExport(48);
+    await render();
+    expect(panel()?.querySelector('h2')?.textContent?.trim()).toBe(
+      'Export devices',
+    );
+    expect(text()).toContain('48 selected devices · Not submitted');
+    expect(text()).toContain(
+      'Google Drive is not available for your account.',
+    );
+    const primary = panel()?.querySelector<HTMLButtonElement>(
+      '.export-actions button[mat-flat-button]',
+    );
+    expect(primary?.textContent?.trim()).toBe('Export 48 devices');
+    expect(primary?.disabled).toBe(false);
+  });
+
+  it('names the limit and disables the primary action over the limit', async () => {
+    const { store, render, panel, text } = setup();
+    store.openExport(62_480);
+    await render();
+    expect(text()).toContain('An edit export holds at most 50,000 devices.');
+    expect(text()).toContain('This selection holds 62,480.');
+    const primary = panel()?.querySelector<HTMLButtonElement>(
+      '.export-actions button[mat-flat-button]',
+    );
+    expect(primary?.disabled).toBe(true);
+    expect(primary?.textContent?.trim()).toBe('Export 62,480 devices');
+  });
+
+  it('writes the report columns in grid order', async () => {
+    const { store, render, panel } = setup();
+    store.openReport(48, ['serialNumber', 'model', 'assetTag']);
+    await render();
+    const chips = [...(panel()?.querySelectorAll('.col-chips li') ?? [])].map(
+      (chip) => chip.textContent?.trim(),
+    );
+    expect(chips).toEqual(['Serial', 'Model', 'Asset tag']);
+    expect(
+      panel()
+        ?.querySelector('.export-actions button[mat-flat-button]')
+        ?.textContent?.trim(),
+    ).toBe('Create report');
+  });
+
+  it('follows a running job with the phase list and the bar', async () => {
+    const { store, render, panel, text } = setup();
+    store.openJob('EXP-001');
+    await render();
+    expect(text()).toContain('Job EXP-001 · Running');
+    expect(text()).toContain('Write rows');
+    expect(text()).toContain('32 of 48');
+    expect(text()).toContain('Prepare download');
+    expect(
+      text(),
+    ).toContain('Closing this dialog keeps the export running.');
+    expect(panel()?.querySelector('mat-progress-bar')).not.toBeNull();
+    expect(panel()?.querySelector('.export-actions button')?.textContent?.trim()).toBe(
+      'Close',
+    );
+  });
+
+  it('shows the ready file with the facts and the download link', async () => {
+    const expiresAt = futureExpiry();
+    const { store, render, panel, text } = setup(
+      exportDetail({
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        phase: null,
+        exportFile: {
+          name: 'devices-for-editing-EXP-001.csv',
+          sizeBytes: 7987,
+          rows: 48,
+          columns: 10,
+          expiresAt,
+        },
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(text()).toContain('devices-for-editing-EXP-001.csv');
+    expect(text()).toContain('Ready');
+    expect(text()).toContain('7.8 KB');
+    expect(text()).toContain('48 rows');
+    expect(text()).toContain('10 columns');
+    const download = panel()?.querySelector<HTMLAnchorElement>(
+      '.export-actions a[mat-flat-button]',
+    );
+    expect(download?.getAttribute('href')).toBe(
+      '/api/devices/exports/EXP-001/file',
+    );
+    expect(download?.textContent?.trim()).toBe('Download CSV');
+  });
+
+  it('marks an expired file and disables the download', async () => {
+    const { store, render, panel, text } = setup(
+      exportDetail({
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        phase: null,
+        exportFile: {
+          name: 'devices-for-editing-EXP-001.csv',
+          sizeBytes: 7987,
+          rows: 48,
+          columns: 10,
+          expiresAt: new Date(Date.now() - 86_400_000).toISOString(),
+        },
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(text()).toContain('Expired');
+    expect(text()).toContain('The file expired');
+    expect(
+      panel()?.querySelector('.export-actions button[mat-flat-button]')?.hasAttribute(
+        'disabled',
+      ),
+    ).toBe(true);
+  });
+
+  it('docks the help pane and switches its topic', async () => {
+    const { store, render, element, panel, text } = setup();
+    store.openExport(48);
+    await render();
+    panel()?.querySelector<HTMLButtonElement>('button[aria-label="Export and import help"]')?.click();
+    await render();
+    expect(panel()?.classList.contains('has-help')).toBe(true);
+    const help = element.querySelector('app-device-export-help');
+    expect(help?.querySelector('h3')?.textContent?.trim()).toBe(
+      'Export and import help',
+    );
+    expect(text()).toContain('Editing rules');
+    const toggles = [
+      ...(help?.querySelectorAll<HTMLButtonElement>('mat-button-toggle button') ??
+        []),
+    ];
+    expect(toggles.map((toggle) => toggle.textContent?.trim())).toEqual([
+      'Export',
+      'Reports',
+    ]);
+    toggles[1].click();
+    await render();
+    expect(help?.textContent).toContain(
+      'Reports writes the visible grid columns of the selected devices, in grid order.',
+    );
+  });
+
+  it('closes on Escape and emits closed', async () => {
+    const { store, render, panel, component } = setup();
+    const closed = vi.fn();
+    // The page returns focus through this output (UI-09).
+    component.closed.subscribe(closed);
+    store.openExport(48);
+    await render();
+    panel()?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await render();
+    expect(store.open()).toBe(false);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns to the running job of this tab after the dialog closes', async () => {
+    const { store, render, request } = setup();
+    store.openExport(48);
+    await render();
+    expect(await store.submit({
+      gridId: 'devices',
+      tabId: 'tab-1',
+      purpose: 'edit',
+      format: 'csv',
+      sort: { field: 'serialNumber', direction: 'asc' },
+      columns: [],
+    })).toBe(true);
+    expect(request).toHaveBeenCalledWith(
+      '/api/devices/exports',
+      expect.objectContaining({ purpose: 'edit', format: 'csv' }),
+    );
+    store.close();
+    await render();
+    store.openExport(0);
+    await render();
+    expect(store.step()).toBe('monitor');
+  });
+});
