@@ -1734,9 +1734,7 @@ test('a plan that expires during a mark answers 410 and rolls back every preview
   reset();
   // A row that needs no change makes the mark run before any preview opens.
   changes = [fieldChange(0, 'dev-a', { current_value: 'Note dev-a' })];
-  devices = new Map([
-    ['dev-a', deviceRow('dev-a', { notes: 'Note dev-a' })],
-  ]);
+  devices = new Map([['dev-a', deviceRow('dev-a', { notes: 'Note dev-a' })]]);
   plan = sqlPlan({ expiresAt: at(60_000).toISOString() });
   // The lock reads the plan before its expiry. The mark reads the clock again, past it.
   markExpires = true;
@@ -1825,7 +1823,11 @@ test('four Executes of one open plan create one set of jobs on four pool connect
       'Every replay answers the receipts of the one execution.',
     );
   }
-  assert.equal(createdJobs.length, 1, 'One Execute creates the jobs of the plan.');
+  assert.equal(
+    createdJobs.length,
+    1,
+    'One Execute creates the jobs of the plan.',
+  );
   assert.equal(
     statementsOf('cc.link_device_import_jobs').length,
     1,

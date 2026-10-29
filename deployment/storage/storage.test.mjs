@@ -254,7 +254,10 @@ test('a rolled-back stage removes its attempt file and a committed one keeps it'
       { ...rolledBack, schemaVersion: 1, maxBytes: 1024 },
       [bytes],
     );
-    const path = join(directory, `${rolledBack.artifactId}.${rolledBack.attemptId}`);
+    const path = join(
+      directory,
+      `${rolledBack.artifactId}.${rolledBack.attemptId}`,
+    );
     assert.equal(await exists(path), true);
     assert.equal(await store.discardStaged(rolledBack), true);
     assert.equal(await exists(path), false);

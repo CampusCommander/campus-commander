@@ -11,19 +11,19 @@ Import `createArtifactStore` from `deployment/storage/index.mjs`.
 Pass a `pg.Pool`, an existing absolute `root` directory, and `backend: 'local'` or `'shared-filesystem'`.
 Close the store and pool after active operations finish.
 
-| Method         | Input                                             | Result                                                      |
-| -------------- | ------------------------------------------------- | ----------------------------------------------------------- |
-| `stage`        | Manifest and async iterable of byte chunks        | Verified descriptor with unpublished metadata               |
-| `stageStream`  | Stream manifest and async iterable of byte chunks | Descriptor with the size and the SHA-256 computed on write  |
-| `stageStreamWithin` | Transaction client, stream manifest, and async iterable | Ready descriptor in the caller's transaction           |
-| `discardStaged` | `{ artifactId, attemptId }`                      | Boolean indicating removal of a rolled-back attempt file    |
-| `inspect`      | `{ artifactId, attemptId }`                       | Verified descriptor and `publicationState`                  |
-| `publish`      | Descriptor                                        | Descriptor after the ready-state transaction commits        |
-| `openRead`     | `artifactId`                                      | Read stream for verified ready bytes                        |
-| `remove`       | `{ artifactId, attemptId }`                       | Boolean indicating completed removal                        |
-| `purgeExpired` | None                                              | Number of expired artifacts removed                         |
-| `checkHealth`  | None                                              | Boolean from a private write, read, sync, and cleanup probe |
-| `close`        | None                                              | Closed adapter directory handle                             |
+| Method              | Input                                                   | Result                                                      |
+| ------------------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| `stage`             | Manifest and async iterable of byte chunks              | Verified descriptor with unpublished metadata               |
+| `stageStream`       | Stream manifest and async iterable of byte chunks       | Descriptor with the size and the SHA-256 computed on write  |
+| `stageStreamWithin` | Transaction client, stream manifest, and async iterable | Ready descriptor in the caller's transaction                |
+| `discardStaged`     | `{ artifactId, attemptId }`                             | Boolean indicating removal of a rolled-back attempt file    |
+| `inspect`           | `{ artifactId, attemptId }`                             | Verified descriptor and `publicationState`                  |
+| `publish`           | Descriptor                                              | Descriptor after the ready-state transaction commits        |
+| `openRead`          | `artifactId`                                            | Read stream for verified ready bytes                        |
+| `remove`            | `{ artifactId, attemptId }`                             | Boolean indicating completed removal                        |
+| `purgeExpired`      | None                                                    | Number of expired artifacts removed                         |
+| `checkHealth`       | None                                                    | Boolean from a private write, read, sync, and cleanup probe |
+| `close`             | None                                                    | Closed adapter directory handle                             |
 
 A manifest contains `schemaVersion`, `expectedSizeBytes`, and lowercase hexadecimal `expectedSha256`.
 A stream manifest contains `schemaVersion` and `maxBytes`.

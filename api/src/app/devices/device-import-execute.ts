@@ -465,7 +465,15 @@ export class DeviceImportExecute {
     let outcome: LockedOutcome;
     try {
       outcome = await this.database.transaction((client) =>
-        this.locked(client, session, current, displayId, input, correlationId, staged),
+        this.locked(
+          client,
+          session,
+          current,
+          displayId,
+          input,
+          correlationId,
+          staged,
+        ),
       );
     } catch (error) {
       await this.discard(staged);

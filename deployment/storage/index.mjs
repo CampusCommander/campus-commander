@@ -625,9 +625,10 @@ async function initializeStore({ pool, root, backend = 'local' }) {
       await lock(client, artifactId);
       const {
         rows: [existing],
-      } = await client.query('SELECT * FROM cc.artifacts WHERE id=$1 FOR UPDATE', [
-        artifactId,
-      ]);
+      } = await client.query(
+        'SELECT * FROM cc.artifacts WHERE id=$1 FOR UPDATE',
+        [artifactId],
+      );
       if (
         existing &&
         (existing.publication_state !== 'staging' ||
@@ -736,9 +737,7 @@ async function initializeStore({ pool, root, backend = 'local' }) {
       });
       if (!details) return false;
       if (!details.isFile() || details.nlink !== 1)
-        throw new Error(
-          'Staged artifact removal requires a regular file.',
-        );
+        throw new Error('Staged artifact removal requires a regular file.');
       await unlink(path);
       await directory.sync();
       return true;
