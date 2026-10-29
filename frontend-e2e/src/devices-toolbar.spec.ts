@@ -6,6 +6,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { installLiveStreams } from './live-streams';
 import { devicePageSchema } from '@campus/application-contracts';
 
 const customerId = 'C0123456';
@@ -60,6 +61,7 @@ interface SessionOptions {
 
 /** The Devices page needs the session, a published inventory, and the write access state. */
 async function signIn(page: Page, options: SessionOptions = {}) {
+  await installLiveStreams(page);
   const selectedCount = options.selectedCount ?? rows.length;
   const sessionGrants = options.grants ?? grants;
   await page.route('**/api/**', async (route) => {
@@ -158,12 +160,6 @@ async function signIn(page: Page, options: SessionOptions = {}) {
       });
     if (path === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
-    if (path === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (path === '/api/devices/updates/access')
       return route.fulfill({
         json: {

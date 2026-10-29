@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { installLiveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const observedAt = '2026-10-19T12:00:00.000Z';
@@ -170,6 +171,7 @@ async function signIn(
     fail?: 'none' | 'http' | 'abort';
   } = {},
 ) {
+  await installLiveStreams(page);
   const state = {
     fail: options.fail ?? 'none',
     identity: 'maya' as 'maya' | 'alex',
@@ -209,12 +211,6 @@ async function signIn(
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
         },
-      });
-    if (path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
       });
     if (path === '/api/jobs/requesters')
       return route.fulfill({ json: { requesters: [maya, alex] } });

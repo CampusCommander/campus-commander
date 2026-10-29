@@ -5,6 +5,7 @@ import type { DeviceRow } from '@campus/application-contracts';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { orgUnitTree } from './device-update-u6-simulator';
+import { installLiveStreams } from './live-streams';
 
 /**
  * IF2 completion step 2 of `docs/workflows/in-grid-editing.md`: one toggle switches the
@@ -131,6 +132,7 @@ async function mockApi(
   rows: DeviceRow[],
   log: ApiLog,
 ): Promise<void> {
+  await installLiveStreams(page);
   const selection = new MockSelection(rows);
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -266,12 +268,6 @@ async function mockApi(
           failure: null,
           checkedAt: '2026-10-19T12:00:00.000Z',
         },
-      });
-    if (pathname === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
       });
     if (pathname === '/api/customer')
       return route.fulfill({ json: { customer: null } });

@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { installLiveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const observedAt = '2026-10-19T12:00:00.000Z';
@@ -50,6 +51,7 @@ interface QueryAnswer {
 
 /** The Devices page needs the session, a published inventory, and the write access state. */
 async function signIn(page: Page) {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/application')
@@ -140,12 +142,6 @@ async function signIn(page: Page) {
       });
     if (path === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
-    if (path === '/api/devices/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (path === '/api/devices/updates/access')
       return route.fulfill({
         json: {
