@@ -1,4 +1,5 @@
-import { signal, type WritableSignal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { signal, type Provider, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { AuthStore } from '../auth.store';
@@ -44,28 +45,29 @@ function setup(
   session: WritableSignal<ReturnType<typeof sessionFor> | null> = signal(
     sessionFor('actor'),
   ),
+  doc?: unknown,
 ) {
-  TestBed.configureTestingModule({
-    providers: [
-      {
-        provide: AuthStore,
-        useValue: {
-          request,
-          metadata: () => ({ phase: 3 }),
-          session,
-          interrupted: () => false,
-        },
+  const providers: Provider[] = [
+    {
+      provide: AuthStore,
+      useValue: {
+        request,
+        metadata: () => ({ phase: 3 }),
+        session,
+        interrupted: () => false,
       },
-      {
-        provide: CustomerStore,
-        useValue: { refresh: vi.fn().mockResolvedValue(undefined) },
-      },
-      {
-        provide: ConnectionStore,
-        useValue: { refresh: vi.fn().mockResolvedValue(undefined) },
-      },
-    ],
-  });
+    },
+    {
+      provide: CustomerStore,
+      useValue: { refresh: vi.fn().mockResolvedValue(undefined) },
+    },
+    {
+      provide: ConnectionStore,
+      useValue: { refresh: vi.fn().mockResolvedValue(undefined) },
+    },
+  ];
+  if (doc) providers.push({ provide: DOCUMENT, useValue: doc });
+  TestBed.configureTestingModule({ providers });
   const store = TestBed.inject(DevicesStore);
   store.streamTimeout = 0;
   return store;
@@ -338,7 +340,11 @@ function streams(store: DevicesStore): FakeStream[] {
   return opened;
 }
 
-const rowFor = (deviceId: string, stale: boolean): DeviceRow => ({
+const rowFor = (
+  deviceId: string,
+  stale: boolean,
+  overrides: Partial<DeviceRow> = {},
+): DeviceRow => ({
   deviceId,
   serialNumber: deviceId.toUpperCase(),
   model: null,
@@ -352,7 +358,32 @@ const rowFor = (deviceId: string, stale: boolean): DeviceRow => ({
   battery: { status: 'no-report' },
   lastEntitySync: '2026-10-06T11:00:00.000Z',
   stale,
+  ...overrides,
 });
+
+/** A document whose visibility a test sets. */
+class FakeDocument {
+  visibilityState: DocumentVisibilityState = 'visible';
+  private readonly listeners = new Set<() => void>();
+
+  addEventListener(_type: 'visibilitychange', listener: () => void): void {
+    this.listeners.add(listener);
+  }
+
+  removeEventListener(_type: 'visibilitychange', listener: () => void): void {
+    this.listeners.delete(listener);
+  }
+
+  show(): void {
+    this.visibilityState = 'visible';
+    for (const listener of this.listeners) listener();
+  }
+
+  hide(): void {
+    this.visibilityState = 'hidden';
+    for (const listener of this.listeners) listener();
+  }
+}
 
 function grid(rows: DeviceRow[]) {
   const nodes = rows.map((data) => ({
@@ -525,11 +556,13 @@ it('recounts on a job-finished event with a null failure and keeps the banner ca
   expect(store.jobFailure()).toBe('quota');
 });
 
-it('reconciles after a reconnect: one status read, held stale rows, and a recount', async () => {
+it('reconciles after a reconnect: one status read, every held row, and a recount', async () => {
   const request = routes({
     '/api/devices/sync': () => Response.json({ sync: state('ready') }),
     '/api/devices/by-ids': () =>
-      Response.json({ rows: [rowFor('d1', false), rowFor('d3', false)] }),
+      Response.json({
+        rows: [rowFor('d1', false), rowFor('d2', false), rowFor('d3', false)],
+      }),
     '/api/devices/freshness': () =>
       Response.json({ freshness: { stale: 0, refreshing: false } }),
   });
@@ -555,9 +588,53 @@ it('reconciles after a reconnect: one status read, held stale rows, and a recoun
   );
   expect(statusReads(request)).toBe(2);
   expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
-    deviceIds: ['d1', 'd3'],
+    deviceIds: ['d1', 'd2', 'd3'],
   });
   expect(opened).toHaveLength(1);
+});
+
+it('refetches a fresh held row after a hidden tab returns', async () => {
+  const doc = new FakeDocument();
+  const request = routes({
+    '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+    '/api/devices/by-ids': () =>
+      Response.json({
+        rows: [
+          rowFor('d1', false, { assetTag: 'after' }),
+          rowFor('d2', false, { assetTag: 'other' }),
+        ],
+      }),
+    '/api/devices/freshness': () =>
+      Response.json({ freshness: { stale: 0, refreshing: false } }),
+  });
+  const store = setup(request, undefined, doc);
+  const opened = streams(store);
+  const { nodes, api } = grid([
+    rowFor('d1', false, { assetTag: 'before' }),
+    rowFor('d2', false, { assetTag: 'other' }),
+  ]);
+  store.gridRows.attach(api);
+  await store.init();
+  opened[0].open();
+  expect(store.sync()?.status).toBe('ready');
+
+  // The tab loses its connection and its events.
+  doc.hide();
+  expect(opened[0].closed).toBe(true);
+
+  // The authoritative value changed while the tab was hidden.
+  doc.show();
+  await vi.waitFor(() => expect(opened).toHaveLength(2));
+  opened[1].open();
+
+  await vi.waitFor(() =>
+    expect(nodes[0].updateData).toHaveBeenCalledWith(
+      rowFor('d1', false, { assetTag: 'after' }),
+    ),
+  );
+  expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
+    deviceIds: ['d1', 'd2'],
+  });
 });
 
 it('reopens a closed stream after a status read and stays closed after the session ends', async () => {

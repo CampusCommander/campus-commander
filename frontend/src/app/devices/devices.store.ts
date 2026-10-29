@@ -767,7 +767,10 @@ export class DevicesStore {
     }
   }
 
-  /** After a reconnect: a status read after the open, the rows still tagged stale, and the counts (D12). */
+  /**
+   * After a reconnect: a status read after the open, every held row, and the counts (D12).
+   * A closed feed loses events, so any held row can have changed. Its stale tag is not enough.
+   */
   private async reconcile(): Promise<void> {
     // The reopen read ran before this stream subscribed, so a full sync can end unseen in between.
     // This read runs after the open. It compares against the status from before the drop.
@@ -796,15 +799,15 @@ export class DevicesStore {
       this.revision.update((value) => value + 1);
       return;
     }
-    await this.refreshRows('stale');
+    await this.refreshRows('all');
     await this.recount();
   }
 
-  /** Refetch held rows among `ids`, or every held row still tagged stale (D7, D12). */
-  private async refreshRows(ids: readonly string[] | 'stale'): Promise<void> {
-    const wanted = new Set(ids === 'stale' ? [] : ids);
+  /** Refetch the held rows among `ids`, or every held row (D7, D12). */
+  private async refreshRows(ids: readonly string[] | 'all'): Promise<void> {
+    const wanted = new Set(ids === 'all' ? [] : ids);
     const held = this.gridRows.held((row) =>
-      ids === 'stale' ? row.stale : wanted.has(row.deviceId),
+      ids === 'all' ? true : wanted.has(row.deviceId),
     );
     const epoch = this.epoch;
     for (let start = 0; start < held.length; start += DEVICE_BY_IDS_LIMIT) {
