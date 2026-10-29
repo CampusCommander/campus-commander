@@ -323,6 +323,9 @@ export class DevicesStore {
     this.revision.update((value) => value + 1);
     // The stream carries the session cookie. A new person needs a new stream.
     if (this.feed) this.feed.restart();
+    // The new person's stream is a first stream. Its open recovers nothing.
+    this.streamOpened = false;
+    this.dropped = null;
   }
 
   private async call(path: string, body?: unknown): Promise<Response | null> {
