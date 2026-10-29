@@ -634,7 +634,9 @@ test('the ordinary Devices startup holds both feeds without a native stream', as
     '/api/devices/events',
     '/api/jobs/events',
   ]);
-  expect(await liveStreams(page).constructedCount('/api/devices/events')).toBe(1);
+  expect(await liveStreams(page).constructedCount('/api/devices/events')).toBe(
+    1,
+  );
   expect(await liveStreams(page).constructedCount('/api/jobs/events')).toBe(1);
   expect(nativeEventRequests).toEqual([]);
 });

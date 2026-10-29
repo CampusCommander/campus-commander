@@ -288,7 +288,9 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
  * seconds would see another `by-ids` read. The construction history shows that
  * replacement, which an open-count snapshot alone hides.
  */
-test('keeps both idle feeds mounted past the app watchdog', async ({ page }) => {
+test('keeps both idle feeds mounted past the app watchdog', async ({
+  page,
+}) => {
   test.setTimeout(120_000);
   const nativeEventRequests: string[] = [];
   page.on('request', (request) => {
