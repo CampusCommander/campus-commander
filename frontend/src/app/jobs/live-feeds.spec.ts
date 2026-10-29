@@ -1,10 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, expect, it, vi } from 'vitest';
-import {
-  LiveFeeds,
-  type LiveFeedHandlers,
-} from './live-feeds';
+import { LiveFeeds, type LiveFeedHandlers } from './live-feeds';
 import type { JobEventSource, StreamGate } from './job-stream';
 
 /** A document whose visibility a test sets. */

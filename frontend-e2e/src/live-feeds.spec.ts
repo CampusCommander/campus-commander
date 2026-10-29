@@ -122,20 +122,17 @@ async function trackEventSources(page: Page) {
     Tracked.OPEN = Native.OPEN;
     Tracked.CLOSED = Native.CLOSED;
     window.EventSource = Tracked as unknown as typeof EventSource;
-    (
-      window as unknown as { liveSourceUrls: () => string[] }
-    ).liveSourceUrls = () =>
-      instances
-        .filter((item) => !item.closed())
-        .map((item) => new URL(item.url).pathname);
+    (window as unknown as { liveSourceUrls: () => string[] }).liveSourceUrls =
+      () =>
+        instances
+          .filter((item) => !item.closed())
+          .map((item) => new URL(item.url).pathname);
   });
 }
 
 async function openFeeds(page: Page): Promise<string[]> {
   const urls = await page.evaluate(() =>
-    (
-      window as unknown as { liveSourceUrls: () => string[] }
-    ).liveSourceUrls(),
+    (window as unknown as { liveSourceUrls: () => string[] }).liveSourceUrls(),
   );
   return urls.sort();
 }
@@ -192,8 +189,7 @@ async function mockApi(page: Page) {
       return route.fulfill({
         json: { jobs: [jobSummary], matching: 1, nextCursor: null, observedAt },
       });
-    if (path === '/api/jobs/UPD-014')
-      return route.fulfill({ json: jobDetail });
+    if (path === '/api/jobs/UPD-014') return route.fulfill({ json: jobDetail });
     if (path === '/api/jobs/UPD-014/operations')
       return route.fulfill({ json: { operations: [], nextCursor: null } });
     if (path === '/api/devices/sync')

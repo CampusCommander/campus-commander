@@ -2,12 +2,6 @@ import { DOCUMENT } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
 import { JobStream, type JobEventSource, type StreamGate } from './job-stream';
 
-/** The part of the document that decides whether the tab is hidden. Tests supply a fake. */
-export type VisibilityDocument = Pick<
-  Document,
-  'visibilityState' | 'addEventListener' | 'removeEventListener'
->;
-
 /** One store that follows a feed. */
 export interface LiveFeedHandlers {
   /** Opens the feed. The first subscriber's factory owns the connection. */
@@ -105,9 +99,7 @@ export class LiveFeeds {
         reopenCap: () => created.owner.reopenCap?.(),
         gate: () => (created.owner.gate ? created.owner.gate() : 'open'),
         events: () => [
-          ...new Set(
-            [...created.subscribers].flatMap((item) => item.events),
-          ),
+          ...new Set([...created.subscribers].flatMap((item) => item.events)),
         ],
         settled: () => created.settle(),
         opened: () => {

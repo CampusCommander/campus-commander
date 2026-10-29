@@ -34,10 +34,7 @@ import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
-import {
-  LiveFeeds,
-  type LiveFeedSubscription,
-} from '../jobs/live-feeds';
+import { LiveFeeds, type LiveFeedSubscription } from '../jobs/live-feeds';
 import { type StreamGate } from '../jobs/job-stream';
 import { GROUP_LIMIT, type DeviceView } from './device-datasource';
 import { samePredicates } from './device-filter-model';
