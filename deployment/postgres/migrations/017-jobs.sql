@@ -1020,6 +1020,13 @@ BEGIN
   IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease AND detail.lease_expires_at>now_at THEN
     RETURN jsonb_build_object('outcome','busy','leaseExpiresAt',detail.lease_expires_at);
   END IF;
+  -- A new owner restarts the whole validation (design section 6). A replaced run cannot resume its
+  -- partial report, so its lines go before the new lease lands. The same owner keeps its output.
+  IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease THEN
+    DELETE FROM cc.device_import_changes WHERE job_id=p_job;
+    DELETE FROM cc.device_import_rejections WHERE job_id=p_job;
+    DELETE FROM cc.device_import_warnings WHERE job_id=p_job;
+  END IF;
   UPDATE cc.device_import_jobs SET lease_id=p_lease,lease_expires_at=now_at+interval '120 seconds',
     first_claimed_at=COALESCE(first_claimed_at,now_at) WHERE job_id=p_job;
   IF job.started_at IS NULL THEN
@@ -1067,15 +1074,18 @@ END;
 $$;
 
 -- The renewal of one validation run, with the same fence. The header check writes the row count of
--- the file, so target_count takes the done count of that phase (design section 3).
+-- the file, so target_count takes the done count of that phase (design section 3). The report phase
+-- counts report lines, and one source row yields several lines, so it carries no 50,000 row cap
+-- (design section 2). Every other phase counts source rows or devices.
 CREATE FUNCTION cc.renew_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_phase text,
   p_done integer,p_total integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; rows_count integer;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_phase IS NULL OR p_done IS NULL OR
-    p_done NOT BETWEEN 0 AND 50000 OR (p_total IS NOT NULL AND p_total NOT BETWEEN p_done AND 50000) OR
-    p_phase NOT IN ('header-check','refresh','compare','report') THEN
+    p_phase NOT IN ('header-check','refresh','compare','report') OR p_done<0 OR
+    (p_total IS NOT NULL AND p_total<p_done) OR
+    (p_phase<>'report' AND (p_done>50000 OR (p_total IS NOT NULL AND p_total>50000))) THEN
     RAISE EXCEPTION 'The device import phase is invalid.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
