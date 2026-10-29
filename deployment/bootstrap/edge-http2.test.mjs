@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import http2 from 'node:http2';
 import https from 'node:https';
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -458,7 +458,17 @@ async function startEdgeProcess({ configFile, port, material }) {
     child.kill('SIGKILL');
     throw error;
   });
-  return { child, exited };
+  return { child, exited, output: () => output };
+}
+
+/** Wait until the edge process prints a line. */
+async function waitForOutput(running, text, timeout = 3000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (running.output().includes(text)) return;
+    await delay(20);
+  }
+  assert.fail(`The edge process did not print "${text}".`);
 }
 
 /** The headers of an answer that a protocol does not generate for itself. */
@@ -1210,6 +1220,81 @@ test(
       await closeServer(frontend);
       await closeServer(api.server);
       await rm(material.directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'an accepted connection without a TLS handshake ends at the stop grace',
+  {
+    timeout: 120000,
+  },
+  async () => {
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      const material = await createMaterial();
+      const frontend = createFrontendStub();
+      const api = createApiStub();
+      await listen(frontend);
+      await listen(api.server);
+      const port = await freePort();
+      const configFile = await writeApplicationConfig({
+        directory: material.directory,
+        port,
+        frontendPort: frontend.address().port,
+        apiPort: api.server.address().port,
+      });
+      let running;
+      let peer;
+      try {
+        running = await startEdgeProcess({ configFile, port, material });
+        // The peer completes the TCP connection and sends no ClientHello, so the server holds
+        // a transport without a TLS socket.
+        peer = connect(port, '127.0.0.1');
+        peer.on('error', () => undefined);
+        await once(peer, 'connect');
+        await waitForOutput(running, 'connection accepted');
+        const peerClosed = new Promise((resolve) =>
+          peer.once('close', () => resolve(Date.now())),
+        );
+        const stoppedAt = Date.now();
+        running.child.kill(signal);
+        const closedMs =
+          (await Promise.race([
+            peerClosed,
+            delay(9000, undefined, { ref: false }).then(() =>
+              assert.fail(`${signal} left the connection open.`),
+            ),
+          ])) - stoppedAt;
+        assert.ok(
+          closedMs >= 4500,
+          `The connection ended after ${closedMs} ms, before the grace.`,
+        );
+        assert.ok(
+          closedMs < 9000,
+          `The connection ended after ${closedMs} ms, past the stop timeout.`,
+        );
+        const [exitCode] = await Promise.race([
+          running.exited,
+          delay(Math.max(10000 - (Date.now() - stoppedAt), 1000), undefined, {
+            ref: false,
+          }).then(() =>
+            assert.fail(`${signal} left the edge process running.`),
+          ),
+        ]);
+        const exitMs = Date.now() - stoppedAt;
+        assert.equal(exitCode, 0, `The edge process exits after ${signal}.`);
+        assert.ok(
+          exitMs < 10000,
+          `The edge process exited after ${exitMs} ms.`,
+        );
+      } finally {
+        peer?.destroy();
+        running?.child.kill('SIGKILL');
+        await running?.exited.catch(() => undefined);
+        await closeServer(frontend);
+        await closeServer(api.server);
+        await rm(material.directory, { recursive: true, force: true });
+      }
     }
   },
 );

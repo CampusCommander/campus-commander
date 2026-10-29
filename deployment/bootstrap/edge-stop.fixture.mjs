@@ -20,5 +20,8 @@ const server = await createBootstrapEdge({
 const port = Number(process.env.PORT);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
   throw new Error('Invalid edge port.');
+// A connection that has not started its TLS handshake has no other observable signal. Report
+// acceptance, so the stop test signals the process only after the server holds the transport.
+server.on('connection', () => process.stdout.write('connection accepted\n'));
 server.listen(port, '127.0.0.1', () => process.stdout.write('edge ready\n'));
 stopOnSignals(server);
