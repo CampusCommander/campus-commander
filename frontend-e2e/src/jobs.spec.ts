@@ -35,6 +35,9 @@ const running = {
   },
   cancelRequest: null,
   failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
 };
 
 const refreshed = {
@@ -60,6 +63,9 @@ const refreshed = {
   },
   cancelRequest: null,
   failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
 };
 
 const review = {
@@ -85,6 +91,9 @@ const review = {
   },
   cancelRequest: null,
   failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
 };
 
 const secondPage = {

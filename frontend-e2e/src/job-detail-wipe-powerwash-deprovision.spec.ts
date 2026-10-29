@@ -179,6 +179,17 @@ const powerwashJob = {
       ],
     },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 /** Every command state of the record, including the two outside state 09. */
@@ -350,6 +361,17 @@ const deprovisionJob = {
     },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const wipeJob = {
@@ -377,6 +399,17 @@ const wipeJob = {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const wipeOperations: OperationFixture[] = [
@@ -426,6 +459,9 @@ const summary = (job: {
   progress: job.progress,
   failure: null,
   cancelRequest: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
 });
 
 const jobList = {
@@ -655,6 +691,17 @@ test('shows every Powerwash command state, including a cancelled command', async
             ],
           },
         },
+        phase: null,
+        exportSummary: null,
+        importSummary: null,
+        exportFile: null,
+        importSource: null,
+        plan: null,
+        importDisplayId: null,
+        waitsForDisplayId: null,
+        waitingDisplayIds: null,
+        planJobs: null,
+        executionCounts: null,
       },
     }),
   );
