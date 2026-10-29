@@ -43,6 +43,7 @@ import {
   type DeviceUpdateField,
   type JobImportPlan,
   type JobOutcome,
+  type JobPerson,
   type SessionResponse,
 } from '@campus/application-contracts';
 import type { StagedUpload } from '../storage/storage.service';
@@ -151,6 +152,10 @@ const createImportSql =
 
 const cancelPlanSql =
   'SELECT cc.cancel_device_import_plan($1,$2,$3,$4,$5,$6) AS result';
+
+/** The person behind one plan change. The plan columns keep the principal ID alone. */
+const planPersonSql =
+  'SELECT p.id,p.display_name FROM cc.application_principals p WHERE p.id=$1';
 
 /** The field changes and the status actions of one report (state 13). */
 const changeSummarySql = `SELECT count(*) FILTER (WHERE change_type='field')::integer AS field_changes,
@@ -545,16 +550,39 @@ export class DeviceImports {
     });
   }
 
+  /**
+   * The wire plan of one stored plan (design section 1). An open plan past its expiry reads
+   * `expired`, so the report and the cancel route name one state one way.
+   */
+  private wirePlan(
+    planId: unknown,
+    revision: unknown,
+    state: unknown,
+    expiresAt: string | null,
+    changedBy: JobPerson | null,
+    changedAt: string | null,
+  ): JobImportPlan {
+    const stored = String(state);
+    return jobImportPlanSchema.parse({
+      planId,
+      revision: Number(revision),
+      state:
+        stored === 'open' &&
+        expiresAt !== null &&
+        Date.parse(expiresAt) <= this.clock()
+          ? 'expired'
+          : stored,
+      expiresAt,
+      changedBy,
+      changedAt,
+    });
+  }
+
   /** The plan facts of the job, with `expired` derived from the expiry (design section 1). */
   private plan(row: Record<string, unknown>): JobImportPlan | null {
     if (typeof row['plan_id'] !== 'string') return null;
     const expiresAt = measuredAt(row['plan_expires_at']);
     if (expiresAt === null) return null;
-    const stored = String(row['plan_state']);
-    const state =
-      stored === 'open' && Date.parse(expiresAt) <= this.clock()
-        ? 'expired'
-        : stored;
     const changedBy =
       typeof row['plan_changed_by_id'] === 'string'
         ? {
@@ -562,14 +590,47 @@ export class DeviceImports {
             displayName: String(row['plan_changed_by_name']),
           }
         : null;
-    return jobImportPlanSchema.parse({
-      planId: row['plan_id'],
-      revision: Number(row['plan_revision']),
-      state,
+    return this.wirePlan(
+      row['plan_id'],
+      row['plan_revision'],
+      row['plan_state'],
       expiresAt,
       changedBy,
-      changedAt: measuredAt(row['plan_changed_at']),
-    });
+      measuredAt(row['plan_changed_at']),
+    );
+  }
+
+  /**
+   * The plan of `cc.cancel_device_import_plan`, in the wire shape. The function stores the actor of
+   * the change as a principal ID, so the route resolves the person once. A conflict that names no
+   * plan answers null.
+   */
+  private async cancelPlan(value: unknown): Promise<JobImportPlan | null> {
+    if (value === null || value === undefined) return null;
+    const stored = value as Record<string, unknown>;
+    const changedById = stored['changedBy'];
+    const changedBy =
+      typeof changedById === 'string'
+        ? await this.planPerson(changedById)
+        : null;
+    return this.wirePlan(
+      stored['planId'],
+      stored['revision'],
+      stored['state'],
+      measuredAt(stored['expiresAt']),
+      changedBy,
+      measuredAt(stored['changedAt']),
+    );
+  }
+
+  /** The person behind one plan change. The plan columns keep the principal ID alone. */
+  private async planPerson(id: string): Promise<JobPerson> {
+    const row = (
+      await this.database.connection.query(planPersonSql, [id])
+    ).rows[0];
+    if (!row)
+      throw new Error(`The plan names no application principal ${id}.`);
+    return { id: String(row['id']), displayName: String(row['display_name']) };
   }
 
   /** The lines of one view. The failed view lists only the outcomes of its constant. */
@@ -802,10 +863,11 @@ export class DeviceImports {
     ).rows[0]?.['result'] as Record<string, unknown> | undefined;
     if (!result)
       throw new Error('The plan cancel function returned no result.');
-    const plan = result['plan'] ?? null;
     switch (String(result['outcome'])) {
       case 'cancelled':
-        return deviceImportPlanCancelAnswerSchema.parse({ plan });
+        return deviceImportPlanCancelAnswerSchema.parse({
+          plan: await this.cancelPlan(result['plan']),
+        });
       case 'not-found':
         throw new NotFoundException({ reason: 'job-not-found' });
       case 'forbidden':
@@ -813,9 +875,15 @@ export class DeviceImports {
           'This action requires additional permission.',
         );
       case 'conflict':
-        throw new ConflictException({ reason: 'plan-conflict', plan });
+        throw new ConflictException({
+          reason: 'plan-conflict',
+          plan: await this.cancelPlan(result['plan']),
+        });
       case 'expired':
-        throw new GoneException({ reason: 'plan-expired', plan });
+        throw new GoneException({
+          reason: 'plan-expired',
+          plan: await this.cancelPlan(result['plan']),
+        });
       default:
         throw new Error(
           `The plan cancel function returned ${String(result['outcome'])}.`,
