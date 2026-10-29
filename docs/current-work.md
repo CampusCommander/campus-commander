@@ -21,9 +21,12 @@ On 2026-10-26 the owner supplied his reference design, answered decisions D1 to 
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
 On 2026-10-26 the owner approved the job cancel mockup. Owner: "Thats fine." The approved mockup is [2026-10-26-job-cancel.html](ui/designs/2026-10-26-job-cancel.html).
 On 2026-10-28 the owner signed off the universal job cancel. He asked "What do 2 and 6 reresent?" and then replied: "Agreed I sign off on that."
-On 2026-10-28 the owner kept HTTP/2 at the edge. Owner: "Yea keep with http/2 if it wont turn into a development blocker." Card `t_82e670d2` serves the app over HTTP/2.
+On 2026-10-28 the owner kept HTTP/2 at the edge. Owner: "Yea keep with http/2 if it wont turn into a development blocker." PR #156 serves the app over HTTP/2.
+Early on 2026-10-28 the owner directed the export and import build. Owner: "Go ahead and execute on the import and export work."
 On 2026-10-28 the owner sent UI changes for export and import. Owner: "Seperate the export for editing and export for reporting as two bulk edit actions. Call one export and the other reports." He asked for a dialog instead of a sidebar, a validation progress indicator and its report in the same dialog, and a help icon button for instructions outside the normal flow. Owner: "Go ahead and make those changes then we will do the next polish pass on the design." The [record](workflows/batch-update-export-import.md#2026-10-28-main-chat-ui-changes-for-export-and-import) holds the full message.
-The [batch update through export and import record](workflows/batch-update-export-import.md) is proposed. A mockup comes before the build.
+On 2026-10-28 the owner approved version 4 of the CSV slice mockup. Owner: "This is perfect. Please go ahead and execute on this." He also approved a Failed tab on the execution results: "yes".
+The approved mockup is [2026-10-28-device-export-import.html](ui/designs/2026-10-28-device-export-import.html).
+The CSV slice of the [batch update through export and import record](workflows/batch-update-export-import.md) builds from it. Its design addendum comes first.
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -43,10 +46,11 @@ It also quotes his answers on the defaults and the universal job cancel (D6).
 
 He signed off the cancel slice on 2026-10-28.
 
-Version 2 of the CSV slice mockup applies the UI changes of 2026-10-28 for the owner's polish pass.
-Its build waits for his approval of that mockup.
+Version 4 of the CSV slice mockup applies the UI changes of 2026-10-28 and two polish rounds.
+The owner approved it on 2026-10-28: "This is perfect. Please go ahead and execute on this."
+The [mockup](ui/designs/2026-10-28-device-export-import.html) and its [notes](ui/designs/2026-10-28-device-export-import-notes.md) set the screens. A design addendum comes before the build cards.
 
-The universal job cancel is built. The CSV slice, the Google Drive slice, and the report export follow.
+The universal job cancel is built. The CSV slice builds next: Export, Reports, and Import with CSV files. The Google Drive slice follows.
 A live Google Sheet export creates a Google file. It needs the owner's authorization, as live device writes do.
 
 ### Cancel pending work on any job (signed off 2026-10-28)
@@ -62,7 +66,7 @@ PRs #146 and #148 to #153 hold the build, and PR #154 holds the singular forms.
 On 2026-10-28 the owner signed off the build.
 He asked "What do 2 and 6 reresent?" and then replied: "Agreed I sign off on that."
 He named two changes: finding 2, the Refresh all count, and finding 6, the command job banner.
-Card `t_5355eacd` builds them.
+PR #157 built them with the wording that the owner approved. Owner: "approve changes 2 and 6".
 
 The sign-off accepts these defaults as built:
 
@@ -82,7 +86,7 @@ The sign-off accepts the drafted wording in the package's `owner-review-wording.
 Two examples are "This job no longer exists." for a missing job and "Cancellation stopped 1 operation before it reached Google." for a single operation.
 
 Findings 1, 3, 4, and 5 stay as built.
-Finding 7 stays as the HTTP/2 edge of card `t_82e670d2`. The owner kept HTTP/2.
+Finding 7 stays as the HTTP/2 edge of card `t_82e670d2`. The owner kept HTTP/2, and PR #156 merged it.
 
 Three runs support the sign-off:
 
