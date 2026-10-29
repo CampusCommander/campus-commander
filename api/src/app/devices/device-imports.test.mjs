@@ -128,7 +128,6 @@ before(async () => {
   const [
     controllerModule,
     serviceModule,
-    importsModule,
     devicesModule,
     authModule,
     guardModule,
@@ -136,7 +135,6 @@ before(async () => {
   ] = await Promise.all([
     import('./device-imports.controller.ts'),
     import('./device-imports.service.ts'),
-    import('./device-imports.ts'),
     import('./devices.service.ts'),
     import('../auth/auth.service.ts'),
     import('../auth/auth.guard.ts'),
@@ -488,10 +486,6 @@ const statementCount = () => statements.length;
 const createStatement = () =>
   statements.find((statement) =>
     statement.text.includes('cc.create_device_import_job'),
-  );
-const jobStatement = () =>
-  statements.find((statement) =>
-    statement.text.includes('FROM cc.jobs j JOIN cc.device_import_jobs i'),
   );
 
 test('an upload streams the file into the store and creates its job', async () => {
