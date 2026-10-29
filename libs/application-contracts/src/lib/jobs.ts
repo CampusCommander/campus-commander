@@ -447,6 +447,36 @@ export const jobDetailSchema = jobSummarySchema
       message:
         'A Deprovision job carries its reason, and another job carries none.',
     },
+  )
+  .refine(
+    (detail) =>
+      detail.exportFile === null || detail.action === 'export-devices',
+    { message: 'Only an export job carries a file.' },
+  )
+  .refine(
+    (detail) =>
+      (detail.importSource === null && detail.plan === null) ||
+      detail.action === 'validate-device-import',
+    { message: 'Only a validation job carries a source and a plan.' },
+  )
+  .refine(
+    (detail) =>
+      (detail.planJobs === null && detail.executionCounts === null) ||
+      detail.action === 'validate-device-import',
+    { message: 'Only a validation job carries the jobs and counts of a plan.' },
+  )
+  .refine(
+    (detail) =>
+      detail.action !== 'export-devices' &&
+      detail.action !== 'validate-device-import'
+        ? true
+        : detail.importDisplayId === null &&
+          detail.waitsForDisplayId === null &&
+          detail.waitingDisplayIds === null,
+    {
+      message:
+        'An export or a validation job links no other job, because a plan links its own jobs.',
+    },
   );
 export type JobDetail = z.infer<typeof jobDetailSchema>;
 

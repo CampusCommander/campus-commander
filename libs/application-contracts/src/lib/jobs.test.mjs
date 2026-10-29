@@ -1089,3 +1089,108 @@ test('the export and import failure codes parse', () => {
   };
   assert.equal(jobSummarySchema.safeParse(failed).success, true);
 });
+
+test('each detail block belongs to its kind of job', () => {
+  const update = detailOf({
+    ...summary,
+    displayId: 'UPD-001',
+    action: 'update-device-annotations',
+  });
+  const exported = detailOf({
+    ...summary,
+    displayId: 'EXP-001',
+    action: 'export-devices',
+    scope: { kind: 'rows', deviceCount: 48 },
+  });
+  const validation = detailOf({
+    ...summary,
+    displayId: 'IMP-001',
+    action: 'validate-device-import',
+    scope: { kind: 'rows', deviceCount: 48 },
+  });
+  const file = {
+    name: 'devices-for-editing-EXP-001.csv',
+    sizeBytes: 7987,
+    rows: 48,
+    columns: 10,
+    expiresAt: at,
+  };
+  const source = {
+    name: 'devices-for-editing-EXP-001.csv',
+    sizeBytes: 7987,
+    rowsRead: 48,
+    candidateRows: 13,
+    refusalText: null,
+  };
+  // The blocks of one kind.
+  assert.equal(
+    jobDetailSchema.safeParse({ ...exported, exportFile: file }).success,
+    true,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...validation, importSource: source }).success,
+    true,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...validation, planJobs: [] }).success,
+    true,
+  );
+  // A block of another kind.
+  assert.equal(
+    jobDetailSchema.safeParse({ ...update, exportFile: file }).success,
+    false,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...validation, exportFile: file }).success,
+    false,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...update, importSource: source }).success,
+    false,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...update,
+      executionCounts: null,
+      planJobs: [],
+    }).success,
+    false,
+  );
+  // A validation job links no other job, because its plan links its own jobs.
+  assert.equal(
+    jobDetailSchema.safeParse({ ...validation, importDisplayId: 'IMP-001' })
+      .success,
+    false,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...validation, waitsForDisplayId: 'UPD-001' })
+      .success,
+    false,
+  );
+  // A status job of a plan names the update job that it waits for.
+  const status = detailOf({
+    ...summary,
+    displayId: 'STS-001',
+    action: 'disable-devices',
+    statusAction: 'disable',
+  });
+  assert.equal(
+    jobDetailSchema.safeParse({ ...status, waitsForDisplayId: 'UPD-001' })
+      .success,
+    true,
+  );
+  assert.equal(
+    jobDetailSchema.safeParse({ ...status, importDisplayId: 'IMP-001' })
+      .success,
+    true,
+  );
+  // An update job of a plan names the validation job and the status jobs that wait for it.
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...update,
+      importDisplayId: 'IMP-001',
+      waitingDisplayIds: ['STS-001', 'STS-002'],
+    }).success,
+    true,
+  );
+});
