@@ -279,12 +279,34 @@ function exportPhaseLine(phase: JobPhase | null): string {
 }
 
 /**
+ * The rows written by an export, from the observed phase (design section 2).
+ *
+ * The worker writes `phase_done` and `phase_total` while it writes rows, and it leaves
+ * `progress.succeeded` at zero until the finish. The write phase ends before the download
+ * phase starts, and the worker resets the download phase to `{done: 0, total: null}`. The
+ * scope holds the row count of the completed write phase.
+ */
+export function exportRows(
+  job: Pick<JobSummary, 'scope' | 'progress' | 'phase'>,
+): { written: number; total: number | null } {
+  const target = job.scope.deviceCount ?? job.progress.total ?? null;
+  if (job.phase?.name === 'write-rows')
+    return { written: job.phase.done, total: job.phase.total ?? target };
+  if (job.phase?.name === 'prepare-download') {
+    const total = target ?? job.progress.succeeded;
+    // Every row was written before the download phase began.
+    return { written: total, total };
+  }
+  const written = job.progress.succeeded;
+  return { written, total: target ?? (written > 0 ? written : null) };
+}
+
+/**
  * The Progress cell of an export job (design section 9, state 26). The first line counts the
  * rows that the job wrote; the second line names the phase, the file, or the failure.
  */
 function exportProgress(job: JobSummary): [string, string] {
-  const written = job.progress.succeeded;
-  const total = job.progress.total ?? job.scope.deviceCount ?? null;
+  const { written, total } = exportRows(job);
   const rows = (value: number) =>
     `${count(value)} ${value === 1 ? 'row' : 'rows'}`;
   const ready =
@@ -352,9 +374,12 @@ export function recentLine(job: JobSummary): string {
 
 /** The share of a job that is complete. A job without a total has no determinate bar. */
 export function progressPercent(job: JobSummary): number | null {
-  const { total, succeeded } = job.progress;
-  if (total === null || total === 0) return null;
-  return Math.min(100, Math.round((succeeded / total) * 100));
+  const rows =
+    job.action === 'export-devices'
+      ? exportRows(job)
+      : { written: job.progress.succeeded, total: job.progress.total };
+  if (rows.total === null || rows.total === 0) return null;
+  return Math.min(100, Math.round((rows.written / rows.total) * 100));
 }
 
 /** The progress and requester line of a Running row. */

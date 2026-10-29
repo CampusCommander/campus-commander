@@ -28,13 +28,14 @@ const exportDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   finishedAt: null,
   progress: {
     total: 48,
-    succeeded: 32,
+    // Production writes the phase counters; the outcome counters stay zero until the finish.
+    succeeded: 0,
     failed: 0,
     unknown: 0,
     skipped: 0,
     expired: 0,
     cancelled: 0,
-    pending: 16,
+    pending: 48,
   },
   phase: { name: 'write-rows', done: 32, total: 48 },
   exportSummary: { purpose: 'edit' },

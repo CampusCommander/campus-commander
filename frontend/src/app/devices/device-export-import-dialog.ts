@@ -17,7 +17,11 @@ import {
   type DeviceExportRequest,
   type JobPhase,
 } from '@campus/application-contracts';
-import { JOB_STATUS_LABELS, formatTimestamp } from '../jobs/job-fields';
+import {
+  JOB_STATUS_LABELS,
+  exportRows,
+  formatTimestamp,
+} from '../jobs/job-fields';
 import { DeviceExportImportStore } from './device-export-import.store';
 import { DeviceExportHelp } from './device-export-help';
 import {
@@ -188,26 +192,20 @@ export class DeviceExportImportDialog {
       cancelled: job?.status === 'cancelled',
       completed: job?.status === 'completed',
     };
-    const written =
-      phase?.name === 'write-rows'
-        ? phase.done
-        : (job?.progress.succeeded ?? 0);
-    const total =
-      phase?.name === 'write-rows'
-        ? phase.total
-        : (job?.progress.total ?? job?.scope.deviceCount ?? null);
+    const rows = job ? exportRows(job) : { written: 0, total: null };
+    const writeState = phaseState(phase, 'write-rows', outcome);
     return [
       {
         name: 'write-rows',
         label: 'Write rows',
         detail:
-          total === null ? '' : `${thousands(written)} of ${thousands(total)}`,
-        state: phaseState(phase, 'write-rows', outcome),
+          rows.total === null
+            ? ''
+            : `${thousands(rows.written)} of ${thousands(rows.total)}`,
+        state: writeState,
         percent:
-          phaseState(phase, 'write-rows', outcome) === 'current' &&
-          total !== null &&
-          total > 0
-            ? Math.min(100, Math.round((written / total) * 100))
+          writeState === 'current' && rows.total !== null && rows.total > 0
+            ? Math.min(100, Math.round((rows.written / rows.total) * 100))
             : null,
       },
       {
@@ -251,30 +249,33 @@ export class DeviceExportImportDialog {
   }
 }
 
-/** The state of one phase dot, from the job's stored phase and status. */
+/** The order of the two export phases (design section 2). */
+const EXPORT_PHASES = ['write-rows', 'prepare-download'] as const;
+
+/**
+ * The state of one phase dot, from the job's stored phase and status.
+ * A terminal job marks the phases before its stopping phase Done, the stopping phase
+ * Failed or Stopped, and the phases after it untouched (R7).
+ */
 function phaseState(
   phase: JobPhase | null,
   name: string,
   outcome: { failed: boolean; cancelled: boolean; completed: boolean },
 ): ExportPhaseView['state'] {
-  const first = name === 'write-rows';
-  const current = phase?.name === name;
-  if (current) {
-    if (outcome.failed) return 'failed';
-    return outcome.cancelled ? 'stopped' : 'current';
+  const index = EXPORT_PHASES.indexOf(name as (typeof EXPORT_PHASES)[number]);
+  const reached = phase
+    ? EXPORT_PHASES.indexOf(phase.name as (typeof EXPORT_PHASES)[number])
+    : -1;
+  if (outcome.failed || outcome.cancelled) {
+    // A job without a phase never reached a phase: it stopped before writing a row.
+    const stopping = reached >= 0 ? reached : 0;
+    if (index < stopping) return 'done';
+    if (index === stopping) return outcome.failed ? 'failed' : 'stopped';
+    return 'later';
   }
   if (outcome.completed) return 'done';
-  if (outcome.failed)
-    // A failed export stopped in the phase it reached. Its later phases stay untouched.
-    return phase === null
-      ? first
-        ? 'failed'
-        : 'later'
-      : first
-        ? 'later'
-        : 'failed';
-  if (outcome.cancelled)
-    return phase === null ? (first ? 'stopped' : 'later') : 'done';
-  if (phase === null) return first ? 'current' : 'later';
-  return first ? 'done' : 'later';
+  if (reached < 0) return index === 0 ? 'current' : 'later';
+  if (index < reached) return 'done';
+  if (index === reached) return 'current';
+  return 'later';
 }

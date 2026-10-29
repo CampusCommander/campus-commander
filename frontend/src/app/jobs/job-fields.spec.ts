@@ -51,31 +51,46 @@ const summary = (overrides: Partial<JobSummary> = {}): JobSummary => ({
 });
 
 describe('progressLines', () => {
-  it('counts the rows of a running export', () => {
+  const progress = (overrides: Partial<JobSummary['progress']> = {}) => ({
+    total: 48,
+    succeeded: 0,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 48,
+    ...overrides,
+  });
+
+  it('counts the rows of a running export from the phase', () => {
+    // Production writes phase_done and phase_total; progress.succeeded stays zero.
     expect(
       progressLines(
         summary({
           action: 'export-devices',
           displayId: 'EXP-001',
           status: 'running',
+          progress: progress({ succeeded: 0, pending: 28 }),
           phase: { name: 'write-rows', done: 20, total: 48 },
           exportSummary: { purpose: 'edit' },
         }),
       ),
-    ).toEqual(['36 of 48 rows written', 'Writing rows']);
+    ).toEqual(['20 of 48 rows written', 'Writing rows']);
   });
 
-  it('names the download phase of a running export', () => {
+  it('keeps the completed write count during the download phase', () => {
     expect(
       progressLines(
         summary({
           action: 'export-devices',
           displayId: 'EXP-001',
           status: 'running',
-          phase: { name: 'prepare-download', done: 48, total: null },
+          progress: progress({ total: 48, succeeded: 0, pending: 0 }),
+          phase: { name: 'prepare-download', done: 0, total: null },
         }),
       ),
-    ).toEqual(['36 of 48 rows written', 'Preparing the download']);
+    ).toEqual(['48 of 48 rows written', 'Preparing the download']);
   });
 
   it('follows the completed edit and report rows of state 26', () => {
@@ -122,18 +137,34 @@ describe('progressLines', () => {
           displayId: 'EXP-001',
           status: 'failed',
           failure: 'export-too-large',
+          progress: progress({ succeeded: 0, pending: 36 }),
+          phase: { name: 'write-rows', done: 12, total: 48 },
         }),
       ),
-    ).toEqual(['36 rows written', 'Export too large']);
+    ).toEqual(['12 rows written', 'Export too large']);
     expect(
       progressLines(
         summary({
           action: 'export-devices',
           displayId: 'EXP-001',
           status: 'cancelled',
+          progress: progress({ succeeded: 0, pending: 0 }),
+          phase: { name: 'write-rows', done: 12, total: 48 },
         }),
       ),
-    ).toEqual(['36 rows written', 'Export stopped']);
+    ).toEqual(['12 rows written', 'Export stopped']);
+    // A stop during the download phase keeps the completed write count.
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          status: 'cancelled',
+          progress: progress({ succeeded: 0, pending: 0 }),
+          phase: { name: 'prepare-download', done: 0, total: null },
+        }),
+      ),
+    ).toEqual(['48 rows written', 'Export stopped']);
   });
 
   it('follows the running frame row', () => {
@@ -547,6 +578,47 @@ describe('activity lines', () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it('reads the export bar from its phase, not from the outcome counters', () => {
+    expect(
+      progressPercent(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          progress: {
+            total: 48,
+            succeeded: 0,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: 16,
+          },
+          phase: { name: 'write-rows', done: 32, total: 48 },
+        }),
+      ),
+    ).toBe(67);
+    expect(
+      progressPercent(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          progress: {
+            total: 48,
+            succeeded: 0,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: 0,
+          },
+          phase: { name: 'prepare-download', done: 0, total: null },
+        }),
+      ),
+    ).toBe(100);
   });
 });
 

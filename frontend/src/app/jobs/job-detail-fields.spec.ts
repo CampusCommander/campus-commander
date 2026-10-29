@@ -224,6 +224,64 @@ describe('latest activity', () => {
     );
   });
 
+  it('counts export rows from the observed phase', () => {
+    const at = '2026-10-19T10:36:00.000Z';
+    const exportJob = (overrides: Partial<JobDetail> = {}) =>
+      job({
+        action: 'export-devices',
+        displayId: 'EXP-001',
+        status: 'running',
+        scope: { kind: 'devices', deviceCount: 48 },
+        progress: progress({
+          total: 48,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 16,
+        }),
+        phase: { name: 'write-rows', done: 32, total: 48 },
+        exportSummary: { purpose: 'edit' },
+        latestActivity: {
+          at,
+          failed: { count: 0, operations: [] },
+          unknown: { count: 0, operations: [] },
+        },
+        ...overrides,
+      });
+    expect(latestActivityLine(exportJob())).toBe(
+      `${formatTime(at)} · 32 of 48 rows written.`,
+    );
+    expect(
+      latestActivityLine(
+        exportJob({
+          phase: { name: 'prepare-download', done: 0, total: null },
+          progress: progress({ total: 48, succeeded: 0, pending: 0 }),
+        }),
+      ),
+    ).toBe(`${formatTime(at)} · 48 of 48 rows written.`);
+    expect(
+      latestActivityLine(
+        exportJob({
+          status: 'failed',
+          failure: 'export-too-large',
+          phase: { name: 'write-rows', done: 12, total: 48 },
+          finishedAt: '2026-10-19T10:36:05.000Z',
+        }),
+      ),
+    ).toBe(
+      `${formatTime(at)} · 12 of 48 rows written. The export failed: Export too large.`,
+    );
+    expect(
+      latestActivityLine(
+        exportJob({
+          status: 'cancelled',
+          phase: { name: 'write-rows', done: 12, total: 48 },
+          finishedAt: '2026-10-19T10:36:05.000Z',
+        }),
+      ),
+    ).toBe(`${formatTime(at)} · 12 of 48 rows written. The export stopped.`);
+  });
+
   it('uses the newest sample time', () => {
     const current = sampleJob();
     current.latestActivity.failed.operations[0].updatedAt =
@@ -1741,15 +1799,44 @@ describe('cancel', () => {
         displayId: 'EXP-001',
         action: 'export-devices',
         scope: { kind: 'devices', deviceCount: 48 },
+        phase: { name: 'write-rows', done: 20, total: 48 },
+        progress: progress({
+          total: 48,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 28,
+        }),
       }),
     );
     expect(question.title).toBe('Cancel pending work on EXP-001?');
     expect(question.paragraphs).toEqual([
-      '36 of 48 rows are written. The export stops at its next batch.',
+      '20 of 48 rows are written. The export stops at its next batch.',
       'No file is written. No device changes.',
     ]);
     expect(question.dismissLabel).toBe('Keep export running');
     expect(question.confirmLabel).toBe('Stop the export');
+  });
+
+  it('counts the completed write phase of an export that prepares its file', () => {
+    const question = cancelQuestion(
+      running({
+        displayId: 'EXP-001',
+        action: 'export-devices',
+        scope: { kind: 'devices', deviceCount: 48 },
+        phase: { name: 'prepare-download', done: 0, total: null },
+        progress: progress({
+          total: 48,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 0,
+        }),
+      }),
+    );
+    expect(question.paragraphs[0]).toBe(
+      '48 of 48 rows are written. The export stops at its next batch.',
+    );
   });
 
   it('drafts the export question of an export that has not started', () => {
