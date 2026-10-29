@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
 import { devicePageSchema } from '@campus/application-contracts';
 
 /**
@@ -279,10 +280,15 @@ async function openEntry(page: Page, name: string) {
 
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `test-results/export-import/${name}.png` });
+  const dir = 'dist/e2e-evidence/export-import';
+  await mkdir(dir, { recursive: true });
+  await page.screenshot({ path: `${dir}/${name}.png` });
 }
 
-test.use({ viewport: { width: 1440, height: 900 } });
+test.use({
+  viewport: { width: 1440, height: 900 },
+  timezoneId: 'America/New_York',
+});
 
 test.describe('Export, Reports, and Import', () => {
   test('state 01: the menu lists the three entries below a divider', async ({
