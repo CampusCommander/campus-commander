@@ -316,10 +316,10 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.claim_device_export_job(text,uuid,uuid),
         cc.claim_device_import_job(text,uuid,uuid),
         cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
-        cc.renew_device_import_job(text,uuid,uuid,text,integer,integer),
-        cc.store_device_import_lines(text,uuid,uuid,jsonb),
+        cc.renew_device_import_job(text,uuid,uuid,integer,text,integer,integer),
+        cc.store_device_import_lines(text,uuid,uuid,integer,jsonb),
         cc.finish_device_export_job(text,uuid,uuid,jsonb,text),
-        cc.finish_device_import_job(text,uuid,uuid,jsonb,text,text,text),
+        cc.finish_device_import_job(text,uuid,uuid,integer,jsonb,text,text,text),
         cc.recover_device_file_jobs(text) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '018-device-write-access')) {

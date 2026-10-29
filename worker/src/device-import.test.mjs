@@ -10,7 +10,9 @@ import {
   DEVICE_EDIT_TEMPLATE_COLUMNS,
   DEVICE_EDIT_TEMPLATE_HEADERS,
   DEVICE_IMPORT_ROW_LIMIT,
+  deviceEditFieldChange,
   deviceEditRowChecksum,
+  deviceEditStatusCellIntent,
   deviceImportDuplicateTagWarning,
   deviceImportExportOnlyStatusWarning,
   deviceImportPermissionRejectionText,
@@ -137,17 +139,29 @@ function fakeTimers() {
   };
 }
 
-/** A store that serves the uploaded file in chunks that break pairs and quoted cells. */
+/** A store that serves the uploaded file in byte chunks that break pairs and quoted cells. */
 function fakeStore(text, options = {}) {
   const calls = [];
+  const bytes = Buffer.from(text, 'utf8');
+  let chunks = 0;
+  const size = options.chunkSize ?? 7;
   return {
     calls,
+    get chunks() {
+      return chunks;
+    },
+    get totalChunks() {
+      return Math.ceil(bytes.length / size);
+    },
     async *openRead(id) {
       calls.push(id);
       if (options.readFailure) throw new Error('The artifact read failed.');
-      const size = options.chunkSize ?? 7;
-      for (let start = 0; start < text.length; start += size)
-        yield Buffer.from(text.slice(start, start + size), 'utf8');
+      for (let start = 0; start < bytes.length; start += size) {
+        chunks += 1;
+        options.events?.push('chunk');
+        await options.onChunk?.(chunks);
+        yield bytes.subarray(start, start + size);
+      }
     },
   };
 }
@@ -174,11 +188,15 @@ function fakeReader(options = {}) {
   const calls = { states: [], tree: [] };
   return {
     calls,
-    async deviceStates(_credential, id, deviceIds) {
+    async deviceStates(_credential, id, deviceIds, signal) {
       calls.states.push([...deviceIds]);
       options.events?.push('deviceStates');
       if (options.deviceStates)
-        return options.deviceStates([...deviceIds], calls.states.length);
+        return options.deviceStates(
+          [...deviceIds],
+          calls.states.length,
+          signal,
+        );
       return deviceIds.map((deviceId) => {
         const state = (options.states ?? []).find(
           (entry) => entry.deviceId === deviceId,
@@ -207,6 +225,7 @@ function fakeDatabase(options = {}) {
     claim: [],
     renew: [],
     lines: [],
+    lineAttempts: [],
     finish: [],
     lookup: [],
     compare: [],
@@ -217,7 +236,7 @@ function fakeDatabase(options = {}) {
     order: [],
   };
   const devices = options.devices ?? new Map();
-  const job = { status: null, cancelRequested: false };
+  const job = { status: null, cancelRequested: false, attempt: 0 };
   const lease = { fenced: false };
   const events = options.events ?? [];
   let lineCount = 0;
@@ -238,14 +257,28 @@ function fakeDatabase(options = {}) {
       const name = /cc\.([a-z_]+)\(/.exec(sql)?.[1];
       if (name === 'claim_device_import_job') {
         calls.claim.push(values);
-        if (options.claim) return { rows: [{ result: options.claim(values) }] };
+        if (options.claim) {
+          const answer = options.claim(values);
+          // A claim sets the attempt of the job, and clears the report of the one before it.
+          if (answer.outcome === 'claimed') {
+            job.attempt = answer.attempt;
+            lineCount = 0;
+          }
+          return { rows: [{ result: answer }] };
+        }
         if (job.status !== null || job.cancelRequested)
-          return { rows: [{ result: { outcome: 'done' } }] };
+          return {
+            rows: [{ result: { outcome: 'done', attempt: job.attempt } }],
+          };
+        // Every claim opens a new attempt and clears the report of the one before it.
+        job.attempt += 1;
+        lineCount = 0;
         return {
           rows: [
             {
               result: {
                 outcome: 'claimed',
+                attempt: job.attempt,
                 displayId: options.displayId ?? 'IMP-001',
                 mode: options.mode ?? 'sync-changes',
                 sourceArtifactId: options.missingArtifact ? null : artifactId,
@@ -265,11 +298,11 @@ function fakeDatabase(options = {}) {
         };
       }
       if (name === 'renew_device_import_job') {
-        const [phase, done, total] = values.slice(3, 6);
-        calls.renew.push({ phase, done, total });
+        const [attempt, phase, done, total] = values.slice(3, 7);
+        calls.renew.push({ attempt, phase, done, total });
         let outcome;
         if (options.renew) outcome = options.renew(phase, done, total);
-        else if (lease.fenced) outcome = 'fenced';
+        else if (lease.fenced || attempt !== job.attempt) outcome = 'fenced';
         else if (job.status !== null || job.cancelRequested) outcome = 'done';
         else outcome = 'renewed';
         if (outcome === 'done') job.cancelRequested = true;
@@ -277,22 +310,26 @@ function fakeDatabase(options = {}) {
         return { rows: [{ result: { outcome } }] };
       }
       if (name === 'store_device_import_lines') {
-        const lines = JSON.parse(values[3]);
+        const attempt = values[3];
+        const lines = JSON.parse(values[4]);
         calls.lines.push(lines);
+        calls.lineAttempts.push(attempt);
         calls.order.push('lines');
-        lineCount += lines.length;
-        if (options.linesFenced)
+        events.push('lines');
+        if (options.linesFenced || attempt !== job.attempt)
           return { rows: [{ result: { outcome: 'fenced' } }] };
+        lineCount += lines.length;
         if (job.status !== null || job.cancelRequested)
           return { rows: [{ result: { outcome: 'done' } }] };
         return { rows: [{ result: { outcome: 'stored' } }] };
       }
       if (name === 'finish_device_import_job') {
-        const counts = values[3] === null ? null : JSON.parse(values[3]);
-        const failure = values[4] ?? null;
-        const refusal = values[5] ?? null;
-        const refusalText = values[6] ?? null;
-        calls.finish.push({ counts, failure, refusal, refusalText });
+        const attempt = values[3];
+        const counts = values[4] === null ? null : JSON.parse(values[4]);
+        const failure = values[5] ?? null;
+        const refusal = values[6] ?? null;
+        const refusalText = values[7] ?? null;
+        calls.finish.push({ attempt, counts, failure, refusal, refusalText });
         // `cc.finish_device_import_job` refuses a code that `cc.job_failure_known` misses.
         if (failure !== null && !JOB_FAILURES.has(failure))
           throw new Error('The import finish is invalid.');
@@ -302,7 +339,8 @@ function fakeDatabase(options = {}) {
           return {
             rows: [{ result: { outcome: 'finished', status: job.status } }],
           };
-        if (lease.fenced) return { rows: [{ result: { outcome: 'fenced' } }] };
+        if (lease.fenced || attempt !== job.attempt)
+          return { rows: [{ result: { outcome: 'fenced' } }] };
         if (job.cancelRequested) {
           job.status = 'cancelled';
           return {
@@ -405,6 +443,7 @@ function fakeDatabase(options = {}) {
         if (options.lookupFailure) throw new Error('The lookup failed.');
         calls.lookup.push(values[1]);
         calls.order.push('lookup');
+        options.afterLookup?.(devices);
         return {
           rows: values[1].flatMap((id) => {
             const row = devices.get(id);
@@ -446,7 +485,7 @@ function harness(options = {}) {
   const text =
     options.text ??
     csvText([cellsOf({ deviceId: 'dev-a', orgUnitPath: '/Schools/North' })]);
-  const store = fakeStore(text, options.store ?? {});
+  const store = fakeStore(text, { events, ...(options.store ?? {}) });
   const reader = fakeReader({ events, ...(options.reader ?? {}) });
   const timers = options.timers ?? fakeTimers();
   const jobs = new DeviceImportJobs(
@@ -538,7 +577,7 @@ test('a validation stores the counts, the changes, and the plan', async () => {
   assert.deepEqual(harnessed.database.calls.lines.flat(), [
     {
       kind: 'change',
-      sourceRow: 2,
+      sourceRow: 3,
       deviceId: 'dev-b',
       changeType: 'field',
       field: 'notes',
@@ -548,7 +587,7 @@ test('a validation stores the counts, the changes, and the plan', async () => {
     },
     {
       kind: 'change',
-      sourceRow: 2,
+      sourceRow: 3,
       deviceId: 'dev-b',
       changeType: 'status',
       action: 'disable',
@@ -636,7 +675,7 @@ test('a failed device rejects only its own rows', async () => {
   const rejected = lines.filter((line) => line.kind === 'rejection');
   assert.deepEqual(
     rejected.map((line) => [line.sourceRow, line.reason]),
-    [[1, 'Current values unavailable.']],
+    [[2, 'Current values unavailable.']],
   );
   // The rejected row's line carries the ten template cells of its row.
   assert.equal(rejected[0].templateCells.length, 10);
@@ -695,7 +734,7 @@ test('a token failure rejects its batch and later batches continue', async () =>
       .flat()
       .filter((line) => line.kind === 'rejection')
       .map((line) => line.sourceRow),
-    [1],
+    [2],
   );
   assert.deepEqual(
     harnessed.database.calls.lines
@@ -747,7 +786,7 @@ test('the refresh stores the found and the missing devices in one transaction', 
       .flat()
       .filter((line) => line.kind === 'rejection')
       .map((line) => [line.sourceRow, line.reason]),
-    [[2, 'Google no longer returns this device.']],
+    [[3, 'Google no longer returns this device.']],
   );
 });
 
@@ -785,6 +824,7 @@ test('a refused file fails the job with its code and the module text', async () 
   assert.equal(answer.refusal, 'ragged-record');
   assert.deepEqual(harnessed.database.calls.finish, [
     {
+      attempt: 1,
       counts: null,
       failure: 'invalid-response',
       refusal: 'ragged-record',
@@ -861,7 +901,13 @@ test('a cancel keeps no report and no plan', async () => {
 
   assert.equal(answer.outcome, 'cancelled');
   assert.deepEqual(harnessed.database.calls.finish, [
-    { counts: null, failure: null, refusal: null, refusalText: null },
+    {
+      attempt: 1,
+      counts: null,
+      failure: null,
+      refusal: null,
+      refusalText: null,
+    },
   ]);
   assert.equal(harnessed.database.calls.lines.length, 0);
   assert.equal(harnessed.timers.active, 0);
@@ -930,14 +976,20 @@ test('a busy claim, a fenced lease, and an ended job write nothing', async () =>
   // An ended job repeats its stored answer. The finish writes nothing (migration 017).
   const ended = harness({
     database: {
-      claim: () => ({ outcome: 'done' }),
+      claim: () => ({ outcome: 'done', attempt: 0 }),
       finish: () => ({ outcome: 'finished', status: 'completed' }),
     },
     devices: [device('dev-a')],
   });
   assert.deepEqual(await ended.run(), { outcome: 'done' });
   assert.deepEqual(ended.database.calls.finish, [
-    { counts: null, failure: null, refusal: null, refusalText: null },
+    {
+      attempt: 0,
+      counts: null,
+      failure: null,
+      refusal: null,
+      refusalText: null,
+    },
   ]);
 });
 
@@ -970,16 +1022,20 @@ test('a file of rejected rows stores each call before the next one fills', async
   ]);
 });
 
-test('a call stays below the 32 MiB that the store accepts', async () => {
-  // Ten full cells make a rejection line of about 82 KB, so the byte limit closes the call.
-  const cell = 'n'.repeat(16_384);
-  const rows = Array.from({ length: 450 }, () =>
+test('a report call closes before a maximum row of cells crosses the store limit', async () => {
+  // Nine cells of 16,384 supplementary characters: the largest legal rejection line (design
+  // section 6, steps 4 and 19). Sixty rows hold more than the 32 MiB that the store accepts, so the
+  // buffer closes a call before the next row joins it.
+  const cell = '\u{1f600}'.repeat(16_384);
+  const rows = Array.from({ length: 60 }, () =>
     cellsOf({
-      annotatedLocation: cell,
+      status: cell,
       annotatedAssetId: cell,
+      annotatedLocation: cell,
       annotatedUser: cell,
       notes: cell,
       orgUnitPath: cell,
+      checksum: cell,
     }),
   );
   const harnessed = harness({
@@ -990,23 +1046,31 @@ test('a call stays below the 32 MiB that the store accepts', async () => {
 
   const answer = await harnessed.run();
 
-  assert.equal(answer.outcome, 'completed');
-  assert.equal(answer.counts.rejected, 450);
+  assert.equal(answer.outcome, 'completed', JSON.stringify(answer));
+  assert.equal(answer.counts.rejected, 60);
   assert.ok(
     harnessed.database.calls.lines.length > 1,
     'The byte limit closes the call before 1,000 lines.',
   );
-  for (const batch of harnessed.database.calls.lines)
+  for (const batch of harnessed.database.calls.lines) {
+    // The stored document adds a jsonb container header and one entry per key and value. This
+    // allowance covers it, and `cc.store_device_import_lines` measures the stored size.
+    const stored =
+      Buffer.byteLength(JSON.stringify(batch), 'utf8') +
+      256 * batch.length +
+      4_096;
     assert.ok(
-      Buffer.byteLength(JSON.stringify(batch), 'utf8') <
-        DEVICE_IMPORT_LINE_BYTES,
+      stored <= 32 * 1024 * 1024,
       'A call stays under the document limit of cc.store_device_import_lines.',
     );
-  assert.equal(
-    harnessed.database.calls.lines.flat().length,
-    450,
-    'Every line is stored once.',
+  }
+  const rejectedRows = new Set(
+    harnessed.database.calls.lines
+      .flat()
+      .filter((line) => line.kind === 'rejection')
+      .map((line) => line.sourceRow),
   );
+  assert.equal(rejectedRows.size, 60, 'Every row is rejected once.');
 });
 
 test('a store fault fails the job with storage-unavailable', async () => {
@@ -1035,6 +1099,7 @@ test('the failure request ends a lost run with interrupted', async () => {
   assert.equal(answer.failure, 'interrupted');
   assert.deepEqual(harnessed.database.calls.finish, [
     {
+      attempt: 1,
       counts: null,
       failure: 'interrupted',
       refusal: null,
@@ -1110,10 +1175,10 @@ test('an unknown and a removed device each reject their row', async () => {
       .map((line) => [line.sourceRow, line.reason]),
     [
       [
-        1,
+        2,
         'Campus Commander holds no device with this ID. Import never creates devices.',
       ],
-      [2, 'Google no longer returns this device.'],
+      [3, 'Google no longer returns this device.'],
     ],
   );
   assert.equal(harnessed.reader.calls.states.length, 0);
@@ -1139,23 +1204,99 @@ test('a missing, a malformed, and a duplicated device ID each reject their row',
   const answer = await harnessed.run();
 
   assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.status, 'completed-with-errors');
   assert.equal(answer.counts.unchanged, 0);
-  assert.equal(answer.counts.rejected, 3);
-  assert.equal(answer.counts.proposed, 1);
+  // Both occurrences of `dev-a` reject, so no row proposes a change (design section 6, step 5).
+  assert.equal(answer.counts.rejected, 4);
+  assert.equal(answer.counts.proposed, 0);
+  assert.equal(answer.plan, null);
   assert.deepEqual(
     harnessed.database.calls.lines
       .flat()
       .filter((line) => line.kind === 'rejection')
-      .map((line) => [line.sourceRow, line.reason]),
+      .map((line) => [line.sourceRow, line.reason])
+      .sort((left, right) => left[0] - right[0]),
     [
+      [2, 'Another row uses this Device ID.'],
       [
-        2,
+        3,
         'The Device ID holds 1 to 128 letters, digits, hyphens, or underscores.',
       ],
-      [3, 'Another row uses this Device ID.'],
-      [4, 'The row holds no Device ID.'],
+      [4, 'Another row uses this Device ID.'],
+      [5, 'The row holds no Device ID.'],
     ],
   );
+  assert.equal(
+    harnessed.database.calls.lines
+      .flat()
+      .filter((line) => line.kind === 'change').length,
+    0,
+  );
+});
+
+test('a duplicated Device ID rejects the earlier unchanged row as well', async () => {
+  const exported = {
+    deviceId: 'dev-a',
+    notes: 'one',
+    orgUnitPath: '/Schools/North',
+  };
+  const text = csvText([
+    cellsOf({ ...exported, checksum: await checksumOf(exported) }),
+    cellsOf({
+      deviceId: 'dev-a',
+      notes: 'two',
+      orgUnitPath: '/Schools/North',
+    }),
+  ]);
+  const harnessed = harness({
+    text,
+    devices: [device('dev-a', { notes: 'one' })],
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.status, 'completed-with-errors');
+  assert.equal(answer.counts.unchanged, 0);
+  assert.equal(answer.counts.rejected, 2);
+  assert.equal(answer.counts.proposed, 0);
+  assert.equal(answer.plan, null);
+  assert.deepEqual(
+    harnessed.database.calls.lines
+      .flat()
+      .map((line) => [line.kind, line.sourceRow, line.reason ?? null])
+      .sort((left, right) => left[1] - right[1]),
+    [
+      ['rejection', 2, 'Another row uses this Device ID.'],
+      ['rejection', 3, 'Another row uses this Device ID.'],
+    ],
+  );
+  // The deferred line of the earlier row still carries its ten cells.
+  assert.equal(
+    harnessed.database.calls.lines.flat().find((line) => line.sourceRow === 2)
+      .templateCells.length,
+    10,
+  );
+});
+
+test('a duplicated Device ID rejects every occurrence in Sync all rows', async () => {
+  const text = csvText([
+    cellsOf({ deviceId: 'dev-a', notes: 'one', orgUnitPath: '/Schools/North' }),
+    cellsOf({ deviceId: 'dev-a', notes: 'two', orgUnitPath: '/Schools/North' }),
+  ]);
+  const harnessed = harness({
+    text,
+    mode: 'sync-all-rows',
+    devices: [device('dev-a')],
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.counts.rejected, 2);
+  assert.equal(answer.counts.proposed, 0);
+  assert.equal(answer.plan, null);
+  assert.equal(harnessed.reader.calls.states.length, 0);
 });
 
 test('a status code without its permission rejects its row', async () => {
@@ -1202,7 +1343,7 @@ test('an unknown unit rejects its row, and a failed tree read rejects every unit
       .flat()
       .filter((line) => line.kind === 'rejection')
       .map((line) => [line.sourceRow, line.reason]),
-    [[1, deviceImportUnitRejectionText('/Schools/Nowhere')]],
+    [[2, deviceImportUnitRejectionText('/Schools/Nowhere')]],
   );
 
   const failed = harness({
@@ -1219,8 +1360,9 @@ test('an unknown unit rejects its row, and a failed tree read rejects every unit
     failed.database.calls.lines
       .flat()
       .filter((line) => line.kind === 'rejection')
-      .map((line) => line.sourceRow),
-    [1, 2],
+      .map((line) => line.sourceRow)
+      .sort((left, right) => left - right),
+    [2, 3],
   );
 });
 
@@ -1315,6 +1457,358 @@ test('a field value past its limit rejects its row', async () => {
   assert.match(
     harnessed.database.calls.lines.flat()[0].reason,
     /Notes holds 1 to 500 characters\./,
+  );
+});
+
+test('a stored cancel aborts a pending provider read', async () => {
+  const timers = fakeTimers();
+  let entered;
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  let readerSignal = null;
+  const harnessed = harness({
+    timers,
+    devices: [device('dev-a')],
+    reader: {
+      deviceStates(_ids, _index, received) {
+        readerSignal = received;
+        entered();
+        return new Promise((_resolve, reject) => {
+          received.addEventListener(
+            'abort',
+            () => reject(new Error('The read aborted.')),
+            { once: true },
+          );
+        });
+      },
+    },
+  });
+
+  const running = harnessed.run();
+  await started;
+  // The person cancels while the provider read waits. The tick that reads the cancel stops it.
+  harnessed.database.requestCancel();
+  await timers.fire();
+
+  assert.equal(
+    readerSignal.aborted,
+    true,
+    'The stored cancel aborts the reader signal.',
+  );
+  const answer = await running;
+  assert.equal(answer.outcome, 'cancelled');
+  assert.equal(signal.aborted, false, 'A cancel is not a worker stop.');
+  assert.deepEqual(harnessed.database.calls.finish, [
+    {
+      attempt: 1,
+      counts: null,
+      failure: null,
+      refusal: null,
+      refusalText: null,
+    },
+  ]);
+  assert.equal(harnessed.timers.active, 0);
+});
+
+test('a stored cancel stops the deferred second-pass scan', async () => {
+  const timers = fakeTimers();
+  // Every device is unknown, so pass 1 defers every rejection line to the second pass.
+  const rows = Array.from({ length: 2_501 }, (_value, index) =>
+    cellsOf({ deviceId: `dev-${index}`, orgUnitPath: '/Schools/North' }),
+  );
+  let cancelled = false;
+  let compareChunks = 0;
+  const harnessed = harness({
+    text: csvText(rows),
+    timers,
+    devices: [],
+    store: {
+      chunkSize: 64,
+      onChunk: async () => {
+        if (cancelled) return;
+        const compared = harnessed.database.calls.renew.some(
+          (call) => call.phase === 'compare',
+        );
+        if (!compared) return;
+        compareChunks += 1;
+        if (compareChunks < 4) return;
+        cancelled = true;
+        harnessed.database.requestCancel();
+        await timers.fire();
+      },
+    },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'cancelled');
+  assert.equal(cancelled, true, 'The cancel landed during the second pass.');
+  // The scan stops at its next chunk, so it reads only a sliver of the second pass.
+  const secondPass = harnessed.store.chunks - harnessed.store.totalChunks;
+  assert.ok(
+    secondPass <= 8,
+    `The scan read ${secondPass} chunks of the second pass.`,
+  );
+  assert.ok(
+    harnessed.database.lineCount < 2_501,
+    'The scan stops before it stores every row.',
+  );
+});
+
+test('a deferred rejection stream stores each call during the scan', async () => {
+  // The first branch of design section 6, step 19: an unknown device defers its line to pass 2.
+  const rows = Array.from({ length: 2_101 }, (_value, index) =>
+    cellsOf({ deviceId: `dev-${index}`, orgUnitPath: '/Schools/North' }),
+  );
+  const events = [];
+  const harnessed = harness({
+    text: csvText(rows),
+    devices: [],
+    events,
+    store: { chunkSize: 1024 },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.counts.rejected, 2_101);
+  assert.deepEqual(
+    harnessed.database.calls.lines.map((batch) => batch.length),
+    [1_000, 1_000, 101],
+  );
+  const firstLine = events.indexOf('lines');
+  assert.ok(
+    firstLine !== -1 && firstLine < events.lastIndexOf('chunk'),
+    'The first call lands during the scan, not after it.',
+  );
+});
+
+test('a rejected field cell flushes its call during pass 1', async () => {
+  // The second branch: a cell past its limit rejects in pass 1, which closes its call there.
+  const long = 'n'.repeat(501);
+  const rows = Array.from({ length: 2_101 }, () =>
+    cellsOf({ orgUnitPath: '/Schools/North', notes: long }),
+  );
+  const events = [];
+  const harnessed = harness({
+    text: csvText(rows),
+    devices: [],
+    events,
+    batchSize: 1_000,
+    store: { chunkSize: 1024 },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.counts.rejected, 2_101);
+  // Each row decides two reasons: a missing Device ID and the long Notes cell.
+  assert.equal(harnessed.database.calls.lines.flat().length, 4_202);
+  assert.deepEqual(
+    harnessed.database.calls.lines.map((batch) => batch.length),
+    [1_000, 1_000, 1_000, 1_000, 202],
+  );
+  assert.ok(
+    events.indexOf('lines') < events.lastIndexOf('chunk'),
+    'The first call lands during the header check.',
+  );
+});
+
+test('a device removed after the lookup flushes its call during the compare', async () => {
+  // The third branch: the compare finds no stored row for the device.
+  const devices = Array.from({ length: 2_101 }, (_value, index) =>
+    device(`dev-${index}`, { last_entity_sync: fresh() }),
+  );
+  const events = [];
+  const harnessed = harness({
+    text: csvText(
+      devices.map((row) =>
+        cellsOf({
+          deviceId: row.device_id,
+          notes: 'changed',
+          orgUnitPath: '/Schools/North',
+        }),
+      ),
+    ),
+    devices,
+    events,
+    store: { chunkSize: 1024 },
+    database: {
+      afterLookup: (map) => map.clear(),
+    },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.counts.rejected, 2_101);
+  assert.deepEqual(
+    harnessed.database.calls.lines.map((batch) => batch.length),
+    [1_000, 1_000, 101],
+  );
+  assert.ok(
+    events.indexOf('lines') < events.lastIndexOf('chunk'),
+    'The first call lands during the compare.',
+  );
+});
+
+test('a rejected row keeps every reason that its cells decide', async () => {
+  const text = csvText([
+    cellsOf({
+      deviceId: 'dev-a',
+      orgUnitPath: '/Schools/Missing',
+      notes: 'n'.repeat(501),
+      status: 'garbage',
+    }),
+  ]);
+  const harnessed = harness({ text, devices: [device('dev-a')] });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.counts.rejected, 1);
+  const rejections = harnessed.database.calls.lines
+    .flat()
+    .filter((line) => line.kind === 'rejection');
+  assert.deepEqual(
+    rejections.map((line) => [line.column, line.reason]).sort(),
+    [
+      [
+        DEVICE_EDIT_TEMPLATE_COLUMNS[column('orgUnitPath')].header,
+        deviceImportUnitRejectionText('/Schools/Missing'),
+      ],
+      [
+        DEVICE_EDIT_TEMPLATE_COLUMNS[column('status')].header,
+        deviceEditStatusCellIntent('garbage').reason,
+      ],
+      [
+        DEVICE_EDIT_TEMPLATE_COLUMNS[column('notes')].header,
+        deviceEditFieldChange('notes', 'n'.repeat(501)).reason,
+      ],
+    ].sort(),
+  );
+  // One rejected row stores one set of cells, on its first line.
+  assert.equal(rejections[0].templateCells?.length, 10);
+  assert.equal(rejections[1].templateCells, null);
+  assert.equal(answer.counts.proposed, 0);
+  assert.equal(answer.plan, null);
+});
+
+test('a source row names the spreadsheet row of its record', async () => {
+  const quote = (cell) =>
+    /[",\r\n]/.test(cell) ? `"${cell.replaceAll('"', '""')}"` : cell;
+  const row = (fields) => cellsOf(fields);
+  // Row 1 is the header, row 2 spans two lines inside a quoted cell, row 3 is blank, and row 4 is
+  // the second record (technical design, "Source row number").
+  const text =
+    [
+      DEVICE_EDIT_TEMPLATE_HEADERS,
+      row({ deviceId: 'dev-a', notes: 'two\nlines' }),
+      [],
+      row({ deviceId: 'dev-b', notes: 'changed' }),
+    ]
+      .map((cells) => cells.map(quote).join(','))
+      .join('\r\n') + '\r\n';
+  const harnessed = harness({
+    text,
+    devices: [
+      device('dev-a', { notes: 'before', last_entity_sync: fresh() }),
+      device('dev-b', { notes: 'before', last_entity_sync: fresh() }),
+    ],
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.counts.rows, 2);
+  assert.deepEqual(
+    harnessed.database.calls.lines
+      .flat()
+      .filter((line) => line.kind === 'change')
+      .map((line) => [line.sourceRow, line.deviceId]),
+    [
+      [2, 'dev-a'],
+      [4, 'dev-b'],
+    ],
+  );
+});
+
+test('the unit check compares NFC and case on both sides', async () => {
+  const text = csvText([
+    cellsOf({
+      deviceId: 'dev-a',
+      notes: 'changed',
+      orgUnitPath: '/Cafe\u0301',
+    }),
+    cellsOf({
+      deviceId: 'dev-b',
+      notes: 'changed',
+      orgUnitPath: '/CAF\u00c9',
+    }),
+    cellsOf({
+      deviceId: 'dev-c',
+      notes: 'changed',
+      orgUnitPath: '/Cafe\u0301/Missing',
+    }),
+  ]);
+  const harnessed = harness({
+    text,
+    devices: [
+      device('dev-a', { notes: 'before', last_entity_sync: fresh() }),
+      device('dev-b', { notes: 'before', last_entity_sync: fresh() }),
+      device('dev-c', { notes: 'before', last_entity_sync: fresh() }),
+    ],
+    reader: { tree: [{ orgUnitPath: '/Caf\u00e9', name: 'Cafe' }] },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  // A decomposed path and a path in another case both name the stored unit.
+  assert.equal(answer.counts.proposed, 2);
+  assert.equal(answer.counts.rejected, 1);
+  assert.deepEqual(
+    harnessed.database.calls.lines
+      .flat()
+      .filter((line) => line.kind === 'rejection')
+      .map((line) => line.reason),
+    [deviceImportUnitRejectionText('/Cafe\u0301/Missing')],
+  );
+});
+
+test('the claim attempt reaches the renew, line, and finish calls', async () => {
+  const claimed = {
+    outcome: 'claimed',
+    attempt: 7,
+    displayId: 'IMP-001',
+    mode: 'sync-changes',
+    sourceArtifactId: artifactId,
+    generation: 1,
+    credentialId: randomUUID(),
+    envelope: { ciphertext: 'cipher' },
+    statusPermissions: ['disable', 'reenable', 'deprovision'],
+  };
+  const harnessed = harness({
+    text: csvText([
+      cellsOf({
+        deviceId: 'dev-a',
+        notes: 'changed',
+        orgUnitPath: '/Schools/North',
+      }),
+    ]),
+    devices: [device('dev-a', { notes: 'before', last_entity_sync: fresh() })],
+    database: { claim: () => claimed },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.deepEqual(
+    [...new Set(harnessed.database.calls.renew.map((call) => call.attempt))],
+    [7],
+  );
+  assert.deepEqual([...new Set(harnessed.database.calls.lineAttempts)], [7]);
+  assert.deepEqual(
+    harnessed.database.calls.finish.map((call) => call.attempt),
+    [7],
   );
 });
 

@@ -71,11 +71,18 @@ export const DEVICE_IMPORT_LINE_BATCH = 1_000;
 export const DEVICE_IMPORT_LINE_BYTES = 32 * 1024 * 1024;
 
 /**
- * The framing that one call adds around its lines: the brackets, the separator of each of 1,000
- * lines, and the header of each value. `cc.store_device_import_lines` refuses a document above
- * 32 MiB, so the buffer closes below that cap and never builds a call that the store refuses.
+ * The stored size that one line adds beyond its JSON text. `cc.store_device_import_lines` measures
+ * `pg_column_size` of the jsonb array, and jsonb adds a container header and one entry per key and
+ * value. A line holds eleven members at most, so this allowance covers the largest one twice over
+ * (design section 6, step 19).
  */
-const LINE_ARRAY_FRAMING = 64 * 1024;
+const LINE_JSONB_OVERHEAD = 256;
+
+/**
+ * The framing that one call adds around its lines: the array header and its entries. A call closes
+ * below the 32 MiB cap with this space to spare, so the stored document never reaches it.
+ */
+const LINE_ARRAY_FRAMING = 4 * 1024;
 
 /** The warning of a Checksum cell that is not the exported form (`td:496`). */
 export const DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING =
@@ -104,6 +111,8 @@ const claimSchema = z.union([
     outcome: z.literal('claimed'),
     displayId: jobDisplayIdSchema,
     mode: z.enum(['sync-changes', 'sync-all-rows']),
+    /** The claim counter of this attempt. Only the newest attempt may store a line or finish. */
+    attempt: z.number().int().nonnegative(),
     /** The uploaded file. The upload links it to the job through `cc.artifacts.job_id`. */
     sourceArtifactId: z.string().min(1).max(256).nullable(),
     /** The connection credential that the worker reads Google with. */
@@ -112,13 +121,28 @@ const claimSchema = z.union([
     envelope: z.unknown().nullable(),
     statusPermissions: z.array(statusActionSchema).max(3),
   }),
-  z.object({ outcome: z.literal('done') }),
+  z.object({
+    outcome: z.literal('done'),
+    /** The attempt of the last claim. A repeated finish answers the stored status. */
+    attempt: z.number().int().nonnegative(),
+  }),
   z.object({ outcome: z.literal('busy') }),
 ]);
 type ClaimedImport = Extract<
   z.infer<typeof claimSchema>,
   { outcome: 'claimed' }
 >;
+
+/**
+ * The identity of one claimed run: the customer, the job, the lease, and the claim attempt. A
+ * repeated request opens a new attempt, so the attempt fences a run that a newer claim replaced.
+ */
+type ImportOwner = readonly [
+  customer: string,
+  job: string,
+  lease: string,
+  attempt: number,
+];
 
 const renewalSchema = z.object({
   outcome: z.enum(['renewed', 'done', 'fenced']),
@@ -366,6 +390,8 @@ interface CompareRow extends CandidateRow {
 interface Inspection {
   rowsRead: number;
   unchanged: number;
+  /** The source rows that the checksum marked unchanged, for the duplicate scan. */
+  unchangedRows: Set<number>;
   candidates: CandidateRow[];
   /** Every rejected row and its reasons, keyed by source row. */
   rejected: Map<number, RejectionReason[]>;
@@ -404,6 +430,23 @@ const realTimers: SyncTimers = {
 function* chunks<T>(items: readonly T[], size: number): Generator<T[]> {
   for (let start = 0; start < items.length; start += size)
     yield items.slice(start, start + size);
+}
+
+/**
+ * The physical lines that one record adds beyond its first: one for each newline inside a quoted
+ * cell. The CSV reader counts those lines in `CsvRecord.line` and answers no record for a blank
+ * row, so the spreadsheet row of a record is its line less the continuations before it.
+ */
+function continuationLinesOf(cells: readonly string[]): number {
+  let count = 0;
+  for (const cell of cells) {
+    let index = cell.indexOf('\n');
+    while (index !== -1) {
+      count += 1;
+      index = cell.indexOf('\n', index + 1);
+    }
+  }
+  return count;
 }
 
 /** A timestamp cell of a device row as ISO 8601 UTC text, or null. */
@@ -473,8 +516,8 @@ function refusalOf(error: unknown): unknown {
 }
 
 /**
- * The report line buffer. A call carries at most 1,000 lines and well under 32 MiB of JSON, so it
- * closes a batch at the first limit and opens the next (design section 6, step 19).
+ * The report line buffer. A call carries at most 1,000 lines and under 32 MiB of stored JSON, so it
+ * closes a batch before the next line would cross either limit (design section 6, step 19).
  */
 class ImportLines {
   private readonly send: (
@@ -482,6 +525,7 @@ class ImportLines {
   ) => Promise<'stored' | 'fenced' | 'cancelled'>;
   private closed: ImportLine[][] = [];
   private open: ImportLine[] = [];
+  /** The stored size of the open batch: its line text and its jsonb overhead. */
   private bytes = 0;
   /** The lines that the store holds. */
   stored = 0;
@@ -493,13 +537,20 @@ class ImportLines {
   }
 
   add(line: ImportLine): void {
-    this.open.push(line);
-    this.bytes += Buffer.byteLength(JSON.stringify(line), 'utf8');
+    const size =
+      Buffer.byteLength(JSON.stringify(line), 'utf8') + LINE_JSONB_OVERHEAD;
+    // Close the previous batch before this line joins it, so a legal row of full cells never pushes
+    // a call past the cap. One line of ten full cells is 655,360 bytes at most, so one line always
+    // fits one call.
     if (
-      this.open.length >= DEVICE_IMPORT_LINE_BATCH ||
-      this.bytes >= DEVICE_IMPORT_LINE_BYTES - LINE_ARRAY_FRAMING
+      this.open.length > 0 &&
+      (this.open.length >= DEVICE_IMPORT_LINE_BATCH ||
+        this.bytes + size + LINE_ARRAY_FRAMING > DEVICE_IMPORT_LINE_BYTES)
     )
       this.close();
+    this.open.push(line);
+    this.bytes += size;
+    if (this.open.length >= DEVICE_IMPORT_LINE_BATCH) this.close();
   }
 
   /** True when a closed batch waits for its call. */
@@ -537,31 +588,70 @@ class ImportLines {
 }
 
 /**
+ * The stop of one run: the worker signal, and the cancel or fence that a tick observed. The reader
+ * and the file scan take the combined signal, so an observed cancel stops an unsent provider retry
+ * and a pending scan (design section 6, step 1).
+ */
+class RunControl {
+  private readonly controller = new AbortController();
+  private readonly worker: AbortSignal;
+  /** The worker stop and the job's own stop, composed. */
+  readonly signal: AbortSignal;
+  private requested = false;
+  private lost = false;
+
+  constructor(worker: AbortSignal) {
+    this.worker = worker;
+    this.signal = AbortSignal.any([worker, this.controller.signal]);
+  }
+
+  /** The job's own stop, from a tick that read a stored cancel or a replaced lease. */
+  stop(kind: 'cancelled' | 'lost'): void {
+    if (kind === 'cancelled') this.requested = true;
+    else this.lost = true;
+    this.controller.abort();
+  }
+
+  /**
+   * Why the run must stop now, or null. A stopping worker answers first, because it cannot trust a
+   * finish: the recovery ends the job (design section 5). A cancelled job otherwise keeps the
+   * Cancelled outcome of the cancel design.
+   */
+  reason(): StopReason | null {
+    if (this.worker.aborted) return { kind: 'stopped' };
+    if (this.lost) return { kind: 'fenced' };
+    if (this.requested) return { kind: 'cancelled' };
+    return null;
+  }
+}
+
+/**
  * The 30-second tick and the phase writes of one validation run (design section 6). Every write
  * renews the lease, writes the phase, and reads the cancel request. The writes run in one queue, so
  * a tick never lands after a later phase (design section 2).
  */
 class ImportProgress {
   private readonly database: DeviceImportDatabase;
-  private readonly lease: readonly [string, string, string];
+  private readonly owner: ImportOwner;
   private readonly timers: SyncTimers;
   private readonly state: PhaseState;
+  private readonly run: RunControl;
   private renewals: Promise<unknown> = Promise.resolve();
   private handle: unknown = null;
   private running: Promise<void> | null = null;
-  private requested = false;
-  private lost = false;
 
   constructor(
     database: DeviceImportDatabase,
-    lease: readonly [string, string, string],
+    owner: ImportOwner,
     state: PhaseState,
     timers: SyncTimers,
+    run: RunControl,
   ) {
     this.database = database;
-    this.lease = lease;
+    this.owner = owner;
     this.state = state;
     this.timers = timers;
+    this.run = run;
   }
 
   /** Write the phase and renew the lease. A stored cancel answers `cancelled`. */
@@ -573,24 +663,23 @@ class ImportProgress {
     const renewal = this.renewals.then(() => this.renew(snapshot));
     this.renewals = renewal.catch(() => undefined);
     const answer = await renewal;
-    if (answer === 'cancelled') this.requested = true;
-    if (answer === 'lost') this.lost = true;
+    if (answer === 'cancelled') this.run.stop('cancelled');
+    if (answer === 'lost') this.run.stop('lost');
     return answer;
   }
 
   /** Write the phase, and stop when the answer or the worker ends the run. */
-  async step(signal: AbortSignal, patch: Partial<PhaseState>): Promise<void> {
+  async step(patch: Partial<PhaseState>): Promise<void> {
     const answer = await this.write(patch);
     if (answer === 'cancelled') throw new ImportStop({ kind: 'cancelled' });
     if (answer === 'lost') throw new ImportStop({ kind: 'fenced' });
-    this.check(signal);
+    this.check();
   }
 
   /** Stop between batches after a cancel, a fence, or a worker stop. */
-  check(signal: AbortSignal): void {
-    if (this.lost) throw new ImportStop({ kind: 'fenced' });
-    if (this.requested) throw new ImportStop({ kind: 'cancelled' });
-    if (signal.aborted) throw new ImportStop({ kind: 'stopped' });
+  check(): void {
+    const reason = this.run.reason();
+    if (reason !== null) throw new ImportStop(reason);
   }
 
   private async renew(
@@ -599,8 +688,8 @@ class ImportProgress {
     const answer = renewalSchema.parse(
       await callStore(
         this.database,
-        'SELECT cc.renew_device_import_job($1,$2,$3,$4,$5,$6) AS result',
-        [...this.lease, state.phase, state.done, state.total],
+        'SELECT cc.renew_device_import_job($1,$2,$3,$4,$5,$6,$7) AS result',
+        [...this.owner, state.phase, state.done, state.total],
       ),
     );
     if (answer.outcome === 'renewed') return 'renewed';
@@ -623,7 +712,7 @@ class ImportProgress {
   }
 
   private async tick(): Promise<void> {
-    if (this.requested || this.lost) return;
+    if (this.run.reason() !== null) return;
     try {
       await this.write({});
     } catch {
@@ -636,6 +725,58 @@ class ImportProgress {
     this.timers.clearInterval(this.handle);
     await this.running;
     await this.renewals;
+  }
+}
+
+/**
+ * The organization unit tree of one run (design section 6, step 13). One read serves the job, and a
+ * failed read rejects each unit change. A path compares without case and in NFC, the canonical form
+ * of the shared field helper (technical design section 8.2).
+ */
+class UnitTree {
+  private readonly load: () => Promise<readonly DeviceOrgUnitTreeEntry[]>;
+  private paths: ReadonlySet<string> | null = null;
+  private failed = false;
+
+  constructor(load: () => Promise<readonly DeviceOrgUnitTreeEntry[]>) {
+    this.load = load;
+  }
+
+  /** The reason of one unit cell, or null when the row may assign it. */
+  async reason(cell: string, run: RunControl): Promise<RejectionReason | null> {
+    if (deviceEditFieldCellIntent(cell).intent !== 'assign') return null;
+    if (this.paths === null && !this.failed) {
+      try {
+        const units = await this.load();
+        this.paths = new Set(
+          units.map((unit) =>
+            deviceEditCanonicalFieldValue('orgUnitPath', unit.orgUnitPath),
+          ),
+        );
+      } catch {
+        // A stop of the run ends it here, not as an unavailable unit check.
+        const stop = run.reason();
+        if (stop !== null) throw new ImportStop(stop);
+        this.failed = true;
+      }
+    }
+    if (this.failed)
+      return {
+        column: UNIT_HEADER,
+        submittedValue: cell,
+        reason: DEVICE_IMPORT_REJECTION_TEXTS['org-unit-unavailable'],
+      };
+    if (
+      !(this.paths as ReadonlySet<string>).has(
+        deviceEditCanonicalFieldValue('orgUnitPath', cell),
+      )
+    )
+      return {
+        column: UNIT_HEADER,
+        submittedValue: cell,
+        reason: deviceImportUnitRejectionText(cell),
+      };
+    return null;
   }
 }
 
@@ -685,12 +826,13 @@ export class DeviceImportJobs {
       // request. The finish repeats an ended job's stored answer and writes nothing. It ends the
       // stored cancellation, so a retry leaves no running header (design section 5).
       if (claim.outcome === 'done')
-        return this.endDone(lease, input.failure ?? null);
+        return this.endDone([...lease, claim.attempt], input.failure ?? null);
       return { outcome: claim.outcome };
     }
+    const owner: ImportOwner = [...lease, claim.attempt];
     if (input.failure !== undefined)
-      return this.end(lease, claim.displayId, { failure: input.failure });
-    return this.validate(input, lease, claim, signal);
+      return this.end(owner, claim.displayId, { failure: input.failure });
+    return this.validate(input, owner, claim, signal);
   }
 
   /**
@@ -699,10 +841,10 @@ export class DeviceImportJobs {
    * under this run's lease. A lapsed or replaced lease answers `fenced` and writes nothing.
    */
   private async endDone(
-    lease: readonly [string, string, string],
+    owner: ImportOwner,
     failure: string | null,
   ): Promise<DeviceImportAnswer> {
-    const answer = await this.finish(lease, null, failure, null);
+    const answer = await this.finish(owner, null, failure, null);
     return answer.outcome === 'fenced'
       ? { outcome: 'fenced' }
       : { outcome: 'done' };
@@ -710,7 +852,7 @@ export class DeviceImportJobs {
 
   /** The finish call of `cc.finish_device_import_job` (design section 6). */
   private async finish(
-    lease: readonly [string, string, string],
+    owner: ImportOwner,
     counts: DeviceImportCounts | null,
     failure: string | null,
     refusal: { code: string; text: string } | null,
@@ -718,9 +860,9 @@ export class DeviceImportJobs {
     return finishSchema.parse(
       await callStore(
         this.database,
-        'SELECT cc.finish_device_import_job($1,$2,$3,$4,$5,$6,$7) AS result',
+        'SELECT cc.finish_device_import_job($1,$2,$3,$4,$5,$6,$7,$8) AS result',
         [
-          ...lease,
+          ...owner,
           counts === null ? null : JSON.stringify(counts),
           failure,
           refusal?.code ?? null,
@@ -732,7 +874,7 @@ export class DeviceImportJobs {
 
   /** End one run and answer what the job header holds. */
   private async end(
-    lease: readonly [string, string, string],
+    owner: ImportOwner,
     displayId: string,
     options: {
       counts?: DeviceImportCounts;
@@ -743,7 +885,7 @@ export class DeviceImportJobs {
     const counts = options.counts ?? null;
     const failure = options.failure ?? null;
     const refusal = options.refusal ?? null;
-    const answer = await this.finish(lease, counts, failure, refusal);
+    const answer = await this.finish(owner, counts, failure, refusal);
     if (answer.outcome === 'fenced') return { outcome: 'fenced' };
     if (answer.status === 'cancelled')
       return { outcome: 'cancelled', displayId };
@@ -786,7 +928,7 @@ export class DeviceImportJobs {
   /** Run the two passes of one claimed job (design section 6). */
   private async validate(
     input: DeviceImportRequest,
-    lease: readonly [string, string, string],
+    owner: ImportOwner,
     claim: ClaimedImport,
     signal: AbortSignal,
   ): Promise<DeviceImportAnswer> {
@@ -795,22 +937,24 @@ export class DeviceImportJobs {
     if (artifactId === null) {
       // The upload stores the file and links it to the job. A missing file is a storage fault
       // (design section 6, the failures table).
-      return this.end(lease, displayId, { failure: 'storage-unavailable' });
+      return this.end(owner, displayId, { failure: 'storage-unavailable' });
     }
     let credential: DelegatedCredential;
     try {
       credential = this.open(claim, input.customerId);
     } catch {
-      return this.end(lease, displayId, { failure: 'key-unavailable' });
+      return this.end(owner, displayId, { failure: 'key-unavailable' });
     }
 
+    const run = new RunControl(signal);
     const progress = new ImportProgress(
       this.database,
-      lease,
+      owner,
       { phase: 'header-check', done: 0, total: null },
       this.timers,
+      run,
     );
-    const lines = new ImportLines((batch) => this.storeLines(lease, batch));
+    const lines = new ImportLines((batch) => this.storeLines(owner, batch));
     progress.start();
     try {
       const inspection = await this.inspect(
@@ -820,7 +964,7 @@ export class DeviceImportJobs {
         artifactId,
         progress,
         lines,
-        signal,
+        run,
       );
       const counts = await this.compare(
         input,
@@ -829,27 +973,27 @@ export class DeviceImportJobs {
         artifactId,
         progress,
         lines,
-        signal,
+        run,
       );
       const flushed = await lines.flush();
       if (flushed === 'fenced') return { outcome: 'fenced' };
-      if (flushed === 'cancelled') return this.end(lease, displayId, {});
-      await progress.step(signal, {
+      if (flushed === 'cancelled') return this.end(owner, displayId, {});
+      await progress.step({
         phase: 'report',
         done: lines.stored,
         total: lines.stored,
       });
-      return await this.end(lease, displayId, { counts });
+      return await this.end(owner, displayId, { counts });
     } catch (error) {
       if (error instanceof ImportRefusal)
-        return this.end(lease, displayId, {
+        return this.end(owner, displayId, {
           failure: 'invalid-response',
           refusal: { code: error.code, text: error.text },
         });
       if (error instanceof ImportStop) {
         if (error.reason.kind === 'stopped') return { outcome: 'stopped' };
         if (error.reason.kind === 'fenced') return { outcome: 'fenced' };
-        return this.end(lease, displayId, {});
+        return this.end(owner, displayId, {});
       }
       // A storage fault fails the job. A lost worker writes nothing.
       if (signal.aborted) return { outcome: 'stopped' };
@@ -859,40 +1003,49 @@ export class DeviceImportJobs {
         error instanceof DeviceSyncError &&
         jobFailureSchema.safeParse(error.code).success
       )
-        return this.end(lease, displayId, { failure: error.code });
-      return this.end(lease, displayId, { failure: 'storage-unavailable' });
+        return this.end(owner, displayId, { failure: error.code });
+      return this.end(owner, displayId, { failure: 'storage-unavailable' });
     } finally {
       await progress.close();
     }
   }
 
-  /** Store one batch of lines under the lease (design section 6, step 19). */
+  /** Store one batch of lines under the lease and attempt (design section 6, step 19). */
   private async storeLines(
-    lease: readonly [string, string, string],
+    owner: ImportOwner,
     lines: readonly ImportLine[],
   ): Promise<'stored' | 'fenced' | 'cancelled'> {
     const answer = storedLinesSchema.parse(
       await callStore(
         this.database,
-        'SELECT cc.store_device_import_lines($1,$2,$3,$4) AS result',
-        [...lease, JSON.stringify(lines)],
+        'SELECT cc.store_device_import_lines($1,$2,$3,$4,$5) AS result',
+        [...owner, JSON.stringify(lines)],
       ),
     );
     if (answer.outcome === 'stored') return 'stored';
     return answer.outcome === 'fenced' ? 'fenced' : 'cancelled';
   }
 
+  /** Store a closed batch now, and stop when the job ended (design section 6, step 19). */
+  private async flushLines(lines: ImportLines): Promise<void> {
+    if (!lines.full) return;
+    const answer = await lines.flush();
+    if (answer === 'fenced') throw new ImportStop({ kind: 'fenced' });
+    if (answer === 'cancelled') throw new ImportStop({ kind: 'cancelled' });
+  }
+
   /**
    * Stream the stored file (design section 6, step 2). The decoder is fatal, so a file that is not
-   * UTF-8 refuses before any row check. Each record answers its cells in template order. The first
-   * pass stores the header warnings, and the second pass repeats none of them.
+   * UTF-8 refuses before any row check. Each record answers its cells in template order, with the
+   * spreadsheet row of the record. The first pass stores the header warnings, and the second pass
+   * repeats none of them.
    */
   private async *records(
     artifactId: string,
     mode: DeviceImportMode,
     lines: ImportLines,
     warnings: boolean,
-    signal: AbortSignal,
+    run: RunControl,
   ): AsyncGenerator<FileRow, void, void> {
     let source: AsyncIterable<Uint8Array>;
     try {
@@ -903,7 +1056,8 @@ export class DeviceImportJobs {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     const reader = createCsvReader();
     let mapping: Map<DeviceEditColumnKey, number> | null = null;
-    let sourceRow = 0;
+    // The physical lines that the records before this one hold inside quoted cells.
+    let continuations = 0;
     const out: FileRow[] = [];
 
     const decode = (chunk: Uint8Array | undefined): string => {
@@ -938,15 +1092,22 @@ export class DeviceImportJobs {
                 deviceId: null,
                 warning,
               });
+          continuations += continuationLinesOf(record.cells);
           continue;
         }
-        sourceRow += 1;
+        // The spreadsheet row of the record (technical design, "Source row number"): its file line
+        // less the continuation lines that the records before it hold inside quoted cells. The
+        // header is row 1, and a blank record still holds its line, so every later row keeps its
+        // own number. The reader counts records, not lines, so the count itself would drift.
+        const sourceRow = record.line - continuations;
+        continuations += continuationLinesOf(record.cells);
         out.push({ sourceRow, cells: cellsOf(record, mapping) });
       }
     };
 
     for await (const chunk of source) {
-      if (signal.aborted) throw new ImportStop({ kind: 'stopped' });
+      const reason = run.reason();
+      if (reason !== null) throw new ImportStop(reason);
       let records: CsvRecord[];
       try {
         records = reader.push(decode(chunk));
@@ -954,7 +1115,13 @@ export class DeviceImportJobs {
         throw refusalOf(error);
       }
       feed(records);
-      while (out.length > 0) yield out.shift() as FileRow;
+      while (out.length > 0) {
+        // A cancel stops the scan between rows, not only between chunks (design section 6, the
+        // cancel rule of section 5).
+        const stopped = run.reason();
+        if (stopped !== null) throw new ImportStop(stopped);
+        yield out.shift() as FileRow;
+      }
     }
     // The end of the file answers its last record, and a trailing partial sequence is a fault.
     try {
@@ -963,7 +1130,11 @@ export class DeviceImportJobs {
     } catch (error) {
       throw refusalOf(error);
     }
-    while (out.length > 0) yield out.shift() as FileRow;
+    while (out.length > 0) {
+      const reason = run.reason();
+      if (reason !== null) throw new ImportStop(reason);
+      yield out.shift() as FileRow;
+    }
     if (mapping === null)
       throw new ImportRefusal(
         'header-refused',
@@ -982,26 +1153,29 @@ export class DeviceImportJobs {
     artifactId: string,
     progress: ImportProgress,
     lines: ImportLines,
-    signal: AbortSignal,
+    run: RunControl,
   ): Promise<Inspection> {
     const inspection: Inspection = {
       rowsRead: 0,
       unchanged: 0,
+      unchangedRows: new Set<number>(),
       candidates: [],
       rejected: new Map<number, RejectionReason[]>(),
       deferred: new Set<number>(),
       staleDevicesRead: 0,
     };
-    const seen = new Set<string>();
-    let tree: Set<string> | null = null;
-    let treeFailed = false;
+    /** The source rows of each well-formed Device ID, in file order (design section 6, step 5). */
+    const occurrences = new Map<string, number[]>();
+    const units = new UnitTree(() =>
+      this.reader.readOrgUnitTree(credential, input.customerId, run.signal),
+    );
 
     for await (const row of this.records(
       artifactId,
       claim.mode,
       lines,
       true,
-      signal,
+      run,
     )) {
       const { sourceRow, cells } = row;
       inspection.rowsRead += 1;
@@ -1011,56 +1185,28 @@ export class DeviceImportJobs {
           deviceImportRefusalText('too-many-rows'),
         );
       if (inspection.rowsRead % this.batchSize === 0)
-        await progress.step(signal, {
+        await progress.step({
           phase: 'header-check',
           done: inspection.rowsRead,
           total: null,
         });
       // Store a closed batch now, so a file of rejected rows never holds every line in memory
       // (design section 6, step 19).
-      if (lines.full) {
-        const answer = await lines.flush();
-        if (answer === 'fenced') throw new ImportStop({ kind: 'fenced' });
-        if (answer === 'cancelled') throw new ImportStop({ kind: 'cancelled' });
-      }
+      await this.flushLines(lines);
 
       const deviceIdCell = deviceEditUnescapeCell(cells[DEVICE_ID_COLUMN]);
-      // The identity checks of design section 6, step 5. Duplicate detection covers every row,
-      // unchanged rows included (`td:8.3`), and every later occurrence is rejected.
-      if (deviceIdCell === '') {
-        this.reject(inspection, lines, sourceRow, cells, deviceIdCell, true, [
-          {
-            column: DEVICE_ID_HEADER,
-            submittedValue: null,
-            reason: DEVICE_IMPORT_REJECTION_TEXTS['device-id-missing'],
-          },
-        ]);
-        continue;
+      const identity =
+        deviceIdCell !== '' && PLAIN_DEVICE_ID.test(deviceIdCell);
+      if (identity) {
+        const rows = occurrences.get(deviceIdCell);
+        if (rows === undefined) occurrences.set(deviceIdCell, [sourceRow]);
+        else rows.push(sourceRow);
       }
-      if (!PLAIN_DEVICE_ID.test(deviceIdCell)) {
-        this.reject(inspection, lines, sourceRow, cells, deviceIdCell, true, [
-          {
-            column: DEVICE_ID_HEADER,
-            submittedValue: deviceIdCell,
-            reason: DEVICE_IMPORT_REJECTION_TEXTS['device-id-malformed'],
-          },
-        ]);
-        continue;
-      }
-      if (seen.has(deviceIdCell)) {
-        this.reject(inspection, lines, sourceRow, cells, deviceIdCell, true, [
-          {
-            column: DEVICE_ID_HEADER,
-            submittedValue: deviceIdCell,
-            reason: DEVICE_IMPORT_REJECTION_TEXTS['device-id-duplicate'],
-          },
-        ]);
-        continue;
-      }
-      seen.add(deviceIdCell);
 
-      // The partition of `td:8.3`. Only Sync changes reads the row checksum.
-      if (claim.mode === 'sync-changes') {
+      // The unchanged partition of `td:8.3`. Only Sync changes reads the row checksum, and only a
+      // row with a device identity holds one. An unchanged row requests nothing, so the duplicate
+      // scan below is the one check that can still reject it.
+      if (identity && claim.mode === 'sync-changes') {
         const checksumCell = deviceEditUnescapeCell(
           cells[CHECKSUM_COLUMN],
         ).trim();
@@ -1079,76 +1225,42 @@ export class DeviceImportJobs {
           (await this.rowChecksum(cells)) === checksumCell
         ) {
           inspection.unchanged += 1;
+          inspection.unchangedRows.add(sourceRow);
           continue;
         }
       }
 
-      // The unit paths of design section 6, step 13: one tree read serves the job.
-      const unitCell = deviceEditUnescapeCell(cells[ORG_UNIT_COLUMN]);
-      if (deviceEditFieldCellIntent(unitCell).intent === 'assign') {
-        if (tree === null && !treeFailed) {
-          try {
-            const units = await this.reader.readOrgUnitTree(
-              credential,
-              input.customerId,
-              signal,
-            );
-            tree = new Set(units.map((unit) => unit.orgUnitPath.toLowerCase()));
-          } catch {
-            treeFailed = true;
-          }
-        }
-        if (treeFailed || tree === null) {
-          this.reject(inspection, lines, sourceRow, cells, deviceIdCell, true, [
-            {
-              column: UNIT_HEADER,
-              submittedValue: unitCell,
-              reason: DEVICE_IMPORT_REJECTION_TEXTS['org-unit-unavailable'],
-            },
-          ]);
-          continue;
-        }
-        if (!tree.has(unitCell.toLowerCase())) {
-          this.reject(inspection, lines, sourceRow, cells, deviceIdCell, true, [
-            {
-              column: UNIT_HEADER,
-              submittedValue: unitCell,
-              reason: deviceImportUnitRejectionText(unitCell),
-            },
-          ]);
-          continue;
-        }
+      // Every check that the row's own cells decide keeps its reason, and one rejected row counts
+      // once (design section 6, step 17).
+      const reasons = await this.cellReasons(row, claim, units, run);
+      if (reasons.length > 0) {
+        this.reject(
+          inspection,
+          lines,
+          sourceRow,
+          cells,
+          deviceIdCell,
+          true,
+          reasons,
+        );
+        continue;
       }
-
-      // The access check of design section 6, step 14. A code without its stored permission rejects
-      // its row. An invalid cell stays for the compare pass, which keeps every reason.
-      const statusCell = deviceEditUnescapeCell(cells[STATUS_COLUMN]);
-      const intent = deviceEditStatusCellIntent(statusCell);
-      if (intent.ok && intent.intent.intent !== 'none') {
-        const action = intent.intent.intent;
-        if (!claim.statusPermissions.includes(action)) {
-          this.reject(inspection, lines, sourceRow, cells, deviceIdCell, true, [
-            {
-              column: STATUS_HEADER,
-              submittedValue: statusCell,
-              reason: deviceImportPermissionRejectionText(action),
-            },
-          ]);
-          continue;
-        }
-      }
-
       inspection.candidates.push({
         sourceRow,
         deviceId: deviceIdCell,
         deviceIdCell,
       });
     }
-    await progress.step(signal, {
+    await progress.step({
       phase: 'header-check',
       done: inspection.rowsRead,
       total: null,
     });
+
+    // Every occurrence of a duplicated Device ID rejects (design section 6, step 5). The first
+    // occurrence cannot be judged before the last one is read, so the scan runs here.
+    this.rejectDuplicates(inspection, lines, occurrences);
+    await this.flushLines(lines);
 
     // The inventory lookup of design section 6, step 7. An unknown or removed ID rejects its row,
     // and the compare pass writes that line because pass 1 holds no cells for it.
@@ -1171,7 +1283,7 @@ export class DeviceImportJobs {
             row['removed_at'] !== null && row['removed_at'] !== undefined,
           syncedAt: timestampText(row['last_entity_sync']),
         });
-      progress.check(signal);
+      progress.check();
     }
     for (const candidate of inspection.candidates) {
       const device = stored.get(candidate.deviceId);
@@ -1197,7 +1309,7 @@ export class DeviceImportJobs {
         return syncedAt === null || Date.parse(syncedAt) < cutoff;
       });
     const staleIds = [...new Set(stale.map((row) => row.deviceId))];
-    await progress.step(signal, {
+    await progress.step({
       phase: 'refresh',
       done: 0,
       total: staleIds.length,
@@ -1211,12 +1323,13 @@ export class DeviceImportJobs {
           credential,
           input.customerId,
           batch,
-          signal,
+          run.signal,
         );
       } catch (error) {
-        // A token failure answers the whole call. The rows of this batch reject, and later batches
-        // continue (design section 6, step 12).
-        if (signal.aborted) throw error;
+        // A stop of the run ends it here. A token failure answers the whole call: the rows of this
+        // batch reject, and later batches continue (design section 6, step 12).
+        const reason = run.reason();
+        if (reason !== null) throw new ImportStop(reason);
         states = null;
       }
       if (states === null) {
@@ -1238,7 +1351,7 @@ export class DeviceImportJobs {
         this.rejectDevices(inspection, missing, 'device-removed');
       }
       inspection.staleDevicesRead += batch.length;
-      await progress.step(signal, {
+      await progress.step({
         phase: 'refresh',
         done: inspection.staleDevicesRead,
         total: staleIds.length,
@@ -1255,7 +1368,7 @@ export class DeviceImportJobs {
     artifactId: string,
     progress: ImportProgress,
     lines: ImportLines,
-    signal: AbortSignal,
+    run: RunControl,
   ): Promise<DeviceImportCounts> {
     const compared = inspection.candidates.filter(
       (row) => !inspection.deferred.has(row.sourceRow),
@@ -1322,6 +1435,7 @@ export class DeviceImportJobs {
               },
             ],
           );
+          await this.flushLines(lines);
           continue;
         }
         const syncedAt = timestampText(stored['last_entity_sync']);
@@ -1337,6 +1451,7 @@ export class DeviceImportJobs {
             true,
             outcome.reasons,
           );
+          await this.flushLines(lines);
           continue;
         }
         for (const line of outcome.lines) lines.add(line);
@@ -1364,22 +1479,17 @@ export class DeviceImportJobs {
         // A row that proposes a change counts as proposed. A row that only warns needs no change.
         if (outcome.lines.some((line) => line.kind === 'change')) proposed += 1;
         else noChangeNeeded += 1;
-        if (lines.full) {
-          const answer = await lines.flush();
-          if (answer === 'fenced') throw new ImportStop({ kind: 'fenced' });
-          if (answer === 'cancelled')
-            throw new ImportStop({ kind: 'cancelled' });
-        }
+        await this.flushLines(lines);
       }
       done += current.length;
-      await progress.step(signal, {
+      await progress.step({
         phase: 'compare',
         done,
         total: compared.length,
       });
     };
 
-    await progress.step(signal, {
+    await progress.step({
       phase: 'compare',
       done: 0,
       total: compared.length,
@@ -1389,7 +1499,7 @@ export class DeviceImportJobs {
       claim.mode,
       lines,
       false,
-      signal,
+      run,
     )) {
       const candidate = byRow.get(row.sourceRow);
       if (candidate !== undefined) {
@@ -1397,9 +1507,12 @@ export class DeviceImportJobs {
         if (batch.length >= this.batchSize) await flushBatch();
         continue;
       }
-      // A row that pass 1 deferred a rejection for gets its line here, where its cells are.
-      if (inspection.deferred.has(row.sourceRow))
+      // A row that pass 1 deferred a rejection for gets its line here, where its cells are. The
+      // buffer closes on this path too, so a file of rejected rows never holds the whole report.
+      if (inspection.deferred.has(row.sourceRow)) {
         this.writeDeferred(inspection, lines, row);
+        await this.flushLines(lines);
+      }
     }
     await flushBatch();
     return {
@@ -1412,6 +1525,114 @@ export class DeviceImportJobs {
       staleDevicesRead: inspection.staleDevicesRead,
       oldestObservedAt: oldest,
     };
+  }
+
+  /**
+   * The reasons of one row, from every check that its own cells decide: the identity, the unit
+   * membership, the status permission, and each field and status cell (design section 6, steps 5,
+   * 13, 14, 16 and 17). One invalid cell never hides another, so the row keeps every reason.
+   */
+  private async cellReasons(
+    row: FileRow,
+    claim: ClaimedImport,
+    units: UnitTree,
+    run: RunControl,
+  ): Promise<RejectionReason[]> {
+    const { cells } = row;
+    const reasons: RejectionReason[] = [];
+    const deviceIdCell = deviceEditUnescapeCell(cells[DEVICE_ID_COLUMN]);
+    if (deviceIdCell === '')
+      reasons.push({
+        column: DEVICE_ID_HEADER,
+        submittedValue: null,
+        reason: DEVICE_IMPORT_REJECTION_TEXTS['device-id-missing'],
+      });
+    else if (!PLAIN_DEVICE_ID.test(deviceIdCell))
+      reasons.push({
+        column: DEVICE_ID_HEADER,
+        submittedValue: deviceIdCell,
+        reason: DEVICE_IMPORT_REJECTION_TEXTS['device-id-malformed'],
+      });
+
+    const unitReason = await units.reason(
+      deviceEditUnescapeCell(cells[ORG_UNIT_COLUMN]),
+      run,
+    );
+    if (unitReason !== null) reasons.push(unitReason);
+
+    const statusCell = deviceEditUnescapeCell(cells[STATUS_COLUMN]);
+    const intent = deviceEditStatusCellIntent(statusCell);
+    if (!intent.ok)
+      reasons.push({
+        column: STATUS_HEADER,
+        submittedValue: statusCell,
+        reason: intent.reason,
+      });
+    else if (
+      intent.intent.intent !== 'none' &&
+      !claim.statusPermissions.includes(intent.intent.intent)
+    )
+      reasons.push({
+        column: STATUS_HEADER,
+        submittedValue: statusCell,
+        reason: deviceImportPermissionRejectionText(intent.intent.intent),
+      });
+
+    for (const column of FIELD_COLUMNS) {
+      const cell = deviceEditUnescapeCell(cells[column.column]);
+      const answer = deviceEditFieldChange(column.field, cell);
+      if (!answer.ok)
+        reasons.push({
+          column: column.header,
+          submittedValue: cell,
+          reason: answer.reason,
+        });
+    }
+    return reasons;
+  }
+
+  /**
+   * Reject every occurrence of a duplicated Device ID (design section 6, step 5). A row that pass 1
+   * already rejected keeps its reasons and gains this one. Every other occurrence defers its line to
+   * the compare pass, which holds its cells. No occurrence reaches the plan.
+   */
+  private rejectDuplicates(
+    inspection: Inspection,
+    lines: ImportLines,
+    occurrences: ReadonlyMap<string, number[]>,
+  ): void {
+    for (const [deviceId, sourceRows] of occurrences) {
+      if (sourceRows.length < 2) continue;
+      const reason: RejectionReason = {
+        column: DEVICE_ID_HEADER,
+        submittedValue: deviceId,
+        reason: DEVICE_IMPORT_REJECTION_TEXTS['device-id-duplicate'],
+      };
+      for (const sourceRow of sourceRows) {
+        const reasons = inspection.rejected.get(sourceRow);
+        if (reasons !== undefined) {
+          reasons.push(reason);
+          // The first line of the row already carries its cells, so this reason needs none.
+          lines.add({
+            kind: 'rejection',
+            sourceRow,
+            deviceId,
+            column: reason.column,
+            submittedValue: reason.submittedValue,
+            reason: reason.reason,
+            templateCells: null,
+          });
+          continue;
+        }
+        if (inspection.unchangedRows.delete(sourceRow))
+          inspection.unchanged -= 1;
+        this.defer(inspection, sourceRow, [reason]);
+      }
+    }
+    // A candidate that this scan rejected never reaches the compare pass.
+    inspection.candidates = inspection.candidates.filter(
+      (row) => !inspection.deferred.has(row.sourceRow),
+    );
   }
 
   /** The changes and the reasons of one candidate row (design section 6, steps 15 to 18). */
