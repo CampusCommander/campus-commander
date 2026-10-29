@@ -51,6 +51,91 @@ const summary = (overrides: Partial<JobSummary> = {}): JobSummary => ({
 });
 
 describe('progressLines', () => {
+  it('counts the rows of a running export', () => {
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          status: 'running',
+          phase: { name: 'write-rows', done: 20, total: 48 },
+          exportSummary: { purpose: 'edit' },
+        }),
+      ),
+    ).toEqual(['36 of 48 rows written', 'Writing rows']);
+  });
+
+  it('names the download phase of a running export', () => {
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          status: 'running',
+          phase: { name: 'prepare-download', done: 48, total: null },
+        }),
+      ),
+    ).toEqual(['36 of 48 rows written', 'Preparing the download']);
+  });
+
+  it('follows the completed edit and report rows of state 26', () => {
+    const completed = {
+      status: 'completed' as const,
+      progress: {
+        total: 48,
+        succeeded: 48,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 0,
+      },
+    };
+    expect(
+      progressLines(
+        summary({
+          ...completed,
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          exportSummary: { purpose: 'edit' },
+        }),
+      ),
+    ).toEqual(['48 rows written', 'Edit file ready']);
+    expect(
+      progressLines(
+        summary({
+          ...completed,
+          action: 'export-devices',
+          displayId: 'EXP-002',
+          exportSummary: { purpose: 'report' },
+        }),
+      ),
+    ).toEqual(['48 rows written', 'Report ready']);
+  });
+
+  it('drafts the failed and cancelled export rows', () => {
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          status: 'failed',
+          failure: 'export-too-large',
+        }),
+      ),
+    ).toEqual(['36 rows written', 'Export too large']);
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-001',
+          status: 'cancelled',
+        }),
+      ),
+    ).toEqual(['36 rows written', 'Export stopped']);
+  });
+
   it('follows the running frame row', () => {
     expect(progressLines(summary())).toEqual([
       '36 of 48 complete',

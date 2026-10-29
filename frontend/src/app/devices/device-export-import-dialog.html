@@ -168,15 +168,15 @@
         <div class="step"></div>
         } }
       </div>
-
-      @if (helpOpen()) {
-      <app-device-export-help
-        id="export-help"
-        [topic]="helpTopic()"
-        (topicChange)="store.setHelpTopic($event)"
-      ></app-device-export-help>
-      }
     </div>
+
+    @if (helpOpen()) {
+    <app-device-export-help
+      id="export-help"
+      [topic]="helpTopic()"
+      (topicChange)="store.setHelpTopic($event)"
+    ></app-device-export-help>
+    }
 
     <div class="export-actions">
       @switch (step()) { @case ('configure') {
