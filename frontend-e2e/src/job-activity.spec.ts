@@ -657,3 +657,66 @@ test('moves the badge after a relayed terminal job-changed event', async ({
   );
   await expect(page.locator('.badge')).toHaveCount(0);
 });
+
+test('opens the Devices dialog from an own export row', async ({ page }) => {
+  const state: State = {
+    running: false,
+    waiting: false,
+    recent: false,
+    attention: false,
+    failSeen: false,
+  };
+  await fakeStream(page);
+  await signIn(page, state);
+  const now = Date.now();
+  // The export row returns to its dialog on the Devices page (design section 9, behavior 5).
+  await page.route('**/api/jobs/activity', (route) =>
+    route.fulfill({
+      json: {
+        running: {
+          count: 1,
+          jobs: [
+            {
+              jobId: '5f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+              displayId: 'EXP-001',
+              revision: 2,
+              action: 'export-devices',
+              status: 'running',
+              scope: { kind: 'devices', deviceCount: 48 },
+              requestedBy: person,
+              createdAt: new Date(now - 60_000).toISOString(),
+              startedAt: new Date(now - 50_000).toISOString(),
+              finishedAt: null,
+              progress: {
+                total: 48,
+                succeeded: 36,
+                failed: 0,
+                unknown: 0,
+                skipped: 0,
+                expired: 0,
+                cancelled: 0,
+                pending: 12,
+              },
+              cancelRequest: null,
+              failure: null,
+              phase: { name: 'write-rows', done: 36, total: 48 },
+              exportSummary: { purpose: 'edit' },
+              importSummary: null,
+            } satisfies JobSummary,
+          ],
+        },
+        waiting: { count: 0, jobs: [] },
+        recent: { count: 0, jobs: [], nextExpiryAt: null },
+        attention: false,
+        seenAt: new Date(now - 60_000).toISOString(),
+        observedAt: new Date(now).toISOString(),
+      },
+    }),
+  );
+  await page.goto('/account');
+  await bell(page).click();
+  await expect(page.locator('a.row').first()).toHaveAttribute(
+    'href',
+    '/devices?job=EXP-001',
+  );
+});

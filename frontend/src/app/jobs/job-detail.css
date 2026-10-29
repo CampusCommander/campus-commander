@@ -415,3 +415,63 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* The file card of a finished export (notes answer 24). */
+.file-title {
+  margin: var(--cc-space-lg) 0 var(--cc-space-sm);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.file-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-lg);
+  padding: var(--cc-space-lg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+.file-glyph {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+}
+.file-main {
+  flex: 1;
+  min-width: 0;
+}
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+}
+.file-name {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta-items {
+  margin: var(--cc-space-xs) 0 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+.until {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  margin: var(--cc-space-sm) 0 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}

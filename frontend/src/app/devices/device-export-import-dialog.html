@@ -1,0 +1,245 @@
+@if (store.open()) {
+<div class="picker-scrim" aria-hidden="true" (click)="close()"></div>
+<div class="picker-wrap">
+  <section
+    class="export-dialog"
+    [class.has-help]="helpOpen()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="export-dialog-title"
+    aria-describedby="export-dialog-sub"
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown)="keydown($event)"
+  >
+    <header class="export-head">
+      <div class="export-titles">
+        <h2 id="export-dialog-title">{{ title() }}</h2>
+        @if (subtitleJob(); as job) {
+        <p id="export-dialog-sub" class="export-sub">
+          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
+          subtitleStatus() }}
+        </p>
+        } @else if (subtitleText(); as line) {
+        <p id="export-dialog-sub" class="export-sub">{{ line }}</p>
+        } @else {
+        <p id="export-dialog-sub" class="visually-hidden">{{ title() }}</p>
+        }
+      </div>
+      <div class="export-tools">
+        <button
+          mat-icon-button
+          type="button"
+          [attr.aria-label]="HELP_LABEL"
+          aria-controls="export-help"
+          [attr.aria-expanded]="helpOpen()"
+          [class.is-on]="helpOpen()"
+          matTooltip="Export and import help"
+          matTooltipPosition="below"
+          (click)="store.toggleHelp()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Close"
+          matTooltip="Close"
+          matTooltipPosition="below"
+          (click)="close()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
+        </button>
+      </div>
+    </header>
+
+    <div class="export-main">
+      <div class="export-body">
+        @switch (step()) { @case ('configure') {
+        <div class="step">
+          @if (overLimit()) {
+          <div class="action-note error" role="alert">
+            <p>{{ limitText() }}</p>
+          </div>
+          }
+          <section class="group" aria-labelledby="format-label">
+            <p id="format-label" class="list-label">{{ FORMAT_LABEL }}</p>
+            <mat-radio-group
+              class="option-cards"
+              aria-labelledby="format-label"
+              value="csv"
+            >
+              <mat-radio-button class="option-card" value="csv">
+                <span class="option-label">{{ CSV_FORMAT_LABEL }}</span>
+              </mat-radio-button>
+              <mat-radio-button
+                class="option-card"
+                value="sheet"
+                [disabled]="true"
+              >
+                <span class="option-label">{{ SHEET_FORMAT_LABEL }}</span>
+                <span class="option-line why">{{ SHEET_FORMAT_NOTE }}</span>
+              </mat-radio-button>
+            </mat-radio-group>
+          </section>
+          @if (store.purpose() === 'report') {
+          <section class="group" aria-labelledby="columns-label">
+            <p id="columns-label" class="list-label">
+              {{ REPORT_COLUMNS_LABEL }}
+            </p>
+            <ol class="col-chips">
+              @for (column of reportColumns(); track column) {
+              <li>{{ column }}</li>
+              }
+            </ol>
+          </section>
+          }
+        </div>
+        } @case ('monitor') {
+        <div class="step">
+          <section class="group" aria-labelledby="phases-label">
+            <p id="phases-label" class="visually-hidden">Export phases</p>
+            <ol class="phases">
+              @for (phase of phases(); track phase.name) {
+              <li
+                class="phase"
+                [class.is-done]="phase.state === 'done'"
+                [class.is-current]="phase.state === 'current'"
+                [class.is-failed]="phase.state === 'failed'"
+                [class.is-stopped]="phase.state === 'stopped'"
+              >
+                <span class="phase-dot" aria-hidden="true"
+                  >{{ $index + 1 }}</span
+                >
+                <span class="phase-label">{{ phase.label }}</span>
+                <span class="phase-detail">{{ phase.detail }}</span>
+                @if (phase.state === 'current' && phase.percent !== null) {
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="phase.percent"
+                  [attr.aria-label]="phase.label + ' progress'"
+                ></mat-progress-bar>
+                }
+              </li>
+              }
+            </ol>
+          </section>
+          @if (showFailure()) {
+          <div class="action-note error" role="alert">
+            <p>{{ failureText() }}</p>
+          </div>
+          } @if (jobCancelled()) {
+          <p class="note">{{ EXPORT_CANCELLED_LINE }}</p>
+          } @if (loadError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          }
+        </div>
+        } @case ('file') { @if (file(); as exportFile) {
+        <div class="step">
+          <div class="file-card">
+            <span class="file-glyph" aria-hidden="true">
+              <span class="material-symbols-outlined">csv</span>
+            </span>
+            <div class="file-main">
+              <div class="file-head">
+                <p class="file-name">{{ exportFile.name }}</p>
+                <span
+                  class="status-chip small"
+                  [class.tone-success]="!exportFile.expired"
+                  [class.tone-warning]="exportFile.expired"
+                >
+                  <span class="dot" aria-hidden="true"></span>
+                  {{ exportFile.expired ? 'Expired' : 'Ready' }}
+                </span>
+              </div>
+              <ul class="meta-items">
+                @for (fact of exportFile.facts; track fact) {
+                <li>{{ fact }}</li>
+                }
+              </ul>
+              <p class="until">
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >schedule</span
+                >
+                {{ exportFile.until }}
+              </p>
+            </div>
+          </div>
+        </div>
+        } } @case ('import') {
+        <div class="step"></div>
+        } }
+      </div>
+    </div>
+
+    @if (helpOpen()) {
+    <app-device-export-help
+      id="export-help"
+      [topic]="helpTopic()"
+      (topicChange)="store.setHelpTopic($event)"
+    ></app-device-export-help>
+    }
+
+    <div class="export-actions">
+      @switch (step()) { @case ('configure') { @if (submitError(); as error) {
+      <p class="export-state error" role="alert">{{ error }}</p>
+      } @else {
+      <span class="export-state"></span>
+      }
+      <button mat-button type="button" (click)="close()">Cancel</button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="primaryDisabled()"
+        (click)="submit()"
+      >
+        {{ submitting() ? 'Starting the export…' : actionLabel() }}
+      </button>
+      } @case ('monitor') {
+      <div class="export-state">
+        @if (jobFailed() || jobCancelled()) {
+        <span
+          class="status-chip small"
+          [class.tone-error]="jobFailed()"
+          [class.tone-neutral]="jobCancelled()"
+        >
+          <span class="dot" aria-hidden="true"></span>
+          {{ statusLabel() }}
+        </span>
+        <span
+          >{{ jobCancelled() ? EXPORT_CANCELLED_LINE : failureText() }}</span
+        >
+        } @else {
+        <span class="quiet">
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span>{{ EXPORT_CLOSING_LINE }}</span>
+        </span>
+        }
+      </div>
+      @if (jobFinished()) {
+      <button mat-flat-button type="button" (click)="done()">Done</button>
+      } @else {
+      <button mat-flat-button type="button" (click)="close()">Close</button>
+      } } @case ('file') {
+      <span class="export-state"></span>
+      <button mat-button type="button" (click)="done()">Done</button>
+      @if (file(); as exportFile) { @if (exportFile.expired) {
+      <button mat-flat-button type="button" disabled>
+        {{ DOWNLOAD_CSV_LABEL }}
+      </button>
+      } @else {
+      <a mat-flat-button [href]="fileHref()" download
+        >{{ DOWNLOAD_CSV_LABEL }}</a
+      >
+      } } } @case ('import') {
+      <span class="export-state"></span>
+      <button mat-button type="button" (click)="close()">Cancel</button>
+      } }
+    </div>
+  </section>
+</div>
+}

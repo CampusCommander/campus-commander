@@ -235,6 +235,12 @@ The eng-lead answered, and the owner replied:
 The sign-off changes findings 2 and 6 (card `t_5355eacd`).
 The owner kept HTTP/2 at the edge for finding 7 (card `t_82e670d2`). Owner: "Yea keep with http/2 if it wont turn into a development blocker."
 
+After diagnosis `t_a4e965a3` the owner picked option 2, the edge fix. Owner: "2". PR #163 changed the edge sessions and merged as `3262e6a`.
+The gated full run of PR #164 failed twice on the same restart test (`api-e2e/all-docker.test.mjs`). PR #165 reverted PRs #156 and #163 and merged as `567c602` on 2026-10-29. The edge serves HTTP/1.1 again, and finding 7 is open again.
+
+On 2026-10-29 the owner chose option 1 for finding 7. Option 1 pauses the live updates of a background tab, and the tab catches up when the person switches back. Owner: "1 for now, but persue point 2".
+Card `t_51ec6f43` builds option 1 and the frontend part of point 2.
+
 ### 2026-10-28, main chat: UI changes for export and import
 
 The owner sent these changes for the CSV slice:
@@ -277,6 +283,10 @@ On version 4, he approved the screens and directed the build:
 The eng-lead then asked: "Failed tab on the execution results: yes or no." The owner answered:
 
 > yes
+
+Design section 8 also proposed that an Unknown outcome joins the Failed tab. The eng-lead asked for a yes or no. The owner answered:
+
+> Unknown yes
 
 ## Implementation defaults
 
