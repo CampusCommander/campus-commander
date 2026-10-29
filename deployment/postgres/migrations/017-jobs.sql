@@ -12,16 +12,19 @@ CREATE SEQUENCE cc.job_number_upd;
 CREATE SEQUENCE cc.job_number_ref;
 CREATE SEQUENCE cc.job_number_cmd;
 CREATE SEQUENCE cc.job_number_sts;
+CREATE SEQUENCE cc.job_number_exp;
+CREATE SEQUENCE cc.job_number_imp;
 CREATE SEQUENCE cc.preview_number_pv;
 
 -- One header row per background job. Refresh jobs keep cc.entity_sync_jobs as their detail table.
 -- Every device write kind shares the tables below: an update, a command, or a status change.
 CREATE TABLE cc.jobs (
   job_id uuid PRIMARY KEY,
-  display_id text NOT NULL UNIQUE CHECK(display_id ~ '^(UPD|REF|CMD|STS)-[0-9]{3,}$'),
+  display_id text NOT NULL UNIQUE CHECK(display_id ~ '^(UPD|REF|CMD|STS|EXP|IMP)-[0-9]{3,}$'),
   customer_id text NOT NULL REFERENCES cc.google_connection(customer_id),
-  kind text NOT NULL CHECK(kind IN ('inventory-refresh','device-update','device-command','device-status')),
-  scope_kind text NOT NULL CHECK(scope_kind IN ('devices','all-devices')),
+  kind text NOT NULL CHECK(kind IN ('inventory-refresh','device-update','device-command','device-status',
+    'device-export','device-import')),
+  scope_kind text NOT NULL CHECK(scope_kind IN ('devices','all-devices','rows')),
   status text NOT NULL CHECK(status IN ('accepted','queued','held','running','awaiting-devices','completed',
     'completed-with-errors','failed','needs-review','cancelled')),
   requested_by uuid NOT NULL REFERENCES cc.application_principals(id),
@@ -38,10 +41,15 @@ CREATE TABLE cc.jobs (
   -- repeated request keeps the first person and time.
   cancel_requested_at timestamptz,
   cancel_requested_by uuid REFERENCES cc.application_principals(id),
+  -- The progress phase of an export or a validation job (design section 2). The three columns stay
+  -- null for another kind, and a phase counts no total when phase_total is null.
+  phase text CHECK(phase IN ('write-rows','prepare-download','header-check','refresh','compare','report')),
+  phase_done integer CHECK(phase_done>=0),
+  phase_total integer CHECK(phase_total>=0),
   failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled',
     'policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable',
     'invalid-response','wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
-    'permission-changed','connection-changed')),
+    'permission-changed','connection-changed','storage-unavailable','inventory-unavailable','export-too-large')),
   revision bigint NOT NULL DEFAULT 1,
   changed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   correlation_id uuid NOT NULL,
@@ -50,6 +58,15 @@ CREATE TABLE cc.jobs (
   started_at timestamptz,
   finished_at timestamptz,
   CHECK(scope_kind<>'devices' OR (target_count IS NOT NULL AND target_count BETWEEN 1 AND 100000)),
+  -- A rows scope holds a row count from 0 to 50,000, or null before the header check (design section 3).
+  CHECK(scope_kind<>'rows' OR target_count IS NULL OR target_count BETWEEN 0 AND 50000),
+  -- Only the two file kinds take a rows scope, and every job of them takes it.
+  CHECK((kind IN ('device-export','device-import'))=(scope_kind='rows')),
+  -- Only an export or a validation job writes a phase, and each kind holds its own phase set.
+  CHECK(kind IN ('device-export','device-import') OR
+    (phase IS NULL AND phase_done IS NULL AND phase_total IS NULL)),
+  CHECK(phase IS NULL OR (phase_done IS NOT NULL AND (phase_total IS NULL OR phase_total>=phase_done))),
+  CHECK(phase IS NULL OR (kind='device-export')=(phase IN ('write-rows','prepare-download'))),
   CHECK((cancel_requested_at IS NULL)=(cancel_requested_by IS NULL)),
   CHECK(status<>'cancelled' OR cancel_requested_at IS NOT NULL)
 );
@@ -280,6 +297,152 @@ CREATE TABLE cc.device_update_operation_fields (
   FOREIGN KEY(job_id,operation_number)
     REFERENCES cc.device_update_operations(job_id,operation_number) ON DELETE CASCADE
 );
+
+-- One export job of the batch export and import workflow (design section 3). The header holds the
+-- counts and the cancel request, and this row holds the request, the lease, and the published file.
+-- An edit export writes the template, and a report export writes the report columns in grid order.
+CREATE TABLE cc.device_export_jobs (
+  job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
+  purpose text NOT NULL CHECK(purpose IN ('edit','report')),
+  -- The one format of this slice. The Drive slice adds `sheet` (design section 5).
+  format text NOT NULL CHECK(format IN ('csv')),
+  -- The report field IDs in grid order. An edit export holds none.
+  report_columns text[] NOT NULL DEFAULT '{}'
+    CHECK(cardinality(report_columns)<=10 AND report_columns <@ ARRAY['serialNumber','status','model',
+      'assetTag','annotatedUser','orgUnitPath','battery','lastContact','annotatedLocation','notes']::text[]),
+  sort_field text NOT NULL CHECK(sort_field IN ('serialNumber','status','model','assetTag','annotatedUser',
+    'orgUnitPath','battery','lastContact','annotatedLocation','notes')),
+  sort_direction text NOT NULL CHECK(sort_direction IN ('asc','desc')),
+  -- The lease of the one worker run (design sections 3 and 5). The claim stamps both lease columns and
+  -- first_claimed_at; the cancel reads first_claimed_at under the header lock.
+  lease_id uuid,
+  lease_expires_at timestamptz,
+  first_claimed_at timestamptz,
+  -- The published file facts. They stay null until the finish publishes the file.
+  file_artifact_id text,
+  file_name text CHECK(file_name IS NULL OR length(file_name) BETWEEN 1 AND 255),
+  file_size_bytes bigint CHECK(file_size_bytes IS NULL OR file_size_bytes>=0),
+  file_row_count integer CHECK(file_row_count IS NULL OR file_row_count<=50000),
+  file_column_count integer CHECK(file_column_count IS NULL OR file_column_count BETWEEN 1 AND 64),
+  file_expires_at timestamptz,
+  CHECK((purpose='report')=(cardinality(report_columns)>0)),
+  CHECK((lease_id IS NULL)=(lease_expires_at IS NULL)),
+  CHECK((file_name IS NULL)=(file_artifact_id IS NULL) AND (file_name IS NULL)=(file_size_bytes IS NULL) AND
+    (file_name IS NULL)=(file_row_count IS NULL) AND (file_name IS NULL)=(file_column_count IS NULL) AND
+    (file_name IS NULL)=(file_expires_at IS NULL))
+);
+
+-- The frozen scope of one export, in grid order (design section 3, `td:338`).
+CREATE TABLE cc.device_export_targets (
+  job_id uuid NOT NULL REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
+  ordinal integer NOT NULL CHECK(ordinal>=0),
+  device_id text NOT NULL CHECK(length(device_id) BETWEEN 1 AND 128),
+  PRIMARY KEY(job_id,ordinal),
+  UNIQUE(job_id,device_id)
+);
+
+-- One validation job of the batch export and import workflow (design section 3). The header holds the
+-- row count and the cancel request, and this row holds the mode, the source, the counts, the refusal,
+-- and the plan (design sections 6 and 7). The plan columns land together when the report proposes a
+-- change, and they stay null before it.
+CREATE TABLE cc.device_import_jobs (
+  job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
+  mode text NOT NULL CHECK(mode IN ('sync-changes','sync-all-rows')),
+  -- The one source of this slice. The Drive slice adds a Sheet tab and a Drive file (design section 5).
+  source_type text NOT NULL CHECK(source_type IN ('csv')),
+  source_name text NOT NULL CHECK(length(source_name) BETWEEN 1 AND 255),
+  -- The upload cap of design section 4. The worker never stores a larger source.
+  source_size_bytes bigint NOT NULL CHECK(source_size_bytes BETWEEN 0 AND 1073741824),
+  -- The status actions that the person held at submission (design section 6 step 1).
+  status_permissions text[] NOT NULL DEFAULT '{}'
+    CHECK(status_permissions <@ ARRAY['disable','reenable','deprovision']::text[]),
+  lease_id uuid,
+  lease_expires_at timestamptz,
+  first_claimed_at timestamptz,
+  -- The counts of `td:663`. Rows equal the four row results (design section 6, `td:674`).
+  rows_read integer NOT NULL DEFAULT 0 CHECK(rows_read BETWEEN 0 AND 50000),
+  candidate_rows integer NOT NULL DEFAULT 0 CHECK(candidate_rows BETWEEN 0 AND 50000),
+  unchanged integer NOT NULL DEFAULT 0 CHECK(unchanged>=0),
+  no_change_needed integer NOT NULL DEFAULT 0 CHECK(no_change_needed>=0),
+  proposed integer NOT NULL DEFAULT 0 CHECK(proposed>=0),
+  rejected integer NOT NULL DEFAULT 0 CHECK(rejected>=0),
+  stale_devices_read integer NOT NULL DEFAULT 0 CHECK(stale_devices_read>=0),
+  oldest_observed_at timestamptz,
+  -- A refusal stores its code and the module text (design section 6).
+  refusal text CHECK(refusal IS NULL OR length(refusal) BETWEEN 1 AND 64),
+  refusal_text text CHECK(refusal_text IS NULL OR length(refusal_text) BETWEEN 1 AND 16438),
+  plan_id uuid,
+  plan_revision integer CHECK(plan_revision IS NULL OR plan_revision>=1),
+  plan_state text CHECK(plan_state IS NULL OR plan_state IN ('open','executed','cancelled')),
+  plan_expires_at timestamptz,
+  plan_changed_by uuid REFERENCES cc.application_principals(id),
+  plan_changed_at timestamptz,
+  -- The receipts of one Execute, in run order (design section 7).
+  execute_receipts jsonb NOT NULL DEFAULT '[]'::jsonb
+    CHECK(jsonb_typeof(execute_receipts)='array' AND jsonb_array_length(execute_receipts)<=7),
+  CHECK((lease_id IS NULL)=(lease_expires_at IS NULL)),
+  CHECK(rows_read=unchanged+no_change_needed+proposed+rejected),
+  CHECK((plan_id IS NULL)=(plan_revision IS NULL) AND (plan_id IS NULL)=(plan_state IS NULL) AND
+    (plan_id IS NULL)=(plan_expires_at IS NULL)),
+  CHECK((plan_changed_by IS NULL)=(plan_changed_at IS NULL)),
+  CHECK((refusal IS NULL)=(refusal_text IS NULL))
+);
+
+-- One proposed change of one import plan, and the proposed view of its report (design section 3).
+-- Ordinals follow template order within a source row, and the status change comes last.
+CREATE TABLE cc.device_import_changes (
+  job_id uuid NOT NULL REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
+  ordinal integer NOT NULL CHECK(ordinal>=0),
+  source_row integer NOT NULL CHECK(source_row>=1),
+  device_id text NOT NULL CHECK(length(device_id) BETWEEN 1 AND 128),
+  change_type text NOT NULL CHECK(change_type IN ('field','status')),
+  field text CHECK(field IN ('annotatedLocation','annotatedAssetId','annotatedUser','notes','orgUnitPath')),
+  mode text CHECK(mode IN ('replace','clear','move')),
+  status_action text CHECK(status_action IN ('disable','reenable','deprovision')),
+  deprovision_reason text CHECK(deprovision_reason IN ('DEPROVISION_REASON_RETIRING_DEVICE',
+    'DEPROVISION_REASON_DIFFERENT_MODEL_REPLACEMENT','DEPROVISION_REASON_SAME_MODEL_REPLACEMENT',
+    'DEPROVISION_REASON_UPGRADE_TRANSFER')),
+  current_value text CHECK(current_value IS NULL OR length(current_value)<=4096),
+  new_value text CHECK(new_value IS NULL OR length(new_value)<=4096),
+  -- The reason that Execute does not run the change (design section 3).
+  not_run_reason text CHECK(not_run_reason IN ('changed-after-validation','no-change-needed','removed',
+    'status-unknown','device-deprovisioned','device-active','device-disabled')),
+  -- The job and the operation that run the change, filled by the link step of design section 7.
+  linked_job_id uuid REFERENCES cc.jobs(job_id) ON DELETE SET NULL,
+  operation_number integer CHECK(operation_number IS NULL OR operation_number>=1),
+  PRIMARY KEY(job_id,ordinal),
+  CHECK(change_type<>'field' OR (field IS NOT NULL AND mode IS NOT NULL AND status_action IS NULL AND
+    deprovision_reason IS NULL AND (field='orgUnitPath')=(mode='move') AND (mode='clear')=(new_value IS NULL))),
+  CHECK(change_type<>'status' OR (status_action IS NOT NULL AND field IS NULL AND mode IS NULL)),
+  CHECK((change_type='status' AND status_action='deprovision')=(deprovision_reason IS NOT NULL)),
+  CHECK((linked_job_id IS NULL)=(operation_number IS NULL))
+);
+
+-- One rejected row of one import, with each reason on its own line (design section 3). The ten
+-- template cells sit on the first line of a source row, so one row carries every reason of that row.
+CREATE TABLE cc.device_import_rejections (
+  job_id uuid NOT NULL REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
+  ordinal integer NOT NULL CHECK(ordinal>=0),
+  source_row integer NOT NULL CHECK(source_row>=1),
+  device_id_cell text CHECK(device_id_cell IS NULL OR length(device_id_cell)<=16384),
+  column_name text CHECK(column_name IS NULL OR length(column_name) BETWEEN 1 AND 64),
+  submitted_value text CHECK(submitted_value IS NULL OR length(submitted_value)<=16384),
+  reason text NOT NULL CHECK(length(reason) BETWEEN 1 AND 16438),
+  template_cells text[] CHECK(template_cells IS NULL OR cardinality(template_cells)=10),
+  PRIMARY KEY(job_id,ordinal)
+);
+
+-- One warning of one import (design section 3). The source row stays null for the header row.
+CREATE TABLE cc.device_import_warnings (
+  job_id uuid NOT NULL REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
+  ordinal integer NOT NULL CHECK(ordinal>=0),
+  source_row integer CHECK(source_row IS NULL OR source_row>=1),
+  device_id text CHECK(device_id IS NULL OR length(device_id) BETWEEN 1 AND 128),
+  warning text NOT NULL CHECK(length(warning) BETWEEN 1 AND 16438),
+  PRIMARY KEY(job_id,ordinal)
+);
+CREATE INDEX device_import_changes_linked ON cc.device_import_changes(linked_job_id)
+  WHERE linked_job_id IS NOT NULL;
 
 -- The accepted value of one device, until a list converges or the overlay expires.
 CREATE TABLE cc.device_write_overlays (
@@ -539,7 +702,7 @@ CREATE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer 
   p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; pending integer; dispatched integer;
-  stop_now boolean:=false;
+  stop_now boolean:=false; claimed_at timestamptz;
 BEGIN
   -- S2: a null identifier never matches a header.
   IF p_actor IS NULL OR p_customer IS NULL OR p_display_id IS NULL OR p_correlation IS NULL THEN
@@ -563,6 +726,13 @@ BEGIN
   IF job.scope_kind='devices' AND job.kind='inventory-refresh' THEN
     PERFORM 1 FROM cc.entity_sync_jobs u WHERE u.job_id=job.job_id FOR UPDATE;
   END IF;
+  -- A file job locks its detail row after the header, as its claim, lease, and finish do (design
+  -- section 3).
+  IF job.kind='device-export' THEN
+    PERFORM 1 FROM cc.device_export_jobs e WHERE e.job_id=job.job_id FOR UPDATE;
+  ELSIF job.kind='device-import' THEN
+    PERFORM 1 FROM cc.device_import_jobs i WHERE i.job_id=job.job_id FOR UPDATE;
+  END IF;
   -- The person sees the job, or the call answers as a missing job (017 cc.job_visible).
   IF NOT cc.job_visible(p_actor,p_version,p_customer,job.requested_by) THEN
     RAISE EXCEPTION 'The job does not exist.' USING DETAIL='job-not-found';
@@ -582,7 +752,14 @@ BEGIN
   IF job.finished_at IS NOT NULL THEN
     RAISE EXCEPTION 'The job has finished.' USING DETAIL='job-finished';
   END IF;
-  IF job.kind<>'inventory-refresh' THEN
+  IF job.kind IN ('device-export','device-import') THEN
+    -- A file job that never claimed ends at once. After its first claim the request stays and the
+    -- worker stops at its next batch, then its finish ends the job (design section 3).
+    claimed_at:=CASE job.kind WHEN 'device-export'
+      THEN (SELECT e.first_claimed_at FROM cc.device_export_jobs e WHERE e.job_id=job.job_id)
+      ELSE (SELECT i.first_claimed_at FROM cc.device_import_jobs i WHERE i.job_id=job.job_id) END;
+    stop_now:=claimed_at IS NULL;
+  ELSIF job.kind<>'inventory-refresh' THEN
     -- The header lock holds every operation status: each writer of an operation status locks the header
     -- first (017 cc.settle_device_update_operations, cc.claim_device_update_verification).
     SELECT count(*) FILTER (WHERE o.status='pending'),count(*) FILTER (WHERE o.status='dispatched')
@@ -622,7 +799,19 @@ BEGIN
   END IF;
   now_at:=clock_timestamp();
   UPDATE cc.jobs SET cancel_requested_at=now_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
-  IF job.kind='inventory-refresh' THEN
+  IF job.kind IN ('device-export','device-import') THEN
+    -- A request that ends a file job before its first claim keeps no report. The cancelled count holds
+    -- the rows left, at least 1, as the cancelled finish does (design section 3).
+    IF stop_now THEN
+      IF job.kind='device-import' THEN
+        DELETE FROM cc.device_import_changes WHERE job_id=job.job_id;
+        DELETE FROM cc.device_import_rejections WHERE job_id=job.job_id;
+        DELETE FROM cc.device_import_warnings WHERE job_id=job.job_id;
+      END IF;
+      UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
+        cancelled=GREATEST(COALESCE(target_count,0)-succeeded,1) WHERE job_id=job.job_id;
+    END IF;
+  ELSIF job.kind='inventory-refresh' THEN
     IF job.scope_kind='all-devices' THEN
       -- The five sync columns clear, so the runner's stage, lease, and finish fence on a changed sync.
       -- The generation, the device count, and the failure stay.
@@ -651,6 +840,596 @@ BEGIN
   INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail)
     VALUES(gen_random_uuid(),p_actor,'job-cancel-requested',p_correlation,job.display_id);
   RETURN jsonb_build_object('outcome','requested');
+END;
+$$;
+
+-- ===== The export and the validation job (design sections 3, 5, and 6) =====
+-- Every function below runs as SECURITY DEFINER, locks the header before its detail row, and joins the
+-- runtime grant block of `deployment/postgres/index.mjs` and the PUBLIC revoke list of this file.
+
+-- One export job, its detail row, and its frozen targets, in one transaction. The caller resolves the
+-- selection in grid order and passes the device IDs as one JSON array. A caller without the three
+-- export actions receives no job.
+CREATE FUNCTION cc.create_device_export_job(p_actor uuid,p_version integer,p_customer text,
+  p_purpose text,p_format text,p_sort_field text,p_sort_direction text,p_columns text[],p_devices jsonb,
+  p_correlation uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; connection cc.google_connection; now_at timestamptz; number bigint; bad integer;
+BEGIN
+  p_columns:=COALESCE(p_columns,'{}'::text[]);
+  -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_correlation IS NULL OR
+    p_purpose IS NULL OR p_purpose NOT IN ('edit','report') OR
+    p_format IS NULL OR p_format NOT IN ('csv') OR
+    p_sort_field IS NULL OR p_sort_field NOT IN ('serialNumber','status','model','assetTag','annotatedUser',
+      'orgUnitPath','battery','lastContact','annotatedLocation','notes') OR
+    p_sort_direction IS NULL OR p_sort_direction NOT IN ('asc','desc') OR
+    p_devices IS NULL OR jsonb_typeof(p_devices)<>'array' OR jsonb_array_length(p_devices)>50000 THEN
+    RAISE EXCEPTION 'The export request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- A report export names its columns, and an edit export names none (design section 1).
+  IF (p_purpose='report')<>(cardinality(p_columns)>0) THEN
+    RAISE EXCEPTION 'The export columns are invalid.' USING ERRCODE='22023';
+  END IF;
+  IF EXISTS(SELECT 1 FROM unnest(p_columns) c WHERE c NOT IN ('serialNumber','status','model','assetTag',
+      'annotatedUser','orgUnitPath','battery','lastContact','annotatedLocation','notes')) OR
+    (SELECT count(DISTINCT c) FROM unnest(p_columns) c)<>cardinality(p_columns) THEN
+    RAISE EXCEPTION 'The export columns are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Each target is a device ID, once, in grid order.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_devices) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'string' OR char_length(e #>> '{}') NOT BETWEEN 1 AND 128;
+  IF bad>0 OR (SELECT count(DISTINCT e #>> '{}') FROM jsonb_array_elements(p_devices) e)
+      <>jsonb_array_length(p_devices) THEN
+    RAISE EXCEPTION 'The export targets are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G: the global access lock comes first, so the authority check and the writes hold it and an
+  -- access change cannot commit between the check and the insert. The connection row locks next, before
+  -- the check, so the check runs after the last blocking lock and before the first write.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  SELECT * INTO connection FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  IF connection.customer_id IS NULL THEN
+    RETURN jsonb_build_object('outcome','connection-changed');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    (SELECT count(DISTINCT g.action) FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:bulk-actions','devices:export') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)))<>3 THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  now_at:=clock_timestamp();
+  number:=nextval('cc.job_number_exp');
+  INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+    target_count,correlation_id)
+  VALUES(gen_random_uuid(),cc.job_display_id('EXP',number),p_customer,'device-export','rows','running',
+    p_actor,connection.generation,jsonb_array_length(p_devices),p_correlation)
+  RETURNING * INTO job;
+  INSERT INTO cc.device_export_jobs(job_id,purpose,format,report_columns,sort_field,sort_direction)
+    VALUES(job.job_id,p_purpose,p_format,p_columns,p_sort_field,p_sort_direction);
+  INSERT INTO cc.device_export_targets(job_id,ordinal,device_id)
+    SELECT job.job_id,(e.ordinal-1)::integer,e.value #>> '{}'
+    FROM jsonb_array_elements(p_devices) WITH ORDINALITY e(value,ordinal);
+  PERFORM cc.record_job_change(job.job_id,true);
+  RETURN jsonb_build_object('outcome','created','receipt',jsonb_build_object('jobId',job.job_id,
+    'displayId',job.display_id,'status','accepted','rows',job.target_count));
+END;
+$$;
+
+-- One validation job and its detail row, after the upload. A caller without the three import actions
+-- receives no job. The row count stays null until the header check reads the file.
+CREATE FUNCTION cc.create_device_import_job(p_actor uuid,p_version integer,p_customer text,p_mode text,
+  p_source_type text,p_source_name text,p_source_size bigint,p_status_permissions text[],p_correlation uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; connection cc.google_connection; now_at timestamptz; number bigint;
+BEGIN
+  p_status_permissions:=COALESCE(p_status_permissions,'{}'::text[]);
+  -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
+  IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_correlation IS NULL OR
+    p_mode IS NULL OR p_mode NOT IN ('sync-changes','sync-all-rows') OR
+    p_source_type IS NULL OR p_source_type NOT IN ('csv') OR
+    p_source_name IS NULL OR char_length(p_source_name) NOT BETWEEN 1 AND 255 OR
+    p_source_size IS NULL OR p_source_size NOT BETWEEN 0 AND 1073741824 OR
+    EXISTS(SELECT 1 FROM unnest(p_status_permissions) s WHERE s NOT IN ('disable','reenable','deprovision')) THEN
+    RAISE EXCEPTION 'The import request is invalid.' USING ERRCODE='22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(7240173008);
+  SELECT * INTO connection FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  IF connection.customer_id IS NULL THEN
+    RETURN jsonb_build_object('outcome','connection-changed');
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    (SELECT count(DISTINCT g.action) FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:write','devices:bulk-actions') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)))<>3 THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  now_at:=clock_timestamp();
+  number:=nextval('cc.job_number_imp');
+  INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,status,requested_by,generation,
+    correlation_id)
+  VALUES(gen_random_uuid(),cc.job_display_id('IMP',number),p_customer,'device-import','rows','running',
+    p_actor,connection.generation,p_correlation)
+  RETURNING * INTO job;
+  INSERT INTO cc.device_import_jobs(job_id,mode,source_type,source_name,source_size_bytes,status_permissions)
+    VALUES(job.job_id,p_mode,p_source_type,p_source_name,p_source_size,p_status_permissions);
+  PERFORM cc.record_job_change(job.job_id,true);
+  RETURN jsonb_build_object('outcome','created','receipt',jsonb_build_object('jobId',job.job_id,
+    'displayId',job.display_id,'status','accepted','mode',p_mode,'name',p_source_name,
+    'sizeBytes',p_source_size));
+END;
+$$;
+
+-- The claim of one export run. It takes a two-minute lease and stamps first_claimed_at. A stored
+-- cancel request, or a finished job, answers `done`. A live lease of another run answers `busy`.
+CREATE FUNCTION cc.claim_device_export_job(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  -- Lock order (design section 3): the header, then its detail row.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-export' THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_export_jobs e WHERE e.job_id=p_job FOR UPDATE;
+  -- The fence reads the clock after both row locks.
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
+  IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease AND detail.lease_expires_at>now_at THEN
+    RETURN jsonb_build_object('outcome','busy','leaseExpiresAt',detail.lease_expires_at);
+  END IF;
+  UPDATE cc.device_export_jobs SET lease_id=p_lease,lease_expires_at=now_at+interval '120 seconds',
+    first_claimed_at=COALESCE(first_claimed_at,now_at) WHERE job_id=p_job;
+  IF job.started_at IS NULL THEN
+    UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
+  END IF;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','claimed','leaseExpiresAt',now_at+interval '120 seconds',
+    'displayId',job.display_id,'targetCount',job.target_count,'purpose',detail.purpose,
+    'format',detail.format,'columns',detail.report_columns,
+    'sort',jsonb_build_object('field',detail.sort_field,'direction',detail.sort_direction));
+END;
+$$;
+
+-- The claim of one validation run, with the same lease, fence, and answers as the export claim.
+CREATE FUNCTION cc.claim_device_import_job(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL THEN
+    RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
+  IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease AND detail.lease_expires_at>now_at THEN
+    RETURN jsonb_build_object('outcome','busy','leaseExpiresAt',detail.lease_expires_at);
+  END IF;
+  UPDATE cc.device_import_jobs SET lease_id=p_lease,lease_expires_at=now_at+interval '120 seconds',
+    first_claimed_at=COALESCE(first_claimed_at,now_at) WHERE job_id=p_job;
+  IF job.started_at IS NULL THEN
+    UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
+  END IF;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','claimed','leaseExpiresAt',now_at+interval '120 seconds',
+    'displayId',job.display_id,'targetCount',job.target_count,'mode',detail.mode,
+    'sourceType',detail.source_type,'sourceName',detail.source_name,
+    'sourceSizeBytes',detail.source_size_bytes,'statusPermissions',detail.status_permissions);
+END;
+$$;
+
+-- The renewal of one export run. It renews the two-minute lease and writes the phase and its counts.
+-- A stored cancel request answers `done`. A lease that another run replaced, or one that lapsed,
+-- answers `fenced` and writes nothing.
+CREATE FUNCTION cc.renew_device_export_job(p_customer text,p_job uuid,p_lease uuid,p_phase text,
+  p_done integer,p_total integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_phase IS NULL OR p_done IS NULL OR
+    p_done NOT BETWEEN 0 AND 50000 OR (p_total IS NOT NULL AND p_total NOT BETWEEN p_done AND 50000) OR
+    p_phase NOT IN ('write-rows','prepare-download') THEN
+    RAISE EXCEPTION 'The device export phase is invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-export' THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_export_jobs e WHERE e.job_id=p_job FOR UPDATE;
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
+  now_at:=clock_timestamp();
+  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
+    detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  UPDATE cc.device_export_jobs SET lease_expires_at=now_at+interval '120 seconds' WHERE job_id=p_job;
+  UPDATE cc.jobs SET phase=p_phase,phase_done=p_done,phase_total=p_total WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','renewed','leaseExpiresAt',now_at+interval '120 seconds');
+END;
+$$;
+
+-- The renewal of one validation run, with the same fence. The header check writes the row count of
+-- the file, so target_count takes the done count of that phase (design section 3).
+CREATE FUNCTION cc.renew_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_phase text,
+  p_done integer,p_total integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; rows_count integer;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_phase IS NULL OR p_done IS NULL OR
+    p_done NOT BETWEEN 0 AND 50000 OR (p_total IS NOT NULL AND p_total NOT BETWEEN p_done AND 50000) OR
+    p_phase NOT IN ('header-check','refresh','compare','report') THEN
+    RAISE EXCEPTION 'The device import phase is invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
+  now_at:=clock_timestamp();
+  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
+    detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  UPDATE cc.device_import_jobs SET lease_expires_at=now_at+interval '120 seconds' WHERE job_id=p_job;
+  UPDATE cc.jobs SET phase=p_phase,phase_done=p_done,phase_total=p_total,
+    target_count=CASE WHEN p_phase='header-check' THEN p_done ELSE target_count END
+  WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','renewed','leaseExpiresAt',now_at+interval '120 seconds');
+END;
+$$;
+
+-- One batch of report lines under the caller's lease (design section 6 step 19). A call stores at most
+-- 1,000 lines and 32 MiB of JSON, and it numbers them itself, so a page follows the stored order. A
+-- lapsed or replaced lease writes nothing, and neither does a stopped job. Each line carries one
+-- `kind`: `change`, `rejection`, or `warning`.
+CREATE FUNCTION cc.store_device_import_lines(p_customer text,p_job uuid,p_lease uuid,p_lines jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; bad integer;
+  changes integer:=0; rejections integer:=0; warnings integer:=0;
+  next_change integer; next_rejection integer; next_warning integer;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_lines IS NULL OR
+    jsonb_typeof(p_lines)<>'array' OR jsonb_array_length(p_lines) NOT BETWEEN 1 AND 1000 OR
+    pg_column_size(p_lines)>33554432 THEN
+    RAISE EXCEPTION 'The import lines are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Every line names its kind and its required values, or the call rejects before any lock.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_lines) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
+      COALESCE(e->>'kind','') NOT IN ('change','rejection','warning') OR
+      (e->>'kind'='change' AND (
+        CASE WHEN jsonb_typeof(e->'sourceRow')='number' AND pg_input_is_valid(e->>'sourceRow','integer')
+          THEN (e->>'sourceRow')::integer<1 ELSE true END OR
+        jsonb_typeof(e->'deviceId') IS DISTINCT FROM 'string' OR
+        char_length(e->>'deviceId') NOT BETWEEN 1 AND 128 OR
+        COALESCE(e->>'changeType','') NOT IN ('field','status') OR
+        (e->>'changeType'='field' AND (COALESCE(e->>'field','') NOT IN ('annotatedLocation',
+            'annotatedAssetId','annotatedUser','notes','orgUnitPath') OR
+          COALESCE(e->>'mode','') NOT IN ('replace','clear','move'))) OR
+        (e->>'changeType'='status' AND COALESCE(e->>'action','') NOT IN ('disable','reenable','deprovision')))) OR
+      (e->>'kind'='rejection' AND (
+        CASE WHEN jsonb_typeof(e->'sourceRow')='number' AND pg_input_is_valid(e->>'sourceRow','integer')
+          THEN (e->>'sourceRow')::integer<1 ELSE true END OR
+        jsonb_typeof(e->'reason') IS DISTINCT FROM 'string' OR char_length(e->>'reason') NOT BETWEEN 1 AND 16438 OR
+        (e->'templateCells' IS NOT NULL AND e->'templateCells'<>'null'::jsonb AND
+          (jsonb_typeof(e->'templateCells')<>'array' OR jsonb_array_length(e->'templateCells')<>10 OR
+          EXISTS(SELECT 1 FROM jsonb_array_elements(e->'templateCells') c WHERE jsonb_typeof(c)<>'string'))))) OR
+      (e->>'kind'='warning' AND (
+        jsonb_typeof(e->'warning') IS DISTINCT FROM 'string' OR
+        char_length(e->>'warning') NOT BETWEEN 1 AND 16438));
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The import lines are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Lock order (design section 3): the header, then its detail row. The lease reads under both locks.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done','changes',0,'rejections',0,'warnings',0);
+  END IF;
+  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
+    detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced','changes',0,'rejections',0,'warnings',0);
+  END IF;
+  SELECT COALESCE(max(ordinal)+1,0) INTO next_change FROM cc.device_import_changes WHERE job_id=p_job;
+  SELECT COALESCE(max(ordinal)+1,0) INTO next_rejection FROM cc.device_import_rejections WHERE job_id=p_job;
+  SELECT COALESCE(max(ordinal)+1,0) INTO next_warning FROM cc.device_import_warnings WHERE job_id=p_job;
+  WITH input AS (
+    SELECT (row_number() OVER (ORDER BY e.ordinal)-1)::integer AS position,e.value
+    FROM jsonb_array_elements(p_lines) WITH ORDINALITY e(value,ordinal)
+    WHERE e.value->>'kind'='change')
+  INSERT INTO cc.device_import_changes(job_id,ordinal,source_row,device_id,change_type,field,mode,
+    status_action,deprovision_reason,current_value,new_value,not_run_reason)
+  SELECT p_job,next_change+i.position,(i.value->>'sourceRow')::integer,i.value->>'deviceId',
+    i.value->>'changeType',
+    CASE WHEN i.value->>'changeType'='field' THEN i.value->>'field' END,
+    CASE WHEN i.value->>'changeType'='field' THEN i.value->>'mode' END,
+    CASE WHEN i.value->>'changeType'='status' THEN i.value->>'action' END,
+    CASE WHEN i.value->>'changeType'='status' AND i.value->>'action'='deprovision' THEN i.value->>'reason' END,
+    i.value->>'currentValue',i.value->>'newValue',i.value->>'notRunReason'
+  FROM input i;
+  GET DIAGNOSTICS changes=ROW_COUNT;
+  WITH input AS (
+    SELECT (row_number() OVER (ORDER BY e.ordinal)-1)::integer AS position,e.value
+    FROM jsonb_array_elements(p_lines) WITH ORDINALITY e(value,ordinal)
+    WHERE e.value->>'kind'='rejection')
+  INSERT INTO cc.device_import_rejections(job_id,ordinal,source_row,device_id_cell,column_name,
+    submitted_value,reason,template_cells)
+  SELECT p_job,next_rejection+i.position,(i.value->>'sourceRow')::integer,i.value->>'deviceId',
+    i.value->>'column',i.value->>'submittedValue',i.value->>'reason',
+    CASE WHEN i.value->'templateCells' IS NULL OR i.value->'templateCells'='null'::jsonb THEN NULL
+      ELSE ARRAY(SELECT jsonb_array_elements_text(i.value->'templateCells')) END
+  FROM input i;
+  GET DIAGNOSTICS rejections=ROW_COUNT;
+  WITH input AS (
+    SELECT (row_number() OVER (ORDER BY e.ordinal)-1)::integer AS position,e.value
+    FROM jsonb_array_elements(p_lines) WITH ORDINALITY e(value,ordinal)
+    WHERE e.value->>'kind'='warning')
+  INSERT INTO cc.device_import_warnings(job_id,ordinal,source_row,device_id,warning)
+  SELECT p_job,next_warning+i.position,
+    CASE WHEN i.value->'sourceRow' IS NULL OR i.value->'sourceRow'='null'::jsonb THEN NULL
+      ELSE (i.value->>'sourceRow')::integer END,
+    i.value->>'deviceId',i.value->>'warning'
+  FROM input i;
+  GET DIAGNOSTICS warnings=ROW_COUNT;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','stored','changes',changes,'rejections',rejections,'warnings',warnings);
+END;
+$$;
+
+-- The finish of one export run. It ends the job under the header lock and its detail row. A stored
+-- cancel request ends the job Cancelled and keeps no file. A known failure ends it Failed. A file
+-- publishes the file facts and ends it Completed. A repeated call answers the stored status.
+CREATE FUNCTION cc.finish_device_export_job(p_customer text,p_job uuid,p_lease uuid,p_file jsonb DEFAULT NULL,
+  p_failure text DEFAULT NULL) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR (p_failure IS NOT NULL AND
+      NOT COALESCE(cc.job_failure_known(p_failure),false)) THEN
+    RAISE EXCEPTION 'The export finish is invalid.' USING ERRCODE='22023';
+  END IF;
+  IF p_file IS NOT NULL THEN
+    IF jsonb_typeof(p_file)<>'object' OR jsonb_typeof(p_file->'artifactId') IS DISTINCT FROM 'string' OR
+      char_length(p_file->>'artifactId') NOT BETWEEN 1 AND 256 OR
+      jsonb_typeof(p_file->'name') IS DISTINCT FROM 'string' OR
+      char_length(p_file->>'name') NOT BETWEEN 1 AND 255 OR
+      (CASE WHEN jsonb_typeof(p_file->'sizeBytes')='number' AND pg_input_is_valid(p_file->>'sizeBytes','bigint')
+        THEN (p_file->>'sizeBytes')::bigint<0 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_file->'rows')='number' AND pg_input_is_valid(p_file->>'rows','integer')
+        THEN (p_file->>'rows')::integer NOT BETWEEN 0 AND 50000 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_file->'columns')='number' AND pg_input_is_valid(p_file->>'columns','integer')
+        THEN (p_file->>'columns')::integer NOT BETWEEN 1 AND 64 ELSE true END) OR
+      jsonb_typeof(p_file->'expiresAt') IS DISTINCT FROM 'string' OR
+      NOT pg_input_is_valid(p_file->>'expiresAt','timestamptz') THEN
+      RAISE EXCEPTION 'The export file is invalid.' USING ERRCODE='22023';
+    END IF;
+  END IF;
+  -- Lock order (design section 3): the header, then its detail row.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-export' THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_export_jobs e WHERE e.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.finished_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','finished','status',job.status);
+  END IF;
+  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
+    detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  IF job.cancel_requested_at IS NOT NULL THEN
+    -- A cancelled finish keeps no file, and the cancelled count holds the rows left, at least 1.
+    UPDATE cc.device_export_jobs SET file_artifact_id=NULL,file_name=NULL,file_size_bytes=NULL,
+      file_row_count=NULL,file_column_count=NULL,file_expires_at=NULL WHERE job_id=p_job;
+    UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
+      cancelled=GREATEST(COALESCE(target_count,0)-succeeded,1) WHERE job_id=p_job;
+    PERFORM cc.record_job_change(p_job,true);
+    RETURN jsonb_build_object('outcome','finished','status','cancelled');
+  END IF;
+  IF p_failure IS NOT NULL THEN
+    UPDATE cc.jobs SET status='failed',failure=p_failure,finished_at=now_at WHERE job_id=p_job;
+    PERFORM cc.record_job_change(p_job,true);
+    RETURN jsonb_build_object('outcome','finished','status','failed');
+  END IF;
+  IF p_file IS NULL THEN
+    RAISE EXCEPTION 'The export finish requires a file or a failure.' USING ERRCODE='22023';
+  END IF;
+  UPDATE cc.device_export_jobs SET file_artifact_id=p_file->>'artifactId',file_name=p_file->>'name',
+    file_size_bytes=(p_file->>'sizeBytes')::bigint,file_row_count=(p_file->>'rows')::integer,
+    file_column_count=(p_file->>'columns')::integer,file_expires_at=(p_file->>'expiresAt')::timestamptz
+  WHERE job_id=p_job;
+  UPDATE cc.jobs SET status='completed',succeeded=(p_file->>'rows')::integer,finished_at=now_at,
+    phase='prepare-download',phase_done=0,phase_total=NULL WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,true);
+  RETURN jsonb_build_object('outcome','finished','status','completed','file',jsonb_build_object(
+    'name',p_file->>'name','sizeBytes',(p_file->>'sizeBytes')::bigint,
+    'rows',(p_file->>'rows')::integer,'columns',(p_file->>'columns')::integer,
+    'expiresAt',(p_file->>'expiresAt')::timestamptz));
+END;
+$$;
+
+-- The finish of one validation run. It ends the job under the header lock and its detail row, stores
+-- the counts, and creates an open plan that expires one hour after the finish when a change is
+-- proposed. A stored cancel request, or a failure, ends the job and keeps no report and no plan. A
+-- repeated call answers the stored status.
+CREATE FUNCTION cc.finish_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_counts jsonb DEFAULT NULL,
+  p_failure text DEFAULT NULL,p_refusal text DEFAULT NULL,p_refusal_text text DEFAULT NULL) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz;
+  rows_count integer; unchanged_count integer; no_change_count integer; proposed_count integer;
+  rejected_count integer; stale_count integer; oldest timestamptz; final_status text; plan jsonb;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR
+    (p_failure IS NOT NULL AND NOT COALESCE(cc.job_failure_known(p_failure),false)) OR
+    (p_refusal IS NULL)<>(p_refusal_text IS NULL) OR
+    (p_refusal IS NOT NULL AND p_failure IS NULL) OR
+    (p_refusal IS NOT NULL AND (char_length(p_refusal) NOT BETWEEN 1 AND 64 OR
+      char_length(p_refusal_text) NOT BETWEEN 1 AND 16438)) THEN
+    RAISE EXCEPTION 'The import finish is invalid.' USING ERRCODE='22023';
+  END IF;
+  IF p_counts IS NOT NULL THEN
+    IF jsonb_typeof(p_counts)<>'object' OR
+      (CASE WHEN jsonb_typeof(p_counts->'rows')='number' AND pg_input_is_valid(p_counts->>'rows','integer')
+        THEN (p_counts->>'rows')::integer NOT BETWEEN 0 AND 50000 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_counts->'unchanged')='number' AND pg_input_is_valid(p_counts->>'unchanged','integer')
+        THEN (p_counts->>'unchanged')::integer<0 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_counts->'noChangeNeeded')='number' AND pg_input_is_valid(p_counts->>'noChangeNeeded','integer')
+        THEN (p_counts->>'noChangeNeeded')::integer<0 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_counts->'proposed')='number' AND pg_input_is_valid(p_counts->>'proposed','integer')
+        THEN (p_counts->>'proposed')::integer<0 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_counts->'rejected')='number' AND pg_input_is_valid(p_counts->>'rejected','integer')
+        THEN (p_counts->>'rejected')::integer<0 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_counts->'candidateRows')='number' AND pg_input_is_valid(p_counts->>'candidateRows','integer')
+        THEN (p_counts->>'candidateRows')::integer NOT BETWEEN 0 AND 50000 ELSE true END) OR
+      (CASE WHEN jsonb_typeof(p_counts->'staleDevicesRead')='number' AND pg_input_is_valid(p_counts->>'staleDevicesRead','integer')
+        THEN (p_counts->>'staleDevicesRead')::integer<0 ELSE true END) OR
+      (p_counts->'oldestObservedAt' IS NOT NULL AND p_counts->'oldestObservedAt'<>'null'::jsonb AND
+        (jsonb_typeof(p_counts->'oldestObservedAt')<>'string' OR
+        NOT pg_input_is_valid(p_counts->>'oldestObservedAt','timestamptz'))) THEN
+      RAISE EXCEPTION 'The import counts are invalid.' USING ERRCODE='22023';
+    END IF;
+    rows_count:=(p_counts->>'rows')::integer;
+    unchanged_count:=(p_counts->>'unchanged')::integer;
+    no_change_count:=(p_counts->>'noChangeNeeded')::integer;
+    proposed_count:=(p_counts->>'proposed')::integer;
+    rejected_count:=(p_counts->>'rejected')::integer;
+    stale_count:=(p_counts->>'staleDevicesRead')::integer;
+    IF rows_count<>unchanged_count+no_change_count+proposed_count+rejected_count THEN
+      RAISE EXCEPTION 'The import counts are invalid.' USING ERRCODE='22023';
+    END IF;
+    IF p_counts->'oldestObservedAt' IS NOT NULL AND p_counts->'oldestObservedAt'<>'null'::jsonb THEN
+      oldest:=(p_counts->>'oldestObservedAt')::timestamptz;
+    END IF;
+  END IF;
+  -- Lock order (design section 3): the header, then its detail row.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.finished_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','finished','status',job.status);
+  END IF;
+  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
+    detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  IF job.cancel_requested_at IS NOT NULL OR p_failure IS NOT NULL THEN
+    DELETE FROM cc.device_import_changes WHERE job_id=p_job;
+    DELETE FROM cc.device_import_rejections WHERE job_id=p_job;
+    DELETE FROM cc.device_import_warnings WHERE job_id=p_job;
+    UPDATE cc.device_import_jobs SET rows_read=0,candidate_rows=0,unchanged=0,no_change_needed=0,
+      proposed=0,rejected=0,stale_devices_read=0,oldest_observed_at=NULL,refusal=p_refusal,
+      refusal_text=p_refusal_text,plan_id=NULL,plan_revision=NULL,plan_state=NULL,plan_expires_at=NULL
+    WHERE job_id=p_job;
+    IF job.cancel_requested_at IS NOT NULL THEN
+      UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
+        cancelled=GREATEST(COALESCE(target_count,0)-succeeded,1) WHERE job_id=p_job;
+      PERFORM cc.record_job_change(p_job,true);
+      RETURN jsonb_build_object('outcome','finished','status','cancelled');
+    END IF;
+    UPDATE cc.jobs SET status='failed',failure=p_failure,finished_at=now_at WHERE job_id=p_job;
+    PERFORM cc.record_job_change(p_job,true);
+    RETURN jsonb_build_object('outcome','finished','status','failed');
+  END IF;
+  IF p_counts IS NULL THEN
+    RAISE EXCEPTION 'The import finish requires the counts or a failure.' USING ERRCODE='22023';
+  END IF;
+  final_status:=CASE WHEN proposed_count=0 AND rejected_count>0 THEN 'completed-with-errors' ELSE 'completed' END;
+  UPDATE cc.device_import_jobs SET rows_read=rows_count,candidate_rows=(p_counts->>'candidateRows')::integer,
+    unchanged=unchanged_count,no_change_needed=no_change_count,proposed=proposed_count,
+    rejected=rejected_count,stale_devices_read=stale_count,oldest_observed_at=oldest,
+    plan_id=CASE WHEN proposed_count>0 THEN gen_random_uuid() END,
+    plan_revision=CASE WHEN proposed_count>0 THEN 1 END,
+    plan_state=CASE WHEN proposed_count>0 THEN 'open' END,
+    plan_expires_at=CASE WHEN proposed_count>0 THEN now_at+interval '1 hour' END
+  WHERE job_id=p_job
+  RETURNING CASE WHEN plan_id IS NULL THEN NULL ELSE jsonb_build_object('planId',plan_id,
+    'revision',plan_revision,'state',plan_state,'expiresAt',plan_expires_at) END INTO plan;
+  UPDATE cc.jobs SET target_count=rows_count,status=final_status,finished_at=now_at WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,true);
+  RETURN jsonb_build_object('outcome','finished','status',final_status,'plan',plan);
+END;
+$$;
+
+-- The recovery of a lost export or validation run (design section 5). A job that no worker claimed
+-- within 60 minutes, or whose lease lapsed 15 minutes ago, ends Failed with `interrupted`. A job that
+-- holds a cancel request ends Cancelled instead, as the shared cancel rule requires. Each header locks
+-- in creation order, then its detail row.
+CREATE FUNCTION cc.recover_device_file_jobs(p_customer text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; now_at timestamptz; lost boolean; claimed_at timestamptz; lease_at timestamptz;
+  failed jsonb:='[]'::jsonb;
+BEGIN
+  IF p_customer IS NULL THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  FOR job IN SELECT j.* FROM cc.jobs j WHERE j.customer_id=p_customer AND
+      j.kind IN ('device-export','device-import') AND j.status='running' AND j.finished_at IS NULL
+      ORDER BY j.created_at,j.display_id FOR UPDATE LOOP
+    IF job.kind='device-export' THEN
+      SELECT e.first_claimed_at,e.lease_expires_at INTO claimed_at,lease_at
+      FROM cc.device_export_jobs e WHERE e.job_id=job.job_id FOR UPDATE;
+    ELSE
+      SELECT i.first_claimed_at,i.lease_expires_at INTO claimed_at,lease_at
+      FROM cc.device_import_jobs i WHERE i.job_id=job.job_id FOR UPDATE;
+    END IF;
+    -- The clock reads after the header and the detail row.
+    now_at:=clock_timestamp();
+    lost:=CASE WHEN claimed_at IS NULL THEN job.created_at<=now_at-interval '60 minutes'
+      ELSE COALESCE(lease_at,claimed_at)<=now_at-interval '15 minutes' END;
+    IF NOT lost THEN CONTINUE; END IF;
+    IF job.cancel_requested_at IS NOT NULL THEN
+      IF job.kind='device-import' THEN
+        DELETE FROM cc.device_import_changes WHERE job_id=job.job_id;
+        DELETE FROM cc.device_import_rejections WHERE job_id=job.job_id;
+        DELETE FROM cc.device_import_warnings WHERE job_id=job.job_id;
+      END IF;
+      UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
+        cancelled=GREATEST(COALESCE(target_count,0)-succeeded,1) WHERE job_id=job.job_id;
+    ELSE
+      IF job.kind='device-import' THEN
+        DELETE FROM cc.device_import_changes WHERE job_id=job.job_id;
+        DELETE FROM cc.device_import_rejections WHERE job_id=job.job_id;
+        DELETE FROM cc.device_import_warnings WHERE job_id=job.job_id;
+      END IF;
+      UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),finished_at=now_at
+      WHERE job_id=job.job_id;
+    END IF;
+    PERFORM cc.record_job_change(job.job_id,true);
+    failed:=failed||jsonb_build_array(jsonb_build_object('jobId',job.job_id,'displayId',job.display_id,
+      'status',CASE WHEN job.cancel_requested_at IS NOT NULL THEN 'cancelled' ELSE 'failed' END));
+  END LOOP;
+  RETURN jsonb_build_object('failed',failed);
 END;
 $$;
 
@@ -694,7 +1473,7 @@ LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT p_failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled','policy-restricted',
     'network-failure','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response',
     'wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
-    'permission-changed','connection-changed');
+    'permission-changed','connection-changed','storage-unavailable','inventory-unavailable','export-too-large');
 $$;
 
 -- Admission order: smallest target count, then oldest creation, then lowest display ID.
@@ -2979,7 +3758,9 @@ $$;
 REVOKE ALL ON cc.jobs,cc.job_targets,cc.device_update_previews,cc.device_update_preview_targets,
   cc.device_update_changes,cc.device_update_target_fields,cc.device_update_jobs,cc.device_update_batches,
   cc.device_update_operations,cc.device_update_operation_fields,cc.device_write_overlays,
-  cc.job_activity_seen,cc.job_publications FROM PUBLIC;
+  cc.job_activity_seen,cc.job_publications,cc.device_export_jobs,cc.device_export_targets,
+  cc.device_import_jobs,cc.device_import_changes,cc.device_import_rejections,cc.device_import_warnings
+  FROM PUBLIC;
 REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,integer,text,uuid),
   cc.visible_device_sync(uuid,integer,text),cc.job_publication_element(cc.jobs,cc.job_publications),
   cc.record_job_change(uuid,boolean,jsonb,jsonb,integer),cc.read_job_publications(text,integer),
@@ -3009,4 +3790,13 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.claim_device_command_polls(text,uuid,uuid,uuid),
   cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
   cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer),
-  cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid) FROM PUBLIC;
+  cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid),
+  cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid),
+  cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid),
+  cc.claim_device_export_job(text,uuid,uuid),cc.claim_device_import_job(text,uuid,uuid),
+  cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
+  cc.renew_device_import_job(text,uuid,uuid,text,integer,integer),
+  cc.store_device_import_lines(text,uuid,uuid,jsonb),
+  cc.finish_device_export_job(text,uuid,uuid,jsonb,text),
+  cc.finish_device_import_job(text,uuid,uuid,jsonb,text,text,text),
+  cc.recover_device_file_jobs(text) FROM PUBLIC;

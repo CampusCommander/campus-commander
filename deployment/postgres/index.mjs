@@ -275,7 +275,9 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.device_update_preview_targets, cc.device_update_changes, cc.device_update_target_fields,
         cc.device_update_jobs, cc.device_update_batches,
         cc.device_update_operations, cc.device_update_operation_fields, cc.device_write_overlays,
-        cc.job_activity_seen, cc.job_publications TO ${role};
+        cc.job_activity_seen, cc.job_publications, cc.device_export_jobs, cc.device_export_targets,
+        cc.device_import_jobs, cc.device_import_changes, cc.device_import_rejections,
+        cc.device_import_warnings TO ${role};
         GRANT EXECUTE ON FUNCTION cc.job_visible(uuid,integer,text,uuid),
         cc.record_job_change(uuid,boolean,jsonb,jsonb,integer),
         cc.read_job_publications(text,integer),
@@ -308,7 +310,17 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.job_reader(uuid,integer),
         cc.record_job_activity_seen(uuid,integer),
         cc.job_cancel_requested(text,uuid),
-        cc.request_job_cancel(uuid,integer,text,text,uuid) TO ${role}`);
+        cc.request_job_cancel(uuid,integer,text,text,uuid),
+        cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid),
+        cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid),
+        cc.claim_device_export_job(text,uuid,uuid),
+        cc.claim_device_import_job(text,uuid,uuid),
+        cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
+        cc.renew_device_import_job(text,uuid,uuid,text,integer,integer),
+        cc.store_device_import_lines(text,uuid,uuid,jsonb),
+        cc.finish_device_export_job(text,uuid,uuid,jsonb,text),
+        cc.finish_device_import_job(text,uuid,uuid,jsonb,text,text,text),
+        cc.recover_device_file_jobs(text) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '018-device-write-access')) {
       await client.query(`GRANT EXECUTE ON FUNCTION
