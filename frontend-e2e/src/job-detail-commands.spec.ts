@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { installLiveStreams } from './live-streams';
 
 /**
  * The browser evidence of card F3. Every answer is mocked. The job detail of a
@@ -413,6 +414,7 @@ const DEFAULT_GRANTS = ['jobs:read', 'devices:read', 'devices:write'];
 
 /** One mock for every read of the three screens. */
 async function signIn(page: Page, grants: readonly string[] = DEFAULT_GRANTS) {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -442,12 +444,6 @@ async function signIn(page: Page, grants: readonly string[] = DEFAULT_GRANTS) {
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
         },
-      });
-    if (path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
       });
     if (path === '/api/jobs/CMD-001')
       return route.fulfill({ json: commandJob });

@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { installLiveStreams } from './live-streams';
 
 const customerId = 'C0123456';
 const person = {
@@ -493,6 +494,7 @@ const png09Operations = [
 ];
 
 async function signIn(page: Page) {
+  await installLiveStreams(page);
   const state = {
     reconcileStatus: 202,
     identity: 'district' as 'district' | 'alex' | 'readonly',
@@ -543,12 +545,6 @@ async function signIn(page: Page) {
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
         },
-      });
-    if (path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
       });
     if (path === '/api/jobs/UPD-006')
       return state.fail

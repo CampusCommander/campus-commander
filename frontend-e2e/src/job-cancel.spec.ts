@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { installLiveStreams } from './live-streams';
 
 /**
  * The cancel states of the approved mockup, on a mocked API.
@@ -647,6 +648,7 @@ async function signIn(
   state: MockState,
   theme: 'light' | 'dark' = 'light',
 ) {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route: Route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -745,12 +747,6 @@ async function signIn(
             })),
           },
         },
-      });
-    if (path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
       });
     if (path === '/api/jobs/activity')
       return route.fulfill({
