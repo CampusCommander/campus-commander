@@ -124,6 +124,24 @@ export class StorageService
   }
 
   /**
+   * Stage and publish one JSON document that the caller writes while it runs (design section 7,
+   * "Bounded serialization"). The store computes the size and the SHA-256 while it writes, so the
+   * document never exists as one string. The caller stops above `maxBytes`.
+   */
+  async storeJsonStream(
+    source: AsyncIterable<Buffer>,
+    maxBytes: number,
+  ): Promise<string> {
+    const store = await this.connection();
+    const descriptor = await store.stageStream(
+      { schemaVersion: 1, maxBytes },
+      source,
+    );
+    await store.publish(descriptor);
+    return descriptor.artifactId;
+  }
+
+  /**
    * Stream one published artifact (design section 4). The iterable owns its file handle, and a
    * missing or unreadable artifact rejects before the caller writes an answer.
    */

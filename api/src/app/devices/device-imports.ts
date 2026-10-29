@@ -106,6 +106,8 @@ interface QueryClient {
 }
 export interface ImportsDatabase {
   connection: QueryClient;
+  /** One transaction of the import routes. Execute runs every step of section 7 in it. */
+  transaction<T>(run: (client: QueryClient) => Promise<T>): Promise<T>;
 }
 export interface ImportsStorage {
   stageUpload(source: AsyncIterable<Buffer>): Promise<StagedUpload>;
@@ -113,6 +115,8 @@ export interface ImportsStorage {
     artifactId: string;
     attemptId: string;
   }): Promise<unknown>;
+  /** Stage one manifest that the caller writes while it reads (design section 7). */
+  storeJsonStream(source: AsyncIterable<Buffer>, maxBytes: number): Promise<string>;
 }
 export interface ImportsOrchestration {
   startDeviceImport(input: {
@@ -137,6 +141,7 @@ export interface DeviceImportRejectedFile {
 const jobSql = `SELECT j.job_id,j.display_id,j.status,i.mode,i.source_name,i.source_size_bytes,
   i.rows_read,i.unchanged,i.no_change_needed,i.proposed,i.rejected,i.stale_devices_read,
   i.oldest_observed_at,i.plan_id,i.plan_revision,i.plan_state,i.plan_expires_at,i.plan_changed_at,
+  i.status_permissions,
   p.id AS plan_changed_by_id,p.display_name AS plan_changed_by_name,
   cc.job_visible($1,$2,$3,j.requested_by) AS visible
   FROM cc.jobs j JOIN cc.device_import_jobs i ON i.job_id=j.job_id
@@ -298,6 +303,67 @@ function changeOf(row: Record<string, unknown>): DeviceImportChange {
     currentValue,
     newValue,
   };
+}
+
+/**
+ * The wire plan of one stored plan (design section 1). An open plan past its expiry reads
+ * `expired`, so the report, the plan cancel, and Execute name one state one way.
+ */
+export function wirePlan(
+  planId: unknown,
+  revision: unknown,
+  state: unknown,
+  expiresAt: string | null,
+  changedBy: JobPerson | null,
+  changedAt: string | null,
+  now = Date.now(),
+): JobImportPlan {
+  const stored = String(state);
+  return jobImportPlanSchema.parse({
+    planId,
+    revision: Number(revision),
+    state:
+      stored === 'open' && expiresAt !== null && Date.parse(expiresAt) <= now
+        ? 'expired'
+        : stored,
+    expiresAt,
+    changedBy,
+    changedAt,
+  });
+}
+
+/**
+ * The plan of one plan function, in the wire shape. The functions store the actor of a change as a
+ * principal ID, so the caller resolves the person once. A conflict that names no plan answers null.
+ */
+export async function importPlanAnswer(
+  database: { connection: QueryClient },
+  clock: () => number,
+  value: unknown,
+): Promise<JobImportPlan | null> {
+  if (value === null || value === undefined) return null;
+  const stored = value as Record<string, unknown>;
+  const changedById = stored['changedBy'];
+  let changedBy: JobPerson | null = null;
+  if (typeof changedById === 'string') {
+    const row = (await database.connection.query(planPersonSql, [changedById]))
+      .rows[0];
+    if (!row)
+      throw new Error(`The plan names no application principal ${changedById}.`);
+    changedBy = {
+      id: String(row['id']),
+      displayName: String(row['display_name']),
+    };
+  }
+  return wirePlan(
+    stored['planId'],
+    stored['revision'],
+    stored['state'],
+    measuredAt(stored['expiresAt']),
+    changedBy,
+    measuredAt(stored['changedAt']),
+    clock(),
+  );
 }
 
 export class DeviceImports {
@@ -555,34 +621,6 @@ export class DeviceImports {
     });
   }
 
-  /**
-   * The wire plan of one stored plan (design section 1). An open plan past its expiry reads
-   * `expired`, so the report and the cancel route name one state one way.
-   */
-  private wirePlan(
-    planId: unknown,
-    revision: unknown,
-    state: unknown,
-    expiresAt: string | null,
-    changedBy: JobPerson | null,
-    changedAt: string | null,
-  ): JobImportPlan {
-    const stored = String(state);
-    return jobImportPlanSchema.parse({
-      planId,
-      revision: Number(revision),
-      state:
-        stored === 'open' &&
-        expiresAt !== null &&
-        Date.parse(expiresAt) <= this.clock()
-          ? 'expired'
-          : stored,
-      expiresAt,
-      changedBy,
-      changedAt,
-    });
-  }
-
   /** The plan facts of the job, with `expired` derived from the expiry (design section 1). */
   private plan(row: Record<string, unknown>): JobImportPlan | null {
     if (typeof row['plan_id'] !== 'string') return null;
@@ -595,45 +633,15 @@ export class DeviceImports {
             displayName: String(row['plan_changed_by_name']),
           }
         : null;
-    return this.wirePlan(
+    return wirePlan(
       row['plan_id'],
       row['plan_revision'],
       row['plan_state'],
       expiresAt,
       changedBy,
       measuredAt(row['plan_changed_at']),
+      this.clock(),
     );
-  }
-
-  /**
-   * The plan of `cc.cancel_device_import_plan`, in the wire shape. The function stores the actor of
-   * the change as a principal ID, so the route resolves the person once. A conflict that names no
-   * plan answers null.
-   */
-  private async cancelPlan(value: unknown): Promise<JobImportPlan | null> {
-    if (value === null || value === undefined) return null;
-    const stored = value as Record<string, unknown>;
-    const changedById = stored['changedBy'];
-    const changedBy =
-      typeof changedById === 'string'
-        ? await this.planPerson(changedById)
-        : null;
-    return this.wirePlan(
-      stored['planId'],
-      stored['revision'],
-      stored['state'],
-      measuredAt(stored['expiresAt']),
-      changedBy,
-      measuredAt(stored['changedAt']),
-    );
-  }
-
-  /** The person behind one plan change. The plan columns keep the principal ID alone. */
-  private async planPerson(id: string): Promise<JobPerson> {
-    const row = (await this.database.connection.query(planPersonSql, [id]))
-      .rows[0];
-    if (!row) throw new Error(`The plan names no application principal ${id}.`);
-    return { id: String(row['id']), displayName: String(row['display_name']) };
   }
 
   /** The lines of one view. The failed view lists only the outcomes of its constant. */
@@ -848,6 +856,24 @@ export class DeviceImports {
     }
   }
 
+  /**
+   * The status permissions that the job recorded at submission (design section 6, step 1). Execute
+   * rechecks each one before it locks the plan (design section 7, step 1). A display ID that names
+   * no visible job of the connected customer answers 404.
+   */
+  async statusActions(
+    session: SessionResponse,
+    current: DeviceSyncState,
+    displayId: string,
+  ): Promise<DeviceStatusAction[]> {
+    const job = await this.namedJob(session, current, displayId);
+    const stored = job['status_permissions'];
+    if (!Array.isArray(stored)) return [];
+    return DEVICE_IMPORT_STATUS_ACTIONS.filter((action) =>
+      stored.includes(action),
+    );
+  }
+
   /** Cancel the open plan of one job. The requester alone cancels, and a repeat answers it. */
   async cancel(
     session: SessionResponse,
@@ -871,7 +897,7 @@ export class DeviceImports {
     switch (String(result['outcome'])) {
       case 'cancelled':
         return deviceImportPlanCancelAnswerSchema.parse({
-          plan: await this.cancelPlan(result['plan']),
+          plan: await importPlanAnswer(this.database, this.clock, result['plan']),
         });
       case 'not-found':
         throw new NotFoundException({ reason: 'job-not-found' });
@@ -882,12 +908,12 @@ export class DeviceImports {
       case 'conflict':
         throw new ConflictException({
           reason: 'plan-conflict',
-          plan: await this.cancelPlan(result['plan']),
+          plan: await importPlanAnswer(this.database, this.clock, result['plan']),
         });
       case 'expired':
         throw new GoneException({
           reason: 'plan-expired',
-          plan: await this.cancelPlan(result['plan']),
+          plan: await importPlanAnswer(this.database, this.clock, result['plan']),
         });
       default:
         throw new Error(

@@ -184,6 +184,7 @@ before(async () => {
   const [
     controllerModule,
     serviceModule,
+    executeModule,
     devicesModule,
     authModule,
     guardModule,
@@ -191,6 +192,7 @@ before(async () => {
   ] = await Promise.all([
     import('./device-imports.controller.ts'),
     import('./device-imports.service.ts'),
+    import('./device-import-execute.service.ts'),
     import('./devices.service.ts'),
     import('../auth/auth.service.ts'),
     import('../auth/auth.guard.ts'),
@@ -198,6 +200,7 @@ before(async () => {
   ]);
   const { DeviceImportsController } = controllerModule;
   const { DeviceImportsService } = serviceModule;
+  const { DeviceImportExecuteService } = executeModule;
   const { DevicesService } = devicesModule;
   const { AuthService } = authModule;
   const { AuthGuard } = guardModule;
@@ -371,7 +374,12 @@ before(async () => {
   // esbuild emits no decorator metadata, so the harness names the constructor tokens.
   Reflect.defineMetadata(
     'design:paramtypes',
-    [DevicesService, DeviceImportsService, AuthService],
+    [
+      DevicesService,
+      DeviceImportsService,
+      DeviceImportExecuteService,
+      AuthService,
+    ],
     DeviceImportsController,
   );
 
@@ -383,6 +391,12 @@ before(async () => {
       {
         provide: DeviceImportsService,
         useValue: new DeviceImportsService(database, storage, orchestration),
+      },
+      {
+        provide: DeviceImportExecuteService,
+        useValue: new DeviceImportExecuteService(database, storage, {
+          admit: async () => true,
+        }),
       },
       { provide: AuthService, useValue: auth },
     ],

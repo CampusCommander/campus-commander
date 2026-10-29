@@ -206,7 +206,10 @@ function byDeviceId(left: PreviewTarget, right: PreviewTarget): number {
 }
 
 /** Sort one device's edits into contract order. The rows and the digest use that order. */
-function byField(left: DeviceUpdateEdit, right: DeviceUpdateEdit): number {
+function byField(
+  left: { field: DeviceUpdateField },
+  right: { field: DeviceUpdateField },
+): number {
   return (
     DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
     DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field)
@@ -284,35 +287,71 @@ export function editPreviewTargets(
 }
 
 /**
+ * The version 3 digest, fed one target at a time (design section 7, "Bounded serialization"). Each
+ * eligible target writes its own canonical text into the hash, so a plan of 50,000 devices never
+ * becomes one string. `add` takes its targets in device ID order, which is the `COLLATE "C"` order
+ * of the plan read and the order of `byDeviceId`. The text equals the built form byte for byte.
+ */
+export class ManifestDigest {
+  private readonly hash = createHash('sha256');
+  private count = 0;
+  private lastDeviceId: string | null = null;
+  private value: string | null = null;
+
+  constructor() {
+    this.hash.update('{"actionVersion":3,"targets":[');
+  }
+
+  /** Add one page of targets. A target that is not eligible contributes nothing. */
+  add(targets: readonly PreviewTarget[]): this {
+    for (const target of targets) {
+      if (target.disposition !== 'eligible') continue;
+      if (this.lastDeviceId !== null && target.deviceId < this.lastDeviceId)
+        throw new Error('The digest pages arrive out of device ID order.');
+      this.lastDeviceId = target.deviceId;
+      this.hash.update(`${this.count === 0 ? '' : ','}${canonicalTarget(target)}`);
+      this.count += 1;
+    }
+    return this;
+  }
+
+  /** The digest of every target that the pages held. A second call answers the same value. */
+  digest(): string {
+    this.value ??= this.hash
+      .copy()
+      .update(']}')
+      .digest('hex');
+    return this.value;
+  }
+}
+
+/** The canonical text of one eligible target: its device and its eligible rows. */
+function canonicalTarget(target: PreviewTarget): string {
+  return JSON.stringify([
+    target.deviceId,
+    target.fields
+      .filter((field) => field.disposition === 'eligible')
+      .sort(byField)
+      .map((field) => [
+        field.field,
+        field.requestedValue,
+        field.observedValue,
+        field.baselineValue,
+      ]),
+  ]);
+}
+
+/**
  * SHA-256 over the action version and, for each eligible device, its eligible rows as
  * `[field, requestedValue, observedValue, baselineValue]` in contract order (addendum section 2).
  * The selection builder and the edit builder both call this one function, and the digest drops the
- * change list because each row carries its own request.
+ * change list because each row carries its own request. The pages of a paged caller feed the same
+ * text through `ManifestDigest`, one page at a time.
  */
 export function manifestDigest(targets: readonly PreviewTarget[]): string {
-  const eligible = targets
-    .filter((target) => target.disposition === 'eligible')
-    .sort(byDeviceId);
-  const canonical = JSON.stringify({
-    actionVersion: 3,
-    targets: eligible.map((target) => [
-      target.deviceId,
-      target.fields
-        .filter((field) => field.disposition === 'eligible')
-        .sort(
-          (left, right) =>
-            DEVICE_UPDATE_FIELD_ORDER.indexOf(left.field) -
-            DEVICE_UPDATE_FIELD_ORDER.indexOf(right.field),
-        )
-        .map((field) => [
-          field.field,
-          field.requestedValue,
-          field.observedValue,
-          field.baselineValue,
-        ]),
-    ]),
-  });
-  return createHash('sha256').update(canonical).digest('hex');
+  return new ManifestDigest()
+    .add([...targets].sort(byDeviceId))
+    .digest();
 }
 
 /** The frozen targets, as the preview function freezes them. */
