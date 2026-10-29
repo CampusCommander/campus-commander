@@ -52,6 +52,9 @@ const summary = (overrides: Record<string, unknown>) => ({
   cancelRequest: null,
   failure: null,
   ...overrides,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
 });
 
 const stopSerialNumbers = [
@@ -193,6 +196,17 @@ const updBase = {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const updDetail = (state: UpdState) => {
@@ -217,6 +231,17 @@ const updDetail = (state: UpdState) => {
       failed: { count: 0, operations: [] },
       unknown: { count: 0, operations: [] },
     },
+    phase: null,
+    exportSummary: null,
+    importSummary: null,
+    exportFile: null,
+    importSource: null,
+    plan: null,
+    importDisplayId: null,
+    waitsForDisplayId: null,
+    waitingDisplayIds: null,
+    planJobs: null,
+    executionCounts: null,
   };
   if (state === 'requested') return requested;
   return {
@@ -262,6 +287,17 @@ const updDetail = (state: UpdState) => {
         ],
       },
     },
+    phase: null,
+    exportSummary: null,
+    importSummary: null,
+    exportFile: null,
+    importSource: null,
+    plan: null,
+    importDisplayId: null,
+    waitsForDisplayId: null,
+    waitingDisplayIds: null,
+    planJobs: null,
+    executionCounts: null,
   };
 };
 
@@ -305,6 +341,17 @@ const stsBase = {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const stsDetail = (state: StsState) => {
@@ -396,6 +443,17 @@ const refreshAll = {
     failed: { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
 };
 
 const refreshSelected = {

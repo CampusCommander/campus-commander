@@ -5,6 +5,7 @@ INSERT INTO cc.application_actions(action,scope_kinds) VALUES('devices:write',AR
   ('devices:bulk-actions',ARRAY['platform','district']),('jobs:read',ARRAY['platform','district']),
   ('devices:commands',ARRAY['platform','district']),('devices:wipe',ARRAY['platform','district']),
   ('devices:status',ARRAY['platform','district']),('devices:deprovision',ARRAY['platform','district']),
+  ('devices:export',ARRAY['platform','district']),
   ('jobs:manage',ARRAY['platform','district']);
 
 CREATE SEQUENCE cc.job_number_upd;
