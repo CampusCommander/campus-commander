@@ -153,6 +153,54 @@ it('reads at once for a store that subscribes to an open feed', () => {
   expect(second.open).not.toHaveBeenCalled();
 });
 
+it('waits for the next open before a late subscriber reads on a reconnecting feed', () => {
+  const { feeds } = setup();
+  const sources: FakeSource[] = [];
+  const first = follower(sources);
+  const second = follower(sources);
+  const one = feeds.subscribe('/api/jobs/events', first.handlers);
+  sources[0].readyState = 1;
+  sources[0].emit('open');
+  first.opened.mockClear();
+
+  // The connection drops and the browser retries it while it stays CONNECTING.
+  sources[0].readyState = 0;
+  sources[0].emit('error');
+  expect(one.connected).toBe(false);
+
+  feeds.subscribe('/api/jobs/events', second.handlers);
+
+  // The connection is not open, so the late subscriber has nothing to read yet.
+  expect(second.opened).not.toHaveBeenCalled();
+  expect(sources).toHaveLength(1);
+
+  sources[0].readyState = 1;
+  sources[0].emit('open');
+  expect(second.opened).toHaveBeenCalledTimes(1);
+  expect(first.opened).toHaveBeenCalledTimes(1);
+});
+
+it('waits for the next open before a resume reads on a reconnecting feed', () => {
+  const { feeds } = setup();
+  const sources: FakeSource[] = [];
+  const one = follower(sources);
+  const feed = feeds.subscribe('/api/jobs/events', one.handlers);
+  sources[0].readyState = 1;
+  sources[0].emit('open');
+  one.opened.mockClear();
+
+  sources[0].readyState = 0;
+  sources[0].emit('error');
+  feed.resume();
+
+  // The browser still owns the retry, and no read runs until its next open.
+  expect(one.opened).not.toHaveBeenCalled();
+  expect(sources).toHaveLength(1);
+  sources[0].readyState = 1;
+  sources[0].emit('open');
+  expect(one.opened).toHaveBeenCalledTimes(1);
+});
+
 it('holds no connection while the tab is hidden and reopens every feed when it is visible', () => {
   const { feeds, doc } = setup();
   const jobs: FakeSource[] = [];
