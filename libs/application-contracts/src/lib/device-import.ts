@@ -190,13 +190,16 @@ export type DeviceImportNotRunReason = z.infer<
 export const DEVICE_IMPORT_NOT_RUN_TEXTS: Readonly<
   Record<DeviceImportNotRunReason, string>
 > = Object.freeze({
-  'changed-after-validation': 'The value changed after validation.',
-  'no-change-needed': 'The value already matches the device.',
-  removed: 'The device is no longer in Google.',
-  'status-unknown': 'Google reports no status that this change can use.',
-  'device-deprovisioned': 'The device is deprovisioned.',
-  'device-active': 'The device is active.',
-  'device-disabled': 'The device is disabled.',
+  // The two reasons that only an import writes (design section 3).
+  'changed-after-validation': 'Value changed after validation',
+  'no-change-needed': 'Value already matches',
+  // The reasons of the built device actions keep the wording of `exclusionReasonText`, so the
+  // import and the bulk actions name one reason one way.
+  removed: 'Removed from inventory',
+  'status-unknown': 'Device status is unknown',
+  'device-deprovisioned': 'Device is deprovisioned',
+  'device-active': 'Device is active',
+  'device-disabled': 'Device is disabled',
 });
 
 /** One change that Execute does not run, with its reason. */
