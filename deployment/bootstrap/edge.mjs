@@ -195,98 +195,15 @@ export async function createBootstrapEdge({
   // node:http2 has no closeAllConnections. Keep the teardown that process shutdown and the
   // callers use, and reach both protocols through the TLS socket of each connection.
   const sockets = new Set();
-  // The server accepts a TCP connection before its TLS handshake. A peer that never sends a
-  // ClientHello has no TLS socket, so the forced teardown tracks the accepted transport too.
-  const transports = new Set();
-  /** Each HTTP/2 session with its open stream count, last stream, and idle timer. */
-  const sessions = new Map();
-  let stopping = false;
-  /**
-   * Close an HTTP/2 session that holds no open stream for the keep-alive timeout, as the
-   * server closes an idle HTTP/1.1 connection. A session with an open stream stays open.
-   */
-  const closeIdleSession = (session, entry) => {
-    if (stopping || !server.keepAliveTimeout || entry.open > 0) return;
-    if (session.closed || session.destroyed) return;
-    entry.idle = setTimeout(() => {
-      entry.idle = undefined;
-      if (entry.open > 0 || session.closed || session.destroyed) return;
-      session.close();
-    }, server.keepAliveTimeout);
-    entry.idle.unref();
-  };
-  server.on('session', (session) => {
-    const entry = { open: 0, lastStreamId: 0, idle: undefined };
-    sessions.set(session, entry);
-    session.on('stream', (stream) => {
-      entry.open += 1;
-      // GOAWAY names the last stream the edge may have processed, so a client does not resend
-      // a request that ran.
-      entry.lastStreamId = Math.max(entry.lastStreamId, stream.id);
-      clearTimeout(entry.idle);
-      entry.idle = undefined;
-      stream.once('close', () => {
-        entry.open -= 1;
-        if (entry.open === 0) closeIdleSession(session, entry);
-      });
-    });
-    session.once('close', () => {
-      clearTimeout(entry.idle);
-      sessions.delete(session);
-    });
-    // A new session with no request is idle, as an idle HTTP/1.1 connection is.
-    closeIdleSession(session, entry);
-  });
-  server.on('connection', (socket) => {
-    transports.add(socket);
-    socket.once('close', () => transports.delete(socket));
-  });
   server.on('secureConnection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
   });
   server.closeAllConnections = () => {
     for (const socket of sockets) socket.destroy();
-    // A connection that never finished its handshake exists only here.
-    for (const socket of transports) socket.destroy();
-  };
-  /**
-   * Begin the stop. GOAWAY tells every HTTP/2 client to open a new connection for later
-   * requests, and an open stream keeps its session until the caller destroys the sockets.
-   * Each HTTP/1.1 connection ends now, so only the grace timer remains.
-   */
-  server.stopConnections = () => {
-    if (stopping) return;
-    stopping = true;
-    for (const [session, entry] of [...sessions]) {
-      if (session.closed || session.destroyed) continue;
-      session.goaway(http2.constants.NGHTTP2_NO_ERROR, entry.lastStreamId);
-    }
-    // ALPN names the protocol of each TLS socket, so an HTTP/2 session is never ended here.
-    for (const socket of sockets) {
-      if (socket.alpnProtocol !== 'h2') socket.end();
-    }
   };
   server.requestTimeout = 10000;
   server.headersTimeout = 10000;
   server.keepAliveTimeout = 5000;
   return server;
-}
-
-/**
- * Stop the edge on SIGINT or SIGTERM. GOAWAY and the end of every HTTP/1.1 connection start
- * at once. The edge destroys every remaining socket after the grace, which ends before the
- * ten-second Docker stop timeout.
- */
-export function stopOnSignals(server, { graceMs = 5000 } = {}) {
-  const stop = () => {
-    // Tell every HTTP/2 client to reconnect and end each HTTP/1.1 connection. The close call
-    // also sends GOAWAY with the same last stream, which the protocol allows.
-    server.stopConnections();
-    const deadline = setTimeout(() => server.closeAllConnections(), graceMs);
-    deadline.unref();
-    server.close(() => clearTimeout(deadline));
-  };
-  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
-  return stop;
 }

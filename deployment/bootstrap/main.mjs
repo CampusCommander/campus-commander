@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
 import { secretPath } from '../redis/runtime.mjs';
-import { createBootstrapEdge, stopOnSignals } from './edge.mjs';
+import { createBootstrapEdge } from './edge.mjs';
 import { probeHttp } from './status.mjs';
 
 try {
@@ -34,7 +34,15 @@ try {
     process.exitCode = 1;
   });
   server.listen(port, '0.0.0.0');
-  stopOnSignals(server);
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.once(signal, () => {
+      const timer = setTimeout(() => {
+        server.closeAllConnections();
+      }, 5000);
+      timer.unref();
+      server.close(() => clearTimeout(timer));
+    });
+  }
 } catch {
   process.stderr.write(
     'HTTPS bootstrap startup failed. Check configuration and certificate files.\n',
