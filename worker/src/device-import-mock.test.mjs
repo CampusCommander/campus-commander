@@ -56,8 +56,9 @@ function recording(events) {
 function cellsOf(fields = {}) {
   const cells = DEVICE_EDIT_TEMPLATE_COLUMNS.map(() => '');
   for (const [key, value] of Object.entries(fields))
-    cells[DEVICE_EDIT_TEMPLATE_COLUMNS.findIndex((column) => column.key === key)] =
-      value ?? '';
+    cells[
+      DEVICE_EDIT_TEMPLATE_COLUMNS.findIndex((column) => column.key === key)
+    ] = value ?? '';
   return cells;
 }
 
@@ -222,7 +223,10 @@ function fakeDatabase(stored, events) {
 before(async () => {
   mock = await startMock();
   mock.useInProcess();
-  domain = await mock.createDomain({ tier: 'small', seed: 'import-validation' });
+  domain = await mock.createDomain({
+    tier: 'small',
+    seed: 'import-validation',
+  });
   const key = mock.credential(domain.customerId, scopes);
   credential = {
     serviceAccount: validateServiceAccount(key, key.client_id),
@@ -247,7 +251,9 @@ before(async () => {
   // A path that no organization unit holds (design section 6, step 13).
   mistypedUnit = '/Schools/Not-A-Real-Unit';
   assert.equal(
-    tree.some((unit) => unit.orgUnitPath.toLowerCase() === mistypedUnit.toLowerCase()),
+    tree.some(
+      (unit) => unit.orgUnitPath.toLowerCase() === mistypedUnit.toLowerCase(),
+    ),
     false,
   );
 });
@@ -307,10 +313,7 @@ test('the refresh reads the stale devices and the tree, and the compare uses the
     ['stamp', 'deviceStates'],
   );
   // One tree read served the job (design section 6, step 13).
-  assert.equal(
-    events.filter((event) => event === 'readOrgUnitTree').length,
-    1,
-  );
+  assert.equal(events.filter((event) => event === 'readOrgUnitTree').length, 1);
   // Each pass streams the file: pass 1 checks and pass 2 compares (design section 6).
   assert.deepEqual(store.calls, [artifactId, artifactId]);
   // The read stored Google's values, not the values of the file (design section 6, step 10).
@@ -326,7 +329,10 @@ test('the refresh reads the stale devices and the tree, and the compare uses the
   assert.equal(observation.orgUnitPath, changed.orgUnitPath);
   assert.equal(observation.serialNumber, changed.serialNumber);
   assert.equal(observation.status, changed.status);
-  assert.deepEqual(database.calls.upsert.map((call) => call.syncedAt), [stamp]);
+  assert.deepEqual(
+    database.calls.upsert.map((call) => call.syncedAt),
+    [stamp],
+  );
   assert.equal(database.calls.transactions, 1);
   // The unit tree read accepted the stored path in another case and refused the mistyped one.
   const lines = database.calls.lines.flat();
@@ -369,9 +375,10 @@ test('the refresh reads the stale devices and the tree, and the compare uses the
       expiresAt: '2026-10-29T13:00:00.000Z',
     },
   });
-  assert.deepEqual(database.calls.finish.map((call) => call.counts), [
-    answer.counts,
-  ]);
+  assert.deepEqual(
+    database.calls.finish.map((call) => call.counts),
+    [answer.counts],
+  );
 });
 
 test('each refresh batch keeps its own stamp before the Google call', async () => {
@@ -412,22 +419,17 @@ test('each refresh batch keeps its own stamp before the Google call', async () =
     AbortSignal.timeout(60_000),
   );
 
-  assert.deepEqual(events, [
-    'stamp',
-    'deviceStates',
-    'stamp',
-    'deviceStates',
-  ]);
+  assert.deepEqual(events, ['stamp', 'deviceStates', 'stamp', 'deviceStates']);
   assert.deepEqual(
     database.calls.upsert.map((call) =>
       call.devices.map((device) => device.deviceId),
     ),
     [[first.deviceId], [second.deviceId]],
   );
-  assert.deepEqual(database.calls.upsert.map((call) => call.syncedAt), [
-    stamp,
-    stamp,
-  ]);
+  assert.deepEqual(
+    database.calls.upsert.map((call) => call.syncedAt),
+    [stamp, stamp],
+  );
   assert.equal(answer.outcome, 'completed');
   assert.equal(answer.counts.noChangeNeeded, 2);
   assert.equal(answer.counts.proposed, 0);

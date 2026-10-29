@@ -32,7 +32,10 @@ import {
   type DeviceStatusAction,
   type DeviceUpdateField,
 } from '@campus/application-contracts';
-import type { DelegatedCredential, DeviceState } from '@campus/google-connection';
+import type {
+  DelegatedCredential,
+  DeviceState,
+} from '@campus/google-connection';
 import type { DeviceArtifactReader } from './device-export-store';
 import {
   CANCEL_POLL_MILLISECONDS,
@@ -282,11 +285,12 @@ const FIELD_COLUMNS: readonly {
 const PLAIN_DEVICE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** The status that each status action asks Google for (design section 6, step 16). */
-const STATUS_RESULT: Readonly<Record<DeviceStatusAction, string>> = Object.freeze({
-  disable: 'DISABLED',
-  reenable: 'ACTIVE',
-  deprovision: 'DEPROVISIONED',
-});
+const STATUS_RESULT: Readonly<Record<DeviceStatusAction, string>> =
+  Object.freeze({
+    disable: 'DISABLED',
+    reenable: 'ACTIVE',
+    deprovision: 'DEPROVISIONED',
+  });
 
 /** The template header of one column. */
 function columnHeader(key: DeviceEditColumnKey): string {
@@ -410,7 +414,10 @@ function timestampText(value: unknown): string | null {
 }
 
 /** The fresh value of one field, as the device row stores it. */
-function observedValue(row: DeviceRow, field: DeviceUpdateField): string | null {
+function observedValue(
+  row: DeviceRow,
+  field: DeviceUpdateField,
+): string | null {
   const column = {
     annotatedLocation: 'annotated_location',
     annotatedAssetId: 'asset_tag',
@@ -431,7 +438,11 @@ function statusExclusionReason(
   action: DeviceStatusAction,
   status: string | null,
 ): DeviceImportNotRunReason | null {
-  if (status !== 'ACTIVE' && status !== 'DISABLED' && status !== 'DEPROVISIONED')
+  if (
+    status !== 'ACTIVE' &&
+    status !== 'DISABLED' &&
+    status !== 'DEPROVISIONED'
+  )
     return 'status-unknown';
   if (status === 'DEPROVISIONED') return 'device-deprovisioned';
   // Deprovision accepts an ACTIVE or a DISABLED device (design section 3).
@@ -733,7 +744,8 @@ export class DeviceImportJobs {
     const refusal = options.refusal ?? null;
     const answer = await this.finish(lease, counts, failure, refusal);
     if (answer.outcome === 'fenced') return { outcome: 'fenced' };
-    if (answer.status === 'cancelled') return { outcome: 'cancelled', displayId };
+    if (answer.status === 'cancelled')
+      return { outcome: 'cancelled', displayId };
     if (answer.status === 'failed')
       return {
         outcome: 'failed',
@@ -1043,8 +1055,13 @@ export class DeviceImportJobs {
 
       // The partition of `td:8.3`. Only Sync changes reads the row checksum.
       if (claim.mode === 'sync-changes') {
-        const checksumCell = deviceEditUnescapeCell(cells[CHECKSUM_COLUMN]).trim();
-        if (checksumCell !== '' && !deviceEditChecksumIsWellFormed(checksumCell)) {
+        const checksumCell = deviceEditUnescapeCell(
+          cells[CHECKSUM_COLUMN],
+        ).trim();
+        if (
+          checksumCell !== '' &&
+          !deviceEditChecksumIsWellFormed(checksumCell)
+        ) {
           lines.add({
             kind: 'warning',
             sourceRow,
@@ -1129,7 +1146,10 @@ export class DeviceImportJobs {
 
     // The inventory lookup of design section 6, step 7. An unknown or removed ID rejects its row,
     // and the compare pass writes that line because pass 1 holds no cells for it.
-    const stored = new Map<string, { removed: boolean; syncedAt: string | null }>();
+    const stored = new Map<
+      string,
+      { removed: boolean; syncedAt: string | null }
+    >();
     for (const batch of chunks(
       [...new Set(inspection.candidates.map((row) => row.deviceId))],
       this.batchSize,
@@ -1141,7 +1161,8 @@ export class DeviceImportJobs {
       );
       for (const row of rows)
         stored.set(String(row['device_id']), {
-          removed: row['removed_at'] !== null && row['removed_at'] !== undefined,
+          removed:
+            row['removed_at'] !== null && row['removed_at'] !== undefined,
           syncedAt: timestampText(row['last_entity_sync']),
         });
       progress.check(signal);
@@ -1280,13 +1301,21 @@ export class DeviceImportJobs {
       for (const { row, stored, outcome } of outcomes) {
         if (outcome === null || stored === undefined) {
           // The device left the inventory after the refresh read.
-          this.reject(inspection, lines, row.sourceRow, row.cells, row.deviceIdCell, true, [
-            {
-              column: DEVICE_ID_HEADER,
-              submittedValue: row.deviceIdCell,
-              reason: DEVICE_IMPORT_REJECTION_TEXTS['device-removed'],
-            },
-          ]);
+          this.reject(
+            inspection,
+            lines,
+            row.sourceRow,
+            row.cells,
+            row.deviceIdCell,
+            true,
+            [
+              {
+                column: DEVICE_ID_HEADER,
+                submittedValue: row.deviceIdCell,
+                reason: DEVICE_IMPORT_REJECTION_TEXTS['device-removed'],
+              },
+            ],
+          );
           continue;
         }
         const syncedAt = timestampText(stored['last_entity_sync']);
@@ -1316,7 +1345,9 @@ export class DeviceImportJobs {
         );
         for (const tag of changedTags)
           if (
-            (holders.get(tag) ?? []).some((deviceId) => deviceId !== row.deviceId)
+            (holders.get(tag) ?? []).some(
+              (deviceId) => deviceId !== row.deviceId,
+            )
           )
             lines.add({
               kind: 'warning',
@@ -1330,7 +1361,8 @@ export class DeviceImportJobs {
         if (lines.full) {
           const answer = await lines.flush();
           if (answer === 'fenced') throw new ImportStop({ kind: 'fenced' });
-          if (answer === 'cancelled') throw new ImportStop({ kind: 'cancelled' });
+          if (answer === 'cancelled')
+            throw new ImportStop({ kind: 'cancelled' });
         }
       }
       done += current.length;
@@ -1383,7 +1415,8 @@ export class DeviceImportJobs {
   ): { lines: ImportLine[]; reasons: RejectionReason[] } {
     const lines: ImportLine[] = [];
     const reasons: RejectionReason[] = [];
-    const cellOf = (column: number) => deviceEditUnescapeCell(row.cells[column]);
+    const cellOf = (column: number) =>
+      deviceEditUnescapeCell(row.cells[column]);
 
     for (const column of FIELD_COLUMNS) {
       const cell = cellOf(column.column);
@@ -1530,9 +1563,7 @@ export class DeviceImportJobs {
       [],
     );
     const stamp = new Date(
-      clock instanceof Date || typeof clock === 'string'
-        ? clock
-        : Number.NaN,
+      clock instanceof Date || typeof clock === 'string' ? clock : Number.NaN,
     );
     if (Number.isNaN(stamp.getTime()))
       throw new DeviceImportError('store-unavailable');
@@ -1540,10 +1571,7 @@ export class DeviceImportJobs {
   }
 
   /** The rows of one query. A failed call keeps its lease code, or reports a store failure. */
-  private async rows(
-    sql: string,
-    values: unknown[],
-  ): Promise<DeviceRow[]> {
+  private async rows(sql: string, values: unknown[]): Promise<DeviceRow[]> {
     try {
       return (await this.database.query(sql, values)).rows;
     } catch (error) {
@@ -1553,14 +1581,14 @@ export class DeviceImportJobs {
   }
 
   /** The inventory lookup of design section 6, step 7. A failed lookup fails the job. */
-  private async lookup(
-    sql: string,
-    values: unknown[],
-  ): Promise<DeviceRow[]> {
+  private async lookup(sql: string, values: unknown[]): Promise<DeviceRow[]> {
     try {
       return (await this.database.query(sql, values)).rows;
     } catch (error) {
-      if (error instanceof DeviceSyncError && error.code !== 'store-unavailable')
+      if (
+        error instanceof DeviceSyncError &&
+        error.code !== 'store-unavailable'
+      )
         throw error;
       throw new DeviceImportError('inventory-unavailable');
     }

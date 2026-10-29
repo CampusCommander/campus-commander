@@ -159,7 +159,9 @@ function fakeReader(options = {}) {
         const state = (options.states ?? []).find(
           (entry) => entry.deviceId === deviceId,
         );
-        return state ?? { deviceId, status: 'found', device: observation(deviceId) };
+        return (
+          state ?? { deviceId, status: 'found', device: observation(deviceId) }
+        );
       });
     },
     async readOrgUnitTree() {
@@ -225,7 +227,9 @@ function fakeDatabase(options = {}) {
                 sourceArtifactId: options.missingArtifact ? null : artifactId,
                 generation: options.noCredential ? null : 1,
                 credentialId: options.noCredential ? null : randomUUID(),
-                envelope: options.noCredential ? null : { ciphertext: 'cipher' },
+                envelope: options.noCredential
+                  ? null
+                  : { ciphertext: 'cipher' },
                 statusPermissions: options.statusPermissions ?? [
                   'disable',
                   'reenable',
@@ -265,7 +269,8 @@ function fakeDatabase(options = {}) {
         const refusal = values[5] ?? null;
         const refusalText = values[6] ?? null;
         calls.finish.push({ counts, failure, refusal, refusalText });
-        if (options.finish) return { rows: [{ result: options.finish(values) }] };
+        if (options.finish)
+          return { rows: [{ result: options.finish(values) }] };
         if (job.status !== null)
           return {
             rows: [{ result: { outcome: 'finished', status: job.status } }],
@@ -284,7 +289,9 @@ function fakeDatabase(options = {}) {
           };
         }
         if (counts === null)
-          throw new Error('The import finish requires the counts or a failure.');
+          throw new Error(
+            'The import finish requires the counts or a failure.',
+          );
         if (
           counts.rows !==
           counts.unchanged +
@@ -447,7 +454,11 @@ test('a validation stores the counts, the changes, and the plan', async () => {
       notes: 'a new note',
       orgUnitPath: '/Schools/North',
     }),
-    cellsOf({ deviceId: 'dev-c', notes: 'same', orgUnitPath: '/Schools/North' }),
+    cellsOf({
+      deviceId: 'dev-c',
+      notes: 'same',
+      orgUnitPath: '/Schools/North',
+    }),
   ]);
   const harnessed = harness({
     text,
@@ -578,7 +589,11 @@ test('a failed device rejects only its own rows', async () => {
       deviceStates: (ids) =>
         ids.map((deviceId) =>
           deviceId === 'dev-a'
-            ? { deviceId, status: 'failed', failure: { code: 'provider-unavailable' } }
+            ? {
+                deviceId,
+                status: 'failed',
+                failure: { code: 'provider-unavailable' },
+              }
             : { deviceId, status: 'found', device: observation(deviceId) },
         ),
     },
@@ -618,7 +633,11 @@ test('a token failure rejects its batch and later batches continue', async () =>
   const text = csvText([
     cellsOf({ deviceId: 'dev-a', notes: 'one', orgUnitPath: '/Schools/North' }),
     cellsOf({ deviceId: 'dev-b', notes: 'two', orgUnitPath: '/Schools/North' }),
-    cellsOf({ deviceId: 'dev-c', notes: 'three', orgUnitPath: '/Schools/North' }),
+    cellsOf({
+      deviceId: 'dev-c',
+      notes: 'three',
+      orgUnitPath: '/Schools/North',
+    }),
   ]);
   const harnessed = harness({
     text,
@@ -726,10 +745,10 @@ test('only stale devices are read', async () => {
 });
 
 test('a refused file fails the job with its code and the module text', async () => {
-  const ragged = csvText([
-    ['dev-a'],
-    ['dev-b'],
-  ]).replace('dev-b\r\n', 'dev-b,extra\r\n');
+  const ragged = csvText([['dev-a'], ['dev-b']]).replace(
+    'dev-b\r\n',
+    'dev-b,extra\r\n',
+  );
   const harnessed = harness({ text: ragged, devices: [device('dev-a')] });
 
   const answer = await harnessed.run();
@@ -769,8 +788,11 @@ test('Sync changes refuses a file without the Checksum column, and Sync all rows
   );
   const text = csvText(
     [
-      cellsOf({ deviceId: 'dev-a', notes: 'one', orgUnitPath: '/Schools/North' })
-        .filter((_cell, index) => column('checksum') !== index),
+      cellsOf({
+        deviceId: 'dev-a',
+        notes: 'one',
+        orgUnitPath: '/Schools/North',
+      }).filter((_cell, index) => column('checksum') !== index),
     ],
     headers,
   );
@@ -819,11 +841,13 @@ test('a cancel keeps no report and no plan', async () => {
 });
 
 test('the row limit refuses a file above 50,000 rows', async () => {
-  const rows = Array.from({ length: DEVICE_IMPORT_ROW_LIMIT + 1 }, (_value, index) =>
-    cellsOf({
-      deviceId: `dev-${index}`,
-      orgUnitPath: '/Schools/North',
-    }),
+  const rows = Array.from(
+    { length: DEVICE_IMPORT_ROW_LIMIT + 1 },
+    (_value, index) =>
+      cellsOf({
+        deviceId: `dev-${index}`,
+        orgUnitPath: '/Schools/North',
+      }),
   );
   const harnessed = harness({
     text: csvText(rows),
@@ -947,7 +971,8 @@ test('a call stays below the 32 MiB that the store accepts', async () => {
   );
   for (const batch of harnessed.database.calls.lines)
     assert.ok(
-      Buffer.byteLength(JSON.stringify(batch), 'utf8') < DEVICE_IMPORT_LINE_BYTES,
+      Buffer.byteLength(JSON.stringify(batch), 'utf8') <
+        DEVICE_IMPORT_LINE_BYTES,
       'A call stays under the document limit of cc.store_device_import_lines.',
     );
   assert.equal(
@@ -1024,7 +1049,9 @@ test('an unknown and a removed device each reject their row', async () => {
   const harnessed = harness({
     text,
     devices: [
-      device('dev-removed', { removed_at: new Date('2026-10-01T00:00:00.000Z') }),
+      device('dev-removed', {
+        removed_at: new Date('2026-10-01T00:00:00.000Z'),
+      }),
     ],
   });
 
@@ -1038,7 +1065,10 @@ test('an unknown and a removed device each reject their row', async () => {
       .flat()
       .map((line) => [line.sourceRow, line.reason]),
     [
-      [1, 'Campus Commander holds no device with this ID. Import never creates devices.'],
+      [
+        1,
+        'Campus Commander holds no device with this ID. Import never creates devices.',
+      ],
       [2, 'Google no longer returns this device.'],
     ],
   );
@@ -1048,8 +1078,16 @@ test('an unknown and a removed device each reject their row', async () => {
 test('a missing, a malformed, and a duplicated device ID each reject their row', async () => {
   const text = csvText([
     cellsOf({ deviceId: 'dev-a', notes: 'one', orgUnitPath: '/Schools/North' }),
-    cellsOf({ deviceId: 'dev a!', notes: 'two', orgUnitPath: '/Schools/North' }),
-    cellsOf({ deviceId: 'dev-a', notes: 'three', orgUnitPath: '/Schools/North' }),
+    cellsOf({
+      deviceId: 'dev a!',
+      notes: 'two',
+      orgUnitPath: '/Schools/North',
+    }),
+    cellsOf({
+      deviceId: 'dev-a',
+      notes: 'three',
+      orgUnitPath: '/Schools/North',
+    }),
     cellsOf({ deviceId: '', notes: 'four', orgUnitPath: '/Schools/North' }),
   ]);
   const harnessed = harness({ text, devices: [device('dev-a')] });
@@ -1066,7 +1104,10 @@ test('a missing, a malformed, and a duplicated device ID each reject their row',
       .filter((line) => line.kind === 'rejection')
       .map((line) => [line.sourceRow, line.reason]),
     [
-      [2, 'The Device ID holds 1 to 128 letters, digits, hyphens, or underscores.'],
+      [
+        2,
+        'The Device ID holds 1 to 128 letters, digits, hyphens, or underscores.',
+      ],
       [3, 'Another row uses this Device ID.'],
       [4, 'The row holds no Device ID.'],
     ],
@@ -1200,7 +1241,11 @@ test('the warnings never block a change', async () => {
 
 test('a row that only warns needs no change', async () => {
   const text = csvText([
-    cellsOf({ deviceId: 'dev-a', status: 'INACTIVE', orgUnitPath: '/Schools/North' }),
+    cellsOf({
+      deviceId: 'dev-a',
+      status: 'INACTIVE',
+      orgUnitPath: '/Schools/North',
+    }),
   ]);
   const harnessed = harness({ text, devices: [device('dev-a')] });
 
