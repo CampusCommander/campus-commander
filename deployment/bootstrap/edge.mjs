@@ -29,6 +29,9 @@ const finish = (response, status, message) => {
  * the ordinary ten-second deadline. The deadline covers the request body only. A request whose
  * framing declares no body returns at once. A request whose body arrived keeps its answer and
  * its open event stream whatever the method, because the parser reports the complete message.
+ *
+ * The returned predicate reports whether this timer ended the request. An awaited continuation
+ * checks it before it writes, because the 408 owns the connection once the timer fires.
  */
 function enforceRequestDeadline(request, response, deadlines) {
   // Only a framed body waits for input. The method proves nothing: GET, HEAD, and DELETE can
@@ -36,12 +39,14 @@ function enforceRequestDeadline(request, response, deadlines) {
   const declaresBody =
     request.headers['transfer-encoding'] !== undefined ||
     Number(request.headers['content-length'] ?? 0) > 0;
-  if (!declaresBody || request.complete) return;
+  if (!declaresBody || request.complete) return () => false;
+  let expired = false;
   const timer = setTimeout(
     () => {
       // The parser read the whole framed body before the deadline. The answer itself may take
       // longer than the deadline, as an event stream does.
       if (request.complete) return;
+      expired = true;
       if (!response.headersSent) {
         response.writeHead(408, {
           'content-type': 'text/plain; charset=utf-8',
@@ -63,6 +68,7 @@ function enforceRequestDeadline(request, response, deadlines) {
   request.once('end', clear);
   request.once('close', clear);
   request.once('aborted', clear);
+  return () => expired;
 }
 
 /** Serve application routes and protected installer checks through the TLS edge. */
@@ -94,7 +100,7 @@ export async function createBootstrapEdge({
     };
   }
   const server = https.createServer(material, async (request, response) => {
-    enforceRequestDeadline(request, response, deadlines);
+    const deadlineExpired = enforceRequestDeadline(request, response, deadlines);
     response.setHeader('strict-transport-security', 'max-age=31536000');
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');
@@ -149,6 +155,9 @@ export async function createBootstrapEdge({
     } catch {
       /* Deny unavailable verification. */
     }
+    // Verification can take longer than the body deadline. The timer already answered 408 and
+    // closed the connection, so a late result must send no headers and start no upstream request.
+    if (deadlineExpired()) return;
     if (!accepted) {
       response.setHeader(
         'www-authenticate',
@@ -173,6 +182,9 @@ export async function createBootstrapEdge({
         timeout: 5000,
       },
       (incoming) => {
+        // The deadline can answer between the verified continuation and this answer. Never
+        // write a second status line on a connection that the 408 already owns.
+        if (response.headersSent) return incoming.destroy();
         const status = incoming.statusCode || 502;
         if (status >= 300 && status < 400) {
           incoming.destroy();
