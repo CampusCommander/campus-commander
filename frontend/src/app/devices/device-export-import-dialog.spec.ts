@@ -84,6 +84,15 @@ function deferred<T>() {
 const accepted = (displayId = 'EXP-001') =>
   response({ jobId, displayId, status: 'accepted', rows: 48 });
 
+/** The state class of each phase dot, in list order (design section 9, states 04 and 26). */
+function phaseStates(panel: () => HTMLElement | null): string[][] {
+  return [...(panel()?.querySelectorAll('.phase') ?? [])].map((phase) =>
+    ['is-done', 'is-current', 'is-failed', 'is-stopped'].filter((name) =>
+      phase.classList.contains(name),
+    ),
+  );
+}
+
 function setup(
   detail: JobDetail = exportDetail(),
   requestOverride?: (path: string, body?: unknown) => Promise<Response>,
@@ -218,6 +227,48 @@ describe('DeviceExportImportDialog', () => {
     expect(
       panel()?.querySelector('.export-actions button')?.textContent?.trim(),
     ).toBe('Close');
+  });
+
+  it('marks a failure in Write rows and leaves Prepare download untouched', async () => {
+    const { store, render, panel } = setup(
+      exportDetail({
+        status: 'failed',
+        failure: 'storage-unavailable',
+        phase: { name: 'write-rows', done: 12, total: 48 },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(phaseStates(panel)).toEqual([['is-failed'], []]);
+    expect(panel()?.textContent).toContain('12 of 48');
+  });
+
+  it('marks Write rows done when Prepare download fails', async () => {
+    const { store, render, panel } = setup(
+      exportDetail({
+        status: 'failed',
+        failure: 'storage-unavailable',
+        phase: { name: 'prepare-download', done: 0, total: null },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(phaseStates(panel)).toEqual([['is-done'], ['is-failed']]);
+  });
+
+  it('marks the stopping Write rows and leaves Prepare download untouched when cancelled', async () => {
+    const { store, render, panel } = setup(
+      exportDetail({
+        status: 'cancelled',
+        phase: { name: 'write-rows', done: 12, total: 48 },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(phaseStates(panel)).toEqual([['is-stopped'], []]);
   });
 
   it('shows the ready file with the facts and the download link', async () => {
