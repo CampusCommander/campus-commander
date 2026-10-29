@@ -235,14 +235,18 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
 
   await page.goto('/jobs');
   await expect(page.getByRole('cell', { name: /UPD-014/ })).toBeVisible();
-  await expect.poll(async () => liveStreams(page).openUrls()).toEqual(['/api/jobs/events']);
+  await expect
+    .poll(async () => liveStreams(page).openUrls())
+    .toEqual(['/api/jobs/events']);
   await shot(page, testInfo, 'live-feeds-jobs.png');
 
   await page.goto('/jobs/UPD-014');
   await expect(
     page.getByRole('heading', { name: 'UPD-014 · 48 devices', exact: true }),
   ).toBeVisible();
-  await expect.poll(async () => liveStreams(page).openUrls()).toEqual(['/api/jobs/events']);
+  await expect
+    .poll(async () => liveStreams(page).openUrls())
+    .toEqual(['/api/jobs/events']);
   await shot(page, testInfo, 'live-feeds-job-detail.png');
 
   await page.goto('/devices');
