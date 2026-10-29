@@ -308,6 +308,27 @@ describe('the Import step of the dialog', () => {
     expect(button('Start validation')?.hasAttribute('disabled')).toBe(true);
   });
 
+  it('opens the help on the Import topic of state 11 and keeps the four topics', async () => {
+    const { render, text, element, store } = setup({ detail: importDetail() });
+    store.openImport();
+    await render();
+    element
+      .querySelector<HTMLButtonElement>('button[aria-controls="export-help"]')
+      ?.click();
+    await render();
+    const help = element.querySelector('app-device-export-help');
+    expect(help?.textContent).toContain('Export and import help');
+    expect(help?.textContent).toContain('Import modes');
+    expect(help?.textContent).toContain(
+      'Checks every row and resets the devices to the file. Ignores the Checksum column.',
+    );
+    expect(help?.textContent).toContain('DEPROVISION:<reason code>');
+    expect(help?.textContent).toContain('UPGRADE_TRANSFER');
+    expect(help?.textContent).toContain(
+      'Codes match in upper case, for example DEPROVISION:RETIRING_DEVICE.',
+    );
+    expect(text()).toContain('Start validation');
+  });
   it('reads the first 64 KiB and passes the header of a chosen file', async () => {
     const { render, text, button, store } = setup({ detail: importDetail() });
     store.openImport();

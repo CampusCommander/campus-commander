@@ -34,7 +34,10 @@ import { AuthStore } from '../auth.store';
 import { JobReader, type JobRevisions } from '../jobs/job-reader';
 import { LiveFeeds, type LiveFeedSubscription } from '../jobs/live-feeds';
 import type { JobEventSource } from '../jobs/job-stream';
-import { EXPORT_ROW_LIMIT } from './device-export-messages';
+import {
+  EXPORT_ROW_LIMIT,
+  type ExportHelpTopic,
+} from './device-export-messages';
 import {
   IMPORT_EMPTY_FILE_REFUSAL,
   IMPORT_FILE_LIMIT_BYTES,
@@ -96,7 +99,7 @@ export class DeviceExportImportStore {
   /** The displayed grid columns of a report, in grid order (state 07). */
   readonly columns = signal<readonly DeviceReportFieldId[]>([]);
   /** The help pane's topic, or null while the pane is closed (state 06). */
-  readonly helpTopic = signal<'export' | 'report' | null>(null);
+  readonly helpTopic = signal<ExportHelpTopic | null>(null);
   readonly displayId = signal<string | null>(null);
   readonly job = signal<JobDetail | null>(null);
   readonly loading = signal(false);
@@ -289,18 +292,24 @@ export class DeviceExportImportStore {
     this.step.set('import');
   }
 
-  toggleHelp(topic?: 'export' | 'report'): void {
+  toggleHelp(topic?: ExportHelpTopic): void {
     if (this.helpTopic() !== null) {
       this.helpTopic.set(null);
       return;
     }
-    this.helpTopic.set(
-      topic ?? (this.purpose() === 'report' ? 'report' : 'export'),
-    );
+    this.helpTopic.set(topic ?? this.defaultHelpTopic());
   }
 
-  setHelpTopic(topic: 'export' | 'report'): void {
+  setHelpTopic(topic: ExportHelpTopic): void {
     this.helpTopic.set(topic);
+  }
+
+  /** The help opens on the topic of the current step (composition choice 5). */
+  private defaultHelpTopic(): ExportHelpTopic {
+    const step = this.step();
+    if (step === 'import' || step === 'validation') return 'import';
+    if (step === 'report') return 'review';
+    return this.purpose() === 'report' ? 'report' : 'export';
   }
 
   /**

@@ -589,6 +589,26 @@ test.describe('Import', () => {
     await shot(page, '10-import-header-check');
   });
 
+  test('state 11: the help docks beside the import setup', async ({ page }) => {
+    await openDevices(page);
+    await openImport(page);
+    await chooseFile(page, goodCsv);
+    await dialog(page)
+      .getByRole('button', { name: 'Export and import help' })
+      .click();
+    const help = page.locator('app-device-export-help');
+    await expect(help).toBeVisible();
+    await expect(help).toContainText('Export and import help');
+    await expect(help).toContainText('Import modes');
+    await expect(help).toContainText('Sync all rows');
+    await expect(help).toContainText('DEPROVISION:<reason code>');
+    await expect(help).toContainText(
+      'Codes match in upper case, for example DEPROVISION:RETIRING_DEVICE.',
+    );
+    await expect(dialog(page)).toHaveClass(/has-help/);
+    await shot(page, '11-import-help');
+  });
+
   test('state 12: the validation runs with its phases and counters', async ({
     page,
   }) => {

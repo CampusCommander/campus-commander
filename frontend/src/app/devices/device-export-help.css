@@ -87,3 +87,27 @@
   width: 40%;
   font-weight: 500;
 }
+
+/* The mode pair of the Import topic: the term above its sentence (state 11). */
+.help-modes {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  margin: 0;
+  column-gap: var(--cc-space-md);
+  row-gap: 2px;
+}
+
+.help-modes dt {
+  font-weight: 500;
+}
+
+.help-modes dd {
+  margin: 0;
+  color: var(--cc-text-secondary);
+}
+
+.code-key {
+  font-family: var(--cc-font-mono, monospace);
+  font-size: 11.5px;
+  font-weight: 500;
+}

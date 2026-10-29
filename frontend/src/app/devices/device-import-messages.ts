@@ -685,3 +685,65 @@ export function formatBytes(sizeBytes: number): string {
     maximumFractionDigits: 1,
   })} MB`;
 }
+
+/* The help pane of states 11 and 13 to 15: the Import and Review topics. */
+
+export const IMPORT_HELP_MODES_HEAD = 'Import modes';
+export interface HelpMode {
+  readonly mode: string;
+  readonly text: string;
+}
+export const IMPORT_HELP_MODES: readonly HelpMode[] = Object.freeze([
+  {
+    mode: 'Sync changes',
+    text: 'Checks the rows that changed since the export. Needs the Checksum column.',
+  },
+  {
+    mode: 'Sync all rows',
+    text: 'Checks every row and resets the devices to the file. Ignores the Checksum column.',
+  },
+]);
+export const IMPORT_HELP_RULES_HEAD = 'Rules';
+export const IMPORT_HELP_RULES: readonly string[] = Object.freeze([
+  'A blank cell keeps the current value.',
+  '[clear] empties Annotated location, Annotated user, or Notes.',
+  'Import never creates devices. A device ID that Campus Commander does not hold rejects its row.',
+  'A file holds at most 50,000 rows.',
+]);
+export const IMPORT_HELP_STATUS_HEAD = 'Status codes';
+export const IMPORT_HELP_STATUS_CODES: readonly (readonly [string, string])[] =
+  Object.freeze([
+    ['ACTIVE', 'Re-enables a disabled device'],
+    ['DISABLED', 'Disables an active device'],
+    ['DEPROVISION:<reason code>', 'Deprovisions an active or disabled device'],
+  ]);
+export const IMPORT_HELP_REASON_HEAD = 'Reason codes';
+export const IMPORT_HELP_REASON_CODES: readonly (readonly [string, string])[] =
+  Object.freeze([
+    ['RETIRING_DEVICE', 'Retiring from fleet'],
+    ['DIFFERENT_MODEL_REPLACEMENT', 'Different model replacement'],
+    ['SAME_MODEL_REPLACEMENT', 'Same model replacement'],
+    ['UPGRADE_TRANSFER', 'ChromeOS Flex upgrade transfer'],
+  ]);
+export const IMPORT_HELP_CODES_LINE =
+  'Codes match in upper case, for example DEPROVISION:RETIRING_DEVICE.';
+
+export const REVIEW_HELP_INTRO =
+  'Validation checks the file against the current devices and writes a plan. Nothing reaches Google before Execute.';
+export const REVIEW_HELP_PLAN_HEAD = 'Plan';
+export const REVIEW_HELP_PLAN: readonly string[] = Object.freeze([
+  'A validated plan expires 1 hour after validation. Validate the file again after that.',
+  'Cancel import cancels the plan. Closing the dialog keeps the plan open until it expires.',
+]);
+export const REVIEW_HELP_EXECUTE_HEAD = 'Execute';
+export const REVIEW_HELP_EXECUTE: readonly string[] = Object.freeze([
+  'Execute runs the valid rows only. Rejected rows never run.',
+  'Execute creates one update job for the field changes and one job for each status change. The status jobs start after the update job ends.',
+  'Deprovision needs the typed word DEPROVISION.',
+]);
+export const REVIEW_HELP_REJECTED_HEAD = 'Rejected rows and warnings';
+export const REVIEW_HELP_REJECTED: readonly string[] = Object.freeze([
+  'Download rejected rows gives the rejected rows with their reasons. Correct them in the file, then import it again.',
+  'A warning does not block Execute.',
+  'Other Google status values, such as DEPROVISIONED, request nothing.',
+]);
