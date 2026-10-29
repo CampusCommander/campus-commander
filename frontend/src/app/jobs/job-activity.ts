@@ -94,14 +94,18 @@ export class JobActivity {
   protected readonly progressPercent = progressPercent;
   /**
    * An export or import row returns to its dialog on the Devices page (design section 9, built
-   * behavior 5). Another kind of row keeps the job page.
+   * behavior 5). Only the requester's own row does. Another kind of row, or another person's
+   * row, keeps the job page.
    */
   protected readonly rowLink = (job: JobSummary): string[] =>
-    rowOpensDialog(job) ? ['/devices'] : ['/jobs', job.displayId];
+    this.opensDialog(job) ? ['/devices'] : ['/jobs', job.displayId];
   protected readonly rowQuery = (
     job: JobSummary,
   ): Record<string, string> | undefined =>
-    rowOpensDialog(job) ? { job: job.displayId } : undefined;
+    this.opensDialog(job) ? { job: job.displayId } : undefined;
+  private opensDialog(job: JobSummary): boolean {
+    return rowOpensDialog(job, this.auth.session()?.identity.id ?? null);
+  }
   protected readonly formatTimestamp = formatTimestamp;
   protected readonly clockTime = formatClockTime;
 
@@ -182,7 +186,8 @@ export class JobActivity {
 }
 
 /** The two job kinds whose row opens the Devices dialog (design section 9, behavior 5). */
-function rowOpensDialog(job: JobSummary): boolean {
+function rowOpensDialog(job: JobSummary, viewerId: string | null): boolean {
+  if (viewerId === null || job.requestedBy.id !== viewerId) return false;
   return (
     job.action === 'export-devices' || job.action === 'validate-device-import'
   );

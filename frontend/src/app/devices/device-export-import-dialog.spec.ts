@@ -73,16 +73,21 @@ const response = (body: unknown, status = 200) =>
     json: async () => body,
   }) as unknown as Response;
 
-function setup(detail: JobDetail = exportDetail()) {
-  const request = vi.fn(async (path: string) =>
-    path.startsWith('/api/jobs/')
-      ? response(detail)
-      : response({
-          jobId,
-          displayId: 'EXP-001',
-          status: 'accepted',
-          rows: 48,
-        }),
+function setup(
+  detail: JobDetail = exportDetail(),
+  requestOverride?: (path: string, body?: unknown) => Promise<Response>,
+) {
+  const request = vi.fn(
+    requestOverride ??
+      (async (path: string) =>
+        path.startsWith('/api/jobs/')
+          ? response(detail)
+          : response({
+              jobId,
+              displayId: 'EXP-001',
+              status: 'accepted',
+              rows: 48,
+            })),
   );
   TestBed.configureTestingModule({
     providers: [
@@ -308,28 +313,149 @@ describe('DeviceExportImportDialog', () => {
     expect(closed).toHaveBeenCalledTimes(1);
   });
 
-  it('returns to the running job of this tab after the dialog closes', async () => {
-    const { store, render, request } = setup();
-    store.openExport(48);
+  it('retains an Activity-opened export for its entry', async () => {
+    const { store, render } = setup();
+    store.openJob('EXP-001');
     await render();
-    expect(
-      await store.submit({
-        gridId: 'devices',
-        tabId: 'tab-1',
-        purpose: 'edit',
-        format: 'csv',
-        sort: { field: 'serialNumber', direction: 'asc' },
-        columns: [],
-      }),
-    ).toBe(true);
-    expect(request).toHaveBeenCalledWith(
-      '/api/devices/exports',
-      expect.objectContaining({ purpose: 'edit', format: 'csv' }),
-    );
+    expect(store.activeJobs().edit).toEqual({
+      displayId: 'EXP-001',
+      purpose: 'edit',
+    });
     store.close();
     await render();
     store.openExport(0);
     await render();
     expect(store.step()).toBe('monitor');
+    expect(store.displayId()).toBe('EXP-001');
+  });
+
+  it('keeps one retained job for Export and one for Reports', async () => {
+    const reportJobId = '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a11';
+    const request = async (path: string, body?: unknown) => {
+      if (path === '/api/devices/exports') {
+        const purpose = (body as { purpose: string }).purpose;
+        return response({
+          jobId: purpose === 'report' ? reportJobId : jobId,
+          displayId: purpose === 'report' ? 'EXP-002' : 'EXP-001',
+          status: 'accepted',
+          rows: 48,
+        });
+      }
+      if (path === '/api/jobs/EXP-001') return response(exportDetail());
+      if (path === '/api/jobs/EXP-002')
+        return response(
+          exportDetail({
+            jobId: reportJobId,
+            displayId: 'EXP-002',
+            exportSummary: { purpose: 'report' },
+          }),
+        );
+      return response({});
+    };
+    const { store, render } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    await store.submit({
+      gridId: 'devices',
+      tabId: 'tab-1',
+      purpose: 'edit',
+      format: 'csv',
+      sort: { field: 'serialNumber', direction: 'asc' },
+      columns: [],
+    });
+    await render();
+    store.close();
+    await render();
+
+    store.openReport(48, ['serialNumber']);
+    await render();
+    expect(store.step()).toBe('configure');
+    await store.submit({
+      gridId: 'devices',
+      tabId: 'tab-1',
+      purpose: 'report',
+      format: 'csv',
+      sort: { field: 'serialNumber', direction: 'asc' },
+      columns: ['serialNumber'],
+    });
+    await render();
+    store.close();
+    await render();
+
+    store.openExport(0);
+    await render();
+    expect(store.step()).toBe('monitor');
+    expect(store.displayId()).toBe('EXP-001');
+    store.close();
+    await render();
+    store.openReport(0, []);
+    await render();
+    expect(store.step()).toBe('monitor');
+    expect(store.displayId()).toBe('EXP-002');
+  });
+
+  it('releases a failed export with Done and starts a fresh configure', async () => {
+    const { store, render, panel } = setup(
+      exportDetail({
+        status: 'failed',
+        failure: 'export-too-large',
+        phase: { name: 'write-rows', done: 12, total: 48 },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(panel()?.textContent).toContain('The file passed the 1 GiB limit');
+    const done = [
+      ...(panel()?.querySelectorAll<HTMLButtonElement>(
+        '.export-actions button',
+      ) ?? []),
+    ].find((button) => button.textContent?.trim() === 'Done');
+    expect(done).toBeDefined();
+    done?.click();
+    await render();
+    expect(store.open()).toBe(false);
+    expect(store.activeJobs().edit).toBeNull();
+    store.openExport(6);
+    await render();
+    expect(store.step()).toBe('configure');
+  });
+
+  it('releases a cancelled export with Done and starts a fresh configure', async () => {
+    const { store, render, panel } = setup(
+      exportDetail({
+        status: 'cancelled',
+        phase: { name: 'prepare-download', done: 0, total: null },
+        progress: {
+          total: 48,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 48,
+          pending: 0,
+        },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-001');
+    await render();
+    expect(panel()?.textContent).toContain(
+      'The export stopped before it finished. No file was written.',
+    );
+    const done = [
+      ...(panel()?.querySelectorAll<HTMLButtonElement>(
+        '.export-actions button',
+      ) ?? []),
+    ].find((button) => button.textContent?.trim() === 'Done');
+    expect(done).toBeDefined();
+    done?.click();
+    await render();
+    expect(store.open()).toBe(false);
+    expect(store.activeJobs().edit).toBeNull();
+    store.openExport(6);
+    await render();
+    expect(store.step()).toBe('configure');
   });
 });

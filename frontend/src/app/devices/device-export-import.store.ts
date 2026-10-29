@@ -62,8 +62,10 @@ export class DeviceExportImportStore {
   readonly error = signal('');
   readonly submitting = signal(false);
   readonly submitError = signal('');
-  /** The job that the Bulk Actions entry returns to until Done releases it. */
-  readonly activeJob = signal<ActiveExportJob | null>(null);
+  /** The jobs that the Bulk Actions entries return to until Done releases them (behavior 6). */
+  readonly activeJobs = signal<
+    Readonly<Record<JobExportPurpose, ActiveExportJob | null>>
+  >({ edit: null, report: null });
 
   /** The export request may start: the selection fits the row limit. */
   readonly overLimit = computed(() => this.count() > EXPORT_ROW_LIMIT);
@@ -74,6 +76,11 @@ export class DeviceExportImportStore {
   readonly running = computed(() => {
     const job = this.job();
     return !!job && !finished(job);
+  });
+  /** A finished job releases its entry through Done when it has no file (R4). */
+  readonly jobFinished = computed(() => {
+    const job = this.job();
+    return !!job && finished(job);
   });
 
   private readonly reader = new JobReader(() => this.read());
@@ -148,9 +155,9 @@ export class DeviceExportImportStore {
     this.stop();
   }
 
-  /** Done releases the job, so the next entry starts a new export (behavior 6). */
+  /** Done releases the current entry's job, so its next entry starts a new export (behavior 6). */
   done(): void {
-    this.activeJob.set(null);
+    this.releaseActive(this.purpose());
     this.close();
     this.step.set('configure');
     this.displayId.set(null);
@@ -198,7 +205,7 @@ export class DeviceExportImportStore {
         );
         return false;
       }
-      this.activeJob.set({
+      this.retain({
         displayId: receipt.data.displayId,
         purpose: request.purpose,
       });
@@ -230,9 +237,9 @@ export class DeviceExportImportStore {
     this.submitError.set('');
     this.helpTopic.set(null);
     this.open.set(true);
-    const active = this.activeJob();
-    if (active && active.purpose === purpose) {
-      // The entry returns to the running or finished job of this tab.
+    const active = this.activeJobs()[purpose];
+    if (active) {
+      // The entry returns to the running or finished job of this tab and purpose.
       this.openJob(active.displayId);
       this.purpose.set(purpose);
       return;
@@ -245,6 +252,15 @@ export class DeviceExportImportStore {
     this.stop();
   }
 
+  /** A job remains the entry's own until Done releases it (behavior 6). */
+  private retain(job: ActiveExportJob): void {
+    this.activeJobs.update((jobs) => ({ ...jobs, [job.purpose]: job }));
+  }
+
+  private releaseActive(purpose: JobExportPurpose): void {
+    this.activeJobs.update((jobs) => ({ ...jobs, [purpose]: null }));
+  }
+
   private stop(): void {
     this.loading.set(false);
     this.reader.stop();
@@ -253,7 +269,7 @@ export class DeviceExportImportStore {
 
   private reset(): void {
     this.epoch++;
-    this.activeJob.set(null);
+    this.activeJobs.set({ edit: null, report: null });
     this.reader.clear();
     this.events.stop();
     this.open.set(false);
@@ -300,8 +316,15 @@ export class DeviceExportImportStore {
       this.job.set(detail.data);
       this.loading.set(false);
       this.error.set('');
-      if (detail.data.exportSummary)
+      if (detail.data.exportSummary) {
         this.purpose.set(detail.data.exportSummary.purpose);
+        // An export opened from Activity stays the entry's own until Done releases it.
+        if (detail.data.action === 'export-devices')
+          this.retain({
+            displayId: detail.data.displayId,
+            purpose: detail.data.exportSummary.purpose,
+          });
+      }
       // The job names its own step: a published file opens the file card (behavior 5). An
       // import row opens the import step, which XF2 fills.
       if (this.open()) {

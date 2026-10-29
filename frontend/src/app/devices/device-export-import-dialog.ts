@@ -153,6 +153,8 @@ export class DeviceExportImportDialog {
   protected readonly jobCancelled = computed(
     () => this.store.job()?.status === 'cancelled',
   );
+  /** A finished job without a file releases its entry with Done (R4). */
+  protected readonly jobFinished = this.store.jobFinished;
   protected readonly showFailure = computed(
     () => this.jobFailed() && !!this.store.job(),
   );

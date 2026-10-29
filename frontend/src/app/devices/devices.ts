@@ -425,10 +425,15 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.store.init();
-    // The Activity row of an own export links here with ?job= (behavior 5).
+    // The Activity row of an own export links here with ?job= (behavior 5). Closing the
+    // dialog drops the parameter, so the same row must open it again (R3).
     this.querySub = this.route.queryParamMap.subscribe((params) => {
       const job = params.get('job');
-      if (!job || job === this.openedJob) return;
+      if (!job) {
+        this.openedJob = null;
+        return;
+      }
+      if (job === this.openedJob) return;
       this.openedJob = job;
       this.exportDialog.openJob(job);
     });

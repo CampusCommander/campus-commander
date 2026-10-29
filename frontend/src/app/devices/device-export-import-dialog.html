@@ -220,8 +220,11 @@
         </span>
         }
       </div>
+      @if (jobFinished()) {
+      <button mat-flat-button type="button" (click)="done()">Done</button>
+      } @else {
       <button mat-flat-button type="button" (click)="close()">Close</button>
-      } @case ('file') {
+      } } @case ('file') {
       <span class="export-state"></span>
       <button mat-button type="button" (click)="done()">Done</button>
       @if (file(); as exportFile) { @if (exportFile.expired) {
