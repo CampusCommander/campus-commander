@@ -1133,18 +1133,20 @@ export class Jobs {
         [...actor, customerId, actor[0]],
       )
     )[0];
+    // One clock read gives every row of the panel one plan-expiry decision.
+    const now = Date.now();
     return jobActivitySchema.parse({
       running: {
         count: counted(runningCount?.['count']),
-        jobs: running.map(jobSummary),
+        jobs: running.map((row) => jobSummary(row, now)),
       },
       waiting: {
         count: counted(waitingCount?.['count']),
-        jobs: waiting.map(jobSummary),
+        jobs: waiting.map((row) => jobSummary(row, now)),
       },
       recent: {
         count: counted(recentCount?.['count']),
-        jobs: recent.map(jobSummary),
+        jobs: recent.map((row) => jobSummary(row, now)),
         nextExpiryAt: measuredAtOrNull(recentCount?.['next_expiry_at']),
       },
       attention: attention?.['attention'] === true,

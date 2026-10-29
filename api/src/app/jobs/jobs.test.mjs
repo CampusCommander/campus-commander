@@ -1284,7 +1284,17 @@ test('the activity answer caps each section and derives the window and attention
       (values, text) =>
         text.includes('count(*)::int')
           ? [{ count: 51 }]
-          : [jobRow({ status: 'running', display_id: 'UPD-009' })],
+          : [
+              jobRow({
+                kind: 'device-export',
+                status: 'running',
+                display_id: 'EXP-001',
+                phase: 'write-rows',
+                phase_done: 12,
+                phase_total: 48,
+                export_purpose: 'edit',
+              }),
+            ],
     ],
     [
       "j.status IN ('accepted','queued','held')",
@@ -1317,6 +1327,13 @@ test('the activity answer caps each section and derives the window and attention
   assert.equal(activity.attention, true);
   assert.equal(activity.seenAt, '2026-10-06T10:00:00.000Z');
   assert.equal(activity.observedAt, '2026-10-06T12:00:00.000Z');
+  // A running export row of the panel carries the blocks of its state 26 line.
+  assert.deepEqual(activity.running.jobs[0].phase, {
+    name: 'write-rows',
+    done: 12,
+    total: 48,
+  });
+  assert.deepEqual(activity.running.jobs[0].exportSummary, { purpose: 'edit' });
   assert.equal(now, 2);
   const attentionCall = db.calls.find(([text]) =>
     text.includes('AS attention'),
