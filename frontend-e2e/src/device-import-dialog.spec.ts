@@ -12,6 +12,7 @@ import {
 const customerId = 'C0123456';
 const observedAt = '2026-10-19T12:00:00.000Z';
 const impJobId = '0f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
+const expJobId = '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a11';
 const planId = '9a1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
 const person = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -340,6 +341,62 @@ const importJob = (name: ImportCase) => ({
   },
 });
 
+/** A finished export of the same tab, so another flow's Done can release it (R3). */
+const exportJob = {
+  jobId: expJobId,
+  displayId: 'EXP-001',
+  revision: 4,
+  action: 'export-devices',
+  status: 'completed',
+  scope: { kind: 'devices', deviceCount: rows.length },
+  requestedBy: person,
+  createdAt: new Date(Date.now() - 120_000).toISOString(),
+  startedAt: new Date(Date.now() - 110_000).toISOString(),
+  finishedAt: past(),
+  progress: {
+    total: rows.length,
+    succeeded: rows.length,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  phase: null,
+  exportSummary: { purpose: 'edit' },
+  exportFile: {
+    name: 'devices-for-editing-EXP-001.csv',
+    sizeBytes: 7_987,
+    rows: rows.length,
+    columns: 10,
+    expiresAt: future(),
+  },
+  importSummary: null,
+  cancelRequest: null,
+  failure: null,
+  confirmedBy: null,
+  previewDisplayId: null,
+  changes: null,
+  commandType: null,
+  statusAction: null,
+  deprovisionReason: null,
+  targetOrgUnitPaths: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
+  correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  latestActivity: {
+    at: new Date().toISOString(),
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+};
+
 const reportAnswer = (name: ImportCase, view: string, page: number) => {
   const noUpdate = noUpdateCase(name);
   const rejectedOnly = name === 'rejected-only';
@@ -524,6 +581,17 @@ async function signIn(
       });
     if (path === '/api/jobs/IMP-001')
       return route.fulfill({ json: importJob(name) });
+    if (path === '/api/devices/exports' && request.method() === 'POST')
+      return route.fulfill({
+        status: 202,
+        json: {
+          jobId: expJobId,
+          displayId: 'EXP-001',
+          status: 'accepted',
+          rows: rows.length,
+        },
+      });
+    if (path === '/api/jobs/EXP-001') return route.fulfill({ json: exportJob });
     if (path === '/api/jobs/IMP-001/cancel')
       return route.fulfill({
         json: { cancelRequest: { by: person, at: past() } },
@@ -1045,6 +1113,99 @@ test.describe('Import', () => {
     await expect(dialog(page)).toBeVisible();
     await expect(dialog(page)).toContainText('Proposed changes:');
     await shot(page, '13-review-proposed-dark');
+  });
+
+  test('state 13: another flow Done restores the retained report (R3)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'completed');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toContainText('Cancel import');
+    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await expect(dialog(page)).toBeHidden();
+    // Start and finish an export of the same dialog, then release it with Done.
+    await bulk(page).click();
+    await page
+      .getByRole('menu')
+      .getByRole('menuitem', { name: 'Export', exact: true })
+      .click();
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page)
+      .getByRole('button', { name: 'Export 6 devices' })
+      .click();
+    await expect(dialog(page)).toContainText('devices-for-editing-EXP-001.csv');
+    await dialog(page).getByRole('button', { name: 'Done' }).click();
+    await expect(dialog(page)).toBeHidden();
+    // Import returns to its completed report, not to the validation body.
+    await openImport(page);
+    await expect(dialog(page)).toContainText('Open');
+    await expect(dialog(page)).toContainText('Cancel import');
+    await expect(dialog(page)).toContainText('7 field changes on 6 devices');
+    await expect(dialog(page)).not.toContainText(
+      'Closing this dialog keeps the validation running.',
+    );
+  });
+
+  test('state 13: a cached view restores the facts of a failed page (R4)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'completed');
+    // Keep the shared feed connecting, so no feed-driven reread can mask the cache path.
+    await page.route(
+      '**/api/jobs/events',
+      () => new Promise<void>(() => undefined),
+    );
+    // The Proposed page fails while the listed views answer in full.
+    await page.route(
+      '**/api/devices/imports/IMP-001/report**',
+      async (route) => {
+        const url = new URL(route.request().url());
+        const view = url.searchParams.get('view') ?? 'proposed';
+        const pageIndex = Number(url.searchParams.get('page') ?? '0');
+        if (view === 'proposed')
+          return route.fulfill({ status: 503, json: {} });
+        return route.fulfill({
+          json: reportAnswer('completed', view, pageIndex),
+        });
+      },
+    );
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText(
+      'The report is unavailable. Try again.',
+    );
+    await expect(dialog(page)).not.toContainText('Cancel import');
+    // Drain the shared feed's first-open reread, so the tab selection is the read under test.
+    await page.waitForTimeout(1500);
+    await expect(dialog(page)).toContainText(
+      'The report is unavailable. Try again.',
+    );
+    // The tab total of Rejected rows already holds its whole first answer.
+    const rejected = dialog(page).getByRole('tab', { name: /Rejected/ });
+    await expect(rejected).toContainText('2');
+    await rejected.click();
+    await expect(dialog(page)).toContainText(
+      'The status "Gone" is not a Google status.',
+    );
+    // The shown view owns the counts, the open plan, and the actions again.
+    await expect(dialog(page)).not.toContainText(
+      'The report is unavailable. Try again.',
+    );
+    await expect(dialog(page)).toContainText('Open');
+    await expect(dialog(page)).toContainText('Cancel import');
+    await expect(
+      dialog(page).getByRole('button', { name: /^Execute/ }),
+    ).toBeEnabled();
+    await dialog(page)
+      .getByRole('tab', { name: /Warnings/ })
+      .click();
+    await expect(dialog(page)).toContainText(
+      'The column "Grade" is unknown. It stays out of every write.',
+    );
+    await expect(dialog(page)).not.toContainText(
+      'The report is unavailable. Try again.',
+    );
+    await expect(dialog(page)).toContainText('Cancel import');
   });
 
   test('the dialog opens one shared jobs feed and no second connection', async ({

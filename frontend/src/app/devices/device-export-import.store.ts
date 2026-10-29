@@ -275,9 +275,10 @@ export class DeviceExportImportStore {
     if (active) {
       // The retained report of this import owns its screen. Another flow's Done resets the
       // shared step, so reentry restores the report from its own facts (R3).
-      const report =
-        this.reportJob === active && this.reportCounts() !== null;
-      this.step.set(report || this.step() === 'report' ? 'report' : 'validation');
+      const report = this.reportJob === active && this.reportCounts() !== null;
+      this.step.set(
+        report || this.step() === 'report' ? 'report' : 'validation',
+      );
       this.openJob(active);
       return;
     }
@@ -974,7 +975,8 @@ export class DeviceExportImportStore {
     const pages =
       this.cache.get(displayId) ??
       new Map<DeviceImportReportView, Map<number, DeviceImportReport>>();
-    const views = pages.get(answer.view) ?? new Map<number, DeviceImportReport>();
+    const views =
+      pages.get(answer.view) ?? new Map<number, DeviceImportReport>();
     views.set(answer.page, answer);
     pages.set(answer.view, views);
     this.cache.set(displayId, pages);

@@ -1243,10 +1243,7 @@ describe('the Import entry ownership and report facts', () => {
         answer: (path) => {
           if (!path.includes('/report?')) return undefined;
           const url = new URL(path, 'http://x');
-          if (
-            !proposedFailed &&
-            url.searchParams.get('view') === 'proposed'
-          ) {
+          if (!proposedFailed && url.searchParams.get('view') === 'proposed') {
             proposedFailed = true;
             return Promise.resolve(response({}, 503));
           }
@@ -1269,7 +1266,9 @@ describe('the Import entry ownership and report facts', () => {
       expect(store.plan()?.state).toBe('open');
       expect(store.reportError()).toBe('');
       expect(store.reportLines()).toEqual([line]);
-      expect(text()).toContain(view === 'rejected' ? 'Download rejected rows' : 'Header row');
+      expect(text()).toContain(
+        view === 'rejected' ? 'Download rejected rows' : 'Header row',
+      );
       expect(button('Cancel import')).toBeDefined();
       expect(button(/^Execute/)?.hasAttribute('disabled')).toBe(false);
     });
