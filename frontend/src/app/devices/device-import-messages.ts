@@ -416,7 +416,7 @@ export const REPORT_EMPTY_LINES: Readonly<
 });
 export const NO_UPDATE_LINE =
   'Every row matches its export checksum. No update is needed.';
-/** The same line for the Sync changes mode: every row already matches the file (state 21). */
+/** The same line for the Sync all rows mode: every row already matches the file (state 21). */
 export const SYNC_ALL_ROWS_NO_UPDATE_LINE =
   'Every row already matches the file. No update is needed.';
 
