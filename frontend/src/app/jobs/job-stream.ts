@@ -34,7 +34,7 @@ export interface JobStreamOptions {
   /** Every stream open, first or after a reconnect, resynchronizes the reader (section 3.4). */
   opened: () => void;
   /** One message payload of a requested event. */
-  changed: (data: string) => void;
+  changed: (name: string, data: string) => void;
   /** Every close or lost connection. Live updates end until the next open. */
   closed?: () => void;
 }
@@ -164,7 +164,7 @@ export class JobStream {
       stream.addEventListener(name, (message) => {
         if (!current()) return;
         this.watch();
-        this.options.changed((message as MessageEvent<string>).data);
+        this.options.changed(name, (message as MessageEvent<string>).data);
       });
     }
     stream.addEventListener('error', () => {

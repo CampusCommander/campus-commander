@@ -239,6 +239,29 @@ it('reopens once when a shared connection closes', () => {
   expect(sources).toHaveLength(2);
 });
 
+it('registers the event names of a late subscriber on the shared connection', () => {
+  const { feeds } = setup();
+  const sources: FakeSource[] = [];
+  const first = follower(sources);
+  const second = follower(sources, ['job-changed', 'entity-batch']);
+  feeds.subscribe('/api/jobs/events', first.handlers);
+  sources[0].readyState = 1;
+  sources[0].emit('open');
+
+  feeds.subscribe('/api/jobs/events', second.handlers);
+
+  // One connection, replaced so the new event name is read.
+  expect(sources).toHaveLength(2);
+  sources[1].readyState = 1;
+  sources[1].emit('open');
+  sources[1].emit(
+    'entity-batch',
+    new MessageEvent('entity-batch', { data: '{"type":"entity-batch"}' }),
+  );
+  expect(second.changed).toHaveBeenCalledWith('{"type":"entity-batch"}');
+  expect(first.changed).not.toHaveBeenCalled();
+});
+
 it('keeps a stopped feed closed until a resume', async () => {
   const { feeds } = setup();
   const sources: FakeSource[] = [];

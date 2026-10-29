@@ -28,7 +28,7 @@ export interface LiveFeedHandlers {
 }
 
 export interface LiveFeedSubscription {
-  /** A connection exists, or one of its attempts is in flight. */
+  /** A connection exists. */
   readonly active: boolean;
   /** The connection has opened since the last close. */
   readonly connected: boolean;
@@ -50,6 +50,8 @@ interface Feed {
   stream: JobStream;
   settle: () => void;
   ready: Promise<void>;
+  /** The event names registered on the current connection. */
+  names: readonly string[];
 }
 
 /**
@@ -91,6 +93,7 @@ export class LiveFeeds {
         stream: null as unknown as JobStream,
         settle,
         ready,
+        names: [],
       };
       created.stream = new JobStream({
         open: () => created.owner.open(),
@@ -98,15 +101,20 @@ export class LiveFeeds {
         timeout: () => created.owner.timeout(),
         reopenCap: () => created.owner.reopenCap?.(),
         gate: () => (created.owner.gate ? created.owner.gate() : 'open'),
-        events: () => [
-          ...new Set([...created.subscribers].flatMap((item) => item.events)),
-        ],
+        events: () => {
+          created.names = [
+            ...new Set([...created.subscribers].flatMap((item) => item.events)),
+          ];
+          return created.names;
+        },
         settled: () => created.settle(),
         opened: () => {
           for (const item of created.subscribers) item.opened();
         },
-        changed: (data) => {
-          for (const item of created.subscribers) item.changed(data);
+        changed: (name, data) => {
+          for (const item of created.subscribers) {
+            if (item.events.includes(name)) item.changed(data);
+          }
         },
         closed: () => {
           for (const item of created.subscribers) item.closed?.();
@@ -116,10 +124,19 @@ export class LiveFeeds {
       feed = created;
     }
     feed.subscribers.add(subscriber);
-    if (this.hidden) feed.settle();
-    else feed.stream.start();
-    // The connection is already open. This subscriber missed its open event.
-    if (joined?.stream.connected) subscriber.opened();
+    // A late subscriber can bring an event name that the open connection does not read.
+    const missing = subscriber.events.some(
+      (name) => !feed.names.includes(name),
+    );
+    if (!this.hidden && joined && missing && feed.stream.active) {
+      // The next connection registers the names of every subscriber.
+      feed.stream.restart();
+    } else {
+      if (this.hidden) feed.settle();
+      else feed.stream.start();
+      // The connection is already open. This subscriber missed its open event.
+      if (joined?.stream.connected) subscriber.opened();
+    }
     return {
       get active() {
         return feed.stream.active;
