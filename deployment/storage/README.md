@@ -11,18 +11,25 @@ Import `createArtifactStore` from `deployment/storage/index.mjs`.
 Pass a `pg.Pool`, an existing absolute `root` directory, and `backend: 'local'` or `'shared-filesystem'`.
 Close the store and pool after active operations finish.
 
-| Method        | Input                                      | Result                                                      |
-| ------------- | ------------------------------------------ | ----------------------------------------------------------- |
-| `stage`       | Manifest and async iterable of byte chunks | Verified descriptor with unpublished metadata               |
-| `inspect`     | `{ artifactId, attemptId }`                | Verified descriptor and `publicationState`                  |
-| `publish`     | Descriptor                                 | Descriptor after the ready-state transaction commits        |
-| `openRead`    | `artifactId`                               | Read stream for verified ready bytes                        |
-| `remove`      | `{ artifactId, attemptId }`                | Boolean indicating completed removal                        |
-| `checkHealth` | None                                       | Boolean from a private write, read, sync, and cleanup probe |
-| `close`       | None                                       | Closed adapter directory handle                             |
+| Method         | Input                                             | Result                                                      |
+| -------------- | ------------------------------------------------- | ----------------------------------------------------------- |
+| `stage`        | Manifest and async iterable of byte chunks        | Verified descriptor with unpublished metadata               |
+| `stageStream`  | Stream manifest and async iterable of byte chunks | Descriptor with the size and the SHA-256 computed on write  |
+| `inspect`      | `{ artifactId, attemptId }`                       | Verified descriptor and `publicationState`                  |
+| `publish`      | Descriptor                                        | Descriptor after the ready-state transaction commits        |
+| `openRead`     | `artifactId`                                      | Read stream for verified ready bytes                        |
+| `remove`       | `{ artifactId, attemptId }`                       | Boolean indicating completed removal                        |
+| `purgeExpired` | None                                              | Number of expired artifacts removed                         |
+| `checkHealth`  | None                                              | Boolean from a private write, read, sync, and cleanup probe |
+| `close`        | None                                              | Closed adapter directory handle                             |
 
 A manifest contains `schemaVersion`, `expectedSizeBytes`, and lowercase hexadecimal `expectedSha256`.
-It accepts optional UUID `artifactId`, UUID `attemptId`, and `retentionUntil`.
+A stream manifest contains `schemaVersion` and `maxBytes`.
+Its caller supplies neither the size nor the digest, because the store computes both while it writes.
+Both manifests accept optional UUID `artifactId` and UUID `attemptId`.
+Both accept `retentionUntil` as an explicit deadline, or `retentionDays` as a positive day count.
+The store computes the deadline of `retentionDays` when it stages the artifact.
+`ARTIFACT_RETENTION_DAYS` is 30. The module exports it for the export job and the upload.
 The adapter generates missing identities.
 A descriptor contains `artifactId`, `attemptId`, `schemaVersion`, `sizeBytes`, and `sha256`.
 `attemptId` is the opaque attempt locator in the public contract.
@@ -34,6 +41,8 @@ Every operation rejects invalid identities. Error messages omit paths and databa
 The adapter reserves staging metadata before creating an attempt-specific file with exclusive creation.
 A PostgreSQL session advisory lock serializes writes for that artifact identity.
 The adapter streams chunks and verifies their declared size and SHA256 checksum.
+A streamed stage reserves null size and checksum, then records the computed pair before it clears the active flag.
+It stops above `maxBytes` and removes the file when the write or the metadata update fails.
 It makes the file read-only, syncs the file, closes it, and syncs the containing directory.
 It then clears the active-upload flag.
 Staging metadata remains invisible to readers.
@@ -49,7 +58,7 @@ Partial files fail verification and remain unpublished.
 
 Retries use a new attempt ID for an inactive staging artifact.
 Ready artifacts reject replacement. Stale descriptors reject publication and removal.
-Superseded attempt files remain unpublished. Full orphan retention automation remains outside this foundation.
+A streamed stage removes its own partial file. An orphan file of a superseded attempt still needs an operator.
 An interrupted partial upload retains its active flag until an operator resolves the abandoned attempt.
 Do not clear an active flag while its writer remains operational.
 
@@ -70,6 +79,11 @@ A database failure after unlink leaves a hidden deleting record.
 Retry removal to complete that record. It never returns to ready state automatically.
 The database constraint prevents new references or active uploads in deleting state.
 Application code must create references through conditional updates of ready rows.
+
+Retention removes expired artifacts. The store removes each expired row of `cc.artifacts` and calls `remove` for it.
+The API storage service starts that sweep once an hour.
+An active upload, a positive reference count, and a failed removal wait for the next sweep.
+The API stops the sweep when the application shuts down.
 
 ## Filesystem requirements
 
@@ -108,7 +122,7 @@ CC_STORAGE_BACKEND=shared-filesystem npm exec nx run deployment:storage-integrat
 ```
 
 The integration tests use isolated PostgreSQL, temporary artifact directories, and synthetic consumer containers.
-They cover streaming, corruption, interruption, metadata rollback, cleanup races, and container restart.
+They cover streaming, streamed staging, retention and the purge, corruption, interruption, metadata rollback, cleanup races, and container restart.
 The shared test uses one local host. It does not qualify a district mount or cross-host access.
 Follow [the two-host procedure](cross-host.md) for that gate.
 

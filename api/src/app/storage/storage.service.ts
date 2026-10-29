@@ -1,4 +1,8 @@
-import { Injectable, OnApplicationShutdown } from '@nestjs/common';
+import {
+  Injectable,
+  OnApplicationBootstrap,
+  OnApplicationShutdown,
+} from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -6,6 +10,7 @@ import type { Pool } from 'pg';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
 import { storeJsonDocument } from './json-artifact';
+import { startArtifactPurge } from './purge-timer';
 
 interface ArtifactManifest {
   artifactId: string;
@@ -13,6 +18,16 @@ interface ArtifactManifest {
   schemaVersion: number;
   expectedSizeBytes: number;
   expectedSha256: string;
+}
+interface ArtifactStreamManifest {
+  artifactId?: string;
+  attemptId?: string;
+  schemaVersion: number;
+  /** The largest accepted file. The store stops above it and removes the partial file. */
+  maxBytes: number;
+  /** The number of days to keep the artifact. The store computes `retentionUntil`. */
+  retentionDays?: number;
+  retentionUntil?: string | null;
 }
 interface ArtifactDescriptor {
   artifactId: string;
@@ -27,9 +42,15 @@ interface ArtifactStore {
     manifest: ArtifactManifest,
     source: Buffer[],
   ): Promise<ArtifactDescriptor>;
+  stageStream(
+    manifest: ArtifactStreamManifest,
+    source: AsyncIterable<Buffer>,
+  ): Promise<ArtifactDescriptor>;
   publish(manifest: ArtifactDescriptor): Promise<unknown>;
   openRead(artifactId: string): Promise<AsyncIterable<Buffer>>;
   remove(manifest: { artifactId: string; attemptId: string }): Promise<boolean>;
+  /** Remove each artifact whose retention passed. Returns the number removed. */
+  purgeExpired(): Promise<number>;
   close(): Promise<void>;
 }
 interface StorageModule {
@@ -41,8 +62,11 @@ interface StorageModule {
 }
 
 @Injectable()
-export class StorageService implements OnApplicationShutdown {
+export class StorageService
+  implements OnApplicationBootstrap, OnApplicationShutdown
+{
   private store?: Promise<ArtifactStore>;
+  private stopPurge?: () => void;
   private readonly configuration: ConfigurationService;
   private readonly database: DatabaseService;
 
@@ -133,6 +157,21 @@ export class StorageService implements OnApplicationShutdown {
   }
 
   async onApplicationShutdown() {
+    this.stopPurge?.();
     await (await this.store?.catch(() => undefined))?.close();
+  }
+
+  onApplicationBootstrap(): void {
+    this.stopPurge = startArtifactPurge(() => this.purge());
+  }
+
+  /** Remove each artifact whose retention passed. A failed sweep waits for the next hour. */
+  private async purge() {
+    try {
+      const store = await this.connection();
+      await store.purgeExpired();
+    } catch {
+      // The next hourly sweep retries an unavailable store or database.
+    }
   }
 }
