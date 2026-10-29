@@ -1080,6 +1080,46 @@ test('one conflict device never reaches a job, and the split lands first', async
   );
 });
 
+test('a conflict device takes its status change with it', async () => {
+  reset();
+  changes = [
+    fieldChange(0, 'dev-a'),
+    fieldChange(1, 'dev-b'),
+    statusChange(2, 'dev-b', 'disable'),
+  ];
+  devices = new Map([
+    ['dev-a', deviceRow('dev-a')],
+    ['dev-b', deviceRow('dev-b', { notes: 'Someone else' })],
+  ]);
+  const answer = await execute();
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.equal(
+    answer.body.conflicts,
+    2,
+    'Both changes of the device read as conflicts.',
+  );
+  assert.equal(
+    answer.body.receipts.length,
+    1,
+    'Only the edit job of dev-a exists.',
+  );
+  assert.deepEqual(
+    changes
+      .filter((row) => row.device_id === 'dev-b')
+      .map((row) => row.not_run_reason),
+    ['changed-after-validation', 'changed-after-validation'],
+  );
+  assert.deepEqual(
+    ids(
+      [...previews.values()].flatMap((preview) =>
+        preview.targets.map((target) => target.device_id),
+      ),
+    ),
+    ['dev-a'],
+    'No preview holds the conflict device.',
+  );
+});
+
 test('a removed device and an ineligible status change never reach a job', async () => {
   reset();
   changes = [
