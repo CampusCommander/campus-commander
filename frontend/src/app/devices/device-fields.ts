@@ -16,12 +16,7 @@ import {
 } from '@campus/application-contracts';
 
 // The grid and the export share one copy of the battery text, the status text, and the labels.
-export {
-  BATTERY_LABELS,
-  DEVICE_STATUS_LABELS,
-  batteryText,
-  statusText,
-};
+export { BATTERY_LABELS, DEVICE_STATUS_LABELS, batteryText, statusText };
 
 export type DeviceSortField = DeviceQuery['sort']['field'];
 export type BatteryFilterValue =
@@ -56,7 +51,12 @@ const gridField = (
   id: DeviceSortField,
   kind: DeviceFieldKind,
   optional: boolean,
-): DeviceField => ({ id, label: DEVICE_REPORT_FIELD_LABELS[id], kind, optional });
+): DeviceField => ({
+  id,
+  label: DEVICE_REPORT_FIELD_LABELS[id],
+  kind,
+  optional,
+});
 
 export const DEVICE_FIELDS: readonly DeviceField[] = [
   gridField('serialNumber', 'text', false),

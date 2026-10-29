@@ -871,10 +871,7 @@ test('the export phases and purpose parse', () => {
     jobPhaseSchema.safeParse({ ...phase, extra: true }).success,
     false,
   );
-  assert.equal(
-    jobPhaseSchema.safeParse({ ...phase, done: -1 }).success,
-    false,
-  );
+  assert.equal(jobPhaseSchema.safeParse({ ...phase, done: -1 }).success, false);
 });
 
 test('an export job carries its phase, its summary, and its file', () => {
@@ -940,7 +937,15 @@ test('a validation job carries its phase, its summary, the plan, and the counts'
       changedBy: null,
       changedAt: null,
     },
-    planJobs: [{ ...row, displayId: 'UPD-001', exportSummary: null, importSummary: null, phase: null }],
+    planJobs: [
+      {
+        ...row,
+        displayId: 'UPD-001',
+        exportSummary: null,
+        importSummary: null,
+        phase: null,
+      },
+    ],
     executionCounts: {
       succeeded: 4,
       failed: 1,
@@ -1025,11 +1030,17 @@ test('each new block stays null for another kind of job', () => {
     action: 'validate-device-import',
   };
   assert.equal(
-    jobSummarySchema.safeParse({ ...validation, exportSummary: { purpose: 'report' } })
-      .success,
+    jobSummarySchema.safeParse({
+      ...validation,
+      exportSummary: { purpose: 'report' },
+    }).success,
     false,
   );
-  const exported = { ...summary, displayId: 'EXP-001', action: 'export-devices' };
+  const exported = {
+    ...summary,
+    displayId: 'EXP-001',
+    action: 'export-devices',
+  };
   assert.equal(
     jobSummarySchema.safeParse({
       ...exported,

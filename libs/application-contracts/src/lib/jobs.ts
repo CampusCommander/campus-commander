@@ -254,8 +254,7 @@ export const jobSummarySchema = z
   })
   .refine(
     (summary) =>
-      summary.exportSummary === null ||
-      summary.action === 'export-devices',
+      summary.exportSummary === null || summary.action === 'export-devices',
     { message: 'Only an export job carries an export summary.' },
   )
   .refine(

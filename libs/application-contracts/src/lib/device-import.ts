@@ -282,7 +282,10 @@ export const deviceImportCountsSchema = z
         counts.noChangeNeeded +
         counts.proposed +
         counts.rejected,
-    { message: 'Rows equal unchanged, no change needed, proposed, and rejected.' },
+    {
+      message:
+        'Rows equal unchanged, no change needed, proposed, and rejected.',
+    },
   );
 export type DeviceImportCounts = z.infer<typeof deviceImportCountsSchema>;
 

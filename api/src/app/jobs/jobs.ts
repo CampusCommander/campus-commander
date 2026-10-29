@@ -235,7 +235,8 @@ export function jobSummary(row: Record<string, unknown>): JobSummary {
           ? 'export-devices'
           : row['kind'] === 'device-import'
             ? 'validate-device-import'
-            : (writeActions[String(row['action'])] ?? 'update-device-annotations'),
+            : (writeActions[String(row['action'])] ??
+              'update-device-annotations'),
     status: row['status'],
     scope: { kind: row['scope_kind'], deviceCount: total },
     requestedBy: {

@@ -49,13 +49,21 @@ test('an edit export names no column and a report export names its grid columns'
   const report = {
     ...request,
     purpose: 'report',
-    columns: ['serialNumber', 'model', 'assetTag', 'orgUnitPath', 'battery', 'lastContact'],
+    columns: [
+      'serialNumber',
+      'model',
+      'assetTag',
+      'orgUnitPath',
+      'battery',
+      'lastContact',
+    ],
     sort: { field: 'orgUnitPath', direction: 'desc' },
   };
   assert.deepEqual(deviceExportRequestSchema.parse(report), report);
   // An edit export writes the template, so it names no column (design section 1).
   assert.equal(
-    deviceExportRequestSchema.safeParse({ ...request, columns: ['notes'] }).success,
+    deviceExportRequestSchema.safeParse({ ...request, columns: ['notes'] })
+      .success,
     false,
   );
   // A report of no column writes no value, so it names one at least.
@@ -64,11 +72,13 @@ test('an edit export names no column and a report export names its grid columns'
     false,
   );
   assert.equal(
-    deviceExportRequestSchema.safeParse({ ...report, columns: ['group'] }).success,
+    deviceExportRequestSchema.safeParse({ ...report, columns: ['group'] })
+      .success,
     false,
   );
   assert.equal(
-    deviceExportRequestSchema.safeParse({ ...request, format: 'sheet' }).success,
+    deviceExportRequestSchema.safeParse({ ...request, format: 'sheet' })
+      .success,
     false,
     'The Drive slice adds sheet.',
   );
@@ -94,7 +104,8 @@ test('the export receipt carries the job, its display ID, and the row count', ()
   };
   assert.deepEqual(deviceExportReceiptSchema.parse(receipt), receipt);
   assert.equal(
-    deviceExportReceiptSchema.safeParse({ ...receipt, displayId: 'EXP-01' }).success,
+    deviceExportReceiptSchema.safeParse({ ...receipt, displayId: 'EXP-01' })
+      .success,
     false,
   );
   assert.equal(
@@ -102,7 +113,8 @@ test('the export receipt carries the job, its display ID, and the row count', ()
     false,
   );
   assert.equal(
-    deviceExportReceiptSchema.safeParse({ ...receipt, status: 'running' }).success,
+    deviceExportReceiptSchema.safeParse({ ...receipt, status: 'running' })
+      .success,
     false,
   );
 });
@@ -171,7 +183,10 @@ test('a report cell holds the grid text and an ISO 8601 device contact', () => {
   assert.equal(deviceReportCellText('status', empty), '');
   assert.equal(deviceReportCellText('lastContact', empty), '');
   // Google's unknown status shows as Google sends it.
-  assert.equal(deviceReportCellText('status', { ...row, status: 'PRE_PROVISIONED' }), 'PRE_PROVISIONED');
+  assert.equal(
+    deviceReportCellText('status', { ...row, status: 'PRE_PROVISIONED' }),
+    'PRE_PROVISIONED',
+  );
 });
 
 test('the battery and status labels serve the grid and the report', () => {
@@ -189,8 +204,18 @@ test('the battery and status labels serve the grid and the report', () => {
   });
   assert.deepEqual(
     [
-      { status: 'reported', health: 'normal', capacityPercent: 99, reportedAt: '2026-10-28T10:00:00.000Z' },
-      { status: 'reported', health: 'replace-now', capacityPercent: 12, reportedAt: '2026-10-28T10:00:00.000Z' },
+      {
+        status: 'reported',
+        health: 'normal',
+        capacityPercent: 99,
+        reportedAt: '2026-10-28T10:00:00.000Z',
+      },
+      {
+        status: 'reported',
+        health: 'replace-now',
+        capacityPercent: 12,
+        reportedAt: '2026-10-28T10:00:00.000Z',
+      },
       { status: 'no-report' },
       { status: 'unavailable' },
     ].map(batteryText),
@@ -206,5 +231,8 @@ test('the export file name follows the scenario data of the notes', () => {
     deviceExportFileName('edit', 'EXP-001'),
     'devices-for-editing-EXP-001.csv',
   );
-  assert.equal(deviceExportFileName('report', 'EXP-002'), 'device-report-EXP-002.csv');
+  assert.equal(
+    deviceExportFileName('report', 'EXP-002'),
+    'device-report-EXP-002.csv',
+  );
 });

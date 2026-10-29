@@ -138,14 +138,19 @@ export const deviceExportRequestSchema = z
       direction: z.enum(['asc', 'desc']),
     }),
     /** The report field IDs in grid order. An edit export sends none. */
-    columns: z.array(deviceReportFieldIdSchema).max(DEVICE_REPORT_FIELD_IDS.length),
+    columns: z
+      .array(deviceReportFieldIdSchema)
+      .max(DEVICE_REPORT_FIELD_IDS.length),
   })
   .refine(
     (request) =>
       request.purpose === 'report'
         ? request.columns.length > 0
         : request.columns.length === 0,
-    { message: 'A report export names its columns, and an edit export names none.' },
+    {
+      message:
+        'A report export names its columns, and an edit export names none.',
+    },
   );
 export type DeviceExportRequest = z.infer<typeof deviceExportRequestSchema>;
 

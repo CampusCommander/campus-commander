@@ -43,6 +43,9 @@ function summary(state: State) {
     },
     cancelRequest: null,
     failure: null,
+    phase: null,
+    exportSummary: null,
+    importSummary: null,
     ...overrides,
   });
   const running = state.running

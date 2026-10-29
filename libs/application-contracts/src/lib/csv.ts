@@ -91,8 +91,7 @@ export function createCsvReader(): CsvReader {
     quoteClosed = false;
     if (blank) return;
     if (width === null) width = record.cells.length;
-    else if (record.cells.length !== width)
-      throw new CsvError('ragged-record');
+    else if (record.cells.length !== width) throw new CsvError('ragged-record');
     out.push(record);
   }
 

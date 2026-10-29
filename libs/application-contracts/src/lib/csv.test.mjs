@@ -42,7 +42,9 @@ test('a byte order mark and CRLF records read as the template header and its row
     { line: 3, cells: ['02A1MB6', 'C0A1-7F2E', 'ACTIVE'] },
   ]);
   // A byte order mark inside a cell stays a cell character.
-  assert.deepEqual(readAll(['a,\uFEFFb\n']), [{ line: 1, cells: ['a', '\uFEFFb'] }]);
+  assert.deepEqual(readAll(['a,\uFEFFb\n']), [
+    { line: 1, cells: ['a', '\uFEFFb'] },
+  ]);
 });
 
 test('LF record ends read the same records as CRLF', () => {
@@ -97,7 +99,9 @@ test('a chunk split inside a surrogate pair keeps the character whole', () => {
     { line: 2, cells: ['04XTBHJ', 'Chromebook 😀 cart'] },
   ]);
   // A lone high surrogate at the end of the file stays a cell character.
-  assert.deepEqual(readAll(['a,\uD83D']), [{ line: 1, cells: ['a', '\uD83D'] }]);
+  assert.deepEqual(readAll(['a,\uD83D']), [
+    { line: 1, cells: ['a', '\uD83D'] },
+  ]);
 });
 
 test('the first record sets the column count and a ragged record refuses the file', () => {
@@ -129,7 +133,10 @@ test('the cell limit counts code points and refuses a longer cell', () => {
   ]);
   // One astral character is one code point and two UTF-16 units.
   const astral = '😀'.repeat(CSV_MAX_CELL_LENGTH);
-  assert.equal(readAll([`a,${astral}\n`])[0].cells[1].length, 2 * CSV_MAX_CELL_LENGTH);
+  assert.equal(
+    readAll([`a,${astral}\n`])[0].cells[1].length,
+    2 * CSV_MAX_CELL_LENGTH,
+  );
   assert.equal(faultOf([`a,${astral}😀\n`]), 'cell-too-long');
 });
 
@@ -157,10 +164,13 @@ test('the writer counts its UTF-8 bytes and its records', () => {
   assert.equal(writer.bytes, 3 + 17 + 15);
   assert.equal(writer.rows, 2);
   // A written file reads back through the reader.
-  assert.deepEqual(readAll([CSV_BYTE_ORDER_MARK, 'Device ID,Notes\r\n04XTBHJ,café\r\n']), [
-    { line: 1, cells: ['Device ID', 'Notes'] },
-    { line: 2, cells: ['04XTBHJ', 'café'] },
-  ]);
+  assert.deepEqual(
+    readAll([CSV_BYTE_ORDER_MARK, 'Device ID,Notes\r\n04XTBHJ,café\r\n']),
+    [
+      { line: 1, cells: ['Device ID', 'Notes'] },
+      { line: 2, cells: ['04XTBHJ', 'café'] },
+    ],
+  );
 });
 
 test('a written record round-trips every RFC 4180 hazard', () => {

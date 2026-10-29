@@ -123,9 +123,7 @@ const report = {
     fieldChangeDevices: 6,
     disable: 1,
     reenable: 1,
-    deprovision: [
-      { reason: 'DEPROVISION_REASON_RETIRING_DEVICE', devices: 1 },
-    ],
+    deprovision: [{ reason: 'DEPROVISION_REASON_RETIRING_DEVICE', devices: 1 }],
   },
   lines: [fieldLine, statusLine],
   total: 11,
@@ -142,10 +140,22 @@ test('the import receipt carries the job, the mode, and the file', () => {
     sizeBytes: 7987,
   };
   assert.deepEqual(deviceImportReceiptSchema.parse(receipt), receipt);
-  assert.equal(deviceImportReceiptSchema.safeParse({ ...receipt, mode: 'sync' }).success, false);
-  assert.equal(deviceImportReceiptSchema.safeParse({ ...receipt, name: '' }).success, false);
-  assert.equal(deviceImportReceiptSchema.safeParse({ ...receipt, sizeBytes: -1 }).success, false);
-  assert.equal(deviceImportReceiptSchema.safeParse({ ...receipt, extra: true }).success, false);
+  assert.equal(
+    deviceImportReceiptSchema.safeParse({ ...receipt, mode: 'sync' }).success,
+    false,
+  );
+  assert.equal(
+    deviceImportReceiptSchema.safeParse({ ...receipt, name: '' }).success,
+    false,
+  );
+  assert.equal(
+    deviceImportReceiptSchema.safeParse({ ...receipt, sizeBytes: -1 }).success,
+    false,
+  );
+  assert.equal(
+    deviceImportReceiptSchema.safeParse({ ...receipt, extra: true }).success,
+    false,
+  );
 });
 
 test('the report query takes one of the four views and a page', () => {
@@ -153,10 +163,13 @@ test('the report query takes one of the four views and a page', () => {
     view: 'proposed',
     page: 0,
   });
-  assert.deepEqual(deviceImportReportQuerySchema.parse({ view: 'failed', page: '2' }), {
-    view: 'failed',
-    page: 2,
-  });
+  assert.deepEqual(
+    deviceImportReportQuerySchema.parse({ view: 'failed', page: '2' }),
+    {
+      view: 'failed',
+      page: 2,
+    },
+  );
   assert.deepEqual(DEVICE_IMPORT_REPORT_VIEWS, [
     'proposed',
     'rejected',
@@ -167,15 +180,28 @@ test('the report query takes one of the four views and a page', () => {
     deviceImportReportQuerySchema.safeParse({ view: 'unknown' }).success,
     false,
   );
-  assert.equal(deviceImportReportQuerySchema.safeParse({ page: -1 }).success, false);
+  assert.equal(
+    deviceImportReportQuerySchema.safeParse({ page: -1 }).success,
+    false,
+  );
 });
 
 test('the report answer holds the counts, the facts, ten lines at most, and the plan', () => {
   assert.deepEqual(deviceImportReportSchema.parse(report), report);
   // Every view answers its own lines, a warning on the header row included.
-  const rejected = { ...report, view: 'rejected', lines: [rejectedLine], total: 4 };
+  const rejected = {
+    ...report,
+    view: 'rejected',
+    lines: [rejectedLine],
+    total: 4,
+  };
   assert.equal(deviceImportReportSchema.safeParse(rejected).success, true);
-  const warnings = { ...report, view: 'warnings', lines: [warningLine], total: 3 };
+  const warnings = {
+    ...report,
+    view: 'warnings',
+    lines: [warningLine],
+    total: 3,
+  };
   assert.equal(deviceImportReportSchema.safeParse(warnings).success, true);
   const failed = { ...report, view: 'failed', lines: [failedLine], total: 1 };
   assert.equal(deviceImportReportSchema.safeParse(failed).success, true);
@@ -188,8 +214,10 @@ test('the report answer holds the counts, the facts, ten lines at most, and the 
     false,
   );
   assert.equal(
-    deviceImportReportSchema.safeParse({ ...report, lines: Array(10).fill(fieldLine) })
-      .success,
+    deviceImportReportSchema.safeParse({
+      ...report,
+      lines: Array(10).fill(fieldLine),
+    }).success,
     true,
   );
   assert.equal(
@@ -197,7 +225,10 @@ test('the report answer holds the counts, the facts, ten lines at most, and the 
     false,
   );
   // A report before the plan exists carries no plan.
-  assert.equal(deviceImportReportSchema.safeParse({ ...report, plan: null }).success, true);
+  assert.equal(
+    deviceImportReportSchema.safeParse({ ...report, plan: null }).success,
+    true,
+  );
 });
 
 test('the counts equal unchanged, no change needed, proposed, and rejected', () => {
@@ -220,8 +251,14 @@ test('the counts equal unchanged, no change needed, proposed, and rejected', () 
 });
 
 test('a change is a field write or a status action with its reason', () => {
-  assert.deepEqual(deviceImportChangeSchema.parse(fieldLine.change), fieldLine.change);
-  assert.deepEqual(deviceImportChangeSchema.parse(statusLine.change), statusLine.change);
+  assert.deepEqual(
+    deviceImportChangeSchema.parse(fieldLine.change),
+    fieldLine.change,
+  );
+  assert.deepEqual(
+    deviceImportChangeSchema.parse(statusLine.change),
+    statusLine.change,
+  );
   const deprovision = {
     type: 'status',
     action: 'deprovision',
@@ -232,7 +269,8 @@ test('a change is a field write or a status action with its reason', () => {
   assert.deepEqual(deviceImportChangeSchema.parse(deprovision), deprovision);
   // A Deprovision carries its reason, and another status change carries none.
   assert.equal(
-    deviceImportChangeSchema.safeParse({ ...deprovision, reason: null }).success,
+    deviceImportChangeSchema.safeParse({ ...deprovision, reason: null })
+      .success,
     false,
   );
   assert.equal(
@@ -243,11 +281,17 @@ test('a change is a field write or a status action with its reason', () => {
     false,
   );
   assert.equal(
-    deviceImportChangeSchema.safeParse({ ...fieldLine.change, operation: 'append' }).success,
+    deviceImportChangeSchema.safeParse({
+      ...fieldLine.change,
+      operation: 'append',
+    }).success,
     false,
   );
   assert.equal(
-    deviceImportChangeSchema.safeParse({ ...fieldLine.change, field: 'serialNumber' }).success,
+    deviceImportChangeSchema.safeParse({
+      ...fieldLine.change,
+      field: 'serialNumber',
+    }).success,
     false,
     'Only the five writable fields change.',
   );
@@ -263,24 +307,38 @@ test('a change is a field write or a status action with its reason', () => {
 });
 
 test('a report line names its row, its device, and its reason or change', () => {
-  assert.deepEqual(deviceImportReportLineSchema.parse(rejectedLine), rejectedLine);
-  assert.deepEqual(deviceImportReportLineSchema.parse(warningLine), warningLine);
+  assert.deepEqual(
+    deviceImportReportLineSchema.parse(rejectedLine),
+    rejectedLine,
+  );
+  assert.deepEqual(
+    deviceImportReportLineSchema.parse(warningLine),
+    warningLine,
+  );
   assert.deepEqual(deviceImportReportLineSchema.parse(failedLine), failedLine);
   assert.equal(
-    deviceImportReportLineSchema.safeParse({ ...failedLine, outcome: 'succeeded' }).success,
+    deviceImportReportLineSchema.safeParse({
+      ...failedLine,
+      outcome: 'succeeded',
+    }).success,
     true,
   );
   assert.equal(
-    deviceImportReportLineSchema.safeParse({ ...failedLine, outcome: 'dispatched' }).success,
+    deviceImportReportLineSchema.safeParse({
+      ...failedLine,
+      outcome: 'dispatched',
+    }).success,
     false,
   );
   assert.equal(
-    deviceImportReportLineSchema.safeParse({ ...failedLine, row: null }).success,
+    deviceImportReportLineSchema.safeParse({ ...failedLine, row: null })
+      .success,
     true,
     'The header row carries no row number.',
   );
   assert.equal(
-    deviceImportReportLineSchema.safeParse({ ...failedLine, extra: true }).success,
+    deviceImportReportLineSchema.safeParse({ ...failedLine, extra: true })
+      .success,
     false,
   );
 });
@@ -319,34 +377,59 @@ test('the plan cancel and the execute routes carry the plan and its revision', (
   const cancel = { planId: plan.planId, planRevision: 4 };
   assert.deepEqual(deviceImportPlanCancelRequestSchema.parse(cancel), cancel);
   assert.equal(
-    deviceImportPlanCancelRequestSchema.safeParse({ ...cancel, planRevision: 0 }).success,
+    deviceImportPlanCancelRequestSchema.safeParse({
+      ...cancel,
+      planRevision: 0,
+    }).success,
     false,
   );
   assert.equal(
-    deviceImportPlanCancelRequestSchema.safeParse({ planId: plan.planId }).success,
+    deviceImportPlanCancelRequestSchema.safeParse({ planId: plan.planId })
+      .success,
     false,
   );
   const cancelled = {
-    plan: { ...plan, state: 'cancelled', changedBy: { id: jobId, displayName: 'Alex Rivera' }, changedAt: at },
+    plan: {
+      ...plan,
+      state: 'cancelled',
+      changedBy: { id: jobId, displayName: 'Alex Rivera' },
+      changedAt: at,
+    },
   };
-  assert.deepEqual(deviceImportPlanCancelAnswerSchema.parse(cancelled), cancelled);
+  assert.deepEqual(
+    deviceImportPlanCancelAnswerSchema.parse(cancelled),
+    cancelled,
+  );
 
-  const execute = { planId: plan.planId, planRevision: 4, typedPhrase: 'DEPROVISION' };
+  const execute = {
+    planId: plan.planId,
+    planRevision: 4,
+    typedPhrase: 'DEPROVISION',
+  };
   assert.deepEqual(deviceImportExecuteRequestSchema.parse(execute), execute);
   // A plan without a Deprovision sends no phrase.
   assert.equal(
-    deviceImportExecuteRequestSchema.safeParse({ ...execute, typedPhrase: null }).success,
+    deviceImportExecuteRequestSchema.safeParse({
+      ...execute,
+      typedPhrase: null,
+    }).success,
     true,
   );
   assert.equal(
-    deviceImportExecuteRequestSchema.safeParse({ ...execute, planRevision: 0 }).success,
+    deviceImportExecuteRequestSchema.safeParse({ ...execute, planRevision: 0 })
+      .success,
     false,
   );
 });
 
 test('the execute answer holds the plan, its jobs, and the excluded changes', () => {
   const answer = {
-    plan: { ...plan, state: 'executed', changedBy: { id: jobId, displayName: 'Alex Rivera' }, changedAt: at },
+    plan: {
+      ...plan,
+      state: 'executed',
+      changedBy: { id: jobId, displayName: 'Alex Rivera' },
+      changedAt: at,
+    },
     receipts: [
       {
         jobId,
@@ -368,7 +451,8 @@ test('the execute answer holds the plan, its jobs, and the excluded changes', ()
   };
   assert.deepEqual(deviceImportExecuteAnswerSchema.parse(answer), answer);
   assert.equal(
-    deviceImportExecuteAnswerSchema.safeParse({ ...answer, receipts: [] }).success,
+    deviceImportExecuteAnswerSchema.safeParse({ ...answer, receipts: [] })
+      .success,
     false,
     'Execute creates at least one job.',
   );
@@ -388,7 +472,8 @@ test('the execute answer holds the plan, its jobs, and the excluded changes', ()
     false,
   );
   assert.equal(
-    deviceImportExecuteAnswerSchema.safeParse({ ...answer, conflictCount: 1 }).success,
+    deviceImportExecuteAnswerSchema.safeParse({ ...answer, conflictCount: 1 })
+      .success,
     false,
   );
 });
@@ -406,7 +491,10 @@ test('each refusal code answers the text of states 23 and 26', () => {
     assert.equal(deviceImportRefusalSchema.safeParse(refusal).success, true);
   assert.deepEqual(
     DEVICE_IMPORT_REFUSALS.map((refusal) =>
-      deviceImportRefusalText(refusal, 'The file is missing the Checksum column.'),
+      deviceImportRefusalText(
+        refusal,
+        'The file is missing the Checksum column.',
+      ),
     ),
     [
       'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.',
@@ -428,7 +516,10 @@ test('each refusal code answers the text of states 23 and 26', () => {
 
 test('each rejected row reason and each warning names the rule of the design', () => {
   for (const rejection of DEVICE_IMPORT_REJECTIONS) {
-    assert.equal(deviceImportRejectionSchema.safeParse(rejection).success, true);
+    assert.equal(
+      deviceImportRejectionSchema.safeParse(rejection).success,
+      true,
+    );
     assert.equal(
       typeof DEVICE_IMPORT_REJECTION_TEXTS[rejection],
       'string',
