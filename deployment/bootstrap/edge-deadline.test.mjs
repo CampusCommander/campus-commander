@@ -29,7 +29,7 @@ async function close(server) {
  * Start a Phase 3 edge in front of a stub API and a stub frontend. The stub API answers each
  * request through `answer(request, response)`, so a test holds an answer past a deadline.
  */
-async function startEdge({ answer, deadlines } = {}) {
+async function startEdge({ answer, deadlines, verify = async () => true } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'cc-edge-deadline-'));
   execFileSync(
     'openssl',
@@ -77,7 +77,7 @@ async function startEdge({ answer, deadlines } = {}) {
   };
   const edge = await createBootstrapEdge({
     config,
-    verify: async () => true,
+    verify,
     resolveSecret: async (ref) =>
       ref.path.endsWith('private-key') ? key : cert,
     ...(deadlines ? { deadlines } : {}),
@@ -150,6 +150,70 @@ function send(
         elapsed: Date.now() - started,
       });
     });
+  });
+}
+
+/**
+ * Send headers and a partial body over a keep-alive connection, then keep sending one byte every
+ * `interval` ms. The client never asks for a close, so only the edge can end the connection. The
+ * helper settles on peer closure, or on a watchdog that ends a broken run instead of leaving the
+ * test open. `closedByPeer` separates the two outcomes.
+ */
+function sendKeepAliveTrickle(
+  port,
+  cert,
+  { path, headers, body, interval = 50, watchdog = 1500 },
+) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    let data = '';
+    let writes = 0;
+    let answeredAt = null;
+    let settled = false;
+    let ticker;
+    let guard;
+    const settle = (closedByPeer) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(ticker);
+      clearTimeout(guard);
+      if (!closedByPeer) socket.destroy();
+      resolve({
+        status: statusOf(data),
+        data,
+        writes,
+        closedByPeer,
+        elapsed: Date.now() - started,
+        closedAfterAnswer: answeredAt === null ? null : Date.now() - answeredAt,
+      });
+    };
+    const socket = tls.connect(
+      { port, host: 'localhost', servername: 'localhost', ca: cert },
+      () => {
+        const lines = [
+          `POST ${path} HTTP/1.1`,
+          'Host: localhost',
+          'Connection: keep-alive',
+        ];
+        for (const [name, value] of Object.entries(headers))
+          lines.push(`${name}: ${value}`);
+        socket.write(`${lines.join('\r\n')}\r\n\r\n${body}`);
+      },
+    );
+    ticker = setInterval(() => {
+      if (socket.destroyed) return;
+      writes += 1;
+      socket.write('y');
+    }, interval);
+    socket.on('data', (chunk) => {
+      data += chunk.toString('latin1');
+      if (answeredAt !== null || !/^HTTP\/1\.1 408/.test(data)) return;
+      if (!data.includes('\r\n\r\n')) return;
+      answeredAt = Date.now();
+      guard = setTimeout(() => settle(false), watchdog);
+    });
+    socket.on('error', () => undefined);
+    socket.on('close', () => settle(true));
   });
 }
 
@@ -443,4 +507,116 @@ test('the listener carries the thirty-minute upload deadline and keeps the base 
     7,
   );
   assert.equal(requestDeadline('POST', '/api/devices/exports', deadlines), 7);
+});
+
+test('a keep-alive client that keeps sending after 408 still loses the connection', async () => {
+  const deadlines = { request: 300, importUpload: 1500 };
+  const fixture = await startEdge({ deadlines });
+  try {
+    const result = await sendKeepAliveTrickle(fixture.port, fixture.cert, {
+      path: '/api/auth/preferences',
+      headers: { 'content-length': 1000, 'content-type': 'application/json' },
+      body: '{',
+    });
+    assert.equal(result.status, 408, 'The unfinished body answered 408.');
+    assert.ok(
+      result.elapsed >= 250 && result.elapsed < 1200,
+      `The deadline answered after ${result.elapsed} ms.`,
+    );
+    // The client never asked for a close. Only the 408 cleanup can end this connection.
+    assert.equal(result.closedByPeer, true, 'The peer closed the connection.');
+    assert.ok(
+      result.closedAfterAnswer !== null && result.closedAfterAnswer < 750,
+      `The peer closed ${result.closedAfterAnswer} ms after the 408.`,
+    );
+    assert.ok(
+      result.writes >= 3,
+      `The client sent ${result.writes} body bytes before the deadline.`,
+    );
+    assert.ok(
+      result.data.toLowerCase().includes('connection: close'),
+      'The 408 named the closing connection.',
+    );
+  } finally {
+    await fixture.stop();
+  }
+});
+
+test('a verification result after the body deadline sends nothing and keeps the edge alive', async () => {
+  const deadlines = { request: 300, importUpload: 1500 };
+  // An accepted installer read carries a credential. The value is synthetic.
+  const authorization = `Basic ${Buffer.from('synthetic:credential').toString('base64')}`;
+  for (const accepted of [false, true]) {
+    const forwarded = [];
+    const fixture = await startEdge({
+      deadlines,
+      answer: (request, response) => {
+        forwarded.push(request.url);
+        response.end('api');
+      },
+      verify: () =>
+        new Promise((resolve) => setTimeout(() => resolve(accepted), 600)),
+    });
+    try {
+      const timed = await send(fixture.port, fixture.cert, {
+        method: 'GET',
+        path: '/api/startup',
+        headers: { 'content-length': 1000, authorization },
+        body: 'x',
+      });
+      assert.equal(timed.status, 408, `The unfinished body answered 408.`);
+      assert.ok(
+        timed.elapsed >= 250 && timed.elapsed < 1200,
+        `The deadline answered after ${timed.elapsed} ms.`,
+      );
+      // The verification result arrives after the deadline and must send nothing.
+      await delay(800);
+      assert.deepEqual(
+        forwarded,
+        [],
+        'A late verification sent nothing upstream.',
+      );
+      assert.equal(
+        timed.data.includes('401'),
+        false,
+        'The 408 was not replaced by a denial.',
+      );
+      assert.ok(
+        timed.data.includes('The request timed out.'),
+        'The deadline answer stayed.',
+      );
+      const alive = await send(fixture.port, fixture.cert, {
+        method: 'GET',
+        path: '/health/live',
+      });
+      assert.equal(
+        alive.status,
+        200,
+        'The edge stayed alive after the late verification.',
+      );
+      // Completed input keeps its answer after the same verification delay.
+      const completed = await send(fixture.port, fixture.cert, {
+        method: 'GET',
+        path: '/api/startup',
+        headers: { 'content-length': 2, authorization },
+        body: 'xy',
+      });
+      assert.equal(
+        completed.status,
+        accepted ? 200 : 401,
+        'A completed body kept its answer.',
+      );
+      assert.ok(
+        completed.elapsed >= 500,
+        `The completed body answered after ${completed.elapsed} ms.`,
+      );
+      assert.deepEqual(
+        forwarded,
+        accepted ? ['/api/startup'] : [],
+        'Only the completed approval forwarded.',
+      );
+    } finally {
+      await fixture.stop();
+    }
+  }
 });
