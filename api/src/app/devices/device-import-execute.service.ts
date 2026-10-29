@@ -10,8 +10,7 @@ export class DeviceImportExecuteService extends DeviceImportExecute {
     database: DatabaseService,
     storage: StorageService,
     jobs: JobService,
-    clock?: () => number,
   ) {
-    super(database, storage, jobs, clock);
+    super(database, storage, jobs);
   }
 }

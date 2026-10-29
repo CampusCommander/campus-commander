@@ -667,6 +667,7 @@ before(async () => {
     controllerModule,
     importsServiceModule,
     executeServiceModule,
+    executeModule,
     devicesModule,
     authModule,
     guardModule,
@@ -677,6 +678,7 @@ before(async () => {
     import('./device-imports.controller.ts'),
     import('./device-imports.service.ts'),
     import('./device-import-execute.service.ts'),
+    import('./device-import-execute.ts'),
     import('./devices.service.ts'),
     import('../auth/auth.service.ts'),
     import('../auth/auth.guard.ts'),
@@ -686,6 +688,7 @@ before(async () => {
   ]);
   const { DeviceImportsController } = controllerModule;
   const { DeviceImportsService } = importsServiceModule;
+  const { DeviceImportExecute } = executeModule;
   const { DeviceImportExecuteService } = executeServiceModule;
   const { DevicesService } = devicesModule;
   const { AuthService } = authModule;
@@ -899,12 +902,7 @@ before(async () => {
       return true;
     },
   };
-  executeService = new DeviceImportExecuteService(
-    database,
-    storage,
-    jobs,
-    testClock,
-  );
+  executeService = new DeviceImportExecute(database, storage, jobs, testClock);
   const devicesService = {
     sync: async () => {
       if (!allowed.has('devices:read'))
