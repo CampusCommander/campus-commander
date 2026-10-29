@@ -179,6 +179,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/jobs/activity/seen', 'api'],
       ['GET', '/api/jobs/requesters', 'api'],
       ['GET', '/api/jobs/events', 'api'],
+      // The one stream carries the job feed and the device feed.
+      ['GET', '/api/events', 'api'],
       ['GET', '/api/devices/updates/access', 'api'],
       ['GET', '/api/devices/updates/org-units', 'api'],
       ['POST', '/api/devices/updates/access/check', 'api'],
@@ -273,6 +275,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/jobs/UPD-001/operations', 405],
       ['GET', '/api/jobs/UPD-001/operations/1/reconcile', 405],
       ['POST', '/api/jobs/events', 405],
+      ['POST', '/api/events', 405],
       ['POST', '/api/jobs/requesters', 405],
       ['GET', '/api/jobs/not-a-display-id', 404],
       ['GET', '/api/jobs/UPD-001/private', 404],
@@ -434,7 +437,8 @@ test('the device event stream outlives the request timeout while pings flow', as
   const api = http.createServer((request, response) => {
     if (
       !request.url.startsWith('/api/devices/events') &&
-      !request.url.startsWith('/api/jobs/events')
+      !request.url.startsWith('/api/jobs/events') &&
+      !request.url.startsWith('/api/events')
     )
       return;
     response.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -505,6 +509,25 @@ test('the device event stream outlives the request timeout while pings flow', as
     await assert.rejects(silentJobs.text());
     assert.ok(
       Date.now() - quietJobs < 1000,
+      'The edge ended the silent stream.',
+    );
+    // The one stream of /api/events carries the same event idle timeout.
+    const all = await fetch(`${origin(edge)}/api/events`, guard());
+    assert.equal(all.headers.get('content-type'), 'text/event-stream');
+    assert.equal(all.headers.get('cache-control'), 'no-store');
+    assert.equal(
+      (await all.text()).split('event: ping').length - 1,
+      6,
+      'The one stream ran past the 120 ms request timeout.',
+    );
+    const silentAll = await fetch(
+      `${origin(edge)}/api/events?silent=1`,
+      guard(),
+    );
+    const quietAll = Date.now();
+    await assert.rejects(silentAll.text());
+    assert.ok(
+      Date.now() - quietAll < 1000,
       'The edge ended the silent stream.',
     );
     // Every other request keeps the request timeout.

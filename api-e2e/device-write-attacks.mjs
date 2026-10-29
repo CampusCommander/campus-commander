@@ -1001,11 +1001,14 @@ async function runCatalog(context) {
       { timeout, interval: 500 },
     );
 
-  /** The Devices stream of one session. Frames carry the event type and payload. */
+  /**
+   * The one event stream of one session. It carries the job feed and the device feed. Frames carry
+   * the event type and payload.
+   */
   const openStream = (session) => {
     const frames = [];
     let buffer = '';
-    const target = new URL(`${publicOrigin}/api/devices/events`);
+    const target = new URL(`${publicOrigin}/api/events`);
     const stream = https.request(
       {
         hostname: target.hostname,

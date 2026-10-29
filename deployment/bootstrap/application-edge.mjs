@@ -170,6 +170,16 @@ export function requestDeadline(method, path, deadlines = requestDeadlines) {
  */
 export const upstreamTimeouts = { request: 45000, events: 75000 };
 
+/**
+ * The event streams take the event idle timeout. The one stream of `/api/events` carries the job
+ * feed and the device feed, so it holds the connection open between pings like they do.
+ */
+const eventStreams = new Set([
+  '/api/events',
+  '/api/devices/events',
+  '/api/jobs/events',
+]);
+
 /** Proxy only released pages and bounded application requests. */
 export async function proxyApplication(
   request,
@@ -199,6 +209,7 @@ export async function proxyApplication(
         connectionRead.test(pathname) ||
         customerRead.test(pathname) ||
         pathname === '/api/schools/references' ||
+        eventStreams.has(pathname) ||
         deviceRead.test(pathname) ||
         schoolRead.test(pathname) ||
         jobRead.test(pathname) ||
@@ -303,10 +314,9 @@ export async function proxyApplication(
       headers,
       ca: target.ca,
       rejectUnauthorized: true,
-      timeout:
-        pathname === '/api/devices/events' || pathname === '/api/jobs/events'
-          ? timeouts.events
-          : timeouts.request,
+      timeout: eventStreams.has(pathname)
+        ? timeouts.events
+        : timeouts.request,
     },
     (incoming) => {
       response.writeHead(
