@@ -201,8 +201,7 @@ test('the API image copies every flow that the service deploys', async () => {
     `The flow reader found both call shapes: ${flows.join(', ')}`,
   );
   const layout = await packagedLayout();
-  for (const flow of flows)
-    await packaged(layout, `deployment/kestra/${flow}`);
+  for (const flow of flows) await packaged(layout, `deployment/kestra/${flow}`);
 });
 
 test('startDeviceUpdate deploys and starts the packaged device_update flow', async () => {
