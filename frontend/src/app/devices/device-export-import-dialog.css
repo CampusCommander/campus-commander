@@ -54,6 +54,19 @@ app-device-export-help {
   border-inline-start: 1px solid var(--cc-border);
 }
 
+/* An accessibility-only label: it stays in the accessibility tree and takes no space. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* The header: the title and the step context line at the left, the icon buttons at the right. */
 .export-head {
   display: flex;
@@ -221,7 +234,9 @@ app-device-export-help {
   padding-block: 10px;
 }
 
-.option-card.is-selected {
+/* The checked format card takes the approved accent border and selected surface (state 02).
+   Material marks the checked host with `mat-mdc-radio-checked`. */
+.option-card.mat-mdc-radio-checked {
   border-color: var(--cc-accent);
   box-shadow: inset 0 0 0 1px var(--cc-accent);
   background: var(--cc-surface-selected);

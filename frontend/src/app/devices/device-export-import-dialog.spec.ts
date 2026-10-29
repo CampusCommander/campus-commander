@@ -311,6 +311,32 @@ describe('DeviceExportImportDialog', () => {
     ).toBe(true);
   });
 
+  it('marks the checked CSV card with the selected treatment', async () => {
+    const { store, render, panel } = setup();
+    store.openExport(6);
+    await render();
+    const cards = [
+      ...(panel()?.querySelectorAll('mat-radio-button.option-card') ?? []),
+    ];
+    expect(cards).toHaveLength(2);
+    expect(cards[0].classList.contains('mat-mdc-radio-checked')).toBe(true);
+    expect(cards[1].classList.contains('mat-mdc-radio-checked')).toBe(false);
+    // The browser suite asserts the computed accent border of this class (state 02).
+  });
+
+  it('keeps the phase heading out of the visible layout', async () => {
+    const { store, render, panel } = setup();
+    store.openJob('EXP-001');
+    await render();
+    const heading = panel()?.querySelector<HTMLElement>('#phases-label');
+    expect(heading?.textContent?.trim()).toBe('Export phases');
+    expect(heading?.getAttribute('aria-hidden')).toBeNull();
+    const style = getComputedStyle(heading as HTMLElement);
+    expect(style.position).toBe('absolute');
+    expect(style.width).toBe('1px');
+    expect(style.height).toBe('1px');
+  });
+
   it('docks the help pane and switches its topic', async () => {
     const { store, render, element, panel, text } = setup();
     store.openExport(48);
