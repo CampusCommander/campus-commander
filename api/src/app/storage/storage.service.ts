@@ -109,6 +109,14 @@ export class StorageService
     return storeJsonDocument(await this.connection(), document);
   }
 
+  /**
+   * Stream one published artifact (design section 4). The iterable owns its file handle, and a
+   * missing or unreadable artifact rejects before the caller writes an answer.
+   */
+  async openRead(artifactId: string): Promise<AsyncIterable<Buffer>> {
+    return (await this.connection()).openRead(artifactId);
+  }
+
   async check(correlationId: string) {
     const store = await this.connection();
     const bytes = Buffer.from(

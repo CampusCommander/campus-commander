@@ -168,6 +168,33 @@ export class OrchestrationService {
     });
   }
 
+  /**
+   * Start one export job. The flow claims the job with this lease and ends it with `interrupted`
+   * from its `errors` block when the run is lost (design section 5).
+   */
+  async startDeviceExport(input: {
+    customerId: string;
+    jobId: string;
+    leaseId: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        leaseId: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('device-export.yaml', 'device_export');
+    return this.execute('device_export', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      leaseId: values.leaseId,
+      correlationId: values.correlationId,
+    });
+  }
+
   async startDeviceUpdateReconcile(input: {
     customerId: string;
     jobId: string;
