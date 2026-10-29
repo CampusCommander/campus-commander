@@ -48,7 +48,6 @@ const { Test } = require('@nestjs/testing');
 const { Reflector } = require('@nestjs/core');
 
 const customer = 'C0123456';
-const otherCustomer = 'C0654321';
 const actor = '11111111-1111-4111-8111-111111111111';
 const jobId = '44444444-4444-4444-8444-444444444444';
 const planId = '66666666-6666-4666-8666-666666666666';
@@ -91,14 +90,6 @@ const STATUS_REASONS = [
   'device-active',
   'device-disabled',
 ];
-
-/** The job action of each preview action, as the route answers it. */
-const JOB_ACTION = {
-  'annotated-location': 'update-device-annotations',
-  disable: 'disable-devices',
-  reenable: 'reenable-devices',
-  deprovision: 'deprovision-devices',
-};
 
 /** The status permissions that the job recorded at submission. */
 let statusPermissions;
