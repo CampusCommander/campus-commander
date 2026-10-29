@@ -182,6 +182,39 @@ test('a report cell holds the grid text and an ISO 8601 device contact', () => {
   assert.equal(deviceReportCellText('model', empty), '');
   assert.equal(deviceReportCellText('status', empty), '');
   assert.equal(deviceReportCellText('lastContact', empty), '');
+  // The battery and status cells read the grid text, so a report and the grid never differ.
+  for (const candidate of [
+    row,
+    { ...row, status: 'ACTIVE', battery: { status: 'no-report' } },
+    { ...row, status: 'PRE_PROVISIONED' },
+  ]) {
+    assert.equal(
+      deviceReportCellText('battery', candidate),
+      batteryText(candidate.battery),
+    );
+    assert.equal(
+      deviceReportCellText('status', candidate),
+      statusText(candidate.status),
+    );
+  }
+  // A device contact writes ISO 8601 in UTC, whatever offset the row carries.
+  const contact = deviceReportCellText('lastContact', row);
+  assert.match(contact, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  assert.equal(contact, new Date(row.lastContact).toISOString());
+  assert.equal(
+    deviceReportCellText('lastContact', {
+      ...row,
+      lastContact: '2026-10-28T23:59:00-10:00',
+    }),
+    '2026-10-29T09:59:00.000Z',
+  );
+  // Every report cell holds text, so a write never sends a number or a null.
+  for (const field of DEVICE_REPORT_FIELD_IDS)
+    assert.equal(
+      typeof deviceReportCellText(field, row),
+      'string',
+      `${field} is text.`,
+    );
   // Google's unknown status shows as Google sends it.
   assert.equal(
     deviceReportCellText('status', { ...row, status: 'PRE_PROVISIONED' }),

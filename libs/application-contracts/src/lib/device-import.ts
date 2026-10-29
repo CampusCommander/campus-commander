@@ -65,11 +65,12 @@ export type DeviceImportRefusal = z.infer<typeof deviceImportRefusalSchema>;
 
 /**
  * The text of a refusal, for states 23 and 26. A `header-refused` refusal carries the sentence of
- * `matchDeviceEditHeaders`, which names each missing column and the Checksum rule.
+ * `matchDeviceEditHeaders`, which names each missing column and the Checksum rule, so the caller
+ * passes that sentence rather than a copy.
  */
 export function deviceImportRefusalText(
   refusal: DeviceImportRefusal,
-  headerReason: string | null = null,
+  headerReason?: string,
 ): string {
   switch (refusal) {
     case 'unreadable-file':
@@ -87,7 +88,11 @@ export function deviceImportRefusalText(
         'en-US',
       )} rows.`;
     case 'header-refused':
-      return headerReason ?? 'The header row is not the edit template.';
+      if (!headerReason)
+        throw new Error(
+          'A header refusal carries the reason of matchDeviceEditHeaders.',
+        );
+      return headerReason;
   }
 }
 

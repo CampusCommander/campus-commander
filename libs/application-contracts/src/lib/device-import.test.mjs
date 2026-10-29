@@ -30,6 +30,7 @@ import {
   deviceImportUnitRejectionText,
 } from './device-import.ts';
 import { jobOutcomeSchema } from './jobs.ts';
+import { matchDeviceEditHeaders } from './device-edit-template.ts';
 
 const at = '2026-10-28T14:31:00.000Z';
 const jobId = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
@@ -493,7 +494,7 @@ test('each refusal code answers the text of states 23 and 26', () => {
     DEVICE_IMPORT_REFUSALS.map((refusal) =>
       deviceImportRefusalText(
         refusal,
-        'The file is missing the Checksum column.',
+        'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
       ),
     ),
     [
@@ -502,13 +503,25 @@ test('each refusal code answers the text of states 23 and 26', () => {
       'The file ends inside a quoted cell. Correct the file and import it again.',
       'A cell holds more than 16,384 characters.',
       'A file holds at most 50,000 rows.',
-      'The file is missing the Checksum column.',
+      'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
     ],
   );
-  // The header refusal keeps the sentence of the template module.
+  // A header refusal keeps the sentence of the template module, so the contract copies no text.
+  const refused = matchDeviceEditHeaders(
+    ['Device ID', 'Serial number', 'Model', 'Status', 'Asset tag'],
+    'sync-changes',
+  );
+  assert.equal(refused.ok, false);
+  if (refused.ok) throw new Error('The header must refuse.');
   assert.equal(
-    deviceImportRefusalText('header-refused'),
-    'The header row is not the edit template.',
+    deviceImportRefusalText('header-refused', refused.reason),
+    refused.reason,
+  );
+  assert.match(refused.reason, /^The file is missing the /);
+  assert.throws(
+    () => deviceImportRefusalText('header-refused'),
+    /matchDeviceEditHeaders/,
+    'The contract invents no header sentence.',
   );
   assert.equal(DEVICE_IMPORT_ROW_LIMIT, 50000);
   assert.equal(deviceImportRefusalSchema.safeParse('disk-full').success, false);
@@ -568,7 +581,7 @@ test('each rejected row reason and each warning names the rule of the design', (
   );
 });
 
-test('the Failed tab holds failed and unknown until the owner rules out Unknown', () => {
+test('the Failed tab holds failed and unknown, never expired', () => {
   // The owner answered the proposal on Unknown with "Unknown yes" on 2026-10-28.
   assert.deepEqual(DEVICE_IMPORT_FAILED_OUTCOMES, ['failed', 'unknown']);
   for (const outcome of DEVICE_IMPORT_FAILED_OUTCOMES)
