@@ -79,7 +79,7 @@ function fakeTimers() {
  * A store that behaves as the artifact store does: it consumes the stream, removes the partial
  * file when the stream fails, and keeps the published files.
  */
-function fakeStore() {
+function fakeStore(options = {}) {
   const calls = { manifests: [], published: [], removed: [] };
   let removed = false;
   let staged = null;
@@ -113,6 +113,8 @@ function fakeStore() {
     },
     async publish(descriptor) {
       calls.published.push(descriptor);
+      // The store verifies the whole file and syncs the filesystem before it answers.
+      await options.onPublish?.(descriptor);
     },
     async remove(descriptor) {
       calls.removed.push(descriptor);
@@ -123,20 +125,44 @@ function fakeStore() {
   };
 }
 
-/** A database that answers the export functions and pages the frozen scope. */
+/** A database that answers the export functions, pages the scope, and holds the job state. */
 function fakeDatabase(options, devices) {
   const calls = { claim: [], renew: [], cancel: [], finish: [], read: [] };
-  let cancelledNow = false;
+  // The stored job state that the functions change (design section 5).
+  const job = {
+    status: options.jobStatus ?? null,
+    cancelRequested: options.cancelRequested ?? false,
+  };
+  // The two-minute lease. A test that models the clock advances it (design section 5).
+  const lease = { expiresAt: Number.POSITIVE_INFINITY, fenced: false };
+  const now = options.now ?? (() => 0);
   return {
     calls,
+    lease,
+    get status() {
+      return job.status;
+    },
+    get cancelRequested() {
+      return job.cancelRequested;
+    },
+    /** Another connection stores the cancel request (design section 5). */
+    requestCancel() {
+      job.cancelRequested = true;
+    },
     async query(sql, values) {
       const name = /cc\.([a-z_]+)\(/.exec(sql)?.[1];
       if (name === 'claim_device_export_job') {
         calls.claim.push(values);
+        if (options.claim)
+          return { rows: [{ result: options.claim(values) }] };
+        // A stored cancel request, or an ended job, answers `done` (migration 017).
+        if (job.status !== null || job.cancelRequested)
+          return { rows: [{ result: { outcome: 'done' } }] };
+        lease.expiresAt = now() + 120_000;
         return {
           rows: [
             {
-              result: options.claim?.(values) ?? {
+              result: {
                 outcome: 'claimed',
                 displayId: options.purpose === 'report' ? 'EXP-002' : 'EXP-001',
                 targetCount: devices.length,
@@ -156,29 +182,54 @@ function fakeDatabase(options, devices) {
       if (name === 'renew_device_export_job') {
         const [phase, done, total] = values.slice(3, 6);
         calls.renew.push({ phase, done, total });
-        const outcome = options.renew?.(phase, done, total) ?? 'renewed';
+        let outcome;
+        if (options.renew) outcome = options.renew(phase, done, total);
+        else if (now() > lease.expiresAt) outcome = 'fenced';
+        else if (job.status !== null || job.cancelRequested) outcome = 'done';
+        else {
+          lease.expiresAt = now() + 120_000;
+          outcome = 'renewed';
+        }
         // The store answers `done` only when a cancel is stored or the job ended.
-        if (outcome === 'done') cancelledNow = true;
+        if (outcome === 'done') job.cancelRequested = true;
+        if (outcome === 'fenced') lease.fenced = true;
         return { rows: [{ result: { outcome } }] };
       }
       if (name === 'job_cancel_requested') {
-        const answer = options.cancel?.(calls.cancel.length) ?? false;
+        const answer = options.cancel
+          ? options.cancel(calls.cancel.length)
+          : job.cancelRequested;
         calls.cancel.push(answer);
-        if (answer) cancelledNow = true;
+        if (answer) job.cancelRequested = true;
         return { rows: [{ result: answer }] };
       }
       if (name === 'finish_device_export_job') {
         const file = values[3] === null ? null : JSON.parse(values[3]);
         const failure = values[4] ?? null;
         calls.finish.push({ file, failure });
-        if (cancelledNow)
+        if (options.finish)
+          return { rows: [{ result: options.finish(file, failure) }] };
+        if (job.status !== null)
+          return {
+            rows: [{ result: { outcome: 'finished', status: job.status } }],
+          };
+        if (lease.fenced || now() > lease.expiresAt)
+          return { rows: [{ result: { outcome: 'fenced' } }] };
+        if (job.cancelRequested) {
+          job.status = 'cancelled';
           return {
             rows: [{ result: { outcome: 'finished', status: 'cancelled' } }],
           };
-        if (failure !== null)
+        }
+        if (failure !== null) {
+          job.status = 'failed';
           return {
             rows: [{ result: { outcome: 'finished', status: 'failed' } }],
           };
+        }
+        if (file === null)
+          throw new Error('The export finish requires a file or a failure.');
+        job.status = 'completed';
         return {
           rows: [
             { result: { outcome: 'finished', status: 'completed', file } },
@@ -205,7 +256,7 @@ function fakeDatabase(options, devices) {
 function harness(options = {}) {
   const devices = options.devices ?? [deviceRow(0)];
   const timers = options.timers ?? fakeTimers();
-  const store = fakeStore();
+  const store = fakeStore(options);
   const database = fakeDatabase(options, devices);
   const jobs = new DeviceExportJobs(database, store, {
     batchSize: options.batchSize,
@@ -609,17 +660,178 @@ test('a failed cancel read after the stage removes the file and retries', async 
   assert.equal(harnessed.database.calls.finish.length, 0);
 });
 
-test('a claimed job with a stored cancel writes nothing', async () => {
+test('a claimed job with a stored cancel writes no file and finishes the cancellation', async () => {
   const { run, database, store } = harness({
     devices: [deviceRow(0)],
-    claim: () => ({ outcome: 'done' }),
+    cancelRequested: true,
   });
   const answer = await run();
 
   assert.deepEqual(answer, { outcome: 'done' });
   assert.equal(database.calls.read.length, 0);
   assert.equal(store.calls.manifests.length, 0);
-  assert.equal(database.calls.finish.length, 0);
+  // The claim answers `done` for a stored cancel request. The finish ends the job (design
+  // section 5).
+  assert.deepEqual(database.calls.finish, [{ file: null, failure: null }]);
+  assert.equal(database.status, 'cancelled');
+});
+
+test('a retry after a failed cancel read finishes the stored cancellation', async () => {
+  let first = true;
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    cancel: () => {
+      if (!first) return true;
+      first = false;
+      // Another connection stores the cancel request, and then the read fails.
+      harnessed.database.requestCancel();
+      throw new Error('The database failed.');
+    },
+  });
+
+  await assert.rejects(harnessed.run());
+  assert.equal(harnessed.store.calls.removed.length, 1);
+  assert.equal(harnessed.database.calls.finish.length, 0);
+  assert.equal(harnessed.database.status, null);
+
+  // The retry carries the same lease. It writes no second file and ends the cancellation.
+  const answer = await harnessed.run();
+  assert.deepEqual(answer, { outcome: 'done' });
+  assert.equal(harnessed.store.calls.manifests.length, 1);
+  assert.equal(harnessed.database.calls.read.length, 2);
+  assert.deepEqual(harnessed.database.calls.finish, [
+    { file: null, failure: null },
+  ]);
+  assert.equal(harnessed.database.status, 'cancelled');
+});
+
+test('the interrupted error request ends a stored cancellation', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    cancelRequested: true,
+  });
+  const answer = await harnessed.run({ failure: 'interrupted' });
+
+  assert.deepEqual(answer, { outcome: 'done' });
+  assert.equal(harnessed.database.calls.claim.length, 1);
+  assert.equal(harnessed.store.calls.manifests.length, 0);
+  assert.deepEqual(harnessed.database.calls.finish, [
+    { file: null, failure: 'interrupted' },
+  ]);
+  assert.equal(harnessed.database.status, 'cancelled');
+});
+
+test('a retry of an ended job writes nothing and keeps its stored status', async () => {
+  const harnessed = harness({ devices: [deviceRow(0)], jobStatus: 'completed' });
+  const answer = await harnessed.run();
+
+  assert.deepEqual(answer, { outcome: 'done' });
+  assert.equal(harnessed.store.calls.manifests.length, 0);
+  assert.deepEqual(harnessed.database.calls.finish, [
+    { file: null, failure: null },
+  ]);
+  assert.equal(harnessed.database.status, 'completed');
+});
+
+test('a retry without a live lease leaves the cancellation to recovery', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    cancelRequested: true,
+    finish: () => ({ outcome: 'fenced' }),
+  });
+  const answer = await harnessed.run();
+
+  assert.deepEqual(answer, { outcome: 'fenced' });
+  assert.equal(harnessed.store.calls.manifests.length, 0);
+  assert.equal(harnessed.database.status, null);
+});
+
+test('a cancel stored after publication removes the published file', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    onPublish: () => harnessed.database.requestCancel(),
+  });
+  const answer = await harnessed.run();
+
+  assert.deepEqual(answer, { outcome: 'cancelled', displayId: 'EXP-001' });
+  assert.equal(harnessed.store.calls.published.length, 1);
+  assert.deepEqual(harnessed.store.calls.removed, [
+    harnessed.store.calls.published[0],
+  ]);
+  assert.equal(harnessed.database.calls.finish.length, 1);
+  assert.equal(harnessed.database.calls.finish[0].failure, null);
+  assert.equal(harnessed.database.status, 'cancelled');
+});
+
+test('a fenced finish removes the published file', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    finish: () => ({ outcome: 'fenced' }),
+  });
+  const answer = await harnessed.run();
+
+  assert.deepEqual(answer, { outcome: 'fenced' });
+  assert.equal(harnessed.store.calls.published.length, 1);
+  assert.deepEqual(harnessed.store.calls.removed, [
+    harnessed.store.calls.published[0],
+  ]);
+});
+
+test('a stored failed status removes the published file', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    finish: () => ({ outcome: 'finished', status: 'failed' }),
+  });
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'storage-unavailable');
+  assert.equal(harnessed.store.calls.published.length, 1);
+  assert.deepEqual(harnessed.store.calls.removed, [
+    harnessed.store.calls.published[0],
+  ]);
+});
+
+test('a failed finish keeps the published file because the commit may have landed', async () => {
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    finish: () => {
+      throw new Error('The connection failed.');
+    },
+  });
+
+  await assert.rejects(harnessed.run());
+  assert.equal(harnessed.store.calls.published.length, 1);
+  assert.equal(harnessed.store.calls.removed.length, 0);
+});
+
+test('publication keeps the lease renewed and the export completes', async () => {
+  let clock = 0;
+  const timers = fakeTimers();
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    timers,
+    now: () => clock,
+    // Five intervals pass while the store verifies and syncs the file. The lease would expire
+    // without the renewal tick (design section 5).
+    onPublish: async () => {
+      for (let tick = 0; tick < 5; tick += 1) {
+        clock += 30_000;
+        await timers.fire();
+      }
+    },
+  });
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(
+    harnessed.database.calls.renew.filter(
+      (renewal) => renewal.phase === 'prepare-download',
+    ).length,
+    6,
+    'the tick renewed five times through publication',
+  );
+  assert.equal(harnessed.timers.active, 0, 'the ticker closed after the finish');
 });
 
 test('a job of another live run writes nothing', async () => {
