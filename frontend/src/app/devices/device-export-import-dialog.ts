@@ -100,7 +100,9 @@ import {
   reportOldestLine,
   reportPagerText,
   reportRefreshLine,
+  type ReportValue,
 } from './device-import-messages';
+import { cutDevicePath } from './device-path-cut';
 
 /** One dot of the export phase list (state 04). */
 export interface ExportPhaseView {
@@ -605,6 +607,14 @@ export class DeviceExportImportDialog {
 
   protected chip(line: DeviceImportChange) {
     return reportChangeChip(line);
+  }
+
+  /**
+   * The cell text of a report value. A path cuts at a `/` boundary and keeps whole trailing
+   * segments, and the tooltip of the cell holds the whole path (design section 9, ruling 3).
+   */
+  protected cellText(value: ReportValue): string {
+    return value.path ? cutDevicePath(value.text, 32) : value.text;
   }
 
   protected keydown(event: KeyboardEvent): void {

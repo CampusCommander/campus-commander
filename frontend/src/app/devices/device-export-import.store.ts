@@ -235,6 +235,8 @@ export class DeviceExportImportStore {
     this.error.set('');
     const active = this.activeImport();
     if (active) {
+      // The dialog stays on the import it was showing, so the read lands on its own step.
+      this.step.set('validation');
       this.openJob(active);
       return;
     }
@@ -245,7 +247,8 @@ export class DeviceExportImportStore {
   /** The Activity row of an export or an import opens the dialog at the job's step (behavior 5). */
   openJob(displayId: string): void {
     this.open.set(true);
-    this.step.set('monitor');
+    // An import step stays on its own step until the read names the job's step.
+    if (!this.isImportStep()) this.step.set('monitor');
     this.helpTopic.set(null);
     this.submitError.set('');
     this.job.set(null);
@@ -793,11 +796,12 @@ export class DeviceExportImportStore {
       ...counts,
       [answer.view]: answer.pageCount,
     }));
+    if (!show) return;
+    // Only the shown page names the report facts, so a tab total read never replaces them.
     this.reportCounts.set(answer.counts);
     this.reportRefresh.set(answer.refresh);
     this.reportChanges.set(answer.changes);
     this.plan.set(answer.plan);
-    if (!show) return;
     this.reportView.set(answer.view);
     this.reportPage.set(answer.page);
     this.reportLines.set(answer.lines);
@@ -892,6 +896,11 @@ export class DeviceExportImportStore {
     this.subscription = null;
   }
 
+  private isImportStep(): boolean {
+    const step = this.step();
+    return step === 'import' || step === 'validation' || step === 'report';
+  }
+
   private reset(): void {
     this.epoch++;
     this.activeRequest = null;
@@ -959,6 +968,9 @@ export class DeviceExportImportStore {
         if (detail.data.action === 'validate-device-import') {
           this.activeImport.set(detail.data.displayId);
           this.importName.set(detail.data.importSource?.name ?? this.importName());
+          // The job names its own mode, so a report opened from Activity reads its own line.
+          if (detail.data.importSummary)
+            this.mode.set(detail.data.importSummary.mode);
           const report =
             detail.data.status === 'completed' ||
             detail.data.status === 'completed-with-errors';

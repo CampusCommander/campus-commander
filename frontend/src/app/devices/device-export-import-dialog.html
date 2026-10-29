@@ -351,7 +351,12 @@
             @if (!first) {
             <span class="count-plus" aria-hidden="true">+</span>
             }
-            <div class="count-term" [class]="term.tone">
+            <div
+              class="count-term"
+              [class.tone-success]="term.tone === 'success'"
+              [class.tone-info]="term.tone === 'info'"
+              [class.tone-error]="term.tone === 'error'"
+            >
               <dd>{{ term.value }}</dd>
               <dt>{{ term.label }}</dt>
             </div>
@@ -487,14 +492,19 @@
                       } @default { @if (line.change; as change) { @let cells =
                       values(change); @let chip = this.chip(change);
                       <td class="col-change">
-                        <span class="change-chip" [class]="chip.tone">
+                        <span
+                          class="change-chip"
+                          [class.tone-success]="chip.tone === 'success'"
+                          [class.tone-warning]="chip.tone === 'warning'"
+                          [class.tone-error]="chip.tone === 'error'"
+                        >
                           <span class="dot" aria-hidden="true"></span>
                           {{ chip.label }}
                         </span>
                       </td>
                       <td class="col-value">
                         <span class="cut" [title]="cells.current.full">{{
-                          cells.current.text
+                          cellText(cells.current)
                         }}</span>
                       </td>
                       <td class="col-value">
@@ -502,7 +512,7 @@
                           class="cut"
                           [class.clear]="cells.next.clear"
                           [title]="cells.next.full"
-                          >{{ cells.next.text }}</span
+                          >{{ cellText(cells.next) }}</span
                         >
                         @if (cells.note) {
                         <span class="value-note">{{ cells.note }}</span>
