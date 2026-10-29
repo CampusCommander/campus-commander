@@ -455,10 +455,19 @@ test('one stream carries the job feed and the device feed of a caller with devic
   });
 });
 
-test('a caller without devices:read receives the job feed alone and the stream stays open', async () => {
+test('a caller without devices:read receives the job feed alone when the sync read denies it', async () => {
+  // PostgreSQL raises 42501 from cc.read_device_sync through cc.device_reader for a caller without
+  // devices:read, and DevicesService answers it with ForbiddenException.
   const db = database([
     ['cc.job_reader', [{ customer_id: CUSTOMER }]],
-    ['cc.read_device_sync', [{ result: syncState() }]],
+    [
+      'cc.read_device_sync',
+      () => {
+        throw Object.assign(new Error('Device read authority is required.'), {
+          code: '42501',
+        });
+      },
+    ],
   ]);
   arrange(db, ['jobs:read']);
 
@@ -470,10 +479,12 @@ test('a caller without devices:read receives the job feed alone and the stream s
     fanout.feeds.map((feed) => feed.channel),
     [jobEventsChannel(CUSTOMER)],
   );
-  // The refused device open writes one access-denied row, as the Devices stream does.
-  assert.equal(auditEvents.length, 1);
-  assert.equal(auditEvents[0][0], 'access-denied');
-  assert.deepEqual(auditEvents[0].slice(2), [ACTOR, 'devices:read']);
+  // The protected read denies the caller before the audit rule runs, as the Devices stream does.
+  assert.deepEqual(authorizeCalls, []);
+  assert.deepEqual(auditEvents, []);
+  // The Devices stream still refuses this caller, as its open rule decides today.
+  assert.equal((await answer('/api/devices/events')).status, 403);
+  assert.equal(stream.ended, false, 'The refused device open leaves the stream open.');
 
   // An entity event reaches no caller on this stream. The job event after it still arrives.
   fanout.publish(entityEventsChannel(CUSTOMER), entityBatch);
@@ -481,6 +492,41 @@ test('a caller without devices:read receives the job feed alone and the stream s
   assert.deepEqual(await stream.next(), {
     type: 'job-changed',
     data: jobChanged,
+  });
+  assert.equal(stream.ended, false, 'The job-only stream stays open.');
+});
+
+test('a jobs:manage-only caller receives the job feed alone', async () => {
+  // cc.job_reader admits jobs:manage, so this caller opens the job feed. cc.device_reader still
+  // denies the protected sync read of the device feed.
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    [
+      'cc.read_device_sync',
+      () => {
+        throw Object.assign(new Error('Device read authority is required.'), {
+          code: '42501',
+        });
+      },
+    ],
+  ]);
+  arrange(db, ['jobs:manage']);
+
+  const stream = await open('/api/events');
+
+  assert.equal(stream.status, 200);
+  assert.deepEqual(
+    fanout.feeds.map((feed) => feed.channel),
+    [jobEventsChannel(CUSTOMER)],
+  );
+  assert.deepEqual(authorizeCalls, []);
+
+  // jobs:manage holds the visibility of every job, so another requester's event arrives unchanged.
+  const otherJob = { ...jobChanged, requestedBy: REQUESTER };
+  fanout.publish(jobEventsChannel(CUSTOMER), otherJob);
+  assert.deepEqual(await stream.next(), {
+    type: 'job-changed',
+    data: otherJob,
   });
   assert.equal(stream.ended, false, 'The job-only stream stays open.');
 });

@@ -135,27 +135,32 @@ export class EventsController {
    * holds devices:read for it. It reads null when the caller cannot open the device feed, and the
    * stream carries the job feed alone. A sync read that fails refuses the stream, as the Devices
    * stream refuses it. The ping of an open device feed asks the same rule again.
+   *
+   * The protected sync read denies a caller without devices:read with SQLSTATE 42501, which
+   * `DevicesService` raises as ForbiddenException before `authorize` runs. That denial leaves the
+   * feed out, like a refusal of `authorize`. Every other store failure refuses the stream.
    */
   private async deviceFeed(
     session: SessionResponse,
     customerId: string,
     correlationId: string,
   ): Promise<DeviceSyncState | null> {
-    const sync = await this.devices.sync(session);
-    if (sync?.customerId !== customerId) return null;
     try {
+      const sync = await this.devices.sync(session);
+      if (sync?.customerId !== customerId) return null;
       await this.auth.authorize(
         session,
         'devices:read',
         { kind: 'district', customerId },
         correlationId,
       );
+      return sync;
     } catch (error) {
       // A caller without devices:read is left out of the device feed. Every other failure refuses.
+      // The sync read denies that caller in the database, so both the read and the rule raise here.
       if (error instanceof ForbiddenException) return null;
       throw error;
     }
-    return sync;
   }
 
   /** True when the caller can now open the device feed that this stream leaves out. */
