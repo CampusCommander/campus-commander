@@ -3115,7 +3115,9 @@ export async function qualifyDeviceExportImport({
           jobs.push(update.jobId, ...statuses.map((entry) => entry.jobId));
           const holder = await connect('postgres', 'cc-app');
           const waiter = await connect('cc-app', 'cc-app');
-          const probe = await connect('cc-app', 'cc-app');
+          // The probe takes a row lock of its own, and cc-app holds only SELECT on cc.jobs.
+          const probe = await connect('postgres', 'cc-app');
+          let pending = null;
           try {
             await holder.query('BEGIN');
             await holder.query(
@@ -3123,7 +3125,7 @@ export async function qualifyDeviceExportImport({
             );
             const holderPid = await backendPid(holder);
             const waiterPid = await backendPid(waiter);
-            const pending = waiter
+            pending = waiter
               .query('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
                 planActor,
                 1,
@@ -3145,6 +3147,7 @@ export async function qualifyDeviceExportImport({
             assert.equal((await pending).outcome, 'requested');
           } finally {
             await holder.query('ROLLBACK').catch(() => undefined);
+            await pending?.catch(() => undefined);
             await close(holder);
             await close(waiter);
             await close(probe);
@@ -3434,9 +3437,8 @@ export async function qualifyDeviceExportImport({
                 '[]',
               ],
             );
-          const target = await principal(
-            grants.map(({ action, scope }) => [action, scope]),
-          );
+          const makeTarget = () =>
+            principal(grants.map(({ action, scope }) => [action, scope]));
           // The plan state, the header revision, the publications, and the audit rows of one plan.
           const snapshot = async (plan) => {
             const detail = await planDetail(plan.jobId);
@@ -3465,7 +3467,7 @@ export async function qualifyDeviceExportImport({
               audits,
             };
           };
-          const lockRequester = (client) =>
+          const lockRequester = (client, target) =>
             client.query(
               'SELECT 1 FROM cc.application_principals WHERE id=$1 FOR UPDATE',
               [target],
@@ -3476,15 +3478,16 @@ export async function qualifyDeviceExportImport({
               [customer],
             );
           // One case: the holder locks one row, the cancel waits on it, the case changes access or
-          // waits for the plan to expire, and the holder commits.
+          // waits for the plan to expire, and the holder commits. Each case takes a fresh person at
+          // permission version 1, so a later case is not refused by an earlier case's version move.
           const caseRun = async ({
             label,
             lock,
             during,
             expected,
-            version,
             interval = '1 hour',
           }) => {
+            const target = await makeTarget();
             const plan = await importPlan({
               actor: target,
               lines: [fieldChange(2, `S2W-${label.length}`)],
@@ -3499,25 +3502,27 @@ export async function qualifyDeviceExportImport({
             const holder = await connect('postgres', 'cc-app');
             const waiter = await connect('cc-app', 'cc-app');
             let answer;
+            let pending = null;
             try {
               await holder.query('BEGIN');
-              await lock(holder);
+              await lock(holder, target);
               const holderPid = await backendPid(holder);
               const waiterPid = await backendPid(waiter);
-              const pending = planCancel(
+              pending = planCancel(
                 target,
-                version,
+                1,
                 plan.jobId,
                 plan.planId,
                 plan.revision,
                 waiter,
               );
               await waitBlocked(waiterPid, holderPid, `the plan cancel at ${label}`);
-              if (during) await during({ holder, waiter, plan });
+              if (during) await during({ holder, waiter, plan, target });
               await holder.query('COMMIT');
               answer = await pending;
             } finally {
               await holder.query('ROLLBACK').catch(() => undefined);
+              await pending?.catch(() => undefined);
               await close(holder);
               await close(waiter);
             }
@@ -3540,23 +3545,34 @@ export async function qualifyDeviceExportImport({
           await caseRun({
             label: 'the requester wait',
             lock: lockRequester,
-            during: ({ holder }) => changeAccess(holder, target, 1, false),
+            during: ({ holder, target }) => changeAccess(holder, target, 1, false),
             expected: 'not-found',
-            version: 1,
           });
-          // Enable the person again, so the next cases reach the connection wait.
-          await changeAccess(migrator, target, 2, true);
           // A permission version that changes during the connection wait refuses the call.
           await caseRun({
             label: 'the connection wait',
             lock: lockConnection,
-            during: () =>
-              changeAccess(migrator, target, 3, true, [
+            during: ({ target }) =>
+              changeAccess(migrator, target, 1, true, [
                 ...grants,
                 { action: 'devices:status', scope: district() },
               ]),
             expected: 'not-found',
-            version: 3,
+          });
+          // A grant that a later change removes during the connection wait refuses the call. The
+          // production change also moves the permission version, so the test restores the version to
+          // hold it fixed and leave the grant check as the only difference.
+          await caseRun({
+            label: 'the connection wait grant',
+            lock: lockConnection,
+            during: async ({ target }) => {
+              await changeAccess(migrator, target, 1, true, grants.slice(0, 2));
+              await migrator.query(
+                'UPDATE cc.application_principals SET permission_version=1 WHERE id=$1',
+                [target],
+              );
+            },
+            expected: 'forbidden',
           });
           // A plan that expires during the connection wait answers expired and stays open.
           await caseRun({
@@ -3564,7 +3580,6 @@ export async function qualifyDeviceExportImport({
             lock: lockConnection,
             during: ({ holder }) => holder.query('SELECT pg_sleep(2.5)'),
             expected: 'expired',
-            version: 4,
             interval: '2 seconds',
           });
           // Controls: unchanged access through both waits cancels the plan.
@@ -3572,13 +3587,11 @@ export async function qualifyDeviceExportImport({
             label: 'the requester wait control',
             lock: lockRequester,
             expected: 'cancelled',
-            version: 4,
           });
           await caseRun({
             label: 'the connection wait control',
             lock: lockConnection,
             expected: 'cancelled',
-            version: 4,
           });
         },
       );
