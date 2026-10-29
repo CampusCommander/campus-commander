@@ -115,7 +115,7 @@ export class EventsController {
             ? {
                 seesEveryJob: deviceEveryJob,
                 current: (session) =>
-                  this.opened(session, customerId, request.correlationId),
+                  this.deviceFeed(session, customerId, request.correlationId),
                 jobVisibility: (session, id) =>
                   this.devices.jobVisibility(session, id),
               }
@@ -131,37 +131,30 @@ export class EventsController {
   }
 
   /**
-   * The device feed of this stream, or null when the caller cannot open it and the stream carries
-   * the job feed alone. Every other failure of the open refuses the stream, as the Devices stream
-   * refuses it.
+   * The open rule of the Devices stream for this caller: the customer has a sync, and the caller
+   * holds devices:read for it. It reads null when the caller cannot open the device feed, and the
+   * stream carries the job feed alone. A sync read that fails refuses the stream, as the Devices
+   * stream refuses it. The ping of an open device feed asks the same rule again.
    */
   private async deviceFeed(
     session: SessionResponse,
     customerId: string,
     correlationId: string,
   ): Promise<DeviceSyncState | null> {
+    const sync = await this.devices.sync(session);
+    if (sync?.customerId !== customerId) return null;
     try {
-      return await this.opened(session, customerId, correlationId);
+      await this.auth.authorize(
+        session,
+        'devices:read',
+        { kind: 'district', customerId },
+        correlationId,
+      );
     } catch (error) {
+      // A caller without devices:read is left out of the device feed. Every other failure refuses.
       if (error instanceof ForbiddenException) return null;
       throw error;
     }
-  }
-
-  /** The sync of the customer, after devices:read for it. A customer without a sync reads null. */
-  private async opened(
-    session: SessionResponse,
-    customerId: string,
-    correlationId: string,
-  ): Promise<DeviceSyncState | null> {
-    const sync = await this.devices.sync(session);
-    if (sync?.customerId !== customerId) return null;
-    await this.auth.authorize(
-      session,
-      'devices:read',
-      { kind: 'district', customerId },
-      correlationId,
-    );
     return sync;
   }
 

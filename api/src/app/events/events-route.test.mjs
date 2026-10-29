@@ -180,6 +180,7 @@ before(async () => {
   const [
     eventsControllerModule,
     jobsControllerModule,
+    devicesControllerModule,
     securityModule,
     guardModule,
     jobsServiceModule,
@@ -191,6 +192,7 @@ before(async () => {
   ] = await Promise.all([
     import('./events.controller.ts'),
     import('../jobs/jobs.controller.ts'),
+    import('../devices/devices.controller.ts'),
     import('../security.ts'),
     import('../auth/auth.guard.ts'),
     import('../jobs/jobs.service.ts'),
@@ -202,6 +204,7 @@ before(async () => {
   ]);
   const { EventsController } = eventsControllerModule;
   const { JobsController } = jobsControllerModule;
+  const { DevicesController } = devicesControllerModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
   const { AuthGuard } = guardModule;
   const { JobsService } = jobsServiceModule;
@@ -215,6 +218,9 @@ before(async () => {
   // The harness names the phase-3 configuration that the route reads its deployment phase from.
   class TestConfiguration {}
   const configuration = { deployment: { phase: 3 } };
+  // The Devices controller builds its domain refresh around this service. These tests call no route
+  // of it, so the harness leaves it empty.
+  class TestConnection {}
 
   // esbuild does not emit decorator metadata, so the harness names the constructor tokens.
   Reflect.defineMetadata(
@@ -233,6 +239,11 @@ before(async () => {
     [JobsService, AuthService, DeviceEventsService, OrchestrationService],
     JobsController,
   );
+  Reflect.defineMetadata(
+    'design:paramtypes',
+    [DevicesService, AuthService, DeviceEventsService, TestConnection],
+    DevicesController,
+  );
 
   const store = {
     connection: {
@@ -245,7 +256,7 @@ before(async () => {
 
   class EventRoutesModule {}
   Module({
-    controllers: [EventsController, JobsController],
+    controllers: [EventsController, JobsController, DevicesController],
     providers: [
       { provide: JobsService, useValue: jobs },
       { provide: DevicesService, useValue: devices },
@@ -275,6 +286,7 @@ before(async () => {
         useValue: { startDeviceUpdateReconcile: async () => 'execution' },
       },
       { provide: TestConfiguration, useValue: configuration },
+      { provide: TestConnection, useValue: {} },
     ],
   })(EventRoutesModule);
 
@@ -518,6 +530,27 @@ test('a sync of another customer leaves the device feed out', async () => {
   assert.deepEqual(authorizeCalls, []);
 });
 
+test('a failed device open refuses the stream as the Devices stream refuses it', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    [
+      'cc.read_device_sync',
+      () => {
+        throw Object.assign(new Error('store down'), { code: '08006' });
+      },
+    ],
+  ]);
+  arrange(db, ['jobs:read', 'devices:read']);
+
+  const refused = await answer('/api/events');
+
+  assert.equal(refused.status, 503);
+  assert.deepEqual(refused.body, { reason: 'device-store-unavailable' });
+  // The Devices stream answers the same failure the same way.
+  assert.deepEqual(refused, await answer('/api/devices/events'));
+  assert.deepEqual(fanout.feeds, [], 'A refused stream subscribes nothing.');
+});
+
 test('a caller that the Jobs stream refuses receives the same refusal', async () => {
   const db = database([['cc.job_reader', []]]);
   arrange(db, ['jobs:read', 'devices:read']);
@@ -528,6 +561,34 @@ test('a caller that the Jobs stream refuses receives the same refusal', async ()
   assert.deepEqual(refused.body, { reason: 'connection-required' });
   assert.deepEqual(refused, await answer('/api/jobs/events'));
   assert.deepEqual(fanout.feeds, [], 'A refused stream subscribes nothing.');
+});
+
+test('a failed job read ends the stream', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', [{ result: syncState() }]],
+    [
+      'cc.job_visible',
+      () => {
+        throw new Error('store down');
+      },
+    ],
+  ]);
+  // The caller has no jobs:read, so the job feed decides each event with one read.
+  arrange(db, ['devices:read']);
+
+  const stream = await open('/api/events');
+  assert.equal(stream.status, 200);
+
+  fanout.publish(jobEventsChannel(CUSTOMER), jobChanged);
+
+  assert.equal(await stream.end(), true, 'The failed read ends the stream.');
+  assert.deepEqual(
+    stream.frames,
+    [],
+    'The job feed sends no event after a failed read.',
+  );
+  assert.deepEqual(fanout.feeds, [], 'Both feeds leave the stream.');
 });
 
 test('a failed device read sends its final event and ends the stream', async () => {
