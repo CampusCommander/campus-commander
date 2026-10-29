@@ -69,6 +69,23 @@ function assertBound(text, values) {
     assert.ok(named.has(index), `The statement skips parameter $${index}.`);
 }
 
+/**
+ * The driver boundary of `pg`: a JavaScript array becomes a PostgreSQL array, which a `jsonb` cast
+ * rejects with 22P02. A JSON argument therefore arrives as one string (review round 1, R1).
+ */
+function assertJsonDocument(text, values) {
+  if (!text.includes('::jsonb')) return;
+  for (const [index, value] of values.entries())
+    if (Array.isArray(value))
+      throw Object.assign(
+        new Error(`invalid input syntax for type json: $${index + 1}`),
+        { code: '22P02' },
+      );
+}
+
+/** The clock of the suite, relative to the wall clock unless a test moves it. */
+const testClock = () => Date.now() + (nowOffset ?? 0);
+
 const session = {
   identity: {
     id: actor,
@@ -123,10 +140,22 @@ let addedPages;
 let sealedDigests;
 /** The artifacts that the store staged, in order. */
 let artifacts;
+/** The attempt files that a rolled-back Execute asked the store to remove. */
+let discards;
 /** The confirmations that ran, in order. */
 let confirmations;
 /** The commits and rollbacks of the fake transaction. */
 let transactions;
+/** The receipts that `cc.link_device_import_jobs` stored on the plan. */
+let planReceipts;
+/** Whether the mark function reads the clock past the plan expiry. */
+let markExpires;
+/** The offset of the test clock from the wall clock. */
+let nowOffset;
+/** The application pool of `DatabaseService`: four connections, as production configures them. */
+let pool;
+/** The global access lock of the plan, held until its transaction ends. */
+let planLock;
 /** The actions that the signed-in person holds. */
 let allowed;
 /** The action checks that the route ran, in order. */
@@ -138,6 +167,8 @@ let denied;
 
 let app;
 let origin;
+/** The service under test, which the concurrency tests call without the route. */
+let executeService;
 /** The plan modules under test. */
 let executeModule;
 let manifestDigest;
@@ -253,8 +284,14 @@ function reset({ actions, recordedStatuses = null } = {}) {
   addedPages = [];
   sealedDigests = new Map();
   artifacts = [];
+  discards = [];
   confirmations = [];
   transactions = [];
+  planReceipts = [];
+  markExpires = false;
+  nowOffset = 0;
+  pool = { inUse: 0, peak: 0, failures: 0 };
+  planLock = { owner: null, waiters: [] };
   admissions = [];
   checks = [];
   denied = [];
@@ -496,13 +533,27 @@ function confirmAnswer(values) {
 /** The links, the waits, and the executed plan, as `cc.link_device_import_jobs` writes them. */
 function linkAnswer(values) {
   const [, , , , linkedPlanId, previewIds, notRun] = values;
+  // The driver sends a JavaScript array as a PostgreSQL array, which `$6::jsonb` rejects with
+  // 22P02. Both arguments arrive as JSON text (review round 1, R1).
+  assert.equal(
+    typeof previewIds,
+    'string',
+    'The preview IDs arrive as one JSON document.',
+  );
+  assert.equal(
+    typeof notRun,
+    'string',
+    'The not-run reasons arrive as one JSON document.',
+  );
+  const linkedPreviews = jsonb(previewIds);
+  const reasons = jsonb(notRun);
   assert.ok(
-    previewIds.length >= 1 && previewIds.length <= 7,
+    linkedPreviews.length >= 1 && linkedPreviews.length <= 7,
     'One Execute links one to seven previews.',
   );
-  assert.deepEqual(notRun, [], 'The reasons of the plan are already stored.');
+  assert.deepEqual(reasons, [], 'The reasons of the plan are already stored.');
   if (linkRefuses) throw new Error('The import links are incomplete.');
-  const runs = previewIds.map((previewId) => {
+  const runs = linkedPreviews.map((previewId) => {
     const preview = previews.get(previewId);
     assert.ok(preview?.job, 'Every linked preview holds a job.');
     return preview;
@@ -526,6 +577,8 @@ function linkAnswer(values) {
     row.operation_number = 1;
   }
   planState = 'executed';
+  const receipts = runs.map((preview) => storedReceipt(preview.job));
+  planReceipts = receipts;
   plan = sqlPlan({
     revision: plan.revision + 1,
     state: 'executed',
@@ -535,7 +588,7 @@ function linkAnswer(values) {
   return {
     outcome: 'executed',
     plan: plan,
-    receipts: runs.map((preview) => storedReceipt(preview.job)),
+    receipts,
     linked: changes.filter((row) => row.linked_job_id !== null).length,
   };
 }
@@ -591,6 +644,24 @@ function jobAnswer(customerId, displayId, width) {
   };
 }
 
+/** The plan lock of Execute, as `cc.lock_device_import_plan` answers it from the stored plan. */
+function lockAnswer(values) {
+  // A test that names one answer keeps it: another revision, an expiry, or a refusal.
+  if (lockResult.outcome !== 'locked') return lockResult;
+  const [, , , , requestPlanId, revision] = values;
+  if (requestPlanId !== plan.planId) return { outcome: 'conflict' };
+  // The lock reads the plan row after the global access lock, so a waiter reads the commit before
+  // it. An executed plan answers its stored receipts.
+  if (planState === 'executed')
+    return { outcome: 'executed', plan: { ...plan }, receipts: planReceipts };
+  if (planState !== 'open') return { outcome: 'conflict', plan: { ...plan } };
+  if (Date.parse(plan.expiresAt) <= testClock())
+    return { outcome: 'expired', plan: { ...plan }, expiresAt: plan.expiresAt };
+  if (Number(revision) !== plan.revision)
+    return { outcome: 'conflict', plan: { ...plan } };
+  return { outcome: 'locked', plan: { ...plan } };
+}
+
 before(async () => {
   const [
     controllerModule,
@@ -628,12 +699,19 @@ before(async () => {
   reset();
 
   const answer = (text, values) => {
-    if (text.includes('cc.lock_device_import_plan')) {
-      if (lockResult.outcome === 'locked') lockResult = { ...lockResult, plan };
-      return { rows: [{ result: lockResult }] };
-    }
-    if (text.includes('cc.mark_device_import_changes'))
+    if (text.includes('cc.lock_device_import_plan'))
+      return { rows: [{ result: lockAnswer(values) }] };
+    if (text.includes('cc.mark_device_import_changes')) {
+      // The mark reads the clock again, so a plan that expires after the lock answers `expired`
+      // here (review round 1, R2).
+      if (markExpires) {
+        nowOffset = 2 * HOUR;
+        return {
+          rows: [{ result: { outcome: 'expired', expiresAt: plan.expiresAt } }],
+        };
+      }
       return { rows: [{ result: markAnswer(values) }] };
+    }
     if (text.includes('cc.open_device_update_preview'))
       return { rows: [{ result: openAnswer(values) }] };
     if (text.includes('cc.add_device_update_preview_targets')) {
@@ -700,16 +778,61 @@ before(async () => {
     throw new Error(`The test answered no statement: ${text}`);
   };
 
-  const query = async (text, values = []) => {
+  /** The connection lease of `DatabaseService`: four connections, and a request waits three seconds. */
+  const POOL_CAPACITY = 4;
+  const connect = () => {
+    if (pool.inUse >= POOL_CAPACITY) {
+      pool.failures += 1;
+      throw new Error('timeout exceeded when trying to connect');
+    }
+    pool.inUse += 1;
+    pool.peak = Math.max(pool.peak, pool.inUse);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      pool.inUse -= 1;
+    };
+  };
+
+  /** The global access lock of the plan: one transaction holds it until its commit or rollback. */
+  const acquirePlanLock = async (client) => {
+    while (planLock.owner !== null)
+      await new Promise((resolve) => planLock.waiters.push(resolve));
+    planLock.owner = client;
+  };
+  const releasePlanLock = (client) => {
+    if (planLock.owner !== client) return;
+    planLock.owner = null;
+    planLock.waiters.shift()?.();
+  };
+
+  const runQuery = async (client, text, values = []) => {
     statements.push({ text, values });
     assertBound(text, values);
+    assertJsonDocument(text, values);
+    if (text.includes('cc.lock_device_import_plan'))
+      await acquirePlanLock(client);
     return answer(text, values);
   };
+  const poolClient = { transaction: false };
 
   /** One transaction that rolls its own writes back, as `DatabaseService.transaction` does. */
   const database = {
-    connection: { query },
+    connection: {
+      query: async (text, values = []) => {
+        const release = connect();
+        try {
+          return await runQuery(poolClient, text, values);
+        } finally {
+          release();
+        }
+      },
+    },
     transaction: async (run) => {
+      const release = connect();
+      const client = { transaction: true };
+      client.query = (text, values = []) => runQuery(client, text, values);
       const snapshot = {
         changes: changes.map((row) => ({ ...row })),
         previews: new Map(
@@ -723,7 +846,7 @@ before(async () => {
         plan: { ...plan },
       };
       try {
-        const value = await run({ query });
+        const value = await run(client);
         transactions.push('commit');
         return value;
       } catch (error) {
@@ -734,6 +857,9 @@ before(async () => {
         plan = snapshot.plan;
         transactions.push('rollback');
         throw error;
+      } finally {
+        releasePlanLock(client);
+        release();
       }
     },
   };
@@ -743,12 +869,27 @@ before(async () => {
       throw new Error('An import route stages no file here.');
     },
     discardUpload: async () => true,
-    storeJsonStream: async (source) => {
+    storeJsonStreamWithin: async (client, source) => {
+      assert.equal(
+        client.transaction,
+        true,
+        'The manifest stages on the Execute transaction, not on a second pool connection.',
+      );
       const chunks = [];
       for await (const chunk of source) chunks.push(chunk);
       const bytes = Buffer.concat(chunks);
       artifacts.push(bytes);
-      return `artifact-manifest-${artifacts.length}`;
+      const staged = {
+        artifactId: `artifact-manifest-${artifacts.length}`,
+        attemptId: `attempt-manifest-${artifacts.length}`,
+        sizeBytes: bytes.length,
+        sha256: 'a'.repeat(64),
+      };
+      return staged;
+    },
+    discardStaged: async (descriptor) => {
+      discards.push(descriptor);
+      return true;
     },
   };
   const orchestration = { startDeviceImport: async () => 'execution-1' };
@@ -758,6 +899,12 @@ before(async () => {
       return true;
     },
   };
+  executeService = new DeviceImportExecuteService(
+    database,
+    storage,
+    jobs,
+    testClock,
+  );
   const devicesService = {
     sync: async () => {
       if (!allowed.has('devices:read'))
@@ -809,7 +956,7 @@ before(async () => {
       },
       {
         provide: DeviceImportExecuteService,
-        useValue: new DeviceImportExecuteService(database, storage, jobs),
+        useValue: executeService,
       },
       { provide: AuthService, useValue: auth },
     ],
@@ -1293,12 +1440,12 @@ test('a status plan fills one preview per action and reason, and every job waits
   );
   const link = statementsOf('cc.link_device_import_jobs')[0];
   assert.deepEqual(
-    link.values[5],
+    jsonb(link.values[5]),
     [...previews.keys()],
     'The link takes every preview once, in run order.',
   );
   assert.equal(
-    link.values[5].length,
+    jsonb(link.values[5]).length,
     4,
     'The plan links four previews of the seven that it may hold.',
   );
@@ -1442,6 +1589,11 @@ test('a refused link rolls back every job of the plan', async () => {
   assert.equal(planState, 'open');
   assert.equal(changes[0].linked_job_id, null);
   assert.equal(admissions.length, 0);
+  assert.deepEqual(
+    discards.map((one) => one.artifactId),
+    ['artifact-manifest-1', 'artifact-manifest-2'],
+    'The store removes the manifest file of each preview that rolled back.',
+  );
 });
 
 test('the route rechecks each status permission that the plan recorded', async () => {
@@ -1536,11 +1688,11 @@ test('no call of Execute passes more than one page', async () => {
     );
   for (const statement of statementsOf('cc.mark_device_import_changes')) {
     assert.ok(
-      statement.values[5].length <= 250,
+      jsonb(statement.values[5]).length <= 250,
       'A mark call names 250 devices.',
     );
     assert.ok(
-      statement.values[6].length <= 250,
+      jsonb(statement.values[6]).length <= 250,
       'A mark call names 250 reasons.',
     );
   }
@@ -1548,9 +1700,146 @@ test('no call of Execute passes more than one page', async () => {
   assert.ok(reads.length >= 3, 'The manifest arrives in pages.');
   const link = statementsOf('cc.link_device_import_jobs')[0];
   assert.ok(
-    link.values[5].length <= 7,
+    jsonb(link.values[5]).length <= 7,
     'A link call names seven previews at most.',
   );
   const document = JSON.parse(artifacts[0].toString('utf8'));
   assert.equal(document.targets.length, 600);
+});
+
+test('the link binds its previews and its reasons as JSON documents', async () => {
+  reset();
+  changes = [fieldChange(0, 'dev-a'), statusChange(1, 'dev-a', 'disable')];
+  const answer = await execute();
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  const link = statementsOf('cc.link_device_import_jobs')[0];
+  // `pg` sends a JavaScript array as a PostgreSQL array, and `$6::jsonb` rejects that with 22P02.
+  // The double rejects a native array the same way, so this run fails when either argument is one.
+  assert.equal(
+    typeof link.values[5],
+    'string',
+    'The preview IDs are one JSON document.',
+  );
+  assert.equal(
+    typeof link.values[6],
+    'string',
+    'The not-run reasons are one JSON document.',
+  );
+  assert.deepEqual(jsonb(link.values[5]), [...previews.keys()]);
+  assert.deepEqual(jsonb(link.values[6]), []);
+  assert.equal(createdJobs.length, 2);
+});
+
+test('a plan that expires during a mark answers 410 and rolls back every preview', async () => {
+  reset();
+  // A row that needs no change makes the mark run before any preview opens.
+  changes = [fieldChange(0, 'dev-a', { current_value: 'Note dev-a' })];
+  devices = new Map([
+    ['dev-a', deviceRow('dev-a', { notes: 'Note dev-a' })],
+  ]);
+  plan = sqlPlan({ expiresAt: at(60_000).toISOString() });
+  // The lock reads the plan before its expiry. The mark reads the clock again, past it.
+  markExpires = true;
+  const answer = await execute();
+  assert.equal(answer.status, 410, JSON.stringify(answer.body));
+  assert.equal(answer.body.reason, 'plan-expired');
+  assert.equal(answer.body.plan.state, 'expired');
+  assert.equal(answer.body.plan.expiresAt, plan.expiresAt);
+  assert.deepEqual(transactions, ['rollback'], 'The refusal rolls back.');
+  assert.equal(createdJobs.length, 0);
+  assert.equal(planState, 'open');
+  assert.equal(statementsOf('cc.confirm_device_update_preview').length, 0);
+  assert.deepEqual(admissions, []);
+});
+
+test('four replays of an executed plan answer the receipts on four pool connections', async () => {
+  reset();
+  const job = {
+    jobId: '77777777-7777-4777-8777-777777777777',
+    displayId: 'UPD-004',
+    action: 'annotated-location',
+    deviceCount: 2,
+    customerId: customer,
+  };
+  createdJobs = [job];
+  planReceipts = [storedReceipt(job)];
+  planState = 'executed';
+  plan = sqlPlan({ revision: 2, state: 'executed', changedBy: actor });
+  changes = [
+    fieldChange(0, 'dev-a', {
+      linked_job_id: job.jobId,
+      operation_number: 1,
+    }),
+  ];
+  const answers = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      executeService.execute(
+        session,
+        connected,
+        'IMP-001',
+        { planId, planRevision: 1, typedPhrase: null },
+        'correlation-1',
+      ),
+    ),
+  );
+  for (const answer of answers) {
+    assert.equal(answer.plan.state, 'executed');
+    assert.deepEqual(
+      answer.receipts.map((one) => one.jobId),
+      [job.jobId],
+      'Every replay answers the stored receipts.',
+    );
+  }
+  assert.equal(
+    pool.peak,
+    4,
+    'Four Execute transactions hold the four configured connections at once.',
+  );
+  assert.equal(
+    pool.failures,
+    0,
+    'No Execute waits for a connection that its own lock holder needs.',
+  );
+  assert.equal(createdJobs.length, 1, 'A replay creates no job.');
+  assert.equal(statementsOf('cc.link_device_import_jobs').length, 0);
+});
+
+test('four Executes of one open plan create one set of jobs on four pool connections', async () => {
+  reset();
+  const answers = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      executeService.execute(
+        session,
+        connected,
+        'IMP-001',
+        { planId, planRevision: 1, typedPhrase: null },
+        'correlation-1',
+      ),
+    ),
+  );
+  for (const answer of answers) {
+    assert.equal(answer.plan.state, 'executed');
+    assert.deepEqual(
+      answer.receipts.map((one) => one.action),
+      ['update-device-annotations'],
+      'Every replay answers the receipts of the one execution.',
+    );
+  }
+  assert.equal(createdJobs.length, 1, 'One Execute creates the jobs of the plan.');
+  assert.equal(
+    statementsOf('cc.link_device_import_jobs').length,
+    1,
+    'One Execute links the plan.',
+  );
+  assert.equal(
+    pool.peak,
+    4,
+    'Four Execute transactions hold the four configured connections at once.',
+  );
+  assert.equal(
+    pool.failures,
+    0,
+    'No Execute waits for a connection that its own lock holder needs.',
+  );
+  assert.deepEqual(admissions, [customer], 'Only the executor admits.');
 });
