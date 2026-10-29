@@ -5,6 +5,12 @@ import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import esbuild from 'esbuild';
+import {
+  DEVICE_EDIT_TEMPLATE_HEADERS,
+  createCsvReader,
+  deviceEditEscapeCell,
+  deviceEditUnescapeCell,
+} from '@campus/application-contracts';
 
 /**
  * The import routes of the device export and import workflow (design section 1, card XB9). The
@@ -14,6 +20,10 @@ import esbuild from 'esbuild';
  *
  * The guard is not stubbed: the upload passes `text/csv` and every other route refuses it, and the
  * origin and CSRF checks run on each request, as they do in production.
+ *
+ * The database double applies the bind rule of PostgreSQL, so a statement that names fewer
+ * parameters than the route supplies fails here. It reads each page from the statement's own LIMIT
+ * and OFFSET clause and orders the rows that the statement orders.
  *
  * `device-actions-route.test.mjs` compiles the TypeScript the same way, because Node's type
  * stripping does not transform the Nest decorators.
@@ -59,6 +69,34 @@ const DAY = 24 * HOUR;
  */
 const at = (offsetMs = 0) => new Date(Date.now() + offsetMs);
 
+/**
+ * The value that one SQL clause binds. The double reads the page from the statement itself, so a
+ * page clause that binds no parameter answers no page.
+ */
+function clauseValue(text, clause, values) {
+  const match = new RegExp(`${clause} \\$(\\d+)`).exec(text);
+  assert.ok(match, `The statement binds its ${clause}: ${text}`);
+  return values[Number(match[1]) - 1];
+}
+
+/**
+ * The bind rule of PostgreSQL: one value for each named parameter, with no gap. A statement that
+ * names two parameters and supplies four values is refused with `08P01`, so the double refuses it
+ * too instead of hiding the defect.
+ */
+function assertBound(text, values) {
+  const named = new Set();
+  for (const match of text.matchAll(/\$(\d+)/g)) named.add(Number(match[1]));
+  const highest = Math.max(0, ...named);
+  assert.equal(
+    values.length,
+    highest,
+    `The statement binds ${values.length} values for ${highest} parameters: ${text}`,
+  );
+  for (let index = 1; index <= highest; index += 1)
+    assert.ok(named.has(index), `The statement skips parameter $${index}.`);
+}
+
 const session = {
   identity: {
     id: actor,
@@ -76,7 +114,21 @@ const connected = { customerId: customer, generation: 3 };
 const csv = Buffer.from(
   'Device ID,Serial number\r\nabc,SN-abc\r\ndef,SN-def\r\n',
 );
+/** The plan of a job row, as the job statement answers it. */
 const plan = (overrides = {}) => ({
+  planId,
+  revision: 1,
+  state: 'open',
+  expiresAt: at(HOUR).toISOString(),
+  changedBy: null,
+  changedAt: null,
+  ...overrides,
+});
+/**
+ * The plan of `cc.cancel_device_import_plan`, as the function builds it: `changedBy` is the
+ * principal ID of the actor, never a person object (017-jobs.sql).
+ */
+const sqlPlan = (overrides = {}) => ({
   planId,
   revision: 1,
   state: 'open',
@@ -110,8 +162,12 @@ let discarded;
 let starts;
 /** The create-function answer of the current test. */
 let createResult;
+/** Whether the create statement runs and then loses its answer. */
+let createThrows;
 /** The plan-cancel-function answer of the current test. */
 let cancelResult;
+/** The application principals that the plan lookup answers. */
+let people;
 /** Whether the store refuses a stage. */
 let stageFails;
 /** Whether the flow starter refuses. */
@@ -154,13 +210,17 @@ before(async () => {
   statements = [];
   jobs = new Map();
   artifacts = new Map();
+  people = new Map();
   stages = [];
   discarded = [];
   starts = [];
 
   const answer = (text, values) => {
-    if (text.includes('cc.create_device_import_job'))
+    if (text.includes('cc.create_device_import_job')) {
+      // The statement runs, then its answer is lost: the job may already be committed.
+      if (createThrows) throw new Error('The connection dropped the answer.');
       return { rows: [{ result: createResult }] };
+    }
     if (text.includes('cc.cancel_device_import_plan'))
       return { rows: [{ result: cancelResult }] };
     if (text.includes('FROM cc.jobs j JOIN cc.device_import_jobs i')) {
@@ -173,6 +233,10 @@ before(async () => {
     if (text.includes('FROM cc.artifacts a')) {
       const artifact = artifacts.get(values[0]);
       return { rows: artifact ? [artifact] : [] };
+    }
+    if (text.includes('cc.application_principals p WHERE p.id=$1')) {
+      const person = people.get(values[0]);
+      return { rows: person ? [person] : [] };
     }
     if (text.includes('count(*)::integer AS total')) {
       if (text.includes('o.status=ANY('))
@@ -193,13 +257,28 @@ before(async () => {
     }
     if (text.includes('field_changes')) return { rows: [report.summary] };
     if (text.includes('FROM cc.device_import_changes c')) {
-      const [, , limit, offset, outcomes] = values;
-      const rows = text.includes('o.status=ANY(')
+      const limit = clauseValue(text, 'LIMIT', values);
+      const offset = clauseValue(text, 'OFFSET', values);
+      assert.match(
+        text,
+        /ORDER BY c\.source_row,c\.ordinal/,
+        'A change page is ordered by source row and ordinal.',
+      );
+      const outcomes = /ANY\(\$(\d+)/.exec(text);
+      const rows = outcomes
         ? report.changes.filter((row) =>
-            outcomes.includes(row.operation_status),
+            values[Number(outcomes[1]) - 1].includes(row.operation_status),
           )
         : report.changes;
-      return { rows: rows.slice(offset, offset + limit) };
+      return {
+        rows: [...rows]
+          .sort(
+            (left, right) =>
+              left.source_row - right.source_row ||
+              left.ordinal - right.ordinal,
+          )
+          .slice(offset, offset + limit),
+      };
     }
     if (text.includes('string_agg(r.reason'))
       return { rows: report.fileRows.slice(values[2], values[2] + values[1]) };
@@ -216,6 +295,7 @@ before(async () => {
     connection: {
       query: async (text, values = []) => {
         statements.push({ text, values });
+        assertBound(text, values);
         return answer(text, values);
       },
     },
@@ -340,11 +420,13 @@ function reset({
   statements = [];
   jobs = new Map();
   artifacts = new Map();
+  people = new Map([[actor, { id: actor, display_name: 'Test person' }]]);
   stages = [];
   discarded = [];
   starts = [];
   probe = undefined;
   stageFails = false;
+  createThrows = false;
   startFails = false;
   report = {
     summary: {
@@ -370,7 +452,15 @@ function reset({
       sizeBytes: csv.length,
     },
   };
-  cancelResult = { outcome: 'cancelled', plan: plan({ revision: 2 }) };
+  cancelResult = {
+    outcome: 'cancelled',
+    plan: sqlPlan({
+      revision: 2,
+      state: 'cancelled',
+      changedBy: actor,
+      changedAt: at().toISOString(),
+    }),
+  };
   session.identity.grants = grants;
 }
 
@@ -426,6 +516,7 @@ function jobRow(job) {
 function changeRow(overrides = {}) {
   return {
     source_row: 2,
+    ordinal: 1,
     device_id: 'dev-1',
     serial_number: 'SN-dev-1',
     change_type: 'field',
@@ -681,6 +772,50 @@ test('a storage fault answers 503 and creates no job', async () => {
   assert.equal(starts.length, 0);
 });
 
+test('a lost create answer keeps the staged file that a committed job may own', async () => {
+  reset();
+  // The create statement runs and its transaction may commit. Its answer never arrives.
+  createThrows = true;
+  const answer = await upload(uploadPath, csv);
+  assert.equal(answer.status, 503, JSON.stringify(answer.body));
+  assert.equal(
+    createStatement()?.values[9],
+    'artifact-IMP-001',
+    'The create ran with the staged file.',
+  );
+  assert.equal(
+    discarded.length,
+    0,
+    'An uncertain create never deletes the file that its committed job owns.',
+  );
+  assert.equal(starts.length, 0, 'An unanswered create starts no flow.');
+});
+
+test('a create that answers no result keeps the staged file', async () => {
+  reset();
+  createResult = undefined;
+  const answer = await upload(uploadPath, csv);
+  assert.equal(answer.status, 503, JSON.stringify(answer.body));
+  assert.equal(
+    discarded.length,
+    0,
+    'A missing answer is not a confirmed refusal.',
+  );
+  assert.equal(starts.length, 0);
+});
+
+test('an unrecognized create outcome keeps the staged file', async () => {
+  reset();
+  createResult = { outcome: 'unexpected' };
+  const answer = await upload(uploadPath, csv);
+  assert.equal(answer.status, 503, JSON.stringify(answer.body));
+  assert.equal(
+    discarded.length,
+    0,
+    'An outcome that the route cannot read may hold a committed job.',
+  );
+});
+
 test('a refused create removes the staged file', async () => {
   reset();
   createResult = { outcome: 'forbidden' };
@@ -903,6 +1038,54 @@ test('a page past the last page answers the last page', async () => {
   assert.equal(page.values[3], 20, 'The last page reads its own offset.');
 });
 
+test('a proposed page holds ten ordered lines and keeps the links of a later page', async () => {
+  reset();
+  jobs.set('IMP-001', importJob());
+  // The rows arrive in another order, as a heap read does. The statement must order them.
+  report.changes = [12, 3, 10, 1, 8, 5, 11, 2, 9, 4, 7, 6].map((row, index) =>
+    changeRow({
+      source_row: row,
+      ordinal: index + 1,
+      linked_display_id: row > 10 ? 'UPD-001' : null,
+      operation_number: row > 10 ? row : null,
+      operation_status: row > 10 ? 'failed' : null,
+    }),
+  );
+  const first = await request('/api/devices/imports/IMP-001/report?page=0');
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.total, 12);
+  assert.equal(first.body.pageCount, 2);
+  assert.equal(first.body.lines.length, 10, 'A page holds ten lines at most.');
+  assert.deepEqual(
+    first.body.lines.map((line) => line.row),
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    'The page is ordered by source row.',
+  );
+  const second = await request('/api/devices/imports/IMP-001/report?page=1');
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.page, 1);
+  assert.deepEqual(
+    second.body.lines.map((line) => line.row),
+    [11, 12],
+  );
+  for (const line of second.body.lines) {
+    assert.equal(line.jobDisplayId, 'UPD-001');
+    assert.equal(line.operationNumber, line.row);
+    assert.equal(
+      line.outcome,
+      'failed',
+      'A post-Execute line keeps its outcome on a later page.',
+    );
+  }
+  const page = statements
+    .filter((statement) =>
+      statement.text.includes('FROM cc.device_import_changes c'),
+    )
+    .at(-1);
+  assert.equal(page.values[2], 10, 'The statement binds the page size.');
+  assert.equal(page.values[3], 10, 'The statement binds the page offset.');
+});
+
 test('the rejected and warning views answer their own lines', async () => {
   reset();
   jobs.set('IMP-001', importJob());
@@ -1027,13 +1210,76 @@ test('the rejected file streams a CSV attachment with every reason of a row', as
   );
   assert.match(
     text,
-    /dev-bad,SN-bad,Model 1,ACTIVE,AT-1,=formula,user@example\.org,note,\/Schools\/A,0000,4,The row holds no Device ID\.; Another row uses this Device ID\.\r\n$/,
+    /\r\ndev-bad,SN-bad,Model 1,ACTIVE,AT-1,\t=formula,user@example\.org,note,\/Schools\/A,0000,4,The row holds no Device ID\.; Another row uses this Device ID\.\r\n$/,
     'One row carries the ten cells, its row, and every reason.',
   );
   const file = statements.find((statement) =>
     statement.text.includes('string_agg(r.reason'),
   );
   assert.ok(file, 'The route reads the rejected file.');
+});
+
+test('the rejected file keeps the formula protection of a cell', async () => {
+  reset();
+  jobs.set('IMP-001', importJob());
+  // An unprotected formula, a protected one, two other formula starts, and cells that the CSV
+  // writer must quote. The download writes every template column through the shared escape.
+  const stored = [
+    '=HYPERLINK("http://example.org","x")',
+    'SN, with a comma',
+    'Model 1',
+    'ACTIVE',
+    '@AT-1',
+    '+1+1',
+    'user@example.org',
+    'Line 1\nLine 2',
+    '/Schools/A',
+    '\t=1+1',
+  ];
+  const reasons =
+    'An unknown column "=Owner, notes\nsecond line" arrived.; The row holds no Device ID.';
+  report.fileRows = [{ source_row: 4, template_cells: stored, reasons }];
+  const answer = await request('/api/devices/imports/IMP-001/rejected');
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  const reader = createCsvReader();
+  const records = [
+    ...reader.push(String(answer.body)),
+    ...reader.end(),
+  ];
+  assert.equal(records.length, 2, 'The file holds a header and one row.');
+  assert.deepEqual(
+    records[0].cells.slice(0, DEVICE_EDIT_TEMPLATE_HEADERS.length),
+    [...DEVICE_EDIT_TEMPLATE_HEADERS],
+  );
+  assert.deepEqual(records[0].cells.slice(DEVICE_EDIT_TEMPLATE_HEADERS.length), [
+    'Row',
+    'Reason',
+  ]);
+  const row = records[1].cells;
+  assert.equal(row.length, DEVICE_EDIT_TEMPLATE_HEADERS.length + 2);
+  for (const [index, value] of stored.entries()) {
+    assert.equal(
+      row[index],
+      deviceEditEscapeCell(deviceEditUnescapeCell(value)),
+      `The rejected cell ${index} keeps its text protection.`,
+    );
+    assert.equal(
+      deviceEditUnescapeCell(row[index]),
+      deviceEditUnescapeCell(value),
+      `The rejected cell ${index} reads back as the value of its row.`,
+    );
+  }
+  assert.equal(
+    row.some((cell) => /^[=+\-@]/.test(cell)),
+    false,
+    'No rejected cell starts a formula.',
+  );
+  assert.equal(row[DEVICE_EDIT_TEMPLATE_HEADERS.length], '4');
+  assert.equal(
+    row[DEVICE_EDIT_TEMPLATE_HEADERS.length + 1],
+    reasons,
+    'One row carries every reason of its source row, quoted and whole.',
+  );
 });
 
 test('the rejected file needs devices:read and the job visibility', async () => {
@@ -1059,7 +1305,26 @@ test('the plan cancel answers the cancelled plan', async () => {
     planRevision: 1,
   });
   assert.equal(answer.status, 201, JSON.stringify(answer.body));
-  assert.deepEqual(answer.body, { plan: cancelResult.plan });
+  // The function answers the actor of the change as a principal ID. The route names the person.
+  assert.equal(cancelResult.plan.changedBy, actor);
+  assert.deepEqual(answer.body, {
+    plan: {
+      planId: cancelResult.plan.planId,
+      revision: 2,
+      state: 'cancelled',
+      expiresAt: cancelResult.plan.expiresAt,
+      changedBy: { id: actor, displayName: 'Test person' },
+      changedAt: cancelResult.plan.changedAt,
+    },
+  });
+  const lookups = statements.filter((statement) =>
+    statement.text.includes('cc.application_principals p WHERE p.id=$1'),
+  );
+  assert.deepEqual(
+    lookups.map((statement) => statement.values[0]),
+    [actor],
+    'The route resolves the person of the plan once.',
+  );
   assert.deepEqual(checks, importActions);
   const cancel = statements.find((statement) =>
     statement.text.includes('cc.cancel_device_import_plan'),
@@ -1067,24 +1332,82 @@ test('the plan cancel answers the cancelled plan', async () => {
   assert.deepEqual(cancel.values, [actor, 7, customer, jobId, planId, 1]);
 });
 
+test('a cancelled plan answers the same plan on a replay, and the report stays', async () => {
+  reset();
+  jobs.set('IMP-001', importJob());
+  cancelResult = {
+    outcome: 'cancelled',
+    plan: sqlPlan({
+      revision: 3,
+      state: 'cancelled',
+      changedBy: actor,
+      changedAt: at(-HOUR).toISOString(),
+    }),
+  };
+  const answer = await post('/api/devices/imports/IMP-001/cancel', {
+    planId,
+    planRevision: 3,
+  });
+  assert.equal(answer.status, 201, JSON.stringify(answer.body));
+  assert.equal(answer.body.plan.state, 'cancelled');
+  assert.equal(answer.body.plan.revision, 3);
+  assert.deepEqual(answer.body.plan.changedBy, {
+    id: actor,
+    displayName: 'Test person',
+  });
+  // Nothing ran, and the report of the job is still there (design section 7, state 20).
+  assert.equal(starts.length, 0, 'A cancel starts no flow.');
+  const reportAnswer = await request('/api/devices/imports/IMP-001/report');
+  assert.equal(reportAnswer.status, 200, JSON.stringify(reportAnswer.body));
+});
+
+test('a plan of another actor keeps its person in the answer', async () => {
+  reset();
+  jobs.set('IMP-001', importJob());
+  const other = '22222222-2222-4222-8222-222222222222';
+  people.set(other, { id: other, display_name: 'Other person' });
+  cancelResult = {
+    outcome: 'cancelled',
+    plan: sqlPlan({ revision: 2, state: 'cancelled', changedBy: other }),
+  };
+  const answer = await post('/api/devices/imports/IMP-001/cancel', {
+    planId,
+    planRevision: 1,
+  });
+  assert.equal(answer.status, 201, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body.plan.changedBy, {
+    id: other,
+    displayName: 'Other person',
+  });
+});
+
 test('another plan revision answers 409 and an expired plan answers 410', async () => {
   reset();
   jobs.set('IMP-001', importJob());
-  cancelResult = { outcome: 'conflict', plan: plan({ revision: 3 }) };
+  cancelResult = {
+    outcome: 'conflict',
+    plan: sqlPlan({ revision: 3 }),
+  };
   const conflict = await post('/api/devices/imports/IMP-001/cancel', {
     planId,
     planRevision: 1,
   });
   assert.equal(conflict.status, 409, JSON.stringify(conflict.body));
   assert.equal(conflict.body.reason, 'plan-conflict');
-  assert.deepEqual(conflict.body.plan, cancelResult.plan);
+  assert.equal(
+    conflict.body.plan.changedBy,
+    null,
+    'The echo of an open plan names no person.',
+  );
+  assert.equal(conflict.body.plan.revision, 3);
 
   reset();
   jobs.set('IMP-001', importJob());
+  const expiresAt = at(-1).toISOString();
   cancelResult = {
     outcome: 'expired',
-    plan: plan({ expiresAt: at(-1).toISOString() }),
-    expiresAt: at(-1).toISOString(),
+    plan: sqlPlan({ expiresAt }),
+    expiresAt,
   };
   const expired = await post('/api/devices/imports/IMP-001/cancel', {
     planId,
@@ -1092,6 +1415,12 @@ test('another plan revision answers 409 and an expired plan answers 410', async 
   });
   assert.equal(expired.status, 410, JSON.stringify(expired.body));
   assert.equal(expired.body.reason, 'plan-expired');
+  assert.equal(
+    expired.body.plan.state,
+    'expired',
+    'An open plan past its expiry reads expired, as the report reads it.',
+  );
+  assert.equal(expired.body.plan.expiresAt, expiresAt);
 });
 
 test('the plan cancel accepts the requester only', async () => {
@@ -1104,22 +1433,6 @@ test('the plan cancel accepts the requester only', async () => {
   });
   assert.equal(answer.status, 404, JSON.stringify(answer.body));
   assert.deepEqual(answer.body, { reason: 'job-not-found' });
-});
-
-test('a repeated cancel answers the same plan', async () => {
-  reset();
-  jobs.set('IMP-001', importJob());
-  cancelResult = {
-    outcome: 'cancelled',
-    plan: plan({ revision: 3, state: 'cancelled' }),
-  };
-  const answer = await post('/api/devices/imports/IMP-001/cancel', {
-    planId,
-    planRevision: 3,
-  });
-  assert.equal(answer.status, 201, JSON.stringify(answer.body));
-  assert.equal(answer.body.plan.state, 'cancelled');
-  assert.equal(answer.body.plan.revision, 3);
 });
 
 test('an invalid cancel body answers 400 before any person check', async () => {
