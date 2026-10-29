@@ -48,7 +48,12 @@ const actor = '11111111-1111-4111-8111-111111111111';
 const jobId = '44444444-4444-4444-8444-444444444444';
 const tabId = '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10';
 const selectionKey = `cc:device-selection:${actor}:devices:${tabId}`;
-const EXPIRED_AT = '2026-10-28T09:00:00.000Z';
+const HOUR = 60 * 60 * 1000;
+/**
+ * A fixture time relative to the clock of the run. The selection lifetime is 12 hours, so an
+ * absolute date would make this suite pass today and refuse its own fixtures tomorrow.
+ */
+const at = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString();
 
 const session = {
   identity: {
@@ -250,12 +255,13 @@ function reset({
   starts = [];
   jobs = new Map();
   reads = 0;
+  // A current selection: it stays inside the 12-hour lifetime of the run that reads it.
   selectionRaw = JSON.stringify({
     terms: [],
     groups: [],
     additions: ['d1', 'd2'],
     exceptions: [],
-    changedAt: '2026-10-29T10:00:00.000Z',
+    changedAt: at(),
   });
   selectionRows = ['d1', 'd2'];
   storeFails = false;
@@ -449,7 +455,7 @@ test('an expired selection answers 409 and starts nothing', async () => {
     groups: [],
     additions: ['d1'],
     exceptions: [],
-    changedAt: '2026-10-20T10:00:00.000Z',
+    changedAt: at(-13 * HOUR),
   });
   const answer = await post('/api/devices/exports', editRequest());
   assert.equal(answer.status, 409, JSON.stringify(answer.body));
@@ -615,14 +621,12 @@ test('a download before the file publishes answers 409', async () => {
 
 test('a download after the expiry answers 410', async () => {
   reset();
-  jobs.set(
-    'EXP-001',
-    finishedJob({ expiresAt: new Date(Date.parse(EXPIRED_AT)) }),
-  );
+  const expiredAt = at(-24 * HOUR);
+  jobs.set('EXP-001', finishedJob({ expiresAt: new Date(expiredAt) }));
   const answer = await get('/api/devices/exports/EXP-001/file');
   assert.equal(answer.status, 410, JSON.stringify(answer.body));
   assert.equal(answer.body.reason, 'export-expired');
-  assert.equal(answer.body.expiresAt, EXPIRED_AT);
+  assert.equal(answer.body.expiresAt, expiredAt);
   assert.equal(reads, 0, 'An expired file opens no artifact.');
 });
 
