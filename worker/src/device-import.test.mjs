@@ -1761,60 +1761,62 @@ test('a blank record that spans lines holds its spreadsheet row', async () => {
   // physical line without moving the row.
   const quote = (cell) =>
     /[",\r\n]/.test(cell) ? `"${cell.replaceAll('"', '""')}"` : cell;
-  const rows = [
-    DEVICE_EDIT_TEMPLATE_HEADERS,
-    cellsOf({ deviceId: 'dev-a', notes: 'one\ntwo' }),
-    ['', ' \n ', '', '', '', '', '', '', '', ''],
-    cellsOf({ deviceId: 'dev-b', notes: 'n'.repeat(501), checksum: 'bad' }),
-    cellsOf({ deviceId: 'dev-c', notes: 'valid', checksum: 'bad' }),
-  ];
   for (const recordEnd of ['\n', '\r\n']) {
-    const text = `${rows.map((cells) => cells.map(quote).join(',')).join(recordEnd)}${recordEnd}`;
-    const harnessed = harness({
-      text,
-      devices: [
-        device('dev-a', { notes: 'before', last_entity_sync: fresh() }),
-        device('dev-b', { notes: 'before', last_entity_sync: fresh() }),
-        device('dev-c', { notes: 'before', last_entity_sync: fresh() }),
-      ],
-    });
+    for (const blankBreak of ['\n', '\r\n']) {
+      const rows = [
+        DEVICE_EDIT_TEMPLATE_HEADERS,
+        cellsOf({ deviceId: 'dev-a', notes: 'one\ntwo' }),
+        ['', ` ${blankBreak} `, '', '', '', '', '', '', '', ''],
+        cellsOf({ deviceId: 'dev-b', notes: 'n'.repeat(501), checksum: 'bad' }),
+        cellsOf({ deviceId: 'dev-c', notes: 'valid', checksum: 'bad' }),
+      ];
+      const text = `${rows.map((cells) => cells.map(quote).join(',')).join(recordEnd)}${recordEnd}`;
+      const harnessed = harness({
+        text,
+        devices: [
+          device('dev-a', { notes: 'before', last_entity_sync: fresh() }),
+          device('dev-b', { notes: 'before', last_entity_sync: fresh() }),
+          device('dev-c', { notes: 'before', last_entity_sync: fresh() }),
+        ],
+      });
 
-    const answer = await harnessed.run();
-    const at = `record end ${JSON.stringify(recordEnd)}`;
+      const answer = await harnessed.run();
+      const at = `record end ${JSON.stringify(recordEnd)}, blank cell ${JSON.stringify(blankBreak)}`;
 
-    assert.equal(answer.outcome, 'completed', at);
-    // The blank record stays out of every data count (technical design, section 9.2).
-    assert.equal(answer.counts.rows, 3, at);
-    assert.equal(answer.counts.rejected, 1, at);
-    assert.equal(answer.counts.proposed, 2, at);
-    const lines = harnessed.database.calls.lines.flat();
-    assert.deepEqual(
-      lines
-        .filter((line) => line.kind === 'warning')
-        .map((line) => [line.sourceRow, line.warning]),
-      [
-        [4, DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING],
-        [5, DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING],
-      ],
-      at,
-    );
-    assert.deepEqual(
-      lines
-        .filter((line) => line.kind === 'rejection')
-        .map((line) => [line.sourceRow, line.deviceId]),
-      [[4, 'dev-b']],
-      at,
-    );
-    assert.deepEqual(
-      lines
-        .filter((line) => line.kind === 'change')
-        .map((line) => [line.sourceRow, line.deviceId]),
-      [
-        [2, 'dev-a'],
-        [5, 'dev-c'],
-      ],
-      at,
-    );
+      assert.equal(answer.outcome, 'completed', at);
+      // The blank record stays out of every data count (technical design, section 9.2).
+      assert.equal(answer.counts.rows, 3, at);
+      assert.equal(answer.counts.rejected, 1, at);
+      assert.equal(answer.counts.proposed, 2, at);
+      const lines = harnessed.database.calls.lines.flat();
+      assert.deepEqual(
+        lines
+          .filter((line) => line.kind === 'warning')
+          .map((line) => [line.sourceRow, line.warning]),
+        [
+          [4, DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING],
+          [5, DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING],
+        ],
+        at,
+      );
+      assert.deepEqual(
+        lines
+          .filter((line) => line.kind === 'rejection')
+          .map((line) => [line.sourceRow, line.deviceId]),
+        [[4, 'dev-b']],
+        at,
+      );
+      assert.deepEqual(
+        lines
+          .filter((line) => line.kind === 'change')
+          .map((line) => [line.sourceRow, line.deviceId]),
+        [
+          [2, 'dev-a'],
+          [5, 'dev-c'],
+        ],
+        at,
+      );
+    }
   }
 });
 
