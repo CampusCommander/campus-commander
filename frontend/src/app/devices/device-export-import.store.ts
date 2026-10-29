@@ -7,25 +7,69 @@ import {
   untracked,
 } from '@angular/core';
 import {
+  createCsvReader,
   deviceExportReceiptSchema,
+  deviceImportPlanCancelAnswerSchema,
+  deviceImportReceiptSchema,
+  deviceImportReportSchema,
   jobDetailSchema,
   jobEventSchema,
+  matchDeviceEditHeaders,
+  DEVICE_IMPORT_MODE_DEFAULT,
   type DeviceExportRequest,
+  type DeviceImportChangeSummary,
+  type DeviceImportCounts,
+  type DeviceImportMode,
+  type DeviceImportReceipt,
+  type DeviceImportRefresh,
+  type DeviceImportReport,
+  type DeviceImportReportLine,
+  type DeviceImportReportView,
   type DeviceReportFieldId,
   type JobDetail,
   type JobExportPurpose,
+  type JobImportPlan,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { JobReader, type JobRevisions } from '../jobs/job-reader';
-import { JobStream, type JobEventSource } from '../jobs/job-stream';
+import {
+  LiveFeeds,
+  type LiveFeedSubscription,
+} from '../jobs/live-feeds';
+import type { JobEventSource } from '../jobs/job-stream';
 import { EXPORT_ROW_LIMIT } from './device-export-messages';
+import {
+  IMPORT_EMPTY_FILE_REFUSAL,
+  IMPORT_FILE_LIMIT_BYTES,
+  IMPORT_HEADER_SAMPLE_BYTES,
+  IMPORT_NOT_UTF8_REFUSAL,
+  IMPORT_READ_FAILURE,
+  importSizeRefusal,
+  importUploadFailureText,
+  importUploadPath,
+} from './device-import-messages';
 
-/** The surfaces of one dialog, in the order of design section 9 (states 02 to 08). */
+/** The surfaces of one dialog, in the order of design section 9 (states 02 to 24). */
 export type DeviceExportDialogStep =
   | 'configure'
   | 'monitor'
   | 'file'
-  | 'import';
+  | 'import'
+  | 'validation'
+  | 'report';
+
+/** The header check of a chosen file (states 09 and 10). */
+export interface ImportFileState {
+  readonly file: File;
+  readonly name: string;
+  readonly sizeBytes: number;
+  /** A file above the cap never uploads (design section 4). */
+  readonly check: 'passed' | 'refused' | 'too-large';
+  /** The header refusal, one sentence per paragraph (states 10 and 23). */
+  readonly refusal: string;
+  /** The columns of the file header, for the file facts. */
+  readonly columns: number;
+}
 
 /** The job that the browser tab returns to after the dialog closes (design section 9, behavior 6). */
 export interface ActiveExportJob {
@@ -66,6 +110,57 @@ export class DeviceExportImportStore {
   readonly activeJobs = signal<
     Readonly<Record<JobExportPurpose, ActiveExportJob | null>>
   >({ edit: null, report: null });
+  /** The tab's own import, so Import returns to a running validation or an open plan. */
+  readonly activeImport = signal<string | null>(null);
+
+  /** The setup step of the import (states 09 and 10). */
+  readonly mode = signal<DeviceImportMode>(DEVICE_IMPORT_MODE_DEFAULT);
+  readonly importFile = signal<ImportFileState | null>(null);
+  readonly importError = signal('');
+  readonly readingFile = signal(false);
+  /** The upload of states 09 and 12. */
+  readonly uploading = signal(false);
+  readonly uploadError = signal('');
+  /** The person asked to stop before the receipt arrived (design section 9, td:760). */
+  readonly stopRequested = signal(false);
+  /** The mode and file name of the job, for the subtitle of a 480 px step (state 12). */
+  readonly importName = signal('');
+
+  /** The report step of states 13 to 15 and 18 to 22. */
+  readonly reportCounts = signal<DeviceImportCounts | null>(null);
+  readonly reportRefresh = signal<DeviceImportRefresh | null>(null);
+  readonly reportChanges = signal<DeviceImportChangeSummary | null>(null);
+  readonly plan = signal<JobImportPlan | null>(null);
+  readonly reportView = signal<DeviceImportReportView>('proposed');
+  readonly reportPage = signal(0);
+  readonly reportLines = signal<readonly DeviceImportReportLine[]>([]);
+  readonly reportTotals = signal<
+    Readonly<Record<DeviceImportReportView, number | null>>
+  >({ proposed: null, rejected: null, warnings: null, failed: null });
+  readonly reportPages = signal<
+    Readonly<Record<DeviceImportReportView, number>>
+  >({ proposed: 1, rejected: 1, warnings: 1, failed: 1 });
+  readonly reportLoading = signal(false);
+  readonly reportError = signal('');
+  /** The plan cancel and Validate again requests (states 19 and 20). */
+  readonly actionBusy = signal(false);
+  readonly actionError = signal('');
+
+  /** The header check refuses a file, so the primary action stays disabled (state 10). */
+  readonly importReady = computed(() => {
+    const file = this.importFile();
+    return file?.check === 'passed' && !this.uploading() && !this.readingFile();
+  });
+  /** A running validation can be stopped, and closing the dialog keeps it running. */
+  readonly validating = computed(() => {
+    const job = this.job();
+    return (
+      this.uploading() ||
+      (this.step() === 'validation' && !!job && !finished(job))
+    );
+  });
+  /** The changes of the current report page (states 13 to 15). */
+  readonly reportShown = computed(() => this.reportLines().length);
 
   /** The export request may start: the selection fits the row limit. */
   readonly overLimit = computed(() => this.count() > EXPORT_ROW_LIMIT);
@@ -84,13 +179,18 @@ export class DeviceExportImportStore {
   });
 
   private readonly reader = new JobReader(() => this.read());
-  private readonly events = new JobStream({
-    open: () => this.eventSource('/api/jobs/events'),
-    reopenDelay: () => this.reopenDelay,
-    timeout: () => this.streamTimeout,
-    opened: () => this.reader.opened(),
-    changed: (data) => this.onEvent(data),
-  });
+  private readonly feeds = inject(LiveFeeds);
+  /** The one shared connection of `/api/jobs/events` in this tab (finding 7). */
+  private subscription: LiveFeedSubscription | null = null;
+  /** The header check of the last chosen file, so a mode change rechecks the same file. */
+  private chosenFile: File | null = null;
+  /** Each file choice invalidates the header check of the earlier one. */
+  private fileCheck = 0;
+  /** The pages that this dialog already read, by view and page. */
+  private readonly cache = new Map<
+    DeviceImportReportView,
+    Map<number, readonly DeviceImportReportLine[]>
+  >();
   /** Increments on another person. A late answer is dropped. */
   private epoch = 0;
   private identity: string | null = null;
@@ -124,20 +224,25 @@ export class DeviceExportImportStore {
   }
 
   /**
-   * Import opens its step. XF2 builds the import steps; until then the step holds no field and
-   * the dialog says so in the hand-off.
+   * Import opens its setup step, or the tab's own import while its validation runs or its plan
+   * stays open (notes choice 14, eng-lead answer 3).
    */
   openImport(): void {
+    this.purpose.set('edit');
     this.open.set(true);
-    this.step.set('import');
-    this.displayId.set(null);
-    this.job.set(null);
-    this.error.set('');
-    this.submitError.set('');
     this.helpTopic.set(null);
+    this.submitError.set('');
+    this.error.set('');
+    const active = this.activeImport();
+    if (active) {
+      this.openJob(active);
+      return;
+    }
+    this.resetImport();
+    this.step.set('import');
   }
 
-  /** The Activity row of an export opens the dialog at the job's step (behavior 5). */
+  /** The Activity row of an export or an import opens the dialog at the job's step (behavior 5). */
   openJob(displayId: string): void {
     this.open.set(true);
     this.step.set('monitor');
@@ -147,7 +252,7 @@ export class DeviceExportImportStore {
     this.error.set('');
     this.displayId.set(displayId);
     this.loading.set(true);
-    this.events.start();
+    this.startFeed();
     void this.reader.request();
   }
 
@@ -160,13 +265,28 @@ export class DeviceExportImportStore {
 
   /** Done releases the current entry's job, so its next entry starts a new export (behavior 6). */
   done(): void {
-    this.releaseActive(this.purpose());
+    if (this.step() === 'report') this.activeImport.set(null);
+    else this.releaseActive(this.purpose());
     this.close();
+    this.resetImport();
     this.step.set('configure');
     this.displayId.set(null);
     this.job.set(null);
     this.count.set(0);
     this.columns.set([]);
+  }
+
+  /** Import again starts a new import and releases the finished one (states 19 to 24). */
+  importAgain(): void {
+    this.activeImport.set(null);
+    this.reader.stop();
+    this.stopFeed();
+    this.resetImport();
+    this.displayId.set(null);
+    this.job.set(null);
+    this.loading.set(false);
+    this.error.set('');
+    this.step.set('import');
   }
 
   toggleHelp(topic?: 'export' | 'report'): void {
@@ -234,7 +354,7 @@ export class DeviceExportImportStore {
       this.displayId.set(receipt.data.displayId);
       this.job.set(null);
       this.error.set('');
-      this.events.start();
+      this.startFeed();
       void this.reader.request();
       return true;
     } catch {
@@ -250,6 +370,468 @@ export class DeviceExportImportStore {
         this.submitting.set(false);
       }
     }
+  }
+
+  /**
+   * The mode choice of state 09. The header check follows the mode: Sync changes needs the
+   * Checksum column, and Sync all rows ignores it.
+   */
+  setImportMode(mode: DeviceImportMode): void {
+    if (this.mode() === mode) return;
+    this.mode.set(mode);
+    if (this.chosenFile) void this.chooseImportFile(this.chosenFile);
+  }
+
+  /**
+   * Read the first 64 KiB of the chosen file and check its header (states 09 and 10). A file
+   * above 1 GiB refuses here and never reaches the upload (design section 4).
+   */
+  async chooseImportFile(file: File): Promise<void> {
+    const check = ++this.fileCheck;
+    this.chosenFile = file;
+    this.importError.set('');
+    this.uploadError.set('');
+    this.stopRequested.set(false);
+    this.readingFile.set(true);
+    const base: ImportFileState = {
+      file,
+      name: file.name,
+      sizeBytes: file.size,
+      check: 'passed',
+      refusal: '',
+      columns: 0,
+    };
+    try {
+      if (file.size > IMPORT_FILE_LIMIT_BYTES) {
+        if (check === this.fileCheck)
+          this.importFile.set({
+            ...base,
+            check: 'too-large',
+            refusal: importSizeRefusal(file.size),
+          });
+        return;
+      }
+      const header = await readFileHeader(file);
+      if (check !== this.fileCheck) return;
+      if (header === null) {
+        this.importFile.set({
+          ...base,
+          check: 'refused',
+          refusal: IMPORT_NOT_UTF8_REFUSAL,
+        });
+        return;
+      }
+      if (header.length === 0) {
+        this.importFile.set({
+          ...base,
+          check: 'refused',
+          refusal: IMPORT_EMPTY_FILE_REFUSAL,
+        });
+        return;
+      }
+      const match = matchDeviceEditHeaders(header, this.mode());
+      this.importFile.set(
+        match.ok
+          ? { ...base, columns: header.length }
+          : {
+              ...base,
+              check: 'refused',
+              refusal: match.reason,
+              columns: header.length,
+            },
+      );
+    } catch {
+      if (check === this.fileCheck)
+        this.importFile.set({
+          ...base,
+          check: 'refused',
+          refusal: IMPORT_READ_FAILURE,
+        });
+    } finally {
+      if (check === this.fileCheck) this.readingFile.set(false);
+    }
+  }
+
+  /**
+   * Upload the raw file as `text/csv` (design sections 1 and 4). The validation step follows the
+   * receipt, and a stop that arrived first cancels the job as soon as its ID exists.
+   */
+  async startValidation(): Promise<boolean> {
+    const chosen = this.importFile();
+    if (!chosen || !this.importReady()) return false;
+    const requestId = ++this.nextRequest;
+    this.activeRequest = requestId;
+    const epoch = this.epoch;
+    const identity = this.identity;
+    const owned = () => epoch === this.epoch && identity === this.identity;
+    this.uploading.set(true);
+    this.uploadError.set('');
+    this.stopRequested.set(false);
+    this.actionError.set('');
+    this.displayId.set(null);
+    this.job.set(null);
+    this.loading.set(false);
+    this.error.set('');
+    this.importName.set(chosen.name);
+    this.step.set('validation');
+    try {
+      const response = await this.auth.request(
+        importUploadPath(this.mode(), chosen.name),
+        undefined,
+        {
+          raw: chosen.file,
+          contentType: 'text/csv',
+          timeoutMs: UPLOAD_TIMEOUT_MS,
+        },
+      );
+      if (!owned()) return false;
+      if (!response.ok) {
+        const reason = await refusalReason(response);
+        if (!owned()) return false;
+        this.uploading.set(false);
+        this.uploadError.set(importUploadFailureText(response.status, reason));
+        this.step.set('import');
+        return false;
+      }
+      const receipt = deviceImportReceiptSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (!owned()) return false;
+      if (!receipt.success) {
+        this.uploading.set(false);
+        this.uploadError.set(
+          'Campus Commander answered an unexpected import receipt. Try again.',
+        );
+        this.step.set('import');
+        return false;
+      }
+      this.accepted(receipt.data);
+      return true;
+    } catch {
+      if (owned()) {
+        this.uploading.set(false);
+        this.uploadError.set(
+          'Cannot reach Campus Commander. The file did not upload.',
+        );
+        this.step.set('import');
+      }
+      return false;
+    } finally {
+      if (this.activeRequest === requestId) this.activeRequest = null;
+    }
+  }
+
+  /**
+   * Stop validation sends `POST /api/jobs/{displayId}/cancel` (design section 9). A stop before
+   * the receipt cancels the job when its ID arrives (design section 9, td:760).
+   */
+  async stopValidation(): Promise<boolean> {
+    this.stopRequested.set(true);
+    if (!this.displayId()) return true;
+    return this.cancelJob();
+  }
+
+  /** One read of each view and page that the report shows (states 13 to 15 and 18 to 22). */
+  async openImportReport(): Promise<void> {
+    this.step.set('report');
+    this.helpTopic.set(null);
+    this.cache.clear();
+    this.reportLines.set([]);
+    this.reportCounts.set(null);
+    this.reportRefresh.set(null);
+    this.reportChanges.set(null);
+    this.plan.set(null);
+    this.reportTotals.set({
+      proposed: null,
+      rejected: null,
+      warnings: null,
+      failed: null,
+    });
+    this.reportPages.set({ proposed: 1, rejected: 1, warnings: 1, failed: 1 });
+    this.reportError.set('');
+    await Promise.all([this.showReportPage('proposed', 0), this.readTabTotals()]);
+  }
+
+  async setReportView(view: DeviceImportReportView): Promise<void> {
+    if (view === this.reportView()) return;
+    await this.showReportPage(view, 0);
+  }
+
+  async nextReportPage(): Promise<void> {
+    const pages = this.reportPages()[this.reportView()];
+    if (this.reportPage() + 1 >= pages) return;
+    await this.showReportPage(this.reportView(), this.reportPage() + 1);
+  }
+
+  async previousReportPage(): Promise<void> {
+    if (this.reportPage() === 0) return;
+    await this.showReportPage(this.reportView(), this.reportPage() - 1);
+  }
+
+  /** Cancel import cancels the open plan (state 20). Nothing runs, and the report stays. */
+  async cancelImport(): Promise<boolean> {
+    const plan = this.plan();
+    const displayId = this.displayId();
+    if (!plan || !displayId || plan.state !== 'open' || this.actionBusy())
+      return false;
+    this.actionBusy.set(true);
+    this.actionError.set('');
+    try {
+      const response = await this.auth.request(
+        `${importBase(displayId)}/cancel`,
+        { planId: plan.planId, planRevision: plan.revision },
+      );
+      if (!response.ok) {
+        this.actionError.set(await importActionFailureText(response));
+        return false;
+      }
+      const answer = deviceImportPlanCancelAnswerSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (!answer.success) {
+        this.actionError.set(
+          'Campus Commander answered an unexpected plan. Try again.',
+        );
+        return false;
+      }
+      this.plan.set(answer.data.plan);
+      this.activeImport.set(displayId);
+      return true;
+    } catch {
+      this.actionError.set(
+        'Cannot reach Campus Commander. The plan stays open.',
+      );
+      return false;
+    } finally {
+      this.actionBusy.set(false);
+    }
+  }
+
+  /** Validate again starts a new validation from the stored file (state 19). */
+  async revalidate(): Promise<boolean> {
+    const displayId = this.displayId();
+    if (!displayId || this.actionBusy()) return false;
+    this.actionBusy.set(true);
+    this.actionError.set('');
+    try {
+      const response = await this.auth.request(
+        `${importBase(displayId)}/revalidate`,
+        {},
+      );
+      if (!response.ok) {
+        this.actionError.set(await importActionFailureText(response));
+        return false;
+      }
+      const receipt = deviceImportReceiptSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (!receipt.success) {
+        this.actionError.set(
+          'Campus Commander answered an unexpected import receipt. Try again.',
+        );
+        return false;
+      }
+      this.cache.clear();
+      this.reportLines.set([]);
+      this.reportCounts.set(null);
+      this.reportRefresh.set(null);
+      this.reportChanges.set(null);
+      this.plan.set(null);
+      this.accepted(receipt.data);
+      return true;
+    } catch {
+      this.actionError.set(
+        'Cannot reach Campus Commander. The plan stays expired.',
+      );
+      return false;
+    } finally {
+      this.actionBusy.set(false);
+    }
+  }
+
+  /** The rejected rows download (design section 1). */
+  readonly rejectedHref = computed(() => {
+    const displayId = this.displayId();
+    return displayId ? `${importBase(displayId)}/rejected` : '';
+  });
+
+  /** The report answer accepted a running job: follow it with the shared feed. */
+  private accepted(receipt: DeviceImportReceipt): void {
+    this.uploading.set(false);
+    this.uploadError.set('');
+    this.mode.set(receipt.mode);
+    this.importName.set(receipt.name);
+    this.displayId.set(receipt.displayId);
+    this.activeImport.set(receipt.displayId);
+    this.job.set(null);
+    this.error.set('');
+    this.loading.set(false);
+    this.step.set('validation');
+    this.startFeed();
+    void this.reader.request();
+    // The person asked to stop before the job existed (design section 9, td:760).
+    if (this.stopRequested()) void this.cancelJob();
+  }
+
+  private async cancelJob(): Promise<boolean> {
+    const displayId = this.displayId();
+    if (!displayId || this.actionBusy()) return false;
+    this.actionBusy.set(true);
+    this.actionError.set('');
+    try {
+      const response = await this.auth.request(
+        `/api/jobs/${encodeURIComponent(displayId)}/cancel`,
+        {},
+      );
+      if (!response.ok) {
+        this.actionError.set(await importActionFailureText(response));
+        return false;
+      }
+      void this.reader.request();
+      return true;
+    } catch {
+      this.actionError.set(
+        'Cannot reach Campus Commander. The validation keeps running.',
+      );
+      return false;
+    } finally {
+      this.actionBusy.set(false);
+    }
+  }
+
+  private async showReportPage(
+    view: DeviceImportReportView,
+    page: number,
+  ): Promise<void> {
+    this.reportLoading.set(true);
+    try {
+      const cached = this.cache.get(view)?.get(page);
+      if (cached) {
+        this.reportView.set(view);
+        this.reportPage.set(page);
+        this.reportLines.set(cached);
+        return;
+      }
+      const answer = await this.fetchReport(view, page);
+      if (answer) this.applyReport(answer, true);
+    } finally {
+      this.reportLoading.set(false);
+    }
+  }
+
+  /** The tab counts of the rejected and warnings views need one page each (states 13 to 15). */
+  private async readTabTotals(): Promise<void> {
+    for (const view of ['rejected', 'warnings'] as const) {
+      const answer = await this.fetchReport(view, 0);
+      if (answer) this.applyReport(answer, false);
+    }
+  }
+
+  private async fetchReport(
+    view: DeviceImportReportView,
+    page: number,
+  ): Promise<DeviceImportReport | null> {
+    const displayId = this.displayId();
+    if (!displayId) return null;
+    const epoch = this.epoch;
+    try {
+      const response = await this.auth.request(
+        `${importBase(displayId)}/report?view=${view}&page=${page}`,
+      );
+      if (epoch !== this.epoch) return null;
+      if (response.status === 404) {
+        this.reportError.set('This import no longer exists.');
+        return null;
+      }
+      if (!response.ok) {
+        this.reportError.set('The report is unavailable. Try again.');
+        return null;
+      }
+      const answer = deviceImportReportSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (epoch !== this.epoch) return null;
+      if (!answer.success) {
+        this.reportError.set(
+          'Campus Commander answered an unexpected report. Try again.',
+        );
+        return null;
+      }
+      this.reportError.set('');
+      return answer.data;
+    } catch {
+      if (epoch === this.epoch)
+        this.reportError.set(
+          'Cannot reach Campus Commander. The report may be out of date.',
+        );
+      return null;
+    }
+  }
+
+  private applyReport(
+    answer: {
+      view: DeviceImportReportView;
+      page: number;
+      lines: readonly DeviceImportReportLine[];
+      total: number;
+      pageCount: number;
+      counts: DeviceImportCounts;
+      refresh: DeviceImportRefresh;
+      changes: DeviceImportChangeSummary;
+      plan: JobImportPlan | null;
+    },
+    show: boolean,
+  ): void {
+    const pages = this.cache.get(answer.view) ?? new Map();
+    pages.set(answer.page, answer.lines);
+    this.cache.set(answer.view, pages);
+    this.reportTotals.update((totals) => ({
+      ...totals,
+      [answer.view]: answer.total,
+    }));
+    this.reportPages.update((counts) => ({
+      ...counts,
+      [answer.view]: answer.pageCount,
+    }));
+    this.reportCounts.set(answer.counts);
+    this.reportRefresh.set(answer.refresh);
+    this.reportChanges.set(answer.changes);
+    this.plan.set(answer.plan);
+    if (!show) return;
+    this.reportView.set(answer.view);
+    this.reportPage.set(answer.page);
+    this.reportLines.set(answer.lines);
+  }
+
+  private resetImport(): void {
+    this.mode.set(DEVICE_IMPORT_MODE_DEFAULT);
+    this.importFile.set(null);
+    this.chosenFile = null;
+    this.importError.set('');
+    this.readingFile.set(false);
+    this.uploading.set(false);
+    this.uploadError.set('');
+    this.stopRequested.set(false);
+    this.importName.set('');
+    this.reportCounts.set(null);
+    this.reportRefresh.set(null);
+    this.reportChanges.set(null);
+    this.plan.set(null);
+    this.reportView.set('proposed');
+    this.reportPage.set(0);
+    this.reportLines.set([]);
+    this.reportTotals.set({
+      proposed: null,
+      rejected: null,
+      warnings: null,
+      failed: null,
+    });
+    this.reportPages.set({ proposed: 1, rejected: 1, warnings: 1, failed: 1 });
+    this.reportLoading.set(false);
+    this.reportError.set('');
+    this.actionBusy.set(false);
+    this.actionError.set('');
+    this.cache.clear();
   }
 
   private openFor(
@@ -289,15 +871,35 @@ export class DeviceExportImportStore {
   private stop(): void {
     this.loading.set(false);
     this.reader.stop();
-    this.events.stop();
+    this.stopFeed();
+  }
+
+  /** The one shared feed of this tab. The dialog opens no connection of its own (finding 7). */
+  private startFeed(): void {
+    if (this.subscription) return;
+    this.subscription = this.feeds.subscribe('/api/jobs/events', {
+      open: () => this.eventSource('/api/jobs/events'),
+      reopenDelay: () => this.reopenDelay,
+      timeout: () => this.streamTimeout,
+      events: ['job-changed'],
+      opened: () => this.reader.opened(),
+      changed: (data) => this.onEvent(data),
+    });
+  }
+
+  private stopFeed(): void {
+    this.subscription?.close();
+    this.subscription = null;
   }
 
   private reset(): void {
     this.epoch++;
     this.activeRequest = null;
     this.activeJobs.set({ edit: null, report: null });
+    this.activeImport.set(null);
+    this.resetImport();
     this.reader.clear();
-    this.events.stop();
+    this.stopFeed();
     this.open.set(false);
     this.purpose.set('edit');
     this.step.set('configure');
@@ -352,12 +954,23 @@ export class DeviceExportImportStore {
           });
       }
       // The job names its own step: a published file opens the file card (behavior 5). An
-      // import row opens the import step, which XF2 fills.
+      // import row opens the validation or the report of that job (behavior 5).
       if (this.open()) {
-        if (detail.data.action === 'validate-device-import')
-          this.step.set('import');
-        else if (detail.data.action === 'export-devices')
+        if (detail.data.action === 'validate-device-import') {
+          this.activeImport.set(detail.data.displayId);
+          this.importName.set(detail.data.importSource?.name ?? this.importName());
+          const report =
+            detail.data.status === 'completed' ||
+            detail.data.status === 'completed-with-errors';
+          if (report) {
+            // A report keeps its view and page while the dialog stays on it.
+            if (this.step() !== 'report') void this.openImportReport();
+          } else if (this.step() !== 'report') {
+            this.step.set('validation');
+          }
+        } else if (detail.data.action === 'export-devices') {
           this.step.set(detail.data.exportFile ? 'file' : 'monitor');
+        }
       }
       return [{ jobId: detail.data.jobId, revision: detail.data.revision }];
     } catch {
@@ -411,6 +1024,76 @@ function finished(job: JobDetail): boolean {
     job.status === 'cancelled' ||
     job.status === 'needs-review'
   );
+}
+
+/** The browser gives the upload the deadline of the edge path (design section 4). */
+const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** The routes of one import (design section 1). */
+function importBase(displayId: string): string {
+  return `/api/devices/imports/${encodeURIComponent(displayId)}`;
+}
+
+/**
+ * The header row of the first 64 KiB of a file (design section 9, states 09 and 10). The sample
+ * may end inside a quoted cell, so the record is taken from `push` and the reader is not closed.
+ * A byte order mark is dropped by the reader. Null means the bytes are not UTF-8 text.
+ */
+async function readFileHeader(file: File): Promise<string[] | null> {
+  const bytes = new Uint8Array(
+    await file.slice(0, IMPORT_HEADER_SAMPLE_BYTES).arrayBuffer(),
+  );
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, {
+      stream: true,
+    });
+  } catch {
+    return null;
+  }
+  const records = createCsvReader().push(text);
+  return records.length > 0 ? records[0].cells : [];
+}
+
+/** The reason of a JSON refusal, for the upload and the plan routes. */
+async function refusalReason(response: Response): Promise<string | null> {
+  const body: unknown = await response.json().catch(() => null);
+  const reason = (body as { reason?: unknown } | null)?.reason;
+  return typeof reason === 'string' ? reason : null;
+}
+
+/**
+ * The refusal of a stop, a plan cancel, or Validate again (design sections 6 and 7). The route
+ * answers one of the four cancel refusals, or the plan refusals of Execute.
+ */
+async function importActionFailureText(response: Response): Promise<string> {
+  const reason = await refusalReason(response);
+  switch (reason) {
+    case 'job-finished':
+      return 'The validation already ended. Reload the page.';
+    case 'nothing-to-stop':
+      return 'The validation has nothing to stop. Reload the page.';
+    case 'cancel-not-permitted':
+      return 'You do not have permission to stop this validation.';
+    case 'job-not-found':
+      return 'This import no longer exists.';
+    case 'plan-not-open':
+      return 'The plan already ended. Reload the page.';
+    case 'plan-expired':
+      return 'The plan expired. Validate again.';
+    case 'plan-revision':
+      return 'The plan changed. Reload the page.';
+    default:
+      if (response.status === 401)
+        return 'Your session ended. Sign in again, then import.';
+      if (response.status === 403)
+        return 'You do not have permission to change this import.';
+      if (response.status === 410)
+        return 'The plan expired. Validate again.';
+      if (response.status === 409)
+        return 'The plan changed. Reload the page.';
+      return 'Campus Commander could not change this import. Try again.';
+  }
 }
 
 /** The refusal of the export route (design sections 1 and 5). */

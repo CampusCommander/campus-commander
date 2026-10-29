@@ -4,6 +4,7 @@
   <section
     class="export-dialog"
     [class.has-help]="helpOpen()"
+    [class.is-wide]="wide()"
     role="dialog"
     aria-modal="true"
     aria-labelledby="export-dialog-title"
@@ -18,9 +19,11 @@
         @if (subtitleJob(); as job) {
         <p id="export-dialog-sub" class="export-sub">
           Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
-          subtitleStatus() }}
+          subtitleStatus() }}@if (wide() && importLine()) { · {{ importLine() }} }
         </p>
-        } @else if (subtitleText(); as line) {
+        @if (!wide() && importLine(); as line) {
+        <p class="export-sub">{{ line }}</p>
+        } } @else if (subtitleText(); as line) {
         <p id="export-dialog-sub" class="export-sub">{{ line }}</p>
         } @else {
         <p id="export-dialog-sub" class="visually-hidden">{{ title() }}</p>
@@ -171,7 +174,387 @@
           </div>
         </div>
         } } @case ('import') {
-        <div class="step"></div>
+        <div class="step">
+          <section class="group" aria-labelledby="mode-label">
+            <p id="mode-label" class="list-label">{{ MODE_LABEL }}</p>
+            <mat-radio-group
+              class="option-cards two"
+              aria-labelledby="mode-label"
+              [value]="mode()"
+              (change)="chooseMode($event.value)"
+            >
+              @for (option of modes; track option.mode) {
+              <mat-radio-button class="option-card" [value]="option.mode">
+                <span class="option-label">{{ option.label }}</span>
+              </mat-radio-button>
+              }
+            </mat-radio-group>
+          </section>
+
+          <section class="group" aria-labelledby="source-label">
+            <p id="source-label" class="list-label">{{ SOURCE_LABEL }}</p>
+            <mat-radio-group
+              class="option-cards"
+              aria-labelledby="source-label"
+              value="upload"
+            >
+              <mat-radio-button class="option-card" value="upload">
+                <span class="option-label">{{ UPLOAD_SOURCE_LABEL }}</span>
+              </mat-radio-button>
+              <mat-radio-button class="option-card" value="drive" [disabled]="true">
+                <span class="option-label">{{ DRIVE_SOURCE_LABEL }}</span>
+                <span class="option-line why">{{ DRIVE_SOURCE_NOTE }}</span>
+              </mat-radio-button>
+            </mat-radio-group>
+          </section>
+
+          <div
+            class="drop-zone"
+            (dragover)="dragOver($event)"
+            (drop)="dropped($event)"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">csv</span>
+            <span class="drop-label">{{ DROP_LABEL }}</span>
+            <button mat-stroked-button type="button" (click)="fileInput.click()">
+              {{ BROWSE_LABEL }}
+            </button>
+            <input
+              #fileInput
+              class="visually-hidden"
+              type="file"
+              accept=".csv,text/csv"
+              tabindex="-1"
+              aria-hidden="true"
+              (change)="picked($event)"
+            />
+          </div>
+
+          @if (importFile(); as chosen) {
+          <div
+            class="file-item"
+            [class.has-error]="chosen.check !== 'passed'"
+            [attr.aria-label]="SELECTED_FILE_LABEL"
+          >
+            <span class="file-glyph small" aria-hidden="true">
+              <span class="material-symbols-outlined">csv</span>
+            </span>
+            <div class="file-main">
+              <p class="file-name">{{ chosen.name }}</p>
+              <ul class="meta-items">
+                @for (fact of importFacts(); track fact) {
+                <li>{{ fact }}</li>
+                }
+              </ul>
+              @if (chosen.check === 'passed') {
+              <p class="file-check ok">
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >check_circle</span
+                >
+                {{ HEADER_PASSED_LINE }}
+              </p>
+              } @else {
+              <p class="file-check bad" role="alert">
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >error</span
+                >
+                {{ chosen.refusal }}
+              </p>
+              }
+            </div>
+          </div>
+          } @if (uploadError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          } @if (importError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          }
+        </div>
+        } @case ('validation') {
+        <div class="step">
+          <section class="group" aria-labelledby="import-phases-label">
+            <p id="import-phases-label" class="visually-hidden">
+              Validation phases
+            </p>
+            <ol class="phases">
+              @for (phase of importPhases(); track phase.name) {
+              <li
+                class="phase"
+                [class.is-done]="phase.state === 'done'"
+                [class.is-current]="phase.state === 'current'"
+                [class.is-failed]="phase.state === 'failed'"
+                [class.is-stopped]="phase.state === 'stopped'"
+              >
+                <span class="phase-dot" aria-hidden="true">
+                  @if (phase.state === 'done') {
+                  <span class="material-symbols-outlined">check</span>
+                  } @else if (phase.state === 'failed') {
+                  <span class="material-symbols-outlined">priority_high</span>
+                  } @else { {{ $index + 1 }} }
+                </span>
+                <span class="phase-label">{{ phase.label }}</span>
+                <span class="phase-detail">{{ phase.detail }}</span>
+                @if (phase.state === 'current' && phase.percent !== null) {
+                <mat-progress-bar
+                  mode="determinate"
+                  [value]="phase.percent"
+                  [attr.aria-label]="phase.label + ' progress'"
+                ></mat-progress-bar>
+                }
+              </li>
+              }
+            </ol>
+          </section>
+
+          @if (validationFailed()) {
+          <div class="action-note error" role="alert">
+            @for (paragraph of refusalParagraphs(); track paragraph) {
+            <p>{{ paragraph }}</p>
+            }
+          </div>
+          } @if (validationCancelled()) {
+          <p class="action-note stopped">{{ VALIDATION_STOPPED_LINE }}</p>
+          @if (cancelledLine(); as line) {
+          <p class="note">{{ line }}</p>
+          } } @if (validationFailed()) {
+          <p class="note">{{ VALIDATION_FAILED_LINE }}</p>
+          }
+
+          @if (importCounters().length) {
+          <dl class="counters">
+            @for (counter of importCounters(); track counter.label) {
+            <div class="counter">
+              <dt>{{ counter.label }}</dt>
+              <dd>{{ counter.value }}</dd>
+            </div>
+            }
+          </dl>
+          } @if (validationCancelled()) {
+          <p class="note">{{ stoppedReads() }}</p>
+          } @if (loadError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          } @if (actionError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          }
+        </div>
+        } @case ('report') {
+        <div class="step report">
+          @if (counts(); as rowCounts) {
+          <dl class="count-equation" aria-label="Rows">
+            @for (term of countTerms(); track term.label; let first = $first) {
+            @if (!first) {
+            <span class="count-plus" aria-hidden="true">+</span>
+            }
+            <div class="count-term" [class]="term.tone">
+              <dd>{{ term.value }}</dd>
+              <dt>{{ term.label }}</dt>
+            </div>
+            }
+          </dl>
+          } @if (changeLine(); as line) {
+          <p class="change-line">Proposed changes: {{ line }}</p>
+          }
+          <p class="meta-line">
+            @if (syncAllRows()) {
+            <span>{{ SYNC_ALL_ROWS_LINE }}</span>
+            } @if (refreshLine(); as line) {
+            <span>{{ line }}</span>
+            } @if (oldestLine(); as line) {
+            <span>{{ line }}</span>
+            }
+          </p>
+
+          <div class="report-body">
+            <nav
+              mat-tab-nav-bar
+              class="report-tabs"
+              [tabPanel]="reportPanel"
+              aria-label="Validation results view"
+            >
+              @for (tab of tabs(); track tab.view) {
+              <button
+                mat-tab-link
+                type="button"
+                [active]="tab.view === view()"
+                (click)="setView(tab.view)"
+              >
+                {{ tab.label }} <span class="tab-count">{{ tab.count }}</span>
+              </button>
+              }
+              @if (hasRejected()) {
+              <a
+                mat-button
+                class="download-rejected"
+                [href]="rejectedHref()"
+                download
+              >
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >download</span
+                >
+                {{ DOWNLOAD_REJECTED_LABEL }}
+              </a>
+              }
+            </nav>
+
+            <mat-tab-nav-panel #reportPanel>
+              <div class="report-table-wrap">
+                <table class="report-table">
+                  <caption class="visually-hidden"
+                    >Validation results table</caption
+                  >
+                  <thead>
+                    @switch (view()) { @case ('warnings') {
+                    <tr>
+                      <th scope="col" class="col-row">Row</th>
+                      <th scope="col" class="col-device">Device</th>
+                      <th scope="col" class="col-reason">Warning</th>
+                    </tr>
+                    } @case ('rejected') {
+                    <tr>
+                      <th scope="col" class="col-row">Row</th>
+                      <th scope="col" class="col-device">Device</th>
+                      <th scope="col" class="col-change">Cell</th>
+                      <th scope="col" class="col-value">Submitted value</th>
+                      <th scope="col" class="col-reason">Reason</th>
+                    </tr>
+                    } @default {
+                    <tr>
+                      <th scope="col" class="col-row">Row</th>
+                      <th scope="col" class="col-device">Device</th>
+                      <th scope="col" class="col-change">Change</th>
+                      <th scope="col" class="col-value">Current value</th>
+                      <th scope="col" class="col-value">New value</th>
+                    </tr>
+                    } }
+                  </thead>
+                  <tbody>
+                    @if (lines().length === 0) {
+                    <tr class="empty-row">
+                      <td [attr.colspan]="view() === 'warnings' ? 3 : view() === 'rejected' ? 5 : 5">
+                        {{ view() === 'proposed' ? NO_UPDATE_VIEW_LINE : '' }}
+                      </td>
+                    </tr>
+                    } @for (line of lines(); track $index) {
+                    <tr>
+                      <td class="col-row">
+                        {{ line.row === null ? 'Header row' : line.row }}
+                      </td>
+                      <td class="col-device">
+                        @if (line.deviceId) {
+                        <a
+                          class="device-link"
+                          [routerLink]="['/devices', line.deviceId]"
+                          [attr.aria-label]="'Open device ' + line.deviceId"
+                        >
+                          <span
+                            class="material-symbols-outlined"
+                            aria-hidden="true"
+                            >visibility</span
+                          >
+                        </a>
+                        {{ line.deviceId }}
+                        } @else {
+                        <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
+                        }
+                      </td>
+                      @switch (view()) { @case ('warnings') {
+                      <td class="col-reason">
+                        <span class="warn-icon" aria-hidden="true">warning</span>
+                        {{ line.reason }}
+                      </td>
+                      } @case ('rejected') {
+                      <td class="col-change">{{ line.column }}</td>
+                      <td class="col-value">
+                        <span class="cut" [title]="line.submittedValue ?? ''"
+                          >{{ line.submittedValue }}</span
+                        >
+                        @if ((line.submittedValue?.length ?? 0) > 40) {
+                        <span class="value-length"
+                          >{{ line.submittedValue?.length }} characters</span
+                        >
+                        }
+                      </td>
+                      <td class="col-reason">
+                        <span class="warn-icon" aria-hidden="true">error</span>
+                        {{ line.reason }}
+                      </td>
+                      } @default { @if (line.change; as change) { @let cells =
+                      values(change); @let chip = this.chip(change);
+                      <td class="col-change">
+                        <span class="change-chip" [class]="chip.tone">
+                          <span class="dot" aria-hidden="true"></span>
+                          {{ chip.label }}
+                        </span>
+                      </td>
+                      <td class="col-value">
+                        <span class="cut" [title]="cells.current.full">{{
+                          cells.current.text
+                        }}</span>
+                      </td>
+                      <td class="col-value">
+                        <span
+                          class="cut"
+                          [class.clear]="cells.next.clear"
+                          [title]="cells.next.full"
+                          >{{ cells.next.text }}</span
+                        >
+                        @if (cells.note) {
+                        <span class="value-note">{{ cells.note }}</span>
+                        }
+                      </td>
+                      } @else {
+                      <td class="col-change"></td>
+                      <td class="col-value"></td>
+                      <td class="col-value"></td>
+                      } } }
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </mat-tab-nav-panel>
+
+            <div class="report-pager">
+              <span class="pager-text">{{ pagerText() }}</span>
+              <span class="pager-buttons">
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Previous results page"
+                  [disabled]="!canPageBack()"
+                  (click)="previousPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_left</span
+                  >
+                </button>
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Next results page"
+                  [disabled]="!canPageForward()"
+                  (click)="nextPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_right</span
+                  >
+                </button>
+              </span>
+            </div>
+          </div>
+
+          @if (reportError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          }
+        </div>
         } }
       </div>
     </div>
@@ -238,7 +621,95 @@
       } } } @case ('import') {
       <span class="export-state"></span>
       <button mat-button type="button" (click)="close()">Cancel</button>
-      } }
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!importReady()"
+        (click)="startValidation()"
+      >
+        {{ uploading() ? 'Starting the validation…' : START_VALIDATION_LABEL }}
+      </button>
+      } @case ('validation') {
+      <div class="export-state">
+        @if (validationFailed() || validationCancelled()) {
+        <span
+          class="status-chip small"
+          [class.tone-error]="validationFailed()"
+          [class.tone-neutral]="validationCancelled()"
+        >
+          <span class="dot" aria-hidden="true"></span>
+          {{ NO_REPORT_LABEL }}
+        </span>
+        } @else {
+        <span class="quiet">
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span>{{ VALIDATION_CLOSING_LINE }}</span>
+        </span>
+        }
+      </div>
+      @if (validationFailed() || validationCancelled()) {
+      <button mat-button type="button" (click)="close()">Close</button>
+      <button mat-flat-button type="button" (click)="importAgain()">
+        {{ IMPORT_AGAIN_LABEL }}
+      </button>
+      } @else {
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="actionBusy()"
+        (click)="stopValidation()"
+      >
+        {{ STOP_VALIDATION_LABEL }}
+      </button>
+      <button mat-flat-button type="button" (click)="close()">Close</button>
+      } } @case ('report') {
+      <div class="export-state">
+        <span
+          class="status-chip small"
+          [class]="planView().tone"
+          [attr.data-plan]="planView().state"
+        >
+          <span class="dot" aria-hidden="true"></span>
+          {{ planView().chip }}
+        </span>
+        <span>{{ planView().line }}</span>
+        @if (actionError(); as error) {
+        <span class="error" role="alert">{{ error }}</span>
+        }
+      </div>
+      @switch (planView().state) { @case ('open') {
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="actionBusy()"
+        (click)="cancelImport()"
+      >
+        {{ CANCEL_IMPORT_LABEL }}
+      </button>
+      <button mat-flat-button type="button">{{ executeLabel() }}</button>
+      } @case ('expired') {
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="actionBusy()"
+        (click)="revalidate()"
+      >
+        {{ VALIDATE_AGAIN_LABEL }}
+      </button>
+      <button mat-flat-button type="button" disabled>{{ executeLabel() }}</button>
+      } @case ('cancelled') {
+      <button mat-stroked-button type="button" (click)="importAgain()">
+        {{ IMPORT_AGAIN_LABEL }}
+      </button>
+      } @default { @if (counts()?.rejected) {
+      <button mat-stroked-button type="button" (click)="importAgain()">
+        {{ IMPORT_AGAIN_LABEL }}
+      </button>
+      } @else {
+      <button mat-button type="button" (click)="done()">Done</button>
+      }
+      <button mat-flat-button type="button" disabled>{{ executeLabel() }}</button>
+      } } } }
     </div>
   </section>
 </div>

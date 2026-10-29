@@ -1,0 +1,397 @@
+/*
+ * The Import steps of the dialog (design section 9, states 09 to 15 and 18 to 24).
+ * The surface, the header, the action bar, and the shared chips come from
+ * `device-export-import-dialog.css`. This file adds the drop zone, the file item, the counters,
+ * the count equation, and the report table. Every value is a token of `theme/tokens.css`.
+ */
+.tone-info {
+  color: var(--cc-accent);
+}
+
+.tone-info .dot {
+  background: var(--cc-accent);
+}
+
+/* The 1120 px steps: the report of states 13 to 15 and 18 to 22. The dialog takes the full area
+   under the header less the 16 px wrap padding, so the action bar stays in place (notes, choice 3). */
+.export-dialog.is-wide {
+  position: relative;
+  width: 1120px;
+  height: 100%;
+}
+
+/* The help of a wide step lies over the right 520 px of the body, above the action bar. */
+.export-dialog.is-wide.has-help {
+  display: flex;
+  width: 1120px;
+}
+
+.export-dialog.is-wide.has-help app-device-export-help {
+  position: absolute;
+  z-index: 1;
+  inset-block: 88px var(--cc-space-xl);
+  inset-inline-end: 0;
+  width: 520px;
+  border-block-start: 1px solid var(--cc-border);
+  border-inline-start: 1px solid var(--cc-border);
+  border-end-start-radius: var(--cc-radius-control);
+  box-shadow: -8px 0 24px rgb(32 33 36 / 8%);
+}
+
+/* The setup step of states 09 and 10: the mode pair takes two columns. */
+.option-cards.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* The drop zone: a dashed target for the native picker and a drop (states 09 and 10). */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cc-space-md);
+  padding: var(--cc-space-xl) var(--cc-space-lg);
+  border: 1px dashed var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-app);
+  text-align: center;
+}
+
+.drop-zone > .material-symbols-outlined {
+  font-size: 32px;
+  color: var(--cc-text-secondary);
+}
+
+.drop-label {
+  color: var(--cc-text-secondary);
+}
+
+/* The chosen file of states 09 and 10: the name, the facts, and the header check line. */
+.file-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--cc-space-md);
+  padding: var(--cc-space-md) var(--cc-space-lg) var(--cc-space-md)
+    var(--cc-space-md);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.file-item.has-error {
+  border-color: var(--cc-status-error-text);
+}
+
+.file-glyph.small {
+  width: 40px;
+  height: 40px;
+}
+
+.file-item .file-name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.file-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-xs);
+  margin: var(--cc-space-sm) 0 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.file-check .material-symbols-outlined {
+  flex: none;
+  font-size: 16px;
+}
+
+.file-check.ok {
+  color: var(--cc-status-success-text);
+}
+
+.file-check.bad {
+  color: var(--cc-status-error-text);
+}
+
+/* The counters of states 12 and 24: one label and one value for each read total. */
+.counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--cc-space-md);
+  margin: 0;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  padding: var(--cc-space-md) var(--cc-card-padding);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.counter dt {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.counter dd {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The stopped note of state 24: a one-way statement, not an error. */
+.action-note.stopped {
+  border-color: var(--cc-border);
+}
+
+/* The report of states 13 to 15 and 18 to 22. */
+.step.report {
+  gap: var(--cc-space-lg);
+}
+
+/* The count equation: the terms in reading order, joined by a plus sign. */
+.count-equation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--cc-space-lg);
+  margin: 0;
+}
+
+.count-term {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+
+.count-term dd {
+  margin: 0;
+  font-size: 28px;
+  line-height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-term dt {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.count-term.tone-success dd {
+  color: var(--cc-status-success-text);
+}
+
+.count-term.tone-warning dd {
+  color: var(--cc-status-warning-text);
+}
+
+.count-term.tone-error dd {
+  color: var(--cc-status-error-text);
+}
+
+.count-plus {
+  color: var(--cc-text-secondary);
+  font-size: 20px;
+  line-height: 36px;
+}
+
+.change-line {
+  margin: 0;
+  font-weight: 500;
+}
+
+.meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-space-lg);
+  margin: 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The report body takes the remaining height, with the table scrolling under the tabs. */
+.report-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.report-tabs {
+  display: flex;
+  align-items: center;
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.report-tabs .download-rejected {
+  margin-inline-start: auto;
+}
+
+.tab-count {
+  margin-inline-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.report-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--cc-space-sm) var(--cc-space-md);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-align: start;
+}
+
+.report-table td {
+  padding: var(--cc-space-sm) var(--cc-space-md);
+  border-block-end: 1px solid var(--cc-border);
+  vertical-align: top;
+}
+
+.report-table .col-row {
+  width: 96px;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table .col-device {
+  width: 200px;
+}
+
+.report-table .col-change {
+  width: 160px;
+}
+
+.report-table .col-reason {
+  width: 240px;
+}
+
+.empty-row td {
+  color: var(--cc-text-secondary);
+  text-align: center;
+}
+
+.device-link {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-inline-end: var(--cc-space-xs);
+  border-radius: 50%;
+  color: var(--cc-text-link);
+  vertical-align: middle;
+}
+
+.device-link .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.muted {
+  color: var(--cc-text-secondary);
+}
+
+/* A long path or value takes one line and a start cut, and its tooltip holds the whole text
+   (design section 9, ruling 3). */
+.cut {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cut.clear {
+  color: var(--cc-text-secondary);
+  font-style: italic;
+}
+
+.value-note,
+.value-length {
+  display: block;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.change-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 24px;
+  padding-inline: var(--cc-space-md);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.change-chip.tone-success .dot {
+  background: var(--cc-status-success);
+}
+
+.change-chip.tone-warning .dot {
+  background: var(--cc-status-warning);
+}
+
+.change-chip.tone-error .dot {
+  background: var(--cc-status-error);
+}
+
+.warn-icon {
+  margin-inline-end: var(--cc-space-xs);
+  color: var(--cc-status-warning-text);
+  font-family: 'Material Symbols Outlined';
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+.col-reason .warn-icon {
+  color: var(--cc-status-error-text);
+}
+
+/* The pager of the report: 10 lines a page, with the page text at the start. */
+.report-pager {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-md);
+  padding-block-start: var(--cc-space-sm);
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.pager-text {
+  flex: 1;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-buttons {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
