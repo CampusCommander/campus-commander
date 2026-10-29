@@ -180,6 +180,9 @@ export class JobStream {
       }
       // EventSource retries while CONNECTING. Live updates end until the next open,
       // and the native reconnection keeps its own retry.
+      this.isOpen = false;
+      clearTimeout(this.watchdog);
+      this.watchdog = undefined;
       this.options.closed?.();
     });
   }
