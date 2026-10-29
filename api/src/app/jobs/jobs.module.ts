@@ -24,5 +24,6 @@ import { JobsService } from './jobs.service';
   ],
   controllers: [JobsController],
   providers: [JobsService, JobServiceProcess],
+  exports: [JobsService],
 })
 export class JobsModule {}

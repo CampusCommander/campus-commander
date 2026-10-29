@@ -14,6 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigurationModule } from './configuration/configuration.module';
 import { DiagnosticsModule } from './diagnostics/diagnostics.module';
 import { DevicesModule } from './devices/devices.module';
+import { EventsModule } from './events/events.module';
 import { JobsModule } from './jobs/jobs.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { JobsModule } from './jobs/jobs.module';
     AuthModule,
     DiagnosticsModule,
     DevicesModule,
+    EventsModule,
     JobsModule,
   ],
   controllers: [AppController, BootstrapController, HealthController],
