@@ -220,6 +220,34 @@
         >
           Change status
         </button>
+        <mat-divider></mat-divider>
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="!!describedBy()['export']"
+          [attr.aria-describedby]="describedBy()['export'] ?? null"
+          (click)="startExport()"
+        >
+          Export
+        </button>
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="!!describedBy()['report']"
+          [attr.aria-describedby]="describedBy()['report'] ?? null"
+          (click)="startReport()"
+        >
+          Reports
+        </button>
+        <button
+          mat-menu-item
+          type="button"
+          [disabled]="!!describedBy()['import']"
+          [attr.aria-describedby]="describedBy()['import'] ?? null"
+          (click)="startImport()"
+        >
+          Import
+        </button>
       </mat-menu>
     </div>
   </div>
@@ -391,6 +419,12 @@
     />
   </div>
 
+  <app-device-export-import-dialog
+    [gridId]="gridId"
+    [tabId]="store.selectionTab"
+    [sort]="store.view().sort"
+    (closed)="exportClosed()"
+  />
   <app-device-update-sheet
     [open]="updateOpen()"
     [source]="sheetSource()"

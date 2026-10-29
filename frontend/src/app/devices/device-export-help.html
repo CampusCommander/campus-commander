@@ -1,0 +1,63 @@
+<aside class="export-help" aria-labelledby="export-help-title">
+  <h3 id="export-help-title">{{ HELP_TITLE }}</h3>
+  <mat-button-toggle-group
+    class="help-topics"
+    aria-label="Help topic"
+    [value]="topic()"
+    (change)="setTopic($event.value)"
+  >
+    @for (option of EXPORT_HELP_TOPICS; track option) {
+    <mat-button-toggle [value]="option">
+      {{ EXPORT_HELP_TOPIC_LABELS[option] }}
+    </mat-button-toggle>
+    }
+  </mat-button-toggle-group>
+  @if (topic() === 'export') {
+  <div class="help-body">
+    <p>{{ EXPORT_HELP_INTRO }}</p>
+    <h4>{{ EXPORT_HELP_COLUMNS_HEAD }}</h4>
+    <table class="help-table">
+      <colgroup>
+        <col class="col-key" />
+        <col />
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Column</th>
+          <th scope="col">Use</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (column of EXPORT_HELP_COLUMNS; track column.column) {
+        <tr>
+          <th scope="row">{{ column.column }}</th>
+          <td>{{ column.use }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+    <h4>{{ EXPORT_HELP_RULES_HEAD }}</h4>
+    <ul>
+      @for (rule of EXPORT_HELP_RULES; track rule) {
+      <li>{{ rule }}</li>
+      }
+    </ul>
+    <h4>{{ EXPORT_HELP_LIMITS_HEAD }}</h4>
+    <ul>
+      @for (limit of EXPORT_HELP_LIMITS; track limit) {
+      <li>{{ limit }}</li>
+      }
+    </ul>
+  </div>
+  } @else {
+  <div class="help-body">
+    <p>{{ REPORT_HELP_INTRO }}</p>
+    <h4>{{ EXPORT_HELP_LIMITS_HEAD }}</h4>
+    <ul>
+      @for (limit of REPORT_HELP_LIMITS; track limit) {
+      <li>{{ limit }}</li>
+      }
+    </ul>
+  </div>
+  }
+</aside>

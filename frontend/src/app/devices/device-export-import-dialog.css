@@ -1,0 +1,539 @@
+/*
+ * The Export, Reports, and Import dialog (design section 9, states 02 to 08).
+ * The surface, scrim, and wrap come from `device-dialog.css`. This file adds the 480 px step,
+ * the 1000 px docked help of state 06, the option cards, the phases, the file card, and the
+ * help pane. Every value is a token of `theme/tokens.css`.
+ */
+:host {
+  display: contents;
+}
+
+.export-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--mat-sys-corner-extra-large, 28px);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-primary);
+  box-shadow: 0 8px 24px rgb(32 33 36 / 18%);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+/* State 06: the dialog grows by the 520 px pane, the step keeps 480 px, and the action bar
+   stays under the step. */
+.export-dialog.has-help {
+  display: grid;
+  width: 1000px;
+  grid-template-columns: 480px 520px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'head head'
+    'main help'
+    'actions help';
+}
+
+.export-dialog.has-help > .export-head {
+  grid-area: head;
+}
+
+.export-dialog.has-help > .export-main {
+  grid-area: main;
+}
+
+.export-dialog.has-help > .export-actions {
+  grid-area: actions;
+}
+
+/* The help pane host: the 520 px column of state 06, docked beside the 480 px step. */
+app-device-export-help {
+  grid-area: help;
+  border-block-start: 1px solid var(--cc-border);
+  border-inline-start: 1px solid var(--cc-border);
+}
+
+/* The header: the title and the step context line at the left, the icon buttons at the right. */
+.export-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--cc-space-lg);
+  padding: var(--cc-space-lg) var(--cc-space-lg) var(--cc-space-lg)
+    var(--cc-space-xl);
+}
+
+.export-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.export-head h2 {
+  margin: 0;
+  font:
+    400 24px / 32px Roboto,
+    sans-serif;
+  letter-spacing: 0;
+}
+
+.export-sub {
+  margin: var(--cc-space-xs) 0 0;
+  color: var(--cc-text-secondary);
+}
+
+.export-sub a {
+  color: var(--cc-text-link);
+}
+
+.export-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  margin-block-start: -4px;
+}
+
+.export-tools .mat-mdc-icon-button {
+  color: var(--cc-text-secondary);
+}
+
+/* The open help button takes the open style of the Activity button. */
+.export-tools .mat-mdc-icon-button.is-on {
+  background: var(--cc-surface-selected);
+  color: var(--cc-accent);
+}
+
+.export-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.export-dialog.has-help .export-main {
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.export-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--cc-space-xl) var(--cc-space-xl);
+  overflow-y: auto;
+}
+
+.export-dialog.has-help .export-body {
+  padding-block-start: var(--cc-space-lg);
+}
+
+/* The action bar: the state at the left, the actions at the right, the primary action last. */
+.export-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 72px;
+  padding: var(--cc-space-lg) var(--cc-space-xl);
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.export-state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-width: 0;
+  margin: 0 var(--cc-space-lg) 0 0;
+  color: var(--cc-text-secondary);
+}
+
+.export-state.error {
+  color: var(--cc-status-error-text);
+}
+
+.export-state > span:last-child {
+  min-width: 0;
+}
+
+.export-state .quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.export-state .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.export-actions .mdc-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* The setup step: one column of groups in the 480 px dialog. */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xl);
+  min-width: 0;
+}
+
+.group {
+  min-width: 0;
+}
+
+.list-label {
+  margin: 0 0 var(--cc-space-sm);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+/* Option cards: mat-radio-button in a CSS card. */
+.option-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cc-space-sm);
+}
+
+.option-card {
+  display: flex;
+  min-height: 56px;
+  padding: var(--cc-space-sm) var(--cc-space-lg) var(--cc-space-sm)
+    var(--cc-space-xs);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.option-card ::ng-deep .mdc-form-field {
+  align-items: flex-start;
+  width: 100%;
+}
+
+.option-card ::ng-deep .mdc-label {
+  padding-block: 10px;
+}
+
+.option-card.is-selected {
+  border-color: var(--cc-accent);
+  box-shadow: inset 0 0 0 1px var(--cc-accent);
+  background: var(--cc-surface-selected);
+}
+
+.option-card.mat-mdc-radio-disabled {
+  border-color: var(--cc-border);
+  background: var(--cc-surface-app);
+}
+
+.option-label {
+  display: block;
+  color: var(--cc-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.option-line {
+  display: block;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.option-card.mat-mdc-radio-disabled .option-label {
+  color: var(--cc-text-disabled);
+  font-weight: 400;
+}
+
+/* The note of a disabled choice keeps the secondary color, so it stays readable. */
+.option-card.mat-mdc-radio-disabled .option-line.why {
+  color: var(--cc-text-secondary);
+}
+
+/* The report columns: plain chips in grid order, with no state layer. */
+.col-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.col-chips li {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--cc-space-md);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-primary);
+  white-space: nowrap;
+}
+
+/* Progress: the stepper dots of the built sheet, laid out vertically, with one determinate
+   bar under the current phase (state 04). */
+.phases {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-rows: 40px auto;
+  column-gap: var(--cc-space-md);
+  align-items: center;
+}
+
+.phase:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 11.5px;
+  inset-block: 32px -8px;
+  width: 1px;
+  background: var(--cc-border);
+}
+
+.phase-dot {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cc-text-secondary);
+  color: var(--cc-text-on-accent);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.phase.is-done .phase-dot,
+.phase.is-current .phase-dot {
+  background: var(--cc-accent);
+}
+
+.phase.is-failed .phase-dot {
+  background: var(--cc-status-error);
+}
+
+.phase-label {
+  color: var(--cc-text-secondary);
+}
+
+.phase.is-done .phase-label {
+  color: var(--cc-text-primary);
+}
+
+.phase.is-current .phase-label,
+.phase.is-stopped .phase-label {
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+.phase.is-failed .phase-label {
+  color: var(--cc-status-error-text);
+  font-weight: 500;
+}
+
+.phase-detail {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.phase.is-current .phase-detail {
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+.phase.is-failed .phase-detail {
+  color: var(--cc-status-error-text);
+}
+
+.phase > .mat-mdc-progress-bar {
+  grid-column: 2 / -1;
+  margin-block: 0 var(--cc-space-sm);
+}
+
+.note {
+  margin: 0;
+  color: var(--cc-text-secondary);
+}
+
+/* The one-way note of a failed or stopped export. */
+.action-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xs);
+  margin: 0;
+  padding: var(--cc-space-md) var(--cc-card-padding);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+}
+
+.action-note.error {
+  border-color: var(--cc-status-error-text);
+}
+
+.action-note p {
+  margin: 0;
+}
+
+.action-note.error p {
+  color: var(--cc-status-error-text);
+}
+
+/* The ready file: one card with the name, the facts, and the expiry (states 05 and 08). */
+.file-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  column-gap: var(--cc-space-lg);
+  padding: var(--cc-space-lg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.file-glyph {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+}
+
+.file-main {
+  min-width: 0;
+}
+
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-width: 0;
+}
+
+.file-name {
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-items {
+  display: flex;
+  flex-wrap: wrap;
+  margin: var(--cc-space-xs) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta-items li {
+  white-space: nowrap;
+}
+
+.meta-items li + li::before {
+  content: '\00B7';
+  margin-inline: var(--cc-space-xs);
+}
+
+.until {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  margin: var(--cc-space-sm) 0 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.until .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* Chips: the built status chip of the job page. */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  max-width: 100%;
+  min-height: 32px;
+  padding-inline: var(--cc-space-md);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-card);
+  white-space: nowrap;
+}
+
+.status-chip.small {
+  min-height: 24px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.file-head .status-chip {
+  flex: none;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tone-success {
+  color: var(--cc-status-success-text);
+}
+
+.tone-success .dot {
+  background: var(--cc-status-success);
+}
+
+.tone-warning {
+  color: var(--cc-status-warning-text);
+}
+
+.tone-warning .dot {
+  background: var(--cc-status-warning);
+}
+
+.tone-error {
+  color: var(--cc-status-error-text);
+}
+
+.tone-error .dot {
+  background: var(--cc-status-error);
+}
+
+.tone-neutral {
+  color: var(--cc-text-secondary);
+}
+
+.tone-neutral .dot {
+  background: var(--cc-text-disabled);
+}

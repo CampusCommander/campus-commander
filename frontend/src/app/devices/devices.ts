@@ -13,11 +13,14 @@ import {
   viewChild,
   viewChildren,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDividerModule } from '@angular/material/divider';
 import { MatMenuModule } from '@angular/material/menu';
+import type { Subscription } from 'rxjs';
 import type {
   Action,
+  DeviceReportFieldId,
   DevicePredicate,
   DeviceRow,
 } from '@campus/application-contracts';
@@ -29,6 +32,10 @@ import { DeviceUpdateSheet } from './device-update-sheet';
 import { DeviceActionSheet } from './device-action-sheet';
 import { DeviceGridDraftStore, rowPatchFor } from './device-grid-draft.store';
 import { DeviceGridRevertDialog } from './device-grid-revert-dialog';
+import { DeviceExportImportDialog } from './device-export-import-dialog';
+import { DeviceExportImportStore } from './device-export-import.store';
+import { exportEntryNote } from './device-export-messages';
+import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { deviceActionNote } from './device-action-messages';
 import { freshnessBanner } from './device-freshness';
@@ -58,13 +65,23 @@ import { GoogleHealthStore } from '../google-connection/health.store';
 export const PENDING_VIEW_LINE =
   'Showing only devices with pending changes. Show all devices returns to your filters.';
 
-/** The three Bulk Actions entries of the owner mockup of 2026-10-21. */
-export type BulkActionKey = 'update' | 'command' | 'status';
+/** The three Bulk Actions entries of the owner mockup of 2026-10-21, and the three of
+ * 2026-10-28 below their divider (states 01). */
+export type BulkActionKey =
+  | 'update'
+  | 'command'
+  | 'status'
+  | 'export'
+  | 'report'
+  | 'import';
 
 const BULK_ACTION_KEYS: readonly BulkActionKey[] = [
   'update',
   'command',
   'status',
+  'export',
+  'report',
+  'import',
 ];
 
 interface BulkActionNoteGroup {
@@ -80,12 +97,14 @@ interface BulkActionNoteGroup {
   imports: [
     RouterLink,
     MatButtonModule,
+    MatDividerModule,
     MatMenuModule,
     DeviceGrid,
     DeviceFilter,
     DeviceUpdateSheet,
     DeviceActionSheet,
     DeviceGridRevertDialog,
+    DeviceExportImportDialog,
   ],
   templateUrl: './devices.html',
   styleUrl: './devices.css',
@@ -101,6 +120,14 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly google = inject(GoogleHealthStore);
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  /** The Export, Reports, and Import dialog. It lives for the browser tab (behavior 6). */
+  protected readonly exportDialog = inject(DeviceExportImportStore);
+  /** The grid ID that the export request names (design section 1). */
+  protected readonly gridId = DEVICE_GRID_ID;
+  /** The ?job= value that opened the dialog, so a repeat does not reopen it. */
+  private openedJob: string | null = null;
+  private querySub: Subscription | undefined;
   private readonly injector = inject(Injector);
   private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
   private readonly bulkButton = viewChild<
@@ -240,6 +267,10 @@ export class DevicesPage implements OnInit, OnDestroy {
   protected readonly canBulk = computed(() =>
     this.authorized('devices:bulk-actions'),
   );
+  /** Export and Reports hold `devices:export` (design section 5). */
+  protected readonly canExportAction = computed(() =>
+    this.authorized('devices:export'),
+  );
   /** The three actions of Update device. Without them every grid cell stays read-only. */
   protected readonly gridEditable = computed(
     () => this.canRead() && this.canWrite() && this.canBulk(),
@@ -292,6 +323,21 @@ export class DevicesPage implements OnInit, OnDestroy {
         family: 'status',
         // D2: Change status enables with devices:status or devices:deprovision.
         canAction: this.canStatus() || this.canDeprovision(),
+      }),
+      export: exportEntryNote({
+        ...shared,
+        entry: 'export',
+        canEntry: this.canExportAction(),
+      }),
+      report: exportEntryNote({
+        ...shared,
+        entry: 'report',
+        canEntry: this.canExportAction(),
+      }),
+      import: exportEntryNote({
+        ...shared,
+        entry: 'import',
+        canEntry: this.canWrite(),
       }),
     };
   });
@@ -379,9 +425,17 @@ export class DevicesPage implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     void this.store.init();
+    // The Activity row of an own export links here with ?job= (behavior 5).
+    this.querySub = this.route.queryParamMap.subscribe((params) => {
+      const job = params.get('job');
+      if (!job || job === this.openedJob) return;
+      this.openedJob = job;
+      this.exportDialog.openJob(job);
+    });
   }
 
   ngOnDestroy(): void {
+    this.querySub?.unsubscribe();
     this.store.leave();
   }
 
@@ -438,6 +492,45 @@ export class DevicesPage implements OnInit, OnDestroy {
   /** Change status opens the status sheet over the grid. */
   protected startStatus(): void {
     this.statusOpen.set(true);
+  }
+
+  /** Export opens the configure step, or this tab's own export (behavior 6). */
+  protected startExport(): void {
+    if (this.actionNotes()['export']) return;
+    this.exportDialog.openExport(this.selectedCount());
+  }
+
+  /** Reports opens the configure step with the visible grid columns (state 07). */
+  protected startReport(): void {
+    if (this.actionNotes()['report']) return;
+    this.exportDialog.openReport(this.selectedCount(), this.reportColumns());
+  }
+
+  /**
+   * Import opens its step. XF2 builds the import steps; this card opens the empty step, and
+   * the hand-off says so.
+   */
+  protected startImport(): void {
+    if (this.actionNotes()['import']) return;
+    this.exportDialog.openImport();
+  }
+
+  /** The visible grid columns in grid order (design section 5). */
+  private reportColumns(): readonly DeviceReportFieldId[] {
+    return this.grid()?.reportColumns() ?? [];
+  }
+
+  /** Closing the export returns focus to the Bulk Actions button (UI-09). */
+  protected exportClosed(): void {
+    this.focusBulkActions();
+    // The Activity link carries ?job=. Drop it, so the same row opens the dialog again.
+    if (!this.route.snapshot.queryParamMap.has('job')) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { job: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   /** Closing a sheet returns focus to the Bulk Actions button. */
