@@ -25,10 +25,10 @@ export const ACTIVITY_EXPIRY_FLOOR_MS = 60_000;
 /**
  * The activity summary of the shell (design 2.5 and 3.4).
  *
- * One `JobReader` reads `GET /api/jobs/activity` and one `JobStream` listens on
- * `/api/jobs/events`. The badge reads `running.count` and attention reads `attention`
- * from the latest answer. A successful `seen` request marks the reader dirty. After each
- * successful read, one timed reread follows at `recent.nextExpiryAt`.
+ * One `JobReader` reads `GET /api/jobs/activity`. The tab's shared jobs stream
+ * listens on `/api/jobs/events`. The badge reads `running.count` and attention reads
+ * `attention` from the latest answer. A successful `seen` request marks the reader
+ * dirty. After each successful read, one timed reread follows at `recent.nextExpiryAt`.
  */
 @Injectable({ providedIn: 'root' })
 export class JobActivityStore {
