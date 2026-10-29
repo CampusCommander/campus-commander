@@ -385,7 +385,12 @@ async function until(condition, message, timeout = 3000) {
  * Write the phase 3 application configuration that the stop-path child process reads. The
  * upstreams are the stubs of this process.
  */
-async function writeApplicationConfig({ directory, port, frontendPort, apiPort }) {
+async function writeApplicationConfig({
+  directory,
+  port,
+  frontendPort,
+  apiPort,
+}) {
   const config = JSON.parse(
     await readFile('deployment/examples/all-docker.json', 'utf8'),
   );
@@ -1064,7 +1069,9 @@ test(
       assert.equal((await events.answer).status, 200);
       assert.match(await events.first, /retry: 3000/);
       const received = [];
-      events.stream.on('data', (chunk) => received.push(chunk.toString('utf8')));
+      events.stream.on('data', (chunk) =>
+        received.push(chunk.toString('utf8')),
+      );
       await delay(5600);
       assert.equal(
         client.destroyed,
