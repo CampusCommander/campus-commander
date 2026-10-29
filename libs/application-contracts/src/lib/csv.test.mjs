@@ -62,11 +62,19 @@ test('LF record ends read the same records as CRLF', () => {
 test('quoted cells keep commas, quotes, and line feeds', () => {
   const text = '"a,b","say ""hi""","line one\nline two",plain\r\n';
   assert.deepEqual(readAll([text]), [
-    { line: 1, row: 1, cells: ['a,b', 'say "hi"', 'line one\nline two', 'plain'] },
+    {
+      line: 1,
+      row: 1,
+      cells: ['a,b', 'say "hi"', 'line one\nline two', 'plain'],
+    },
   ]);
   // The line of the next record counts the lines inside a quoted cell.
   assert.deepEqual(readAll([text, 'w,x,y,z\r\n']), [
-    { line: 1, row: 1, cells: ['a,b', 'say "hi"', 'line one\nline two', 'plain'] },
+    {
+      line: 1,
+      row: 1,
+      cells: ['a,b', 'say "hi"', 'line one\nline two', 'plain'],
+    },
     { line: 3, row: 2, cells: ['w', 'x', 'y', 'z'] },
   ]);
 });
@@ -215,7 +223,9 @@ test('the writer counts its UTF-8 bytes and its records', () => {
 
 test('a written record round-trips every RFC 4180 hazard', () => {
   const cells = ['a,b', 'say "hi"', 'line one\nline two', 'plain', ''];
-  assert.deepEqual(readAll([csvRecordText(cells)]), [{ line: 1, row: 1, cells }]);
+  assert.deepEqual(readAll([csvRecordText(cells)]), [
+    { line: 1, row: 1, cells },
+  ]);
 });
 
 test('an empty file reads as no record', () => {
