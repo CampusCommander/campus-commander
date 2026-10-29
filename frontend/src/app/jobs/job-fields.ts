@@ -79,6 +79,8 @@ export const JOB_ACTIONS: readonly JobAction[] = [
   'disable-devices',
   'reenable-devices',
   'deprovision-devices',
+  'export-devices',
+  'validate-device-import',
 ];
 
 /** One tone per status for the chip dot and label (UI-04). */
@@ -111,7 +113,14 @@ export function actionLabel(action: JobAction): string {
   return JOB_ACTION_LABELS[action];
 }
 
+/** The scope of a job: a device count, every device, or the rows of an export or an import. */
 export function scopeLabel(scope: JobScope): string {
+  if (scope.kind === 'rows')
+    return scope.deviceCount === null
+      ? 'Rows'
+      : `${scope.deviceCount.toLocaleString('en-US')} ${
+          scope.deviceCount === 1 ? 'row' : 'rows'
+        }`;
   if (scope.kind === 'all-devices' || scope.deviceCount === null)
     return 'All devices';
   const count = scope.deviceCount.toLocaleString('en-US');

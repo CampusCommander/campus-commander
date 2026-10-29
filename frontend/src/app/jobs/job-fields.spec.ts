@@ -229,6 +229,10 @@ it('labels the scope with a thousands separator', () => {
   expect(scopeLabel({ kind: 'all-devices', deviceCount: null })).toBe(
     'All devices',
   );
+  // An export or an import counts rows, not devices (state 26).
+  expect(scopeLabel({ kind: 'rows', deviceCount: 30 })).toBe('30 rows');
+  expect(scopeLabel({ kind: 'rows', deviceCount: 1 })).toBe('1 row');
+  expect(scopeLabel({ kind: 'rows', deviceCount: null })).toBe('Rows');
 });
 
 it('lists every job action in the Actions filter', () => {
@@ -241,10 +245,15 @@ it('lists every job action in the Actions filter', () => {
     'disable-devices',
     'reenable-devices',
     'deprovision-devices',
+    'export-devices',
+    'validate-device-import',
   ]);
   expect(actionLabel('wipe-user-data')).toBe('Wipe user data');
   expect(actionLabel('powerwash-devices')).toBe('Powerwash devices');
   expect(actionLabel('deprovision-devices')).toBe('Deprovision devices');
+  // The two labels of state 26.
+  expect(actionLabel('export-devices')).toBe('Export devices');
+  expect(actionLabel('validate-device-import')).toBe('Validate device import');
 });
 
 it('shows a Powerwash job like a command job', () => {
