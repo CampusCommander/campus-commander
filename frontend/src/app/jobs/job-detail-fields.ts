@@ -15,6 +15,8 @@ import { statusText } from '../devices/device-fields';
 import { deviceCountText } from '../devices/device-update-messages';
 import {
   cancelledRefreshAll,
+  exportFailureLabel,
+  exportRows,
   formatDuration,
   formatTimestamp,
 } from './job-fields';
@@ -410,6 +412,13 @@ export function cancelState(
     return 'none';
   // A refresh has no operations, and no waiting status exists (design O1 ruling).
   if (job.action === 'refresh-inventory') return 'request';
+  // An export or a validation has no per-device operations either. Cancel stops its worker
+  // (design section 9, built behavior 8).
+  if (
+    job.action === 'export-devices' ||
+    job.action === 'validate-device-import'
+  )
+    return 'request';
   return (job.progress.pending ?? 0) > 0 ? 'request' : 'none';
 }
 
@@ -485,6 +494,38 @@ export function cancelQuestion(job: JobDetail): CancelQuestion {
   const title = `Cancel pending work on ${job.displayId}?`;
   const confirmLabel = 'Cancel pending work';
   const succeeded = job.progress.succeeded;
+  if (job.action === 'export-devices') {
+    const rows = exportRows(job);
+    const written = countText(rows.written);
+    const scopeTotal =
+      rows.total ?? job.scope.deviceCount ?? job.progress.pending ?? 0;
+    const stopsBeforeWork =
+      job.status === 'accepted' ||
+      job.status === 'queued' ||
+      job.status === 'awaiting-devices' ||
+      job.status === 'held';
+    if (stopsBeforeWork)
+      return {
+        title,
+        paragraphs: [
+          'No row is written. The export ends Cancelled.',
+          'No file is written. No device changes.',
+        ],
+        dismissLabel: 'Keep export waiting',
+        confirmLabel: 'Stop the export',
+      };
+    return {
+      title,
+      paragraphs: [
+        `${written} of ${countText(scopeTotal)} ${
+          scopeTotal === 1 ? 'row is' : 'rows are'
+        } written. The export stops at its next batch.`,
+        'No file is written. No device changes.',
+      ],
+      dismissLabel: 'Keep export running',
+      confirmLabel: 'Stop the export',
+    };
+  }
   if (job.action === 'refresh-inventory') {
     const read = countText(job.progress.succeeded);
     if (job.scope.kind === 'devices') {
@@ -888,6 +929,37 @@ function refreshCounterLine(job: JobDetail): string {
 }
 
 /**
+ * The Latest activity line of an export job (design section 9, state 26). An export counts
+ * rows, not operations, so the update counters do not apply.
+ */
+function exportActivityLine(job: JobDetail): string {
+  const time = formatTime(job.latestActivity.at);
+  const { written, total } = exportRows(job);
+  const writtenText =
+    total === null
+      ? `${countText(written)} ${written === 1 ? 'row' : 'rows'} written`
+      : `${countText(written)} of ${countText(total)} rows written`;
+  switch (job.status) {
+    case 'accepted':
+    case 'queued':
+    case 'awaiting-devices':
+      return `${time} · Not started.`;
+    case 'held':
+      return `${time} · Waiting for Google.`;
+    case 'completed':
+    case 'completed-with-errors':
+      return `${time} · ${writtenText}. The export file is ready.`;
+    case 'failed':
+    case 'needs-review':
+      return `${time} · ${writtenText}. The export failed: ${exportFailureLabel(job.failure)}.`;
+    case 'cancelled':
+      return `${time} · ${writtenText}. The export stopped.`;
+    default:
+      return `${time} · ${writtenText}.`;
+  }
+}
+
+/**
  * The Latest activity line of section 2.5. Sample lines name each failed and unknown
  * operation of the whole job. Counters supply the time and totals when no sample exists.
  * A refresh job has no operations, so its counters always supply the line.
@@ -895,6 +967,7 @@ function refreshCounterLine(job: JobDetail): string {
  */
 export function latestActivityLine(job: JobDetail): string {
   if (job.action === 'refresh-inventory') return refreshCounterLine(job);
+  if (job.action === 'export-devices') return exportActivityLine(job);
   if (isCommandJob(job)) return commandCounterLine(job);
   const cancelled = job.status === 'cancelled';
   const subject =

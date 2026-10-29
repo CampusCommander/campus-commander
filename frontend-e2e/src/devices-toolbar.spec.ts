@@ -228,22 +228,29 @@ async function openMenu(page: Page, trigger: Locator) {
   return menu;
 }
 
-/** The menu opens 4 px below the trigger, aligned to the trigger's end edge. */
+/**
+ * The menu opens 4 px below the trigger, aligned to the trigger's end edge. In a narrow window
+ * the overlay flips above the trigger when the six Bulk Actions entries do not fit below it.
+ */
 async function expectMenuPlacement(page: Page, trigger: Locator) {
   const menu = page.getByRole('menu');
   const triggerBox = await trigger.boundingBox();
   const menuBox = await menu.boundingBox();
   expect(triggerBox).not.toBeNull();
   expect(menuBox).not.toBeNull();
-  expect(Math.round(menuBox!.y - (triggerBox!.y + triggerBox!.height))).toBe(4);
+  const below = Math.round(menuBox!.y - (triggerBox!.y + triggerBox!.height));
+  const above = Math.round(triggerBox!.y - (menuBox!.y + menuBox!.height));
+  expect([below, above]).toContain(4);
   expect(
     Math.round(
       triggerBox!.x + triggerBox!.width - (menuBox!.x + menuBox!.width),
     ),
   ).toBe(0);
-  const width = page.viewportSize()!.width;
+  const viewport = page.viewportSize()!;
   expect(menuBox!.x).toBeGreaterThanOrEqual(0);
-  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(width);
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewport.width);
+  expect(menuBox!.y).toBeGreaterThanOrEqual(0);
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(viewport.height);
 }
 
 async function screenshot(page: Page, testInfo: TestInfo, name: string) {

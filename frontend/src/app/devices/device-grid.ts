@@ -51,6 +51,7 @@ import type {
   DeviceOrgUnit,
   DevicePage,
   DevicePredicate,
+  DeviceReportFieldId,
   DeviceRow,
   DeviceUpdateField,
 } from '@campus/application-contracts';
@@ -94,7 +95,7 @@ import {
 import type { DeviceRowRefresh } from './device-row-refresh';
 import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceStatusPanel } from './device-status-panel';
-import type { DeviceSortField } from './device-fields';
+import { DEVICE_FIELDS, type DeviceSortField } from './device-fields';
 
 ModuleRegistry.registerModules([
   AllCommunityModule,
@@ -485,6 +486,23 @@ export class DeviceGrid implements OnInit {
       onConflict: (deviceId, field, anchor) =>
         this.openConflict(deviceId, field, anchor),
     };
+  }
+
+  /**
+   * The report columns: the displayed grid columns in grid order, columns out of view
+   * included, without the details, checkbox, and Group columns (design section 5). A grid that
+   * has not started yet answers the columns that its default state shows.
+   */
+  reportColumns(): DeviceReportFieldId[] {
+    const fields = new Set<string>(DEVICE_FIELDS.map((field) => field.id));
+    const state = this.api?.getColumnState();
+    if (!state)
+      return DEVICE_FIELDS.filter((field) => !field.optional).map(
+        (field) => field.id,
+      );
+    return state
+      .filter((column) => !column.hide && fields.has(column.colId))
+      .map((column) => column.colId as DeviceReportFieldId);
   }
 
   /**

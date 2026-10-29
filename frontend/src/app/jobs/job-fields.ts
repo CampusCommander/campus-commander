@@ -2,7 +2,9 @@ import {
   JOB_ACTION_LABELS,
   jobDisplayIdSchema,
   type JobAction,
+  type JobFailure,
   type JobPerson,
+  type JobPhase,
   type JobProgress,
   type JobScope,
   type JobStatus,
@@ -243,9 +245,100 @@ function refreshProgress(job: JobSummary): [string, string] {
 
 /** The two lines of a Progress cell. The first line is the primary state. */
 export function progressLines(job: JobSummary): [string, string] {
-  return job.action === 'refresh-inventory'
-    ? refreshProgress(job)
-    : updateProgress(job);
+  if (job.action === 'refresh-inventory') return refreshProgress(job);
+  // An export counts the rows that it wrote (design section 9, state 26).
+  if (job.action === 'export-devices') return exportProgress(job);
+  return updateProgress(job);
+}
+
+/** The short failure of an export row (design section 9, state 26). */
+export function exportFailureLabel(failure: JobFailure | null): string {
+  switch (failure) {
+    case 'export-too-large':
+      return 'Export too large';
+    case 'storage-unavailable':
+      return 'Storage unavailable';
+    case 'inventory-unavailable':
+      return 'Inventory unavailable';
+    case 'interrupted':
+      return 'The export stopped';
+    case 'permission-changed':
+      return 'Permission changed';
+    case 'connection-changed':
+      return 'Connection changed';
+    default:
+      return 'Export failed';
+  }
+}
+
+/** The second line of a running export: the phase that holds the file (design section 2). */
+function exportPhaseLine(phase: JobPhase | null): string {
+  return phase?.name === 'prepare-download'
+    ? 'Preparing the download'
+    : 'Writing rows';
+}
+
+/**
+ * The rows written by an export, from the observed phase (design section 2).
+ *
+ * The worker writes `phase_done` and `phase_total` while it writes rows, and it leaves
+ * `progress.succeeded` at zero until the finish. The write phase ends before the download
+ * phase starts, and the worker resets the download phase to `{done: 0, total: null}`. The
+ * scope holds the row count of the completed write phase.
+ */
+export function exportRows(
+  job: Pick<JobSummary, 'scope' | 'progress' | 'phase'>,
+): { written: number; total: number | null } {
+  const target = job.scope.deviceCount ?? job.progress.total ?? null;
+  if (job.phase?.name === 'write-rows')
+    return { written: job.phase.done, total: job.phase.total ?? target };
+  if (job.phase?.name === 'prepare-download') {
+    const total = target ?? job.progress.succeeded;
+    // Every row was written before the download phase began.
+    return { written: total, total };
+  }
+  const written = job.progress.succeeded;
+  return { written, total: target ?? (written > 0 ? written : null) };
+}
+
+/**
+ * The Progress cell of an export job (design section 9, state 26). The first line counts the
+ * rows that the job wrote; the second line names the phase, the file, or the failure.
+ */
+function exportProgress(job: JobSummary): [string, string] {
+  const { written, total } = exportRows(job);
+  const rows = (value: number) =>
+    `${count(value)} ${value === 1 ? 'row' : 'rows'}`;
+  const ready =
+    job.exportSummary?.purpose === 'report'
+      ? 'Report ready'
+      : 'Edit file ready';
+  switch (job.status) {
+    case 'running':
+      return [
+        total === null
+          ? `${rows(written)} written`
+          : `${count(written)} of ${count(total)} rows written`,
+        exportPhaseLine(job.phase),
+      ];
+    case 'completed':
+      return [`${rows(written)} written`, ready];
+    case 'completed-with-errors':
+      return [`${rows(written)} written`, 'Export completed with errors'];
+    case 'failed':
+    case 'needs-review':
+      return [`${rows(written)} written`, exportFailureLabel(job.failure)];
+    case 'cancelled':
+      return [`${rows(written)} written`, 'Export stopped'];
+    case 'held':
+      return ['Not started', 'Waiting for Google'];
+    case 'accepted':
+    case 'queued':
+    case 'awaiting-devices':
+      return ['Not started', 'Waiting to start'];
+    default:
+      return ['Not started', 'In progress'];
+  }
 }
 
 /** "10:40 AM". A Recent row carries its exact timestamp on the time element. */
@@ -281,9 +374,12 @@ export function recentLine(job: JobSummary): string {
 
 /** The share of a job that is complete. A job without a total has no determinate bar. */
 export function progressPercent(job: JobSummary): number | null {
-  const { total, succeeded } = job.progress;
-  if (total === null || total === 0) return null;
-  return Math.min(100, Math.round((succeeded / total) * 100));
+  const rows =
+    job.action === 'export-devices'
+      ? exportRows(job)
+      : { written: job.progress.succeeded, total: job.progress.total };
+  if (rows.total === null || rows.total === 0) return null;
+  return Math.min(100, Math.round((rows.written / rows.total) * 100));
 }
 
 /** The progress and requester line of a Running row. */
