@@ -747,3 +747,19 @@ export const REVIEW_HELP_REJECTED: readonly string[] = Object.freeze([
   'A warning does not block Execute.',
   'Other Google status values, such as DEPROVISIONED, request nothing.',
 ]);
+
+/**
+ * The grid line of an open plan (design section 9, behavior 7). The grid that shows state 26 owns
+ * the placement; this card drafts the sentence.
+ */
+export function gridOpenPlanLine(
+  importDisplayId: string,
+  expiryLabel: string,
+): string {
+  return `Import ${importDisplayId} is validated and waits for Execute. It expires ${expiryLabel}.`;
+}
+
+/** The grid line after a refused import (design section 9, behavior 7). */
+export function gridImportRefusalLine(reason: string): string {
+  return `The last import did not start. ${reason}`;
+}
