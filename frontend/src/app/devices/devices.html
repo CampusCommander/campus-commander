@@ -257,8 +257,7 @@
     <div class="action-note-group">
       <p role="status">{{ line }}</p>
     </div>
-    }
-    @for (group of notes(); track group.id) {
+    } @for (group of notes(); track group.id) {
     <div class="action-note-group" [class.error]="group.error">
       <p [id]="group.id">{{ group.text }}</p>
       @for (action of group.actions; track action) { @if (action ===

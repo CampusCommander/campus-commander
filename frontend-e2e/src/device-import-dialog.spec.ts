@@ -201,7 +201,8 @@ type ImportCase =
   | 'rejected-only'
   | 'failed'
   | 'late-failure'
-  | 'cancelled';
+  | 'cancelled'
+  | 'expiring';
 
 /** One page of ten proposed changes, so the bounded page fills (R6, UI-03). */
 const tenLines = Array.from({ length: 10 }, (_, index) => ({
@@ -261,7 +262,10 @@ const importJob = (name: ImportCase) => ({
         ? 'sync-all-rows'
         : 'sync-changes',
     planState:
-      name === 'completed' || name === 'full-page' || name === 'sync-all-rows'
+      name === 'completed' ||
+      name === 'full-page' ||
+      name === 'sync-all-rows' ||
+      name === 'expiring'
         ? 'open'
         : name === 'expired'
           ? 'expired'
@@ -306,18 +310,23 @@ const importJob = (name: ImportCase) => ({
   plan:
     name === 'expired'
       ? { ...openPlan, state: 'open', expiresAt: past() }
-      : name === 'cancelled-plan'
+      : name === 'expiring'
         ? {
             ...openPlan,
-            state: 'cancelled',
-            changedBy: person,
-            changedAt: past(),
+            expiresAt: new Date(Date.now() + 3000).toISOString(),
           }
-        : name === 'completed' ||
-            name === 'full-page' ||
-            name === 'sync-all-rows'
-          ? openPlan
-          : null,
+        : name === 'cancelled-plan'
+          ? {
+              ...openPlan,
+              state: 'cancelled',
+              changedBy: person,
+              changedAt: past(),
+            }
+          : name === 'completed' ||
+              name === 'full-page' ||
+              name === 'sync-all-rows'
+            ? openPlan
+            : null,
   importDisplayId: null,
   waitsForDisplayId: null,
   waitingDisplayIds: null,
@@ -379,18 +388,23 @@ const reportAnswer = (name: ImportCase, view: string, page: number) => {
     plan:
       name === 'expired'
         ? { ...openPlan, state: 'open', expiresAt: past() }
-        : name === 'cancelled-plan'
+        : name === 'expiring'
           ? {
               ...openPlan,
-              state: 'cancelled',
-              changedBy: person,
-              changedAt: past(),
+              expiresAt: new Date(Date.now() + 3000).toISOString(),
             }
-          : name === 'completed' ||
-              name === 'full-page' ||
-              name === 'sync-all-rows'
-            ? openPlan
-            : null,
+          : name === 'cancelled-plan'
+            ? {
+                ...openPlan,
+                state: 'cancelled',
+                changedBy: person,
+                changedAt: past(),
+              }
+            : name === 'completed' ||
+                name === 'full-page' ||
+                name === 'sync-all-rows'
+              ? openPlan
+              : null,
   };
 };
 
@@ -522,10 +536,19 @@ async function signIn(
         headers: { 'content-type': 'text/csv' },
         body: 'Row,Device ID,Reason\r\n5,C0A1-0004,The status "Gone" is not a Google status.\r\n',
       });
-    if (
-      path === '/api/devices/imports/IMP-001/cancel' ||
-      path === '/api/devices/imports/IMP-001/revalidate'
-    )
+    if (path === '/api/devices/imports/IMP-001/cancel')
+      return route.fulfill({
+        json: {
+          plan: {
+            ...openPlan,
+            revision: openPlan.revision + 1,
+            state: 'cancelled',
+            changedBy: person,
+            changedAt: past(),
+          },
+        },
+      });
+    if (path === '/api/devices/imports/IMP-001/revalidate')
       return route.fulfill({ json: {} });
     return route.fulfill({ status: 404, json: {} });
   });
@@ -663,6 +686,23 @@ test.describe('Import', () => {
     await expect(help).toContainText('Organization unit');
     await expect(help).toContainText('4,096 characters');
     await expect(dialog(page)).toHaveClass(/has-help/);
+    // The complete topic fits the pane at 1440x900, down to the last reason code and its
+    // instruction (R12).
+    const helpBox = await help.evaluate((node) => ({
+      client: node.clientHeight,
+      scroll: node.scrollHeight,
+    }));
+    expect(helpBox.scroll).toBeLessThanOrEqual(helpBox.client + 1);
+    const pane = await help.boundingBox();
+    for (const text of [
+      'UPGRADE_TRANSFER',
+      'Codes match in upper case, for example DEPROVISION:RETIRING_DEVICE.',
+    ]) {
+      const box = await help.getByText(text, { exact: true }).boundingBox();
+      expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(
+        (pane?.y ?? 0) + (pane?.height ?? 0) + 1,
+      );
+    }
     await shot(page, '11-import-help');
   });
 
@@ -885,6 +925,41 @@ test.describe('Import', () => {
     await shot(page, '13-review-proposed-help');
   });
 
+  test('the complete Import help also fits the wide report pane (R12)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'completed');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page)
+      .getByRole('button', { name: 'Export and import help' })
+      .click();
+    const help = page.locator('app-device-export-help');
+    await expect(help).toBeVisible();
+    // The wide step opens on Review; the Import topic must fit the same 520 px pane.
+    await help.getByRole('radio', { name: 'Import', exact: true }).click();
+    await expect(help).toContainText('Field limits');
+    const sheet = await dialog(page).boundingBox();
+    const pane = await help.boundingBox();
+    expect(Math.round(sheet?.width ?? 0)).toBe(1120);
+    expect(Math.round(pane?.width ?? 0)).toBe(520);
+    const box = await help.evaluate((node) => ({
+      client: node.clientHeight,
+      scroll: node.scrollHeight,
+    }));
+    expect(box.scroll).toBeLessThanOrEqual(box.client + 1);
+    for (const text of [
+      'UPGRADE_TRANSFER',
+      'Codes match in upper case, for example DEPROVISION:RETIRING_DEVICE.',
+    ]) {
+      const line = await help.getByText(text, { exact: true }).boundingBox();
+      expect((line?.y ?? 0) + (line?.height ?? 0)).toBeLessThanOrEqual(
+        (pane?.y ?? 0) + (pane?.height ?? 0) + 1,
+      );
+    }
+    await shot(page, '13-review-proposed-help-import');
+  });
+
   test('state 23: a fault after the header check names its own reason (R10)', async ({
     page,
   }) => {
@@ -925,6 +1000,42 @@ test.describe('Import', () => {
       'Import IMP-001 is validated and waits for Execute.',
     );
     await shot(page, '25-devices-open-plan-line');
+  });
+
+  test('a cancelled plan stops waiting for Execute on the Devices page (R9)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'completed');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await dialog(page).getByRole('button', { name: 'Cancel import' }).click();
+    await expect(dialog(page)).toContainText('Cancelled');
+    await expect(dialog(page)).toContainText('Nothing ran.');
+    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await expect(dialog(page)).toBeHidden();
+    // The job detail still carries the plan that the cancellation replaced (R9).
+    await expect(page.locator('.action-note')).not.toContainText(
+      'waits for Execute',
+    );
+  });
+
+  test('an open plan note expires at its deadline with no job event (R9)', async ({
+    page,
+  }) => {
+    await openDevices(page, 'expiring');
+    await page.goto('/devices?job=IMP-001');
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText('Expires');
+    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await expect(dialog(page)).toBeHidden();
+    await expect(page.locator('.action-note')).toContainText(
+      'waits for Execute',
+    );
+    // No job event arrives; the grid clock alone drops the note at the deadline.
+    await page.waitForTimeout(3500);
+    await expect(page.locator('.action-note')).not.toContainText(
+      'waits for Execute',
+    );
   });
 
   test('state 13 in the dark theme', async ({ page }) => {

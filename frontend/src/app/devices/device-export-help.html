@@ -1,4 +1,8 @@
-<aside class="export-help" aria-labelledby="export-help-title">
+<aside
+  class="export-help"
+  [class.help-import-pane]="topic() === 'import'"
+  aria-labelledby="export-help-title"
+>
   <h3 id="export-help-title">{{ HELP_TITLE }}</h3>
   <mat-button-toggle-group
     class="help-topics"
@@ -60,7 +64,7 @@
     </ul>
   </div>
   } @else if (topic() === 'import') {
-  <div class="help-body">
+  <div class="help-body help-import">
     <h4>{{ IMPORT_HELP_MODES_HEAD }}</h4>
     <dl class="help-modes">
       @for (mode of IMPORT_HELP_MODES; track mode.mode) {

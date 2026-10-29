@@ -77,6 +77,12 @@ export interface ActiveExportJob {
   purpose: JobExportPurpose;
 }
 
+/** One read of the report: the answer, or the sentence that replaced it (R4). */
+interface ReportRead {
+  readonly report: DeviceImportReport | null;
+  readonly error: string;
+}
+
 /**
  * The state of the Export, Reports, and Import dialog of the Devices page (design section 9).
  *
@@ -161,6 +167,19 @@ export class DeviceExportImportStore {
   });
   /** The changes of the current report page (states 13 to 15). */
   readonly reportShown = computed(() => this.reportLines().length);
+  /**
+   * The current accepted plan of this tab's import (design section 9, behavior 7). Once the
+   * report holds facts for this import, its plan owns the note, so a cancelled plan or an
+   * expired plan never reads as an open plan from the older job detail.
+   */
+  readonly importPlan = computed<JobImportPlan | null>(() => {
+    const displayId = this.activeImport();
+    if (!displayId) return null;
+    if (this.reportJob === displayId && this.reportCounts() !== null)
+      return this.plan();
+    const job = this.job();
+    return job?.displayId === displayId ? job.plan : null;
+  });
 
   /** The export request may start: the selection fits the row limit. */
   readonly overLimit = computed(() => this.count() > EXPORT_ROW_LIMIT);
@@ -210,6 +229,8 @@ export class DeviceExportImportStore {
   /** The page and tab-total reads that may still write (R4). */
   private reportPageRequest = 0;
   private reportTotalsRequest = 0;
+  /** The plan revision that the report already accepted, so an older page cannot replace it. */
+  private acceptedPlan: { planId: string; revision: number } | null = null;
 
   constructor() {
     effect(() => {
@@ -290,10 +311,16 @@ export class DeviceExportImportStore {
 
   /** Done releases the current entry's job, so its next entry starts a new export (behavior 6). */
   done(): void {
-    if (this.step() === 'report') this.activeImport.set(null);
-    else this.releaseActive(this.purpose());
+    if (this.step() === 'report') {
+      // Done belongs to this import: release it and clear the import entry.
+      this.activeImport.set(null);
+      this.resetImport();
+    } else {
+      // Done belongs to an export or a Reports entry. A pending import of this tab keeps
+      // its receipt and its Stop intent, so this Done never resets the import state (R3).
+      this.releaseActive(this.purpose());
+    }
     this.close();
-    this.resetImport();
     this.step.set('configure');
     this.displayId.set(null);
     this.job.set(null);
@@ -421,7 +448,8 @@ export class DeviceExportImportStore {
     const check = ++this.fileCheck;
     const entry = this.importEntry;
     /** The answer belongs to the current entry and the current file choice. */
-    const current = () => check === this.fileCheck && entry === this.importEntry;
+    const current = () =>
+      check === this.fileCheck && entry === this.importEntry;
     this.chosenFile = file;
     this.importError.set('');
     this.uploadError.set('');
@@ -663,7 +691,18 @@ export class DeviceExportImportStore {
         return false;
       }
       this.plan.set(answer.data.plan);
+      this.acceptedPlan = {
+        planId: answer.data.plan.planId,
+        revision: answer.data.plan.revision,
+      };
       this.activeImport.set(displayId);
+      // A page that left before this answer carries the older plan. Drop it, and read the
+      // shown page again from the cancelled plan (R4).
+      if (this.reportJob === displayId) {
+        this.reportPageRequest++;
+        this.reportTotalsRequest++;
+        void this.refreshReportFacts();
+      }
       return true;
     } catch {
       if (owned())
@@ -815,10 +854,7 @@ export class DeviceExportImportStore {
       displayId === this.displayId();
     this.reportLoading.set(true);
     try {
-      const cached = this.cache
-        .get(displayId)
-        ?.get(view)
-        ?.get(page);
+      const cached = this.cache.get(displayId)?.get(view)?.get(page);
       if (cached) {
         if (!current()) return;
         this.reportView.set(view);
@@ -826,9 +862,21 @@ export class DeviceExportImportStore {
         this.reportLines.set(cached);
         return;
       }
-      const answer = await this.fetchReport(displayId, view, page);
-      if (!answer || !current()) return;
-      this.applyReport(answer, true);
+      const outcome = await this.fetchReport(displayId, view, page);
+      if (!current()) return;
+      if (outcome.error !== '') {
+        this.reportError.set(outcome.error);
+        // The failed revision is not one that a successor read may trust, so a reentry or
+        // a reconnect reads the shown page again (R4).
+        if (this.reportJob === displayId) this.reportRevision = null;
+        return;
+      }
+      if (!outcome.report) return;
+      this.reportError.set('');
+      // A successful page restores the revision that its facts reflect.
+      if (this.reportJob === displayId && this.job()?.displayId === displayId)
+        this.reportRevision = this.job()!.revision;
+      this.applyReport(outcome.report, true);
     } finally {
       if (requestId === this.reportPageRequest) this.reportLoading.set(false);
     }
@@ -838,10 +886,18 @@ export class DeviceExportImportStore {
   private async readTabTotals(displayId: string): Promise<void> {
     const requestId = ++this.reportTotalsRequest;
     for (const view of ['rejected', 'warnings'] as const) {
-      const answer = await this.fetchReport(displayId, view, 0);
+      const outcome = await this.fetchReport(displayId, view, 0);
       if (requestId !== this.reportTotalsRequest) return;
-      if (displayId !== this.reportJob || displayId !== this.displayId()) return;
-      if (answer) this.applyReport(answer, false);
+      if (displayId !== this.reportJob || displayId !== this.displayId())
+        return;
+      if (outcome.error !== '') {
+        // A tab total never replaces the shown page's error, and its success never clears
+        // one (R4). A missing report never reads as a successful result.
+        if (this.reportCounts() === null && this.reportError() === '')
+          this.reportError.set(outcome.error);
+        continue;
+      }
+      if (outcome.report) this.applyReport(outcome.report, false);
     }
   }
 
@@ -862,7 +918,7 @@ export class DeviceExportImportStore {
     displayId: string,
     view: DeviceImportReportView,
     page: number,
-  ): Promise<DeviceImportReport | null> {
+  ): Promise<ReportRead> {
     const epoch = this.epoch;
     const entry = this.importEntry;
     /** A late page of another job, entry, or principal is dropped. */
@@ -871,37 +927,34 @@ export class DeviceExportImportStore {
       entry === this.importEntry &&
       displayId === this.reportJob &&
       displayId === this.displayId();
+    const empty: ReportRead = { report: null, error: '' };
     try {
       const response = await this.auth.request(
         `${importBase(displayId)}/report?view=${view}&page=${page}`,
       );
-      if (!current()) return null;
-      if (response.status === 404) {
-        this.reportError.set('This import no longer exists.');
-        return null;
-      }
-      if (!response.ok) {
-        this.reportError.set('The report is unavailable. Try again.');
-        return null;
-      }
+      if (!current()) return empty;
+      if (response.status === 404)
+        return { report: null, error: 'This import no longer exists.' };
+      if (!response.ok)
+        return { report: null, error: 'The report is unavailable. Try again.' };
       const answer = deviceImportReportSchema.safeParse(
         await response.json().catch(() => null),
       );
-      if (!current()) return null;
-      if (!answer.success) {
-        this.reportError.set(
-          'Campus Commander answered an unexpected report. Try again.',
-        );
-        return null;
-      }
-      this.reportError.set('');
-      return answer.data;
+      if (!current()) return empty;
+      if (!answer.success)
+        return {
+          report: null,
+          error: 'Campus Commander answered an unexpected report. Try again.',
+        };
+      return { report: answer.data, error: '' };
     } catch {
-      if (current())
-        this.reportError.set(
-          'Cannot reach Campus Commander. The report may be out of date.',
-        );
-      return null;
+      return current()
+        ? {
+            report: null,
+            error:
+              'Cannot reach Campus Commander. The report may be out of date.',
+          }
+        : empty;
     }
   }
 
@@ -941,10 +994,23 @@ export class DeviceExportImportStore {
     }));
     if (!show) return;
     // Only the shown page names the report facts, so a tab total read never replaces them.
+    // An answer that predates the accepted plan keeps that plan (R4).
+    const incoming = answer.plan;
+    const accepted = this.acceptedPlan;
+    const stalePlan =
+      accepted !== null &&
+      (incoming === null ||
+        (incoming.planId === accepted.planId &&
+          incoming.revision < accepted.revision));
     this.reportCounts.set(answer.counts);
     this.reportRefresh.set(answer.refresh);
     this.reportChanges.set(answer.changes);
-    this.plan.set(answer.plan);
+    if (!stalePlan) {
+      this.plan.set(incoming);
+      this.acceptedPlan = incoming
+        ? { planId: incoming.planId, revision: incoming.revision }
+        : null;
+    }
     this.reportView.set(answer.view);
     this.reportPage.set(answer.page);
     this.reportLines.set(answer.lines);
@@ -978,6 +1044,7 @@ export class DeviceExportImportStore {
   private resetReportFacts(): void {
     this.reportJob = null;
     this.reportRevision = null;
+    this.acceptedPlan = null;
     this.reportCounts.set(null);
     this.reportRefresh.set(null);
     this.reportChanges.set(null);
@@ -1152,7 +1219,11 @@ export class DeviceExportImportStore {
               this.reportRevision = detail.data.revision;
               void this.refreshReportFacts();
             }
-          } else if (this.step() !== 'report') {
+          } else {
+            // A running, failed, or cancelled successor is not the report that the dialog
+            // showed before. Its facts leave with the job that produced them (R4).
+            if (this.reportJob !== null || this.step() === 'report')
+              this.resetReportFacts();
             this.step.set('validation');
           }
         } else if (detail.data.action === 'export-devices') {

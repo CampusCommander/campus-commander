@@ -224,6 +224,8 @@ function setup(routes: Routes) {
     return response({}, 404);
   });
   const feedUrls: string[] = [];
+  /** The handlers of the shared feed, so a test can open it again (R4). */
+  const feedHandlers: LiveFeedHandlers[] = [];
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
@@ -238,8 +240,9 @@ function setup(routes: Routes) {
       {
         provide: LiveFeeds,
         useValue: {
-          subscribe: (url: string, _handlers: LiveFeedHandlers) => {
+          subscribe: (url: string, handlers: LiveFeedHandlers) => {
             feedUrls.push(url);
+            feedHandlers.push(handlers);
             return {
               active: true,
               connected: true,
@@ -291,6 +294,7 @@ function setup(routes: Routes) {
     request,
     calls,
     feedUrls,
+    feedHandlers,
   };
 }
 
@@ -1053,6 +1057,262 @@ describe('the Import entry ownership and report facts', () => {
     expect(store.job()).toBeNull();
     expect(store.displayId()).toBeNull();
   });
+
+  it('keeps a pending import and its Stop intent when another flow finishes (R3)', async () => {
+    const held = deferred<Response>();
+    const routes: Routes = {
+      detail: importDetail(),
+      upload: () => held.promise,
+    };
+    const { render, store, calls } = setup(routes);
+    store.openImport();
+    await render();
+    await store.chooseImportFile(
+      new File([csv(goodHeader)], 'devices.csv', { type: 'text/csv' }),
+    );
+    const upload = store.startValidation();
+    await store.stopValidation();
+    store.close();
+    // A finished export of another flow is the entry that this Done releases.
+    routes.detail = importDetail({
+      jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a11',
+      displayId: 'EXP-001',
+      action: 'export-devices',
+      status: 'completed',
+      phase: null,
+      exportSummary: { purpose: 'edit' },
+      exportFile: null,
+      importSummary: null,
+      importSource: null,
+      plan: null,
+      finishedAt: past(),
+    });
+    store.openJob('EXP-001');
+    await render();
+    expect(store.step()).toBe('monitor');
+    store.done();
+    await render();
+    expect(store.open()).toBe(false);
+    held.resolve(
+      response({
+        jobId,
+        displayId: 'IMP-001',
+        status: 'accepted',
+        mode: 'sync-changes',
+        name: 'devices.csv',
+        sizeBytes: 7_936,
+      }),
+    );
+    await upload;
+    await render();
+    // The receipt and the requested Stop survive the other flow's Done.
+    expect(store.activeImport()).toBe('IMP-001');
+    expect(
+      calls.filter((call) => call.path === '/api/jobs/IMP-001/cancel'),
+    ).toHaveLength(1);
+    expect(store.uploading()).toBe(false);
+    expect(store.stopRequested()).toBe(false);
+  });
+
+  it('clears the report of a finished job when a running successor opens (R4)', async () => {
+    const routes: Routes = {
+      detail: reportDetail(),
+      reports: () => report({ plan: openPlan(), counts }),
+    };
+    const { render, store } = setup(routes);
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(store.step()).toBe('report');
+    expect(store.reportCounts()).not.toBeNull();
+    expect(store.plan()?.state).toBe('open');
+    routes.detail = importDetail({
+      jobId: '1f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a12',
+      displayId: 'IMP-002',
+      status: 'running',
+      phase: { name: 'refresh', done: 5, total: 48 },
+    });
+    store.openJob('IMP-002');
+    await render();
+    // The running successor is not the report of the completed job before it.
+    expect(store.step()).toBe('validation');
+    expect(store.reportCounts()).toBeNull();
+    expect(store.plan()).toBeNull();
+    expect(store.reportLines()).toEqual([]);
+  });
+
+  it('keeps a cancelled plan when a page that left before it arrives (R4)', async () => {
+    const held = deferred<Response>();
+    let heldPage = false;
+    const accepted = openPlan({
+      revision: 3,
+      state: 'cancelled',
+      changedBy: person,
+      changedAt: past(),
+    });
+    const { render, store } = setup({
+      detail: reportDetail(),
+      reports: (view, page) => report({ view, page, plan: openPlan() }),
+      answer: (path) => {
+        if (path.endsWith('/cancel'))
+          return Promise.resolve(response({ plan: accepted }));
+        if (!path.includes('/report?')) return undefined;
+        const url = new URL(path, 'http://x');
+        if (
+          !heldPage &&
+          url.searchParams.get('view') === 'proposed' &&
+          url.searchParams.get('page') === '1'
+        ) {
+          heldPage = true;
+          return held.promise;
+        }
+        return undefined;
+      },
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    const paging = store.nextReportPage();
+    const cancel = store.cancelImport();
+    await cancel;
+    await render();
+    expect(store.plan()?.state).toBe('cancelled');
+    expect(store.plan()?.revision).toBe(3);
+    held.resolve(
+      response(report({ view: 'proposed', page: 1, plan: openPlan() })),
+    );
+    await paging;
+    await render();
+    // The older page never restores the open plan that it left with.
+    expect(store.plan()?.state).toBe('cancelled');
+    expect(store.plan()?.revision).toBe(3);
+    expect(store.reportPage()).toBe(0);
+  });
+
+  it('never puts an abandoned view error on the shown view (R4)', async () => {
+    const held = deferred<Response>();
+    let heldPage = false;
+    const { render, store } = setup({
+      detail: reportDetail(),
+      reports: (view, page) => report({ view, page, plan: openPlan() }),
+      answer: (path) => {
+        if (!path.includes('/report?')) return undefined;
+        const url = new URL(path, 'http://x');
+        if (
+          !heldPage &&
+          url.searchParams.get('view') === 'proposed' &&
+          url.searchParams.get('page') === '0'
+        ) {
+          heldPage = true;
+          return held.promise;
+        }
+        return undefined;
+      },
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    // The tab totals fill the rejected view, so selecting it needs no held page.
+    await store.setReportView('rejected');
+    await render();
+    expect(store.reportView()).toBe('rejected');
+    held.resolve(response({}, 503));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await render();
+    expect(store.reportError()).toBe('');
+    expect(store.reportView()).toBe('rejected');
+  });
+
+  it('retries a failed shown page when the import reopens (R4)', async () => {
+    let failed = false;
+    const { render, store } = setup({
+      detail: reportDetail(),
+      reports: (view, page) => report({ view, page, plan: openPlan(), counts }),
+      answer: (path) => {
+        if (!path.includes('/report?')) return undefined;
+        const url = new URL(path, 'http://x');
+        if (
+          !failed &&
+          url.searchParams.get('view') === 'proposed' &&
+          url.searchParams.get('page') === '0'
+        ) {
+          failed = true;
+          return Promise.resolve(response({}, 503));
+        }
+        return undefined;
+      },
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    await render();
+    expect(store.reportCounts()).toBeNull();
+    expect(store.reportError()).toBe('The report is unavailable. Try again.');
+    store.close();
+    store.openImport();
+    await render();
+    await render();
+    // The failed page left no trusted revision, so the same job reads it again.
+    expect(store.reportCounts()).not.toBeNull();
+    expect(store.reportError()).toBe('');
+  });
+
+  it('retries a failed shown page when the shared feed opens again (R4)', async () => {
+    let failed = false;
+    const { render, store, feedHandlers } = setup({
+      detail: reportDetail(),
+      reports: (view, page) => report({ view, page, plan: openPlan(), counts }),
+      answer: (path) => {
+        if (!path.includes('/report?')) return undefined;
+        const url = new URL(path, 'http://x');
+        if (
+          !failed &&
+          url.searchParams.get('view') === 'proposed' &&
+          url.searchParams.get('page') === '0'
+        ) {
+          failed = true;
+          return Promise.resolve(response({}, 503));
+        }
+        return undefined;
+      },
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    await render();
+    expect(store.reportCounts()).toBeNull();
+    store.openImport();
+    await render();
+    // A same-revision reconnect reads the shown page again.
+    feedHandlers.at(-1)?.opened();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await render();
+    expect(store.reportCounts()).not.toBeNull();
+  });
+
+  it('does not present a failed report as a no-change result (R4)', async () => {
+    const { render, store, text } = setup({
+      detail: reportDetail(),
+      answer: (path) =>
+        path.includes('/report?')
+          ? Promise.resolve(response({}, 503))
+          : undefined,
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    await render();
+    expect(store.reportCounts()).toBeNull();
+    expect(text()).toContain('The report is unavailable. Try again.');
+    expect(text()).not.toContain('No changes');
+    expect(text()).not.toContain('Every row matches its export checksum.');
+  });
 });
 
 describe('the approved Import composition', () => {
@@ -1174,6 +1434,55 @@ describe('the approved Import composition', () => {
     store.openImport();
     await render();
     expect(text()).toContain('Every row already matches the file.');
+  });
+
+  it('states the checksum line only when every row is unchanged (R10)', async () => {
+    const { render, store, text } = setup({
+      detail: reportDetail({ plan: null }),
+      reports: () =>
+        report({
+          counts: {
+            rows: 48,
+            unchanged: 48,
+            noChangeNeeded: 0,
+            proposed: 0,
+            rejected: 0,
+          },
+          lines: [],
+          total: 0,
+        }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(text()).toContain(
+      'Every row matches its export checksum. No update is needed.',
+    );
+  });
+
+  it('states the generic no-update line for edited rows that already match (R10)', async () => {
+    const { render, store, text } = setup({
+      detail: reportDetail({ plan: null }),
+      reports: () =>
+        report({
+          counts: {
+            rows: 48,
+            unchanged: 0,
+            noChangeNeeded: 48,
+            proposed: 0,
+            rejected: 0,
+          },
+          lines: [],
+          total: 0,
+        }),
+    });
+    store.openImport();
+    store.activeImport.set('IMP-001');
+    store.openImport();
+    await render();
+    expect(text()).toContain('No row needs an update.');
+    expect(text()).not.toContain('Every row matches its export checksum.');
   });
 
   it('reads the stored reads of a stopped validation from its refresh phase (R11)', async () => {

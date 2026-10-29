@@ -20,6 +20,7 @@ import {
   DEVICE_REPORT_FIELD_LABELS,
   type DeviceExportRequest,
   type DeviceImportChange,
+  type DeviceImportCounts,
   type DeviceImportMode,
   type DeviceImportReportView,
   type JobPhase,
@@ -461,11 +462,12 @@ export class DeviceExportImportDialog {
     const counts = this.store.reportCounts();
     return REPORT_TABS.map((view) => {
       const total =
-        totals[view] ?? (view === 'rejected' ? counts?.rejected : 0);
+        totals[view] ?? (view === 'rejected' ? counts?.rejected : null);
       return {
         view,
         label: REPORT_TAB_LABELS[view],
-        count: thousands(total ?? 0),
+        // A missing count is not a count of zero (R4).
+        count: total === null || total === undefined ? '' : thousands(total),
       };
     });
   });
@@ -488,7 +490,14 @@ export class DeviceExportImportDialog {
     const now = this.planNow();
     const expired =
       !!plan && plan.state === 'open' && Date.parse(plan.expiresAt) <= now;
-    const state = !plan ? 'no-change' : expired ? 'expired' : plan.state;
+    // Missing report facts are not a successful No changes result (R4).
+    const state = !plan
+      ? counts
+        ? 'no-change'
+        : 'unread'
+      : expired
+        ? 'expired'
+        : plan.state;
     return {
       state,
       chip:
@@ -498,7 +507,9 @@ export class DeviceExportImportDialog {
             ? PLAN_EXPIRED_LABEL
             : state === 'cancelled'
               ? PLAN_CANCELLED_LABEL
-              : PLAN_NO_CHANGE_LABEL,
+              : state === 'no-change'
+                ? PLAN_NO_CHANGE_LABEL
+                : '',
       tone:
         state === 'open'
           ? 'tone-info'
@@ -516,11 +527,15 @@ export class DeviceExportImportDialog {
             ? planExpiredText(plan.expiresAt)
             : state === 'cancelled' && plan
               ? planCancelledText(plan)
-              : counts?.rejected
-                ? nothingCanRunText(counts.rejected)
-                : this.store.job()?.importSummary?.mode === 'sync-all-rows'
-                  ? SYNC_ALL_ROWS_NO_UPDATE_LINE
-                  : NO_UPDATE_LINE,
+              : state === 'unread'
+                ? ''
+                : counts?.rejected
+                  ? nothingCanRunText(counts.rejected)
+                  : this.syncAllRows()
+                    ? SYNC_ALL_ROWS_NO_UPDATE_LINE
+                    : counts
+                      ? noChangeText(counts)
+                      : '',
     };
   });
   protected readonly executeLabel = computed(() =>
@@ -649,6 +664,17 @@ export class DeviceExportImportDialog {
 
 /** The order of the two export phases (design section 2). */
 const EXPORT_PHASES = ['write-rows', 'prepare-download'] as const;
+
+/**
+ * The no-change line that the counts support (R10, state 21). Only a file whose every row is
+ * unchanged matches its export checksum. Edited rows that already match the current values
+ * take the approved generic sentence.
+ */
+function noChangeText(counts: DeviceImportCounts): string {
+  return counts.rows > 0 && counts.unchanged === counts.rows
+    ? NO_UPDATE_LINE
+    : NO_UPDATE_VIEW_LINE;
+}
 
 /**
  * The state of one phase dot, from the job's stored phase and status.
