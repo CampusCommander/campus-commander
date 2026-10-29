@@ -560,6 +560,178 @@ export async function qualifyDeviceExportImport({
     );
 
     await check(
+      'a report renewal takes line counts above the source-row cap',
+      async () => {
+        // One source row yields several report lines, so `report` counts lines, not rows (design
+        // section 2). The reviewer reproduction: 10,000 source rows, 60,000 stored changes.
+        const imported = await createImport({ actor: importer });
+        jobs.push(imported.receipt.jobId);
+        const lease = randomUUID();
+        await claimImport(imported.receipt.jobId, lease);
+        for (let batch = 0; batch < 60; batch += 1) {
+          const lines = Array.from({ length: 1000 }, (_, index) => {
+            const row = (batch * 1000 + index) % 10000;
+            return lineChange(2 + row, `D-${row}`);
+          });
+          assert.equal(
+            (await storeLines(imported.receipt.jobId, lease, lines)).changes,
+            1000,
+          );
+        }
+        assert.equal(
+          (
+            await admin(
+              'SELECT count(*)::integer AS rows FROM cc.device_import_changes WHERE job_id=$1',
+              [imported.receipt.jobId],
+            )
+          )[0].rows,
+          60000,
+        );
+        assert.equal(
+          (await renewImport(imported.receipt.jobId, lease, 'report', 0, 60000))
+            .outcome,
+          'renewed',
+        );
+        assert.equal(
+          (
+            await renewImport(
+              imported.receipt.jobId,
+              lease,
+              'report',
+              60000,
+              60000,
+            )
+          ).outcome,
+          'renewed',
+        );
+        const header = await jobRow(imported.receipt.jobId);
+        assert.equal(header.phase, 'report');
+        assert.equal(header.phase_done, 60000);
+        assert.equal(header.phase_total, 60000);
+        // The row phases keep the 50,000 source-row cap, and the report domain stays non-negative
+        // with a total at or above the done count.
+        await rejects(
+          renewImport(imported.receipt.jobId, lease, 'compare', 0, 60000),
+          '22023',
+        );
+        await rejects(
+          renewImport(imported.receipt.jobId, lease, 'compare', 50001, 50001),
+          '22023',
+        );
+        await rejects(
+          renewImport(imported.receipt.jobId, lease, 'report', -1, 60000),
+          '22023',
+        );
+        await rejects(
+          renewImport(imported.receipt.jobId, lease, 'report', 2, 1),
+          '22023',
+        );
+      },
+    );
+
+    await check(
+      'a replacement import lease clears the partial report of the expired run',
+      async () => {
+        const imported = await createImport({ actor: importer });
+        jobs.push(imported.receipt.jobId);
+        const leaseA = randomUUID();
+        const leaseB = randomUUID();
+        const lines = () => [
+          lineChange(2, 'D-1'),
+          {
+            kind: 'rejection',
+            sourceRow: 3,
+            deviceId: 'D-2',
+            column: 'Status',
+            submittedValue: 'nope',
+            reason: 'The Status cell is invalid.',
+          },
+          {
+            kind: 'warning',
+            sourceRow: 4,
+            deviceId: 'D-3',
+            warning: 'Unknown column.',
+          },
+        ];
+        const lineCounts = async () => {
+          const counts = [];
+          for (const table of [
+            'device_import_changes',
+            'device_import_rejections',
+            'device_import_warnings',
+          ])
+            counts.push(
+              (
+                await admin(
+                  `SELECT count(*)::integer AS rows FROM cc.${table} WHERE job_id=$1`,
+                  [imported.receipt.jobId],
+                )
+              )[0].rows,
+            );
+          return counts;
+        };
+        await claimImport(imported.receipt.jobId, leaseA);
+        assert.deepEqual(
+          await storeLines(imported.receipt.jobId, leaseA, lines()),
+          { outcome: 'stored', changes: 1, rejections: 1, warnings: 1 },
+        );
+        // A live lease refuses the second owner and keeps the report of the first.
+        assert.equal(
+          (await claimImport(imported.receipt.jobId, leaseB)).outcome,
+          'busy',
+        );
+        assert.deepEqual(await lineCounts(), [1, 1, 1]);
+        // A claim by the same owner keeps the output of that owner.
+        await expire('device_import_jobs', imported.receipt.jobId);
+        assert.equal(
+          (await claimImport(imported.receipt.jobId, leaseA)).outcome,
+          'claimed',
+        );
+        assert.deepEqual(await lineCounts(), [1, 1, 1]);
+        // A new owner restarts the whole validation, so the replaced output cannot double the report.
+        await expire('device_import_jobs', imported.receipt.jobId);
+        assert.equal(
+          (await claimImport(imported.receipt.jobId, leaseB)).outcome,
+          'claimed',
+        );
+        assert.deepEqual(await lineCounts(), [0, 0, 0]);
+        // The replaced owner is fenced and stores nothing.
+        assert.equal(
+          (await storeLines(imported.receipt.jobId, leaseA, lines())).outcome,
+          'fenced',
+        );
+        assert.deepEqual(await lineCounts(), [0, 0, 0]);
+        // The new owner stores its report once, and the finish publishes those counts.
+        assert.equal(
+          (await storeLines(imported.receipt.jobId, leaseB, lines())).changes,
+          1,
+        );
+        const finished = await finishImport(
+          imported.receipt.jobId,
+          leaseB,
+          counts({
+            rows: 2,
+            unchanged: 0,
+            noChangeNeeded: 0,
+            proposed: 1,
+            rejected: 1,
+          }),
+        );
+        assert.equal(finished.outcome, 'finished');
+        assert.equal(finished.status, 'completed');
+        assert.equal(finished.plan.state, 'open');
+        assert.deepEqual(await lineCounts(), [1, 1, 1]);
+        assert.deepEqual(
+          await admin(
+            'SELECT ordinal FROM cc.device_import_changes WHERE job_id=$1 ORDER BY ordinal',
+            [imported.receipt.jobId],
+          ),
+          [{ ordinal: 0 }],
+        );
+      },
+    );
+
+    await check(
       'a renewal fences a replaced lease and a lapsed lease',
       async () => {
         const created = await createExport({ actor: exporter });
