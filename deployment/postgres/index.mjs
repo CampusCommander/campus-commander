@@ -320,7 +320,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.job_cancel_requested(text,uuid),
         cc.request_job_cancel(uuid,integer,text,text,uuid),
         cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid),
-        cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid),
+        cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text),
         cc.claim_device_export_job(text,uuid,uuid),
         cc.claim_device_import_job(text,uuid,uuid),
         cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),

@@ -510,6 +510,25 @@ function datasources(setGridOption: ReturnType<typeof vi.fn>) {
 }
 
 // S5: the blocks whose loads failed retry, and the rows that loaded stay in place.
+it('reports the displayed grid columns in grid order', () => {
+  const { fixture, api } = mounted();
+  // The grid answers its own column state: the details column, the selection column, and the
+  // Group column are not report fields (design section 5).
+  (api as unknown as { getColumnState: () => unknown[] }).getColumnState =
+    () => [
+      { colId: 'details', hide: false },
+      { colId: 'ag-Grid-SelectionColumn', hide: false },
+      { colId: 'serialNumber', hide: false },
+      { colId: 'status', hide: true },
+      { colId: 'assetTag', hide: false },
+      { colId: 'devicesGroup', hide: false },
+    ];
+  expect(fixture.componentInstance.reportColumns()).toEqual([
+    'serialNumber',
+    'assetTag',
+  ]);
+});
+
 it('retries the failed server-side blocks when a resumed session asks for it', () => {
   const { fixture, retryServerSideLoads } = mounted();
   expect(retryServerSideLoads).not.toHaveBeenCalled();

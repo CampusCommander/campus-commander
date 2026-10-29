@@ -54,7 +54,8 @@
           <li>
             <a
               class="row"
-              [routerLink]="['/jobs', job.displayId]"
+              [routerLink]="rowLink(job)"
+              [queryParams]="rowQuery(job) ?? {}"
               (click)="close(false)"
             >
               <span class="spinner" aria-hidden="true"></span>
@@ -100,7 +101,8 @@
           <li>
             <a
               class="row"
-              [routerLink]="['/jobs', job.displayId]"
+              [routerLink]="rowLink(job)"
+              [queryParams]="rowQuery(job) ?? {}"
               (click)="close(false)"
             >
               <mat-icon
@@ -131,7 +133,8 @@
           <li>
             <a
               class="row"
-              [routerLink]="['/jobs', job.displayId]"
+              [routerLink]="rowLink(job)"
+              [queryParams]="rowQuery(job) ?? {}"
               (click)="close(false)"
             >
               <mat-icon

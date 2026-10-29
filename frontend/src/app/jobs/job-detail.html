@@ -88,6 +88,42 @@
     }
   </section>
 
+  @if (exportFile(); as file) {
+  <section class="file-section card" aria-labelledby="job-file-title">
+    <h2 id="job-file-title" class="file-title">File</h2>
+    <div class="file-card">
+      <span class="file-glyph" aria-hidden="true">
+        <span class="material-symbols-outlined">csv</span>
+      </span>
+      <div class="file-main">
+        <div class="file-head">
+          <p class="file-name">{{ file.name }}</p>
+          <span
+            class="status-chip small"
+            [class.tone-success]="!file.expired"
+            [class.tone-warning]="file.expired"
+          >
+            <span class="dot" aria-hidden="true"></span>
+            {{ file.expired ? 'Expired' : 'Ready' }}
+          </span>
+        </div>
+        <p class="meta-items">{{ file.facts }}</p>
+        <p class="until">
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >schedule</span
+          >
+          {{ file.line }}
+        </p>
+      </div>
+      @if (!file.expired) {
+      <a mat-stroked-button [href]="file.href" download>Download CSV</a>
+      } @else {
+      <button mat-stroked-button type="button" disabled>Download CSV</button>
+      }
+    </div>
+  </section>
+  } @if (!isExport() && !isImport()) {
+
   <section class="counters-section" aria-labelledby="job-counts-title">
     <h2 id="job-counts-title" class="visually-hidden">Operation counts</h2>
     <dl class="counters">
@@ -340,7 +376,7 @@
       </footer>
     </div>
   </section>
-  }
+  } }
 
   <section class="activity card" aria-labelledby="activity-title">
     <h2 id="activity-title">Latest activity</h2>

@@ -46,12 +46,29 @@ interface ArtifactStore {
     manifest: ArtifactStreamManifest,
     source: AsyncIterable<Buffer>,
   ): Promise<ArtifactDescriptor>;
+  /** Stage one stream inside the caller's transaction, and answer its ready descriptor. */
+  stageStreamWithin(
+    client: QueryClient,
+    manifest: ArtifactStreamManifest,
+    source: AsyncIterable<Buffer>,
+  ): Promise<ArtifactDescriptor>;
+  /** Remove the attempt file of a stage whose caller's transaction rolled back. */
+  discardStaged(manifest: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<boolean>;
   publish(manifest: ArtifactDescriptor): Promise<unknown>;
   openRead(artifactId: string): Promise<AsyncIterable<Buffer>>;
   remove(manifest: { artifactId: string; attemptId: string }): Promise<boolean>;
   /** Remove each artifact whose retention passed. Returns the number removed. */
   purgeExpired(): Promise<number>;
   close(): Promise<void>;
+}
+interface QueryClient {
+  query(
+    text: string,
+    values?: unknown[],
+  ): Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null }>;
 }
 interface StorageModule {
   createArtifactStore(options: {
@@ -60,6 +77,28 @@ interface StorageModule {
     backend: string;
   }): Promise<ArtifactStore>;
 }
+
+/** One stored upload, with the size and the digest that the store computed while it wrote. */
+export interface StagedUpload {
+  artifactId: string;
+  attemptId: string;
+  sizeBytes: number;
+  sha256: string;
+}
+
+/** One artifact that a caller staged inside its own transaction. */
+export interface StagedArtifact {
+  artifactId: string;
+  attemptId: string;
+  sizeBytes: number;
+  sha256: string;
+}
+
+/** The largest uploaded file. The edge refuses above it, and the store refuses a second time. */
+const UPLOAD_MAX_BYTES = 1_073_741_824;
+
+/** The upload and the export file stay for 30 days (design section 4). */
+const FILE_RETENTION_DAYS = 30;
 
 @Injectable()
 export class StorageService
@@ -110,11 +149,65 @@ export class StorageService
   }
 
   /**
+   * Stage and publish one JSON document inside the caller's transaction (design section 7,
+   * "Bounded serialization"). The caller's client carries the artifact row, so an Execute that
+   * holds the plan lock never borrows a second pool connection. The store computes the size and
+   * the SHA-256 while it writes, so the document never exists as one string.
+   */
+  async storeJsonStreamWithin(
+    client: QueryClient,
+    source: AsyncIterable<Buffer>,
+    maxBytes: number,
+  ): Promise<StagedArtifact> {
+    const store = await this.connection();
+    return store.stageStreamWithin(
+      client,
+      { schemaVersion: 1, maxBytes },
+      source,
+    );
+  }
+
+  /** Remove the attempt file of a stage whose transaction rolled back. */
+  async discardStaged(descriptor: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<boolean> {
+    return (await this.connection()).discardStaged(descriptor);
+  }
+
+  /**
    * Stream one published artifact (design section 4). The iterable owns its file handle, and a
    * missing or unreadable artifact rejects before the caller writes an answer.
    */
   async openRead(artifactId: string): Promise<AsyncIterable<Buffer>> {
     return (await this.connection()).openRead(artifactId);
+  }
+
+  /**
+   * Stage and publish one uploaded file (design section 4). The store computes the size and the
+   * SHA-256 while it writes, so the caller never holds the file. The staged file stays 30 days,
+   * unless the caller discards it first.
+   */
+  async stageUpload(source: AsyncIterable<Buffer>): Promise<StagedUpload> {
+    const store = await this.connection();
+    const descriptor = await store.stageStream(
+      {
+        schemaVersion: 1,
+        maxBytes: UPLOAD_MAX_BYTES,
+        retentionDays: FILE_RETENTION_DAYS,
+      },
+      source,
+    );
+    await store.publish(descriptor);
+    return descriptor;
+  }
+
+  /** Remove one staged upload that a refused request leaves behind. */
+  async discardUpload(descriptor: {
+    artifactId: string;
+    attemptId: string;
+  }): Promise<unknown> {
+    return (await this.connection()).remove(descriptor);
   }
 
   async check(correlationId: string) {

@@ -155,13 +155,22 @@ export function actionTargets(
 }
 
 /**
+ * The part of an action target that its digest covers. A paged caller keeps these two fields per
+ * device and never the target's values (design section 7, "Bounded serialization").
+ */
+export type ActionDigestTarget = Pick<
+  ActionPreviewTarget,
+  'deviceId' | 'observedStatus' | 'disposition'
+>;
+
+/**
  * SHA-256 over the action, its version, the Google action, and the ordered eligible device IDs
  * with their cached baseline statuses (section 2). A Deprovision preview also covers its reason,
  * so a new reason needs a new preview (D12).
  */
 export function actionManifestDigest(
   action: DeviceAction,
-  targets: readonly ActionPreviewTarget[],
+  targets: readonly ActionDigestTarget[],
   deprovisionReason: DeprovisionReason | null = null,
 ): string {
   const eligible = targets

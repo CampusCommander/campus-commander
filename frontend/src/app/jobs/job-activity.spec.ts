@@ -356,6 +356,65 @@ it('opens the running job and the Jobs page from the panel', async () => {
   expect(dialog(fixture)?.querySelector('a[href="/account"]')).toBeNull();
 });
 
+it('sends only the requester own export and import rows to the dialog', async () => {
+  const other = {
+    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    displayName: 'Other Admin',
+  };
+  const finished = {
+    status: 'completed' as const,
+    finishedAt: '2026-10-19T11:58:00.000Z',
+  };
+  configure({
+    summary: activity({
+      recent: {
+        count: 4,
+        jobs: [
+          job({
+            displayId: 'EXP-001',
+            action: 'export-devices',
+            ...finished,
+            exportSummary: { purpose: 'edit' },
+          }),
+          job({
+            displayId: 'EXP-002',
+            action: 'export-devices',
+            requestedBy: other,
+            ...finished,
+            exportSummary: { purpose: 'edit' },
+          }),
+          job({
+            displayId: 'IMP-001',
+            action: 'validate-device-import',
+            ...finished,
+            scope: { kind: 'rows', deviceCount: 12 },
+          }),
+          job({
+            displayId: 'IMP-002',
+            action: 'validate-device-import',
+            requestedBy: other,
+            ...finished,
+            scope: { kind: 'rows', deviceCount: 12 },
+          }),
+        ],
+        nextExpiryAt: null,
+      },
+    }),
+  });
+  const fixture = await render();
+  await open(fixture);
+
+  const hrefs = [...(dialog(fixture)?.querySelectorAll('a.row') ?? [])].map(
+    (row) => row.getAttribute('href'),
+  );
+  expect(hrefs).toEqual([
+    '/devices?job=EXP-001',
+    '/jobs/EXP-002',
+    '/devices?job=IMP-001',
+    '/jobs/IMP-002',
+  ]);
+});
+
 it('shows the read count and an indeterminate bar for a job without a total', async () => {
   configure({
     summary: activity({

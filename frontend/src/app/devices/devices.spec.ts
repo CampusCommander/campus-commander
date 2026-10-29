@@ -61,6 +61,8 @@ class GridStub {
     count: number | null;
   }>();
   readonly filtersChange = output<unknown>();
+  /** The report columns of the real grid (design section 5). */
+  reportColumns = () => ['serialNumber', 'model', 'assetTag'];
 }
 
 const ready = (extra: Partial<DeviceSyncState> = {}): DeviceSyncState => ({
@@ -83,6 +85,7 @@ const allActions = [
   'devices:commands',
   'devices:status',
   'devices:bulk-actions',
+  'devices:export',
   'connection:diagnose',
 ];
 const grantedAccess: DeviceWriteAccess = {
@@ -696,8 +699,8 @@ describe('Bulk Actions', () => {
     expect(writeAccess.load).not.toHaveBeenCalled();
   });
 
-  it('offers the three built items in order', async () => {
-    const { openBulk, menuItem } = setup({ sync: ready(), page: counted });
+  it('offers the three built items and the three export items in order', async () => {
+    const { openBulk } = setup({ sync: ready(), page: counted });
     await openBulk();
     const items = [
       ...document.querySelectorAll<HTMLButtonElement>('button[mat-menu-item]'),
@@ -706,9 +709,10 @@ describe('Bulk Actions', () => {
       'Update device',
       'Send command',
       'Change status',
+      'Export',
+      'Reports',
+      'Import',
     ]);
-    expect(menuItem('Import')).toBeUndefined();
-    expect(menuItem('Export')).toBeUndefined();
   });
 
   it('opens the bulk action sheet from Update device', async () => {
@@ -771,7 +775,7 @@ describe('Bulk Actions', () => {
     expect(menuItem('Update device')?.disabled).toBe(true);
   });
 
-  it('shows one selection note above the grid when no device is selected', async () => {
+  it('shows one note per reason and enables only Import when no device is selected', async () => {
     const { element, openBulk, menuItem } = setup({
       sync: ready(),
       page: counted,
@@ -780,14 +784,25 @@ describe('Bulk Actions', () => {
     const notes = [...element.querySelectorAll('.action-note-group p')].map(
       (note) => note.textContent?.trim(),
     );
-    expect(notes).toEqual(['Select one or more devices to update.']);
+    expect(notes[0]).toBe('Select one or more devices to update.');
+    expect(notes).toContain('Select one or more devices to export.');
+    expect(notes).toContain('Select one or more devices to create a report.');
     await openBulk();
-    for (const label of ['Update device', 'Send command', 'Change status']) {
+    for (const label of [
+      'Update device',
+      'Send command',
+      'Change status',
+      'Export',
+      'Reports',
+    ]) {
       expect(menuItem(label)?.disabled).toBe(true);
-      expect(menuItem(label)?.getAttribute('aria-describedby')).toBe(
-        'bulk-note',
+      expect(menuItem(label)?.getAttribute('aria-describedby')).toMatch(
+        /^bulk-note/,
       );
     }
+    // Import needs no selection (notes eng-lead answer 1).
+    expect(menuItem('Import')?.disabled).toBe(false);
+    expect(menuItem('Import')?.getAttribute('aria-describedby')).toBeNull();
   });
 
   it('opens the command sheet from Send command', async () => {
@@ -1133,6 +1148,74 @@ describe('Bulk Actions', () => {
     ].find((candidate) => candidate.textContent?.trim() === 'Update device');
     expect(item?.disabled).toBe(false);
     expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Export, Reports, and Import', () => {
+  const panelOf = (element: HTMLElement) =>
+    element.querySelector<HTMLElement>(
+      'app-device-export-import-dialog section[role="dialog"]',
+    );
+  /** Opens the Bulk Actions entry and returns the open dialog. */
+  const openEntry = async (entry: string, selectionCount = 6) => {
+    const context = setup({
+      sync: ready(),
+      page: counted,
+      selectionCount,
+    });
+    await context.openBulk();
+    expect(context.menuItem(entry)?.disabled).toBe(false);
+    context.menuItem(entry)?.click();
+    context.fixture.detectChanges();
+    await context.fixture.whenStable();
+    context.fixture.detectChanges();
+    return { ...context, panel: panelOf(context.element) };
+  };
+
+  it('opens Export at the configure step with the selected count', async () => {
+    const { panel } = await openEntry('Export');
+    expect(panel?.querySelector('h2')?.textContent?.trim()).toBe(
+      'Export devices',
+    );
+    expect(panel?.textContent).toContain('6 selected devices · Not submitted');
+    expect(panel?.textContent).toContain('CSV file');
+    expect(
+      panel
+        ?.querySelector('.export-actions button[mat-flat-button]')
+        ?.textContent?.trim(),
+    ).toBe('Export 6 devices');
+  });
+
+  it('opens Reports at the configure step with the column label', async () => {
+    const { panel } = await openEntry('Reports');
+    expect(panel?.querySelector('h2')?.textContent?.trim()).toBe(
+      'Create a report',
+    );
+    expect(panel?.textContent).toContain('Visible grid columns');
+    expect(
+      panel
+        ?.querySelector('.export-actions button[mat-flat-button]')
+        ?.textContent?.trim(),
+    ).toBe('Create report');
+  });
+
+  it('opens Import at the import step without a selection', async () => {
+    const { panel } = await openEntry('Import', 0);
+    expect(panel?.querySelector('h2')?.textContent?.trim()).toBe(
+      'Import devices',
+    );
+  });
+
+  it('returns focus to Bulk Actions after the dialog closes', async () => {
+    const { panel, button, fixture } = await openEntry('Export');
+    panel
+      ?.querySelector<HTMLButtonElement>('button[aria-label="Close"]')
+      ?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(panelOf(fixture.nativeElement)).toBeNull();
+    expect(document.activeElement).toBe(button('Bulk Actions'));
   });
 });
 
