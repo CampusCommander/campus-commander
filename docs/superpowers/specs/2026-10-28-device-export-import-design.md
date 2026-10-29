@@ -185,6 +185,8 @@ A cancel request takes the admission lock, then the header (`017:548`, `:560`). 
 - **Worker access.** The worker imports the store module as the API does (`api/storage/storage.service.ts:54-77`). Its container already mounts the artifacts volume (`docker-compose.yml:531`).
 - **Download.** The file route streams the artifact with `content-disposition: attachment`. The edge drops that header (`edge:132-144`) and passes it for the two file routes. The link is the route itself. It works inside the session until the file expires, then answers 410. This maps `td:359` without a token store.
 
+PR #165 removed HTTP/2 from the edge after this design. The edge serves HTTP/1.1, so the HTTP/2 parts of section 4 and of row E1 no longer apply.
+
 ## 5. The export job
 
 **API.** `POST /api/devices/exports` checks the export permissions. An expired selection answers 409, as previews do (`api/devices/device-updates.ts:507-508`). One query resolves the selection terms (`api/devices/device-query.ts:370-406`) in grid order, with the device ID as the tie (`api/devices/device-query.ts:163-169`). Above 50,000 devices it answers 422 for both purposes (`td:1037`, notes eng-lead answer 2). Otherwise it creates the job and starts the flow.
@@ -308,7 +310,7 @@ A cancel request takes the admission lock, then the header (`017:548`, `:560`). 
 
 **Proposal on Unknown.** This design proposes that an Unknown outcome joins the Failed tab. Engineering default 17 raises the Jobs attention dot for a cancelled job with a failed or Unknown operation (`record:288`, `api/jobs/jobs.ts:924`). The record lets no result show success while an operation reads unknown (`record:73`). An Unknown write needs the same check in Google as a failed one. Its row keeps the Unknown chip, so the tab hides no difference.
 
-The constant holds `failed` until the owner answers. His yes adds `unknown`. Expired stays out, because the ruling and default 17 omit it. The job page filter reads all three (`api/jobs/jobs.ts:684`).
+The owner answered "Unknown yes" on 2026-10-28, so the constant holds `failed` and `unknown`. Expired stays out, because the ruling and default 17 omit it. The job page filter reads all three (`api/jobs/jobs.ts:684`).
 
 **Live updates.** The dialog opens the job events stream (`api/jobs/jobs.controller.ts:147-193`). A newer revision of a plan job marks the reader dirty (`fe/jobs/job-reader.ts:40-44`). One read of the IMP detail and the page's operations runs at a time, 250 ms after an event (`fe/jobs/job-reader.ts:11-22`). With every job final, "Finished" and the end time replace the live line (state 17b). The EXP and IMP workers publish as the write worker does (`worker/src/device-update.ts:1304-1351`). The relay covers a missed publish (`api/jobs/job-service.ts:512-567`).
 

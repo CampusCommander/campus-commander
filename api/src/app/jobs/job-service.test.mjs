@@ -335,6 +335,7 @@ test('recovery starts each element with its new token and starts one reconcile f
         },
       ],
     ],
+    ['SELECT cc.recover_device_file_jobs', () => [{ result: { failed: [] } }]],
     [
       'SELECT batch_count FROM cc.device_update_jobs',
       () => [{ batch_count: 2 }],
@@ -365,6 +366,123 @@ test('recovery starts each element with its new token and starts one reconcile f
   assert.equal(reconcile.input.operationNumber, 'all');
   assert.equal('verifyAttempt' in reconcile.input, false);
   assert.equal(reconcile.input.jobId, OTHER_JOB);
+});
+
+test('the recovery fails a lost export and a lost validation run', async () => {
+  const database = databaseOf([
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    [
+      'SELECT cc.recover_device_update_jobs',
+      () => [{ result: { starts: [], reconciles: [] } }],
+    ],
+    [
+      'SELECT cc.recover_device_file_jobs',
+      () => [
+        {
+          result: {
+            failed: [
+              { jobId: JOB, displayId: 'EXP-001', status: 'failed' },
+              { jobId: OTHER_JOB, displayId: 'IMP-001', status: 'cancelled' },
+            ],
+          },
+        },
+      ],
+    ],
+    ['SELECT p.publication_id', () => []],
+  ]);
+  const orchestration = orchestrationOf();
+  const service = serviceOf({
+    database,
+    cache: cacheOf(),
+    orchestration,
+  });
+  assert.equal(await service.recover(CUSTOMER), true);
+  const call = database.calls.find(({ text }) =>
+    text.includes('cc.recover_device_file_jobs'),
+  );
+  assert.deepEqual(call.values, [CUSTOMER]);
+  // A recovered file run starts no flow. The function ends it in Failed or Cancelled.
+  assert.deepEqual(orchestration.calls, []);
+});
+
+test('a failed file recovery never blocks the write recovery', async () => {
+  const database = databaseOf([
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    [
+      'SELECT cc.recover_device_update_jobs',
+      () => [{ result: { starts: [admitted()], reconciles: [] } }],
+    ],
+    [
+      'SELECT cc.recover_device_file_jobs',
+      () => {
+        throw new Error('permission denied');
+      },
+    ],
+    [
+      'SELECT batch_count FROM cc.device_update_jobs',
+      () => [{ batch_count: 1 }],
+    ],
+    ['SELECT cc.record_device_update_start', () => [{ result: null }]],
+    ['SELECT p.publication_id', () => []],
+  ]);
+  const orchestration = orchestrationOf();
+  const service = serviceOf({
+    database,
+    cache: cacheOf(),
+    orchestration,
+  });
+  assert.equal(await service.recover(CUSTOMER), true);
+  assert.equal(orchestration.calls[0].name, 'startDeviceUpdate');
+});
+
+test('the tick visits a customer with a running export or validation run and recovers it', async () => {
+  const database = databaseOf([
+    [
+      'SELECT DISTINCT j.customer_id FROM cc.jobs j',
+      () => [{ customer_id: CUSTOMER }],
+    ],
+    ['SELECT cc.accept_device_update_hold', () => []],
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    ['SELECT cc.admit_device_update_job', () => []],
+    ['SELECT p.publication_id,p.job_id', () => []],
+    [
+      'SELECT cc.recover_device_update_jobs',
+      () => [{ result: { starts: [], reconciles: [] } }],
+    ],
+    [
+      'SELECT cc.recover_device_file_jobs',
+      () => [
+        {
+          result: {
+            failed: [{ jobId: JOB, displayId: 'EXP-001', status: 'failed' }],
+          },
+        },
+      ],
+    ],
+    ['SELECT j.job_id FROM cc.jobs j JOIN', () => []],
+    ['SELECT cc.due_device_command_polls', () => [{ result: [] }]],
+  ]);
+  const orchestration = orchestrationOf();
+  const service = serviceOf({
+    database,
+    cache: cacheOf(),
+    orchestration,
+  });
+  await service.tick();
+  const customers = database.calls.find(({ text }) =>
+    text.includes('SELECT DISTINCT j.customer_id FROM cc.jobs j'),
+  );
+  assert.ok(
+    customers.text.includes(
+      "j.kind IN ('device-export','device-import') AND j.status='running'",
+    ),
+  );
+  const recovered = database.calls.find(({ text }) =>
+    text.includes('cc.recover_device_file_jobs'),
+  );
+  assert.deepEqual(recovered.values, [CUSTOMER]);
+  // The recovered run ends in the function. It starts no flow.
+  assert.deepEqual(orchestration.calls, []);
 });
 
 test('a failed publication after admission leaves the row for the relay and still starts the job', async () => {
@@ -438,6 +556,7 @@ test('a failed publication after a reaper run still starts the reconcile flow fo
       'SELECT cc.recover_device_update_jobs',
       () => [{ result: { starts: [], reconciles: [OTHER_JOB] } }],
     ],
+    ['SELECT cc.recover_device_file_jobs', () => [{ result: { failed: [] } }]],
     [
       'SELECT p.publication_id,p.job_id',
       () => [
@@ -486,6 +605,7 @@ test('a failed reconcile start after a reaper run is not retried', async () => {
       'SELECT cc.recover_device_update_jobs',
       () => [{ result: { starts: [], reconciles: [OTHER_JOB] } }],
     ],
+    ['SELECT cc.recover_device_file_jobs', () => [{ result: { failed: [] } }]],
     ['SELECT p.publication_id', () => []],
   ]);
   const orchestration = orchestrationOf({
@@ -792,6 +912,7 @@ test('a recovery answer without a start dispatches nothing', async () => {
       'SELECT cc.recover_device_update_jobs',
       () => [{ result: { starts: [], reconciles: [] } }],
     ],
+    ['SELECT cc.recover_device_file_jobs', () => [{ result: { failed: [] } }]],
     ['SELECT p.publication_id', () => []],
   ]);
   const orchestration = orchestrationOf();
@@ -821,6 +942,7 @@ test('a slow tick never delays the relay', async () => {
       'SELECT cc.recover_device_update_jobs',
       () => [{ result: { starts: [admitted()], reconciles: [] } }],
     ],
+    ['SELECT cc.recover_device_file_jobs', () => [{ result: { failed: [] } }]],
     [
       'SELECT batch_count FROM cc.device_update_jobs',
       () => [{ batch_count: 1 }],
@@ -863,6 +985,7 @@ const pollTickDatabase = (due = [{ jobId: OTHER_JOB, leaseId: LEASE }]) =>
       'SELECT cc.recover_device_update_jobs',
       () => [{ result: { starts: [], reconciles: [] } }],
     ],
+    ['SELECT cc.recover_device_file_jobs', () => [{ result: { failed: [] } }]],
     ['SELECT j.job_id FROM cc.jobs j JOIN', () => []],
     ['SELECT cc.due_device_command_polls', () => [{ result: due }]],
     ['SELECT cc.record_device_command_poll_start', () => [{ result: true }]],

@@ -437,3 +437,41 @@ test('the reconcile route answers 409 reconcile-unsupported for Powerwash', asyn
   assert.equal(claimCount(db), 0, 'A command operation claims nothing.');
   assert.deepEqual(startedFlows, [], 'A command operation starts no flow.');
 });
+
+/** A database for one operations read: the connected customer, the header, and no operation. */
+function operationsDatabase() {
+  return database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    [
+      'p.display_name AS requested_by_name',
+      [jobRow({ display_id: 'UPD-006', kind: 'device-update' })],
+    ],
+    ['FROM cc.device_update_operations o', []],
+  ]);
+}
+
+test('the operations route reads at most ten operation numbers', async () => {
+  const db = operationsDatabase();
+  arrange(db, ['jobs:read']);
+  const url = new URL(`${origin}/api/jobs/UPD-006/operations`);
+  for (const number of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    url.searchParams.append('number', String(number));
+
+  const answer = await fetch(url);
+
+  assert.equal(answer.status, 200);
+  assert.deepEqual(await answer.json(), { operations: [], nextCursor: null });
+  const [text, values] = db.calls.find(([sql]) =>
+    sql.includes('FROM cc.device_update_operations o'),
+  );
+  // The repeated key reaches the statement as one array of numbers.
+  assert.ok(text.includes('o.operation_number=ANY($10::integer[])'));
+  assert.deepEqual(values[9], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+  // An eleventh number answers 400 before the route reads the job.
+  url.searchParams.append('number', '11');
+  const before = db.calls.length;
+  const refused = await fetch(url);
+  assert.equal(refused.status, 400);
+  assert.equal(db.calls.length, before, 'A refused query reads nothing.');
+});
