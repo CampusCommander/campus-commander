@@ -120,9 +120,9 @@ CREATE TABLE cc.device_update_previews (
   field_changes integer NOT NULL DEFAULT 0 CHECK(field_changes>=0),
   oldest_observed_at timestamptz,
   -- The digest of the filled preview. It stays null while the preview holds pages (design section 7,
-  -- "Bounded serialization"), and the seal writes it. Confirm and both manifest reads refuse a null
-  -- digest.
-  manifest_digest text CHECK(manifest_digest IS NULL OR manifest_digest ~ '^[a-f0-9]{64}$'),
+  -- "Bounded serialization"), and the seal writes it. The seal and the confirmation check the 64-unit
+  -- hexadecimal form; the column holds a value of 1 to 256 units.
+  manifest_digest text CHECK(manifest_digest IS NULL OR length(manifest_digest) BETWEEN 1 AND 256),
   prepared_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL,
   job_id uuid UNIQUE REFERENCES cc.jobs(job_id),
@@ -716,7 +716,8 @@ $$;
 CREATE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer text,p_display_id text,
   p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; pending integer; dispatched integer;
+DECLARE job cc.jobs; detail cc.device_update_jobs; now_at timestamptz; request_at timestamptz;
+  pending integer; dispatched integer;
   stop_now boolean:=false; claimed_at timestamptz; waiting_jobs cc.jobs[]:='{}'; waiting_job cc.jobs;
   waiting_detail cc.device_update_jobs;
 BEGIN
@@ -825,7 +826,10 @@ BEGIN
     RAISE EXCEPTION 'The cancel is not permitted.' USING DETAIL='cancel-not-permitted';
   END IF;
   now_at:=clock_timestamp();
-  UPDATE cc.jobs SET cancel_requested_at=now_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
+  -- The request time stays one value: the update job and each waiting status job store the same
+  -- request, so a reader never sees two requests for one call.
+  request_at:=now_at;
+  UPDATE cc.jobs SET cancel_requested_at=request_at,cancel_requested_by=p_actor WHERE job_id=job.job_id;
   IF job.kind IN ('device-export','device-import') THEN
     -- A request that ends a file job before its first claim keeps no report. The cancelled count holds
     -- the rows left, at least 1, as the cancelled finish does (design section 3).
@@ -864,7 +868,7 @@ BEGIN
     -- The same request lands on each waiting status job of an import's update job. Each one that never
     -- claimed ends at once with every operation Cancelled, and the one request keeps one audit row.
     FOREACH waiting_job IN ARRAY waiting_jobs LOOP
-      UPDATE cc.jobs SET cancel_requested_at=now_at,cancel_requested_by=p_actor
+      UPDATE cc.jobs SET cancel_requested_at=request_at,cancel_requested_by=p_actor
       WHERE job_id=waiting_job.job_id;
       SELECT * INTO waiting_detail FROM cc.device_update_jobs u WHERE u.job_id=waiting_job.job_id;
       IF waiting_detail.first_claimed_at IS NULL THEN
@@ -3988,11 +3992,12 @@ BEGIN
   END IF;
   preview_id:=(opened->'preview'->>'preview_id')::uuid;
   -- One pass over the targets groups them into pages of 250. Every add call carries one page.
-  SELECT COALESCE(jsonb_agg(p.targets ORDER BY p.page),'[]'::jsonb),count(*) INTO pages,page_count
-  FROM (SELECT (row_number() OVER (ORDER BY e.ordinal)-1)/250 AS page,
-      jsonb_agg(e.value ORDER BY e.ordinal) AS targets
-    FROM jsonb_array_elements(p_targets) WITH ORDINALITY e(value,ordinal)
-    GROUP BY 1) p;
+  SELECT COALESCE(jsonb_agg(p.targets ORDER BY p.page),'[]'::jsonb) INTO pages
+  FROM (SELECT g.page,jsonb_agg(g.value ORDER BY g.ord) AS targets
+    FROM (SELECT (row_number() OVER (ORDER BY e.ord)-1)/250 AS page,e.value,e.ord
+      FROM jsonb_array_elements(p_targets) WITH ORDINALITY e(value,ord)) g
+    GROUP BY g.page) p;
+  page_count:=COALESCE(jsonb_array_length(pages),0);
   FOR i IN 0..page_count-1 LOOP
     sealed:=cc.add_device_update_preview_targets(p_actor,p_version,p_customer,preview_id,pages->i);
     IF sealed->>'outcome' IS DISTINCT FROM 'added' THEN

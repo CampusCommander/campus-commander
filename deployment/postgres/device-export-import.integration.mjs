@@ -1754,6 +1754,13 @@ export async function qualifyDeviceExportImport({
       ['jobs:read', district()],
       ['jobs:manage', district()],
     ]);
+    // An earlier module leaves the connection inactive, and every preview of this section confirms
+    // against a connected customer. The previous value returns in the cleanup.
+    const wasActive = (
+      await admin('SELECT active FROM cc.google_connection')
+    )[0].active;
+    if (!wasActive)
+      await migrator.query('UPDATE cc.google_connection SET active=true');
     const managedDevices = [];
     const artifacts = [];
     const deviceFixture = async (deviceId, { removed = false } = {}) => {
@@ -2071,7 +2078,7 @@ export async function qualifyDeviceExportImport({
           'sealed',
         );
         const answer = await confirmed(previewId, digest);
-        assert.equal(answer.outcome, 'created');
+        assert.equal(answer.outcome, 'created', JSON.stringify(answer));
         previews.push(previewId);
         fieldJob = answer.receipt;
       }
@@ -2314,7 +2321,7 @@ export async function qualifyDeviceExportImport({
             digest,
             artifact,
           );
-          assert.equal(created.outcome, 'created');
+          assert.equal(created.outcome, 'created', JSON.stringify(created));
           assert.match(created.receipt.displayId, /^UPD-/);
           assert.equal(created.receipt.updateCount, 260);
           jobs.push(created.receipt.jobId);
@@ -2445,7 +2452,7 @@ export async function qualifyDeviceExportImport({
                SET plan_expires_at=clock_timestamp()+$2::interval WHERE job_id=$1`,
               [plan.jobId, interval],
             );
-            const holder = await connect('cc-app', 'cc-app');
+            const holder = await connect('postgres', 'cc-app');
             const waiter = await connect('cc-app', 'cc-app');
             try {
               await holder.query('BEGIN');
@@ -2464,6 +2471,7 @@ export async function qualifyDeviceExportImport({
                 waiter,
               );
               await waitBlocked(waiterPid, holderPid);
+              await holder.query('SELECT pg_sleep(0.45)');
               await holder.query('COMMIT');
               const answer = await pending;
               assert.equal(answer.outcome, expected);
@@ -2607,6 +2615,23 @@ export async function qualifyDeviceExportImport({
             assert.equal(executed.plan.linked, 1);
             jobs.push(executed.fieldJob.jobId);
             firstDisplayId = executed.fieldJob.displayId;
+            // The cancel waits for the Execute transaction, then answers the executed plan.
+            const executorPid = await backendPid(executor);
+            const cancellerPid = await backendPid(canceller);
+            const cancelled = planCancel(
+              planActor,
+              1,
+              plan.jobId,
+              plan.planId,
+              plan.revision + 1,
+              canceller,
+            );
+            await waitBlocked(cancellerPid, executorPid);
+            await executor.query('COMMIT');
+            const raced = await cancelled;
+            assert.equal(raced.outcome, 'conflict');
+            assert.equal(raced.plan.state, 'executed');
+            // The links and the reasons read after the commit of the Execute transaction.
             const reasons = await admin(
               `SELECT ordinal,linked_job_id,not_run_reason FROM cc.device_import_changes
                WHERE job_id=$1 ORDER BY ordinal`,
@@ -2616,20 +2641,6 @@ export async function qualifyDeviceExportImport({
             assert.equal(reasons[0].not_run_reason, null);
             assert.equal(reasons[1].linked_job_id, null);
             assert.equal(reasons[1].not_run_reason, 'changed-after-validation');
-            // The cancel waits for the Execute transaction, then answers the executed plan.
-            const cancelled = planCancel(
-              planActor,
-              1,
-              plan.jobId,
-              plan.planId,
-              plan.revision + 1,
-              canceller,
-            );
-            await executor.query('SELECT pg_sleep(0.4)');
-            await executor.query('COMMIT');
-            const raced = await cancelled;
-            assert.equal(raced.outcome, 'conflict');
-            assert.equal(raced.plan.state, 'executed');
             // The other order: the cancel holds the header, then Execute answers the cancel.
             const second = await importPlan({
               lines: [fieldChange(2, 'S2Q-1')],
@@ -2652,7 +2663,7 @@ export async function qualifyDeviceExportImport({
               second.revision,
               executor,
             );
-            await canceller.query('SELECT pg_sleep(0.4)');
+            await waitBlocked(executorPid, cancellerPid);
             await canceller.query('COMMIT');
             const lockedAfterCancel = await blockedLock;
             assert.equal(lockedAfterCancel.outcome, 'conflict');
@@ -2717,6 +2728,15 @@ export async function qualifyDeviceExportImport({
           assert.equal(status.wait_for_job_id, update.job_id);
           assert.equal(update.target_count, 2);
           assert.equal(status.target_count, 1);
+          // Admission is customer wide, and an earlier module leaves its write jobs open. The check
+          // closes them so its own two candidates hold the only choice.
+          await migrator.query(
+            `UPDATE cc.jobs SET status='failed',failure=COALESCE(failure,'interrupted'),
+               finished_at=clock_timestamp()
+             WHERE customer_id=$1 AND kind IN ('device-update','device-command','device-status')
+               AND finished_at IS NULL AND job_id<>ALL($2::uuid[])`,
+            [customer, [update.job_id, status.job_id]],
+          );
           // The status job orders first and still waits, so the update job takes the write slot.
           const admitted = await result(
             'SELECT cc.admit_device_update_job($1,$2) AS result',
@@ -2953,7 +2973,7 @@ export async function qualifyDeviceExportImport({
             actor: target,
             lines: [fieldChange(2, 'S3A-1')],
           });
-          const holder = await connect('cc-app', 'cc-app');
+          const holder = await connect('postgres', 'cc-app');
           const waiter = await connect('cc-app', 'cc-app');
           const duringWait = async (version) => {
             await holder.query('BEGIN');
@@ -2972,14 +2992,15 @@ export async function qualifyDeviceExportImport({
               waiter,
             );
             await waitBlocked(waiterPid, holderPid);
-            return pending;
+            // A returned thenable would adopt the blocked query in the async helper.
+            return { pending };
           };
           try {
             // The enabled state changes during the wait.
             const first = await duringWait(1);
             await changeAccess(target, 1, false, grants);
             await holder.query('COMMIT');
-            assert.equal((await first).outcome, 'not-found');
+            assert.equal((await first.pending).outcome, 'not-found');
             assert.equal((await planDetail(plan.jobId)).plan_state, 'open');
             // The permission version changes during the wait.
             const second = await duringWait(2);
@@ -2988,7 +3009,7 @@ export async function qualifyDeviceExportImport({
               { action: 'devices:status', scope: district() },
             ]);
             await holder.query('COMMIT');
-            assert.equal((await second).outcome, 'not-found');
+            assert.equal((await second.pending).outcome, 'not-found');
             assert.equal((await planDetail(plan.jobId)).plan_state, 'open');
             // A grant leaves. Any grant change bumps the version, so the version check answers a
             // change during a wait; the grant check itself answers a caller that holds the current
@@ -2999,7 +3020,7 @@ export async function qualifyDeviceExportImport({
             ]);
             const third = await duringWait(4);
             await holder.query('COMMIT');
-            assert.equal((await third).outcome, 'forbidden');
+            assert.equal((await third.pending).outcome, 'forbidden');
             assert.equal((await planDetail(plan.jobId)).plan_state, 'open');
             // The visibility check refuses a person who does not request the plan.
             assert.equal(
@@ -3313,6 +3334,10 @@ export async function qualifyDeviceExportImport({
             'DELETE FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[])',
             [customer, managedDevices],
           ),
+        );
+      if (!wasActive)
+        await swallow(
+          migrator.query('UPDATE cc.google_connection SET active=false'),
         );
     }
   } finally {
