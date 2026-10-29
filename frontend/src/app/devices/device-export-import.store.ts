@@ -94,6 +94,9 @@ export class DeviceExportImportStore {
   /** Increments on another person. A late answer is dropped. */
   private epoch = 0;
   private identity: string | null = null;
+  /** The one live submit. A late answer of an earlier request never touches this one. */
+  private nextRequest = 0;
+  private activeRequest: number | null = null;
 
   constructor() {
     effect(() => {
@@ -186,29 +189,47 @@ export class DeviceExportImportStore {
    */
   async submit(request: DeviceExportRequest): Promise<boolean> {
     if (this.submitting()) return false;
+    const requestId = ++this.nextRequest;
+    this.activeRequest = requestId;
     this.submitting.set(true);
     this.submitError.set('');
     const epoch = this.epoch;
+    const identity = this.identity;
+    /** The answer belongs to the current principal and the current request. */
+    const owned = () => epoch === this.epoch && identity === this.identity;
+    /** The dialog still shows the entry that sent this request. */
+    const sameEntry = () =>
+      owned() &&
+      this.activeRequest === requestId &&
+      this.open() &&
+      this.step() === 'configure' &&
+      this.purpose() === request.purpose;
     try {
       const response = await this.auth.request('/api/devices/exports', request);
-      if (epoch !== this.epoch) return false;
+      if (!owned()) return false;
       if (!response.ok) {
-        this.submitError.set(await submitFailureText(response));
+        const message = await submitFailureText(response);
+        if (!owned()) return false;
+        if (sameEntry()) this.submitError.set(message);
         return false;
       }
       const receipt = deviceExportReceiptSchema.safeParse(
         await response.json().catch(() => null),
       );
+      if (!owned()) return false;
       if (!receipt.success) {
-        this.submitError.set(
-          'Campus Commander answered an unexpected export receipt. Try again.',
-        );
+        if (sameEntry())
+          this.submitError.set(
+            'Campus Commander answered an unexpected export receipt. Try again.',
+          );
         return false;
       }
+      // The accepted job belongs to its entry, even after the dialog moved on.
       this.retain({
         displayId: receipt.data.displayId,
         purpose: request.purpose,
       });
+      if (!sameEntry()) return true;
       this.step.set('monitor');
       this.displayId.set(receipt.data.displayId);
       this.job.set(null);
@@ -217,13 +238,17 @@ export class DeviceExportImportStore {
       void this.reader.request();
       return true;
     } catch {
-      if (epoch === this.epoch)
+      if (sameEntry())
         this.submitError.set(
           'Cannot reach Campus Commander. The export did not start.',
         );
       return false;
     } finally {
-      this.submitting.set(false);
+      // Only the owning request clears the fence of its successor.
+      if (this.activeRequest === requestId) {
+        this.activeRequest = null;
+        this.submitting.set(false);
+      }
     }
   }
 
@@ -269,6 +294,7 @@ export class DeviceExportImportStore {
 
   private reset(): void {
     this.epoch++;
+    this.activeRequest = null;
     this.activeJobs.set({ edit: null, report: null });
     this.reader.clear();
     this.events.stop();

@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { JobDetail } from '@campus/application-contracts';
@@ -73,9 +74,20 @@ const response = (body: unknown, status = 200) =>
     json: async () => body,
   }) as unknown as Response;
 
+/** One answer that the test releases after it changes the principal or the flow. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => (resolve = settle));
+  return { promise, resolve };
+}
+
+const accepted = (displayId = 'EXP-001') =>
+  response({ jobId, displayId, status: 'accepted', rows: 48 });
+
 function setup(
   detail: JobDetail = exportDetail(),
   requestOverride?: (path: string, body?: unknown) => Promise<Response>,
+  session: () => { identity: { id: string } } | null = () => null,
 ) {
   const request = vi.fn(
     requestOverride ??
@@ -95,7 +107,7 @@ function setup(
       {
         provide: AuthStore,
         useValue: {
-          session: () => null,
+          session,
           can: () => true,
           request,
         },
@@ -457,5 +469,114 @@ describe('DeviceExportImportDialog', () => {
     store.openExport(6);
     await render();
     expect(store.step()).toBe('configure');
+  });
+
+  it('drops a held receipt after another person takes over', async () => {
+    const session = signal<{ identity: { id: string } } | null>({
+      identity: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    });
+    const held = deferred<Response>();
+    const request = async (path: string) =>
+      path === '/api/devices/exports' ? held.promise : response(exportDetail());
+    const { store, render, fixture } = setup(
+      exportDetail(),
+      request,
+      session,
+    );
+    store.openExport(48);
+    await render();
+    const pending = store.submit({
+      gridId: 'devices',
+      tabId: 'tab-1',
+      purpose: 'edit',
+      format: 'csv',
+      sort: { field: 'serialNumber', direction: 'asc' },
+      columns: [],
+    });
+    session.set({ identity: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    held.resolve(accepted());
+    await expect(pending).resolves.toBe(false);
+    await render();
+    expect(store.activeJobs().edit).toBeNull();
+    expect(store.open()).toBe(false);
+    expect(store.submitting()).toBe(false);
+  });
+
+  it('keeps a successor submit fenced when an earlier body settles', async () => {
+    const session = signal<{ identity: { id: string } } | null>({
+      identity: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    });
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    let calls = 0;
+    const request = async (path: string) => {
+      if (path !== '/api/devices/exports') return response(exportDetail());
+      calls += 1;
+      return calls === 1 ? first.promise : second.promise;
+    };
+    const { store, render, fixture } = setup(
+      exportDetail(),
+      request,
+      session,
+    );
+    const submit = () =>
+      store.submit({
+        gridId: 'devices',
+        tabId: 'tab-1',
+        purpose: 'edit',
+        format: 'csv',
+        sort: { field: 'serialNumber', direction: 'asc' },
+        columns: [],
+      });
+    store.openExport(48);
+    await render();
+    const earlier = submit();
+    session.set({ identity: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    store.openExport(48);
+    await render();
+    const successor = submit();
+    expect(store.submitting()).toBe(true);
+    first.resolve(accepted());
+    await expect(earlier).resolves.toBe(false);
+    // The stale answer must not open the gate for a second click.
+    expect(store.submitting()).toBe(true);
+    expect(store.activeJobs().edit).toBeNull();
+    second.resolve(accepted());
+    await expect(successor).resolves.toBe(true);
+    expect(store.submitting()).toBe(false);
+  });
+
+  it('retains a held receipt without replacing another open flow', async () => {
+    const held = deferred<Response>();
+    const request = async (path: string) =>
+      path === '/api/devices/exports' ? held.promise : response(exportDetail());
+    const { store, render } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    const pending = store.submit({
+      gridId: 'devices',
+      tabId: 'tab-1',
+      purpose: 'edit',
+      format: 'csv',
+      sort: { field: 'serialNumber', direction: 'asc' },
+      columns: [],
+    });
+    store.close();
+    await render();
+    store.openImport();
+    await render();
+    held.resolve(accepted());
+    await expect(pending).resolves.toBe(true);
+    await render();
+    expect(store.step()).toBe('import');
+    expect(store.displayId()).toBeNull();
+    expect(store.activeJobs().edit).toEqual({
+      displayId: 'EXP-001',
+      purpose: 'edit',
+    });
   });
 });
