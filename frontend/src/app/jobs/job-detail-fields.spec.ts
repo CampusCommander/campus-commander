@@ -1735,6 +1735,48 @@ describe('cancel', () => {
     expect(question.confirmLabel).toBe('Cancel pending work');
   });
 
+  it('drafts the export question of a running export', () => {
+    const question = cancelQuestion(
+      running({
+        displayId: 'EXP-001',
+        action: 'export-devices',
+        scope: { kind: 'devices', deviceCount: 48 },
+      }),
+    );
+    expect(question.title).toBe('Cancel pending work on EXP-001?');
+    expect(question.paragraphs).toEqual([
+      '36 of 48 rows are written. The export stops at its next batch.',
+      'No file is written. No device changes.',
+    ]);
+    expect(question.dismissLabel).toBe('Keep export running');
+    expect(question.confirmLabel).toBe('Stop the export');
+  });
+
+  it('drafts the export question of an export that has not started', () => {
+    const question = cancelQuestion(
+      running({
+        displayId: 'EXP-002',
+        action: 'export-devices',
+        status: 'queued',
+        scope: { kind: 'devices', deviceCount: 6 },
+        progress: progress({
+          total: 6,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 6,
+        }),
+        startedAt: null,
+      }),
+    );
+    expect(question.paragraphs).toEqual([
+      'No row is written. The export ends Cancelled.',
+      'No file is written. No device changes.',
+    ]);
+    expect(question.dismissLabel).toBe('Keep export waiting');
+    expect(question.confirmLabel).toBe('Stop the export');
+  });
+
   it('drafts the waiting question of state 05', () => {
     const question = cancelQuestion(
       job({

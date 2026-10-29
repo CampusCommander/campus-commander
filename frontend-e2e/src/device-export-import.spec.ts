@@ -396,6 +396,18 @@ test.describe('Export, Reports, and Import', () => {
     await shot(page, '08-reports-ready');
   });
 
+  test('opens the export at the step of the job in the address', async ({
+    page,
+  }) => {
+    await openDevices(page);
+    // An Activity row of an own export job links to this address (behavior 5).
+    await page.goto('/devices?job=EXP-002');
+    await expect(dialog(page)).toBeVisible();
+    await expect(dialog(page)).toContainText('Create a report');
+    await expect(dialog(page)).toContainText('device-report-EXP-002.csv');
+    await expect(dialog(page)).toContainText('Ready');
+  });
+
   test('the dialog holds focus and returns it to Bulk Actions on close', async ({
     page,
   }) => {

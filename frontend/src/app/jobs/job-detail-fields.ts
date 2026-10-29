@@ -492,6 +492,37 @@ export function cancelQuestion(job: JobDetail): CancelQuestion {
   const title = `Cancel pending work on ${job.displayId}?`;
   const confirmLabel = 'Cancel pending work';
   const succeeded = job.progress.succeeded;
+  if (job.action === 'export-devices') {
+    const written = countText(job.progress.succeeded);
+    const scopeTotal =
+      job.progress.total ?? job.scope.deviceCount ?? job.progress.pending ?? 0;
+    const stopsBeforeWork =
+      job.status === 'accepted' ||
+      job.status === 'queued' ||
+      job.status === 'awaiting-devices' ||
+      job.status === 'held';
+    if (stopsBeforeWork)
+      return {
+        title,
+        paragraphs: [
+          'No row is written. The export ends Cancelled.',
+          'No file is written. No device changes.',
+        ],
+        dismissLabel: 'Keep export waiting',
+        confirmLabel: 'Stop the export',
+      };
+    return {
+      title,
+      paragraphs: [
+        `${written} of ${countText(scopeTotal)} ${
+          scopeTotal === 1 ? 'row is' : 'rows are'
+        } written. The export stops at its next batch.`,
+        'No file is written. No device changes.',
+      ],
+      dismissLabel: 'Keep export running',
+      confirmLabel: 'Stop the export',
+    };
+  }
   if (job.action === 'refresh-inventory') {
     const read = countText(job.progress.succeeded);
     if (job.scope.kind === 'devices') {
