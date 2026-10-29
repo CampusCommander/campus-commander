@@ -189,6 +189,12 @@ interface PageSplit {
   statuses: StatusTarget[];
 }
 
+/** One Execute inside its transaction: the wire answer, and whether it created the plan jobs. */
+interface LockedOutcome {
+  answer: DeviceImportExecuteAnswer;
+  created: boolean;
+}
+
 /** One preview of the plan, filled page by page (design section 7, steps 9 to 11). */
 interface PreviewRun {
   action: PreviewAction;
@@ -424,12 +430,14 @@ export class DeviceImportExecute {
     input: DeviceImportExecuteRequest,
     correlationId: string,
   ): Promise<DeviceImportExecuteAnswer> {
-    const answer = await this.database.transaction((client) =>
+    const outcome = await this.database.transaction((client) =>
       this.locked(client, session, current, displayId, input, correlationId),
     );
     // After the commit, run admission (design section 7, step 13). A missed run repeats on the tick.
-    await this.jobs.admit(current.customerId).catch(() => undefined);
-    return answer;
+    // A plan that ran before created no job here, so it admits nothing (step 3).
+    if (outcome.created)
+      await this.jobs.admit(current.customerId).catch(() => undefined);
+    return outcome.answer;
   }
 
   private async locked(
@@ -439,7 +447,7 @@ export class DeviceImportExecute {
     displayId: string,
     input: DeviceImportExecuteRequest,
     correlationId: string,
-  ): Promise<DeviceImportExecuteAnswer> {
+  ): Promise<LockedOutcome> {
     const actor = session.identity.id;
     // The route already rechecked the three device actions and each status permission of the plan.
     const job = (
@@ -472,15 +480,18 @@ export class DeviceImportExecute {
     );
     const outcome = String(locked['outcome']);
     if (outcome === 'executed')
-      return this.answer(
-        client,
-        current,
-        jobId,
-        locked,
-        Array.isArray(locked['receipts'])
-          ? (locked['receipts'] as Record<string, unknown>[])
-          : [],
-      );
+      return {
+        answer: await this.answer(
+          client,
+          current,
+          jobId,
+          locked,
+          Array.isArray(locked['receipts'])
+            ? (locked['receipts'] as Record<string, unknown>[])
+            : [],
+        ),
+        created: false,
+      };
     if (outcome === 'conflict')
       throw new ConflictException({
         reason: 'plan-conflict',
@@ -521,13 +532,10 @@ export class DeviceImportExecute {
       [],
       correlationId,
     ]);
-    return this.answer(
-      client,
-      current,
-      jobId,
-      linked,
-      receipts,
-    );
+    return {
+      answer: await this.answer(client, current, jobId, linked, receipts),
+      created: true,
+    };
   }
 
   /** Whether the plan holds a Deprovision change, which needs the typed phrase. */
