@@ -2783,7 +2783,10 @@ export async function qualifyDeviceExportImport({
           // 25,002 source rows of two field changes each: 50,004 change lines, and 50,003 of them never
           // run. The disposition call stores them in pages of 250, so no call carries the whole plan.
           const rows = 25002;
-          const devices = Array.from({ length: rows }, (_, index) => `S2M-${index}`);
+          const devices = Array.from(
+            { length: rows },
+            (_, index) => `S2M-${index}`,
+          );
           const lines = [];
           devices.forEach((deviceId, index) => {
             lines.push(
@@ -2810,7 +2813,10 @@ export async function qualifyDeviceExportImport({
           let pages = 0;
           for (let start = 0; start < dispositions.length; start += 250) {
             const page = dispositions.slice(start, start + 250);
-            assert.ok(page.length <= 250, 'one disposition call carries one page');
+            assert.ok(
+              page.length <= 250,
+              'one disposition call carries one page',
+            );
             const marked = await markChanges(
               planActor,
               1,
@@ -2982,7 +2988,11 @@ export async function qualifyDeviceExportImport({
             'SELECT cc.admit_device_update_job($1,$2) AS result',
             [customer, false],
           );
-          assert.equal(released.jobId, status.job_id, 'the status job runs after its wait ends');
+          assert.equal(
+            released.jobId,
+            status.job_id,
+            'the status job runs after its wait ends',
+          );
           assert.equal((await jobRow(status.job_id)).status, 'running');
           await retire(status.display_id);
           assert.equal((await jobRow(status.job_id)).status, 'cancelled');
@@ -3064,7 +3074,11 @@ export async function qualifyDeviceExportImport({
           );
           const repeated = await cancelAs(planActor, update.displayId);
           assert.equal(repeated.outcome, 'repeated');
-          assert.equal((await audits()).length, 2, 'a repeat writes no audit row');
+          assert.equal(
+            (await audits()).length,
+            2,
+            'a repeat writes no audit row',
+          );
         },
       );
 
@@ -3516,7 +3530,11 @@ export async function qualifyDeviceExportImport({
                 plan.revision,
                 waiter,
               );
-              await waitBlocked(waiterPid, holderPid, `the plan cancel at ${label}`);
+              await waitBlocked(
+                waiterPid,
+                holderPid,
+                `the plan cancel at ${label}`,
+              );
               if (during) await during({ holder, waiter, plan, target });
               await holder.query('COMMIT');
               answer = await pending;
@@ -3545,7 +3563,8 @@ export async function qualifyDeviceExportImport({
           await caseRun({
             label: 'the requester wait',
             lock: lockRequester,
-            during: ({ holder, target }) => changeAccess(holder, target, 1, false),
+            during: ({ holder, target }) =>
+              changeAccess(holder, target, 1, false),
             expected: 'not-found',
           });
           // A permission version that changes during the connection wait refuses the call.
