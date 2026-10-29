@@ -153,8 +153,7 @@ function fakeDatabase(options, devices) {
       const name = /cc\.([a-z_]+)\(/.exec(sql)?.[1];
       if (name === 'claim_device_export_job') {
         calls.claim.push(values);
-        if (options.claim)
-          return { rows: [{ result: options.claim(values) }] };
+        if (options.claim) return { rows: [{ result: options.claim(values) }] };
         // A stored cancel request, or an ended job, answers `done` (migration 017).
         if (job.status !== null || job.cancelRequested)
           return { rows: [{ result: { outcome: 'done' } }] };
@@ -722,7 +721,10 @@ test('the interrupted error request ends a stored cancellation', async () => {
 });
 
 test('a retry of an ended job writes nothing and keeps its stored status', async () => {
-  const harnessed = harness({ devices: [deviceRow(0)], jobStatus: 'completed' });
+  const harnessed = harness({
+    devices: [deviceRow(0)],
+    jobStatus: 'completed',
+  });
   const answer = await harnessed.run();
 
   assert.deepEqual(answer, { outcome: 'done' });
@@ -831,7 +833,11 @@ test('publication keeps the lease renewed and the export completes', async () =>
     6,
     'the tick renewed five times through publication',
   );
-  assert.equal(harnessed.timers.active, 0, 'the ticker closed after the finish');
+  assert.equal(
+    harnessed.timers.active,
+    0,
+    'the ticker closed after the finish',
+  );
 });
 
 test('a job of another live run writes nothing', async () => {
