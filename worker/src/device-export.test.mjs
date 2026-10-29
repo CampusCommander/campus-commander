@@ -138,12 +138,8 @@ function fakeDatabase(options, devices) {
   const now = options.now ?? (() => 0);
   return {
     calls,
-    lease,
     get status() {
       return job.status;
-    },
-    get cancelRequested() {
-      return job.cancelRequested;
     },
     /** Another connection stores the cancel request (design section 5). */
     requestCancel() {
