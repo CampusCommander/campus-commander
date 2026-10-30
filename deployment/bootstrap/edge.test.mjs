@@ -18,6 +18,35 @@ async function close(server) {
   await new Promise((done) => server.close(done));
 }
 
+/**
+ * The security headers of every edge answer. The three Google directives of design section 5 join
+ * the base policy. Every other directive and header keeps its value, and the referrer policy stays
+ * `no-referrer`.
+ */
+function assertSecurityHeaders(headers) {
+  assert.equal(headers['strict-transport-security'], 'max-age=31536000');
+  assert.equal(headers['x-content-type-options'], 'nosniff');
+  assert.equal(headers['referrer-policy'], 'no-referrer');
+  const policy = headers['content-security-policy'];
+  assert.equal(typeof policy, 'string', 'The edge sent no content security policy.');
+  const directives = {};
+  for (const directive of policy.split(';')) {
+    const [name, ...values] = directive.trim().split(' ');
+    directives[name] = values.join(' ');
+  }
+  assert.deepEqual(directives, {
+    'default-src': "'self'",
+    'script-src': "'self' https://apis.google.com",
+    'frame-src': 'https://docs.google.com',
+    'connect-src': "'self' https://sheets.googleapis.com https://www.googleapis.com",
+    'img-src': "'self' data:",
+    'style-src': "'self' 'unsafe-inline'",
+    'frame-ancestors': "'none'",
+    'object-src': "'none'",
+    'base-uri': "'self'",
+  });
+}
+
 for (const phase of [1, 2, 3])
   test(`Phase ${phase} HTTPS startup requires bootstrap access and limits edge routes`, async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cc12-edge-'));
@@ -134,11 +163,7 @@ for (const phase of [1, 2, 3])
       }
       const live = await request('/health/live');
       assert.equal(live.status, 200);
-      // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
-      assert.equal(
-        live.headers['content-security-policy'],
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-      );
+      assertSecurityHeaders(live.headers);
       assert.equal((await request('/health')).status, 503);
       assert.equal((await request('/api/startup')).status, 401);
       assert.equal((await request('/api/startup', token)).status, 503);
