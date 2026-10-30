@@ -182,6 +182,9 @@ const exportJob = (
   },
 });
 
+/** The plan state of the import mock: open, running, finished, or a finished job that partly failed. */
+type ImportRun = 'open' | 'running' | 'finished' | 'partial';
+
 interface MockOptions {
   /** The server-side selection count. State 03 holds 62,480. */
   selectedCount?: number;
@@ -190,7 +193,7 @@ interface MockOptions {
   /** The theme of the stored preferences (state 13 of the dark theme). */
   theme?: 'light' | 'dark';
   /** The import that `/devices?job=IMP-001` opens: its plan state (states 13, 16, 17, and 17b). */
-  importRun?: 'open' | 'running' | 'finished';
+  importRun?: ImportRun;
   /** Holds the next IMP-001 detail read, so a test can hold the detail it starts (R4). */
   holdDetail?: DetailHold;
 }
@@ -273,9 +276,25 @@ const fieldChange = (
 });
 
 /** The 12 changes of the plan, in report order. The status rows sit inside the first page. */
-const planLines = (
-  run: 'open' | 'running' | 'finished',
-): Array<Record<string, unknown>> => {
+const planLines = (run: ImportRun): Array<Record<string, unknown>> => {
+  // A plan of two field changes whose job ended with one success and one failure (partial job).
+  if (run === 'partial')
+    return [
+      ['C0A1-0001', '01P0T1V', 'annotatedLocation', 'Room 12', 'Room 14'],
+      ['C0A1-0002', '02A1MB6', 'annotatedLocation', 'North lab', 'Room 14'],
+    ].map(([deviceId, serialNumber, field, from, to], index) => ({
+      row: index + 2,
+      deviceId,
+      serialNumber,
+      change: fieldChange(field, from, to),
+      column: null,
+      submittedValue: null,
+      reason: null,
+      notRun: null,
+      jobDisplayId: 'UPD-001',
+      operationNumber: index + 1,
+      outcome: index === 0 ? 'succeeded' : 'failed',
+    }));
   const executed = run !== 'open';
   const fieldLines = fieldRows.map(
     ([deviceId, serialNumber, field, from, to]) => ({
@@ -381,15 +400,24 @@ const changeCounts = {
   deprovision: [{ reason: 'DEPROVISION_REASON_RETIRING_DEVICE', devices: 1 }],
 };
 
+/** The changes of the partial plan: two field changes on two devices. */
+const partialChangeCounts = {
+  fieldChanges: 2,
+  fieldChangeDevices: 2,
+  disable: 0,
+  reenable: 0,
+  deprovision: [],
+};
+
 /** One page of the report route. The results hold two views: all changes and failed. */
 const importReport = (
-  run: 'open' | 'running' | 'finished',
+  run: ImportRun,
   view: 'proposed' | 'failed',
   page: number,
 ) => {
   const all = planLines(run);
   const failed =
-    run === 'finished'
+    run === 'finished' || run === 'partial'
       ? all.filter((line) => line['outcome'] === 'failed')
       : [];
   const lines =
@@ -399,19 +427,31 @@ const importReport = (
     displayId: 'IMP-001',
     view,
     page,
-    pageCount: view === 'failed' ? 1 : 2,
-    counts: {
-      // Twelve source rows: eight proposed devices and four rejected rows.
-      rows: 12,
-      unchanged: 0,
-      noChangeNeeded: 0,
-      proposed: 8,
-      rejected: 4,
+    pageCount: view === 'failed' ? 1 : run === 'partial' ? 1 : 2,
+    counts:
+      run === 'partial'
+        ? {
+            rows: 2,
+            unchanged: 0,
+            noChangeNeeded: 0,
+            proposed: 2,
+            rejected: 0,
+          }
+        : {
+            // Twelve source rows: eight proposed devices and four rejected rows.
+            rows: 12,
+            unchanged: 0,
+            noChangeNeeded: 0,
+            proposed: 8,
+            rejected: 4,
+          },
+    refresh: {
+      staleDevicesRead: run === 'partial' ? 2 : 8,
+      oldestObservedAt: at(3600),
     },
-    refresh: { staleDevicesRead: 8, oldestObservedAt: at(3600) },
-    changes: changeCounts,
+    changes: run === 'partial' ? partialChangeCounts : changeCounts,
     lines,
-    total: view === 'failed' ? failed.length : 12,
+    total: view === 'failed' ? failed.length : run === 'partial' ? 2 : 12,
     plan: run === 'open' ? openPlan : executedPlan,
   };
 };
@@ -453,9 +493,23 @@ const summaryOf = (
   cancelRequest: null,
 });
 
-/** The four jobs of the plan: the update job first, then the three status jobs. */
-const planJobs = (run: 'running' | 'finished') =>
-  run === 'finished'
+/** The jobs of the plan: the update job first, then the status jobs of the finished plan. */
+const planJobs = (run: 'running' | 'finished' | 'partial') => {
+  // A partial plan holds only the update job, which ended with one success and one failure.
+  if (run === 'partial')
+    return [
+      summaryOf(
+        updJobId,
+        'UPD-001',
+        'update-device-annotations',
+        'completed-with-errors',
+        2,
+        { succeeded: 1, failed: 1, pending: 0 },
+        at(150),
+        2,
+      ),
+    ];
+  return run === 'finished'
     ? [
         summaryOf(
           updJobId,
@@ -534,22 +588,23 @@ const planJobs = (run: 'running' | 'finished') =>
           null,
         ),
       ];
+};
 
 /** The IMP detail: the plan, its jobs, and the counts of the execution (section 8). */
-const importDetail = (run: 'open' | 'running' | 'finished') => ({
+const importDetail = (run: ImportRun) => ({
   jobId: impJobId,
   displayId: 'IMP-001',
   revision: run === 'open' ? 6 : 8,
   action: 'validate-device-import',
   status: 'completed',
-  scope: { kind: 'rows', deviceCount: 12 },
+  scope: { kind: 'rows', deviceCount: run === 'partial' ? 2 : 12 },
   requestedBy: person,
   createdAt: at(600),
   startedAt: at(580),
   finishedAt: at(540),
   progress: {
-    total: 12,
-    succeeded: 12,
+    total: run === 'partial' ? 2 : 12,
+    succeeded: run === 'partial' ? 2 : 12,
     failed: 0,
     unknown: 0,
     skipped: 0,
@@ -572,15 +627,15 @@ const importDetail = (run: 'open' | 'running' | 'finished') => ({
   importSummary: {
     mode: 'sync-changes',
     planState: run === 'open' ? 'open' : 'executed',
-    proposed: 8,
-    rejected: 4,
+    proposed: run === 'partial' ? 2 : 8,
+    rejected: run === 'partial' ? 0 : 4,
     refusal: null,
   },
   importSource: {
     name: 'devices-for-editing-EXP-001.csv',
     sizeBytes: 8064,
-    rowsRead: 12,
-    candidateRows: 12,
+    rowsRead: run === 'partial' ? 2 : 12,
+    candidateRows: run === 'partial' ? 2 : 12,
     refusalText: null,
   },
   plan: run === 'open' ? openPlan : executedPlan,
@@ -602,16 +657,27 @@ const importDetail = (run: 'open' | 'running' | 'finished') => ({
             pending: 9,
             notRun: 0,
           }
-        : {
-            succeeded: 11,
-            failed: 1,
-            unknown: 0,
-            skipped: 0,
-            expired: 0,
-            cancelled: 0,
-            pending: 0,
-            notRun: 0,
-          },
+        : run === 'partial'
+          ? {
+              succeeded: 1,
+              failed: 1,
+              unknown: 0,
+              skipped: 0,
+              expired: 0,
+              cancelled: 0,
+              pending: 0,
+              notRun: 0,
+            }
+          : {
+              succeeded: 11,
+              failed: 1,
+              unknown: 0,
+              skipped: 0,
+              expired: 0,
+              cancelled: 0,
+              pending: 0,
+              notRun: 0,
+            },
   correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
   latestActivity: {
     at: at(60),
@@ -632,12 +698,51 @@ const importDetail = (run: 'open' | 'running' | 'finished') => ({
               },
             ],
           }
-        : { count: 0, operations: [] },
+        : run === 'partial'
+          ? {
+              count: 1,
+              operations: [
+                {
+                  operationId: 'UPD-001-2',
+                  deviceId: 'C0A1-0002',
+                  serialNumber: '02A1MB6',
+                  outcomeReason: 'permission-denied',
+                  googleStatus: 403,
+                  googleReason: 'Permission failure on 02A1MB6.',
+                  updatedAt: at(90),
+                },
+              ],
+            }
+          : { count: 0, operations: [] },
     unknown: { count: 0, operations: [] },
   },
 });
 
-const operationsOf = (run: 'running' | 'finished', job: string) => {
+const operationsOf = (run: 'running' | 'finished' | 'partial', job: string) => {
+  if (run === 'partial')
+    return [fieldRows[0], fieldRows[3]].map(
+      ([deviceId, serialNumber, field, from, to], index) => ({
+        operationId: `UPD-001-${index + 1}`,
+        deviceId,
+        serialNumber,
+        orgUnitPath: '/Chrome Devices/Lowell',
+        field,
+        operation: to === null ? 'clear' : 'replace',
+        baselineValue: from,
+        requestedValue: to,
+        outcome: index === 0 ? 'succeeded' : 'failed',
+        outcomeReason: index === 0 ? null : 'permission-denied',
+        googleStatus: index === 0 ? 200 : 403,
+        googleReason: index === 0 ? null : 'Permission failure on 02A1MB6.',
+        observedValue: index === 0 ? to : null,
+        verifiedBy: index === 0 ? 'write-response' : null,
+        commandId: null,
+        commandState: null,
+        commandExpiresAt: null,
+        commandExecutedAt: null,
+        updatedAt: at(60),
+      }),
+    );
   if (job === 'UPD-001')
     return fieldRows.map(
       ([deviceId, serialNumber, field, from, to], index) => ({
@@ -1368,6 +1473,140 @@ test.describe('Execute and the results', () => {
     await expect(panel.locator('.rs-sum .count-term')).toHaveCount(3);
     await page.screenshot({
       path: testInfo.outputPath('dark-17b-execution-finished.png'),
+    });
+  });
+
+  test('state 17b with a partial job keeps the status chip clear of the progress', async ({
+    page,
+  }) => {
+    const panel = await openImport(page, { importRun: 'partial' });
+    await expect(panel).toContainText('Finished ');
+    // 2 changes = 1 Succeeded + 1 Failed, all in the one job of the plan.
+    await expect(panel.locator('.rs-sum .count-term')).toHaveCount(3);
+
+    const band = panel.locator('.jobs-band');
+    const items = band.locator('.job-item');
+    await expect(items).toHaveCount(1);
+    const item = items.first();
+    await expect(item.locator('.job-chip')).toHaveText('Completed with errors');
+    await expect(item.locator('.job-progress > span')).toHaveText(
+      '1 succeeded · 1 failed',
+    );
+
+    const rows = await items.evaluateAll((jobRows) =>
+      jobRows.map((row) => {
+        const box = (el: Element) => {
+          const rect = el.getBoundingClientRect();
+          return {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            bottom: rect.bottom,
+          };
+        };
+        const chip = row.querySelector('.job-chip') as HTMLElement;
+        const label = document.createRange();
+        label.selectNodeContents(chip);
+        const progress = row.querySelector(
+          '.job-progress > span',
+        ) as HTMLElement;
+        return {
+          status: chip.textContent?.trim() ?? '',
+          chip: box(chip),
+          label: label.getBoundingClientRect().toJSON(),
+          chipOverflow: chip.scrollWidth - chip.clientWidth,
+          progress: box(progress),
+          progressOverflow: progress.scrollWidth - progress.clientWidth,
+          jobLink: box(row.querySelector('.job-link') as Element),
+          bars: Array.from(row.querySelectorAll('mat-progress-bar')).map(box),
+        };
+      }),
+    );
+
+    expect(rows.map((row) => row.status)).toEqual(['Completed with errors']);
+    for (const row of rows) {
+      // The label stays inside its chip, and the chip stays clear of the progress text, the job
+      // ID, and the bar. The chip grows leftward into the action column when the label is long.
+      expect(row.chipOverflow, row.status).toBeLessThanOrEqual(0);
+      expect(row.label.left, row.status).toBeGreaterThanOrEqual(
+        row.chip.left - 1,
+      );
+      expect(row.label.right, row.status).toBeLessThanOrEqual(
+        row.chip.right + 1,
+      );
+      expect(row.chip.right, row.status).toBeLessThanOrEqual(row.progress.left);
+      expect(row.chip.left, row.status).toBeGreaterThanOrEqual(
+        row.jobLink.right,
+      );
+      expect(row.progressOverflow, row.status).toBeLessThanOrEqual(0);
+      for (const bar of row.bars)
+        expect(row.chip.right, row.status).toBeLessThanOrEqual(bar.left);
+    }
+
+    // The outcome cells pair a chip with the failure text and notes below it (scope 3).
+    const outcomes = await page.locator('td.col-result').evaluateAll((cells) =>
+      cells.flatMap((cell) => {
+        const chip = cell.querySelector('.status-chip') as HTMLElement | null;
+        if (!chip) return [];
+        const box = (el: Element) => {
+          const rect = el.getBoundingClientRect();
+          return {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            bottom: rect.bottom,
+          };
+        };
+        const reason = cell.querySelector('.outcome-reason');
+        const note = cell.querySelector('.outcome-note');
+        return [
+          {
+            status: chip.textContent?.trim() ?? '',
+            chip: box(chip),
+            cell: box(cell),
+            overflow: chip.scrollWidth - chip.clientWidth,
+            reason: reason ? box(reason) : null,
+            note: note ? box(note) : null,
+          },
+        ];
+      }),
+    );
+
+    expect(outcomes.map((outcome) => outcome.status)).toEqual([
+      'Succeeded',
+      'Failed',
+    ]);
+    for (const outcome of outcomes) {
+      expect(outcome.overflow, outcome.status).toBeLessThanOrEqual(0);
+      expect(outcome.chip.right, outcome.status).toBeLessThanOrEqual(
+        outcome.cell.right + 1,
+      );
+      if (outcome.reason)
+        expect(outcome.chip.bottom, outcome.status).toBeLessThanOrEqual(
+          outcome.reason.top + 1,
+        );
+      if (outcome.note)
+        expect(outcome.chip.bottom, outcome.status).toBeLessThanOrEqual(
+          outcome.note.top + 1,
+        );
+    }
+
+    await shot(page, '17b-partial-results-light');
+    await band.screenshot({
+      path: 'dist/e2e-evidence/export-import/17b-partial-band-light.png',
+    });
+
+    const darkPanel = await openImport(page, {
+      importRun: 'partial',
+      theme: 'dark',
+    });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(darkPanel.locator('.job-chip')).toHaveText(
+      'Completed with errors',
+    );
+    await shot(page, '17b-partial-results-dark');
+    await darkPanel.locator('.jobs-band').screenshot({
+      path: 'dist/e2e-evidence/export-import/17b-partial-band-dark.png',
     });
   });
 

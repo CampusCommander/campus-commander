@@ -257,7 +257,10 @@
 
 .job-item {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 100px 156px;
+  /* The chip column takes the width of its longest label, never less than the 100 px of state
+     17b. A long status such as "Completed with errors" grows the chip leftward into the action
+     column instead of painting over the progress text. */
+  grid-template-columns: 52px minmax(0, 1fr) minmax(100px, max-content) 156px;
   align-items: center;
   column-gap: var(--cc-space-sm);
   min-width: 0;
