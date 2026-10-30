@@ -1059,10 +1059,29 @@ test.describe('Import', () => {
     page,
   }) => {
     await openDevices(page, 'completed');
+    // Hold the report answer, so the shell renders before its facts. The header Close and the
+    // Close of the validation action bar then both exist, as the strict-mode race needs.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      '**/api/devices/imports/IMP-001/report**',
+      async (route) => {
+        await held;
+        const url = new URL(route.request().url());
+        const view = url.searchParams.get('view') ?? 'proposed';
+        const pageIndex = Number(url.searchParams.get('page') ?? '0');
+        return route.fulfill({
+          json: reportAnswer('completed', view, pageIndex),
+        });
+      },
+    );
     await page.goto('/devices?job=IMP-001');
     await expect(dialog(page)).toBeVisible();
-    // Wait for the report that the note describes. The validation action bar also holds a
-    // Close, so the shell alone is not enough to pick the intended control.
+    await expect(dialog(page)).not.toContainText(
+      '7 field changes on 6 devices',
+    );
+    release();
+    // Wait for the report that the note describes, then use the intended Close control.
     await expect(dialog(page)).toContainText('7 field changes on 6 devices');
     await expect(dialog(page)).toContainText('Cancel import');
     await closeDialog(page).click();
