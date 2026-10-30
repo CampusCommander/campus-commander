@@ -432,6 +432,7 @@ test('the access read answers both choices as available', async () => {
   const answer = await access();
 
   assert.equal(answer.status, 200);
+  assert.equal(answer.cacheControl, 'no-store');
   assert.deepEqual(answer.body, {
     sheetExport: { available: true },
     driveImport: { available: true },
@@ -698,6 +699,7 @@ test('the tab list answers the tabs of one Sheet with the person token', async (
   const { answer, output } = await captured(() => tabs(SHEET_ID));
 
   assert.equal(answer.status, 200);
+  assert.equal(answer.cacheControl, 'no-store');
   assert.deepEqual(answer.body, {
     fileId: SHEET_ID,
     tabs: [{ tabId: 0, title: 'Devices', index: 0 }],
