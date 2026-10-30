@@ -436,7 +436,7 @@
               <div
                 class="report-table-wrap"
                 role="region"
-                aria-label="Validation results"
+                aria-label="Validation results table"
                 tabindex="0"
               >
                 <table
@@ -446,7 +446,7 @@
                   [class.wn]="view() === 'warnings'"
                 >
                   <caption class="visually-hidden">
-                    Validation results table
+                    Results of the validation
                   </caption>
                   <colgroup>
                     @switch (view()) { @case ('warnings') {
@@ -837,13 +837,10 @@
               <div
                 class="report-table-wrap"
                 role="region"
-                aria-label="Execution results"
+                aria-label="Execution results table"
                 tabindex="0"
               >
-                <table
-                  class="report-table rv rs"
-                  aria-label="Execution results table"
-                >
+                <table class="report-table rv rs">
                   <caption class="visually-hidden">
                     Results of the changes of job {{ subtitleJob() }}
                   </caption>

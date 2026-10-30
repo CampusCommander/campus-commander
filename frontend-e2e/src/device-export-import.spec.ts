@@ -78,6 +78,41 @@ const activityJob: JobSummary = {
   cancelRequest: null,
 };
 
+/** The own import row of the Activity panel (behavior 5, results). */
+const impActivityJob = (): JobSummary => ({
+  jobId: impJobId,
+  displayId: 'IMP-001',
+  revision: 8,
+  action: 'validate-device-import',
+  status: 'running',
+  scope: { kind: 'rows', deviceCount: 16 },
+  requestedBy: person,
+  createdAt: at(600),
+  startedAt: at(580),
+  finishedAt: null,
+  progress: {
+    total: 16,
+    succeeded: 16,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  phase: null,
+  exportSummary: null,
+  importSummary: {
+    mode: 'sync-changes',
+    planState: 'executed',
+    proposed: 12,
+    rejected: 4,
+    refusal: null,
+  },
+  failure: null,
+  cancelRequest: null,
+});
+
 const exportJob = (
   displayId: string,
   purpose: 'edit' | 'report',
@@ -838,10 +873,14 @@ async function signIn(page: Page, options: MockOptions = {}) {
           },
         });
     }
-    if (path === '/api/jobs/activity')
+    if (path === '/api/jobs/activity') {
+      // The import row is an executed plan, so its Activity link opens results.
+      const jobs = options.importRun
+        ? [activityJob, { ...impActivityJob(), status: 'completed' }]
+        : [activityJob];
       return route.fulfill({
         json: {
-          running: { count: 1, jobs: [activityJob] },
+          running: { count: jobs.length, jobs },
           waiting: { count: 0, jobs: [] },
           recent: { count: 0, jobs: [], nextExpiryAt: null },
           attention: false,
@@ -849,6 +888,7 @@ async function signIn(page: Page, options: MockOptions = {}) {
           observedAt: new Date().toISOString(),
         },
       });
+    }
     if (path === '/api/customer')
       return route.fulfill({ json: { customer: null } });
     if (path === '/api/google-connection')
@@ -1071,6 +1111,27 @@ test.describe('Export, Reports, and Import', () => {
     await bell.click();
     await activity.getByRole('link', { name: /EXP-001/ }).click();
     await expect(exportDialog(page)).toContainText('Job EXP-001 · Running');
+  });
+
+  test('the Activity row of the import opens the results', async ({ page }) => {
+    await openDevices(page, { importRun: 'finished' });
+    const bell = page.getByRole('button', { name: /^Activity:/ });
+    await bell.click();
+    const activity = page.getByRole('dialog', { name: 'Activity' });
+    await activity.getByRole('link', { name: /IMP-001/ }).click();
+    // Behavior 5 of section 9: the row opens the dialog at the results.
+    await expect(page).toHaveURL(/\/devices\?job=IMP-001$/);
+    const results = page.locator(
+      'section[role="dialog"][aria-labelledby="export-dialog-title"]',
+    );
+    await expect(
+      results.getByRole('region', { name: 'Execution results table' }),
+    ).toBeVisible();
+    await expect(results.locator('[data-plan="executed"]')).toBeVisible();
+    await expect(results.locator('.export-state')).toContainText(
+      'Executed by District operator',
+    );
+    await expect(results).toContainText('Finished');
   });
 
   test('the dialog holds focus and returns it to Bulk Actions on close', async ({
