@@ -262,8 +262,8 @@ export class DevicesStore {
   private feed: LiveFeedSubscription | null = null;
   /** Devices is mounted. */
   private streamWanted = false;
-  /** A status read before the store subscribes is in flight. */
-  private connecting = false;
+  /** The status read before the store follows the device events, while it runs. */
+  private connecting: Promise<void> | null = null;
   /** A stream opened once since the store subscribed. The next open is a reconnect. */
   private streamOpened = false;
   /** The status from before the stream dropped. The reconcile after the next open compares against it. */
@@ -277,6 +277,8 @@ export class DevicesStore {
   /** Failed status reads since the last successful one. */
   private statusFailures = 0;
   private statusRetryTimer?: ReturnType<typeof setTimeout>;
+  /** The open that owns the retry timer. An older open cannot suppress a newer retry. */
+  private statusRetryGeneration = -1;
   private recountTimer?: ReturnType<typeof setTimeout>;
   /** Increments on sign-in by another person. Late answers for the old person are dropped. */
   private epoch = 0;
@@ -328,13 +330,29 @@ export class DevicesStore {
     this.error.set('');
     this.position.set(null);
     this.revision.update((value) => value + 1);
-    // The stream carries the session cookie. A new person needs a new stream.
-    if (this.feed) this.feed.restart();
-    // The new person's stream is a first stream. Its open recovers nothing.
-    this.streamOpened = false;
-    this.dropped = null;
+    // The previous person's held rows and status retries end here.
+    this.openGeneration += 1;
     this.dropHeld();
     this.clearStatusRetry();
+    if (!this.streamWanted) {
+      this.stopFeed();
+      return;
+    }
+    // Device events wait for the new person's status. Only this store waits.
+    this.holding = true;
+    if (this.feed) {
+      // The stream carries the session cookie. A new person needs a new stream.
+      this.feed.restart();
+      // The new person's stream is a first stream. Its open recovers nothing.
+      this.streamOpened = false;
+      this.dropped = null;
+    } else {
+      // A denied status read or a missing sync stopped this store. The new person follows again.
+      this.follow();
+    }
+    // The new person's status decides whether this store follows the device events. The shared
+    // connection serves every other store without waiting for this read.
+    void this.connect();
   }
 
   private async call(path: string, body?: unknown): Promise<Response | null> {
@@ -359,24 +377,31 @@ export class DevicesStore {
    * customer without a sync leaves this store stopped. The tab keeps its connection for the
    * stores that follow the job feed.
    */
-  private async connect(): Promise<void> {
-    if (this.feed || this.connecting) return;
-    this.connecting = true;
-    try {
-      const result = await this.readSync();
-      // A leave, or a resume that opened a connection, made this read obsolete.
-      if (!this.streamWanted || this.feed) return;
-      if (result === 'denied') return;
-      if (result === 'failed') {
-        this.scheduleStatusRetry('connect');
-        return;
-      }
-      if (!this.sync()) return;
-      this.statusFailures = 0;
-      this.follow();
-    } finally {
-      this.connecting = false;
+  private connect(): Promise<void> {
+    if (this.connecting) return this.connecting;
+    const epoch = this.epoch;
+    const read = this.admit(epoch).finally(() => {
+      this.connecting = null;
+      // A reset during the read gave the admission to another person. That person still needs it.
+      if (epoch !== this.epoch && this.streamWanted) void this.connect();
+    });
+    this.connecting = read;
+    return read;
+  }
+
+  private async admit(epoch: number): Promise<void> {
+    const result = await this.readSync();
+    // A leave or a reset made this read obsolete.
+    if (epoch !== this.epoch || !this.streamWanted) return;
+    if (this.stopOnStatusResult(result)) return;
+    if (result === 'failed') {
+      this.scheduleStatusRetry('connect', this.openGeneration);
+      return;
     }
+    this.clearStatusRetry();
+    this.releaseHeld();
+    // A store that a denial or a missing sync stopped follows again for this person.
+    if (!this.feed) this.follow();
   }
 
   /** Subscribes to the tab's one connection. Other stores keep it while this store follows. */
@@ -418,14 +443,22 @@ export class DevicesStore {
   /** Reads the status again after a failed read. The device store alone waits. */
   private scheduleStatusRetry(
     action: 'connect' | 'open',
-    generation = 0,
+    generation: number,
   ): void {
-    if (this.statusRetryTimer !== undefined || !this.streamWanted) return;
+    if (!this.streamWanted) return;
+    // A timer that an older open scheduled cannot serve this open: it returns at its stale
+    // generation check. The current open takes the retry over.
+    if (this.statusRetryTimer !== undefined) {
+      if (generation <= this.statusRetryGeneration) return;
+      clearTimeout(this.statusRetryTimer);
+      this.statusRetryTimer = undefined;
+    }
     const delay = Math.min(
       this.statusRetryDelay * 2 ** this.statusFailures,
       this.statusRetryCap,
     );
     this.statusFailures += 1;
+    this.statusRetryGeneration = generation;
     this.statusRetryTimer = setTimeout(() => {
       this.statusRetryTimer = undefined;
       if (action === 'connect') void this.connect();
@@ -437,6 +470,7 @@ export class DevicesStore {
     if (this.statusRetryTimer !== undefined)
       clearTimeout(this.statusRetryTimer);
     this.statusRetryTimer = undefined;
+    this.statusRetryGeneration = -1;
     this.statusFailures = 0;
   }
 
@@ -807,6 +841,9 @@ export class DevicesStore {
   ): Promise<void> {
     // Only a first open with no closed stream behind it has missed no event.
     if (first && this.dropped === null) {
+      // The admission read may still run. It answers for this first open.
+      if (this.connecting) await this.connecting;
+      if (generation !== this.openGeneration) return;
       if (this.sync()?.status !== 'running') return;
       // A full sync can end between the read before the subscription and this first open.
       this.dropped = { state: this.sync() };
@@ -819,7 +856,7 @@ export class DevicesStore {
         this.scheduleStatusRetry('open', generation);
         return;
       }
-      this.statusFailures = 0;
+      this.clearStatusRetry();
     }
     await this.reconcile();
     if (generation !== this.openGeneration) return;
@@ -836,7 +873,7 @@ export class DevicesStore {
       this.scheduleStatusRetry('open', generation);
       return;
     }
-    this.statusFailures = 0;
+    this.clearStatusRetry();
     await this.reconcile();
     if (generation !== this.openGeneration) return;
     this.releaseHeld();
