@@ -6,6 +6,7 @@ import {
   DEVICE_IMPORT_ROW_LIMIT,
   CsvError,
   createCsvReader,
+  createCsvWriter,
   deviceEditCanonicalFieldValue,
   deviceEditCanonicalStatusCell,
   deviceEditChecksumIsWellFormed,
@@ -33,11 +34,17 @@ import {
   type DeviceStatusAction,
   type DeviceUpdateField,
 } from '@campus/application-contracts';
-import type {
-  DelegatedCredential,
-  DeviceState,
+import {
+  GOOGLE_DRIVE_SOURCE_BYTES,
+  GoogleConnectionError,
+  GoogleDriveError,
+  type DelegatedCredential,
+  type DeviceState,
 } from '@campus/google-connection';
-import type { DeviceArtifactReader } from './device-export-store';
+import type {
+  DeviceArtifactStore,
+  DeviceExportDescriptor,
+} from './device-export-store';
 import {
   CANCEL_POLL_MILLISECONDS,
   DeviceSyncError,
@@ -84,6 +91,9 @@ const LINE_JSONB_OVERHEAD = 256;
  */
 const LINE_ARRAY_FRAMING = 4 * 1024;
 
+/** The payload version of a stored Drive source. The stage is a CSV file of the edit template. */
+export const DEVICE_IMPORT_SOURCE_SCHEMA_VERSION = 1;
+
 /** The warning of a Checksum cell that is not the exported form (`td:496`). */
 export const DEVICE_IMPORT_MALFORMED_CHECKSUM_WARNING =
   'The Checksum cell is malformed. The row is checked in full.';
@@ -113,8 +123,19 @@ const claimSchema = z.union([
     mode: z.enum(['sync-changes', 'sync-all-rows']),
     /** The claim counter of this attempt. Only the newest attempt may store a line or finish. */
     attempt: z.number().int().nonnegative(),
-    /** The uploaded file. The upload links it to the job through `cc.artifacts.job_id`. */
+    /** The uploaded file, or the stored Drive source. The upload links it to the job through
+     * `cc.artifacts.job_id`. A Drive import reads its source when this stays null (design
+     * section 7). */
     sourceArtifactId: z.string().min(1).max(256).nullable(),
+    /** The source type of the job (design section 1). A built upload answers `csv`. */
+    sourceType: z.enum(['csv', 'drive-sheet', 'drive-csv']).default('csv'),
+    /** The file name that Drive answered. A source refusal names it (design section 7). */
+    sourceName: z.string().min(1).max(255).default('devices.csv'),
+    /** The Drive file of a Drive source, and the tab of a Sheet (design section 1). */
+    sourceFileId: z.string().min(1).max(128).nullable().default(null),
+    sourceTabId: z.number().int().min(0).nullable().default(null),
+    /** The verified sign-in subject that the worker mints its Drive token for (section 4). */
+    driveSubject: z.string().min(3).max(254).nullable().default(null),
     /** The connection credential that the worker reads Google with. */
     generation: z.number().int().positive().nullable(),
     credentialId: z.uuid().nullable(),
@@ -150,6 +171,13 @@ const renewalSchema = z.object({
 
 const storedLinesSchema = z.object({
   outcome: z.enum(['stored', 'fenced', 'done']),
+});
+
+/** The answer of the source link of one Drive read (design section 7, step 7). */
+const sourceStoreSchema = z.object({
+  outcome: z.enum(['stored', 'fenced', 'done']),
+  artifactId: z.string().min(1).max(256).optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
 });
 
 const finishSchema = z.object({
@@ -244,10 +272,39 @@ export interface DeviceImportCipher {
   ): DelegatedCredential;
 }
 
+/**
+ * One Sheet tab and its rows, as the Drive read consumes them (design section 7, step 2).
+ * `GoogleDriveClient` satisfies it, and a test passes the real client over a fake transport.
+ */
+export interface DeviceImportDriveTab {
+  /** The current title of the tab, as `spreadsheets.get` answers it. */
+  readonly title: string;
+  /** The rows of the tab, the header first, each padded to the header width. */
+  rows(): AsyncIterable<string[]>;
+}
+
+/**
+ * The Drive calls of one Drive import (design section 7, steps 2 and 5). A Sheet reads one tab by
+ * its ID, and a CSV file streams its bytes.
+ */
+export interface DeviceImportDriveClient {
+  readTab(fileId: string, tabId: number): Promise<DeviceImportDriveTab>;
+  stream(fileId: string): AsyncIterable<Uint8Array>;
+}
+
+/** Mint the Drive client of one Drive import for the person of the job (design section 4). */
+export type DeviceImportDriveFactory = (
+  credential: DelegatedCredential,
+  subject: string,
+  signal: AbortSignal,
+) => Promise<DeviceImportDriveClient>;
+
 export interface DeviceImportOptions {
   /** The rows and the devices of one read. Defaults to 1,000 (design section 6). */
   batchSize?: number;
   timers?: SyncTimers;
+  /** The Drive client of a Drive source. A test supplies the real client over a fake transport. */
+  drive?: DeviceImportDriveFactory;
 }
 
 /** A store call that keeps no lease detail. The dispatch answers 503, so Kestra retries. */
@@ -405,7 +462,7 @@ type DeviceRow = Record<string, unknown>;
 
 /** The phase of the job header and its counts (design section 2). */
 interface PhaseState {
-  phase: 'header-check' | 'refresh' | 'compare' | 'report';
+  phase: 'drive-read' | 'header-check' | 'refresh' | 'compare' | 'report';
   done: number;
   total: number | null;
 }
@@ -496,6 +553,53 @@ function refusalOf(error: unknown): unknown {
   if (error instanceof CsvError)
     return new ImportRefusal(error.code, deviceImportRefusalText(error.code));
   return error;
+}
+
+/** The refusal of a Drive source that Google refuses to serve (design section 7). */
+function driveSourceRefusal(sourceName: string): ImportRefusal {
+  return new ImportRefusal(
+    'drive-source-unavailable',
+    deviceImportRefusalText('drive-source-unavailable', undefined, sourceName),
+  );
+}
+
+/**
+ * The fault of one Drive read, as the refusal or the job failure that ends the run, or null when
+ * the fault keeps its built handling. A missing file, a missing tab, and a refused token name the
+ * file (design section 7). The client's row and size caps keep their codes and texts. Every other
+ * Google failure keeps its code after its retries, because the job header accepts each one
+ * (`jobFailureSchema`).
+ */
+function driveFaultOf(
+  error: unknown,
+  sourceName: string,
+): ImportRefusal | DeviceImportError | null {
+  if (error instanceof GoogleDriveError) {
+    if (
+      error.code === 'drive-file-unavailable' ||
+      error.code === 'tab-missing' ||
+      error.code === 'not-a-sheet'
+    )
+      return driveSourceRefusal(sourceName);
+    if (
+      error.code === 'source-too-large' ||
+      error.code === 'rows-too-large' ||
+      error.code === 'too-many-rows' ||
+      error.code === 'ragged-record'
+    )
+      return new ImportRefusal(error.code, deviceImportRefusalText(error.code));
+    return new DeviceImportError(error.code);
+  }
+  if (error instanceof GoogleConnectionError) {
+    if (
+      error.code === 'credential-rejected' ||
+      error.code === 'delegation-not-authorized' ||
+      error.code === 'scope-mismatch'
+    )
+      return driveSourceRefusal(sourceName);
+    return new DeviceImportError(error.code);
+  }
+  return null;
 }
 
 /**
@@ -766,15 +870,16 @@ class UnitTree {
 /** Run one validation job (design section 6). */
 export class DeviceImportJobs {
   private readonly database: DeviceImportDatabase;
-  private readonly store: DeviceArtifactReader;
+  private readonly store: DeviceArtifactStore;
   private readonly reader: DeviceImportReader;
   private readonly cipher: DeviceImportCipher;
   private readonly batchSize: number;
   private readonly timers: SyncTimers;
+  private readonly drive?: DeviceImportDriveFactory;
 
   constructor(
     database: DeviceImportDatabase,
-    store: DeviceArtifactReader,
+    store: DeviceArtifactStore,
     reader: DeviceImportReader,
     cipher: DeviceImportCipher,
     options: DeviceImportOptions = {},
@@ -785,6 +890,7 @@ export class DeviceImportJobs {
     this.cipher = cipher;
     this.batchSize = options.batchSize ?? DEVICE_IMPORT_BATCH_SIZE;
     this.timers = options.timers ?? realTimers;
+    this.drive = options.drive;
   }
 
   async run(
@@ -916,10 +1022,11 @@ export class DeviceImportJobs {
     signal: AbortSignal,
   ): Promise<DeviceImportAnswer> {
     const displayId = claim.displayId;
-    const artifactId = claim.sourceArtifactId;
-    if (artifactId === null) {
+    let artifactId = claim.sourceArtifactId;
+    if (artifactId === null && claim.sourceType === 'csv') {
       // The upload stores the file and links it to the job. A missing file is a storage fault
-      // (design section 6, the failures table).
+      // (design section 6, the failures table). A Drive source stages its own file in the
+      // drive-read phase (design section 7, step 1).
       return this.end(owner, displayId, { failure: 'storage-unavailable' });
     }
     let credential: DelegatedCredential;
@@ -933,13 +1040,29 @@ export class DeviceImportJobs {
     const progress = new ImportProgress(
       this.database,
       owner,
-      { phase: 'header-check', done: 0, total: null },
+      {
+        phase: artifactId === null ? 'drive-read' : 'header-check',
+        done: 0,
+        total: null,
+      },
       this.timers,
       run,
     );
     const lines = new ImportLines((batch) => this.storeLines(owner, batch));
     progress.start();
     try {
+      // A Drive source with no stored artifact reads Drive first. The stored source then runs the
+      // built passes unchanged, and a revalidation reads no Drive file (design section 7).
+      if (artifactId === null) {
+        artifactId = await this.driveSource(
+          owner,
+          claim,
+          credential,
+          progress,
+          run,
+        );
+        await progress.step({ phase: 'header-check', done: 0, total: null });
+      }
       const inspection = await this.inspect(
         input,
         claim,
@@ -1015,6 +1138,30 @@ export class DeviceImportJobs {
     const answer = await lines.flush();
     if (answer === 'fenced') throw new ImportStop({ kind: 'fenced' });
     if (answer === 'cancelled') throw new ImportStop({ kind: 'cancelled' });
+  }
+
+  /**
+   * Link the staged Drive source to the job under the lease and record its size (design section
+   * 7, step 7). The store answers no `stored` when the lease lapsed or the job ended.
+   */
+  private async storeSource(
+    owner: ImportOwner,
+    artifactId: string,
+    sizeBytes: number,
+  ): Promise<'stored' | 'fenced' | 'done'> {
+    const answer = sourceStoreSchema.parse(
+      await callStore(
+        this.database,
+        'SELECT cc.store_device_import_source($1,$2,$3,$4,$5,$6) AS result',
+        [...owner, artifactId, sizeBytes],
+      ),
+    );
+    return answer.outcome;
+  }
+
+  /** Remove a stage that the job does not reference. The store keeps a referenced file. */
+  private async discard(descriptor: DeviceExportDescriptor): Promise<void> {
+    await this.store.remove(descriptor).catch(() => undefined);
   }
 
   /**
@@ -1120,6 +1267,191 @@ export class DeviceImportJobs {
           DEVICE_IMPORT_MISSING_HEADER_TEXT,
         ),
       );
+  }
+
+  /**
+   * Read a Drive source into a CSV stage (design section 7, steps 2 to 7). A Sheet writes its
+   * padded rows through the CSV writer, and a CSV file streams its own bytes. The stage is
+   * published and linked to the job under the lease, and the built passes then read it like an
+   * uploaded file.
+   */
+  private async driveSource(
+    owner: ImportOwner,
+    claim: ClaimedImport,
+    credential: DelegatedCredential,
+    progress: ImportProgress,
+    run: RunControl,
+  ): Promise<string> {
+    const fileId = claim.sourceFileId;
+    const tabId = claim.sourceTabId;
+    const subject = claim.driveSubject;
+    const sourceName = claim.sourceName;
+    const sheet = claim.sourceType === 'drive-sheet';
+    if (
+      this.drive === undefined ||
+      fileId === null ||
+      subject === null ||
+      (sheet && tabId === null)
+    )
+      // The submission stored the file, the tab, and the subject of every Drive job (design
+      // section 1), so a claim that misses one cannot read its source.
+      throw new DeviceImportError('drive-unavailable');
+    let client: DeviceImportDriveClient;
+    try {
+      client = await this.drive(credential, subject, run.signal);
+    } catch (error) {
+      // A stop of the run ends it here. A refused token refuses the source (design section 7).
+      const stop = run.reason();
+      if (stop !== null) throw new ImportStop(stop);
+      const fault = driveFaultOf(error, sourceName);
+      if (fault !== null) throw fault;
+      throw error;
+    }
+
+    const batchSize = this.batchSize;
+    const writer = createCsvWriter();
+    /** The records of the file, the header included. */
+    let rowsRead = 0;
+    /** The data rows that the phase counts (design section 7, step 6). */
+    let dataRows = 0;
+    let reported = 0;
+    const count = async (): Promise<void> => {
+      if (dataRows - reported < batchSize) return;
+      reported = dataRows;
+      await progress.step({ phase: 'drive-read', done: dataRows, total: null });
+    };
+
+    const source = async function* (): AsyncIterable<Buffer> {
+      yield Buffer.from(writer.start(), 'utf8');
+      if (sheet) {
+        const tab = await client.readTab(fileId, tabId as number);
+        for await (const row of tab.rows()) {
+          const stop = run.reason();
+          if (stop !== null) throw new ImportStop(stop);
+          const text = writer.row(row);
+          // A stage of more than 1 GiB of text refuses (design section 7, the limits).
+          if (writer.bytes > GOOGLE_DRIVE_SOURCE_BYTES)
+            throw new ImportRefusal(
+              'source-too-large',
+              deviceImportRefusalText('source-too-large'),
+            );
+          yield Buffer.from(text, 'utf8');
+          rowsRead += 1;
+          // The header row counts no data row. A blank gap row keeps its source position and
+          // counts none, as the client counts it (design section 7, steps 3 and 6).
+          if (rowsRead > 1 && !row.every((cell) => cell.trim() === '')) {
+            dataRows += 1;
+            // The tab refuses data row 50,001 (design section 7, the limits). The client refuses
+            // it first; this count keeps the same answer for a tab that another reader serves.
+            if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
+              throw new ImportRefusal(
+                'too-many-rows',
+                deviceImportRefusalText('too-many-rows'),
+              );
+          }
+          await count();
+        }
+        return;
+      }
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      const reader = createCsvReader();
+      let bytes = 0;
+      const decode = (chunk: Uint8Array | undefined): string => {
+        try {
+          return chunk === undefined
+            ? decoder.decode()
+            : decoder.decode(chunk, { stream: true });
+        } catch {
+          throw new ImportRefusal(
+            'unreadable-file',
+            deviceImportRefusalText('unreadable-file'),
+          );
+        }
+      };
+      const tally = (records: readonly CsvRecord[]): void => {
+        for (let index = 0; index < records.length; index += 1) {
+          rowsRead += 1;
+          if (rowsRead > 1) {
+            dataRows += 1;
+            // The read refuses data row 50,001, as the tab read does (design section 7, the
+            // limits). The built passes hold the same cap for an uploaded file.
+            if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
+              throw new ImportRefusal(
+                'too-many-rows',
+                deviceImportRefusalText('too-many-rows'),
+              );
+          }
+        }
+      };
+      for await (const chunk of client.stream(fileId)) {
+        const stop = run.reason();
+        if (stop !== null) throw new ImportStop(stop);
+        // The media stream passes 1 GiB of stored text (design section 7, step 5).
+        bytes += chunk.byteLength;
+        if (bytes > GOOGLE_DRIVE_SOURCE_BYTES)
+          throw new ImportRefusal(
+            'source-too-large',
+            deviceImportRefusalText('source-too-large'),
+          );
+        let records: CsvRecord[];
+        try {
+          // The reader counts the records of the stream on the way (design section 7, step 5).
+          records = reader.push(decode(chunk));
+        } catch (error) {
+          throw refusalOf(error);
+        }
+        tally(records);
+        yield Buffer.from(chunk);
+        await count();
+      }
+      // The end of the file answers its last record, and a trailing partial sequence is a fault.
+      try {
+        tally([...reader.push(decode(undefined)), ...reader.end()]);
+      } catch (error) {
+        throw refusalOf(error);
+      }
+    };
+
+    let descriptor: DeviceExportDescriptor;
+    try {
+      descriptor = await this.store.stageStream(
+        {
+          schemaVersion: DEVICE_IMPORT_SOURCE_SCHEMA_VERSION,
+          maxBytes: GOOGLE_DRIVE_SOURCE_BYTES,
+        },
+        source(),
+      );
+    } catch (error) {
+      // A source fault keeps its refusal or its job failure. Any other stage fault fails the job.
+      const fault = driveFaultOf(error, sourceName);
+      if (fault !== null) throw fault;
+      throw error;
+    }
+
+    let published = false;
+    try {
+      // The phase counts the data rows that the stage holds (design section 7, step 6). The write
+      // renews the lease after the long read.
+      reported = dataRows;
+      await progress.step({ phase: 'drive-read', done: dataRows, total: null });
+      await this.store.publish(descriptor);
+      published = true;
+      const stored = await this.storeSource(
+        owner,
+        descriptor.artifactId,
+        descriptor.sizeBytes,
+      );
+      if (stored === 'stored') return descriptor.artifactId;
+      // The job ended or a newer attempt owns it, so this stage stays unlinked.
+      await this.discard(descriptor);
+      throw new ImportStop(
+        stored === 'fenced' ? { kind: 'fenced' } : { kind: 'cancelled' },
+      );
+    } catch (error) {
+      // A stage that no job references leaves no file (design section 7, step 7).
+      if (!published) await this.discard(descriptor);
+      throw error;
+    }
   }
 
   /** Pass 1 of design section 6: the checks, the lookup, the refresh, the units, and the access. */
