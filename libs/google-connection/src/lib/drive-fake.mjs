@@ -11,9 +11,7 @@ import { Readable } from 'node:stream';
 /** Whether a value is a byte stream, as the media answer of `files.get` is. */
 function streamed(value) {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    Symbol.asyncIterator in value
+    typeof value === 'object' && value !== null && Symbol.asyncIterator in value
   );
 }
 

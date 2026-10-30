@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 import { JWT, OAuth2Client } from 'google-auth-library';
-import { createCsvReader, createCsvWriter } from '@campus/application-contracts';
+import {
+  createCsvReader,
+  createCsvWriter,
+} from '@campus/application-contracts';
 import {
   GOOGLE_DRIVE_SCOPE,
   GOOGLE_DRIVE_SOURCE_BYTES,
@@ -627,7 +630,10 @@ test('a window of exactly 64 MiB is read', async () => {
   const tab = await client.readTab('fixture-sheet', 0);
   const read = await collected(tab.rows());
   assert.equal(read.length, 1);
-  assert.equal(read[0][0].length, size - '{"values":[["'.length - '"]]}'.length);
+  assert.equal(
+    read[0][0].length,
+    size - '{"values":[["'.length - '"]]}'.length,
+  );
 });
 
 test('the byte cap refuses before the JSON parse', async () => {
