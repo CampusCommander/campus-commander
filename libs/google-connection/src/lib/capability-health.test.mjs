@@ -251,9 +251,7 @@ test('all seven capabilities request one exact scope each and read the smallest 
     call.url.endsWith('/telemetry/devices'),
   );
   assert.equal(telemetryRead.params.pageSize, 1);
-  const driveRead = read.find((call) =>
-    call.url.endsWith('/drive/v3/files'),
-  );
+  const driveRead = read.find((call) => call.url.endsWith('/drive/v3/files'));
   assert.deepEqual(driveRead.params, { pageSize: 1, fields: 'files(id)' });
 });
 

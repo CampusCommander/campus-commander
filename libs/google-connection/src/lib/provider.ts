@@ -200,7 +200,10 @@ const telemetryHealthPage = z.object({
 });
 /** A Drive health read asks for one file ID. An empty Drive omits the list. */
 const driveHealthPage = z.object({
-  files: z.array(z.object({ id: z.string().min(1).max(128) })).max(1).optional(),
+  files: z
+    .array(z.object({ id: z.string().min(1).max(128) }))
+    .max(1)
+    .optional(),
 });
 
 function domainObservation(
@@ -242,7 +245,9 @@ export function googleRequestAllowed(url: URL): boolean {
           url.pathname,
         ))) ||
     (url.origin === 'https://www.googleapis.com' &&
-      ['/batch/admin/directory_v1', '/drive/v3/files'].includes(url.pathname)) ||
+      ['/batch/admin/directory_v1', '/drive/v3/files'].includes(
+        url.pathname,
+      )) ||
     (url.origin === 'https://chromemanagement.googleapis.com' &&
       /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices(?:\/[A-Za-z0-9_-]{1,128})?$/.test(
         url.pathname,

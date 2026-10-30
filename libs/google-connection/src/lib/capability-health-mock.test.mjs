@@ -59,7 +59,11 @@ function check(credential, requested = capabilities) {
 }
 
 test('a client with the six scopes of admin-sdk-mock 0.2.0 passes every capability check', async () => {
-  assert.equal(capabilities.length, 6, 'admin-sdk-mock 0.2.0 serves six scopes');
+  assert.equal(
+    capabilities.length,
+    6,
+    'admin-sdk-mock 0.2.0 serves six scopes',
+  );
   const result = await check(credentialFor(capabilities));
   assert.deepEqual(
     result.results,
