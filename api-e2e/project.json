@@ -58,6 +58,14 @@
         }
       }
     },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["worker:build"],
+      "options": {
+        "command": "node --test api-e2e/kestra-fixture.test.mjs"
+      }
+    },
     "admin-sdk-mock-fixture-test": {
       "executor": "nx:run-commands",
       "cache": false,
