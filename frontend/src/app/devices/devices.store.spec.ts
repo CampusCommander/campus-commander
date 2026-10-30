@@ -304,6 +304,42 @@ describe('a new person over a followed device stream', () => {
     expect(store.sync()?.status).toBe('ready');
   });
 
+  it('reconciles a first open that arrives while the admission read runs', async () => {
+    let held = false;
+    let release: () => void = () => undefined;
+    let current: object = state('ready');
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/sync') {
+        const answer = current;
+        if (held) await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: answer });
+      }
+      if (path === '/api/devices/freshness')
+        return Response.json({ freshness: { stale: 0, refreshing: false } });
+      throw new TypeError('Failed to fetch');
+    });
+    const session = signal(sessionFor('actor'));
+    const store = setup(request, session);
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+
+    // The new person's admission read answers `running`. The sync ends before the open.
+    held = true;
+    current = running(null);
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    const before = store.revision();
+    opened[1].open();
+    current = state('ready', { observedAt: LATER });
+    held = false;
+    release();
+    // The first open uses the admission read that is still in flight, then reconciles.
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+  });
+
   it.each([
     ['a denied status read', 'denied'],
     ['a customer without a sync', 'missing'],
