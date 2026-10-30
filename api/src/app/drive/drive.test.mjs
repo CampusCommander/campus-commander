@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import esbuild from 'esbuild';
 import { JWT, OAuth2Client } from 'google-auth-library';
+import {
+  GoogleConnectionError,
+  loadCredentialCipher,
+} from '@campus/google-connection';
 
 /**
  * The Drive access, session, and tab list routes (design section 1, card DB8). This suite boots the
@@ -244,7 +248,6 @@ before(async () => {
     devicesModule,
     driveServiceModule,
     authzModule,
-    library,
   ] = await Promise.all([
     import('./drive.controller.ts'),
     import('../security.ts'),
@@ -254,7 +257,6 @@ before(async () => {
     import('../devices/devices.service.ts'),
     import('./drive.service.ts'),
     import('../auth/authorize-action.ts'),
-    import('@campus/google-connection'),
   ]);
   const { DriveController } = controllerModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
@@ -264,8 +266,6 @@ before(async () => {
   const { DevicesService } = devicesModule;
   const { DriveService } = driveServiceModule;
   const { authorizeAction } = authzModule;
-  const { loadCredentialCipher, GoogleConnectionError } = library;
-  libraryError = GoogleConnectionError;
 
   // esbuild does not emit decorator metadata, so the harness names the constructor tokens.
   Reflect.defineMetadata('design:paramtypes', [DriveService], DriveController);
@@ -384,9 +384,6 @@ const mint = (body = {}) =>
   });
 const tabs = (fileId) => request(`/api/google/drive/files/${fileId}/tabs`);
 
-/** A `GoogleConnectionError`, imported by the setup and used by the refusal helper. */
-let libraryError;
-
 /** Answer the one token exchange of the test. */
 function exchange(t) {
   t.mock.method(JWT.prototype, 'getAccessToken', async () => ({ token: TOKEN }));
@@ -399,7 +396,7 @@ function exchange(t) {
 /** Refuse the one token exchange of the test with a Google failure code. */
 function refuseExchange(t, code) {
   t.mock.method(JWT.prototype, 'getAccessToken', async () => {
-    throw new libraryError(code);
+    throw new GoogleConnectionError(code);
   });
 }
 
