@@ -43,13 +43,15 @@ CREATE TABLE cc.jobs (
   cancel_requested_by uuid REFERENCES cc.application_principals(id),
   -- The progress phase of an export or a validation job (design section 2). The three columns stay
   -- null for another kind, and a phase counts no total when phase_total is null.
-  phase text CHECK(phase IN ('write-rows','prepare-download','header-check','refresh','compare','report')),
+  phase text CHECK(phase IN ('write-rows','create-sheet','prepare-download','drive-read','header-check',
+    'refresh','compare','report')),
   phase_done integer CHECK(phase_done>=0),
   phase_total integer CHECK(phase_total>=0),
   failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled',
     'policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable',
     'invalid-response','wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
-    'permission-changed','connection-changed','storage-unavailable','inventory-unavailable','export-too-large')),
+    'permission-changed','connection-changed','storage-unavailable','inventory-unavailable','export-too-large',
+    'drive-unavailable','sheet-write-failed')),
   revision bigint NOT NULL DEFAULT 1,
   changed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   correlation_id uuid NOT NULL,
@@ -66,7 +68,9 @@ CREATE TABLE cc.jobs (
   CHECK(kind IN ('device-export','device-import') OR
     (phase IS NULL AND phase_done IS NULL AND phase_total IS NULL)),
   CHECK(phase IS NULL OR (phase_done IS NOT NULL AND (phase_total IS NULL OR phase_total>=phase_done))),
-  CHECK(phase IS NULL OR (kind='device-export')=(phase IN ('write-rows','prepare-download'))),
+  CHECK(phase IS NULL OR (kind='device-export')=(phase IN ('write-rows','create-sheet','prepare-download'))),
+  -- The stamp phase of a Sheet export counts nothing and draws no bar (design section 6).
+  CHECK(phase IS DISTINCT FROM 'create-sheet' OR (phase_done=0 AND phase_total IS NULL)),
   CHECK((cancel_requested_at IS NULL)=(cancel_requested_by IS NULL)),
   CHECK(status<>'cancelled' OR cancel_requested_at IS NOT NULL)
 );
@@ -319,8 +323,17 @@ CREATE TABLE cc.device_update_operation_fields (
 CREATE TABLE cc.device_export_jobs (
   job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
   purpose text NOT NULL CHECK(purpose IN ('edit','report')),
-  -- The one format of this slice. The Drive slice adds `sheet` (design section 5).
-  format text NOT NULL CHECK(format IN ('csv')),
+  -- The two formats of the Drive slice: a CSV file, and a Google Sheet of the edit template.
+  format text NOT NULL CHECK(format IN ('csv','sheet')),
+  -- A Sheet export runs as the person: the detail row stores the verified sign-in subject at
+  -- submission, and the worker mints its own token for that subject (design section 4). A CSV export
+  -- holds none.
+  drive_subject text CHECK(drive_subject IS NULL OR char_length(drive_subject) BETWEEN 3 AND 254),
+  -- The stamp before the one Sheet create (design section 6). It stays null for a CSV file, and a cancel
+  -- refuses after it, so one run creates at most one Sheet.
+  sheet_started_at timestamptz,
+  -- The Google Sheets spreadsheet ID of a published Sheet file. The API builds the link from it.
+  spreadsheet_id text CHECK(spreadsheet_id IS NULL OR spreadsheet_id ~ '^[A-Za-z0-9_-]{1,128}$'),
   -- The report field IDs in grid order. An edit export holds none.
   report_columns text[] NOT NULL DEFAULT '{}'
     CHECK(cardinality(report_columns)<=10 AND report_columns <@ ARRAY['serialNumber','status','model',
@@ -341,10 +354,21 @@ CREATE TABLE cc.device_export_jobs (
   file_column_count integer CHECK(file_column_count IS NULL OR file_column_count BETWEEN 1 AND 64),
   file_expires_at timestamptz,
   CHECK((purpose='report')=(cardinality(report_columns)>0)),
+  -- A Sheet writes the edit template only (design section 6, ruling 1).
+  CHECK(format='csv' OR purpose='edit'),
   CHECK((lease_id IS NULL)=(lease_expires_at IS NULL)),
-  CHECK((file_name IS NULL)=(file_artifact_id IS NULL) AND (file_name IS NULL)=(file_size_bytes IS NULL) AND
-    (file_name IS NULL)=(file_row_count IS NULL) AND (file_name IS NULL)=(file_column_count IS NULL) AND
-    (file_name IS NULL)=(file_expires_at IS NULL))
+  -- Only a Sheet carries a subject, a stamp, and a spreadsheet ID.
+  CHECK((format='sheet')=(drive_subject IS NOT NULL)),
+  CHECK(sheet_started_at IS NULL OR format='sheet'),
+  CHECK((file_name IS NULL)=(file_row_count IS NULL) AND (file_name IS NULL)=(file_column_count IS NULL)),
+  -- The file split of design section 6: a CSV file holds the artifact facts, and a Sheet holds the
+  -- spreadsheet ID, the rows, and the columns, with no size and no expiry.
+  CHECK(CASE format WHEN 'csv' THEN
+      (file_name IS NULL)=(file_artifact_id IS NULL) AND (file_name IS NULL)=(file_size_bytes IS NULL) AND
+      (file_name IS NULL)=(file_expires_at IS NULL) AND spreadsheet_id IS NULL
+    ELSE
+      file_artifact_id IS NULL AND file_size_bytes IS NULL AND file_expires_at IS NULL AND
+      (file_name IS NULL)=(spreadsheet_id IS NULL) END)
 );
 
 -- The frozen scope of one export, in grid order (design section 3, `td:338`).
@@ -363,9 +387,16 @@ CREATE TABLE cc.device_export_targets (
 CREATE TABLE cc.device_import_jobs (
   job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
   mode text NOT NULL CHECK(mode IN ('sync-changes','sync-all-rows')),
-  -- The one source of this slice. The Drive slice adds a Sheet tab and a Drive file (design section 5).
-  source_type text NOT NULL CHECK(source_type IN ('csv')),
+  -- The uploaded file, a Sheet tab, or a CSV file in Drive (design section 7).
+  source_type text NOT NULL CHECK(source_type IN ('csv','drive-sheet','drive-csv')),
   source_name text NOT NULL CHECK(length(source_name) BETWEEN 1 AND 255),
+  -- A Drive source names its file. A Sheet adds its tab ID and the tab title that the receipt shows. The
+  -- uploaded file of a CSV source holds none of them.
+  source_file_id text CHECK(source_file_id IS NULL OR source_file_id ~ '^[A-Za-z0-9_-]{1,128}$'),
+  source_tab_id integer CHECK(source_tab_id IS NULL OR source_tab_id>=0),
+  source_tab_title text CHECK(source_tab_title IS NULL OR char_length(source_tab_title) BETWEEN 1 AND 255),
+  -- The verified sign-in subject that the worker mints its token for (design section 4).
+  drive_subject text CHECK(drive_subject IS NULL OR char_length(drive_subject) BETWEEN 3 AND 254),
   -- The upload cap of design section 4. The worker never stores a larger source.
   source_size_bytes bigint NOT NULL CHECK(source_size_bytes BETWEEN 0 AND 1073741824),
   -- The status actions that the person held at submission (design section 6 step 1).
@@ -400,6 +431,14 @@ CREATE TABLE cc.device_import_jobs (
   execute_receipts jsonb NOT NULL DEFAULT '[]'::jsonb
     CHECK(jsonb_typeof(execute_receipts)='array' AND jsonb_array_length(execute_receipts)<=7),
   CHECK((lease_id IS NULL)=(lease_expires_at IS NULL)),
+  -- The Drive source shape of design section 7: a file and a subject, plus a tab ID and its title for
+  -- a Sheet. A CSV upload holds none of them.
+  CHECK(CASE WHEN source_type='csv' THEN
+      source_file_id IS NULL AND source_tab_id IS NULL AND source_tab_title IS NULL AND drive_subject IS NULL
+    ELSE
+      source_file_id IS NOT NULL AND drive_subject IS NOT NULL AND
+      (source_type='drive-sheet')=(source_tab_id IS NOT NULL) AND
+      (source_tab_id IS NULL)=(source_tab_title IS NULL) END),
   CHECK(rows_read=unchanged+no_change_needed+proposed+rejected),
   CHECK((plan_id IS NULL)=(plan_revision IS NULL) AND (plan_id IS NULL)=(plan_state IS NULL) AND
     (plan_id IS NULL)=(plan_expires_at IS NULL)),
@@ -780,6 +819,13 @@ BEGIN
       THEN (SELECT e.first_claimed_at FROM cc.device_export_jobs e WHERE e.job_id=job.job_id)
       ELSE (SELECT i.first_claimed_at FROM cc.device_import_jobs i WHERE i.job_id=job.job_id) END;
     stop_now:=claimed_at IS NULL;
+    -- A Sheet export that already stamped its Sheet offers nothing to stop, because a cancel cannot
+    -- remove a Sheet (design section 6, `record:336`). The stamp holds the same header lock, so the two
+    -- requests order one after the other and this read is the committed stamp.
+    IF job.kind='device-export' AND (SELECT e.sheet_started_at FROM cc.device_export_jobs e
+        WHERE e.job_id=job.job_id) IS NOT NULL THEN
+      RAISE EXCEPTION 'The job holds no work to stop.' USING DETAIL='nothing-to-stop';
+    END IF;
   ELSIF job.kind<>'inventory-refresh' THEN
     -- The header lock holds every operation status: each writer of an operation status locks the header
     -- first (017 cc.settle_device_update_operations, cc.claim_device_update_verification).
@@ -905,10 +951,10 @@ $$;
 
 -- One export job, its detail row, and its frozen targets, in one transaction. The caller resolves the
 -- selection in grid order and passes the device IDs as one JSON array. A caller without the three
--- export actions receives no job.
+-- export actions receives no job. A Sheet export names the person it runs as; a CSV export names none.
 CREATE FUNCTION cc.create_device_export_job(p_actor uuid,p_version integer,p_customer text,
   p_purpose text,p_format text,p_sort_field text,p_sort_direction text,p_columns text[],p_devices jsonb,
-  p_correlation uuid) RETURNS jsonb
+  p_correlation uuid,p_drive_subject text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; connection cc.google_connection; now_at timestamptz; number bigint; bad integer;
 BEGIN
@@ -916,7 +962,8 @@ BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_correlation IS NULL OR
     p_purpose IS NULL OR p_purpose NOT IN ('edit','report') OR
-    p_format IS NULL OR p_format NOT IN ('csv') OR
+    p_format IS NULL OR p_format NOT IN ('csv','sheet') OR
+    (p_drive_subject IS NOT NULL AND char_length(p_drive_subject) NOT BETWEEN 3 AND 254) OR
     p_sort_field IS NULL OR p_sort_field NOT IN ('serialNumber','status','model','assetTag','annotatedUser',
       'orgUnitPath','battery','lastContact','annotatedLocation','notes') OR
     p_sort_direction IS NULL OR p_sort_direction NOT IN ('asc','desc') OR
@@ -926,6 +973,11 @@ BEGIN
   -- A report export names its columns, and an edit export names none (design section 1).
   IF (p_purpose='report')<>(cardinality(p_columns)>0) THEN
     RAISE EXCEPTION 'The export columns are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- A Sheet export writes the edit template and runs as one person (design section 6, ruling 1). A CSV
+  -- export carries no subject.
+  IF (p_format='sheet')<>(p_drive_subject IS NOT NULL) OR (p_format='sheet' AND p_purpose<>'edit') THEN
+    RAISE EXCEPTION 'The export request is invalid.' USING ERRCODE='22023';
   END IF;
   IF EXISTS(SELECT 1 FROM unnest(p_columns) c WHERE c NOT IN ('serialNumber','status','model','assetTag',
       'annotatedUser','orgUnitPath','battery','lastContact','annotatedLocation','notes')) OR
@@ -962,8 +1014,9 @@ BEGIN
   VALUES(gen_random_uuid(),cc.job_display_id('EXP',number),p_customer,'device-export','rows','running',
     p_actor,connection.generation,jsonb_array_length(p_devices),p_correlation)
   RETURNING * INTO job;
-  INSERT INTO cc.device_export_jobs(job_id,purpose,format,report_columns,sort_field,sort_direction)
-    VALUES(job.job_id,p_purpose,p_format,p_columns,p_sort_field,p_sort_direction);
+  INSERT INTO cc.device_export_jobs(job_id,purpose,format,report_columns,sort_field,sort_direction,
+    drive_subject)
+    VALUES(job.job_id,p_purpose,p_format,p_columns,p_sort_field,p_sort_direction,p_drive_subject);
   INSERT INTO cc.device_export_targets(job_id,ordinal,device_id)
     SELECT job.job_id,(e.ordinal-1)::integer,e.value #>> '{}'
     FROM jsonb_array_elements(p_devices) WITH ORDINALITY e(value,ordinal);
@@ -977,10 +1030,12 @@ $$;
 -- receives no job. The row count stays null until the header check reads the file. The optional
 -- artifact is the uploaded file: the same transaction links it to the new job through
 -- `cc.artifacts.job_id`, so the claim of design section 6 answers it. A revalidation calls this
--- function again with the stored file, which moves the link to the new job.
+-- function again with the stored file, which moves the link to the new job. A Drive source names its
+-- file, the person the worker reads as, and the tab of a Sheet, and it links no artifact.
 CREATE FUNCTION cc.create_device_import_job(p_actor uuid,p_version integer,p_customer text,p_mode text,
   p_source_type text,p_source_name text,p_source_size bigint,p_status_permissions text[],p_correlation uuid,
-  p_artifact_id text DEFAULT NULL)
+  p_artifact_id text DEFAULT NULL,p_file_id text DEFAULT NULL,p_tab_id integer DEFAULT NULL,
+  p_tab_title text DEFAULT NULL,p_drive_subject text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; connection cc.google_connection; artifact cc.artifacts; now_at timestamptz; number bigint;
@@ -989,11 +1044,27 @@ BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_correlation IS NULL OR
     p_mode IS NULL OR p_mode NOT IN ('sync-changes','sync-all-rows') OR
-    p_source_type IS NULL OR p_source_type NOT IN ('csv') OR
+    p_source_type IS NULL OR p_source_type NOT IN ('csv','drive-sheet','drive-csv') OR
     p_source_name IS NULL OR char_length(p_source_name) NOT BETWEEN 1 AND 255 OR
     p_source_size IS NULL OR p_source_size NOT BETWEEN 0 AND 1073741824 OR
     (p_artifact_id IS NOT NULL AND char_length(p_artifact_id) NOT BETWEEN 1 AND 128) OR
+    (p_file_id IS NOT NULL AND p_file_id !~ '^[A-Za-z0-9_-]{1,128}$') OR
+    (p_tab_id IS NOT NULL AND p_tab_id<0) OR
+    (p_tab_title IS NOT NULL AND char_length(p_tab_title) NOT BETWEEN 1 AND 255) OR
+    (p_drive_subject IS NOT NULL AND char_length(p_drive_subject) NOT BETWEEN 3 AND 254) OR
     EXISTS(SELECT 1 FROM unnest(p_status_permissions) s WHERE s NOT IN ('disable','reenable','deprovision')) THEN
+    RAISE EXCEPTION 'The import request is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- A Drive source names its file and its subject, and a Sheet adds its tab ID and title (design
+  -- section 7). It links no artifact, because the worker stores what it reads. A CSV upload names none
+  -- of the Drive fields.
+  IF p_source_type='csv' THEN
+    IF p_file_id IS NOT NULL OR p_tab_id IS NOT NULL OR p_tab_title IS NOT NULL OR
+      p_drive_subject IS NOT NULL THEN
+      RAISE EXCEPTION 'The import request is invalid.' USING ERRCODE='22023';
+    END IF;
+  ELSIF p_file_id IS NULL OR p_drive_subject IS NULL OR p_artifact_id IS NOT NULL OR
+    (p_source_type='drive-sheet')<>(p_tab_id IS NOT NULL) OR (p_tab_id IS NULL)<>(p_tab_title IS NULL) THEN
     RAISE EXCEPTION 'The import request is invalid.' USING ERRCODE='22023';
   END IF;
   PERFORM pg_advisory_xact_lock(7240173008);
@@ -1031,8 +1102,10 @@ BEGIN
   VALUES(gen_random_uuid(),cc.job_display_id('IMP',number),p_customer,'device-import','rows','running',
     p_actor,connection.generation,p_correlation)
   RETURNING * INTO job;
-  INSERT INTO cc.device_import_jobs(job_id,mode,source_type,source_name,source_size_bytes,status_permissions)
-    VALUES(job.job_id,p_mode,p_source_type,p_source_name,p_source_size,p_status_permissions);
+  INSERT INTO cc.device_import_jobs(job_id,mode,source_type,source_name,source_size_bytes,status_permissions,
+    source_file_id,source_tab_id,source_tab_title,drive_subject)
+    VALUES(job.job_id,p_mode,p_source_type,p_source_name,p_source_size,p_status_permissions,
+      p_file_id,p_tab_id,p_tab_title,p_drive_subject);
   -- The link sets no reference count, so the purge still removes the file after 30 days (design
   -- section 4). A revalidation moves the same link from the stored job to this one.
   IF p_artifact_id IS NOT NULL THEN
@@ -1046,7 +1119,9 @@ END;
 $$;
 
 -- The claim of one export run. It takes a two-minute lease and stamps first_claimed_at. A stored
--- cancel request, or a finished job, answers `done`. A live lease of another run answers `busy`.
+-- cancel request, or a finished job, answers `done`. A live lease of another run answers `busy`. A Sheet
+-- export that already stamped its Sheet ends Failed `interrupted` and answers `done`, so a retried
+-- dispatch creates no second Sheet (design section 6).
 CREATE FUNCTION cc.claim_device_export_job(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
@@ -1068,6 +1143,14 @@ BEGIN
   IF detail.lease_id IS NOT NULL AND detail.lease_id<>p_lease AND detail.lease_expires_at>now_at THEN
     RETURN jsonb_build_object('outcome','busy','leaseExpiresAt',detail.lease_expires_at);
   END IF;
+  -- The stamp of design section 6 bars a second Sheet. A dispatch that claims the job after the stamp
+  -- ends it Failed `interrupted` and answers done; the recovery reaches the same answer for a run that no
+  -- dispatch replaces (design section 6, `add:196`).
+  IF detail.sheet_started_at IS NOT NULL THEN
+    UPDATE cc.jobs SET status='failed',failure='interrupted',finished_at=now_at WHERE job_id=p_job;
+    PERFORM cc.record_job_change(p_job,true);
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
   UPDATE cc.device_export_jobs SET lease_id=p_lease,lease_expires_at=now_at+interval '120 seconds',
     first_claimed_at=COALESCE(first_claimed_at,now_at) WHERE job_id=p_job;
   IF job.started_at IS NULL THEN
@@ -1076,15 +1159,16 @@ BEGIN
   PERFORM cc.record_job_change(p_job,false);
   RETURN jsonb_build_object('outcome','claimed','leaseExpiresAt',now_at+interval '120 seconds',
     'displayId',job.display_id,'targetCount',job.target_count,'purpose',detail.purpose,
-    'format',detail.format,'columns',detail.report_columns,
+    'format',detail.format,'driveSubject',detail.drive_subject,'columns',detail.report_columns,
     'sort',jsonb_build_object('field',detail.sort_field,'direction',detail.sort_direction));
 END;
 $$;
 
 -- The claim of one validation run, with the same lease, fence, and answers as the export claim. It
--- also answers the source artifact of the upload and the connection credential, because the worker
--- reads the file and Google with them (design section 6). The claim opens a new attempt and clears
--- the partial report, so a retried request cannot store its lines twice. The artifact is the ready
+-- also answers the source artifact of the upload, the Drive source fields of design section 7, and the
+-- connection credential, because the worker reads the file and Google with them (design section 6). A
+-- Drive source holds no artifact until the worker stores what it read. The claim opens a new attempt and
+-- clears the partial report, so a retried request cannot store its lines twice. The artifact is the ready
 -- artifact that the upload linked to this job through `cc.artifacts.job_id`, newest first. Both
 -- reads take no lock,
 -- so the claim keeps the lock order of the header and the detail row (design section 3).
@@ -1131,6 +1215,8 @@ BEGIN
     'displayId',job.display_id,'targetCount',job.target_count,'mode',detail.mode,
     'sourceType',detail.source_type,'sourceName',detail.source_name,
     'sourceSizeBytes',detail.source_size_bytes,'statusPermissions',detail.status_permissions,
+    'sourceFileId',detail.source_file_id,'sourceTabId',detail.source_tab_id,
+    'sourceTabTitle',detail.source_tab_title,'driveSubject',detail.drive_subject,
     'sourceArtifactId',source_artifact,'generation',connection.generation,
     'credentialId',connection.credential_id,
     'envelope',(SELECT envelope FROM cc.google_credentials WHERE id=connection.credential_id));
@@ -1139,7 +1225,8 @@ $$;
 
 -- The renewal of one export run. It renews the two-minute lease and writes the phase and its counts.
 -- A stored cancel request answers `done`. A lease that another run replaced, or one that lapsed,
--- answers `fenced` and writes nothing.
+-- answers `fenced` and writes nothing. The Sheet stamp phase counts nothing and draws no bar (design
+-- section 6).
 CREATE FUNCTION cc.renew_device_export_job(p_customer text,p_job uuid,p_lease uuid,p_phase text,
   p_done integer,p_total integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -1147,7 +1234,8 @@ DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_phase IS NULL OR p_done IS NULL OR
     p_done NOT BETWEEN 0 AND 50000 OR (p_total IS NOT NULL AND p_total NOT BETWEEN p_done AND 50000) OR
-    p_phase NOT IN ('write-rows','prepare-download') THEN
+    p_phase NOT IN ('write-rows','create-sheet','prepare-download') OR
+    (p_phase='create-sheet' AND (p_done<>0 OR p_total IS NOT NULL)) THEN
     RAISE EXCEPTION 'The device export phase is invalid.' USING ERRCODE='22023';
   END IF;
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
@@ -1173,7 +1261,8 @@ $$;
 -- The renewal of one validation run, with the same fence. The header check writes the row count of
 -- the file, so target_count takes the done count of that phase (design section 3). The report phase
 -- counts report lines, and one source row yields several lines, so it carries no 50,000 row cap
--- (design section 2). Every other phase counts source rows or devices. A stale attempt of the same
+-- (design section 2). Every other phase counts source rows or devices, so the Drive read of design
+-- section 7 keeps the cap. A stale attempt of the same
 -- lease is fenced, because the claim that replaced it owns the report.
 CREATE FUNCTION cc.renew_device_import_job(p_customer text,p_job uuid,p_lease uuid,p_attempt integer,
   p_phase text,p_done integer,p_total integer) RETURNS jsonb
@@ -1182,7 +1271,7 @@ DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; rows_coun
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_attempt IS NULL OR p_attempt<0 OR
     p_phase IS NULL OR p_done IS NULL OR
-    p_phase NOT IN ('header-check','refresh','compare','report') OR p_done<0 OR
+    p_phase NOT IN ('drive-read','header-check','refresh','compare','report') OR p_done<0 OR
     (p_total IS NOT NULL AND p_total<p_done) OR
     (p_phase<>'report' AND (p_done>50000 OR (p_total IS NOT NULL AND p_total>50000))) THEN
     RAISE EXCEPTION 'The device import phase is invalid.' USING ERRCODE='22023';
@@ -1315,9 +1404,58 @@ BEGIN
 END;
 $$;
 
+-- The source of a Drive import, after the worker stored what it read (design section 7 step 7). It locks
+-- the header, then the detail row, and fences the lease and the attempt as the line store does. The
+-- artifact must be a ready file of this job or of no job, of the recorded size, so the two built passes
+-- read the stored stage as they read an upload. A CSV upload carries its link from creation and never
+-- calls this.
+CREATE FUNCTION cc.store_device_import_source(p_customer text,p_job uuid,p_lease uuid,p_attempt integer,
+  p_artifact_id text,p_size_bytes bigint) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_import_jobs; now_at timestamptz; artifact cc.artifacts;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL OR p_attempt IS NULL OR p_attempt<0 OR
+    p_artifact_id IS NULL OR char_length(p_artifact_id) NOT BETWEEN 1 AND 256 OR
+    p_size_bytes IS NULL OR p_size_bytes NOT BETWEEN 0 AND 1073741824 THEN
+    RAISE EXCEPTION 'The import source is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Lock order (design section 3): the header, then its detail row.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-import' THEN
+    RAISE EXCEPTION 'The device import job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_import_jobs i WHERE i.job_id=p_job FOR UPDATE;
+  IF detail.source_type='csv' THEN
+    RAISE EXCEPTION 'The import source is invalid.' USING ERRCODE='22023';
+  END IF;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
+  IF detail.attempt<>p_attempt OR detail.lease_id IS DISTINCT FROM p_lease OR
+    detail.lease_expires_at IS NULL OR detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  SELECT * INTO artifact FROM cc.artifacts a WHERE a.id=p_artifact_id
+    AND a.publication_state='ready' AND a.size_bytes=p_size_bytes
+    AND (a.retention_until IS NULL OR a.retention_until>now_at)
+    AND (a.job_id IS NULL OR a.job_id=p_job::text)
+    FOR UPDATE;
+  IF artifact.id IS NULL THEN
+    RAISE EXCEPTION 'The import source is invalid.' USING ERRCODE='22023';
+  END IF;
+  UPDATE cc.artifacts SET job_id=p_job::text WHERE id=p_artifact_id;
+  UPDATE cc.device_import_jobs SET source_size_bytes=p_size_bytes WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','stored','artifactId',p_artifact_id,'sizeBytes',p_size_bytes);
+END;
+$$;
+
 -- The finish of one export run. It ends the job under the header lock and its detail row. A stored
 -- cancel request ends the job Cancelled and keeps no file. A known failure ends it Failed. A file
--- publishes the file facts and ends it Completed. A repeated call answers the stored status.
+-- publishes the file facts and ends it Completed. A repeated call answers the stored status. The file
+-- splits by format (design section 6): a CSV file holds its artifact, size, and expiry, and a Sheet holds
+-- its spreadsheet ID, the rows, and the columns, and no size or expiry.
 CREATE FUNCTION cc.finish_device_export_job(p_customer text,p_job uuid,p_lease uuid,p_file jsonb DEFAULT NULL,
   p_failure text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -1328,18 +1466,25 @@ BEGIN
     RAISE EXCEPTION 'The export finish is invalid.' USING ERRCODE='22023';
   END IF;
   IF p_file IS NOT NULL THEN
-    IF jsonb_typeof(p_file)<>'object' OR jsonb_typeof(p_file->'artifactId') IS DISTINCT FROM 'string' OR
-      char_length(p_file->>'artifactId') NOT BETWEEN 1 AND 256 OR
+    IF jsonb_typeof(p_file)<>'object' OR
       jsonb_typeof(p_file->'name') IS DISTINCT FROM 'string' OR
       char_length(p_file->>'name') NOT BETWEEN 1 AND 255 OR
-      (CASE WHEN jsonb_typeof(p_file->'sizeBytes')='number' AND pg_input_is_valid(p_file->>'sizeBytes','bigint')
-        THEN (p_file->>'sizeBytes')::bigint<0 ELSE true END) OR
       (CASE WHEN jsonb_typeof(p_file->'rows')='number' AND pg_input_is_valid(p_file->>'rows','integer')
         THEN (p_file->>'rows')::integer NOT BETWEEN 0 AND 50000 ELSE true END) OR
       (CASE WHEN jsonb_typeof(p_file->'columns')='number' AND pg_input_is_valid(p_file->>'columns','integer')
         THEN (p_file->>'columns')::integer NOT BETWEEN 1 AND 64 ELSE true END) OR
-      jsonb_typeof(p_file->'expiresAt') IS DISTINCT FROM 'string' OR
-      NOT pg_input_is_valid(p_file->>'expiresAt','timestamptz') THEN
+      (p_file->'artifactId' IS NOT NULL AND p_file->'artifactId'<>'null'::jsonb AND
+        (jsonb_typeof(p_file->'artifactId') IS DISTINCT FROM 'string' OR
+        char_length(p_file->>'artifactId') NOT BETWEEN 1 AND 256)) OR
+      (p_file->'sizeBytes' IS NOT NULL AND p_file->'sizeBytes'<>'null'::jsonb AND
+        (CASE WHEN jsonb_typeof(p_file->'sizeBytes')='number' AND pg_input_is_valid(p_file->>'sizeBytes','bigint')
+          THEN (p_file->>'sizeBytes')::bigint<0 ELSE true END)) OR
+      (p_file->'expiresAt' IS NOT NULL AND p_file->'expiresAt'<>'null'::jsonb AND
+        (jsonb_typeof(p_file->'expiresAt') IS DISTINCT FROM 'string' OR
+        NOT pg_input_is_valid(p_file->>'expiresAt','timestamptz'))) OR
+      (p_file->'spreadsheetId' IS NOT NULL AND p_file->'spreadsheetId'<>'null'::jsonb AND
+        (jsonb_typeof(p_file->'spreadsheetId') IS DISTINCT FROM 'string' OR
+        p_file->>'spreadsheetId' !~ '^[A-Za-z0-9_-]{1,128}$')) THEN
       RAISE EXCEPTION 'The export file is invalid.' USING ERRCODE='22023';
     END IF;
   END IF;
@@ -1360,7 +1505,8 @@ BEGIN
   IF job.cancel_requested_at IS NOT NULL THEN
     -- A cancelled finish keeps no file, and the cancelled count holds the rows left, at least 1.
     UPDATE cc.device_export_jobs SET file_artifact_id=NULL,file_name=NULL,file_size_bytes=NULL,
-      file_row_count=NULL,file_column_count=NULL,file_expires_at=NULL WHERE job_id=p_job;
+      file_row_count=NULL,file_column_count=NULL,file_expires_at=NULL,spreadsheet_id=NULL
+    WHERE job_id=p_job;
     UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
       cancelled=GREATEST(COALESCE(target_count,0)-succeeded,1) WHERE job_id=p_job;
     PERFORM cc.record_job_change(p_job,true);
@@ -1374,17 +1520,77 @@ BEGIN
   IF p_file IS NULL THEN
     RAISE EXCEPTION 'The export finish requires a file or a failure.' USING ERRCODE='22023';
   END IF;
+  -- The file split reads the stored format under the header and detail locks.
+  IF detail.format='csv' THEN
+    IF p_file->>'artifactId' IS NULL OR p_file->>'sizeBytes' IS NULL OR p_file->>'expiresAt' IS NULL OR
+      (p_file->'spreadsheetId' IS NOT NULL AND p_file->'spreadsheetId'<>'null'::jsonb) THEN
+      RAISE EXCEPTION 'The export file is invalid.' USING ERRCODE='22023';
+    END IF;
+  ELSIF p_file->>'spreadsheetId' IS NULL OR
+    (p_file->'artifactId' IS NOT NULL AND p_file->'artifactId'<>'null'::jsonb) OR
+    (p_file->'sizeBytes' IS NOT NULL AND p_file->'sizeBytes'<>'null'::jsonb) OR
+    (p_file->'expiresAt' IS NOT NULL AND p_file->'expiresAt'<>'null'::jsonb) THEN
+    RAISE EXCEPTION 'The export file is invalid.' USING ERRCODE='22023';
+  END IF;
   UPDATE cc.device_export_jobs SET file_artifact_id=p_file->>'artifactId',file_name=p_file->>'name',
     file_size_bytes=(p_file->>'sizeBytes')::bigint,file_row_count=(p_file->>'rows')::integer,
-    file_column_count=(p_file->>'columns')::integer,file_expires_at=(p_file->>'expiresAt')::timestamptz
+    file_column_count=(p_file->>'columns')::integer,file_expires_at=(p_file->>'expiresAt')::timestamptz,
+    spreadsheet_id=p_file->>'spreadsheetId'
   WHERE job_id=p_job;
+  -- A Sheet ends in its stamp phase, because it has no download to prepare (design section 6).
   UPDATE cc.jobs SET status='completed',succeeded=(p_file->>'rows')::integer,finished_at=now_at,
-    phase='prepare-download',phase_done=0,phase_total=NULL WHERE job_id=p_job;
+    phase=CASE WHEN detail.format='sheet' THEN 'create-sheet' ELSE 'prepare-download' END,
+    phase_done=0,phase_total=NULL WHERE job_id=p_job;
   PERFORM cc.record_job_change(p_job,true);
   RETURN jsonb_build_object('outcome','finished','status','completed','file',jsonb_build_object(
-    'name',p_file->>'name','sizeBytes',(p_file->>'sizeBytes')::bigint,
+    'format',detail.format,'name',p_file->>'name','sizeBytes',(p_file->>'sizeBytes')::bigint,
     'rows',(p_file->>'rows')::integer,'columns',(p_file->>'columns')::integer,
-    'expiresAt',(p_file->>'expiresAt')::timestamptz));
+    'expiresAt',(p_file->>'expiresAt')::timestamptz,'spreadsheetId',p_file->>'spreadsheetId'));
+END;
+$$;
+
+-- The stamp before the one Sheet create of an export (design section 6 step 3). It locks the header, then
+-- the detail row, as the cancel does, so the stamp and a cancel order one after the other and one wins.
+-- A stored cancel request ends the run Cancelled here, before any Sheet exists. Otherwise the first call
+-- stamps sheet_started_at and phase create-sheet, and a repeat keeps the first stamp.
+CREATE FUNCTION cc.start_device_export_sheet(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  -- Lock order (design section 3): the header, then its detail row.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'device-export' THEN
+    RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
+  END IF;
+  SELECT * INTO detail FROM cc.device_export_jobs e WHERE e.job_id=p_job FOR UPDATE;
+  IF detail.format<>'sheet' THEN
+    RAISE EXCEPTION 'The device export job is not a Sheet export.' USING ERRCODE='22023';
+  END IF;
+  now_at:=clock_timestamp();
+  IF job.finished_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','finished','status',job.status);
+  END IF;
+  IF detail.lease_id IS DISTINCT FROM p_lease OR detail.lease_expires_at IS NULL OR
+    detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  IF job.status<>'running' THEN
+    RETURN jsonb_build_object('outcome','finished','status',job.status);
+  END IF;
+  IF job.cancel_requested_at IS NOT NULL THEN
+    -- The request landed before the stamp, so no Sheet exists and the run ends Cancelled at once.
+    UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
+      cancelled=GREATEST(COALESCE(target_count,0)-succeeded,1) WHERE job_id=p_job;
+    PERFORM cc.record_job_change(p_job,true);
+    RETURN jsonb_build_object('outcome','cancelled');
+  END IF;
+  UPDATE cc.device_export_jobs SET sheet_started_at=COALESCE(sheet_started_at,now_at) WHERE job_id=p_job;
+  UPDATE cc.jobs SET phase='create-sheet',phase_done=0,phase_total=NULL WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,false);
+  RETURN jsonb_build_object('outcome','started','startedAt',COALESCE(detail.sheet_started_at,now_at));
 END;
 $$;
 
@@ -1560,7 +1766,7 @@ ALTER TABLE cc.security_events ADD CONSTRAINT security_events_event_check CHECK 
   'connection-staged','connection-stage-failed','connection-stage-expired',
   'connection-token-renewed','connection-token-failed',
   'connection-revoked','connection-checked','credential-key-rotated','school-scope-changed','recovery-required',
-  'job-cancel-requested','device-import-executed'
+  'job-cancel-requested','device-import-executed','drive-settings-changed'
 ));
 
 -- ===== The import plan, the wait, and the cascade (design sections 3 and 7) =====
@@ -1983,12 +2189,14 @@ $$;
 
 -- The job failure codes: the codes of the cc.jobs failure CHECK. A finish, a preparation, and the reaper
 -- reject any other code before their first lock (round 3, eng-lead ruling 2). A null input yields null.
+-- A Sheet export adds `drive-unavailable` and `sheet-write-failed` (Drive slice design section 6).
 CREATE FUNCTION cc.job_failure_known(p_failure text) RETURNS boolean
 LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT p_failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled','policy-restricted',
     'network-failure','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response',
     'wrong-customer','request-failed','key-unavailable','interrupted','orchestration-unavailable',
-    'permission-changed','connection-changed','storage-unavailable','inventory-unavailable','export-too-large');
+    'permission-changed','connection-changed','storage-unavailable','inventory-unavailable','export-too-large',
+    'drive-unavailable','sheet-write-failed');
 $$;
 
 -- Admission order: smallest target count, then oldest creation, then lowest display ID.
@@ -4539,12 +4747,14 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
   cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer),
   cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid),
-  cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid),
-  cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text),
+  cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid,text),
+  cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text,text,integer,text,text),
   cc.claim_device_export_job(text,uuid,uuid),cc.claim_device_import_job(text,uuid,uuid),
   cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
   cc.renew_device_import_job(text,uuid,uuid,integer,text,integer,integer),
   cc.store_device_import_lines(text,uuid,uuid,integer,jsonb),
+  cc.store_device_import_source(text,uuid,uuid,integer,text,bigint),
+  cc.start_device_export_sheet(text,uuid,uuid),
   cc.finish_device_export_job(text,uuid,uuid,jsonb,text),
   cc.finish_device_import_job(text,uuid,uuid,integer,jsonb,text,text,text),
   cc.recover_device_file_jobs(text) FROM PUBLIC;
