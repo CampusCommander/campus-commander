@@ -407,6 +407,86 @@ it('does not restart a stopped device store when the person before answers', asy
   expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
 });
 
+it('recovers the stopped device store on an explicit init after the person before answers', async () => {
+  vi.useFakeTimers();
+  let reads = 0;
+  let release: () => void = () => undefined;
+  let denied = false;
+  const {
+    activity,
+    devices,
+    sources,
+    session,
+    reads: count,
+  } = setup(['jobs:read', 'devices:read'], async () => {
+    reads += 1;
+    // The first read is the person before. It answers only when the test says so.
+    if (reads === 1) {
+      await new Promise<void>((resolve) => (release = resolve));
+      return Response.json({ sync: syncState() });
+    }
+    return denied
+      ? Response.json({ code: 'forbidden' }, { status: 403 })
+      : Response.json({ sync: syncState() });
+  });
+  const feeds = TestBed.inject(LiveFeeds);
+  // The production reopen delay. The replacement open follows the failed reset source.
+  feeds.reopenDelay = 5000;
+  TestBed.tick();
+  const first = devices.init();
+
+  // The job feed owns the tab's one connection while the device admission is in flight.
+  expect(sources).toHaveLength(1);
+  session.set(sessionFor(['jobs:read', 'devices:read'], 'someone-else'));
+  TestBed.tick();
+  expect(sources).toHaveLength(2);
+  sources[1].fail(2);
+  await vi.advanceTimersByTimeAsync(5000);
+  denied = true;
+  const live = sources[sources.length - 1];
+  expect(sources).toHaveLength(3);
+  live.open();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(devices.sync()).toBeNull();
+  expect(activity.live()).toBe(true);
+  expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
+
+  // The stopped Devices page asks for recovery while the person before still answers.
+  denied = false;
+  void devices.init();
+  await vi.advanceTimersByTimeAsync(0);
+  // The old admission still owns the request. No read starts before it answers.
+  expect(count('/api/devices/sync')).toBe(2);
+
+  // The former principal's answer completes, and the current person's admission follows.
+  release();
+  await first;
+  await vi.advanceTimersByTimeAsync(250);
+  expect(count('/api/devices/sync')).toBe(3);
+  expect(devices.sync()?.status).toBe('ready');
+  expect(devices.syncLoaded()).toBe(true);
+
+  // The restored device subscription follows the one live connection. Jobs keep reading.
+  const revision = devices.revision();
+  live.send('full-sync', {
+    type: 'full-sync',
+    sync: syncState(new Date(now - 30_000).toISOString()),
+  });
+  expect(devices.revision()).toBe(revision + 1);
+  const events = count('/api/jobs/activity');
+  live.send('job-changed', {
+    type: 'job-changed',
+    jobId: '33333333-3333-4333-8333-333333333333',
+    displayId: 'UPD-014',
+    revision: 6,
+    requestedBy: actor,
+  });
+  await vi.advanceTimersByTimeAsync(250);
+  expect(activity.live()).toBe(true);
+  expect(count('/api/jobs/activity')).toBeGreaterThan(events);
+  expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
+});
+
 it('keeps the job feed live when the customer has no device sync', async () => {
   vi.useFakeTimers();
   const { activity, devices, sources } = setup(

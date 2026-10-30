@@ -554,7 +554,9 @@ describe('an admission of the person before a stop', () => {
       }
       return stopped ? stop() : Response.json({ sync: state('ready') });
     });
-    const session = signal(sessionFor('actor'));
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
     const store = setup(request, session);
     const feeds = TestBed.inject(LiveFeeds);
     // The production reopen delay. The replacement open follows the failed reset source.
@@ -579,6 +581,7 @@ describe('an admission of the person before a stop', () => {
       store,
       opened,
       first,
+      session,
       reads: () => reads,
       // The stop answered. The person before's answer arrives after status reads succeed again.
       recover: () => {
@@ -675,6 +678,94 @@ describe('an admission of the person before a stop', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(reads).toBe(3);
       expect(store.sync()?.status).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  type Recovery = 'init' | 'remount' | 'resume' | 'reconnect';
+
+  /** Requests the recovery of the stopped store while the person before's answer waits. */
+  async function requestRecovery(
+    kind: Recovery,
+    person: Awaited<ReturnType<typeof delayedPersonAndStop>>,
+  ): Promise<void> {
+    if (kind === 'init') {
+      void person.store.init();
+      return;
+    }
+    if (kind === 'remount') {
+      person.store.leave();
+      void person.store.init();
+      return;
+    }
+    if (kind === 'resume') {
+      // The session is interrupted, then the same person resumes it.
+      person.session.set(null);
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(0);
+      person.session.set(sessionFor('someone-else'));
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(0);
+      return;
+    }
+    // The browser comes back from offline.
+    void person.store.reconnect();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it.each(
+    (['denied', 'missing'] as const).flatMap((stop) =>
+      (
+        [
+          ['an init', 'init'],
+          ['a leave and init', 'remount'],
+          ['a session resume', 'resume'],
+          ['an offline reconnect', 'reconnect'],
+        ] as const
+      ).map(
+        ([label, kind]) =>
+          [`${label} after a ${stop} stop`, kind, stop] as const,
+      ),
+    ),
+  )('recovers on %s', async (_case, kind, stopKind) => {
+    vi.useFakeTimers();
+    try {
+      const stop = () =>
+        stopKind === 'denied'
+          ? Response.json({ code: 'forbidden' }, { status: 403 })
+          : Response.json({ sync: null });
+      const person = await delayedPersonAndStop(stop);
+      const before = person.reads();
+
+      // The explicit request arrives while the person before's answer still waits.
+      person.recover();
+      await requestRecovery(kind, person);
+      // A reconnect reads the status directly. Every other entry waits for the handover.
+      expect(person.reads()).toBe(kind === 'reconnect' ? before + 1 : before);
+
+      person.release();
+      await person.first;
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The handover answered the request: this person's own status read followed.
+      expect(person.reads()).toBe(
+        kind === 'reconnect' ? before + 2 : before + 1,
+      );
+      expect(person.store.sync()?.status).toBe('ready');
+      expect(person.store.syncLoaded()).toBe(true);
+      expect(person.store.error()).toBe('');
+
+      // The restored subscription follows the device events again.
+      expect(person.opened).toHaveLength(3);
+      person.opened[2].open();
+      await vi.advanceTimersByTimeAsync(0);
+      const revision = person.store.revision();
+      person.opened[2].send('full-sync', {
+        type: 'full-sync',
+        sync: state('ready', { observedAt: LATER }),
+      });
+      expect(person.store.revision()).toBe(revision + 1);
     } finally {
       vi.useRealTimers();
     }
