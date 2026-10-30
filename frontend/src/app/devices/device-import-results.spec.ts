@@ -1656,7 +1656,7 @@ describe('Execute and its results', () => {
       'A device with status ACTIVE does not allow this action.',
     );
 
-    // The Failed tab keeps its page. A change that moves from failed to unknown leaves it.
+    // The Failed tab keeps its page. A change that moves from failed to pending leaves it.
     await store.setReportView('failed');
     await render();
     expect(resultCells()).toHaveLength(1);
