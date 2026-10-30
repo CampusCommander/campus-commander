@@ -28,7 +28,7 @@
   <div #status tabindex="-1" role="status" aria-atomic="true">
     @if (error()) {
     <p class="error">{{ error() }}</p>
-    } @if (message()) {
+    } @if (message() && !ready()) {
     <p>{{ message() }}</p>
     } @if (health.error()) {
     <p class="error">{{ health.error() }}</p>
@@ -50,7 +50,11 @@
   </p>
   } @else {
   <form (ngSubmit)="save()">
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+    <mat-form-field
+      appearance="outline"
+      subscriptSizing="dynamic"
+      hideRequiredMarker
+    >
       <mat-label>Picker API key</mat-label>
       <input
         matInput
@@ -73,7 +77,11 @@
       <mat-error>Enter the 39-character API key.</mat-error>
       }
     </mat-form-field>
-    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+    <mat-form-field
+      appearance="outline"
+      subscriptSizing="dynamic"
+      hideRequiredMarker
+    >
       <mat-label>Project number</mat-label>
       <input
         matInput
