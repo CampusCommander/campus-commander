@@ -23,8 +23,11 @@
   overflow-y: auto;
 }
 
-/* The results keep the count sum and the jobs band fixed, and scroll the table only. */
+/* The results keep the count sum and the jobs band fixed, and scroll the table only. The
+   tighter gaps and rows fit the whole ten-line page above the pager at 1440 x 900 (notes,
+   choice 3: no step scrolls at that size, even when a Failed row carries its reason). */
 .step.results {
+  gap: var(--cc-space-md);
   overflow: hidden;
 }
 
@@ -335,4 +338,17 @@
 
 .report-table .col-result {
   min-width: 0;
+}
+
+/* The results table shares the report columns, with a shallower row so one page of ten
+   results, including a Failed row and its reason, fits above the pager (design section 9,
+   state 17 and 17b). */
+.report-table.rs td {
+  height: 26px;
+  padding-block: 2px;
+}
+
+/* The results header is one line, so it takes 30 px, as the approved mockup draws it. */
+.report-table.rs th {
+  height: 30px;
 }

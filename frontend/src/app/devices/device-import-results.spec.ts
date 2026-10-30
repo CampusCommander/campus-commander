@@ -1069,11 +1069,23 @@ describe('Execute and its results', () => {
 
   it('keeps the Execute confirmation and its phrase across unchanged-plan rereads', async () => {
     let plan: JobImportPlan = { ...openPlan };
-    const request = api({
+    const base = api({
       detail: () => importDetail({ plan }),
       proposed: () => report({ plan }),
       failed: () => report({ view: 'failed', plan, lines: [], total: 0 }),
       operations: () => [],
+    });
+    // Hold the next detail read so the confirmation is open while it lands.
+    let holdNext = false;
+    let release!: () => void;
+    const request = vi.fn(async (path: string, body?: unknown) => {
+      if (holdNext && path.endsWith('/IMP-001')) {
+        holdNext = false;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return base(path, body);
     });
     const { store, render, text } = setup(request);
     store.openJob('IMP-001');
@@ -1084,11 +1096,21 @@ describe('Execute and its results', () => {
     await render();
 
     // A late initial-open read and a later reread of the same frozen plan keep the step.
-    store.openJob('IMP-001');
+    holdNext = true;
+    const late = store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('confirm');
+    expect(release).toBeDefined();
+    release();
+    await late;
     await render();
     expect(store.step()).toBe('confirm');
     expect(store.typedPhrase()).toBe('DEPROVISION');
     expect(text()).toContain('Execute 4 changes on 4 devices?');
+
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('confirm');
 
     // A relevant plan change invalidates the confirmation and reads the new plan.
     plan = { ...openPlan, revision: 3 };

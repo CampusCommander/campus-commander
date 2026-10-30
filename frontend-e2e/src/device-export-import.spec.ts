@@ -1256,6 +1256,14 @@ test.describe('Execute and the results', () => {
     await expect(resultCells(page).nth(9)).toContainText(
       'Pending Starts after UPD-001 ends',
     );
+    // Ten lines fit whole above the pager at 1440 x 900 (design section 9, notes choice 3).
+    const runningFit = await panel
+      .locator('.report-table-wrap')
+      .evaluate((node) => ({
+        client: node.clientHeight,
+        scroll: node.scrollHeight,
+      }));
+    expect(runningFit.scroll).toBeLessThanOrEqual(runningFit.client + 1);
     await page.screenshot({ path: testInfo.outputPath('17-executed.png') });
   });
 
@@ -1283,6 +1291,14 @@ test.describe('Execute and the results', () => {
     await expect(resultCells(page).nth(8)).toContainText(
       'A device with status ACTIVE does not allow this action.',
     );
+    // The ten-line page, including the Failed reason, fits whole above the pager.
+    const finishedFit = await panel
+      .locator('.report-table-wrap')
+      .evaluate((node) => ({
+        client: node.clientHeight,
+        scroll: node.scrollHeight,
+      }));
+    expect(finishedFit.scroll).toBeLessThanOrEqual(finishedFit.client + 1);
     await page.screenshot({
       path: testInfo.outputPath('17b-execution-finished.png'),
     });
@@ -1317,12 +1333,35 @@ test.describe('Execute and the results', () => {
 
   test('the second page of the results holds the remaining two changes', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    const panel = await openImport(page, { importRun: 'running' });
+    await expect(resultCells(page)).toHaveCount(10);
+    await panel.getByRole('button', { name: 'Next' }).click();
+    await expect(panel).toContainText('Rows 11–12 of 12 changes');
+    await expect(resultCells(page)).toHaveCount(2);
+    await page.screenshot({ path: testInfo.outputPath('17-page-2.png') });
+    // The close-up of the two remaining rows, where a continued device repeats Row and Device.
+    await page.screenshot({
+      path: testInfo.outputPath('17-row-11-closeup.png'),
+      clip: { x: 160, y: 330, width: 1120, height: 190 },
+    });
+  });
+
+  test('the finished second page keeps its tail rows whole', async ({
+    page,
+  }, testInfo) => {
     const panel = await openImport(page, { importRun: 'finished' });
     await expect(resultCells(page)).toHaveCount(10);
     await panel.getByRole('button', { name: 'Next' }).click();
     await expect(panel).toContainText('Rows 11–12 of 12 changes');
     await expect(resultCells(page)).toHaveCount(2);
+    await expect(resultCells(page).nth(0)).toContainText('Succeeded');
+    await expect(resultCells(page).nth(1)).toContainText('Succeeded');
+    await page.screenshot({ path: testInfo.outputPath('17b-page-2.png') });
+    await page.screenshot({
+      path: testInfo.outputPath('17b-tail-closeup.png'),
+      clip: { x: 160, y: 330, width: 1120, height: 190 },
+    });
   });
 
   test('the dialog follows its jobs through the shared feed and opens no feed', async ({
