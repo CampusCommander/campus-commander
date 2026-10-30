@@ -15,7 +15,7 @@ import {
 import { redisImage } from '../redis/runtime.mjs';
 
 // The B4 checks of design section 8.3: the jobs reads of section 2.5, the two eng-lead functions,
-// and both live streams through the production controllers and a real Redis.
+// and the one live stream through the production controller and a real Redis.
 // Every check runs against the integration PostgreSQL instance through the runtime role.
 const workspace = resolve(import.meta.dirname, '../..');
 const load = (path) => import(pathToFileURL(resolve(workspace, path)).href);
@@ -26,8 +26,8 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     { EventFanout, redisSubscriber },
     { JobsController },
     { JobsService },
-    { DevicesController },
     { DevicesService },
+    { EventsController },
     { AuthGuard },
     { AuthService },
     { ApplicationExceptionFilter, securityHeaders },
@@ -36,8 +36,8 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     load('api/src/app/devices/device-events.ts'),
     load('api/src/app/jobs/jobs.controller.ts'),
     load('api/src/app/jobs/jobs.service.ts'),
-    load('api/src/app/devices/devices.controller.ts'),
     load('api/src/app/devices/devices.service.ts'),
+    load('api/src/app/events/events.controller.ts'),
     load('api/src/app/auth/auth.guard.ts'),
     load('api/src/app/auth/auth.service.ts'),
     load('api/src/app/security.ts'),
@@ -327,8 +327,8 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
       [jobId, operationNumber, field, baselineValue, requestedValue],
     );
 
-  // --- The live stream harness: the production controllers, a real fanout on a test Redis, and
-  // --- the jobs and Devices reads through the runtime role.
+  // --- The live stream harness: the production Events controller, a real fanout on a test Redis,
+  // --- and the jobs and Devices reads through the runtime role.
   const docker = (...args) =>
     execFileSync('docker', args, {
       encoding: 'utf8',
@@ -407,26 +407,21 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     const deadline = Date.now() + ms;
     while (!done() && Date.now() < deadline) await sleep(10);
   };
-  const openJobsStream = async (principalId, grants) => {
+  // The one stream reads its deployment phase on the ping of a stream that carries the job feed
+  // alone. The integration database runs the phase-3 configuration of the route.
+  const streamConfiguration = { deployment: { phase: 3 } };
+  const openStream = async (principalId, grants) => {
     const cookie = `cc-b4-${randomUUID()}`;
     const current = session(principalId, grants);
     liveSessions.set(cookie, current);
     const sink = sseSink();
-    const controller = new JobsController(jobsService, streamAuth, { fanout });
-    await controller.events(
-      { session: current, headers: { cookie }, correlationId: randomUUID() },
-      sink,
+    const controller = new EventsController(
+      jobsService,
+      devicesService,
+      streamAuth,
+      { fanout },
+      streamConfiguration,
     );
-    return { sink, cookie };
-  };
-  const openDevicesStream = async (principalId, grants) => {
-    const cookie = `cc-b4-${randomUUID()}`;
-    const current = session(principalId, grants);
-    liveSessions.set(cookie, current);
-    const sink = sseSink();
-    const controller = new DevicesController(devicesService, streamAuth, {
-      fanout,
-    });
     await controller.events(
       { session: current, headers: { cookie }, correlationId: randomUUID() },
       sink,
@@ -1408,7 +1403,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         );
         await addFieldRow(job.job_id, 1, 'annotatedUser', null, 'Ada Lovelace');
         await addFieldRow(job.job_id, 2, 'notes', null, 'Front desk');
-        const controller = new JobsController(jobsService, streamAuth, {}, {});
+        const controller = new JobsController(jobsService, streamAuth, {});
         const request = {
           session: auditorSession,
           correlationId: randomUUID(),
@@ -1455,12 +1450,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
             operations: 2,
             status: 'running',
           });
-          const controller = new JobsController(
-            jobsService,
-            streamAuth,
-            {},
-            {},
-          );
+          const controller = new JobsController(jobsService, streamAuth, {});
           const request = {
             session: auditorSession,
             correlationId: randomUUID(),
@@ -1903,7 +1893,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     await startStreams();
 
     await check(
-      'the jobs stream sends only job-changed events of visible jobs',
+      'the one stream sends only job-changed events of visible jobs',
       async () => {
         await reset();
         // One job runs at a time per customer, so the two jobs wait in the queue.
@@ -1911,13 +1901,10 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         const theirs = await header({ requestedBy: reader, status: 'queued' });
         const readGrant = { action: 'devices:read', scope: district() };
         const jobsGrant = { action: 'jobs:read', scope: district() };
-        const ownerStream = await openJobsStream(owner, [readGrant]);
-        const auditorStream = await openJobsStream(auditor, [
-          readGrant,
-          jobsGrant,
-        ]);
+        const ownerStream = await openStream(owner, [readGrant]);
+        const auditorStream = await openStream(auditor, [readGrant, jobsGrant]);
         // jobs:read alone opens the stream, without devices:read.
-        const jobsOnlyStream = await openJobsStream(jobReader, [jobsGrant]);
+        const jobsOnlyStream = await openStream(jobReader, [jobsGrant]);
         const jobFrame = (row, revision = 2) => ({
           type: 'job-changed',
           jobId: row.job_id,
@@ -1928,7 +1915,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         try {
           await publish(jobEventsChannel(customer), jobFrame(mine));
           await publish(jobEventsChannel(customer), jobFrame(theirs));
-          // None of these may reach the Jobs stream.
+          // None of these may reach the one stream.
           await publish(jobEventsChannel(customer), {
             type: 'entity-batch',
             jobId: mine.job_id,
@@ -1980,15 +1967,19 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'the jobs stream answers 503 when the subscription is unavailable',
+      'the one stream answers 503 when the subscription is unavailable',
       async () => {
         const sink = sseSink();
         const unavailable = new EventFanout(async () => {
           throw new Error('redis down');
         });
-        const controller = new JobsController(jobsService, streamAuth, {
-          fanout: unavailable,
-        });
+        const controller = new EventsController(
+          jobsService,
+          devicesService,
+          streamAuth,
+          { fanout: unavailable },
+          streamConfiguration,
+        );
         await assert.rejects(
           controller.events(
             {
@@ -2006,17 +1997,17 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'the jobs stream closes at the next ping when read access is revoked',
+      'the one stream closes at the next ping when read access is revoked',
       async () => {
         await reset();
         await header({ requestedBy: owner, status: 'running' });
         const readGrant = { action: 'devices:read', scope: district() };
         const jobsGrant = { action: 'jobs:read', scope: district() };
-        const everyJobStream = await openJobsStream(auditor, [
+        const everyJobStream = await openStream(auditor, [
           readGrant,
           jobsGrant,
         ]);
-        const jobsOnlyStream = await openJobsStream(jobReader, [jobsGrant]);
+        const jobsOnlyStream = await openStream(jobReader, [jobsGrant]);
         try {
           await admin(
             "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='jobs:read'",
@@ -2053,7 +2044,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'the Devices stream gives A, B, and C their own columns and every device ID',
+      'the one stream gives A, B, and C their own columns and every device ID',
       async () => {
         await reset();
         const readGrant = { action: 'devices:read', scope: district() };
@@ -2076,9 +2067,9 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           telemetry_failure='quota',telemetry_failure_requested_by=$2 WHERE customer_id=$1`,
           [customer, b],
         );
-        const aStream = await openDevicesStream(a, [readGrant]);
-        const bStream = await openDevicesStream(b, [readGrant]);
-        const cStream = await openDevicesStream(c, [readGrant, jobsGrant]);
+        const aStream = await openStream(a, [readGrant]);
+        const bStream = await openStream(b, [readGrant]);
+        const cStream = await openStream(c, [readGrant, jobsGrant]);
         try {
           const stepOne = (
             await adminRow('SELECT cc.device_sync_projection($1) AS sync', [
@@ -2235,7 +2226,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
-      'a ping closes the Devices stream when jobs:read is revoked',
+      'a ping closes the one stream when jobs:read is revoked',
       async () => {
         await reset();
         const readGrant = { action: 'devices:read', scope: district() };
@@ -2251,7 +2242,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
           telemetry_failure_requested_by=NULL WHERE customer_id=$1`,
           [customer],
         );
-        const stream = await openDevicesStream(c, [readGrant, jobsGrant]);
+        const stream = await openStream(c, [readGrant, jobsGrant]);
         try {
           await admin(
             "DELETE FROM cc.application_grants WHERE principal_id=$1 AND action='jobs:read'",
