@@ -489,15 +489,16 @@ export class GoogleDriveClient {
       } catch (error) {
         // A Drive condition, the cap, and a malformed answer are final answers.
         if (error instanceof GoogleDriveError) throw error;
+        const mapped =
+          error instanceof GoogleConnectionError ? error : failure(error);
         if (
           attempt >= this.clock.maxAttempts ||
           this.signal.aborted ||
-          !retryable(error)
+          !retryable(mapped)
         )
-          throw error instanceof GoogleConnectionError ? error : failure(error);
+          throw mapped;
         await this.clock.sleep(this.delay(attempt), this.signal);
-        if (this.signal.aborted)
-          throw error instanceof GoogleConnectionError ? error : failure(error);
+        if (this.signal.aborted) throw mapped;
       }
     }
   }
