@@ -4,7 +4,9 @@
  *
  * `answer(call, index)` answers one request. It returns `{ status?, data }`, and a status outside
  * 2xx throws the way gaxios does, with `error.response`. It returns an Error to throw that error.
- * `call` holds the URL, the query, the method, the headers, and the parsed JSON body.
+ * `call` holds the URL, the query, the method, the headers, the parsed JSON body, and the response
+ * type. A stream request receives the JSON text of `data` unless `data` is a stream itself, so a
+ * values window arrives as bytes.
  */
 import { Readable } from 'node:stream';
 
