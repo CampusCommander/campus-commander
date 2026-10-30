@@ -461,7 +461,8 @@ export function cancelBanner(job: Pick<JobDetail, 'action'>): CancelBannerCopy {
 
 export interface CancelQuestion {
   title: string;
-  paragraphs: readonly [string, string];
+  /** The paragraphs of the question, named by aria-describedby (state 25 adds a third). */
+  paragraphs: readonly string[];
   dismissLabel: string;
   confirmLabel: string;
 }
@@ -486,11 +487,57 @@ function confirmedNoun(job: JobDetail): { one: string; many: string } {
 }
 
 /**
- * The question of one cancel (choices 3 to 7, and the O1 refresh ruling).
+ * The question of one cancel (choices 3 to 7, the O1 refresh ruling, and state 25).
  * A running job names the pending count and the work already sent.
  * A job that has not started names every operation and the untouched devices.
+ * The update job of an import adds the sentence that names the status jobs which wait for it.
  */
 export function cancelQuestion(job: JobDetail): CancelQuestion {
+  const question = baseCancelQuestion(job);
+  const waiting =
+    job.action === 'update-device-annotations' ? waitingJobsSentence(job) : '';
+  if (waiting === '') return question;
+  return { ...question, paragraphs: [...question.paragraphs, waiting] };
+}
+
+/** "A", "A and B", "A, B, and C" (state 25). */
+function andList(values: readonly string[]): string {
+  if (values.length <= 1) return values.join('');
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
+}
+
+/**
+ * The identity line of a plan job: its import, and the status jobs that wait for an update job
+ * (behavior 10). A job of another kind has no import and reads no line.
+ */
+export function importPlanLine(
+  job: Pick<JobDetail, 'importDisplayId' | 'waitingDisplayIds'>,
+): string | null {
+  const importId = job.importDisplayId;
+  if (!importId) return null;
+  const waiting = job.waitingDisplayIds ?? [];
+  return waiting.length > 0
+    ? `Import ${importId} · ${andList(waiting)}`
+    : `Import ${importId}`;
+}
+
+/**
+ * The sentence that names the status jobs which wait for an update job (state 25). Those jobs
+ * never start when the update job ends Cancelled.
+ */
+export function waitingJobsSentence(
+  job: Pick<JobDetail, 'waitingDisplayIds'>,
+): string {
+  const waiting = job.waitingDisplayIds ?? [];
+  if (waiting.length === 0) return '';
+  if (waiting.length === 1)
+    return `The waiting status job ${waiting[0]} also ends Cancelled and never starts.`;
+  return `The waiting status jobs ${andList(waiting)} also end Cancelled and never start.`;
+}
+
+/** The question of one cancel, without the sentence that state 25 adds. */
+function baseCancelQuestion(job: JobDetail): CancelQuestion {
   const title = `Cancel pending work on ${job.displayId}?`;
   const confirmLabel = 'Cancel pending work';
   const succeeded = job.progress.succeeded;
