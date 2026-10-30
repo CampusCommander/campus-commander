@@ -456,7 +456,10 @@ test(
             });
           if (url.pathname === '/jwks') return json({ keys: [jwk] });
           if (url.pathname === '/authorize') {
-            assert.equal(url.searchParams.get('scope'), 'openid profile');
+            assert.equal(
+              url.searchParams.get('scope'),
+              'openid profile email',
+            );
             assert.equal(
               url.searchParams.get('redirect_uri'),
               `${publicOrigin}/api/auth/callback`,
@@ -527,8 +530,20 @@ test(
                 iss: invalidIssuer ? 'https://invalid.example' : issuer,
                 aud: invalidAudience ? 'wrong-client' : 'synthetic-client',
                 sub: grant.subject,
+                // The review administrator signs in as the delegated email of the run, so the
+                // session carries the Drive subject of the mock or the synthetic fixture.
                 ...(clientReview
-                  ? { name: reviewIdentities.get(grant.subject) }
+                  ? {
+                      name: reviewIdentities.get(grant.subject),
+                      ...(grant.subject === 'administrator'
+                        ? {
+                            email:
+                              mock?.adminEmail ??
+                              'administrator@fixture.invalid',
+                            email_verified: true,
+                          }
+                        : {}),
+                    }
                   : {}),
                 nonce: invalidNonce ? 'wrong' : grant.nonce,
                 iat: Math.floor(Date.now() / 1000),
