@@ -497,15 +497,17 @@ function spellCount(value: number): string {
  * a plan with status changes only creates one job per action.
  */
 export function executeJobsLine(fieldChanges: boolean, statusJobs: number): string {
-  if (fieldChanges && statusJobs > 0)
+  if (fieldChanges && statusJobs > 1)
     return `Execute creates ${spellCount(
       statusJobs + 1,
     )} jobs. The update job runs first. The ${spellCount(
       statusJobs,
-    )} status ${statusJobs === 1 ? 'job starts' : 'jobs start'} after it ends.`;
+    )} status jobs start after it ends.`;
+  if (fieldChanges && statusJobs === 1)
+    return 'Execute creates two jobs. The update job runs first. The status job starts after it ends.';
   if (fieldChanges) return 'Execute creates one job. The update job runs first.';
   if (statusJobs === 1)
-    return 'Execute creates one status job. It runs its own action.';
+    return 'Execute creates one job. It runs its own action.';
   return `Execute creates ${spellCount(
     statusJobs,
   )} status jobs. Each one runs its own action.`;
