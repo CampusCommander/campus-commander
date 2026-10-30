@@ -1372,8 +1372,12 @@ test.describe('Execute and the results', () => {
     await expect(panel).toContainText('Updated live');
     // One feed in the tab. The dialog shares it and opens none of its own (design section 8).
     await expect.poll(() => streams.constructedCount('/api/events')).toBe(1);
-    // A tab switch reads the failed view and still adds no stream.
-    await panel.locator('.report-tabs button').nth(1).click();
+    // A tab switch reads the failed view and still adds no stream. The tab is a real control, so
+    // Enter selects it from the keyboard (UI-09).
+    const failedTab = panel.locator('.report-tabs button').nth(1);
+    await failedTab.focus();
+    await page.keyboard.press('Enter');
+    await expect(failedTab).toBeFocused();
     await expect(panel).toContainText('No change failed.');
     // The empty view keeps its centered message, not a collapsed results row.
     await expect
