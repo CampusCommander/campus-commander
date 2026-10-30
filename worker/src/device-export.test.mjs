@@ -1226,6 +1226,51 @@ test('an empty Sheet scope writes the header row and no data rows', async () => 
   assert.equal(answer.file.rows, 0);
 });
 
+test('the Sheet client is minted for the claimed subject and credential', async () => {
+  const granted = [];
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    drive: async (access) => {
+      granted.push(access);
+      throw new Error('delegation-not-authorized');
+    },
+  });
+  await sheet.run();
+
+  // The claim carries the connection credential, and the worker mints the token for the subject of
+  // the job (design section 4).
+  assert.deepEqual(granted, [
+    {
+      customerId,
+      subject: 'editor@example.org',
+      credentialId,
+      generation: 3,
+      envelope: {
+        format: 1,
+        keyId: 'test-key-1',
+        iv: 'iv',
+        tag: 'tag',
+        ciphertext: 'ciphertext',
+      },
+    },
+  ]);
+});
+
+test('a CSV export mints no Drive client', async () => {
+  let minted = 0;
+  const csv = harness({
+    drive: async () => {
+      minted += 1;
+      throw new Error('the CSV path creates no Sheet');
+    },
+  });
+  const answer = await csv.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.file.format, 'csv');
+  assert.equal(minted, 0);
+});
+
 test('the dispatch route answers one export request', async () => {
   const answers = [];
   const google = {
