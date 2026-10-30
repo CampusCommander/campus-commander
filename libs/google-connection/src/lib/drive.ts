@@ -424,82 +424,15 @@ export class GoogleDriveClient {
     };
   }
 
-  /** One values window, padded to the header width by `tabRows`. */
-  private async valuesWindow(
-    fileId: string,
-    title: string,
-    start: number,
-    columns: number,
-  ): Promise<string[][]> {
-    const range = `${quoteTitle(title)}!A${start + 1}:${columnName(columns)}${
-      start + GOOGLE_DRIVE_WINDOW_ROWS
-    }`;
-    const data = await this.read(
-      `${GOOGLE_SHEETS_API}/spreadsheets/${fileId}/values/${encodeURIComponent(
-        range,
-      )}`,
-      {
-        majorDimension: 'ROWS',
-        valueRenderOption: 'FORMATTED_VALUE',
-        fields: 'values',
-      },
-    );
-    // The 64 MiB cap reads the JSON text of the answer, before any row is built (design section 7).
-    if (
-      Buffer.byteLength(JSON.stringify(data) ?? '', 'utf8') >
-      GOOGLE_DRIVE_WINDOW_BYTES
-    )
-      throw new GoogleDriveError('rows-too-large');
-    const answer = parsed(valuesResponse, data);
-    return (answer.values ?? []).map((row) => row.map((cell) => cell ?? ''));
-  }
-
-  /**
-   * Read the windows of one tab in row order. Each row pads to the header width. A value right of
-   * the header refuses as `ragged-record`, and data row 50,001 refuses as `too-many-rows`.
-   */
-  private async *tabRows(
-    fileId: string,
-    title: string,
-    columns: number,
-    total: number,
-  ): AsyncIterable<string[]> {
-    let headerWidth = 0;
-    let dataRows = 0;
-    for (let start = 0; start < total; start += GOOGLE_DRIVE_WINDOW_ROWS) {
-      const window = await this.valuesWindow(fileId, title, start, columns);
-      // The API trims a range of blank rows to nothing, so an empty window ends the read.
-      if (window.length === 0) return;
-      for (const [offset, row] of window.entries()) {
-        if (start === 0 && offset === 0) headerWidth = row.length;
-        if (row.length > headerWidth)
-          throw new GoogleDriveError('ragged-record');
-        const padded =
-          row.length === headerWidth
-            ? row
-            : [...row, ...Array<string>(headerWidth - row.length).fill('')];
-        if (start !== 0 || offset !== 0) {
-          dataRows += 1;
-          if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
-            throw new GoogleDriveError('too-many-rows');
-        }
-        yield padded;
-      }
-    }
-  }
-
-  /** Stream the bytes of one file, `files.get` with `alt=media` (design section 7). */
-  async *stream(fileId: string): AsyncIterable<Uint8Array> {
-    googleDriveFileIdSchema.parse(fileId);
+  /** Open one GET as a byte stream. A missing file or a lost grant is `drive-file-unavailable`. */
+  private async openStream(
+    url: string,
+    params: Record<string, string | number | boolean>,
+  ): Promise<AsyncIterable<Uint8Array>> {
     let response: GoogleDriveHttpResponse;
     try {
       response = await this.send(
-        {
-          url: `${GOOGLE_DRIVE_API}/files/${fileId}`,
-          method: 'GET',
-          params: { alt: 'media' },
-          responseType: 'stream',
-        },
+        { url, method: 'GET', params, responseType: 'stream' },
         this.clock.maxAttempts,
       );
     } catch (error) {
@@ -520,8 +453,108 @@ export class GoogleDriveClient {
       !(Symbol.asyncIterator in body)
     )
       throw new GoogleConnectionError('invalid-response');
+    return body as AsyncIterable<Uint8Array>;
+  }
+
+  /**
+   * One values window, padded to the header width by `tabRows`. The 64 MiB cap counts the bytes of
+   * the answer before any row is parsed (design section 7). A JSON parse removes whitespace and
+   * rewrites escapes, so the count must run on the response itself.
+   */
+  private async valuesWindow(
+    fileId: string,
+    title: string,
+    start: number,
+    columns: number,
+  ): Promise<string[][]> {
+    const range = `${quoteTitle(title)}!A${start + 1}:${columnName(columns)}${
+      start + GOOGLE_DRIVE_WINDOW_ROWS
+    }`;
+    const body = await this.openStream(
+      `${GOOGLE_SHEETS_API}/spreadsheets/${fileId}/values/${encodeURIComponent(
+        range,
+      )}`,
+      {
+        majorDimension: 'ROWS',
+        valueRenderOption: 'FORMATTED_VALUE',
+        fields: 'values',
+      },
+    );
+    const chunks: Buffer[] = [];
     let bytes = 0;
-    for await (const chunk of body as AsyncIterable<unknown>) {
+    for await (const chunk of body) {
+      if (!(chunk instanceof Uint8Array))
+        throw new GoogleConnectionError('invalid-response');
+      bytes += chunk.byteLength;
+      if (bytes > GOOGLE_DRIVE_WINDOW_BYTES)
+        throw new GoogleDriveError('rows-too-large');
+      chunks.push(Buffer.from(chunk));
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(Buffer.concat(chunks, bytes).toString('utf8'));
+    } catch {
+      throw new GoogleConnectionError('invalid-response');
+    }
+    const answer = parsed(valuesResponse, data);
+    return (answer.values ?? []).map((row) => row.map((cell) => cell ?? ''));
+  }
+
+  /**
+   * Read the windows of one tab in row order. A blank row holds its source position, so a later row
+   * keeps the number that the person sees (technical design sections 9.1 and 9.3). Each row pads to
+   * the header width. A value right of the header refuses as `ragged-record`. Nonblank data row
+   * 50,001 refuses as `too-many-rows`.
+   */
+  private async *tabRows(
+    fileId: string,
+    title: string,
+    columns: number,
+    total: number,
+  ): AsyncIterable<string[]> {
+    let headerWidth = 0;
+    let headerRead = false;
+    let dataRows = 0;
+    // Blank rows wait for a later value. A gap then keeps its source rows, and the blank rows at
+    // the end of the tab cost nothing.
+    let blanks = 0;
+    for (let start = 0; start < total; start += GOOGLE_DRIVE_WINDOW_ROWS) {
+      const window = await this.valuesWindow(fileId, title, start, columns);
+      const covered = Math.min(GOOGLE_DRIVE_WINDOW_ROWS, total - start);
+      for (let offset = 0; offset < covered; offset += 1) {
+        // Google trims the blank rows at the end of a requested window, so an omitted row is blank.
+        const row = window[offset] ?? [];
+        if (row.every((cell) => cell.trim() === '')) {
+          blanks += 1;
+          continue;
+        }
+        if (!headerRead) {
+          headerRead = true;
+          headerWidth = row.length;
+        } else {
+          dataRows += 1;
+          if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
+            throw new GoogleDriveError('too-many-rows');
+        }
+        if (row.length > headerWidth)
+          throw new GoogleDriveError('ragged-record');
+        for (; blanks > 0; blanks -= 1)
+          yield Array<string>(headerWidth).fill('');
+        yield row.length === headerWidth
+          ? [...row]
+          : [...row, ...Array<string>(headerWidth - row.length).fill('')];
+      }
+    }
+  }
+
+  /** Stream the bytes of one file, `files.get` with `alt=media` (design section 7). */
+  async *stream(fileId: string): AsyncIterable<Uint8Array> {
+    googleDriveFileIdSchema.parse(fileId);
+    const body = await this.openStream(`${GOOGLE_DRIVE_API}/files/${fileId}`, {
+      alt: 'media',
+    });
+    let bytes = 0;
+    for await (const chunk of body) {
       if (!(chunk instanceof Uint8Array))
         throw new GoogleConnectionError('invalid-response');
       bytes += chunk.byteLength;

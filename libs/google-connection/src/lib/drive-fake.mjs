@@ -8,6 +8,15 @@
  */
 import { Readable } from 'node:stream';
 
+/** Whether a value is a byte stream, as the media answer of `files.get` is. */
+function streamed(value) {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Symbol.asyncIterator in value
+  );
+}
+
 export function fakeDrive(answer) {
   const sent = [];
   const client = {
@@ -43,7 +52,12 @@ export function fakeDrive(answer) {
       return {
         status,
         headers: new Headers(reply.headers ?? {}),
-        data: reply.data,
+        data:
+          call.responseType === 'stream' &&
+          reply.data !== undefined &&
+          !streamed(reply.data)
+            ? Readable.from([Buffer.from(JSON.stringify(reply.data), 'utf8')])
+            : reply.data,
       };
     },
   };

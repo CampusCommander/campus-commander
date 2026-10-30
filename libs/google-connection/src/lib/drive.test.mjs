@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 import { JWT, OAuth2Client } from 'google-auth-library';
+import { createCsvReader, createCsvWriter } from '@campus/application-contracts';
 import {
   GOOGLE_DRIVE_SCOPE,
   GOOGLE_DRIVE_SOURCE_BYTES,
@@ -54,6 +55,52 @@ async function collected(source) {
   return items;
 }
 
+/** A response body of exactly `bytes` bytes, streamed as a Google answer arrives. */
+function filled(bytes, prefix = '', suffix = '') {
+  let fill = bytes - prefix.length - suffix.length;
+  return new ReadableStream({
+    start(controller) {
+      if (prefix !== '') controller.enqueue(Buffer.from(prefix));
+      const chunk = new Uint8Array(64 * 1024).fill(0x78);
+      while (fill > 0) {
+        const take = Math.min(fill, chunk.length);
+        controller.enqueue(chunk.subarray(0, take));
+        fill -= take;
+      }
+      if (suffix !== '') controller.enqueue(Buffer.from(suffix));
+      controller.close();
+    },
+  });
+}
+const jsonWindow = (bytes) => filled(bytes, '{"values":[["', '"]]}');
+const rawWindow = (bytes) => filled(bytes);
+
+/**
+ * A real OAuth2Client whose transport answers from memory. Gaxios and fetch carry the response, so
+ * a window test counts the bytes of a real answer rather than a re-serialized object.
+ */
+function byteClient(body, headers = {}) {
+  const oauth = new OAuth2Client();
+  oauth.setCredentials({ access_token: mintedToken });
+  oauth.transporter.defaults.fetchImplementation = async (input) =>
+    new URL(String(input)).pathname.includes('/values/')
+      ? new Response(body(), { status: 200, headers })
+      : new Response(JSON.stringify(sheetAnswer([sheetProperties]).data), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+  return oauth;
+}
+
+/** Read the rows of a tab through the CSV writer and reader that the import stage uses. */
+async function csvRecords(rows) {
+  const writer = createCsvWriter();
+  let stage = writer.start();
+  for await (const row of rows) stage += writer.row(row);
+  const reader = createCsvReader();
+  return [...reader.push(stage), ...reader.end()];
+}
+
 function reply(call) {
   if (call.path === '/drive/v3/files/fixture-sheet')
     return ok({ name: 'Devices', mimeType: GOOGLE_SHEET_MIME_TYPE });
@@ -94,12 +141,16 @@ test('one drive.file token for the person, sent on every call', async (t) => {
       path: url.pathname,
       authorization: options.headers.get('authorization'),
     });
-    if (options.responseType === 'stream')
+    if (options.responseType === 'stream') {
+      const bytes = url.pathname.includes('/values/')
+        ? Buffer.from(JSON.stringify(reply({ path: url.pathname }).data))
+        : Buffer.from('a,b\n');
       return {
         status: 200,
         headers: new Headers(),
-        data: Readable.from([Buffer.from('a,b\n')]),
+        data: Readable.from([bytes]),
       };
+    }
     const answer = reply({ path: url.pathname });
     return { status: 200, headers: new Headers(), data: answer.data };
   });
@@ -319,14 +370,24 @@ test('reads a tab in windows of one thousand rows and pads each row', async () =
   const tab = await client.readTab('fixture-sheet', 0);
   const read = await collected(tab.rows());
   assert.equal(tab.title, 'Devices');
-  assert.equal(read.length, 1003);
+  assert.equal(
+    read.length,
+    2001,
+    'The trimmed rows of the first window hold their positions.',
+  );
   assert.deepEqual(read[0], ['Device ID', 'Serial']);
   assert.deepEqual(
     read[1],
     ['device-1', ''],
     'A short row pads to the header.',
   );
-  assert.deepEqual(read[1002], ['device-last', 'serial-last']);
+  assert.deepEqual(read[2], ['', ''], 'A trimmed row keeps its place.');
+  assert.deepEqual(
+    read[1000],
+    ['device', 'serial'],
+    'Window two starts at source row 1,001.',
+  );
+  assert.deepEqual(read[2000], ['device-last', 'serial-last']);
   assert.deepEqual(
     google.sent
       .filter((call) => call.path.includes('/values/'))
@@ -340,27 +401,130 @@ test('reads a tab in windows of one thousand rows and pads each row', async () =
   });
 });
 
-test('an empty window ends the read before the grid ends', async () => {
+test('reads across an empty window and keeps every later device', async () => {
+  const total = 3000;
   const google = fakeDrive((call) => {
     if (call.path === '/v4/spreadsheets/fixture-sheet')
       return sheetAnswer([
         {
           ...sheetProperties,
-          gridProperties: { columnCount: 1, rowCount: 5000 },
+          gridProperties: { columnCount: 1, rowCount: total },
+        },
+      ]);
+    const start = Number(/!A(\d+):/.exec(decodeURIComponent(call.path))[1]) - 1;
+    if (start === 0) return valuesAnswer([['Device ID'], ['device-1']]);
+    if (start === 1000) return valuesAnswer(undefined);
+    return valuesAnswer([['device-last']]);
+  });
+  const client = new GoogleDriveClient(google.client, signal);
+  const tab = await client.readTab('fixture-sheet', 0);
+  const read = await collected(tab.rows());
+  assert.equal(
+    read.length,
+    2001,
+    'The rows keep the position of the last device.',
+  );
+  assert.deepEqual(read[0], ['Device ID']);
+  assert.deepEqual(read[1], ['device-1']);
+  assert.deepEqual(read[1999], [''], 'The gap before the last device is held.');
+  assert.deepEqual(read[2000], ['device-last']);
+  assert.equal(
+    google.sent.filter((call) => call.path.includes('/values/')).length,
+    3,
+    'An empty window does not end the read.',
+  );
+});
+
+test('a value after a shortened window keeps its source row', async () => {
+  const google = fakeDrive((call) => {
+    if (call.path === '/v4/spreadsheets/fixture-sheet')
+      return sheetAnswer([
+        {
+          ...sheetProperties,
+          gridProperties: { columnCount: 2, rowCount: 2000 },
         },
       ]);
     const start = Number(/!A(\d+):/.exec(decodeURIComponent(call.path))[1]) - 1;
     return start === 0
-      ? valuesAnswer([['Device ID'], ['device-1']])
-      : valuesAnswer(undefined);
+      ? valuesAnswer([
+          ['Device ID', 'Serial'],
+          ['device-1', 'serial-1'],
+        ])
+      : valuesAnswer([['device-1001', 'serial-1001']]);
   });
   const client = new GoogleDriveClient(google.client, signal);
   const tab = await client.readTab('fixture-sheet', 0);
-  assert.equal((await collected(tab.rows())).length, 2);
-  assert.equal(
-    google.sent.filter((call) => call.path.includes('/values/')).length,
-    2,
+  assert.deepEqual(
+    (await csvRecords(tab.rows())).map((record) => [
+      record.row,
+      record.cells[0],
+    ]),
+    [
+      [1, 'Device ID'],
+      [2, 'device-1'],
+      [1001, 'device-1001'],
+    ],
   );
+});
+
+test('the first nonblank record is the header and blank records keep their rows', async () => {
+  const google = fakeDrive((call) => {
+    if (call.path === '/v4/spreadsheets/fixture-sheet')
+      return sheetAnswer([
+        {
+          ...sheetProperties,
+          gridProperties: { columnCount: 2, rowCount: 6 },
+        },
+      ]);
+    return valuesAnswer([
+      [],
+      ['Device ID', 'Serial'],
+      ['device-1', 'serial-1'],
+      [],
+      ['device-2', 'serial-2'],
+    ]);
+  });
+  const client = new GoogleDriveClient(google.client, signal);
+  const tab = await client.readTab('fixture-sheet', 0);
+  assert.deepEqual(await collected(tab.rows()), [
+    ['', ''],
+    ['Device ID', 'Serial'],
+    ['device-1', 'serial-1'],
+    ['', ''],
+    ['device-2', 'serial-2'],
+  ]);
+  assert.deepEqual(
+    (await csvRecords(tab.rows())).map((record) => [
+      record.row,
+      record.cells[0],
+    ]),
+    [
+      [2, 'Device ID'],
+      [3, 'device-1'],
+      [5, 'device-2'],
+    ],
+  );
+});
+
+test('blank records count toward no limit', async () => {
+  const total = 51_000;
+  const google = fakeDrive((call) => {
+    if (call.path === '/v4/spreadsheets/fixture-sheet')
+      return sheetAnswer([
+        {
+          ...sheetProperties,
+          gridProperties: { columnCount: 1, rowCount: total },
+        },
+      ]);
+    const start = Number(/!A(\d+):/.exec(decodeURIComponent(call.path))[1]) - 1;
+    return valuesAnswer([[start === 0 ? 'Device ID' : `device-${start + 1}`]]);
+  });
+  const client = new GoogleDriveClient(google.client, signal);
+  const tab = await client.readTab('fixture-sheet', 0);
+  const read = await collected(tab.rows());
+  assert.equal(read.length, 50_001, 'The last record keeps source row 50,001.');
+  assert.deepEqual(read[1], [''], 'A blank record counts nowhere.');
+  assert.deepEqual(read[50_000], ['device-50001']);
 });
 
 test('a value right of the header refuses as ragged-record', async () => {
@@ -418,17 +582,58 @@ test('data row 50,001 refuses as too-many-rows', async () => {
   assert.equal(read, 50_001, 'The header and 50,000 data rows were read.');
 });
 
-test('a values answer above 64 MiB refuses as rows-too-large', async () => {
-  const google = fakeDrive((call) =>
-    call.path === '/v4/spreadsheets/fixture-sheet'
-      ? sheetAnswer([sheetProperties])
-      : ok({ values: [['x'.repeat(GOOGLE_DRIVE_WINDOW_BYTES)]] }),
+for (const contentLength of [true, false])
+  test(`a window above 64 MiB refuses as rows-too-large with Content-Length ${
+    contentLength ? 'present' : 'absent'
+  }`, async () => {
+    const size = GOOGLE_DRIVE_WINDOW_BYTES + 1;
+    const client = new GoogleDriveClient(
+      byteClient(
+        () => jsonWindow(size),
+        contentLength ? { 'content-length': String(size) } : {},
+      ),
+      AbortSignal.timeout(30_000),
+    );
+    const tab = await client.readTab('fixture-sheet', 0);
+    await assert.rejects(collected(tab.rows()), {
+      name: 'GoogleDriveError',
+      code: 'rows-too-large',
+    });
+  });
+
+test('a window of exactly 64 MiB is read', async () => {
+  const size = GOOGLE_DRIVE_WINDOW_BYTES;
+  const client = new GoogleDriveClient(
+    byteClient(() => jsonWindow(size), { 'content-length': String(size) }),
+    AbortSignal.timeout(30_000),
   );
-  const client = new GoogleDriveClient(google.client, signal);
+  const tab = await client.readTab('fixture-sheet', 0);
+  const read = await collected(tab.rows());
+  assert.equal(read.length, 1);
+  assert.equal(read[0][0].length, size - '{"values":[["'.length - '"]]}'.length);
+});
+
+test('the byte cap refuses before the JSON parse', async () => {
+  const client = new GoogleDriveClient(
+    byteClient(() => rawWindow(GOOGLE_DRIVE_WINDOW_BYTES + 1)),
+    AbortSignal.timeout(30_000),
+  );
   const tab = await client.readTab('fixture-sheet', 0);
   await assert.rejects(collected(tab.rows()), {
     name: 'GoogleDriveError',
     code: 'rows-too-large',
+  });
+});
+
+test('a window that is not JSON is invalid-response', async () => {
+  const client = new GoogleDriveClient(
+    byteClient(() => rawWindow(16)),
+    AbortSignal.timeout(30_000),
+  );
+  const tab = await client.readTab('fixture-sheet', 0);
+  await assert.rejects(collected(tab.rows()), {
+    name: 'GoogleConnectionError',
+    code: 'invalid-response',
   });
 });
 
