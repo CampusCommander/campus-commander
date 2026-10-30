@@ -1433,9 +1433,14 @@ test.describe('Execute and the results', () => {
     expect(await streams.constructions()).toEqual(['/api/events']);
   });
 
-  test('the results controls wait for a held IMP detail read', async ({ page }) => {
+  test('the results controls wait for a held IMP detail read', async ({
+    page,
+  }) => {
     const hold = detailHold();
-    const panel = await openImport(page, { importRun: 'running', holdDetail: hold });
+    const panel = await openImport(page, {
+      importRun: 'running',
+      holdDetail: hold,
+    });
     await expect(panel).toContainText('Rows 1–10 of 12 changes');
     const streams = liveStreams(page);
     await streams.waitForOpen('/api/events');

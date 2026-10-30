@@ -715,9 +715,9 @@ function clickControl(element: HTMLElement, control: ResultsControl): void {
       ? element.querySelector<HTMLButtonElement>(
           `button[aria-label="${control} results page"]`,
         )
-      : [...element.querySelectorAll<HTMLButtonElement>('.report-tabs button')].find(
-          (tab) => tab.textContent?.includes(control),
-        );
+      : [
+          ...element.querySelectorAll<HTMLButtonElement>('.report-tabs button'),
+        ].find((tab) => tab.textContent?.includes(control));
   expect(button).toBeDefined();
   button?.click();
 }
