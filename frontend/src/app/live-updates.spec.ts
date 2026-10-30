@@ -340,20 +340,23 @@ it('does not restart a stopped device store when the person before answers', asy
   let reads = 0;
   let release: () => void = () => undefined;
   let denied = false;
-  const { activity, devices, sources, session, reads: count } = setup(
-    ['jobs:read', 'devices:read'],
-    async () => {
-      reads += 1;
-      // The first read is the person before. It answers only when the test says so.
-      if (reads === 1) {
-        await new Promise<void>((resolve) => (release = resolve));
-        return Response.json({ sync: syncState() });
-      }
-      return denied
-        ? Response.json({ code: 'forbidden' }, { status: 403 })
-        : Response.json({ sync: syncState() });
-    },
-  );
+  const {
+    activity,
+    devices,
+    sources,
+    session,
+    reads: count,
+  } = setup(['jobs:read', 'devices:read'], async () => {
+    reads += 1;
+    // The first read is the person before. It answers only when the test says so.
+    if (reads === 1) {
+      await new Promise<void>((resolve) => (release = resolve));
+      return Response.json({ sync: syncState() });
+    }
+    return denied
+      ? Response.json({ code: 'forbidden' }, { status: 403 })
+      : Response.json({ sync: syncState() });
+  });
   const feeds = TestBed.inject(LiveFeeds);
   // The production reopen delay. The replacement open follows the failed reset source.
   feeds.reopenDelay = 5000;

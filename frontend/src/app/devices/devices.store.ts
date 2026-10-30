@@ -394,7 +394,11 @@ export class DevicesStore {
       this.connecting = null;
       // A reset during the read gave the admission to another person. That person still needs
       // it, unless a newer open or a stop of that person already decided.
-      if (epoch !== this.epoch && this.admissionEpoch !== this.epoch && this.streamWanted)
+      if (
+        epoch !== this.epoch &&
+        this.admissionEpoch !== this.epoch &&
+        this.streamWanted
+      )
         void this.connect();
     });
     this.connecting = read;

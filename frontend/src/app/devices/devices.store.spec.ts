@@ -634,10 +634,13 @@ describe('an admission of the person before a stop', () => {
       const request = vi.fn(async (path: string) => {
         if (path === '/api/devices/freshness')
           return Response.json({ freshness: { stale: 0, refreshing: false } });
-        if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+        if (path !== '/api/devices/sync')
+          throw new TypeError('Failed to fetch');
         const read = ++reads;
-        if (read === 1) await new Promise<void>((resolve) => (releaseFirst = resolve));
-        if (read === 2) await new Promise<void>((resolve) => (releaseSecond = resolve));
+        if (read === 1)
+          await new Promise<void>((resolve) => (releaseFirst = resolve));
+        if (read === 2)
+          await new Promise<void>((resolve) => (releaseSecond = resolve));
         return Response.json({ sync: state('ready') });
       });
       const session = signal(sessionFor('actor'));
