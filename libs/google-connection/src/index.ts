@@ -65,3 +65,30 @@ export type {
   BatchServiceErrorCode,
   GoogleBatchServiceOptions,
 } from './lib/batch';
+export {
+  columnName,
+  GoogleDriveClient,
+  GoogleDriveError,
+  personDriveClient,
+  personDriveToken,
+  GOOGLE_DRIVE_API,
+  GOOGLE_DRIVE_ATTEMPTS,
+  GOOGLE_DRIVE_ERROR_CODES,
+  GOOGLE_DRIVE_SCOPE,
+  GOOGLE_DRIVE_SOURCE_BYTES,
+  GOOGLE_DRIVE_WINDOW_BYTES,
+  GOOGLE_DRIVE_WINDOW_ROWS,
+  GOOGLE_SHEET_MIME_TYPE,
+  GOOGLE_SHEET_TAB_TITLE,
+  GOOGLE_SHEETS_API,
+} from './lib/drive';
+export type {
+  GoogleDriveClientOptions,
+  GoogleDriveErrorCode,
+  GoogleDriveFile,
+  GoogleDriveHttpClient,
+  GoogleDriveHttpResponse,
+  GoogleDriveSheet,
+  GoogleDriveTabValues,
+  GoogleDriveToken,
+} from './lib/drive';

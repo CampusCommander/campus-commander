@@ -234,7 +234,8 @@ function domainObservation(
   });
 }
 
-/** The only Google URLs the application may call. Token exchange, customer reads, device reads, and the Drive health read. */
+/** The only Google URLs the application may call. Token exchange, customer reads, device reads,
+ * the Drive health read, and the Drive and Sheets calls of the Drive slice. */
 export function googleRequestAllowed(url: URL): boolean {
   return (
     (url.origin === 'https://oauth2.googleapis.com' &&
@@ -245,13 +246,22 @@ export function googleRequestAllowed(url: URL): boolean {
           url.pathname,
         ))) ||
     (url.origin === 'https://www.googleapis.com' &&
-      ['/batch/admin/directory_v1', '/drive/v3/files'].includes(
+      (['/batch/admin/directory_v1', '/drive/v3/files'].includes(
         url.pathname,
-      )) ||
+      ) ||
+        /^\/drive\/v3\/files\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname))) ||
     (url.origin === 'https://chromemanagement.googleapis.com' &&
       /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices(?:\/[A-Za-z0-9_-]{1,128})?$/.test(
         url.pathname,
-      ))
+      )) ||
+    (url.origin === 'https://sheets.googleapis.com' &&
+      (url.pathname === '/v4/spreadsheets' ||
+        /^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}(?::batchUpdate)?$/.test(
+          url.pathname,
+        ) ||
+        /^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}\/values\/(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-Fa-f]{2}){1,2048}$/.test(
+          url.pathname,
+        )))
   );
 }
 
