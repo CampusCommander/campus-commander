@@ -40,6 +40,7 @@ import {
   cancelState,
   formatTime,
   identityLine,
+  importPlanLine,
   isCommandOperation,
   isFinishedJob,
   jobCounters,
@@ -152,6 +153,14 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly reason = computed(() => {
     const job = this.store.job();
     return job ? reasonLine(job) : null;
+  });
+  /**
+   * The import line of a plan job: its import, and the status jobs that wait for an update job
+   * (behavior 10, state 25).
+   */
+  protected readonly importPlan = computed(() => {
+    const job = this.store.job();
+    return job ? importPlanLine(job) : null;
   });
   protected readonly counters = computed<readonly JobCounter[]>(() => {
     const job = this.store.job();

@@ -293,6 +293,10 @@ export const GOOGLE_ACCEPTING =
 export const DEPROVISION_LOCAL_DATA =
   'Deprovision does not erase local data. Send Powerwash first to erase a device that leaves the district.';
 
+/** The consequence of a Deprovision of the Confirm step and of the Execute confirmation. */
+export const DEPROVISION_MANAGEMENT =
+  'Deprovision removes these devices from active management. This workflow cannot restore their previous management state.';
+
 /** "Deprovision reason: Retiring from fleet", or an empty string. */
 export function deprovisionReasonLine(
   reason: DeprovisionReason | null,
@@ -326,7 +330,7 @@ export function confirmationParagraphs(
     ];
   if (action === 'deprovision')
     return [
-      'Deprovision removes these devices from active management. This workflow cannot restore their previous management state.',
+      DEPROVISION_MANAGEMENT,
       DEPROVISION_LOCAL_DATA,
       deprovisionReasonLine(reason),
       `${eligible.toLocaleString(
@@ -391,6 +395,16 @@ export function acknowledgementLabel(action: DeviceAction): string | null {
 /** The exact typed phrase of an action, or null (record D7). */
 export function typedPhrase(action: DeviceAction): string | null {
   return DEVICE_ACTION_PHRASES[action] ?? null;
+}
+
+/**
+ * The trimmed phrase matches the action phrase exactly, and case counts (record D7). The
+ * readiness of a confirmation and its error line share this predicate, so both compare the
+ * way the API compares the phrase (R3).
+ */
+export function phraseMatches(action: DeviceAction, typed: string): boolean {
+  const phrase = typedPhrase(action);
+  return phrase === null || typed.trim() === phrase;
 }
 
 /** "Type WIPE to confirm", or an empty string. */

@@ -9,6 +9,8 @@ import {
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatRadioModule } from '@angular/material/radio';
 import { MatTabsModule } from '@angular/material/tabs';
@@ -17,11 +19,13 @@ import {
   DEVICE_IMPORT_MODE_LABELS,
   DEVICE_IMPORT_MODES,
   DEVICE_IMPORT_REPORT_PAGE_SIZE,
+  DEPROVISION_REASON_LABELS,
   DEVICE_REPORT_FIELD_LABELS,
   type DeviceExportRequest,
   type DeviceImportChange,
   type DeviceImportCounts,
   type DeviceImportMode,
+  type DeviceImportReportLine,
   type DeviceImportReportView,
   type JobPhase,
 } from '@campus/application-contracts';
@@ -56,6 +60,7 @@ import {
 import {
   CANCEL_IMPORT_LABEL,
   DOWNLOAD_REJECTED_LABEL,
+  deviceCountText,
   IMPORT_AGAIN_LABEL,
   IMPORT_BROWSE_LABEL,
   IMPORT_DROP_LABEL,
@@ -85,6 +90,9 @@ import {
   VALIDATION_FAILED_LINE,
   VALIDATION_STOPPED_LINE,
   executeActionLabel,
+  executeConfirmTitle,
+  executeJobsLine,
+  executeStaysOutLine,
   formatBytes,
   importColumnCountText,
   importCounterRows,
@@ -105,6 +113,26 @@ import {
   type ReportValue,
 } from './device-import-messages';
 import { cutDevicePath } from './device-path-cut';
+import {
+  DEPROVISION_LOCAL_DATA,
+  DEPROVISION_MANAGEMENT,
+  phraseError,
+  phraseLabel,
+  phraseMatches,
+} from './device-action-messages';
+import {
+  NOT_RUN_LABEL,
+  RESULTS_TABS,
+  RESULTS_TAB_LABELS,
+  isFinal,
+  planExecutedLine,
+  resultCell,
+  resultChangeUnit,
+  resultCountSum,
+  resultEndLine,
+  resultJobViews,
+  resultPagerText,
+} from './device-import-results';
 
 /** One dot of the export phase list (state 04). */
 export interface ExportPhaseView {
@@ -137,6 +165,8 @@ const thousands = (value: number) => value.toLocaleString('en-US');
     CdkTrapFocus,
     RouterLink,
     MatButtonModule,
+    MatFormFieldModule,
+    MatInputModule,
     MatProgressBarModule,
     MatRadioModule,
     MatTabsModule,
@@ -148,6 +178,7 @@ const thousands = (value: number) => value.toLocaleString('en-US');
     './device-dialog.css',
     './device-export-import-dialog.css',
     './device-import-dialog.css',
+    './device-results-dialog.css',
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -186,8 +217,14 @@ export class DeviceExportImportDialog {
 
   protected readonly step = this.store.step;
   protected readonly title = computed(() => {
-    if (this.store.step() === 'import') return IMPORT_TITLE;
-    if (this.store.step() === 'validation' || this.store.step() === 'report')
+    const step = this.store.step();
+    if (
+      step === 'import' ||
+      step === 'validation' ||
+      step === 'report' ||
+      step === 'confirm' ||
+      step === 'results'
+    )
       return IMPORT_TITLE;
     return this.store.purpose() === 'report' ? REPORT_TITLE : EXPORT_TITLE;
   });
@@ -220,14 +257,23 @@ export class DeviceExportImportDialog {
       this.store.job()?.importSource?.name ?? this.store.importName();
     return name ? `${mode} · ${name}` : mode;
   });
-  private readonly isImport = computed(
+  private readonly isImport = computed(() => {
+    const step = this.store.step();
+    return (
+      step === 'import' ||
+      step === 'validation' ||
+      step === 'report' ||
+      step === 'confirm' ||
+      step === 'results'
+    );
+  });
+  /** The 1120 px steps: the report (13 to 15 and 18 to 22) and the results (16, 17, and 17b). */
+  protected readonly wide = computed(
     () =>
-      this.store.step() === 'import' ||
-      this.store.step() === 'validation' ||
-      this.store.step() === 'report',
+      this.store.step() === 'report' ||
+      this.store.step() === 'confirm' ||
+      this.store.step() === 'results',
   );
-  /** The 1120 px steps: the report (states 13 to 15 and 18 to 22). */
-  protected readonly wide = computed(() => this.store.step() === 'report');
   protected readonly overLimit = this.store.overLimit;
   protected readonly limitText = computed(() =>
     exportLimitText(this.store.count()),
@@ -541,22 +587,204 @@ export class DeviceExportImportDialog {
   protected readonly executeLabel = computed(() =>
     executeActionLabel(this.executeCount()),
   );
-  protected readonly executeCount = computed(
-    () =>
-      (this.store.reportChanges()?.fieldChanges ?? 0) +
-      (this.store.reportChanges()?.disable ?? 0) +
-      (this.store.reportChanges()?.reenable ?? 0) +
-      (this.store.reportChanges()?.deprovision ?? []).reduce(
-        (sum, entry) => sum + entry.devices,
-        0,
-      ),
-  );
+  /** The complete change total of the plan (R2). */
+  protected readonly executeCount = this.store.planChanges;
+  /** The devices of the plan: the proposed rows of the report, each one device (R2). */
+  protected readonly planDeviceCount = this.store.planDevices;
   protected readonly NO_UPDATE_VIEW_LINE = NO_UPDATE_VIEW_LINE;
   /** The empty line of the shown view (states 14 and 15). */
   protected readonly emptyViewLine = computed(
     () => REPORT_EMPTY_LINES[this.view()] ?? '',
   );
   protected readonly pageSize = DEVICE_IMPORT_REPORT_PAGE_SIZE;
+
+  /* ---------- State 16: the Execute confirmation (design section 7) ---------- */
+
+  protected readonly executeError = this.store.executeError;
+  protected readonly executeBusy = this.store.executeBusy;
+  protected readonly thousands = thousands;
+  protected readonly typedPhrase = this.store.typedPhrase;
+  protected readonly needsPhrase = this.store.planHasDeprovision;
+  protected readonly PHRASE_LABEL = phraseLabel('deprovision');
+  /** A typed phrase that is not empty and does not match shows the error of the built sheet. */
+  protected readonly phraseInvalid = computed(
+    () =>
+      this.needsPhrase() &&
+      this.store.typedPhrase().trim().length > 0 &&
+      !this.phraseOk(),
+  );
+  protected readonly phraseError = phraseError('deprovision');
+  /** The typed phrase matches the API's case-sensitive, trimmed comparison (R3). */
+  protected readonly phraseOk = computed(() =>
+    phraseMatches('deprovision', this.store.typedPhrase()),
+  );
+  /** The question, the jobs that Execute creates, and the rows that stay out (state 16). */
+  protected readonly confirmView = computed(() => {
+    const changes = this.store.reportChanges();
+    const counts = this.store.reportCounts();
+    const rejected = counts?.rejected ?? 0;
+    return {
+      title: executeConfirmTitle(this.executeCount(), this.planDeviceCount()),
+      jobs: executeJobsLine(
+        (changes?.fieldChanges ?? 0) > 0,
+        this.store.planStatusJobs(),
+      ),
+      staysOut: rejected > 0 ? executeStaysOutLine(rejected) : '',
+    };
+  });
+  /** Execute waits for the typed phrase when the plan holds a Deprovision (section 7). */
+  protected readonly executeReady = computed(
+    () =>
+      !this.store.executeBusy() &&
+      this.store.plan()?.state === 'open' &&
+      (!this.needsPhrase() || this.phraseOk()),
+  );
+
+  /* ---------- States 17 and 17b: the execution results (design section 8) ---------- */
+
+  protected readonly planJobs = this.store.planJobs;
+  protected readonly executionCounts = this.store.executionCounts;
+  protected readonly resultsLoading = this.store.resultsLoading;
+  protected readonly resultsError = this.store.resultsError;
+  protected readonly resultsView = this.store.resultsView;
+  /** The count sum of the results: `11 changes = 10 Succeeded + 1 Failed` (states 17, 17b). */
+  protected readonly resultSum = computed(() => {
+    const counts = this.store.executionCounts();
+    return counts ? resultCountSum(counts) : null;
+  });
+  protected readonly changeUnit = computed(() =>
+    resultChangeUnit(this.resultSum()?.total ?? 0),
+  );
+  /** The jobs band of the results (states 17 and 17b). */
+  protected readonly resultJobs = computed(() =>
+    resultJobViews(this.store.planJobs()),
+  );
+  /** The live line of state 17, and `Finished <time>` when every job is final (state 17b). */
+  protected readonly resultStatus = computed(() =>
+    resultEndLine(this.store.planJobs()),
+  );
+  protected readonly liveRunning = computed(() =>
+    this.store.planJobs().some((job) => !isFinal(job.status)),
+  );
+  protected readonly executedLine = computed(() =>
+    planExecutedLine(this.store.plan(), this.planNow()),
+  );
+  /** The two tabs of the results, each with its count pill (design section 8, ruling 4). */
+  protected readonly resultTabs = computed<readonly ReportTabView[]>(() => {
+    const totals = this.store.reportTotals();
+    return RESULTS_TABS.map((view) => ({
+      view,
+      label: RESULTS_TAB_LABELS[view],
+      // Both pills count change lines: the view total of the report route. The proposed row
+      // count of `counts` names devices, not changes (R2).
+      // A missing count is not a count of zero (R4).
+      count: totals[view] === null ? '' : thousands(totals[view]),
+    }));
+  });
+  protected readonly resultPagerText = computed(() =>
+    resultPagerText(
+      this.store.reportPage(),
+      this.store.reportLines().length,
+      this.store.reportTotals()[this.store.reportView()] ?? 0,
+    ),
+  );
+  protected readonly resultEmptyLine = computed(() =>
+    this.store.resultsView() === 'failed'
+      ? REPORT_EMPTY_LINES.failed
+      : NO_UPDATE_VIEW_LINE,
+  );
+  /** The Result cell of one change: the chip, the failure text, and the notes (section 8). */
+  protected resultCell(line: DeviceImportReportLine) {
+    return resultCell(line, this.store.planJobs(), this.store.resultOps());
+  }
+  protected readonly NOT_RUN_LABEL = NOT_RUN_LABEL;
+
+  protected openConfirm(): void {
+    this.store.openConfirm();
+  }
+
+  protected backToReview(): void {
+    this.store.backToReview();
+  }
+
+  protected execute(): void {
+    if (!this.executeReady()) return;
+    void this.store.execute();
+  }
+
+  /** The typed phrase field of state 16. */
+  protected typed(event: Event): void {
+    this.store.typedPhrase.set((event.target as HTMLInputElement).value);
+  }
+
+  protected readonly BACK_TO_REVIEW_LABEL = 'Back to review';
+  protected readonly DEPROVISION_MANAGEMENT = DEPROVISION_MANAGEMENT;
+  protected readonly DEPROVISION_LOCAL_DATA = DEPROVISION_LOCAL_DATA;
+  /** The one job that runs first: the update job of the field changes (design section 3). */
+  protected readonly fieldChangeStep = computed(() => {
+    const changes = this.store.reportChanges();
+    if (!changes || changes.fieldChanges <= 0) return null;
+    return {
+      action: 'Update device annotations',
+      line: `${thousands(changes.fieldChanges)} field ${
+        changes.fieldChanges === 1 ? 'change' : 'changes'
+      }`,
+      scope: deviceCountText(changes.fieldChangeDevices),
+    };
+  });
+  /** The status jobs that start after the update job ends, one for each action (section 3). */
+  protected readonly statusJobs = computed(() => {
+    const changes = this.store.reportChanges();
+    if (!changes) return [];
+    const jobs: { key: string; action: string; line: string; scope: string }[] =
+      [];
+    if (changes.disable > 0)
+      jobs.push({
+        key: 'disable',
+        action: 'Disable devices',
+        line: '',
+        scope: deviceCountText(changes.disable),
+      });
+    if (changes.reenable > 0)
+      jobs.push({
+        key: 'reenable',
+        action: 'Re-enable devices',
+        line: '',
+        scope: deviceCountText(changes.reenable),
+      });
+    for (const entry of changes.deprovision)
+      jobs.push({
+        key: `deprovision-${entry.reason}`,
+        action: 'Deprovision devices',
+        line: `(${DEPROVISION_REASON_LABELS[entry.reason]})`,
+        scope: deviceCountText(entry.devices),
+      });
+    return jobs;
+  });
+  /** The one-way warning of each Deprovision reason (state 16). */
+  protected readonly oneWay = computed(() =>
+    (this.store.reportChanges()?.deprovision ?? []).map((entry) => {
+      // The plan names its devices when the page holds them (state 16 shows 04A9BVS).
+      const ids = this.store
+        .reportLines()
+        .filter(
+          (line) =>
+            line.change?.type === 'status' &&
+            line.change.action === 'deprovision' &&
+            line.change.reason === entry.reason,
+        )
+        .map((line) => line.serialNumber ?? line.deviceId)
+        .filter((id): id is string => id !== null);
+      return {
+        key: entry.reason,
+        scope:
+          ids.length === entry.devices && ids.length <= 3
+            ? ids.join(', ')
+            : deviceCountText(entry.devices),
+        reason: `(${DEPROVISION_REASON_LABELS[entry.reason]})`,
+      };
+    }),
+  );
 
   protected close(): void {
     this.store.close();

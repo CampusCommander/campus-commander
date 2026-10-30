@@ -83,6 +83,8 @@
     <p class="identity-meta">{{ identity() }}</p>
     @if (reason(); as reason) {
     <p class="identity-meta">{{ reason }}</p>
+    } @if (importPlan(); as plan) {
+    <p class="identity-meta">{{ plan }}</p>
     } @if (cancelIdentity(); as cancel) {
     <p class="identity-meta">{{ cancel }}</p>
     }

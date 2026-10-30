@@ -405,14 +405,14 @@ export const IMPORT_AGAIN_LABEL = 'Import again';
 export const VALIDATE_AGAIN_LABEL = 'Validate again';
 export const DOWNLOAD_REJECTED_LABEL = 'Download rejected rows';
 export const NO_UPDATE_VIEW_LINE = 'No row needs an update.';
-/** The empty line of each report view (states 14 and 15). XF3 owns the Failed tab. */
+/** The empty line of each report view (states 14, 15, and 17b). */
 export const REPORT_EMPTY_LINES: Readonly<
   Record<DeviceImportReportView, string>
 > = Object.freeze({
   proposed: NO_UPDATE_VIEW_LINE,
   rejected: 'No row was rejected.',
   warnings: 'No warnings.',
-  failed: '',
+  failed: 'No change failed.',
 });
 export const NO_UPDATE_LINE =
   'Every row matches its export checksum. No update is needed.';
@@ -450,12 +450,121 @@ export function nothingCanRunText(rejected: number): string {
   } rejected. Correct the rows in the file, then import it again.`;
 }
 
+/** `1 device`, `6 devices` (state 16). */
+export function deviceCountText(count: number): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? 'device' : 'devices'}`;
+}
+
 /** The primary action of a report: the change count, or the bare word (state 21). */
 export function executeActionLabel(changes: number): string {
   if (changes <= 0) return 'Execute';
   return `Execute ${changes.toLocaleString('en-US')} ${
     changes === 1 ? 'change' : 'changes'
   }`;
+}
+
+/* ---------- State 16: the Execute confirmation (design section 7) ---------- */
+
+/**
+ * The question of the confirmation (state 16). The report answer counts the changes and the
+ * field-change devices, so the question names the changes that Execute runs.
+ */
+export function executeConfirmTitle(changes: number, devices: number): string {
+  const changeText = `${changes.toLocaleString('en-US')} ${
+    changes === 1 ? 'change' : 'changes'
+  }`;
+  if (devices <= 0) return `Execute ${changeText}?`;
+  return `Execute ${changeText} on ${devices.toLocaleString('en-US')} ${
+    devices === 1 ? 'device' : 'devices'
+  }?`;
+}
+
+const NUMBER_WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+] as const;
+
+/** The mockup spells the job counts below eight: "four jobs", "three status jobs". */
+function spellCount(value: number): string {
+  return NUMBER_WORDS[value] ?? value.toLocaleString('en-US');
+}
+
+/**
+ * The jobs that Execute creates (state 16). The update job runs first, and the status jobs of an
+ * import wait for it (design section 3). A plan with field changes only creates the update job, and
+ * a plan with status changes only creates one job per action.
+ */
+export function executeJobsLine(
+  fieldChanges: boolean,
+  statusJobs: number,
+): string {
+  if (fieldChanges && statusJobs > 1)
+    return `Execute creates ${spellCount(
+      statusJobs + 1,
+    )} jobs. The update job runs first. The ${spellCount(
+      statusJobs,
+    )} status jobs start after it ends.`;
+  if (fieldChanges && statusJobs === 1)
+    return 'Execute creates two jobs. The update job runs first. The status job starts after it ends.';
+  if (fieldChanges)
+    return 'Execute creates one job. The update job runs first.';
+  if (statusJobs === 1)
+    return 'Execute creates one job. It runs its own action.';
+  return `Execute creates ${spellCount(
+    statusJobs,
+  )} status jobs. Each one runs its own action.`;
+}
+
+/** The line under the job sequence: the rejected rows of the plan stay out (state 16). */
+export function executeStaysOutLine(rejected: number): string {
+  return `The ${rejected.toLocaleString('en-US')} rejected ${
+    rejected === 1 ? 'row stays' : 'rows stay'
+  } out. Nothing in them runs.`;
+}
+
+/** The typed phrase that a plan with a Deprovision requires (design section 7, step 2). */
+export const DEPROVISION_PHRASE_LABEL = 'DEPROVISION';
+
+/**
+ * The refusal of `POST …/execute` (design sections 1 and 7). The route rechecks the permissions
+ * and the plan lock, so a person reads which check refused the plan.
+ */
+export function executeFailureText(
+  status: number,
+  reason: string | null,
+): string {
+  switch (reason) {
+    case 'phrase-mismatch':
+      return `The typed word does not match. Type ${DEPROVISION_PHRASE_LABEL}, then execute again.`;
+    case 'plan-conflict':
+      return 'The plan changed since you opened it. Reload the review, then execute again.';
+    case 'plan-expired':
+      return 'The plan expired. Validate the file again.';
+    case 'nothing-to-run':
+      return 'Nothing is left to run. The plan stays open.';
+    case 'job-not-found':
+      return 'This import no longer exists.';
+  }
+  switch (status) {
+    case 403:
+      return 'You do not have permission to execute this plan.';
+    case 401:
+      return 'Your session ended. Sign in again, then execute.';
+    case 409:
+      return 'The plan changed since you opened it. Reload the review, then execute again.';
+    case 410:
+      return 'The plan expired. Validate the file again.';
+    case 422:
+      return 'Campus Commander refused a change of this plan. Review the plan, then execute again.';
+    default:
+      return 'Campus Commander could not execute the plan. Try again.';
+  }
 }
 
 /** The empty value of a cell (the built grid literal). */

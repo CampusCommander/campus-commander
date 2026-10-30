@@ -1,0 +1,354 @@
+/*
+ * The Execute confirmation and the execution results of the dialog (design section 8, states 16,
+ * 17, and 17b). The surface, the header, the action bar, and the shared chips come from
+ * `device-export-import-dialog.css`. This file adds the one 720 px column of state 16, the job
+ * sequence, the one-way warning, the count sum, and the jobs band. Every value is a token of
+ * `theme/tokens.css` or of the Material theme.
+ */
+/* ------------------------------------------------------------------------- */
+/* State 16: the Execute confirmation (design section 7)                      */
+/* ------------------------------------------------------------------------- */
+
+/* One centered column of 720 px: the question, the job sequence, the rows that stay out, the
+   one-way warning, and the typed phrase above the action bar (notes, choice 16). */
+.step.confirm,
+.step.results {
+  flex: 1;
+  min-height: 0;
+  gap: var(--cc-space-lg);
+}
+
+.step.confirm {
+  align-items: center;
+  overflow-y: auto;
+}
+
+/* The results keep the count sum and the jobs band fixed, and scroll the table only. The
+   tighter gaps and rows fit the whole ten-line page above the pager at 1440 x 900 (notes,
+   choice 3: no step scrolls at that size, even when a Failed row carries its reason). */
+.step.results {
+  gap: var(--cc-space-md);
+  overflow: hidden;
+}
+
+.confirm-main,
+.step.confirm .one-way,
+.step.confirm .phrase-field,
+.step.confirm .error {
+  width: 100%;
+  max-width: var(--cc-content-max-width);
+  margin-inline: auto;
+}
+
+.confirm-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-lg);
+  min-width: 0;
+}
+
+.confirm-main h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+}
+
+.confirm-main p {
+  margin: 0;
+}
+
+.stays-out {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  color: var(--cc-text-secondary);
+}
+
+.stays-out .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* The one-way warning: the M3 error container of the app theme (notes, color tokens). */
+.step.confirm .one-way {
+  padding: var(--cc-space-lg);
+  border-radius: var(--cc-radius-control);
+  background: var(--mat-sys-error-container, var(--cc-status-error));
+  color: var(--mat-sys-on-error-container, var(--cc-text-on-accent));
+}
+
+.one-way-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-xs) var(--cc-space-sm);
+  margin: 0;
+  font-weight: 500;
+}
+
+.one-way-head .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.one-way-head .item::before {
+  content: '\00B7';
+  margin-inline-end: var(--cc-space-sm);
+  opacity: 0.6;
+}
+
+.one-way p {
+  max-width: none;
+  margin: var(--cc-space-sm) 0 0;
+}
+
+.step.confirm .phrase-field {
+  display: block;
+}
+
+.step.confirm .error {
+  margin: 0;
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The job sequence: the stepper dots of the built sheet beside bordered job lists. */
+.seq {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seq-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: var(--cc-space-md);
+}
+
+.seq-step:not(:last-child) {
+  padding-block-end: var(--cc-space-lg);
+}
+
+.seq-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 11.5px;
+  inset-block: 32px 8px;
+  width: 1px;
+  background: var(--cc-border);
+}
+
+.seq-step > .phase-dot {
+  margin-block-start: 8px;
+  background: var(--cc-accent);
+}
+
+.seq-jobs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+}
+
+.seq-job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--cc-space-lg);
+  min-height: 40px;
+  padding: var(--cc-space-sm) var(--cc-space-lg);
+}
+
+.seq-job + .seq-job {
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.seq-action {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.seq-action > span:first-child {
+  font-weight: 500;
+}
+
+.seq-line {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.seq-scope {
+  color: var(--cc-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------------- */
+/* States 17 and 17b: the execution results (design section 8)                */
+/* ------------------------------------------------------------------------- */
+
+/* The count sum of the results, with the live indicator or the end time at the end. */
+.rs-sum {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cc-space-lg);
+}
+
+.rs-ended {
+  margin: 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The live indicator: the success dot beside the built "Updated live" line (job-activity.css). */
+.live {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cc-status-success);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
+/* The jobs of the plan: a compact secondary part, two jobs per row in body small type. */
+.jobs-band {
+  flex: none;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.job-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 100px 156px;
+  align-items: center;
+  column-gap: var(--cc-space-sm);
+  min-width: 0;
+  min-height: 40px;
+  padding: var(--cc-space-xs) var(--cc-space-lg);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.job-item:nth-child(2n) {
+  border-inline-start: 1px solid var(--cc-border);
+}
+
+.job-item:nth-child(n + 3) {
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.job-link {
+  color: var(--cc-text-link);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.job-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-chip {
+  justify-self: start;
+}
+
+.job-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+  color: var(--cc-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.job-progress mat-progress-bar {
+  height: 4px;
+  border-radius: var(--cc-radius-chip);
+}
+
+/* The Result column copies the outcome cell of the job page (job-detail.css). */
+.report-table .outcome-reason {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.report-table .outcome-note {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The results table keeps the Row, Device, and Change widths of the report and adds Result. */
+.report-table.rs col:nth-child(3) {
+  width: 172px;
+}
+
+.report-table.rs col:nth-child(4) {
+  width: 220px;
+}
+
+.report-table.rs col:nth-child(5) {
+  width: 220px;
+}
+
+.report-table .col-result {
+  min-width: 0;
+}
+
+/* The results table shares the report columns, with a shallower row so one page of ten
+   results, including a Failed row and its reason, fits above the pager (design section 9,
+   state 17 and 17b). */
+.report-table.rs tbody tr:not(.message-row) td {
+  height: 26px;
+  padding-block: 2px;
+}
+
+/* The results header is one line, so it takes 30 px, as the approved mockup draws it. */
+.report-table.rs th {
+  height: 30px;
+}

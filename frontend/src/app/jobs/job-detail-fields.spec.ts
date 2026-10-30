@@ -19,6 +19,7 @@ import {
   fieldLabel,
   formatTime,
   identityLine,
+  importPlanLine,
   isCommandOperation,
   isCommandJob,
   jobCounters,
@@ -1887,6 +1888,96 @@ describe('cancel', () => {
       'No request reaches Google. The 18 devices keep their current status.',
     ]);
     expect(question.dismissLabel).toBe('Keep job waiting');
+  });
+
+  it('adds the state 25 sentence to the question of an import update job', () => {
+    const question = cancelQuestion(
+      job({
+        displayId: 'UPD-001',
+        status: 'running',
+        progress: progress({
+          total: 6,
+          succeeded: 2,
+          failed: 0,
+          unknown: 0,
+          pending: 4,
+        }),
+        finishedAt: null,
+        importDisplayId: 'IMP-001',
+        waitingDisplayIds: ['STS-001', 'STS-002', 'STS-003'],
+      }),
+    );
+    expect(question.title).toBe('Cancel pending work on UPD-001?');
+    expect(question.paragraphs).toEqual([
+      '4 of 6 operations are pending. Those that have not reached Google end Cancelled and never run.',
+      'Requests already sent to Google finish and keep their results. The 2 confirmed updates stay. Nothing rolls back.',
+      'The waiting status jobs STS-001, STS-002, and STS-003 also end Cancelled and never start.',
+    ]);
+    expect(question.dismissLabel).toBe('Keep job running');
+    expect(question.confirmLabel).toBe('Cancel pending work');
+  });
+
+  it('names one waiting status job in the singular', () => {
+    const question = cancelQuestion(
+      job({
+        displayId: 'UPD-001',
+        status: 'running',
+        progress: progress({
+          total: 6,
+          succeeded: 2,
+          failed: 0,
+          unknown: 0,
+          pending: 4,
+        }),
+        finishedAt: null,
+        importDisplayId: 'IMP-001',
+        waitingDisplayIds: ['STS-002'],
+      }),
+    );
+    expect(question.paragraphs.at(-1)).toBe(
+      'The waiting status job STS-002 also ends Cancelled and never starts.',
+    );
+  });
+
+  it('keeps two paragraphs when an update job waits for no status job', () => {
+    const question = cancelQuestion(
+      job({
+        displayId: 'UPD-002',
+        status: 'running',
+        progress: progress({
+          total: 6,
+          succeeded: 2,
+          failed: 0,
+          unknown: 0,
+          pending: 4,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(question.paragraphs).toHaveLength(2);
+  });
+
+  it('names the import and the waiting jobs of a plan job', () => {
+    expect(
+      importPlanLine({
+        importDisplayId: 'IMP-001',
+        waitingDisplayIds: ['STS-001', 'STS-002', 'STS-003'],
+      }),
+    ).toBe(
+      'Import IMP-001 · STS-001, STS-002, and STS-003 start after this job ends',
+    );
+    expect(
+      importPlanLine({
+        importDisplayId: 'IMP-001',
+        waitingDisplayIds: ['STS-002'],
+      }),
+    ).toBe('Import IMP-001 · STS-002 starts after this job ends');
+    expect(
+      importPlanLine({ importDisplayId: 'IMP-001', waitingDisplayIds: [] }),
+    ).toBe('Import IMP-001');
+    expect(
+      importPlanLine({ importDisplayId: null, waitingDisplayIds: null }),
+    ).toBeNull();
   });
 
   it('names confirmed commands and status changes in a running question', () => {

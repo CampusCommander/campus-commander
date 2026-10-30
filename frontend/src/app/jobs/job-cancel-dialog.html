@@ -6,15 +6,16 @@
     role="alertdialog"
     aria-modal="true"
     aria-labelledby="cancel-job-title"
-    aria-describedby="cancel-question-one cancel-question-two"
+    [attr.aria-describedby]="describedBy"
     cdkTrapFocus
     [cdkTrapFocusAutoCapture]="true"
     (keydown)="keydown($event)"
   >
     <h2 id="cancel-job-title">{{ question().title }}</h2>
     <div class="picker-content">
-      <p id="cancel-question-one">{{ question().paragraphs[0] }}</p>
-      <p id="cancel-question-two">{{ question().paragraphs[1] }}</p>
+      @for (paragraph of question().paragraphs; track $index) {
+      <p [id]="paragraphId($index)">{{ paragraph }}</p>
+      }
     </div>
     <div class="picker-actions">
       <button mat-button type="button" (click)="cancelled.emit()">

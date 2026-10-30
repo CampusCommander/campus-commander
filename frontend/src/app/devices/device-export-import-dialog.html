@@ -433,7 +433,12 @@
             </div>
 
             <mat-tab-nav-panel #reportPanel>
-              <div class="report-table-wrap">
+              <div
+                class="report-table-wrap"
+                role="region"
+                aria-label="Validation results table"
+                tabindex="0"
+              >
                 <table
                   class="report-table"
                   [class.rv]="view() === 'proposed'"
@@ -441,7 +446,7 @@
                   [class.wn]="view() === 'warnings'"
                 >
                   <caption class="visually-hidden">
-                    Validation results table
+                    Results of the validation
                   </caption>
                   <colgroup>
                     @switch (view()) { @case ('warnings') {
@@ -627,6 +632,375 @@
           </div>
           }
         </div>
+        } @case ('confirm') {
+        <div class="step confirm">
+          <section class="confirm-main" aria-labelledby="confirm-title">
+            <h3 id="confirm-title">{{ confirmView().title }}</h3>
+            <p>{{ confirmView().jobs }}</p>
+            <ol class="seq plan" aria-label="Jobs that Execute creates">
+              @if (fieldChangeStep(); as step) {
+              <li class="seq-step">
+                <span class="phase-dot" aria-hidden="true">1</span>
+                <ul class="seq-jobs">
+                  <li class="seq-job">
+                    <div class="seq-action">
+                      <span>{{ step.action }}</span>
+                      @if (step.line) {
+                      <span class="seq-line">{{ step.line }}</span>
+                      }
+                    </div>
+                    <span class="seq-scope">{{ step.scope }}</span>
+                  </li>
+                </ul>
+              </li>
+              } @if (statusJobs().length) {
+              <li class="seq-step">
+                <span class="phase-dot" aria-hidden="true"
+                  >{{ fieldChangeStep() ? 2 : 1 }}</span
+                >
+                <ul class="seq-jobs">
+                  @for (job of statusJobs(); track job.key) {
+                  <li class="seq-job">
+                    <div class="seq-action">
+                      <span>{{ job.action }}</span>
+                      @if (job.line) {
+                      <span class="seq-line">{{ job.line }}</span>
+                      }
+                    </div>
+                    <span class="seq-scope">{{ job.scope }}</span>
+                  </li>
+                  }
+                </ul>
+              </li>
+              }
+            </ol>
+            @if (confirmView().staysOut) {
+            <p class="stays-out">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >block</span
+              >
+              <span>{{ confirmView().staysOut }}</span>
+            </p>
+            }
+          </section>
+
+          @for (one of oneWay(); track one.key) {
+          <section
+            class="one-way"
+            [attr.aria-labelledby]="'one-way-' + one.key"
+          >
+            <div class="one-way-head" [id]="'one-way-' + one.key">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >warning</span
+              >
+              <span>Deprovision</span>
+              <span class="item nw">{{ one.scope }}</span>
+              <span class="nw">{{ one.reason }}</span>
+            </div>
+            <p>{{ DEPROVISION_MANAGEMENT }}</p>
+            <p>{{ DEPROVISION_LOCAL_DATA }}</p>
+          </section>
+          } @if (needsPhrase()) {
+          <mat-form-field
+            appearance="outline"
+            subscriptSizing="dynamic"
+            class="phrase-field"
+          >
+            <mat-label>{{ PHRASE_LABEL }}</mat-label>
+            <input
+              matInput
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              [value]="typedPhrase()"
+              (input)="typed($event)"
+              [attr.aria-invalid]="phraseInvalid() ? 'true' : null"
+              [attr.aria-describedby]="
+                phraseInvalid() ? 'execute-phrase-error' : null
+              "
+            />
+          </mat-form-field>
+          @if (phraseInvalid()) {
+          <p class="error" id="execute-phrase-error" role="alert">
+            {{ phraseError }}
+          </p>
+          } } @if (executeError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          }
+        </div>
+        } @case ('results') {
+        <div class="step results">
+          <section
+            class="report-counts rs-sum"
+            aria-labelledby="rs-counts-title"
+          >
+            <h3 id="rs-counts-title" class="visually-hidden">Result counts</h3>
+            <dl class="count-equation" aria-label="Changes">
+              <div class="count-term tone-info">
+                <dd>{{ thousands(resultSum()?.total ?? 0) }}</dd>
+                <dt>{{ changeUnit() }}</dt>
+              </div>
+              @for (term of resultSum()?.terms; track term.label) {
+              <span class="count-sign" aria-hidden="true"
+                >{{ $first ? '=' : '+' }}</span
+              >
+              <div
+                class="count-term"
+                [class.tone-success]="term.tone === 'success'"
+                [class.tone-warning]="term.tone === 'warning'"
+                [class.tone-error]="term.tone === 'error'"
+              >
+                <dd>{{ term.value }}</dd>
+                <dt>{{ term.label }}</dt>
+              </div>
+              }
+            </dl>
+            @if (liveRunning()) {
+            <span class="live">
+              <span class="live-dot" aria-hidden="true"></span>
+              <span>Updated live</span>
+            </span>
+            } @else if (resultStatus(); as ended) {
+            <p class="rs-ended" role="status">{{ ended }}</p>
+            }
+          </section>
+
+          <section
+            class="jobs-band"
+            [attr.aria-label]="'Jobs of the plan of ' + subtitleJob()"
+          >
+            <ul class="job-items">
+              @for (job of resultJobs(); track job.displayId) {
+              <li class="job-item">
+                <a class="job-link" [routerLink]="['/jobs', job.displayId]"
+                  >{{ job.displayId }}</a
+                >
+                <span class="job-action">{{ job.action }}</span>
+                <span
+                  class="status-chip small job-chip"
+                  [class.tone-info]="job.tone === 'info'"
+                  [class.tone-success]="job.tone === 'success'"
+                  [class.tone-warning]="job.tone === 'warning'"
+                  [class.tone-error]="job.tone === 'error'"
+                  [class.tone-neutral]="job.tone === 'neutral'"
+                >
+                  <span class="dot" aria-hidden="true"></span>
+                  {{ job.status }}
+                </span>
+                <span class="job-progress">
+                  <span>{{ job.progress }}</span>
+                  @if (job.percent !== null) {
+                  <mat-progress-bar
+                    mode="determinate"
+                    [value]="job.percent"
+                    [attr.aria-label]="job.displayId + ' progress'"
+                  ></mat-progress-bar>
+                  }
+                </span>
+              </li>
+              }
+            </ul>
+          </section>
+
+          <section class="report-panel" aria-label="Execution results">
+            <div class="report-views">
+              <nav
+                mat-tab-nav-bar
+                class="report-tabs"
+                [tabPanel]="resultsPanel"
+                aria-label="Execution results view"
+              >
+                @for (tab of resultTabs(); track tab.view) {
+                <button
+                  mat-tab-link
+                  type="button"
+                  [active]="tab.view === view()"
+                  (click)="setView(tab.view)"
+                >
+                  {{ tab.label }} @if (tab.count) {
+                  <span
+                    class="tab-count"
+                    [class.tone-error]="
+                      tab.view === 'failed' && tab.count !== '0'
+                    "
+                    >{{ tab.count }}</span
+                  >
+                  }
+                </button>
+                }
+              </nav>
+            </div>
+
+            <mat-tab-nav-panel #resultsPanel>
+              <div
+                class="report-table-wrap"
+                role="region"
+                aria-label="Execution results table"
+                tabindex="0"
+              >
+                <table class="report-table rv rs">
+                  <caption class="visually-hidden">
+                    Results of the changes of job {{ subtitleJob() }}
+                  </caption>
+                  <colgroup>
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="col-row">Row</th>
+                      <th scope="col" class="col-device">Device</th>
+                      <th scope="col" class="col-change">Change</th>
+                      <th scope="col" class="col-value">Current value</th>
+                      <th scope="col" class="col-value">New value</th>
+                      <th scope="col" class="col-result">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @if (lines().length === 0 && !reportLoading()) {
+                    <tr class="message-row">
+                      <td colspan="6">
+                        <div role="status">
+                          <p>{{ resultEmptyLine() }}</p>
+                        </div>
+                      </td>
+                    </tr>
+                    } @for (line of lines(); track $index) {
+                    <tr>
+                      <td class="col-row">{{ line.row ?? '' }}</td>
+                      <td class="col-device">
+                        @if (line.deviceId) {
+                        <span class="device-cell">
+                          <a
+                            class="device-link"
+                            [routerLink]="['/devices', line.deviceId]"
+                            [attr.aria-label]="'Open device ' + line.deviceId"
+                          >
+                            <span
+                              class="material-symbols-outlined"
+                              aria-hidden="true"
+                              >visibility</span
+                            >
+                          </a>
+                          <span class="nw"
+                            >{{ line.serialNumber ?? line.deviceId }}</span
+                          >
+                        </span>
+                        } @else {
+                        <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
+                        }
+                      </td>
+                      @if (line.change; as change) { @let cells =
+                      values(change); @let chip = this.chip(change); @let result
+                      = resultCell(line);
+                      <td class="col-change">
+                        <span
+                          class="change-chip"
+                          [class.tone-success]="chip.tone === 'success'"
+                          [class.tone-warning]="chip.tone === 'warning'"
+                          [class.tone-error]="chip.tone === 'error'"
+                        >
+                          <span class="dot" aria-hidden="true"></span>
+                          {{ chip.label }}
+                        </span>
+                      </td>
+                      <td class="col-value">
+                        <span class="value-cell">
+                          <span class="cut" [title]="cells.current.full"
+                            >{{ cellText(cells.current) }}</span
+                          >
+                        </span>
+                      </td>
+                      <td class="col-value">
+                        <span class="value-cell">
+                          <span class="arrow" aria-hidden="true">→</span>
+                          <span
+                            class="cut"
+                            [class.clear]="cells.next.clear"
+                            [title]="cells.next.full"
+                            >{{ cellText(cells.next) }}</span
+                          >
+                        </span>
+                        @if (cells.note) {
+                        <span class="value-note">{{ cells.note }}</span>
+                        }
+                      </td>
+                      <td class="col-result">
+                        @if (result.chip.label) {
+                        <span
+                          class="status-chip small"
+                          [class.tone-success]="result.chip.tone === 'success'"
+                          [class.tone-warning]="result.chip.tone === 'warning'"
+                          [class.tone-error]="result.chip.tone === 'error'"
+                          [class.tone-neutral]="result.chip.tone === 'neutral'"
+                        >
+                          <span class="dot" aria-hidden="true"></span>
+                          {{ result.chip.label }}
+                        </span>
+                        } @if (result.failure) {
+                        <span class="outcome-reason">{{ result.failure }}</span>
+                        } @for (note of result.notes; track $index) {
+                        <span class="outcome-note">{{ note }}</span>
+                        }
+                      </td>
+                      } @else {
+                      <td class="col-change"></td>
+                      <td class="col-value"></td>
+                      <td class="col-value"></td>
+                      <td class="col-result"></td>
+                      }
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </mat-tab-nav-panel>
+
+            <div class="report-pager">
+              <span class="pager-text">{{ resultPagerText() }}</span>
+              <span class="pager-buttons">
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Previous results page"
+                  [disabled]="!canPageBack()"
+                  (click)="previousPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_left</span
+                  >
+                </button>
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Next results page"
+                  [disabled]="!canPageForward()"
+                  (click)="nextPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_right</span
+                  >
+                </button>
+              </span>
+            </div>
+          </section>
+
+          @if (reportError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          } @if (resultsError(); as error) {
+          <div class="action-note error" role="alert">
+            <p>{{ error }}</p>
+          </div>
+          }
+        </div>
         } }
       </div>
       @if (helpOpen() && wide()) {
@@ -767,7 +1141,9 @@
       >
         {{ CANCEL_IMPORT_LABEL }}
       </button>
-      <button mat-flat-button type="button">{{ executeLabel() }}</button>
+      <button mat-flat-button type="button" (click)="openConfirm()">
+        {{ executeLabel() }}
+      </button>
       } @case ('expired') {
       <button
         mat-stroked-button
@@ -800,7 +1176,50 @@
       <button mat-flat-button type="button" disabled>
         {{ executeLabel() }}
       </button>
-      } } } }
+      } } } @case ('confirm') {
+      <div class="export-state">
+        @if (planView().chip) {
+        <span
+          class="status-chip small"
+          [class]="planView().tone"
+          [attr.data-plan]="planView().state"
+        >
+          <span class="dot" aria-hidden="true"></span>
+          {{ planView().chip }}
+        </span>
+        }
+        <span>{{ planView().line }}</span>
+        @if (executeError()) {
+        <span class="error" role="alert">{{ executeError() }}</span>
+        }
+      </div>
+      <button
+        mat-button
+        type="button"
+        [disabled]="executeBusy()"
+        (click)="backToReview()"
+      >
+        {{ BACK_TO_REVIEW_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        class="destructive"
+        type="button"
+        [disabled]="!executeReady()"
+        (click)="execute()"
+      >
+        {{ executeBusy() ? 'Executing…' : executeLabel() }}
+      </button>
+      } @case ('results') {
+      <div class="export-state">
+        <span class="status-chip small tone-neutral" data-plan="executed">
+          <span class="dot" aria-hidden="true"></span>
+          Executed
+        </span>
+        <span>{{ executedLine() }}</span>
+      </div>
+      <button mat-flat-button type="button" (click)="done()">Done</button>
+      } }
     </div>
   </section>
 </div>
