@@ -304,19 +304,18 @@ export async function qualifyDeviceExportImport({
     client = null,
   ) =>
     (client ?? runtime)
-      .query('SELECT cc.store_device_import_source($1,$2,$3,$4,$5,$6) AS result', [
-        customer,
-        jobId,
-        lease,
-        attemptNumber,
-        artifactId,
-        sizeBytes,
-      ])
+      .query(
+        'SELECT cc.store_device_import_source($1,$2,$3,$4,$5,$6) AS result',
+        [customer, jobId, lease, attemptNumber, artifactId, sizeBytes],
+      )
       .then((r) => r.rows[0].result);
   /** The saved Drive settings, or null before the first save (design section 3). */
   const readSettings = (actor, client = null) =>
     (client ?? runtime)
-      .query('SELECT cc.read_google_drive_settings($1,$2) AS result', [actor, 1])
+      .query('SELECT cc.read_google_drive_settings($1,$2) AS result', [
+        actor,
+        1,
+      ])
       .then((r) => r.rows[0].result);
   const saveSettings = (
     actor,
@@ -1972,13 +1971,7 @@ export async function qualifyDeviceExportImport({
           [
             'cc.save_google_drive_settings(uuid,integer,text,text,uuid)',
             'SELECT cc.save_google_drive_settings($1,$2,$3,$4,$5)',
-            [
-              exporter,
-              1,
-              pickerKey('privilege'),
-              '123456789012',
-              randomUUID(),
-            ],
+            [exporter, 1, pickerKey('privilege'), '123456789012', randomUUID()],
           ],
           [
             'cc.finish_device_export_job(text,uuid,uuid,jsonb,text)',
@@ -4694,7 +4687,10 @@ export async function qualifyDeviceExportImport({
           assert.equal(driveCsv.drive_subject, 'reader@example.org');
           // A Drive source names its file and its subject, a Sheet adds its tab, and a CSV upload names
           // none of them.
-          await rejects(driveSheetImport({ tabId: null, tabTitle: null }), '22023');
+          await rejects(
+            driveSheetImport({ tabId: null, tabTitle: null }),
+            '22023',
+          );
           await rejects(driveSheetImport({ tabId: null }), '22023');
           await rejects(driveSheetImport({ tabTitle: null }), '22023');
           await rejects(driveSheetImport({ fileId: null }), '22023');
@@ -4703,7 +4699,10 @@ export async function qualifyDeviceExportImport({
           await rejects(driveSheetImport({ fileId: 'x'.repeat(129) }), '22023');
           await rejects(driveSheetImport({ tabId: -1 }), '22023');
           await rejects(driveSheetImport({ tabTitle: '' }), '22023');
-          await rejects(driveSheetImport({ tabTitle: 'x'.repeat(256) }), '22023');
+          await rejects(
+            driveSheetImport({ tabTitle: 'x'.repeat(256) }),
+            '22023',
+          );
           await rejects(driveSheetImport({ subject: 'xx' }), '22023');
           await rejects(
             driveSheetImport({ artifactId: 'example-artifact-1' }),
@@ -4901,10 +4900,13 @@ export async function qualifyDeviceExportImport({
               'claimed',
             );
             await holder.query('BEGIN');
-            await holder.query('SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE', [
-              first.receipt.jobId,
-            ]);
-            started = settle(startSheet(first.receipt.jobId, firstLease, starter));
+            await holder.query(
+              'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+              [first.receipt.jobId],
+            );
+            started = settle(
+              startSheet(first.receipt.jobId, firstLease, starter),
+            );
             await waitWaiting(starterPid, 'the stamp');
             lateCancel = settle(
               cancelAs(exporter, first.receipt.displayId, 1, canceller),
@@ -4931,14 +4933,17 @@ export async function qualifyDeviceExportImport({
               'claimed',
             );
             await holder.query('BEGIN');
-            await holder.query('SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE', [
-              second.receipt.jobId,
-            ]);
+            await holder.query(
+              'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+              [second.receipt.jobId],
+            );
             cancelledFirst = settle(
               cancelAs(exporter, second.receipt.displayId, 1, canceller),
             );
             await waitWaiting(cancellerPid, 'the cancel');
-            lateStamp = settle(startSheet(second.receipt.jobId, secondLease, starter));
+            lateStamp = settle(
+              startSheet(second.receipt.jobId, secondLease, starter),
+            );
             await waitWaiting(starterPid, 'the stamp');
             await holder.query('COMMIT');
             assert.equal((await cancelledFirst).value?.outcome, 'requested');
@@ -4967,7 +4972,11 @@ export async function qualifyDeviceExportImport({
             throw new Error(
               `${error.message} ${JSON.stringify(seen, (key, value) =>
                 value instanceof Error
-                  ? { message: value.message, code: value.code, detail: value.detail }
+                  ? {
+                      message: value.message,
+                      code: value.code,
+                      detail: value.detail,
+                    }
                   : value,
               )}`,
             );
@@ -4989,7 +4998,9 @@ export async function qualifyDeviceExportImport({
           const settingsReader = await principal([
             ['connection:read', { kind: 'platform' }],
           ]);
-          const settingsDenied = await principal([['devices:read', district()]]);
+          const settingsDenied = await principal([
+            ['devices:read', district()],
+          ]);
           assert.equal(await readSettings(settingsActor), null);
           // The field rules of design section 3.
           const key = pickerKey('a');
@@ -5007,7 +5018,10 @@ export async function qualifyDeviceExportImport({
           );
           await rejects(saveSettings(settingsActor, key, '0123456'), '22023');
           await rejects(saveSettings(settingsActor, key, '0'), '22023');
-          await rejects(saveSettings(settingsActor, key, '1'.repeat(21)), '22023');
+          await rejects(
+            saveSettings(settingsActor, key, '1'.repeat(21)),
+            '22023',
+          );
           await rejects(saveSettings(settingsActor, key, '12345x'), '22023');
           await rejects(saveSettings(settingsActor, key, ''), '22023');
           // The table checks hold the same rules, before the first row lands.
@@ -5055,7 +5069,9 @@ export async function qualifyDeviceExportImport({
             projectNumber: '123456789012',
           });
           const saved = (
-            await admin('SELECT saved_at,saved_by FROM cc.google_drive_settings')
+            await admin(
+              'SELECT saved_at,saved_by FROM cc.google_drive_settings',
+            )
           )[0];
           assert.equal(saved.saved_by, settingsActor);
           let events = await settingsEvents();
@@ -5075,32 +5091,28 @@ export async function qualifyDeviceExportImport({
           events = await settingsEvents();
           assert.equal(events.length, 1);
           const repeated = (
-            await admin('SELECT saved_at,saved_by FROM cc.google_drive_settings')
+            await admin(
+              'SELECT saved_at,saved_by FROM cc.google_drive_settings',
+            )
           )[0];
           assert.equal(repeated.saved_at.getTime(), saved.saved_at.getTime());
           assert.equal(repeated.saved_by, settingsActor);
           // A new project number writes one event that reports the key as unchanged.
           await saveSettings(settingsActor, key, '210987654321');
           events = await settingsEvents();
-          assert.deepEqual(
-            events.map((row) => row.detail).sort(),
-            [
-              'projectNumber:123456789012,keyChanged:true',
-              'projectNumber:210987654321,keyChanged:false',
-            ],
-          );
+          assert.deepEqual(events.map((row) => row.detail).sort(), [
+            'projectNumber:123456789012,keyChanged:true',
+            'projectNumber:210987654321,keyChanged:false',
+          ]);
           // A new key writes one event that reports the change.
           const nextKey = pickerKey('b');
           await saveSettings(settingsActor, nextKey, '210987654321');
           events = await settingsEvents();
-          assert.deepEqual(
-            events.map((row) => row.detail).sort(),
-            [
-              'projectNumber:123456789012,keyChanged:true',
-              'projectNumber:210987654321,keyChanged:false',
-              'projectNumber:210987654321,keyChanged:true',
-            ],
-          );
+          assert.deepEqual(events.map((row) => row.detail).sort(), [
+            'projectNumber:123456789012,keyChanged:true',
+            'projectNumber:210987654321,keyChanged:false',
+            'projectNumber:210987654321,keyChanged:true',
+          ]);
           assert.deepEqual(await readSettings(settingsReader), {
             pickerApiKey: nextKey,
             projectNumber: '210987654321',
@@ -5134,8 +5146,15 @@ export async function qualifyDeviceExportImport({
           await claimExport(exported.receipt.jobId, lease);
           await startSheet(exported.receipt.jobId, lease);
           assert.equal(
-            (await renewExport(exported.receipt.jobId, lease, 'create-sheet', 0, null))
-              .outcome,
+            (
+              await renewExport(
+                exported.receipt.jobId,
+                lease,
+                'create-sheet',
+                0,
+                null,
+              )
+            ).outcome,
             'renewed',
           );
           const header = await jobRow(exported.receipt.jobId);
@@ -5183,7 +5202,13 @@ export async function qualifyDeviceExportImport({
             '22023',
           );
           await rejects(
-            renewImport(imported.receipt.jobId, importLease, 'create-sheet', 1, 1),
+            renewImport(
+              imported.receipt.jobId,
+              importLease,
+              'create-sheet',
+              1,
+              1,
+            ),
             '22023',
           );
         },
@@ -5202,7 +5227,11 @@ export async function qualifyDeviceExportImport({
           await claimExport(finished.receipt.jobId, lease);
           await startSheet(finished.receipt.jobId, lease);
           const file = sheetFile(3, 10);
-          const answer = await finishExport(finished.receipt.jobId, lease, file);
+          const answer = await finishExport(
+            finished.receipt.jobId,
+            lease,
+            file,
+          );
           assert.equal(answer.outcome, 'finished');
           assert.equal(answer.status, 'completed');
           assert.equal(answer.file.format, 'sheet');
@@ -5261,7 +5290,11 @@ export async function qualifyDeviceExportImport({
           const csvLease = randomUUID();
           await claimExport(csv.receipt.jobId, csvLease);
           const csvFile = exportFile(3, 10);
-          const csvAnswer = await finishExport(csv.receipt.jobId, csvLease, csvFile);
+          const csvAnswer = await finishExport(
+            csv.receipt.jobId,
+            csvLease,
+            csvFile,
+          );
           assert.equal(csvAnswer.outcome, 'finished');
           assert.equal(csvAnswer.status, 'completed');
           assert.equal(csvAnswer.file.format, 'csv');
@@ -5442,7 +5475,9 @@ export async function qualifyDeviceExportImport({
           assert.equal(Number(stored.sizeBytes), 2048);
           assert.equal(
             (
-              await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [artifact])
+              await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [
+                artifact,
+              ])
             )[0].job_id,
             imported.receipt.jobId,
           );
@@ -5463,12 +5498,28 @@ export async function qualifyDeviceExportImport({
           assert.equal(again.outcome, 'claimed');
           assert.equal(again.sourceArtifactId, artifact);
           const againLease = randomUUID();
-          assert.equal((await storeSource(imported.receipt.jobId, againLease, again.attempt, artifact, 2048)).outcome, 'fenced');
+          assert.equal(
+            (
+              await storeSource(
+                imported.receipt.jobId,
+                againLease,
+                again.attempt,
+                artifact,
+                2048,
+              )
+            ).outcome,
+            'fenced',
+          );
           // A file of another size, an unfinished file, and a CSV job refuse the call.
           await expire('device_import_jobs', imported.receipt.jobId);
           const currentLease = randomUUID();
-          const current = await claimImport(imported.receipt.jobId, currentLease);
-          const unfinished = await seedDriveArtifact(2048, { state: 'staging' });
+          const current = await claimImport(
+            imported.receipt.jobId,
+            currentLease,
+          );
+          const unfinished = await seedDriveArtifact(2048, {
+            state: 'staging',
+          });
           await rejects(
             storeSource(
               imported.receipt.jobId,
@@ -5492,7 +5543,10 @@ export async function qualifyDeviceExportImport({
           const upload = await createImport({ actor: importer });
           jobs.push(upload.receipt.jobId);
           const uploadLease = randomUUID();
-          const uploadClaim = await claimImport(upload.receipt.jobId, uploadLease);
+          const uploadClaim = await claimImport(
+            upload.receipt.jobId,
+            uploadLease,
+          );
           await rejects(
             storeSource(
               upload.receipt.jobId,
@@ -5513,7 +5567,9 @@ export async function qualifyDeviceExportImport({
           ])
           .catch(() => undefined);
       await migrator
-        .query("DELETE FROM cc.security_events WHERE event='drive-settings-changed'")
+        .query(
+          "DELETE FROM cc.security_events WHERE event='drive-settings-changed'",
+        )
         .catch(() => undefined);
       await migrator
         .query('DELETE FROM cc.google_drive_settings')
