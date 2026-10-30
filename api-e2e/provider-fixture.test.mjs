@@ -78,7 +78,7 @@ test('provider binds the subject to the authorization code and retains PKCE and 
   const verifier = 'synthetic-pkce-verifier';
   const authorize = async () => {
     const query = new URLSearchParams({
-      scope: 'openid profile',
+      scope: 'openid profile email',
       redirect_uri: `${publicOrigin}/api/auth/callback`,
       code_challenge_method: 'S256',
       code_challenge: createHash('sha256').update(verifier).digest('base64url'),
@@ -109,6 +109,8 @@ test('provider binds the subject to the authorization code and retains PKCE and 
   const claims = JSON.parse(Buffer.from(token[1], 'base64url'));
   assert.equal(claims.sub, 'ordinary-principal');
   assert.equal(claims.nonce, 'synthetic-nonce');
+  assert.equal(claims.email, 'ordinary-principal@fixture.invalid');
+  assert.equal(claims.email_verified, true);
   const { keys } = JSON.parse((await request('/jwks')).body);
   assert.equal(
     verify(

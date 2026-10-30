@@ -43,7 +43,7 @@ export async function startProvider({
           });
         if (url.pathname === '/jwks') return json({ keys: [jwk] });
         if (url.pathname === '/authorize') {
-          assert.equal(url.searchParams.get('scope'), 'openid profile');
+          assert.equal(url.searchParams.get('scope'), 'openid profile email');
           assert.equal(
             url.searchParams.get('redirect_uri'),
             `${publicOrigin}/api/auth/callback`,
@@ -89,6 +89,9 @@ export async function startProvider({
             iss: issuer,
             aud: 'qualification',
             sub: grant.subject,
+            // The sign-in scope asks for the verified email, the session's Drive subject.
+            email: `${grant.subject}@fixture.invalid`,
+            email_verified: true,
             nonce: grant.nonce,
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 300,
