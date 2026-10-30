@@ -433,7 +433,12 @@
             </div>
 
             <mat-tab-nav-panel #reportPanel>
-              <div class="report-table-wrap">
+              <div
+                class="report-table-wrap"
+                role="region"
+                aria-label="Validation results"
+                tabindex="0"
+              >
                 <table
                   class="report-table"
                   [class.rv]="view() === 'proposed'"
@@ -648,12 +653,11 @@
                   </li>
                 </ul>
               </li>
-              }
-              @if (statusJobs().length) {
+              } @if (statusJobs().length) {
               <li class="seq-step">
-                <span class="phase-dot" aria-hidden="true">{{
-                  fieldChangeStep() ? 2 : 1
-                }}</span>
+                <span class="phase-dot" aria-hidden="true"
+                  >{{ fieldChangeStep() ? 2 : 1 }}</span
+                >
                 <ul class="seq-jobs">
                   @for (job of statusJobs(); track job.key) {
                   <li class="seq-job">
@@ -672,14 +676,19 @@
             </ol>
             @if (confirmView().staysOut) {
             <p class="stays-out">
-              <span class="material-symbols-outlined" aria-hidden="true">block</span>
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >block</span
+              >
               <span>{{ confirmView().staysOut }}</span>
             </p>
             }
           </section>
 
           @for (one of oneWay(); track one.key) {
-          <section class="one-way" [attr.aria-labelledby]="'one-way-' + one.key">
+          <section
+            class="one-way"
+            [attr.aria-labelledby]="'one-way-' + one.key"
+          >
             <div class="one-way-head" [id]="'one-way-' + one.key">
               <span class="material-symbols-outlined" aria-hidden="true"
                 >warning</span
@@ -691,9 +700,7 @@
             <p>{{ DEPROVISION_MANAGEMENT }}</p>
             <p>{{ DEPROVISION_LOCAL_DATA }}</p>
           </section>
-          }
-
-          @if (needsPhrase()) {
+          } @if (needsPhrase()) {
           <mat-form-field
             appearance="outline"
             subscriptSizing="dynamic"
@@ -717,10 +724,7 @@
           <p class="error" id="execute-phrase-error" role="alert">
             {{ phraseError }}
           </p>
-          }
-          }
-
-          @if (executeError(); as error) {
+          } } @if (executeError(); as error) {
           <div class="action-note error" role="alert">
             <p>{{ error }}</p>
           </div>
@@ -728,7 +732,10 @@
         </div>
         } @case ('results') {
         <div class="step results">
-          <section class="report-counts rs-sum" aria-labelledby="rs-counts-title">
+          <section
+            class="report-counts rs-sum"
+            aria-labelledby="rs-counts-title"
+          >
             <h3 id="rs-counts-title" class="visually-hidden">Result counts</h3>
             <dl class="count-equation" aria-label="Changes">
               <div class="count-term tone-info">
@@ -736,7 +743,9 @@
                 <dt>{{ changeUnit() }}</dt>
               </div>
               @for (term of resultSum()?.terms; track term.label) {
-              <span class="count-sign" aria-hidden="true">+</span>
+              <span class="count-sign" aria-hidden="true"
+                >{{ $first ? '=' : '+' }}</span
+              >
               <div
                 class="count-term"
                 [class.tone-success]="term.tone === 'success'"
@@ -765,9 +774,9 @@
             <ul class="job-items">
               @for (job of resultJobs(); track job.displayId) {
               <li class="job-item">
-                <a class="job-link" [routerLink]="['/jobs', job.displayId]">{{
-                  job.displayId
-                }}</a>
+                <a class="job-link" [routerLink]="['/jobs', job.displayId]"
+                  >{{ job.displayId }}</a
+                >
                 <span class="job-action">{{ job.action }}</span>
                 <span
                   class="status-chip small job-chip"
@@ -825,8 +834,16 @@
             </div>
 
             <mat-tab-nav-panel #resultsPanel>
-              <div class="report-table-wrap">
-                <table class="report-table rv rs" aria-label="Execution results table">
+              <div
+                class="report-table-wrap"
+                role="region"
+                aria-label="Execution results"
+                tabindex="0"
+              >
+                <table
+                  class="report-table rv rs"
+                  aria-label="Execution results table"
+                >
                   <caption class="visually-hidden">
                     Results of the changes of job {{ subtitleJob() }}
                   </caption>
@@ -882,9 +899,9 @@
                         <span class="muted">{{ NOT_IN_INVENTORY_LABEL }}</span>
                         }
                       </td>
-                      @if (line.change; as change) { @let cells = values(change);
-                      @let chip = this.chip(change); @let result =
-                      resultCell(line);
+                      @if (line.change; as change) { @let cells =
+                      values(change); @let chip = this.chip(change); @let result
+                      = resultCell(line);
                       <td class="col-change">
                         <span
                           class="change-chip"
@@ -1164,6 +1181,17 @@
       </button>
       } } } @case ('confirm') {
       <div class="export-state">
+        @if (planView().chip) {
+        <span
+          class="status-chip small"
+          [class]="planView().tone"
+          [attr.data-plan]="planView().state"
+        >
+          <span class="dot" aria-hidden="true"></span>
+          {{ planView().chip }}
+        </span>
+        }
+        <span>{{ planView().line }}</span>
         @if (executeError()) {
         <span class="error" role="alert">{{ executeError() }}</span>
         }
@@ -1178,6 +1206,7 @@
       </button>
       <button
         mat-flat-button
+        class="destructive"
         type="button"
         [disabled]="!executeReady()"
         (click)="execute()"

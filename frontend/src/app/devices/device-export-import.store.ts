@@ -179,7 +179,9 @@ export class DeviceExportImportStore {
   /** The number of status jobs that Execute creates: one per action of the plan. */
   readonly planStatusJobs = computed(() => {
     const changes = this.reportChanges();
-    return changes ? changes.disable + changes.reenable + changes.deprovision.length : 0;
+    return changes
+      ? changes.disable + changes.reenable + changes.deprovision.length
+      : 0;
   });
   /** The views of the results table: All changes and Failed (design section 8, ruling 4). */
   readonly resultsView = computed<ResultsView>(() =>
@@ -868,7 +870,11 @@ export class DeviceExportImportStore {
 
   /** Execute opens the confirmation of state 16. Only an open plan can run. */
   openConfirm(): void {
-    if (this.plan()?.state !== 'open' || this.actionBusy() || this.executeBusy())
+    if (
+      this.plan()?.state !== 'open' ||
+      this.actionBusy() ||
+      this.executeBusy()
+    )
       return;
     this.executeError.set('');
     this.typedPhrase.set('');
@@ -904,11 +910,14 @@ export class DeviceExportImportStore {
     this.executeBusy.set(true);
     this.executeError.set('');
     try {
-      const response = await this.auth.request(`${importBase(displayId)}/execute`, {
-        planId: plan.planId,
-        planRevision: plan.revision,
-        typedPhrase: this.planHasDeprovision() ? this.typedPhrase() : null,
-      });
+      const response = await this.auth.request(
+        `${importBase(displayId)}/execute`,
+        {
+          planId: plan.planId,
+          planRevision: plan.revision,
+          typedPhrase: this.planHasDeprovision() ? this.typedPhrase() : null,
+        },
+      );
       if (!owned()) return false;
       if (!response.ok) {
         const reason = await refusalReason(response);
@@ -1043,7 +1052,9 @@ export class DeviceExportImportStore {
     this.resultOps.set(found);
     this.resultsLoading.set(false);
     if (failed)
-      this.resultsError.set('The result of each change is unavailable. Try again.');
+      this.resultsError.set(
+        'The result of each change is unavailable. Try again.',
+      );
   }
 
   /**
@@ -1515,7 +1526,10 @@ export class DeviceExportImportStore {
             } else {
               // The retained results own this job's screen, even when their facts need no read.
               this.step.set('results');
-              if (this.reportView() !== 'proposed' && this.reportView() !== 'failed')
+              if (
+                this.reportView() !== 'proposed' &&
+                this.reportView() !== 'failed'
+              )
                 this.reportView.set('proposed');
               const changed =
                 this.reportRevision !== detail.data.revision ||

@@ -217,9 +217,7 @@ export function operationOfLine(
   operations: ReadonlyMap<string, JobOperation>,
 ): JobOperation | null {
   if (!line.jobDisplayId || line.operationNumber === null) return null;
-  return (
-    operations.get(`${line.jobDisplayId}-${line.operationNumber}`) ?? null
-  );
+  return operations.get(`${line.jobDisplayId}-${line.operationNumber}`) ?? null;
 }
 
 /**
@@ -249,7 +247,8 @@ export function resultCell(
     return { chip: { label: '', tone: 'neutral' }, failure: '', notes: [] };
   const job = jobOfLine(line, jobs);
   const operation = operationOfLine(line, operations);
-  const failure = operation && job ? (rowFailureText(job, operation) ?? '') : '';
+  const failure =
+    operation && job ? (rowFailureText(job, operation) ?? '') : '';
   // A status job starts after the update job of the plan ends (design section 3).
   const waitsFor =
     outcome === 'pending' && line.change?.type === 'status'
@@ -267,12 +266,8 @@ export function resultCell(
 }
 
 /** The update job of a plan: the one job that runs before the status jobs (design section 3). */
-export function updateJobOf(
-  jobs: readonly JobSummary[],
-): JobSummary | null {
-  return (
-    jobs.find((job) => job.action === 'update-device-annotations') ?? null
-  );
+export function updateJobOf(jobs: readonly JobSummary[]): JobSummary | null {
+  return jobs.find((job) => job.action === 'update-device-annotations') ?? null;
 }
 
 /** The outcomes of the Failed tab, from the one constant of the contract (design section 8). */

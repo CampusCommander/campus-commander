@@ -469,9 +469,13 @@ export function executeActionLabel(changes: number): string {
  * The question of the confirmation (state 16). The report answer counts the changes and the
  * field-change devices, so the question names the changes that Execute runs.
  */
-export function executeConfirmTitle(changes: number): string {
-  return `Execute ${changes.toLocaleString('en-US')} ${
+export function executeConfirmTitle(changes: number, devices: number): string {
+  const changeText = `${changes.toLocaleString('en-US')} ${
     changes === 1 ? 'change' : 'changes'
+  }`;
+  if (devices <= 0) return `Execute ${changeText}?`;
+  return `Execute ${changeText} on ${devices.toLocaleString('en-US')} ${
+    devices === 1 ? 'device' : 'devices'
   }?`;
 }
 
@@ -496,7 +500,10 @@ function spellCount(value: number): string {
  * import wait for it (design section 3). A plan with field changes only creates the update job, and
  * a plan with status changes only creates one job per action.
  */
-export function executeJobsLine(fieldChanges: boolean, statusJobs: number): string {
+export function executeJobsLine(
+  fieldChanges: boolean,
+  statusJobs: number,
+): string {
   if (fieldChanges && statusJobs > 1)
     return `Execute creates ${spellCount(
       statusJobs + 1,
@@ -505,7 +512,8 @@ export function executeJobsLine(fieldChanges: boolean, statusJobs: number): stri
     )} status jobs start after it ends.`;
   if (fieldChanges && statusJobs === 1)
     return 'Execute creates two jobs. The update job runs first. The status job starts after it ends.';
-  if (fieldChanges) return 'Execute creates one job. The update job runs first.';
+  if (fieldChanges)
+    return 'Execute creates one job. The update job runs first.';
   if (statusJobs === 1)
     return 'Execute creates one job. It runs its own action.';
   return `Execute creates ${spellCount(

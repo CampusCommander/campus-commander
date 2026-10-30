@@ -216,14 +216,13 @@ const fieldChange = (
   field: 'annotatedLocation' | 'notes' | 'orgUnitPath',
   currentValue: string | null,
   newValue: string | null,
-) =>
-  ({
-    type: 'field' as const,
-    field,
-    operation: 'replace' as const,
-    currentValue,
-    newValue,
-  });
+) => ({
+  type: 'field' as const,
+  field,
+  operation: 'replace' as const,
+  currentValue,
+  newValue,
+});
 
 const report = (
   overrides: Partial<DeviceImportReport> = {},
@@ -447,7 +446,8 @@ function setup(
   const text = () => panel()?.textContent?.replace(/\s+/g, ' ') ?? '';
   const button = (label: string) =>
     [...(panel()?.querySelectorAll('button') ?? [])].find(
-      (candidate) => candidate.textContent?.replace(/\s+/g, ' ').trim() === label,
+      (candidate) =>
+        candidate.textContent?.replace(/\s+/g, ' ').trim() === label,
     );
   return {
     fixture,
@@ -490,7 +490,7 @@ describe('Execute and its results', () => {
 
     expect(store.step()).toBe('confirm');
     // The question names the changes of the plan.
-    expect(text()).toContain('Execute 4 changes?');
+    expect(text()).toContain('Execute 4 changes on 4 devices?');
     expect(text()).toContain(
       'Execute creates two jobs. The update job runs first. The status job starts after it ends.',
     );
@@ -520,7 +520,9 @@ describe('Execute and its results', () => {
         scope: '1 device',
       },
     ]);
-    expect(text()).toContain('The 2 rejected rows stay out. Nothing in them runs.');
+    expect(text()).toContain(
+      'The 2 rejected rows stay out. Nothing in them runs.',
+    );
     expect(
       panel()?.querySelector('ol[aria-label="Jobs that Execute creates"]'),
     ).not.toBeNull();
@@ -538,8 +540,8 @@ describe('Execute and its results', () => {
             disable: 0,
             reenable: 1,
             deprovision: [
-            { reason: 'DEPROVISION_REASON_RETIRING_DEVICE', devices: 1 },
-          ],
+              { reason: 'DEPROVISION_REASON_RETIRING_DEVICE', devices: 1 },
+            ],
           },
         }),
       failed: () => report({ view: 'failed', lines: [], total: 0 }),
@@ -551,7 +553,9 @@ describe('Execute and its results', () => {
     store.openConfirm();
     await render();
 
-    expect(text()).toContain('Deprovision removes these devices from active management.');
+    expect(text()).toContain(
+      'Deprovision removes these devices from active management.',
+    );
     expect(text()).toContain('Type DEPROVISION to confirm');
     const execute = () =>
       [...(panel()?.querySelectorAll('button') ?? [])].find((candidate) =>
@@ -659,7 +663,9 @@ describe('Execute and its results', () => {
     await render();
 
     expect(store.step()).toBe('confirm');
-    expect(text()).toContain('You do not have permission to execute this plan.');
+    expect(text()).toContain(
+      'You do not have permission to execute this plan.',
+    );
   });
 
   it('shows the count sum, the jobs band, and the result of each change', async () => {
@@ -709,7 +715,9 @@ describe('Execute and its results', () => {
 
     expect(store.step()).toBe('results');
     // The count sum: 4 changes = 2 Succeeded + 2 Pending.
-    const sum = [...(panel()?.querySelectorAll('.rs-sum .count-term') ?? [])].map(
+    const sum = [
+      ...(panel()?.querySelectorAll('.rs-sum .count-term') ?? []),
+    ].map(
       (term) =>
         `${term.querySelector('dd')?.textContent?.trim()} ${term
           .querySelector('dt')
@@ -721,8 +729,8 @@ describe('Execute and its results', () => {
     expect(text()).not.toContain('Finished ');
 
     // The jobs band: the running job with its bar, the waiting job with its own progress.
-    const jobs = [...(panel()?.querySelectorAll('.job-item') ?? [])].map((job) =>
-      job.textContent?.replace(/\s+/g, ' ').trim(),
+    const jobs = [...(panel()?.querySelectorAll('.job-item') ?? [])].map(
+      (job) => job.textContent?.replace(/\s+/g, ' ').trim(),
     );
     expect(jobs[0]).toContain('UPD-001');
     expect(jobs[0]).toContain('Running');
@@ -730,9 +738,9 @@ describe('Execute and its results', () => {
     expect(jobs[1]).toContain('STS-002');
     expect(jobs[1]).toContain('Queued');
     expect(jobs[1]).toContain('0 of 1 complete');
-    expect(panel()?.querySelectorAll('.job-progress mat-progress-bar')).toHaveLength(
-      1,
-    );
+    expect(
+      panel()?.querySelectorAll('.job-progress mat-progress-bar'),
+    ).toHaveLength(1);
 
     // The table keeps the report columns and adds the Result column.
     const head = [...(panel()?.querySelectorAll('th') ?? [])].map((cell) =>
@@ -793,7 +801,8 @@ describe('Execute and its results', () => {
           baselineValue: 'DISABLED',
           requestedValue: 'ACTIVE',
           outcomeReason: 'status-conflict',
-          googleReason: 'A device with status ACTIVE does not allow this action.',
+          googleReason:
+            'A device with status ACTIVE does not allow this action.',
         }),
       ],
     });
@@ -803,7 +812,9 @@ describe('Execute and its results', () => {
 
     expect(text()).not.toContain('Updated live');
     expect(text()).toContain('Finished ');
-    const sum = [...(panel()?.querySelectorAll('.rs-sum .count-term') ?? [])].map(
+    const sum = [
+      ...(panel()?.querySelectorAll('.rs-sum .count-term') ?? []),
+    ].map(
       (term) =>
         `${term.querySelector('dd')?.textContent?.trim()} ${term
           .querySelector('dt')
@@ -853,9 +864,9 @@ describe('Execute and its results', () => {
     store.openJob('IMP-001');
     await render();
 
-    const tabs = [...(panel()?.querySelectorAll('.report-tabs button') ?? [])].map(
-      (tab) => tab.textContent?.replace(/\s+/g, ' ').trim(),
-    );
+    const tabs = [
+      ...(panel()?.querySelectorAll('.report-tabs button') ?? []),
+    ].map((tab) => tab.textContent?.replace(/\s+/g, ' ').trim());
     expect(tabs).toEqual(['All changes 4', 'Failed 0']);
 
     store.setReportView('failed');
@@ -948,8 +959,8 @@ describe('Execute and its results', () => {
     const numbers = calls.mock.calls
       .map(([path]) => String(path))
       .filter((path) => path.includes('/operations?'))
-      .map(
-        (path) => new URL(path, 'http://localhost').searchParams.get('number'),
+      .map((path) =>
+        new URL(path, 'http://localhost').searchParams.get('number'),
       );
     // Each page reads its own operations: the second page asks for its one operation.
     expect(numbers).toContain('9');

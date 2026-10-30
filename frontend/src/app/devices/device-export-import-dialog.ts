@@ -597,6 +597,17 @@ export class DeviceExportImportDialog {
         0,
       ),
   );
+  /** The devices of the plan: each field-change device, and each status device (state 16). */
+  protected readonly planDeviceCount = computed(
+    () =>
+      (this.store.reportChanges()?.fieldChangeDevices ?? 0) +
+      (this.store.reportChanges()?.disable ?? 0) +
+      (this.store.reportChanges()?.reenable ?? 0) +
+      (this.store.reportChanges()?.deprovision ?? []).reduce(
+        (sum, entry) => sum + entry.devices,
+        0,
+      ),
+  );
   protected readonly NO_UPDATE_VIEW_LINE = NO_UPDATE_VIEW_LINE;
   /** The empty line of the shown view (states 14 and 15). */
   protected readonly emptyViewLine = computed(
@@ -626,7 +637,7 @@ export class DeviceExportImportDialog {
     const counts = this.store.reportCounts();
     const rejected = counts?.rejected ?? 0;
     return {
-      title: executeConfirmTitle(this.executeCount()),
+      title: executeConfirmTitle(this.executeCount(), this.planDeviceCount()),
       jobs: executeJobsLine(
         (changes?.fieldChanges ?? 0) > 0,
         this.store.planStatusJobs(),
@@ -640,7 +651,8 @@ export class DeviceExportImportDialog {
       !this.store.executeBusy() &&
       this.store.plan()?.state === 'open' &&
       (!this.needsPhrase() ||
-        this.store.typedPhrase().trim().toUpperCase() === DEPROVISION_PHRASE_LABEL),
+        this.store.typedPhrase().trim().toUpperCase() ===
+          DEPROVISION_PHRASE_LABEL),
   );
 
   /* ---------- States 17 and 17b: the execution results (design section 8) ---------- */
@@ -663,8 +675,8 @@ export class DeviceExportImportDialog {
     resultJobViews(this.store.planJobs()),
   );
   /** The live line of state 17, and `Finished <time>` when every job is final (state 17b). */
-  protected readonly resultStatus = computed(
-    () => resultEndLine(this.store.planJobs()),
+  protected readonly resultStatus = computed(() =>
+    resultEndLine(this.store.planJobs()),
   );
   protected readonly liveRunning = computed(() =>
     this.store.planJobs().some((job) => !isFinal(job.status)),
@@ -768,11 +780,27 @@ export class DeviceExportImportDialog {
   });
   /** The one-way warning of each Deprovision reason (state 16). */
   protected readonly oneWay = computed(() =>
-    (this.store.reportChanges()?.deprovision ?? []).map((entry) => ({
-      key: entry.reason,
-      scope: deviceCountText(entry.devices),
-      reason: `(${DEPROVISION_REASON_LABELS[entry.reason]})`,
-    })),
+    (this.store.reportChanges()?.deprovision ?? []).map((entry) => {
+      // The plan names its devices when the page holds them (state 16 shows 04A9BVS).
+      const ids = this.store
+        .reportLines()
+        .filter(
+          (line) =>
+            line.change?.type === 'status' &&
+            line.change.action === 'deprovision' &&
+            line.change.reason === entry.reason,
+        )
+        .map((line) => line.serialNumber ?? line.deviceId)
+        .filter((id): id is string => id !== null);
+      return {
+        key: entry.reason,
+        scope:
+          ids.length === entry.devices && ids.length <= 3
+            ? ids.join(', ')
+            : deviceCountText(entry.devices),
+        reason: `(${DEPROVISION_REASON_LABELS[entry.reason]})`,
+      };
+    }),
   );
 
   protected close(): void {

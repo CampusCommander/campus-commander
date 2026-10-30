@@ -1310,3 +1310,56 @@ test('an obsolete answer does not release the next job request', async ({
   await held.release('/api/jobs/STS-001/cancel', { status: 200, json: {} });
   await expect(page.getByText('Job STS-001 · Cancelled')).toBeVisible();
 });
+
+/**
+ * State 25 of the device export and import design: the update job of an import names the import
+ * and the status jobs that wait for it, and the cancel question adds the third paragraph.
+ */
+test('state 25: the update job of an import names its import and its waiting jobs', async ({
+  page,
+}, testInfo) => {
+  const state: MockState = { upd: 'running', sts: 'queued' };
+  await freeze(page, '2026-10-28T14:45:08Z');
+  await signIn(page, state);
+  // The update job of the executed import IMP-001, with the three status jobs that wait.
+  await page.route('**/api/jobs/UPD-001', (route) =>
+    route.fulfill({
+      json: {
+        ...updDetail('running'),
+        importDisplayId: 'IMP-001',
+        waitingDisplayIds: ['STS-001', 'STS-002', 'STS-003'],
+      },
+    }),
+  );
+  await page.goto('/jobs/UPD-001');
+  await expect(page.getByText('Job UPD-001 · Running')).toBeVisible();
+  await expect(
+    page.getByText(
+      'Import IMP-001 · STS-001, STS-002, and STS-003 start after this job ends',
+    ),
+  ).toBeVisible();
+  await top(page);
+  await page.screenshot({
+    path: testInfo.outputPath('25-import-update-job.png'),
+  });
+
+  const dialog = await openCancelQuestion(page);
+  await expect(
+    dialog.getByRole('heading', { name: 'Cancel pending work on UPD-001?' }),
+  ).toBeVisible();
+  await expect(dialog.locator('#cancel-question-one')).toHaveText(
+    '12 of 48 operations are pending. Those that have not reached Google end Cancelled and never run.',
+  );
+  await expect(dialog.locator('#cancel-question-two')).toHaveText(
+    'Requests already sent to Google finish and keep their results. The 36 confirmed updates stay. Nothing rolls back.',
+  );
+  await expect(dialog.locator('#cancel-question-three')).toHaveText(
+    'The waiting status jobs STS-001, STS-002, and STS-003 also end Cancelled and never start.',
+  );
+  await expect(dialog).toHaveAccessibleDescription(
+    /The waiting status jobs STS-001, STS-002, and STS-003 also end Cancelled and never start\.$/,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('25-update-cancel-confirm.png'),
+  });
+});
