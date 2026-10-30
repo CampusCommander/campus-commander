@@ -661,12 +661,52 @@ export async function personDriveClient(
   signal: AbortSignal,
   options: GoogleDriveClientOptions = {},
 ): Promise<GoogleDriveClient> {
+  return new GoogleDriveClient(
+    await personClient(credential, subject, signal),
+    signal,
+    options,
+  );
+}
+
+/** The one-hour `drive.file` token of the person (design section 4). */
+export interface GoogleDriveToken {
+  readonly accessToken: string;
+  readonly expiresAt: number;
+}
+
+/**
+ * Mint the person's `drive.file` token for the session route, which stores no copy (design
+ * section 4). The subject comes from the server session, never from a request.
+ */
+export async function personDriveToken(
+  credential: DelegatedCredential,
+  subject: string,
+  signal: AbortSignal,
+): Promise<GoogleDriveToken> {
+  const client = await personClient(credential, subject, signal);
+  const accessToken = client.credentials.access_token;
+  const expiresAt = client.credentials.expiry_date;
+  if (
+    typeof accessToken !== 'string' ||
+    accessToken === '' ||
+    typeof expiresAt !== 'number' ||
+    !Number.isFinite(expiresAt)
+  )
+    throw new GoogleConnectionError('invalid-response');
+  return { accessToken, expiresAt };
+}
+
+/** Mint one client for one person. The scope and the subject rule stay in one place. */
+async function personClient(
+  credential: DelegatedCredential,
+  subject: string,
+  signal: AbortSignal,
+): Promise<OAuth2Client> {
   const person = z.email().max(254).parse(subject);
-  const client: OAuth2Client = await scopedClient(
+  return scopedClient(
     { ...credential, subject: person },
     GOOGLE_DRIVE_SCOPE,
     signal,
     transportLimit,
   );
-  return new GoogleDriveClient(client, signal, options);
 }

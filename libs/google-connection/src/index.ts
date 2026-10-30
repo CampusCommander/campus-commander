@@ -70,6 +70,7 @@ export {
   GoogleDriveClient,
   GoogleDriveError,
   personDriveClient,
+  personDriveToken,
   GOOGLE_DRIVE_API,
   GOOGLE_DRIVE_ATTEMPTS,
   GOOGLE_DRIVE_ERROR_CODES,
@@ -89,4 +90,5 @@ export type {
   GoogleDriveHttpResponse,
   GoogleDriveSheet,
   GoogleDriveTabValues,
+  GoogleDriveToken,
 } from './lib/drive';

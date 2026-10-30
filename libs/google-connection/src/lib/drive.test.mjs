@@ -13,6 +13,7 @@ import {
   GoogleDriveClient,
   columnName,
   personDriveClient,
+  personDriveToken,
 } from './drive.ts';
 import {
   fakeDrive,
@@ -116,15 +117,24 @@ test('one drive.file token for the person, sent on every call', async (t) => {
   assert.deepEqual(mints[0].scopes, [GOOGLE_DRIVE_SCOPE]);
   assert.equal(mints[0].subject, person);
   assert.equal(tabs.fileId, 'fixture-sheet');
-  assert.ok(sent.length >= 7);
   const authorization = `Bearer ${mintedToken}`;
   assert.deepEqual(
     sent.map((item) => item.authorization),
     Array.from({ length: sent.length }, () => authorization),
   );
   assert.deepEqual(
-    sent.filter((item) => item.path.includes('/values/')).length,
-    2,
+    sent.map((item) => item.path),
+    [
+      '/drive/v3/files/fixture-csv',
+      '/drive/v3/files/fixture-sheet',
+      '/v4/spreadsheets/fixture-sheet',
+      '/v4/spreadsheets/fixture-sheet',
+      "/v4/spreadsheets/fixture-sheet/values/'Devices'!A1%3AB1000",
+      '/v4/spreadsheets',
+      '/v4/spreadsheets/fixture-spreadsheet:batchUpdate',
+      "/v4/spreadsheets/fixture-spreadsheet/values/'Devices'!A1%3AB1",
+      '/drive/v3/files/fixture-csv',
+    ],
   );
 });
 
@@ -180,6 +190,21 @@ for (const [name, token, info, code] of tokenRefusals)
 test('the person subject must be an email address', async () => {
   await assert.rejects(personDriveClient(credential, 'not-an-email', signal), {
     name: 'ZodError',
+  });
+});
+
+test('mints the person token with its expiry', async (t) => {
+  const expiresAt = Date.now() + 3_500_000;
+  t.mock.method(JWT.prototype, 'getAccessToken', async () => ({
+    token: mintedToken,
+  }));
+  t.mock.method(JWT.prototype, 'getTokenInfo', async () => ({
+    scopes: [GOOGLE_DRIVE_SCOPE],
+    expiry_date: expiresAt,
+  }));
+  assert.deepEqual(await personDriveToken(credential, person, signal), {
+    accessToken: mintedToken,
+    expiresAt,
   });
 });
 
