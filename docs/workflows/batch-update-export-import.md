@@ -241,6 +241,16 @@ The gated full run of PR #164 failed twice on the same restart test (`api-e2e/al
 On 2026-10-29 the owner chose option 1 for finding 7. Option 1 pauses the live updates of a background tab, and the tab catches up when the person switches back. Owner: "1 for now, but persue point 2".
 Card `t_51ec6f43` builds option 1 and the frontend part of point 2.
 
+On 2026-10-29 the eng-lead asked: "Rest of point 2 (the server change that gets the Devices page to 1 connection): reply yes (build it now) or no (not now, recommended)."
+The owner replied: "yes".
+
+PR #177 (card `t_51ec6f43`, merged as `c47a5b1`) built `LiveFeeds`. Each tab opens each feed once, and a hidden tab holds no feed.
+
+PR #178 (card `t_a74f4a7c`, merged as `8108fb6`) built `GET /api/events`. It is one Server-Sent Events stream with the job feed and the device feed.
+The device feed joins under the open rule of the Devices stream. Without `devices:read` or a sync, the stream carries the job feed only. A ping closes the stream when that changes.
+
+PR #181 (card `t_31ebc0b2`, merged as `e770ee5`) moved every live feed of the browser to `/api/events`. `GET /api/jobs/events` and `GET /api/devices/events` no longer exist. A visible tab holds one live connection, and a hidden tab holds none.
+
 ### 2026-10-28, main chat: UI changes for export and import
 
 The owner sent these changes for the CSV slice:

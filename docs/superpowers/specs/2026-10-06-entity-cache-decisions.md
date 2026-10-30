@@ -75,7 +75,7 @@ Verified 2026-10-06 against Google documentation:
 `GET /api/devices/events` is an SSE response on the existing controller and session guard.
 The worker publishes to Redis channel `cc:entity-events:{customer}`. Each API instance holds one dedicated subscriber client and fans out to open SSE responses.
 Pub/Sub is fire-and-forget. The client reconciles on reconnect (D12), so lost messages cost only latency.
-As built, each ping first checks the session without extending the idle session lifetime. An open tab never keeps an unattended session alive. The owner amended D6 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)).
+As built, each ping first checks the session without extending the idle session lifetime. An open tab never keeps an unattended session alive. The owner amended D6 on 2026-10-17 (see [Amendments](#amendments-of-2026-10-17)). Since PR #181, `GET /api/events` carries the device events, and `GET /api/devices/events` no longer exists.
 
 ### D7. One event per completed batch (Q7)
 
