@@ -18,6 +18,8 @@ const healthFor = (capacity) =>
       ? 'BATTERY_REPLACE_SOON'
       : 'BATTERY_REPLACE_NOW';
 let quotaCalls = 0;
+/** The synthetic token name for the Drive health scope. */
+const driveToken = 'synthetic-drive-token';
 const fleet = Array.from({ length: 450 }, (_, index) => ({
   deviceId: `synthetic-device-${index}`,
   serialNumber: `C0A1-${index.toString(16).toUpperCase().padStart(4, '0')}`,
@@ -129,7 +131,7 @@ prototype.request = async function (options) {
                 : scope.endsWith('telemetry.readonly')
                   ? 'synthetic-telemetry-token'
                   : scope.endsWith('drive.file')
-                    ? 'synthetic-drive-token'
+                    ? driveToken
                     : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
@@ -151,7 +153,7 @@ prototype.request = async function (options) {
                   ? 'https://www.googleapis.com/auth/admin.directory.device.chromeos'
                   : authorization === 'Bearer synthetic-telemetry-token'
                     ? 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly'
-                    : authorization === 'Bearer synthetic-drive-token'
+                    : authorization === `Bearer ${driveToken}`
                       ? 'https://www.googleapis.com/auth/drive.file'
                       : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
