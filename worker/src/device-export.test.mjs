@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import test from 'node:test';
+import { GoogleDriveClient } from '@campus/google-connection';
 import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
   DEVICE_UPDATE_FIELD_LIMITS,
@@ -18,11 +19,17 @@ import {
   deviceExportRequestSchema,
 } from './device-export.ts';
 import { handleDeviceExportDispatch } from './dispatch.ts';
+import {
+  fakeDrive,
+  googleError,
+} from '../../libs/google-connection/src/lib/drive-fake.mjs';
 
 const customerId = 'C0123456';
 const jobId = randomUUID();
 const leaseId = randomUUID();
 const correlationId = randomUUID();
+/** The connection credential of a Sheet job (design section 4). */
+const credentialId = randomUUID();
 const request = { customerId, jobId, leaseId, correlationId };
 const signal = new AbortController().signal;
 const secret = 's'.repeat(32);
@@ -77,10 +84,12 @@ function fakeTimers() {
 
 /**
  * A store that behaves as the artifact store does: it consumes the stream, removes the partial
- * file when the stream fails, and keeps the published files.
+ * file when the stream fails, reads a published file only, and keeps the published files.
  */
 function fakeStore(options = {}) {
-  const calls = { manifests: [], published: [], removed: [] };
+  const calls = { manifests: [], published: [], removed: [], opened: [] };
+  /** The files of the store, by artifact ID: their state and their bytes. */
+  const files = new Map();
   let removed = false;
   let staged = null;
   return {
@@ -102,7 +111,7 @@ function fakeStore(options = {}) {
         throw new Error('Artifact stageStream failed.');
       }
       staged = Buffer.concat(chunks);
-      return {
+      const descriptor = {
         artifactId: randomUUID(),
         attemptId: randomUUID(),
         schemaVersion: manifest.schemaVersion,
@@ -110,15 +119,34 @@ function fakeStore(options = {}) {
         sha256: 'f'.repeat(64),
         expiresAt: '2026-11-28T00:00:00.000Z',
       };
+      files.set(descriptor.artifactId, { state: 'staging', bytes: staged });
+      return descriptor;
     },
     async publish(descriptor) {
       calls.published.push(descriptor);
+      const file = files.get(descriptor.artifactId);
       // The store verifies the whole file and syncs the filesystem before it answers.
       await options.onPublish?.(descriptor);
+      if (file === undefined || file.state !== 'staging')
+        throw new Error('Artifact cannot be published.');
+      file.state = 'ready';
+    },
+    async *openRead(artifactId) {
+      calls.opened.push(artifactId);
+      const file = files.get(artifactId);
+      // The store reads a ready file only.
+      if (file === undefined || file.state !== 'ready')
+        throw new Error('Artifact is not ready.');
+      await options.onOpenRead?.(artifactId);
+      // Small chunks split multi-byte characters and record ends, as a file read does.
+      for (let index = 0; index < file.bytes.length; index += 7)
+        yield file.bytes.subarray(index, index + 7);
     },
     async remove(descriptor) {
       calls.removed.push(descriptor);
       removed = true;
+      const file = files.get(descriptor.artifactId);
+      if (file !== undefined) file.state = 'deleted';
       return true;
     },
     close: () => Promise.resolve(),
@@ -127,11 +155,20 @@ function fakeStore(options = {}) {
 
 /** A database that answers the export functions, pages the scope, and holds the job state. */
 function fakeDatabase(options, devices) {
-  const calls = { claim: [], renew: [], cancel: [], finish: [], read: [] };
+  const calls = {
+    claim: [],
+    renew: [],
+    cancel: [],
+    finish: [],
+    read: [],
+    start: [],
+  };
   // The stored job state that the functions change (design section 5).
   const job = {
     status: options.jobStatus ?? null,
     cancelRequested: options.cancelRequested ?? false,
+    sheetStarted: options.sheetStarted ?? false,
+    startedAt: null,
   };
   // The two-minute lease. A test that models the clock advances it (design section 5).
   const lease = { expiresAt: Number.POSITIVE_INFINITY, fenced: false };
@@ -162,7 +199,24 @@ function fakeDatabase(options, devices) {
                 displayId: options.purpose === 'report' ? 'EXP-002' : 'EXP-001',
                 targetCount: devices.length,
                 purpose: options.purpose ?? 'edit',
-                format: 'csv',
+                format: options.format ?? 'csv',
+                driveSubject:
+                  (options.format ?? 'csv') === 'sheet'
+                    ? (options.subject ?? 'editor@example.org')
+                    : null,
+                generation: (options.format ?? 'csv') === 'sheet' ? 3 : null,
+                credentialId:
+                  (options.format ?? 'csv') === 'sheet' ? credentialId : null,
+                envelope:
+                  (options.format ?? 'csv') === 'sheet'
+                    ? {
+                        format: 1,
+                        keyId: 'test-key-1',
+                        iv: 'iv',
+                        tag: 'tag',
+                        ciphertext: 'ciphertext',
+                      }
+                    : null,
                 columns:
                   options.columns ??
                   (options.purpose === 'report'
@@ -189,6 +243,26 @@ function fakeDatabase(options, devices) {
         if (outcome === 'done') job.cancelRequested = true;
         if (outcome === 'fenced') lease.fenced = true;
         return { rows: [{ result: { outcome } }] };
+      }
+      if (name === 'start_device_export_sheet') {
+        calls.start.push(values);
+        // The stamp is the one create permission (design section 6, step 3).
+        options.onStart?.();
+        let result;
+        if (options.start) result = options.start(values);
+        else if (job.cancelRequested) result = { outcome: 'cancelled' };
+        else if (lease.fenced || now() > lease.expiresAt)
+          result = { outcome: 'fenced' };
+        else if (job.sheetStarted)
+          result = { outcome: 'repeated', startedAt: job.startedAt };
+        else result = { outcome: 'started', startedAt: new Date(now()) };
+        // The function stores what it answers, so a repeat reads it (migration 017).
+        if (result.outcome === 'cancelled') job.status = 'cancelled';
+        if (result.outcome === 'started') {
+          job.sheetStarted = true;
+          job.startedAt = result.startedAt;
+        }
+        return { rows: [{ result }] };
       }
       if (name === 'job_cancel_requested') {
         const answer = options.cancel
@@ -257,6 +331,7 @@ function harness(options = {}) {
     batchSize: options.batchSize,
     maxBytes: options.maxBytes,
     timers,
+    drive: options.drive,
   });
   return {
     jobs,
@@ -334,6 +409,7 @@ test('the export runs rows in ordinal batches and records the published file', a
   const { file, failure } = database.calls.finish[0];
   assert.equal(failure, null);
   assert.deepEqual(file, {
+    format: 'csv',
     artifactId: store.calls.published[0].artifactId,
     name: 'devices-for-editing-EXP-001.csv',
     sizeBytes: store.staged.length,
@@ -869,6 +945,458 @@ test('the request refuses a failure code of another job', () => {
     failure: 'storage-unavailable',
   });
   assert.equal(parsed.success, false);
+});
+
+/** The Sheets answers of W1: one Sheet, its text format, and its values. */
+function sheetAnswer(call) {
+  if (call.method === 'POST' && call.path === '/v4/spreadsheets')
+    return {
+      status: 200,
+      data: {
+        spreadsheetId: 'example-sheet-1',
+        sheets: [{ properties: { sheetId: 7 } }],
+      },
+    };
+  if (call.path.endsWith(':batchUpdate')) return { status: 200, data: {} };
+  if (call.method === 'PUT' && call.path.includes('/values/'))
+    return { status: 200, data: { updatedRows: call.body.values.length } };
+  throw new Error(`Unexpected Sheets call ${call.method} ${call.url}`);
+}
+
+/**
+ * One Sheet export over the fake transport of the Google client (design section 9, W1). The
+ * transport serves tests only.
+ */
+function sheetHarness(options = {}) {
+  const order = [];
+  const transport = fakeDrive((call, index) => {
+    order.push(`sheets:${call.method} ${call.path}`);
+    return options.answer
+      ? options.answer(call, index)
+      : sheetAnswer(call, index);
+  });
+  const client = new GoogleDriveClient(transport.client, signal, {
+    sleep: async () => undefined,
+    random: () => 0,
+  });
+  const harnessed = harness({
+    ...options,
+    format: 'sheet',
+    drive: options.drive ?? (async () => client),
+    onStart: () => order.push('stamp'),
+  });
+  return { ...harnessed, order, client, calls: transport.sent };
+}
+
+test('a Sheet export creates the Devices tab, freezes the header, and writes RAW rows', async () => {
+  const devices = [
+    deviceRow(0, { device_id: '+155****0000', notes: '=SUM(A1:A2)' }),
+    deviceRow(1, { device_id: '-device-1', serial_number: 'serial,one' }),
+  ];
+  const sheet = sheetHarness({ devices });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  // Step 1: the staged rows skip the formula tab, because RAW stores text.
+  const [header, ...staged] = recordsOf(sheet.store.staged);
+  assert.deepEqual(header.cells, [...DEVICE_EDIT_TEMPLATE_HEADERS]);
+  assert.deepEqual(
+    staged.map((record) => record.cells[0]),
+    ['+155****0000', '-device-1'],
+  );
+  assert.equal(staged[0].cells[7], '=SUM(A1:A2)');
+  // Step 4: one Sheet named for the job, with the Devices tab and its frozen header row.
+  const create = sheet.calls.find(
+    (call) => call.method === 'POST' && call.path === '/v4/spreadsheets',
+  );
+  assert.deepEqual(create.body, {
+    properties: { title: 'devices-for-editing-EXP-001' },
+    sheets: [
+      {
+        properties: {
+          title: 'Devices',
+          gridProperties: { frozenRowCount: 1 },
+        },
+      },
+    ],
+  });
+  // Step 5: the text number format of columns A to J.
+  const format = sheet.calls.find((call) => call.path.endsWith(':batchUpdate'));
+  assert.deepEqual(format.body.requests, [
+    {
+      repeatCell: {
+        range: {
+          sheetId: 7,
+          startRowIndex: 0,
+          startColumnIndex: 0,
+          endColumnIndex: 10,
+        },
+        cell: { userEnteredFormat: { numberFormat: { type: 'TEXT' } } },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    },
+  ]);
+  // Step 6: RAW values, the header first, and the rows in ordinal order.
+  const writes = sheet.calls.filter((call) => call.method === 'PUT');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].query.valueInputOption, 'RAW');
+  assert.equal(writes[0].body.range, "'Devices'!A1:J3");
+  assert.equal(writes[0].body.majorDimension, 'ROWS');
+  assert.deepEqual(writes[0].body.values[0], [...DEVICE_EDIT_TEMPLATE_HEADERS]);
+  assert.deepEqual(
+    writes[0].body.values.slice(1).map((row) => row[0]),
+    ['+155****0000', '-device-1'],
+  );
+  // The Sheet takes the value itself: no formula tab, and the CSV quoting is gone.
+  assert.equal(writes[0].body.values[1][7], '=SUM(A1:A2)');
+  assert.equal(writes[0].body.values[2][1], 'serial,one');
+  // Step 2: the row checksum is the checksum of a CSV row.
+  assert.equal(
+    writes[0].body.values[1][9],
+    await deviceEditRowChecksum({
+      deviceId: '+155****0000',
+      status: 'ACTIVE',
+      annotatedAssetId: 'ASSET-0',
+      annotatedLocation: 'Room 12',
+      annotatedUser: 'person@example.org',
+      notes: '=SUM(A1:A2)',
+      orgUnitPath: '/Schools/North',
+    }),
+  );
+  // Step 7: the finish records the Sheet facts, and the run removes the stage it read.
+  assert.deepEqual(sheet.database.calls.finish, [
+    {
+      file: {
+        format: 'sheet',
+        name: 'devices-for-editing-EXP-001',
+        rows: 2,
+        columns: 10,
+        spreadsheetId: 'example-sheet-1',
+      },
+      failure: null,
+    },
+  ]);
+  assert.deepEqual(answer.file, sheet.database.calls.finish[0].file);
+  // The store reads a ready file only, so the run publishes the stage, reads it once, and removes
+  // it (design section 6, step 7).
+  assert.equal(sheet.store.calls.published.length, 1);
+  assert.deepEqual(sheet.store.calls.opened, [
+    sheet.store.calls.published[0].artifactId,
+  ]);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('the Sheet writes the header and 1,000 rows per call in row order', async () => {
+  const devices = Array.from({ length: 1_001 }, (_, ordinal) =>
+    deviceRow(ordinal),
+  );
+  const sheet = sheetHarness({ devices });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  const writes = sheet.calls.filter((call) => call.method === 'PUT');
+  assert.deepEqual(
+    writes.map((call) => call.body.range),
+    ["'Devices'!A1:J1000", "'Devices'!A1001:J1002"],
+  );
+  assert.deepEqual(
+    writes[0].body.values.slice(1).map((row) => row[0]),
+    devices.slice(0, 999).map((row) => row.device_id),
+  );
+  // The second chunk starts after the header, so it carries only data rows.
+  assert.deepEqual(
+    writes[1].body.values.map((row) => row[0]),
+    devices.slice(999).map((row) => row.device_id),
+  );
+  assert.equal(answer.file.rows, 1_001);
+});
+
+test('the Sheet stamp precedes the first Sheets call', async () => {
+  const sheet = sheetHarness({ devices: [deviceRow(0)] });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.deepEqual(sheet.order.slice(0, 2), [
+    'stamp',
+    'sheets:POST /v4/spreadsheets',
+  ]);
+});
+
+test('an inventory edit after staging keeps the staged values in the Sheet', async () => {
+  const devices = [
+    deviceRow(0, { notes: 'staged note — ünïcode' }),
+    deviceRow(1, { notes: 'second staged note' }),
+  ];
+  const sheet = sheetHarness({
+    devices,
+    answer: (call) => {
+      // A person edits the live inventory after the rows staged and before the Sheet fills.
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets') {
+        devices[0].notes = 'later note';
+        devices[1].notes = 'later second note';
+      }
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  // The stage is the only inventory read: one page of two rows, then the empty page.
+  assert.equal(sheet.database.calls.read.length, 2);
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.deepEqual(
+    write.body.values.slice(1).map((row) => row[7]),
+    ['staged note — ünïcode', 'second staged note'],
+  );
+  // The checksum still covers the staged value, so a later import detects an edit against it.
+  assert.equal(
+    write.body.values[1][9],
+    await deviceEditRowChecksum({
+      deviceId: 'device-0',
+      status: 'ACTIVE',
+      annotatedAssetId: 'ASSET-0',
+      annotatedLocation: 'Room 12',
+      annotatedUser: 'person@example.org',
+      notes: 'staged note — ünïcode',
+      orgUnitPath: '/Schools/North',
+    }),
+  );
+  assert.equal(answer.file.rows, 2);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a staged cell keeps its quote and its line end in the Sheet', async () => {
+  const notes = 'first "quoted" line\r\nsecond line';
+  const sheet = sheetHarness({ devices: [deviceRow(0, { notes })] });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.equal(write.body.values[1][7], notes);
+  assert.equal(answer.file.rows, 1);
+});
+
+test('a device removed after staging still fills the staged rows', async () => {
+  const devices = [deviceRow(0), deviceRow(1)];
+  const sheet = sheetHarness({
+    devices,
+    answer: (call) => {
+      // Another session removes both devices after the rows staged.
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets')
+        devices.length = 0;
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(sheet.database.calls.read.length, 2);
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.deepEqual(
+    write.body.values.slice(1).map((row) => row[0]),
+    ['device-0', 'device-1'],
+  );
+  assert.equal(answer.file.rows, 2);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a failed inventory read after staging changes no staged row', async () => {
+  let failReads = false;
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    readFailure: () => failReads,
+    answer: (call) => {
+      // Every inventory read after the stage fails, as an unreachable database does.
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets')
+        failReads = true;
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.file.rows, 1);
+  assert.equal(sheet.database.calls.read.length, 2);
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.deepEqual(
+    write.body.values.slice(1).map((row) => row[0]),
+    ['device-0'],
+  );
+});
+
+test('a lost create answer fails the job without a second create', async () => {
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    answer: (call) => {
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets')
+        return new Error('socket hang up');
+      throw new Error(`Unexpected Sheets call ${call.method} ${call.url}`);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'sheet-write-failed');
+  assert.equal(
+    sheet.calls.filter(
+      (call) => call.method === 'POST' && call.path === '/v4/spreadsheets',
+    ).length,
+    1,
+  );
+  assert.deepEqual(sheet.database.calls.finish, [
+    { file: null, failure: 'sheet-write-failed' },
+  ]);
+  assert.equal(sheet.store.calls.published.length, 0);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a quota answer to values.update repeats the same range', async () => {
+  let writes = 0;
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    answer: (call) => {
+      if (call.method === 'PUT') {
+        writes += 1;
+        return writes === 1
+          ? googleError(429, 'rateLimitExceeded')
+          : { status: 200, data: { updatedRows: call.body.values.length } };
+      }
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  const ranges = sheet.calls
+    .filter((call) => call.method === 'PUT')
+    .map((call) => call.body.range);
+  assert.deepEqual(ranges, ["'Devices'!A1:J2", "'Devices'!A1:J2"]);
+});
+
+test('a refused token fails the job drive-unavailable and creates no Sheet', async () => {
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    drive: async () => {
+      throw new Error('delegation-not-authorized');
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'drive-unavailable');
+  assert.equal(sheet.calls.length, 0);
+  assert.deepEqual(sheet.database.calls.finish, [
+    { file: null, failure: 'drive-unavailable' },
+  ]);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a cancel stored before the stamp ends Cancelled and leaves no Sheet', async () => {
+  const sheet = sheetHarness({ devices: [deviceRow(0)], cancel: () => true });
+  const answer = await sheet.run();
+
+  assert.deepEqual(answer, { outcome: 'cancelled', displayId: 'EXP-001' });
+  assert.equal(sheet.database.calls.start.length, 0);
+  assert.equal(sheet.calls.length, 0);
+  assert.equal(sheet.store.calls.published.length, 0);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a cancel read by the stamp ends Cancelled and leaves no Sheet', async () => {
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    start: () => ({ outcome: 'cancelled' }),
+  });
+  const answer = await sheet.run();
+
+  assert.deepEqual(answer, { outcome: 'cancelled', displayId: 'EXP-001' });
+  assert.equal(sheet.calls.length, 0);
+  assert.deepEqual(sheet.database.calls.finish, [
+    { file: null, failure: null },
+  ]);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a repeated stamp creates no second Sheet', async () => {
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    sheetStarted: true,
+  });
+  const answer = await sheet.run();
+
+  assert.deepEqual(answer, { outcome: 'done' });
+  assert.equal(sheet.calls.length, 0);
+  assert.equal(sheet.database.calls.finish.length, 0);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a fenced stamp creates no Sheet and writes nothing', async () => {
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    start: () => ({ outcome: 'fenced' }),
+  });
+  const answer = await sheet.run();
+
+  assert.deepEqual(answer, { outcome: 'fenced' });
+  assert.equal(sheet.calls.length, 0);
+  assert.equal(sheet.database.calls.finish.length, 0);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('an empty Sheet scope writes the header row and no data rows', async () => {
+  const sheet = sheetHarness({ devices: [] });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  const writes = sheet.calls.filter((call) => call.method === 'PUT');
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].body.values, [[...DEVICE_EDIT_TEMPLATE_HEADERS]]);
+  assert.equal(answer.file.rows, 0);
+});
+
+test('the Sheet client is minted for the claimed subject and credential', async () => {
+  const granted = [];
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    drive: async (access) => {
+      granted.push(access);
+      throw new Error('delegation-not-authorized');
+    },
+  });
+  await sheet.run();
+
+  // The claim carries the connection credential, and the worker mints the token for the subject of
+  // the job (design section 4).
+  assert.deepEqual(granted, [
+    {
+      customerId,
+      subject: 'editor@example.org',
+      credentialId,
+      generation: 3,
+      envelope: {
+        format: 1,
+        keyId: 'test-key-1',
+        iv: 'iv',
+        tag: 'tag',
+        ciphertext: 'ciphertext',
+      },
+    },
+  ]);
+});
+
+test('a CSV export mints no Drive client', async () => {
+  let minted = 0;
+  const csv = harness({
+    drive: async () => {
+      minted += 1;
+      throw new Error('the CSV path creates no Sheet');
+    },
+  });
+  const answer = await csv.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.file.format, 'csv');
+  assert.equal(minted, 0);
 });
 
 test('the dispatch route answers one export request', async () => {

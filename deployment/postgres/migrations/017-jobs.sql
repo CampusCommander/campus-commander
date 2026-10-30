@@ -1121,10 +1121,12 @@ $$;
 -- The claim of one export run. It takes a two-minute lease and stamps first_claimed_at. A stored
 -- cancel request, or a finished job, answers `done`. A live lease of another run answers `busy`. A Sheet
 -- export that already stamped its Sheet ends Failed `interrupted` and answers `done`, so a retried
--- dispatch creates no second Sheet (design section 6).
+-- dispatch creates no second Sheet (design section 6). A claimed answer carries the credential of the
+-- connection, because the worker mints the person's `drive.file` token itself (design section 4). The
+-- import claim answers the same fields.
 CREATE FUNCTION cc.claim_device_export_job(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
+DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz; connection cc.google_connection;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_lease IS NULL THEN
     RAISE EXCEPTION 'The device export job does not exist.' USING ERRCODE='22023';
@@ -1157,10 +1159,16 @@ BEGIN
     UPDATE cc.jobs SET started_at=now_at WHERE job_id=p_job;
   END IF;
   PERFORM cc.record_job_change(p_job,false);
+  -- The connection credential of the run (design section 4). The worker mints its own token for the
+  -- detail subject with it, so a Sheet export never asks the API for one. The read takes no lock, as
+  -- the import claim's read does, and every refusal above returned before it.
+  SELECT * INTO connection FROM cc.google_connection WHERE singleton;
   RETURN jsonb_build_object('outcome','claimed','leaseExpiresAt',now_at+interval '120 seconds',
     'displayId',job.display_id,'targetCount',job.target_count,'purpose',detail.purpose,
     'format',detail.format,'driveSubject',detail.drive_subject,'columns',detail.report_columns,
-    'sort',jsonb_build_object('field',detail.sort_field,'direction',detail.sort_direction));
+    'sort',jsonb_build_object('field',detail.sort_field,'direction',detail.sort_direction),
+    'generation',connection.generation,'credentialId',connection.credential_id,
+    'envelope',(SELECT envelope FROM cc.google_credentials WHERE id=connection.credential_id));
 END;
 $$;
 

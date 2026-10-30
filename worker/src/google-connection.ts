@@ -11,6 +11,7 @@ import {
   loadCredentialCipher,
   GoogleConnectionProvider,
   GoogleDeviceReader,
+  personDriveClient,
   type GoogleReadRequest,
 } from '@campus/google-connection';
 import type { EntitySyncBatchRequest } from '@campus/application-contracts';
@@ -34,6 +35,8 @@ import {
   DeviceExportJobs,
   type DeviceExportAnswer,
   type DeviceExportRequest,
+  type DeviceExportSheetAccess,
+  type DeviceExportSheetClient,
 } from './device-export';
 import {
   createDeviceExportStore,
@@ -252,16 +255,33 @@ export class GoogleWorker {
     return this.artifacts;
   }
 
-  /** One export job, from its claim to its published file (design section 5). */
+  /**
+   * The Drive client of one Sheet export (design section 4). The worker opens the connection
+   * credential that the claim carries and mints the person's one `drive.file` token itself, so no
+   * API answer ever hands a token to a job.
+   */
+  private async exportDrive(
+    cipher: CredentialCipher,
+    access: DeviceExportSheetAccess,
+    signal: AbortSignal,
+  ): Promise<DeviceExportSheetClient> {
+    const credential = cipher.open(access.envelope, {
+      recordId: access.credentialId,
+      customerId: access.customerId,
+      generation: access.generation,
+    });
+    return personDriveClient(credential, access.subject, signal);
+  }
+
+  /** One export job, from its claim to its published file or Sheet (design section 5 and 6). */
   async exportDevices(
     input: DeviceExportRequest,
     signal: AbortSignal,
   ): Promise<DeviceExportAnswer> {
-    const { pool } = this.resources();
-    return new DeviceExportJobs(pool, await this.exportStore(pool)).run(
-      input,
-      signal,
-    );
+    const { pool, cipher } = this.resources();
+    return new DeviceExportJobs(pool, await this.exportStore(pool), {
+      drive: (access, runSignal) => this.exportDrive(cipher, access, runSignal),
+    }).run(input, signal);
   }
 
   /**
