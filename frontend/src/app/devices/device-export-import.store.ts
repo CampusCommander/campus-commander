@@ -1059,14 +1059,13 @@ export class DeviceExportImportStore {
   }
 
   /**
-   * A detail read of the retained results claims the one results slot before its IMP request.
+   * A detail read of the results screen claims the one results slot before its IMP request.
    * A tab or pager choice during the held detail then queues behind the whole cycle (R4).
    * Returns the cycle that the read owns, or null when another cycle or screen owns it.
    */
   private claimDetailResults(): number | null {
     if (this.step() !== 'results') return null;
-    const displayId = this.displayId();
-    if (!displayId || this.reportJob !== displayId) return null;
+    if (this.reportJob === null) return null;
     if (this.resultsBusy) return null;
     this.resultsBusy = true;
     this.resultsQueued = false;
@@ -1103,6 +1102,15 @@ export class DeviceExportImportStore {
     this.endResultsCycle(cycle);
     if (queued && this.step() === 'results')
       void this.requestResults(this.resultsView(), this.reportPage(), fresh, false);
+  }
+
+  /**
+   * Ends the slot that a detail read held for a screen that another job replaces. The queued
+   * choice of the old screen leaves with it, and the new job's first cycle owns its read (R4).
+   */
+  private releaseDetailResults(cycle: number): void {
+    if (cycle !== this.resultsCycle || !this.resultsBusy) return;
+    this.endResultsCycle(cycle);
   }
 
   /** The one loop of a results cycle: its page, its tab total, and its operations. */
@@ -1748,6 +1756,8 @@ export class DeviceExportImportStore {
           if (executed) {
             if (this.reportJob !== detail.data.displayId) {
               // The results belong to this job, not to the one that the dialog showed before.
+              // This read drops its slot, and the new job's first cycle owns its own read (R4).
+              if (owned !== null) this.releaseDetailResults(owned);
               await this.openResults(detail.data.displayId, detail.data);
             } else {
               // The retained results own this job's screen, even when their facts need no read.
