@@ -84,64 +84,80 @@ export async function qualifyDeviceExportImport({
   const createExport = async ({
     actor,
     purpose = 'edit',
+    format = 'csv',
+    subject = null,
     columns = [],
     devices = ['D-1', 'D-2', 'D-3'],
     sort = { field: 'serialNumber', direction: 'asc' },
   }) =>
     result(
-      'SELECT cc.create_device_export_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
+      'SELECT cc.create_device_export_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
       [
         actor,
         1,
         customer,
         purpose,
-        'csv',
+        format,
         sort.field,
         sort.direction,
         columns,
         JSON.stringify(devices),
         randomUUID(),
+        subject,
       ],
     );
   const createImport = async ({
     actor,
     mode = 'sync-changes',
+    sourceType = 'csv',
     name = 'devices.csv',
     sizeBytes = 2048,
     permissions = ['disable'],
     artifactId = null,
+    fileId = null,
+    tabId = null,
+    tabTitle = null,
+    subject = null,
   }) =>
     result(
-      'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
+      'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS result',
       [
         actor,
         1,
         customer,
         mode,
-        'csv',
+        sourceType,
         name,
         sizeBytes,
         permissions,
         randomUUID(),
         artifactId,
+        fileId,
+        tabId,
+        tabTitle,
+        subject,
       ],
     );
   const jobRow = (jobId) =>
     admin('SELECT * FROM cc.jobs WHERE job_id=$1', [jobId]).then((r) => r[0]);
-  const cancelAs = (actor, displayId, version = 1) =>
-    result('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
-      actor,
-      version,
-      customer,
-      displayId,
-      randomUUID(),
-    ]);
-  const claimExport = (jobId, lease) =>
-    result('SELECT cc.claim_device_export_job($1,$2,$3) AS result', [
-      customer,
-      jobId,
-      lease,
-    ]);
+  const cancelAs = (actor, displayId, version = 1, client = null) =>
+    (client ?? runtime)
+      .query('SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result', [
+        actor,
+        version,
+        customer,
+        displayId,
+        randomUUID(),
+      ])
+      .then((r) => r.rows[0].result);
+  const claimExport = (jobId, lease, client = null) =>
+    (client ?? runtime)
+      .query('SELECT cc.claim_device_export_job($1,$2,$3) AS result', [
+        customer,
+        jobId,
+        lease,
+      ])
+      .then((r) => r.rows[0].result);
   const claimImport = async (jobId, lease) => {
     const answer = await result(
       'SELECT cc.claim_device_import_job($1,$2,$3) AS result',
@@ -234,6 +250,16 @@ export async function qualifyDeviceExportImport({
     columns,
     expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
   });
+  /** The file of a finished Sheet export (design section 6): an ID, a name, rows, and columns only. */
+  const sheetFile = (rows = 3, columns = 10) => ({
+    spreadsheetId: `example-sheet-${randomUUID()}`,
+    name: 'devices-for-editing-EXP-001',
+    rows,
+    columns,
+  });
+  /** A 39-character Picker API key of the table rule. The value is a fixture, not a credential. */
+  const pickerKey = (fill) =>
+    `example-picker-key-${fill}`.padEnd(39, '0').slice(0, 39);
   const counts = (overrides = {}) => ({
     rows: 4,
     unchanged: 1,
@@ -261,6 +287,54 @@ export async function qualifyDeviceExportImport({
     jobs.push(jobId);
     return result(text, values);
   };
+  /** The Sheet stamp of one export run (design section 6). */
+  const startSheet = (jobId, lease, client = null) =>
+    (client ?? runtime)
+      .query('SELECT cc.start_device_export_sheet($1,$2,$3) AS result', [
+        customer,
+        jobId,
+        lease,
+      ])
+      .then((r) => r.rows[0].result);
+  /** The source link of one Drive read (design section 7). */
+  const storeSource = (
+    jobId,
+    lease,
+    attemptNumber,
+    artifactId,
+    sizeBytes,
+    client = null,
+  ) =>
+    (client ?? runtime)
+      .query(
+        'SELECT cc.store_device_import_source($1,$2,$3,$4,$5,$6) AS result',
+        [customer, jobId, lease, attemptNumber, artifactId, sizeBytes],
+      )
+      .then((r) => r.rows[0].result);
+  /** The saved Drive settings, or null before the first save (design section 3). */
+  const readSettings = (actor, client = null) =>
+    (client ?? runtime)
+      .query('SELECT cc.read_google_drive_settings($1,$2) AS result', [
+        actor,
+        1,
+      ])
+      .then((r) => r.rows[0].result);
+  const saveSettings = (
+    actor,
+    key,
+    project,
+    client = null,
+    correlation = randomUUID(),
+  ) =>
+    (client ?? runtime)
+      .query('SELECT cc.save_google_drive_settings($1,$2,$3,$4,$5) AS result', [
+        actor,
+        1,
+        key,
+        project,
+        correlation,
+      ])
+      .then((r) => r.rows[0].result);
   try {
     const exporter = await principal(exportGrants());
     const importer = await principal(importGrants());
@@ -1813,8 +1887,8 @@ export async function qualifyDeviceExportImport({
       async () => {
         const signatures = [
           [
-            'cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid)',
-            'SELECT cc.create_device_export_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+            'cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid,text)',
+            'SELECT cc.create_device_export_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
             [
               exporter,
               1,
@@ -1826,11 +1900,12 @@ export async function qualifyDeviceExportImport({
               [],
               JSON.stringify(['D-1']),
               randomUUID(),
+              null,
             ],
           ],
           [
-            'cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text)',
-            'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+            'cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text,text,integer,text,text)',
+            'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
             [
               importer,
               1,
@@ -1841,6 +1916,10 @@ export async function qualifyDeviceExportImport({
               10,
               [],
               randomUUID(),
+              null,
+              null,
+              null,
+              null,
               null,
             ],
           ],
@@ -1868,6 +1947,33 @@ export async function qualifyDeviceExportImport({
             'cc.store_device_import_lines(text,uuid,uuid,integer,jsonb)',
             'SELECT cc.store_device_import_lines($1,$2,$3,$4,$5)',
             [customer, randomUUID(), randomUUID(), 0, '[]'],
+          ],
+          [
+            'cc.store_device_import_source(text,uuid,uuid,integer,text,bigint)',
+            'SELECT cc.store_device_import_source($1,$2,$3,$4,$5,$6)',
+            [
+              customer,
+              randomUUID(),
+              randomUUID(),
+              0,
+              'example-artifact-1',
+              1024,
+            ],
+          ],
+          [
+            'cc.start_device_export_sheet(text,uuid,uuid)',
+            'SELECT cc.start_device_export_sheet($1,$2,$3)',
+            [customer, randomUUID(), randomUUID()],
+          ],
+          [
+            'cc.read_google_drive_settings(uuid,integer)',
+            'SELECT cc.read_google_drive_settings($1,$2)',
+            [exporter, 1],
+          ],
+          [
+            'cc.save_google_drive_settings(uuid,integer,text,text,uuid)',
+            'SELECT cc.save_google_drive_settings($1,$2,$3,$4,$5)',
+            [exporter, 1, pickerKey('privilege'), '123456789012', randomUUID()],
           ],
           [
             'cc.finish_device_export_job(text,uuid,uuid,jsonb,text)',
@@ -2003,12 +2109,14 @@ export async function qualifyDeviceExportImport({
     );
 
     await check(
-      'the three export failure codes are known to the finish check',
+      'the five export failure codes are known to the finish check',
       async () => {
         for (const code of [
           'storage-unavailable',
           'inventory-unavailable',
           'export-too-large',
+          'drive-unavailable',
+          'sheet-write-failed',
         ])
           assert.equal(
             (
@@ -4310,22 +4418,23 @@ export async function qualifyDeviceExportImport({
 
       await check('a file id of another length refuses the call', async () => {
         const importer = await principal(importGrants());
+        // A Drive file ID holds 1 to 128 letters, digits, hyphens, or underscores (design section 1).
         await rejects(
-          result(
-            'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
-            [
-              importer,
-              1,
-              customer,
-              'sync-changes',
-              'csv',
-              'devices.csv',
-              2048,
-              [],
-              randomUUID(),
-              'x'.repeat(129),
-            ],
-          ),
+          createImport({
+            actor: importer,
+            sourceType: 'drive-csv',
+            fileId: 'x'.repeat(129),
+            subject: 'reader@example.org',
+          }),
+          '22023',
+        );
+        await rejects(
+          createImport({
+            actor: importer,
+            sourceType: 'drive-csv',
+            fileId: 'example/file',
+            subject: 'reader@example.org',
+          }),
           '22023',
         );
       });
@@ -4337,6 +4446,1432 @@ export async function qualifyDeviceExportImport({
             linkedArtifacts,
           ])
           .catch(() => undefined);
+    }
+
+    // ===== DB3: the Drive settings and the Sheet and Drive job functions (design sections 3, 6, 7) =====
+    // The settings row and its audit rows name this module's principals, so this block removes them
+    // before the outer cleanup removes those principals.
+    const driveArtifacts = [];
+    const seedDriveArtifact = async (
+      sizeBytes = 2048,
+      { state = 'ready', retention = '30 days', jobId = null } = {},
+    ) => {
+      const id = randomUUID();
+      const attempt = randomUUID();
+      await migrator.query(
+        `INSERT INTO cc.artifacts(id,backend,locator,schema_version,attempt_id,sha256,size_bytes,
+           publication_state,active,reference_count,retention_until,job_id)
+         VALUES($1,'local',$2,1,$3,$4,$5,$6,false,0,clock_timestamp()+$7::interval,$8)`,
+        [
+          id,
+          `${id}.${attempt}`,
+          attempt,
+          'b'.repeat(64),
+          sizeBytes,
+          state,
+          retention,
+          jobId,
+        ],
+      );
+      driveArtifacts.push(id);
+      return id;
+    };
+    const settingsEvents = () =>
+      admin(
+        `SELECT * FROM cc.security_events WHERE event='drive-settings-changed'
+          ORDER BY occurred_at,id`,
+      );
+    /** One Drive import of a Sheet tab, with the example values of the design. */
+    const driveSheetImport = (overrides = {}) =>
+      createImport({
+        actor: importer,
+        sourceType: 'drive-sheet',
+        name: 'Devices',
+        sizeBytes: 2048,
+        fileId: 'example-sheet-file-1',
+        tabId: 0,
+        tabTitle: 'Devices',
+        subject: 'reader@example.org',
+        ...overrides,
+      });
+    /** A pending call of a race check, so no promise is left floating when a client closes. */
+    const settle = (promise) =>
+      promise.then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+    /** A race client reports a closed connection as a settled result, never as a process error. */
+    const raceClient = async (user) => {
+      const client = await connect(user, 'cc-app');
+      client.on('error', () => undefined);
+      return client;
+    };
+    /**
+     * Wait until the call on that client waits on a lock. `pg_locks` reports the ungranted request
+     * for every role, while `pg_stat_activity` masks the wait columns of another role's session.
+     */
+    const waitWaiting = async (pid, label) => {
+      let last = null;
+      for (let attempt = 0; attempt < 250; attempt += 1) {
+        const row = (
+          await migrator.query(
+            `SELECT (SELECT count(*)::integer FROM pg_locks WHERE pid=$1 AND NOT granted) AS waits,
+              cardinality(pg_blocking_pids($1)) AS blockers`,
+            [pid],
+          )
+        ).rows[0];
+        last = row ?? null;
+        if (row && (row.waits > 0 || row.blockers > 0)) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(`${label} never waited: ${JSON.stringify(last)}`);
+    };
+    try {
+      await check(
+        'S2 a Sheet export and both Drive sources pass their checks',
+        async () => {
+          const exported = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(exported.receipt.jobId);
+          assert.equal(exported.outcome, 'created');
+          assert.equal(exported.receipt.rows, 3);
+          const sheet = (
+            await admin('SELECT * FROM cc.device_export_jobs WHERE job_id=$1', [
+              exported.receipt.jobId,
+            ])
+          )[0];
+          assert.equal(sheet.format, 'sheet');
+          assert.equal(sheet.purpose, 'edit');
+          assert.equal(sheet.drive_subject, 'editor@example.org');
+          assert.equal(sheet.sheet_started_at, null);
+          assert.equal(sheet.spreadsheet_id, null);
+          assert.equal(sheet.file_name, null);
+          // A Sheet writes the edit template and names its subject. A CSV names none.
+          await rejects(
+            createExport({
+              actor: exporter,
+              purpose: 'report',
+              columns: ['status'],
+              format: 'sheet',
+              subject: 'editor@example.org',
+            }),
+            '22023',
+          );
+          await rejects(
+            createExport({ actor: exporter, format: 'sheet' }),
+            '22023',
+          );
+          await rejects(
+            createExport({
+              actor: exporter,
+              format: 'csv',
+              subject: 'editor@example.org',
+            }),
+            '22023',
+          );
+          await rejects(
+            createExport({ actor: exporter, format: 'sheet', subject: 'xx' }),
+            '22023',
+          );
+          await rejects(
+            createExport({
+              actor: exporter,
+              format: 'sheet',
+              subject: 'x'.repeat(255),
+            }),
+            '22023',
+          );
+          // The table checks hold the same rules.
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_export_jobs SET format='pdf' WHERE job_id=$1",
+              [exported.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_export_jobs SET purpose='report' WHERE job_id=$1",
+              [exported.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              'UPDATE cc.device_export_jobs SET drive_subject=NULL WHERE job_id=$1',
+              [exported.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_export_jobs SET file_name='devices-for-editing-EXP-001' WHERE job_id=$1",
+              [exported.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_export_jobs SET spreadsheet_id='example-sheet-1' WHERE job_id=$1",
+              [exported.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              `UPDATE cc.device_export_jobs SET file_name='devices',file_artifact_id='a',
+                 spreadsheet_id='example-sheet-1' WHERE job_id=$1`,
+              [exported.receipt.jobId],
+            ),
+            '23514',
+          );
+          const csv = await createExport({ actor: exporter });
+          jobs.push(csv.receipt.jobId);
+          await rejects(
+            migrator.query(
+              'UPDATE cc.device_export_jobs SET drive_subject=$2 WHERE job_id=$1',
+              [csv.receipt.jobId, 'editor@example.org'],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              'UPDATE cc.device_export_jobs SET sheet_started_at=clock_timestamp() WHERE job_id=$1',
+              [csv.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              `UPDATE cc.device_export_jobs SET file_name='devices.csv',file_row_count=3,
+                 file_column_count=10,spreadsheet_id='example-sheet-1' WHERE job_id=$1`,
+              [csv.receipt.jobId],
+            ),
+            '23514',
+          );
+          // The two Drive source types pass, and each names its own fields.
+          const sheetSource = await driveSheetImport();
+          jobs.push(sheetSource.receipt.jobId);
+          assert.equal(sheetSource.outcome, 'created');
+          const driveSheet = (
+            await admin('SELECT * FROM cc.device_import_jobs WHERE job_id=$1', [
+              sheetSource.receipt.jobId,
+            ])
+          )[0];
+          assert.equal(driveSheet.source_type, 'drive-sheet');
+          assert.equal(driveSheet.source_file_id, 'example-sheet-file-1');
+          assert.equal(driveSheet.source_tab_id, 0);
+          assert.equal(driveSheet.source_tab_title, 'Devices');
+          assert.equal(driveSheet.drive_subject, 'reader@example.org');
+          assert.equal(Number(driveSheet.source_size_bytes), 2048);
+          const csvSource = await createImport({
+            actor: importer,
+            sourceType: 'drive-csv',
+            name: 'devices.csv',
+            sizeBytes: 1024,
+            fileId: 'example-csv-file-1',
+            subject: 'reader@example.org',
+          });
+          jobs.push(csvSource.receipt.jobId);
+          assert.equal(csvSource.outcome, 'created');
+          const driveCsv = (
+            await admin('SELECT * FROM cc.device_import_jobs WHERE job_id=$1', [
+              csvSource.receipt.jobId,
+            ])
+          )[0];
+          assert.equal(driveCsv.source_type, 'drive-csv');
+          assert.equal(driveCsv.source_file_id, 'example-csv-file-1');
+          assert.equal(driveCsv.source_tab_id, null);
+          assert.equal(driveCsv.source_tab_title, null);
+          assert.equal(driveCsv.drive_subject, 'reader@example.org');
+          // A Drive source names its file and its subject, a Sheet adds its tab, and a CSV upload names
+          // none of them.
+          await rejects(
+            driveSheetImport({ tabId: null, tabTitle: null }),
+            '22023',
+          );
+          await rejects(driveSheetImport({ tabId: null }), '22023');
+          await rejects(driveSheetImport({ tabTitle: null }), '22023');
+          await rejects(driveSheetImport({ fileId: null }), '22023');
+          await rejects(driveSheetImport({ subject: null }), '22023');
+          await rejects(driveSheetImport({ fileId: 'example/file' }), '22023');
+          await rejects(driveSheetImport({ fileId: 'x'.repeat(129) }), '22023');
+          await rejects(driveSheetImport({ tabId: -1 }), '22023');
+          await rejects(driveSheetImport({ tabTitle: '' }), '22023');
+          await rejects(
+            driveSheetImport({ tabTitle: 'x'.repeat(256) }),
+            '22023',
+          );
+          await rejects(driveSheetImport({ subject: 'xx' }), '22023');
+          await rejects(
+            driveSheetImport({ artifactId: 'example-artifact-1' }),
+            '22023',
+          );
+          await rejects(
+            createImport({ actor: importer, fileId: 'example-csv-file-1' }),
+            '22023',
+          );
+          await rejects(
+            createImport({ actor: importer, subject: 'reader@example.org' }),
+            '22023',
+          );
+          await rejects(
+            createImport({
+              actor: importer,
+              sourceType: 'drive-csv',
+              fileId: 'example-csv-file-1',
+              tabId: 0,
+              tabTitle: 'Devices',
+              subject: 'reader@example.org',
+            }),
+            '22023',
+          );
+          // The table checks hold the same rules.
+          await rejects(
+            migrator.query(
+              'UPDATE cc.device_import_jobs SET source_tab_id=NULL,source_tab_title=NULL WHERE job_id=$1',
+              [sheetSource.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              'UPDATE cc.device_import_jobs SET source_file_id=NULL WHERE job_id=$1',
+              [sheetSource.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              'UPDATE cc.device_import_jobs SET drive_subject=NULL WHERE job_id=$1',
+              [sheetSource.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_import_jobs SET source_type='drive-csv' WHERE job_id=$1",
+              [sheetSource.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_import_jobs SET source_type='drive-x' WHERE job_id=$1",
+              [csvSource.receipt.jobId],
+            ),
+            '23514',
+          );
+          const upload = await createImport({ actor: importer });
+          jobs.push(upload.receipt.jobId);
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_import_jobs SET source_file_id='example-csv-file-1' WHERE job_id=$1",
+              [upload.receipt.jobId],
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.device_import_jobs SET drive_subject='reader@example.org' WHERE job_id=$1",
+              [upload.receipt.jobId],
+            ),
+            '23514',
+          );
+        },
+      );
+
+      await check(
+        'S2 a cancel after the Sheet stamp answers nothing-to-stop',
+        async () => {
+          const created = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(created.receipt.jobId);
+          const lease = randomUUID();
+          assert.equal(
+            (await claimExport(created.receipt.jobId, lease)).outcome,
+            'claimed',
+          );
+          const started = await startSheet(created.receipt.jobId, lease);
+          assert.equal(started.outcome, 'started');
+          const stamp = (
+            await admin(
+              'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+              [created.receipt.jobId],
+            )
+          )[0].sheet_started_at;
+          assert.notEqual(stamp, null);
+          const header = await jobRow(created.receipt.jobId);
+          assert.equal(header.phase, 'create-sheet');
+          assert.equal(header.phase_done, 0);
+          assert.equal(header.phase_total, null);
+          // The cancel refuses, and it changes nothing.
+          await rejects(
+            cancelAs(exporter, created.receipt.displayId),
+            null,
+            'nothing-to-stop',
+          );
+          const refused = await jobRow(created.receipt.jobId);
+          assert.equal(refused.cancel_requested_at, null);
+          assert.equal(refused.cancel_requested_by, null);
+          assert.equal(refused.status, 'running');
+          assert.equal(
+            (
+              await admin(
+                'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                [created.receipt.jobId],
+              )
+            )[0].sheet_started_at.getTime(),
+            stamp.getTime(),
+          );
+          // A repeat of the stamp keeps the first time and grants no second create.
+          const again = await startSheet(created.receipt.jobId, lease);
+          assert.equal(again.outcome, 'repeated');
+          assert.equal(new Date(again.startedAt).getTime(), stamp.getTime());
+          // A replaced lease is fenced, and a CSV export has no Sheet to stamp.
+          assert.equal(
+            (await startSheet(created.receipt.jobId, randomUUID())).outcome,
+            'fenced',
+          );
+          const csv = await createExport({ actor: exporter });
+          jobs.push(csv.receipt.jobId);
+          const csvLease = randomUUID();
+          await claimExport(csv.receipt.jobId, csvLease);
+          await rejects(startSheet(csv.receipt.jobId, csvLease), '22023');
+          // A request that lands before the stamp ends the run Cancelled, and no Sheet is stamped.
+          const early = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(early.receipt.jobId);
+          const earlyLease = randomUUID();
+          await claimExport(early.receipt.jobId, earlyLease);
+          assert.equal(
+            (await cancelAs(exporter, early.receipt.displayId)).outcome,
+            'requested',
+          );
+          assert.equal(
+            (await startSheet(early.receipt.jobId, earlyLease)).outcome,
+            'cancelled',
+          );
+          const cancelled = await jobRow(early.receipt.jobId);
+          assert.equal(cancelled.status, 'cancelled');
+          assert.notEqual(cancelled.finished_at, null);
+          assert.equal(
+            (
+              await admin(
+                'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                [early.receipt.jobId],
+              )
+            )[0].sheet_started_at,
+            null,
+          );
+        },
+      );
+
+      await check(
+        'S2 two claims of one lease authorize one Sheet create',
+        async () => {
+          const first = await raceClient('cc-app');
+          const second = await raceClient('cc-app');
+          try {
+            const created = await createExport({
+              actor: exporter,
+              format: 'sheet',
+              subject: 'editor@example.org',
+            });
+            jobs.push(created.receipt.jobId);
+            const lease = randomUUID();
+            // Two runs of one dispatch lease claim before either stamps the Sheet. The second claim
+            // admits the same lease, because only another lease is busy (design section 6 step 1).
+            assert.equal(
+              (await claimExport(created.receipt.jobId, lease, first)).outcome,
+              'claimed',
+            );
+            assert.equal(
+              (await claimExport(created.receipt.jobId, lease, second)).outcome,
+              'claimed',
+            );
+            const started = await startSheet(
+              created.receipt.jobId,
+              lease,
+              first,
+            );
+            assert.equal(started.outcome, 'started');
+            const stamp = (
+              await admin(
+                'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                [created.receipt.jobId],
+              )
+            )[0].sheet_started_at;
+            assert.notEqual(stamp, null);
+            assert.equal(
+              new Date(started.startedAt).getTime(),
+              stamp.getTime(),
+            );
+            const before = await jobRow(created.receipt.jobId);
+            // The second run of the same lease receives no second create permission, and it writes
+            // nothing: one stamp, one phase, one revision.
+            const repeated = await startSheet(
+              created.receipt.jobId,
+              lease,
+              second,
+            );
+            assert.equal(repeated.outcome, 'repeated');
+            assert.equal(
+              new Date(repeated.startedAt).getTime(),
+              stamp.getTime(),
+            );
+            const after = await jobRow(created.receipt.jobId);
+            assert.equal(after.status, 'running');
+            assert.equal(after.phase, 'create-sheet');
+            assert.equal(after.revision, before.revision);
+            assert.equal(
+              (
+                await admin(
+                  'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                  [created.receipt.jobId],
+                )
+              )[0].sheet_started_at.getTime(),
+              stamp.getTime(),
+            );
+          } finally {
+            await close(first);
+            await close(second);
+          }
+        },
+      );
+
+      await check(
+        'S3 the Sheet stamp races a cancel, and one wins',
+        async () => {
+          const holder = await raceClient('postgres');
+          const starter = await raceClient('cc-app');
+          const canceller = await raceClient('cc-app');
+          let started = null;
+          let lateCancel = null;
+          let cancelledFirst = null;
+          let lateStamp = null;
+          try {
+            const starterPid = await backendPid(starter);
+            const cancellerPid = await backendPid(canceller);
+            // The stamp arrives first: it holds the header queue, and the cancel then refuses.
+            const first = await createExport({
+              actor: exporter,
+              format: 'sheet',
+              subject: 'editor@example.org',
+            });
+            jobs.push(first.receipt.jobId);
+            const firstLease = randomUUID();
+            assert.equal(
+              (await claimExport(first.receipt.jobId, firstLease)).outcome,
+              'claimed',
+            );
+            await holder.query('BEGIN');
+            await holder.query(
+              'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+              [first.receipt.jobId],
+            );
+            started = settle(
+              startSheet(first.receipt.jobId, firstLease, starter),
+            );
+            await waitWaiting(starterPid, 'the stamp');
+            lateCancel = settle(
+              cancelAs(exporter, first.receipt.displayId, 1, canceller),
+            );
+            await waitWaiting(cancellerPid, 'the cancel');
+            await holder.query('COMMIT');
+            assert.equal((await started).value?.outcome, 'started');
+            assert.equal((await lateCancel).error?.detail, 'nothing-to-stop');
+            assert.equal(
+              (await jobRow(first.receipt.jobId)).cancel_requested_at,
+              null,
+            );
+            // The cancel arrives first: it stores its request, and the stamp then ends the run
+            // Cancelled before any Sheet exists.
+            const second = await createExport({
+              actor: exporter,
+              format: 'sheet',
+              subject: 'editor@example.org',
+            });
+            jobs.push(second.receipt.jobId);
+            const secondLease = randomUUID();
+            assert.equal(
+              (await claimExport(second.receipt.jobId, secondLease)).outcome,
+              'claimed',
+            );
+            await holder.query('BEGIN');
+            await holder.query(
+              'SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE',
+              [second.receipt.jobId],
+            );
+            cancelledFirst = settle(
+              cancelAs(exporter, second.receipt.displayId, 1, canceller),
+            );
+            await waitWaiting(cancellerPid, 'the cancel');
+            lateStamp = settle(
+              startSheet(second.receipt.jobId, secondLease, starter),
+            );
+            await waitWaiting(starterPid, 'the stamp');
+            await holder.query('COMMIT');
+            assert.equal((await cancelledFirst).value?.outcome, 'requested');
+            assert.equal((await lateStamp).value?.outcome, 'cancelled');
+            const ended = await jobRow(second.receipt.jobId);
+            assert.equal(ended.status, 'cancelled');
+            assert.notEqual(ended.cancel_requested_at, null);
+            assert.equal(
+              (
+                await admin(
+                  'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                  [second.receipt.jobId],
+                )
+              )[0].sheet_started_at,
+              null,
+            );
+          } catch (error) {
+            await holder.query('ROLLBACK').catch(() => undefined);
+            // The settled results name the cause, because a race check that throws hides them.
+            const seen = {
+              started: await started,
+              lateCancel: await lateCancel,
+              cancelledFirst: await cancelledFirst,
+              lateStamp: await lateStamp,
+            };
+            throw new Error(
+              `${error.message} ${JSON.stringify(seen, (key, value) =>
+                value instanceof Error
+                  ? {
+                      message: value.message,
+                      code: value.code,
+                      detail: value.detail,
+                    }
+                  : value,
+              )}`,
+            );
+          } finally {
+            await close(holder);
+            await close(starter);
+            await close(canceller);
+          }
+        },
+      );
+
+      await check(
+        'S3 a settings change writes one event, and a repeat writes none',
+        async () => {
+          const settingsActor = await principal([
+            ['connection:manage', { kind: 'platform' }],
+            ['connection:read', { kind: 'platform' }],
+          ]);
+          const settingsReader = await principal([
+            ['connection:read', { kind: 'platform' }],
+          ]);
+          const settingsDenied = await principal([
+            ['devices:read', district()],
+          ]);
+          assert.equal(await readSettings(settingsActor), null);
+          // The field rules of design section 3.
+          const key = pickerKey('a');
+          await rejects(
+            saveSettings(settingsActor, 'k'.repeat(38), '123456789012'),
+            '22023',
+          );
+          await rejects(
+            saveSettings(settingsActor, 'k'.repeat(40), '123456789012'),
+            '22023',
+          );
+          await rejects(
+            saveSettings(settingsActor, `${'k'.repeat(38)}.`, '123456789012'),
+            '22023',
+          );
+          await rejects(saveSettings(settingsActor, key, '0123456'), '22023');
+          await rejects(saveSettings(settingsActor, key, '0'), '22023');
+          await rejects(
+            saveSettings(settingsActor, key, '1'.repeat(21)),
+            '22023',
+          );
+          await rejects(saveSettings(settingsActor, key, '12345x'), '22023');
+          await rejects(saveSettings(settingsActor, key, ''), '22023');
+          // The table checks hold the same rules, before the first row lands.
+          for (const [badKey, badProject] of [
+            ['k'.repeat(38), '123456789012'],
+            [`${'k'.repeat(38)}.`, '123456789012'],
+            [key, '0123456'],
+            [key, '1'.repeat(21)],
+          ])
+            await rejects(
+              migrator.query(
+                `INSERT INTO cc.google_drive_settings(singleton,picker_api_key,project_number,saved_by)
+                 VALUES(true,$1,$2,$3)`,
+                [badKey, badProject, settingsActor],
+              ),
+              '23514',
+            );
+          // A person without connection:manage saves nothing, and the table stays empty.
+          await rejects(
+            saveSettings(settingsDenied, key, '123456789012'),
+            '42501',
+          );
+          assert.equal(
+            (
+              await admin(
+                'SELECT count(*)::integer AS rows FROM cc.google_drive_settings',
+              )
+            )[0].rows,
+            0,
+          );
+          // The first save writes the row and one event.
+          const firstCorrelation = randomUUID();
+          assert.deepEqual(
+            await saveSettings(
+              settingsActor,
+              key,
+              '123456789012',
+              null,
+              firstCorrelation,
+            ),
+            { pickerApiKey: key, projectNumber: '123456789012' },
+          );
+          assert.deepEqual(await readSettings(settingsActor), {
+            pickerApiKey: key,
+            projectNumber: '123456789012',
+          });
+          const saved = (
+            await admin(
+              'SELECT saved_at,saved_by FROM cc.google_drive_settings',
+            )
+          )[0];
+          assert.equal(saved.saved_by, settingsActor);
+          let events = await settingsEvents();
+          assert.equal(events.length, 1);
+          assert.equal(events[0].actor_id, settingsActor);
+          assert.equal(events[0].correlation_id, firstCorrelation);
+          assert.equal(
+            events[0].detail,
+            'projectNumber:123456789012,keyChanged:true',
+          );
+          assert.deepEqual(events[0].resource_scope, { kind: 'platform' });
+          // A repeat writes no event and changes no row.
+          assert.deepEqual(
+            await saveSettings(settingsActor, key, '123456789012'),
+            { pickerApiKey: key, projectNumber: '123456789012' },
+          );
+          events = await settingsEvents();
+          assert.equal(events.length, 1);
+          const repeated = (
+            await admin(
+              'SELECT saved_at,saved_by FROM cc.google_drive_settings',
+            )
+          )[0];
+          assert.equal(repeated.saved_at.getTime(), saved.saved_at.getTime());
+          assert.equal(repeated.saved_by, settingsActor);
+          // A new project number writes one event that reports the key as unchanged.
+          await saveSettings(settingsActor, key, '210987654321');
+          events = await settingsEvents();
+          assert.deepEqual(events.map((row) => row.detail).sort(), [
+            'projectNumber:123456789012,keyChanged:true',
+            'projectNumber:210987654321,keyChanged:false',
+          ]);
+          // A new key writes one event that reports the change.
+          const nextKey = pickerKey('b');
+          await saveSettings(settingsActor, nextKey, '210987654321');
+          events = await settingsEvents();
+          assert.deepEqual(events.map((row) => row.detail).sort(), [
+            'projectNumber:123456789012,keyChanged:true',
+            'projectNumber:210987654321,keyChanged:false',
+            'projectNumber:210987654321,keyChanged:true',
+          ]);
+          assert.deepEqual(await readSettings(settingsReader), {
+            pickerApiKey: nextKey,
+            projectNumber: '210987654321',
+          });
+          // The table holds the rules too.
+          await rejects(
+            migrator.query(
+              "UPDATE cc.google_drive_settings SET picker_api_key='k' WHERE singleton",
+            ),
+            '23514',
+          );
+          await rejects(
+            migrator.query(
+              "UPDATE cc.google_drive_settings SET project_number='0123' WHERE singleton",
+            ),
+            '23514',
+          );
+        },
+      );
+
+      await check(
+        'S4 a renewal takes create-sheet and drive-read',
+        async () => {
+          const exported = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(exported.receipt.jobId);
+          const lease = randomUUID();
+          await claimExport(exported.receipt.jobId, lease);
+          await startSheet(exported.receipt.jobId, lease);
+          assert.equal(
+            (
+              await renewExport(
+                exported.receipt.jobId,
+                lease,
+                'create-sheet',
+                0,
+                null,
+              )
+            ).outcome,
+            'renewed',
+          );
+          const header = await jobRow(exported.receipt.jobId);
+          assert.equal(header.phase, 'create-sheet');
+          assert.equal(header.phase_done, 0);
+          assert.equal(header.phase_total, null);
+          // The stamp phase counts nothing and draws no bar.
+          await rejects(
+            renewExport(exported.receipt.jobId, lease, 'create-sheet', 1, null),
+            '22023',
+          );
+          await rejects(
+            renewExport(exported.receipt.jobId, lease, 'create-sheet', 0, 3),
+            '22023',
+          );
+          // The Drive read counts source rows under the 50,000 bound.
+          const imported = await driveSheetImport();
+          jobs.push(imported.receipt.jobId);
+          const importLease = randomUUID();
+          await claimImport(imported.receipt.jobId, importLease);
+          assert.equal(
+            (
+              await renewImport(
+                imported.receipt.jobId,
+                importLease,
+                'drive-read',
+                1500,
+                2000,
+              )
+            ).outcome,
+            'renewed',
+          );
+          const importHeader = await jobRow(imported.receipt.jobId);
+          assert.equal(importHeader.phase, 'drive-read');
+          assert.equal(importHeader.phase_done, 1500);
+          assert.equal(importHeader.phase_total, 2000);
+          await rejects(
+            renewImport(
+              imported.receipt.jobId,
+              importLease,
+              'drive-read',
+              50001,
+              50001,
+            ),
+            '22023',
+          );
+          await rejects(
+            renewImport(
+              imported.receipt.jobId,
+              importLease,
+              'create-sheet',
+              1,
+              1,
+            ),
+            '22023',
+          );
+        },
+      );
+
+      await check(
+        'S4 a Sheet finish and both new failures settle',
+        async () => {
+          const finished = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(finished.receipt.jobId);
+          const lease = randomUUID();
+          await claimExport(finished.receipt.jobId, lease);
+          await startSheet(finished.receipt.jobId, lease);
+          const file = sheetFile(3, 10);
+          const answer = await finishExport(
+            finished.receipt.jobId,
+            lease,
+            file,
+          );
+          assert.equal(answer.outcome, 'finished');
+          assert.equal(answer.status, 'completed');
+          assert.equal(answer.file.format, 'sheet');
+          assert.equal(answer.file.spreadsheetId, file.spreadsheetId);
+          assert.equal(answer.file.sizeBytes, null);
+          assert.equal(answer.file.expiresAt, null);
+          const row = (
+            await admin('SELECT * FROM cc.device_export_jobs WHERE job_id=$1', [
+              finished.receipt.jobId,
+            ])
+          )[0];
+          assert.equal(row.spreadsheet_id, file.spreadsheetId);
+          assert.equal(row.file_name, file.name);
+          assert.equal(row.file_row_count, 3);
+          assert.equal(row.file_column_count, 10);
+          assert.equal(row.file_artifact_id, null);
+          assert.equal(row.file_size_bytes, null);
+          assert.equal(row.file_expires_at, null);
+          const header = await jobRow(finished.receipt.jobId);
+          assert.equal(header.status, 'completed');
+          assert.equal(header.phase, 'create-sheet');
+          assert.equal(header.phase_done, 0);
+          assert.equal(header.phase_total, null);
+          assert.equal(header.succeeded, 3);
+          // A repeat answers the stored status.
+          assert.equal(
+            (await finishExport(finished.receipt.jobId, lease, file)).status,
+            'completed',
+          );
+          // The split refuses the file facts of the other format.
+          const wrong = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(wrong.receipt.jobId);
+          const wrongLease = randomUUID();
+          await claimExport(wrong.receipt.jobId, wrongLease);
+          await startSheet(wrong.receipt.jobId, wrongLease);
+          for (const refused of [
+            { ...sheetFile(), artifactId: 'example-artifact-1' },
+            { ...sheetFile(), sizeBytes: 100 },
+            {
+              ...sheetFile(),
+              expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+            },
+            { name: 'devices-for-editing-EXP-001', rows: 3, columns: 10 },
+          ])
+            await rejects(
+              finishExport(wrong.receipt.jobId, wrongLease, refused),
+              '22023',
+            );
+          // A CSV finish keeps its facts, and it refuses a spreadsheet ID.
+          const csv = await createExport({ actor: exporter });
+          jobs.push(csv.receipt.jobId);
+          const csvLease = randomUUID();
+          await claimExport(csv.receipt.jobId, csvLease);
+          const csvFile = exportFile(3, 10);
+          const csvAnswer = await finishExport(
+            csv.receipt.jobId,
+            csvLease,
+            csvFile,
+          );
+          assert.equal(csvAnswer.outcome, 'finished');
+          assert.equal(csvAnswer.status, 'completed');
+          assert.equal(csvAnswer.file.format, 'csv');
+          assert.equal(csvAnswer.file.spreadsheetId, null);
+          const csvRow = (
+            await admin('SELECT * FROM cc.device_export_jobs WHERE job_id=$1', [
+              csv.receipt.jobId,
+            ])
+          )[0];
+          assert.equal(csvRow.file_artifact_id, csvFile.artifactId);
+          assert.equal(csvRow.file_name, csvFile.name);
+          assert.equal(Number(csvRow.file_size_bytes), csvFile.sizeBytes);
+          assert.equal(csvRow.file_row_count, csvFile.rows);
+          assert.equal(csvRow.file_column_count, csvFile.columns);
+          assert.equal(
+            csvRow.file_expires_at.getTime(),
+            new Date(csvFile.expiresAt).getTime(),
+          );
+          assert.equal(csvRow.spreadsheet_id, null);
+          assert.equal(
+            (await jobRow(csv.receipt.jobId)).phase,
+            'prepare-download',
+          );
+          const csvMissing = await createExport({ actor: exporter });
+          jobs.push(csvMissing.receipt.jobId);
+          const csvMissingLease = randomUUID();
+          await claimExport(csvMissing.receipt.jobId, csvMissingLease);
+          await rejects(
+            finishExport(csvMissing.receipt.jobId, csvMissingLease, {
+              ...exportFile(),
+              spreadsheetId: 'example-sheet-1',
+            }),
+            '22023',
+          );
+          await rejects(
+            finishExport(csvMissing.receipt.jobId, csvMissingLease, {
+              artifactId: `artifact-${randomUUID()}`,
+              name: 'devices-for-editing-EXP-001.csv',
+              rows: 3,
+              columns: 10,
+            }),
+            '22023',
+          );
+          // Both new failure codes settle a Sheet export.
+          for (const code of ['drive-unavailable', 'sheet-write-failed']) {
+            const failed = await createExport({
+              actor: exporter,
+              format: 'sheet',
+              subject: 'editor@example.org',
+            });
+            jobs.push(failed.receipt.jobId);
+            const failedLease = randomUUID();
+            await claimExport(failed.receipt.jobId, failedLease);
+            await startSheet(failed.receipt.jobId, failedLease);
+            const failedAnswer = await finishExport(
+              failed.receipt.jobId,
+              failedLease,
+              null,
+              code,
+            );
+            assert.equal(failedAnswer.outcome, 'finished');
+            assert.equal(failedAnswer.status, 'failed');
+            const failedHeader = await jobRow(failed.receipt.jobId);
+            assert.equal(failedHeader.status, 'failed');
+            assert.equal(failedHeader.failure, code);
+            assert.notEqual(failedHeader.finished_at, null);
+          }
+        },
+      );
+
+      await check(
+        'S4 a claim after the Sheet stamp ends interrupted',
+        async () => {
+          const created = await createExport({
+            actor: exporter,
+            format: 'sheet',
+            subject: 'editor@example.org',
+          });
+          jobs.push(created.receipt.jobId);
+          const firstLease = randomUUID();
+          await claimExport(created.receipt.jobId, firstLease);
+          await startSheet(created.receipt.jobId, firstLease);
+          // A live lease answers busy, not interrupted.
+          assert.equal(
+            (await claimExport(created.receipt.jobId, randomUUID())).outcome,
+            'busy',
+          );
+          // The lost run's lease lapses, and the retried dispatch ends the job without a second Sheet.
+          await expire('device_export_jobs', created.receipt.jobId);
+          assert.equal(
+            (await claimExport(created.receipt.jobId, randomUUID())).outcome,
+            'done',
+          );
+          const header = await jobRow(created.receipt.jobId);
+          assert.equal(header.status, 'failed');
+          assert.equal(header.failure, 'interrupted');
+          assert.notEqual(header.finished_at, null);
+          const detail = (
+            await admin(
+              'SELECT sheet_started_at,spreadsheet_id FROM cc.device_export_jobs WHERE job_id=$1',
+              [created.receipt.jobId],
+            )
+          )[0];
+          assert.notEqual(detail.sheet_started_at, null);
+          assert.equal(detail.spreadsheet_id, null);
+          assert.equal(
+            (await claimExport(created.receipt.jobId, randomUUID())).outcome,
+            'done',
+          );
+          // A CSV export of a lapsed lease is claimed again, because it has no Sheet to lose.
+          const csv = await createExport({ actor: exporter });
+          jobs.push(csv.receipt.jobId);
+          await claimExport(csv.receipt.jobId, randomUUID());
+          await expire('device_export_jobs', csv.receipt.jobId);
+          assert.equal(
+            (await claimExport(csv.receipt.jobId, randomUUID())).outcome,
+            'claimed',
+          );
+        },
+      );
+
+      await check(
+        'S4 the Drive read stores its source under the lease',
+        async () => {
+          const imported = await driveSheetImport();
+          jobs.push(imported.receipt.jobId);
+          const lease = randomUUID();
+          const claimed = await claimImport(imported.receipt.jobId, lease);
+          assert.equal(claimed.outcome, 'claimed');
+          // The claim answers the Drive fields, and no artifact holds the source yet.
+          assert.equal(claimed.sourceArtifactId, null);
+          assert.equal(claimed.sourceFileId, 'example-sheet-file-1');
+          assert.equal(claimed.sourceTabId, 0);
+          assert.equal(claimed.sourceTabTitle, 'Devices');
+          assert.equal(claimed.driveSubject, 'reader@example.org');
+          const artifact = await seedDriveArtifact(2048);
+          // A stale attempt and a lapsed lease write nothing.
+          assert.equal(
+            (
+              await storeSource(
+                imported.receipt.jobId,
+                lease,
+                0,
+                artifact,
+                2048,
+              )
+            ).outcome,
+            'fenced',
+          );
+          await expire('device_import_jobs', imported.receipt.jobId);
+          assert.equal(
+            (
+              await storeSource(
+                imported.receipt.jobId,
+                lease,
+                claimed.attempt,
+                artifact,
+                2048,
+              )
+            ).outcome,
+            'fenced',
+          );
+          // The live lease links the file and records its size.
+          await migrator.query(
+            `UPDATE cc.device_import_jobs SET lease_expires_at=clock_timestamp()+interval '2 minutes'
+             WHERE job_id=$1`,
+            [imported.receipt.jobId],
+          );
+          const stored = await storeSource(
+            imported.receipt.jobId,
+            lease,
+            claimed.attempt,
+            artifact,
+            2048,
+          );
+          assert.equal(stored.outcome, 'stored');
+          assert.equal(stored.artifactId, artifact);
+          assert.equal(Number(stored.sizeBytes), 2048);
+          assert.equal(
+            (
+              await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [
+                artifact,
+              ])
+            )[0].job_id,
+            imported.receipt.jobId,
+          );
+          assert.equal(
+            Number(
+              (
+                await admin(
+                  'SELECT source_size_bytes FROM cc.device_import_jobs WHERE job_id=$1',
+                  [imported.receipt.jobId],
+                )
+              )[0].source_size_bytes,
+            ),
+            2048,
+          );
+          // A later claim answers the stored file, so the built passes read it as an upload.
+          await expire('device_import_jobs', imported.receipt.jobId);
+          const again = await claimImport(imported.receipt.jobId, randomUUID());
+          assert.equal(again.outcome, 'claimed');
+          assert.equal(again.sourceArtifactId, artifact);
+          const againLease = randomUUID();
+          assert.equal(
+            (
+              await storeSource(
+                imported.receipt.jobId,
+                againLease,
+                again.attempt,
+                artifact,
+                2048,
+              )
+            ).outcome,
+            'fenced',
+          );
+          // A file of another size, an unfinished file, and a CSV job refuse the call.
+          await expire('device_import_jobs', imported.receipt.jobId);
+          const currentLease = randomUUID();
+          const current = await claimImport(
+            imported.receipt.jobId,
+            currentLease,
+          );
+          const unfinished = await seedDriveArtifact(2048, {
+            state: 'staging',
+          });
+          await rejects(
+            storeSource(
+              imported.receipt.jobId,
+              currentLease,
+              current.attempt,
+              unfinished,
+              2048,
+            ),
+            '22023',
+          );
+          await rejects(
+            storeSource(
+              imported.receipt.jobId,
+              currentLease,
+              current.attempt,
+              artifact,
+              1024,
+            ),
+            '22023',
+          );
+          const upload = await createImport({ actor: importer });
+          jobs.push(upload.receipt.jobId);
+          const uploadLease = randomUUID();
+          const uploadClaim = await claimImport(
+            upload.receipt.jobId,
+            uploadLease,
+          );
+          await rejects(
+            storeSource(
+              upload.receipt.jobId,
+              uploadLease,
+              uploadClaim.attempt,
+              artifact,
+              2048,
+            ),
+            '22023',
+          );
+        },
+      );
+
+      await check(
+        'S4 a source store that waits past its lease or its retention writes nothing',
+        async () => {
+          const holder = await raceClient('postgres');
+          const writer = await raceClient('cc-app');
+          const writerPid = await backendPid(writer);
+          const pause = (ms) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
+          const publications = (jobId) =>
+            admin(
+              'SELECT count(*)::integer AS rows FROM cc.job_publications WHERE job_id=$1',
+              [jobId],
+            ).then((r) => r[0].rows);
+          /** A refused call changes none of the four writes: the link, the size, the revision, the row. */
+          const refusesWrite = async (
+            jobId,
+            artifactId,
+            revision,
+            publicationCount,
+            label,
+          ) => {
+            assert.equal(
+              (
+                await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [
+                  artifactId,
+                ])
+              )[0].job_id,
+              null,
+              `${label} links nothing`,
+            );
+            assert.equal(
+              Number(
+                (
+                  await admin(
+                    'SELECT source_size_bytes FROM cc.device_import_jobs WHERE job_id=$1',
+                    [jobId],
+                  )
+                )[0].source_size_bytes,
+              ),
+              2048,
+              `${label} keeps the size`,
+            );
+            assert.equal(
+              (await jobRow(jobId)).revision,
+              revision,
+              `${label} keeps the revision`,
+            );
+            assert.equal(
+              await publications(jobId),
+              publicationCount,
+              `${label} publishes nothing`,
+            );
+          };
+          /**
+           * Hold the artifact row, start the store, confirm that it waits on that lock, let the
+           * deadline pass, then release the lock.
+           */
+          const storeWhileWaiting = async (
+            jobId,
+            lease,
+            attemptNumber,
+            artifactId,
+            label,
+          ) => {
+            await holder.query('BEGIN');
+            await holder.query(
+              'SELECT 1 FROM cc.artifacts WHERE id=$1 FOR UPDATE',
+              [artifactId],
+            );
+            const call = settle(
+              storeSource(
+                jobId,
+                lease,
+                attemptNumber,
+                artifactId,
+                1024,
+                writer,
+              ),
+            );
+            await waitWaiting(writerPid, label);
+            await pause(1700);
+            await holder.query('COMMIT');
+            return call;
+          };
+          const sources = [
+            ['drive-sheet', () => driveSheetImport()],
+            [
+              'drive-csv',
+              () =>
+                createImport({
+                  actor: importer,
+                  sourceType: 'drive-csv',
+                  name: 'devices.csv',
+                  sizeBytes: 2048,
+                  fileId: 'example-csv-file-1',
+                  subject: 'reader@example.org',
+                }),
+            ],
+          ];
+          try {
+            for (const [sourceType, create] of sources) {
+              // The ordinary control: a live lease and a retained artifact store the source.
+              const control = await create();
+              jobs.push(control.receipt.jobId);
+              const controlLease = randomUUID();
+              const controlClaim = await claimImport(
+                control.receipt.jobId,
+                controlLease,
+              );
+              assert.equal(controlClaim.outcome, 'claimed');
+              const controlArtifact = await seedDriveArtifact(1024);
+              const controlStored = await storeSource(
+                control.receipt.jobId,
+                controlLease,
+                controlClaim.attempt,
+                controlArtifact,
+                1024,
+              );
+              assert.equal(controlStored.outcome, 'stored', sourceType);
+              assert.equal(
+                (
+                  await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [
+                    controlArtifact,
+                  ])
+                )[0].job_id,
+                control.receipt.jobId,
+              );
+              assert.equal(
+                Number(
+                  (
+                    await admin(
+                      'SELECT source_size_bytes FROM cc.device_import_jobs WHERE job_id=$1',
+                      [control.receipt.jobId],
+                    )
+                  )[0].source_size_bytes,
+                ),
+                1024,
+              );
+              // The lease lapses while the call waits on the artifact lock.
+              const lapsed = await create();
+              jobs.push(lapsed.receipt.jobId);
+              const lapsedLease = randomUUID();
+              const lapsedClaim = await claimImport(
+                lapsed.receipt.jobId,
+                lapsedLease,
+              );
+              assert.equal(lapsedClaim.outcome, 'claimed');
+              const lapsedArtifact = await seedDriveArtifact(1024);
+              await migrator.query(
+                "UPDATE cc.device_import_jobs SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE job_id=$1",
+                [lapsed.receipt.jobId],
+              );
+              const lapsedBefore = await jobRow(lapsed.receipt.jobId);
+              const lapsedPublications = await publications(
+                lapsed.receipt.jobId,
+              );
+              const lapsedCall = await storeWhileWaiting(
+                lapsed.receipt.jobId,
+                lapsedLease,
+                lapsedClaim.attempt,
+                lapsedArtifact,
+                `the ${sourceType} store past its lease`,
+              );
+              assert.equal(
+                (await lapsedCall).value?.outcome,
+                'fenced',
+                sourceType,
+              );
+              await refusesWrite(
+                lapsed.receipt.jobId,
+                lapsedArtifact,
+                lapsedBefore.revision,
+                lapsedPublications,
+                `${sourceType} past its lease`,
+              );
+              // The retention ends while the call waits on the artifact lock.
+              const expired = await create();
+              jobs.push(expired.receipt.jobId);
+              const expiredLease = randomUUID();
+              const expiredClaim = await claimImport(
+                expired.receipt.jobId,
+                expiredLease,
+              );
+              assert.equal(expiredClaim.outcome, 'claimed');
+              const expiredArtifact = await seedDriveArtifact(1024);
+              await migrator.query(
+                "UPDATE cc.artifacts SET retention_until=clock_timestamp()+interval '1500 milliseconds' WHERE id=$1",
+                [expiredArtifact],
+              );
+              const expiredBefore = await jobRow(expired.receipt.jobId);
+              const expiredPublications = await publications(
+                expired.receipt.jobId,
+              );
+              const expiredCall = await storeWhileWaiting(
+                expired.receipt.jobId,
+                expiredLease,
+                expiredClaim.attempt,
+                expiredArtifact,
+                `the ${sourceType} store past its retention`,
+              );
+              assert.equal(
+                (await expiredCall).error?.code,
+                '22023',
+                sourceType,
+              );
+              await refusesWrite(
+                expired.receipt.jobId,
+                expiredArtifact,
+                expiredBefore.revision,
+                expiredPublications,
+                `${sourceType} past its retention`,
+              );
+            }
+          } catch (error) {
+            await holder.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            await close(holder);
+            await close(writer);
+          }
+        },
+      );
+    } finally {
+      if (driveArtifacts.length)
+        await migrator
+          .query('DELETE FROM cc.artifacts WHERE id=ANY($1::text[])', [
+            driveArtifacts,
+          ])
+          .catch(() => undefined);
+      await migrator
+        .query(
+          "DELETE FROM cc.security_events WHERE event='drive-settings-changed'",
+        )
+        .catch(() => undefined);
+      await migrator
+        .query('DELETE FROM cc.google_drive_settings')
+        .catch(() => undefined);
     }
   } finally {
     // The module leaves no fixture behind for the modules that follow it.

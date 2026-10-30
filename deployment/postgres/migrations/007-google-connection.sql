@@ -106,6 +106,20 @@ CREATE TABLE cc.google_connection (
   FOREIGN KEY(credential_id,generation,customer_id) REFERENCES cc.google_credentials(id,generation,customer_id)
 );
 
+-- The Picker inputs of the Drive slice (design section 3). One singleton row holds the browser key and
+-- the project number. The key is not a secret: every browser that opens the Picker receives it, so the
+-- table holds it in plain text and outside the credential envelope. A credential replacement keeps the
+-- row, because the connection keeps its customer.
+CREATE TABLE cc.google_drive_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
+  -- Exactly 39 letters, digits, hyphens, or underscores (design section 3, `notes:327`).
+  picker_api_key text NOT NULL CHECK(picker_api_key ~ '^[A-Za-z0-9_-]{39}$'),
+  -- 1 to 20 digits and no leading zero (design section 3, `notes:328`). The Picker uses it as its App ID.
+  project_number text NOT NULL CHECK(project_number ~ '^[1-9][0-9]{0,19}$'),
+  saved_by uuid NOT NULL REFERENCES cc.application_principals(id),
+  saved_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
 CREATE FUNCTION cc.google_connection_actor(p_actor uuid,p_version integer,p_action text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE actor cc.application_principals;
@@ -263,6 +277,52 @@ BEGIN
 END;
 $$;
 
+-- The saved Drive settings, or null before the first save (design section 3). It takes the permission of
+-- `GET /api/google-connection` (`api/auth/google-connection.controller.ts:33-36`).
+CREATE FUNCTION cc.read_google_drive_settings(p_actor uuid,p_version integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE settings cc.google_drive_settings;
+BEGIN
+  PERFORM cc.google_connection_actor(p_actor,p_version,'connection:read');
+  SELECT * INTO settings FROM cc.google_drive_settings WHERE singleton;
+  IF settings.singleton IS NULL THEN RETURN NULL; END IF;
+  RETURN jsonb_build_object('pickerApiKey',settings.picker_api_key,'projectNumber',settings.project_number);
+END;
+$$;
+
+-- One save of the Drive settings (design section 3). The save that changes a value writes one
+-- `drive-settings-changed` event that names the actor, the correlation ID, the project number, and
+-- whether the key changed. A save without a change writes no event and changes no row. The event joins
+-- the event enumeration of `017-jobs.sql`, its last definition.
+CREATE FUNCTION cc.save_google_drive_settings(p_actor uuid,p_version integer,p_key text,p_project text,
+  p_correlation uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE settings cc.google_drive_settings; key_changed boolean; changed boolean;
+BEGIN
+  PERFORM cc.google_connection_actor(p_actor,p_version,'connection:manage');
+  IF p_key IS NULL OR p_key !~ '^[A-Za-z0-9_-]{39}$' OR p_project IS NULL OR
+    p_project !~ '^[1-9][0-9]{0,19}$' OR p_correlation IS NULL THEN
+    RAISE EXCEPTION 'The Drive settings are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- The advisory lock of the actor check holds the row decision, so two saves cannot both compare the
+  -- old values and both write an event.
+  SELECT * INTO settings FROM cc.google_drive_settings WHERE singleton;
+  key_changed:=settings.picker_api_key IS DISTINCT FROM p_key;
+  changed:=key_changed OR settings.project_number IS DISTINCT FROM p_project;
+  IF changed THEN
+    INSERT INTO cc.google_drive_settings(singleton,picker_api_key,project_number,saved_by,saved_at)
+      VALUES(true,p_key,p_project,p_actor,clock_timestamp())
+      ON CONFLICT(singleton) DO UPDATE SET picker_api_key=excluded.picker_api_key,
+        project_number=excluded.project_number,saved_by=excluded.saved_by,saved_at=excluded.saved_at;
+    INSERT INTO cc.security_events(id,actor_id,event,correlation_id,detail,resource_scope)
+      VALUES(gen_random_uuid(),p_actor,'drive-settings-changed',p_correlation,
+        'projectNumber:'||p_project||',keyChanged:'||CASE WHEN key_changed THEN 'true' ELSE 'false' END,
+        '{"kind":"platform"}');
+  END IF;
+  RETURN jsonb_build_object('pickerApiKey',p_key,'projectNumber',p_project);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION cc.application_scope_verified(p_scope jsonb) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   SELECT p_scope='{"kind":"platform"}'::jsonb OR (
@@ -271,6 +331,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   );
 $$;
 
+REVOKE ALL ON cc.google_drive_settings FROM PUBLIC;
 REVOKE ALL ON FUNCTION cc.google_envelope_valid(jsonb),cc.google_observation_valid(jsonb),
   cc.google_connection_actor(uuid,integer,text),cc.expire_google_candidates(uuid),
   cc.stage_google_credential(uuid,integer,uuid,text,text,text,jsonb,uuid),
@@ -278,4 +339,6 @@ REVOKE ALL ON FUNCTION cc.google_envelope_valid(jsonb),cc.google_observation_val
   cc.finish_google_candidate(uuid,integer,uuid,text,jsonb,text,uuid),
   cc.read_google_candidate(uuid,integer,uuid,text),
   cc.confirm_google_customer(uuid,integer,uuid,text,text,jsonb,uuid),
-  cc.read_google_connection(uuid,integer) FROM PUBLIC;
+  cc.read_google_connection(uuid,integer),
+  cc.read_google_drive_settings(uuid,integer),
+  cc.save_google_drive_settings(uuid,integer,text,text,uuid) FROM PUBLIC;

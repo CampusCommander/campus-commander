@@ -246,7 +246,9 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.finish_google_candidate(uuid,integer,uuid,text,jsonb,text,uuid),
         cc.read_google_candidate(uuid,integer,uuid,text),
         cc.confirm_google_customer(uuid,integer,uuid,text,text,jsonb,uuid),
-        cc.read_google_connection(uuid,integer) TO ${role}`);
+        cc.read_google_connection(uuid,integer),
+        cc.read_google_drive_settings(uuid,integer),
+        cc.save_google_drive_settings(uuid,integer,text,text,uuid) TO ${role}`);
     }
     if (migrations.some(({ id }) => id === '016-device-inventory')) {
       await client.query(`GRANT SELECT ON cc.devices, cc.device_sync_state, cc.entity_sync_jobs TO ${role};
@@ -319,13 +321,15 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.record_job_activity_seen(uuid,integer),
         cc.job_cancel_requested(text,uuid),
         cc.request_job_cancel(uuid,integer,text,text,uuid),
-        cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid),
-        cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text),
+        cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid,text),
+        cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text,text,integer,text,text),
         cc.claim_device_export_job(text,uuid,uuid),
         cc.claim_device_import_job(text,uuid,uuid),
         cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
         cc.renew_device_import_job(text,uuid,uuid,integer,text,integer,integer),
         cc.store_device_import_lines(text,uuid,uuid,integer,jsonb),
+        cc.store_device_import_source(text,uuid,uuid,integer,text,bigint),
+        cc.start_device_export_sheet(text,uuid,uuid),
         cc.finish_device_export_job(text,uuid,uuid,jsonb,text),
         cc.finish_device_import_job(text,uuid,uuid,integer,jsonb,text,text,text),
         cc.recover_device_file_jobs(text) TO ${role}`);
