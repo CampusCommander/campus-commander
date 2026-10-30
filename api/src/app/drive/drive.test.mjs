@@ -662,6 +662,32 @@ test('the session answers setup before any exchange without saved settings', asy
   assert.equal(statements(db, 'cc.device_write_credential').length, 0);
 });
 
+test('the session answers setup without a connection before any credential read', async () => {
+  const db = driveDatabase({ sync: null });
+  arrange({ db });
+
+  const answer = await mint();
+
+  assert.equal(answer.status, 409);
+  assert.deepEqual(answer.body, {
+    reason: 'drive-unavailable',
+    cause: 'setup',
+  });
+  assert.equal(statements(db, 'cc.device_write_credential').length, 0);
+});
+
+test('the session refuses a request body with a field', async () => {
+  const db = driveDatabase();
+  arrange({ db });
+
+  const answer = await mint({ unexpected: true });
+
+  assert.equal(answer.status, 400);
+  assert.equal(answer.body.code, 'invalid-request');
+  assert.equal(statements(db, 'cc.device_write_credential').length, 0);
+  assert.equal(statements(db, 'cc.read_google_drive_access').length, 0);
+});
+
 test('a person without the import permissions receives 403 before any credential read', async () => {
   const db = driveDatabase();
   arrange({ db, grants: [{ action: 'devices:read', scope: district() }] });
