@@ -20,7 +20,7 @@ import {
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
 
-/** The six capabilities that a fresh installation grants (GOOGLE_SETUP_SCOPES). */
+/** The seven capabilities that a fresh installation grants (GOOGLE_SETUP_SCOPES). */
 const SETUP_CAPABILITY_IDS = new Set(
   GOOGLE_CAPABILITIES.filter((capability) =>
     GOOGLE_SETUP_SCOPES.includes(capability.scope),

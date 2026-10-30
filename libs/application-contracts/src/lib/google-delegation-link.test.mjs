@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { GOOGLE_SETUP_SCOPES } from './google-capabilities.ts';
 import {
   buildDelegationLink,
   delegationLink,
@@ -17,6 +18,7 @@ const TELEMETRY =
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly';
 const SCHOOL_OU =
   'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+const DRIVE = 'https://www.googleapis.com/auth/drive.file';
 
 test('the delegation link holds the sorted scopes, the client ID, and the replace flag', () => {
   assert.equal(
@@ -83,6 +85,17 @@ test('the delegation scopes hold the sorted union without duplicates', () => {
     SCHOOL_OU,
     TELEMETRY,
   ]);
+});
+
+test('the delegation link lists the seven setup scopes in sorted order', () => {
+  const listed = new URL(
+    delegationLink({ clientId: '123456789', scopes: GOOGLE_SETUP_SCOPES }),
+  ).searchParams
+    .get('clientScopeToAdd')
+    .split(',');
+  assert.equal(listed.length, 7);
+  assert.deepEqual(listed, [...GOOGLE_SETUP_SCOPES].sort());
+  assert.ok(listed.includes(DRIVE), 'The link lists the Drive scope.');
 });
 
 test('the shared link helper lists the requested and verified scopes once', () => {

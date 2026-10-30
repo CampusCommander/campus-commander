@@ -124,6 +124,7 @@ export async function qualifyGoogleHealth({
     'device-inventory',
     'device-telemetry',
     'domain-observations',
+    'drive-files',
     'school-ou-references',
   ]);
   assert.equal(JSON.stringify(initial).includes('envelope'), false);
@@ -189,6 +190,7 @@ export async function qualifyGoogleHealth({
     'device-inventory',
     'device-telemetry',
     'device-changes',
+    'drive-files',
   ];
   const allLease = await claim(all);
   const allHealth = await finish(
@@ -200,7 +202,7 @@ export async function qualifyGoogleHealth({
     })),
     connection.observation,
   );
-  assert.equal(allHealth.capabilities.length, 6);
+  assert.equal(allHealth.capabilities.length, 7);
   assert.ok(
     allHealth.capabilities.every(
       (item) => item.failure === null && item.scopeVerified,
@@ -356,6 +358,28 @@ export async function qualifyGoogleHealth({
     ),
   );
   assert.equal(healthy.backgroundFailure, null);
+  // A failed Drive check is optional, so the connection stays active.
+  await clearWindow();
+  const driveLease = await claim(['drive-files'], actor, 2);
+  const driveDenied = await finish(
+    driveLease,
+    [
+      {
+        capability: 'drive-files',
+        scopeVerified: false,
+        failure: 'delegation-not-authorized',
+      },
+    ],
+    null,
+    2,
+  );
+  const driveResult = driveDenied.capabilities.find(
+    (item) => item.capability === 'drive-files',
+  );
+  assert.equal(driveDenied.connectionState, 'active');
+  assert.equal(driveResult.failure, 'delegation-not-authorized');
+  assert.equal(driveResult.scopeVerified, false);
+  assert.ok(driveResult.checkedAt, 'a denied Drive check records its time');
   const revision = (
     await migrator.query(
       'SELECT generation,customer_id FROM cc.google_connection',
@@ -368,6 +392,7 @@ export async function qualifyGoogleHealth({
     'a denied first optional check records no success history: pass',
     'partial scope failure preserves separate successful capabilities and historical success: pass',
     'targeted rechecks preserve unrelated capability observations: pass',
+    'a failed Drive check leaves the connection active: pass',
     'inconclusive combined checks preserve all capability evidence: pass',
     'one shared diagnostic lease and cooldown reject competing replicas: pass',
     'expired and superseded diagnostic completions fail closed: pass',

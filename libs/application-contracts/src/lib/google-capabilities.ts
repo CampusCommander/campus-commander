@@ -79,6 +79,19 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     evidence:
       'admin-sdk-mock v0.2.0 only. Methods: chromeosdevices.patch, customer.devices.chromeos.issueCommand, customer.devices.chromeos.commands.get, customer.devices.chromeos.batchChangeStatus.',
   },
+  {
+    id: 'drive-files',
+    requiredForConnection: false,
+    label: 'Google Drive files',
+    enabled: true,
+    qualified: false,
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    method: 'files.list',
+    source:
+      'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list',
+    evidence:
+      'Not verified on a live domain. The Drive slice demonstration verifies it.',
+  },
 ] as const);
 
 /** Capability ids that the Google connection page lists during setup, in page order. */
@@ -89,6 +102,7 @@ const GOOGLE_SETUP_CAPABILITY_IDS = [
   'device-telemetry',
   'device-changes',
   'school-ou-references',
+  'drive-files',
 ] as const;
 
 /**

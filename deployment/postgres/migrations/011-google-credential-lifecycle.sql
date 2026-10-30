@@ -305,7 +305,7 @@ LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
       'lastSucceededAt',COALESCE(r.last_succeeded_at,CASE WHEN v.setup_verified THEN c.observed_at END),
       'correlationId',r.correlation_id) ORDER BY v.capability)
       FROM (VALUES ('customer-identity',true),('domain-observations',true),('school-ou-references',false),
-        ('device-inventory',false),('device-telemetry',false),('device-changes',false)) AS v(capability,setup_verified)
+        ('device-inventory',false),('device-telemetry',false),('device-changes',false),('drive-files',false)) AS v(capability,setup_verified)
       LEFT JOIN cc.google_capability_health r ON r.customer_id=c.customer_id AND r.generation=c.generation AND r.capability=v.capability))
     FROM cc.google_connection c
     LEFT JOIN cc.google_health_checks h ON h.customer_id=c.customer_id AND h.generation=c.generation

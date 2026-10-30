@@ -128,7 +128,9 @@ prototype.request = async function (options) {
                 ? 'synthetic-changes-token'
                 : scope.endsWith('telemetry.readonly')
                   ? 'synthetic-telemetry-token'
-                  : 'synthetic-domain-token',
+                  : scope.endsWith('drive.file')
+                    ? 'synthetic-drive-token'
+                    : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -149,7 +151,9 @@ prototype.request = async function (options) {
                   ? 'https://www.googleapis.com/auth/admin.directory.device.chromeos'
                   : authorization === 'Bearer synthetic-telemetry-token'
                     ? 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly'
-                    : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+                    : authorization === 'Bearer synthetic-drive-token'
+                      ? 'https://www.googleapis.com/auth/drive.file'
+                      : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))
@@ -281,6 +285,12 @@ prototype.request = async function (options) {
       devices: items.map(telemetry),
       ...(next ? { nextPageToken: next } : {}),
     };
+  } else if (
+    url.hostname === 'www.googleapis.com' &&
+    url.pathname === '/drive/v3/files'
+  ) {
+    // An empty My Drive stands: the health check reads one file at most.
+    data = { files: [] };
   } else if (
     url.hostname === 'www.googleapis.com' &&
     url.pathname === '/batch/admin/directory_v1'

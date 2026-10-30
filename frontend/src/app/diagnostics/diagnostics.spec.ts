@@ -156,20 +156,20 @@ function diagnosticsPage(verified: readonly string[]) {
   return { element, fixture, href, scopes };
 }
 
-it('shows six capability checks and one pre-filled delegation link', () => {
+it('shows seven capability checks and one pre-filled delegation link', () => {
   const { element, href, scopes } = diagnosticsPage(
     GOOGLE_CAPABILITIES.map((capability) => capability.id),
   );
   const articles = [...element.querySelectorAll('article.capability')];
-  expect(articles.length).toBe(6);
+  expect(articles.length).toBe(7);
   expect(
     articles.map((article) => article.querySelector('h3')?.textContent?.trim()),
   ).toEqual(GOOGLE_CAPABILITIES.map((capability) => capability.label));
   const text = element.textContent!.replace(/\s+/g, ' ');
-  expect(text).toContain('6 Google checks available.');
+  expect(text).toContain('7 Google checks available.');
   expect(text).not.toContain('read-only Google checks available');
   expect(text).toContain(
-    'Add these 6 scopes to allow the checks on this page.',
+    'Add these 7 scopes to allow the checks on this page.',
   );
   expect(text).toContain(
     'These checks read at most one record of each kind. They never change Google data.',
@@ -203,7 +203,7 @@ it('lists the school OU scope before Google verifies it', () => {
     'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
   );
   expect(href).toContain('orgunit');
-  expect(element.textContent).toContain('Add these 6 scopes');
+  expect(element.textContent).toContain('Add these 7 scopes');
   expect(
     element.querySelector('pre[aria-label="Required Google capability scopes"]')
       ?.textContent,

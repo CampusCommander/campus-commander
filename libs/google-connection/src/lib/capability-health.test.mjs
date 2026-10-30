@@ -59,6 +59,7 @@ function stub(
     if (options.url.endsWith('/orgunits')) return { data: orgUnits };
     if (options.url.endsWith('/devices/chromeos')) return { data: devices };
     if (options.url.endsWith('/telemetry/devices')) return { data: telemetry };
+    if (options.url.endsWith('/files')) return { data: { files: [] } };
     throw new Error(`The verifier requested an unexpected URL: ${options.url}`);
   });
   return calls;
@@ -214,7 +215,7 @@ test('successful capability checks produce one consistent customer observation w
   assert.equal(JSON.stringify(result).includes('synthetic-private-key'), false);
 });
 
-test('all six capabilities request one exact scope each and read the smallest page', async (t) => {
+test('all seven capabilities request one exact scope each and read the smallest page', async (t) => {
   const calls = stub(t);
   const result = await check(capabilities);
   assert.deepEqual(
@@ -225,6 +226,7 @@ test('all six capabilities request one exact scope each and read the smallest pa
       failure: null,
     })),
   );
+  assert.equal(capabilities.length, 7);
   assert.equal(result.observation?.customerId, customer.id);
   const tokens = calls.filter((call) => call.operation === 'token');
   assert.equal(tokens.length, capabilities.length);
@@ -234,7 +236,7 @@ test('all six capabilities request one exact scope each and read the smallest pa
     capabilities.map(scopeOf).sort(),
   );
   const read = reads(calls);
-  assert.equal(read.length, 5, 'the device write capability reads nothing');
+  assert.equal(read.length, 6, 'the device write capability reads nothing');
   assert.ok(read.every((call) => call.method === 'GET'));
   const orgUnitsRead = read.find((call) => call.url.endsWith('/orgunits'));
   assert.deepEqual(orgUnitsRead.params, {
@@ -249,6 +251,47 @@ test('all six capabilities request one exact scope each and read the smallest pa
     call.url.endsWith('/telemetry/devices'),
   );
   assert.equal(telemetryRead.params.pageSize, 1);
+  const driveRead = read.find((call) =>
+    call.url.endsWith('/drive/v3/files'),
+  );
+  assert.deepEqual(driveRead.params, { pageSize: 1, fields: 'files(id)' });
+});
+
+test('the drive-files check reads an empty file list with its own exact scope', async (t) => {
+  const calls = stub(t);
+  const result = await check(['drive-files']);
+  assert.deepEqual(result.results, [
+    { capability: 'drive-files', scopeVerified: true, failure: null },
+  ]);
+  assert.equal(result.observation, null);
+  assert.deepEqual(calls[0], {
+    operation: 'token',
+    scopes: [scopeOf('drive-files')],
+  });
+  assert.equal(calls[1].operation, 'read');
+  assert.equal(calls[1].url, 'https://www.googleapis.com/drive/v3/files');
+  assert.equal(calls[1].method, 'GET');
+  assert.equal(calls.length, 2, 'the drive check sends no write');
+});
+
+test('a denied Drive scope fails drive-files only', async (t) => {
+  stub(t, {
+    tokenFailure: (scope) =>
+      scope === scopeOf('drive-files')
+        ? {
+            response: { status: 401, data: { error: 'unauthorized_client' } },
+          }
+        : undefined,
+  });
+  const result = await check(capabilities);
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'drive-files' ? 'delegation-not-authorized' : null,
+    ]),
+  );
+  assert.equal(result.observation?.customerId, customer.id);
 });
 
 test('the device-changes check requests its token only and sends no write request', async (t) => {
@@ -352,6 +395,11 @@ test('an inconsistent customer/domain observation keeps every other capability r
       capability: 'device-changes',
       scopeVerified: false,
       failure: 'delegation-not-authorized',
+    },
+    {
+      capability: 'drive-files',
+      scopeVerified: true,
+      failure: null,
     },
   ]);
   assert.equal(result.observation, null);
