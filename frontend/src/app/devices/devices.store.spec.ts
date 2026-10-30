@@ -389,6 +389,145 @@ describe('a new person over a followed device stream', () => {
   );
 });
 
+/**
+ * An admission read that is still in flight when a newer open reads the status itself. The newer
+ * open's decision owns the store from then on, so the older answer changes nothing.
+ */
+describe('an admission answer that a newer open replaced', () => {
+  /**
+   * Opens Devices for one person, changes the person while the admission read is held, and lets a
+   * replacement open read the status. Status reads after the first two answer from `answer`.
+   */
+  async function delayedAdmission(answer: (read: number) => Response) {
+    let reads = 0;
+    let release: () => void = () => undefined;
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/freshness')
+        return Response.json({ freshness: { stale: 0, refreshing: false } });
+      if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+      reads += 1;
+      // The second read is the new person's admission. It answers only when the test says so.
+      if (reads === 2) {
+        await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: running(null) });
+      }
+      return answer(reads);
+    });
+    const session = signal(sessionFor('actor'));
+    const store = setup(request, session);
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The reset source closes before its first open, so the replacement open reads the status.
+    opened[1].fail(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened).toHaveLength(3);
+    return {
+      request,
+      store,
+      opened,
+      reads: () => reads,
+      release: () => release(),
+    };
+  }
+
+  it('keeps the current retry and recovers without the older answer', async () => {
+    vi.useFakeTimers();
+    try {
+      let status = 200;
+      const admission = await delayedAdmission(() =>
+        status === 200
+          ? Response.json({ sync: state('ready') })
+          : Response.json({}, { status }),
+      );
+
+      // The replacement open fails its own status read and schedules the current retry.
+      status = 503;
+      admission.opened[2].open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(admission.reads()).toBe(3);
+      expect(admission.store.error()).toBe(
+        'Device inventory status is unavailable.',
+      );
+
+      // A device frame waits for the current open's status read.
+      const before = admission.store.revision();
+      admission.opened[2].send('full-sync', {
+        type: 'full-sync',
+        sync: state('ready', { observedAt: LATER }),
+      });
+      expect(admission.store.revision()).toBe(before);
+
+      // The older admission answers after the newer open owns the decision. It changes nothing.
+      admission.release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(admission.reads()).toBe(3);
+      expect(admission.store.sync()).toBeNull();
+      expect(admission.store.error()).toBe(
+        'Device inventory status is unavailable.',
+      );
+
+      // The current open still retries, then follows its held frame.
+      status = 200;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(admission.reads()).toBe(5);
+      expect(admission.store.sync()?.status).toBe('ready');
+      expect(admission.store.sync()?.observedAt).toBe(LATER);
+      expect(admission.store.error()).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      'a denied status read',
+      () => Response.json({ code: 'forbidden' }, { status: 403 }),
+      false,
+      'Device inventory status is unavailable.',
+    ],
+    [
+      'a customer without a sync',
+      () => Response.json({ sync: null }),
+      true,
+      '',
+    ],
+  ] as const)(
+    'does not restore the subscription that %s stopped',
+    async (_case, answer, loaded, error) => {
+      vi.useFakeTimers();
+      try {
+        let stopped = false;
+        const admission = await delayedAdmission(() =>
+          stopped ? answer() : Response.json({ sync: state('ready') }),
+        );
+
+        // The replacement open reads a stop of this store alone.
+        stopped = true;
+        admission.opened[2].open();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(admission.opened[2].closed).toBe(true);
+
+        // The older successful admission answers after the newer stop. It must not follow again.
+        admission.release();
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(admission.opened).toHaveLength(3);
+        expect(admission.reads()).toBe(3);
+        expect(admission.store.sync()).toBeNull();
+        expect(admission.store.syncLoaded()).toBe(loaded);
+        expect(admission.store.error()).toBe(error);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
 const groupBody = {
   groups: [{ key: '/School A', devices: 150 }],
   groupCount: 2,

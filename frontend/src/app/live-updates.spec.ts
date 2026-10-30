@@ -91,10 +91,10 @@ class FakeSource {
  * The Devices page with the shell: the activity store follows the job feed and the devices store
  * follows the device feed. Both use the one `LiveFeeds` connection.
  */
-function setup(actions: string[], sync: () => Response) {
+function setup(actions: string[], sync: () => Response | Promise<Response>) {
   const sources: FakeSource[] = [];
   const requests: string[] = [];
-  const route = (path: string): Response => {
+  const route = (path: string): Response | Promise<Response> => {
     if (path === '/api/jobs/activity') return Response.json(activity());
     if (path === '/api/devices/sync') return sync();
     if (path === '/api/devices/freshness')
@@ -269,6 +269,70 @@ it('reads the new person status when both stores follow a replaced connection', 
   expect(devices.syncLoaded()).toBe(true);
   // Every replacement source but the live one is closed.
   expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
+});
+
+it('keeps the device store stopped when a newer denial follows a held admission', async () => {
+  vi.useFakeTimers();
+  let statusReads = 0;
+  let release: () => void = () => undefined;
+  let denied = false;
+  const { activity, devices, sources, session, reads } = setup(
+    ['jobs:read', 'devices:read'],
+    async () => {
+      statusReads += 1;
+      // The second read is the new person's admission. Its answer waits for the test.
+      if (statusReads === 2) {
+        await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: syncState() });
+      }
+      return denied
+        ? Response.json({ code: 'forbidden' }, { status: 403 })
+        : Response.json({ sync: syncState() });
+    },
+  );
+  TestBed.tick();
+  await devices.init();
+  sources[0].open();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(activity.live()).toBe(true);
+
+  // The next person's admission read is in flight. The reset source fails before it opens.
+  session.set(sessionFor(['jobs:read', 'devices:read'], 'someone-else'));
+  TestBed.tick();
+  await vi.advanceTimersByTimeAsync(0);
+  sources[sources.length - 1].fail(2);
+  await vi.advanceTimersByTimeAsync(0);
+
+  // The replacement open reads a denial. It stops the devices store and leaves jobs live.
+  denied = true;
+  const live = sources[sources.length - 1];
+  live.open();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(devices.sync()).toBeNull();
+  expect(activity.live()).toBe(true);
+  expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
+
+  // The older successful admission answer arrives. It must not follow the device events again.
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  const revision = devices.revision();
+  live.send('full-sync', { type: 'full-sync', sync: syncState() });
+  expect(devices.revision()).toBe(revision);
+  expect(devices.sync()).toBeNull();
+  expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
+
+  // The job feed keeps its one connection and its reads.
+  const events = reads('/api/jobs/activity');
+  live.send('job-changed', {
+    type: 'job-changed',
+    jobId: '33333333-3333-4333-8333-333333333333',
+    displayId: 'UPD-014',
+    revision: 6,
+    requestedBy: actor,
+  });
+  await vi.advanceTimersByTimeAsync(250);
+  expect(activity.live()).toBe(true);
+  expect(reads('/api/jobs/activity')).toBeGreaterThan(events);
 });
 
 it('keeps the job feed live when the customer has no device sync', async () => {
