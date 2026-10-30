@@ -4,7 +4,7 @@ import {
   devicePageSchema,
   type JobSummary,
 } from '@campus/application-contracts';
-import { installLiveStreams } from './live-streams';
+import { installLiveStreams, liveStreams } from './live-streams';
 
 /**
  * States 01 to 08 of the Export, Reports, and Import dialog
@@ -191,6 +191,34 @@ interface MockOptions {
   theme?: 'light' | 'dark';
   /** The import that `/devices?job=IMP-001` opens: its plan state (states 13, 16, 17, and 17b). */
   importRun?: 'open' | 'running' | 'finished';
+  /** Holds the next IMP-001 detail read, so a test can hold the detail it starts (R4). */
+  holdDetail?: DetailHold;
+}
+
+/** A hold on one IMP-001 detail read, and the results reads that the page requests (R4). */
+interface DetailHold {
+  armed: boolean;
+  wait: Promise<void>;
+  counts: { detail: number; report: number; operations: number };
+  arm: () => void;
+  release: () => void;
+}
+
+function detailHold(): DetailHold {
+  let release: () => void = () => undefined;
+  const hold: DetailHold = {
+    armed: false,
+    wait: Promise.resolve(),
+    counts: { detail: 0, report: 0, operations: 0 },
+    arm: () => {
+      hold.armed = true;
+      hold.wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    },
+    release: () => release(),
+  };
+  return hold;
 }
 
 const impJobId = '1c1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a11';
@@ -858,11 +886,21 @@ async function signIn(page: Page, options: MockOptions = {}) {
       return route.fulfill({ json: { seenAt: new Date().toISOString() } });
     if (options.importRun) {
       const run = options.importRun;
-      if (path === '/api/jobs/IMP-001')
+      const hold = options.holdDetail;
+      if (path === '/api/jobs/IMP-001') {
+        if (hold) {
+          hold.counts.detail += 1;
+          if (hold.armed) {
+            hold.armed = false;
+            await hold.wait;
+          }
+        }
         return route.fulfill({ json: importDetail(run) });
+      }
       if (path.startsWith('/api/devices/imports/IMP-001/execute'))
         return route.fulfill({ json: executeAnswer });
       if (path === '/api/devices/imports/IMP-001/report') {
+        if (hold) hold.counts.report += 1;
         const view =
           url.searchParams.get('view') === 'failed' ? 'failed' : 'proposed';
         const page = Number(url.searchParams.get('page') ?? '0');
@@ -877,13 +915,15 @@ async function signIn(page: Page, options: MockOptions = {}) {
           },
         });
       const operations = /^\/api\/jobs\/([^/]+)\/operations$/.exec(path);
-      if (operations && run !== 'open')
+      if (operations && run !== 'open') {
+        if (hold) hold.counts.operations += 1;
         return route.fulfill({
           json: {
             operations: operationsOf(run, operations[1]),
             nextCursor: null,
           },
         });
+      }
     }
     if (path === '/api/jobs/activity') {
       // The import row is an executed plan, so its Activity link opens results.
@@ -1391,5 +1431,50 @@ test.describe('Execute and the results', () => {
       .toBeGreaterThan(60);
     await page.screenshot({ path: testInfo.outputPath('17-failed-empty.png') });
     expect(await streams.constructions()).toEqual(['/api/events']);
+  });
+
+  test('the results controls wait for a held IMP detail read', async ({ page }) => {
+    const hold = detailHold();
+    const panel = await openImport(page, { importRun: 'running', holdDetail: hold });
+    await expect(panel).toContainText('Rows 1–10 of 12 changes');
+    const streams = liveStreams(page);
+    await streams.waitForOpen('/api/events');
+    // The feed open reconciles the results once. Let that read settle before the hold.
+    await page.waitForTimeout(700);
+    const base = { ...hold.counts };
+    const send = (revision: number) =>
+      streams.send('/api/events', 'job-changed', {
+        type: 'job-changed',
+        jobId: stsReenableId,
+        displayId: 'STS-002',
+        revision,
+        requestedBy: person.id,
+      });
+
+    // A job event starts the IMP detail read, and its answer stays held (R4).
+    hold.arm();
+    await send(9);
+    await expect.poll(() => hold.counts.detail).toBe(base.detail + 1);
+    const beforeNext = { ...hold.counts };
+
+    // Next waits for the whole detail/report/operations cycle and starts no read of its own.
+    await panel.getByRole('button', { name: 'Next' }).click();
+    await page.waitForTimeout(500);
+    expect(hold.counts).toEqual(beforeNext);
+    hold.release();
+    await expect(panel).toContainText('Rows 11–12 of 12 changes');
+    await expect(resultCells(page)).toHaveCount(2);
+
+    // The Failed tab waits for the held detail in the same way (R4).
+    const base2 = { ...hold.counts };
+    hold.arm();
+    await send(10);
+    await expect.poll(() => hold.counts.detail).toBe(base2.detail + 1);
+    const beforeFailed = { ...hold.counts };
+    await panel.locator('.report-tabs button').nth(1).click();
+    await page.waitForTimeout(500);
+    expect(hold.counts).toEqual(beforeFailed);
+    hold.release();
+    await expect(panel).toContainText('No change failed.');
   });
 });
