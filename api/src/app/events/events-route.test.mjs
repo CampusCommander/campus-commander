@@ -179,8 +179,6 @@ const openStreams = [];
 before(async () => {
   const [
     eventsControllerModule,
-    jobsControllerModule,
-    devicesControllerModule,
     securityModule,
     guardModule,
     jobsServiceModule,
@@ -188,11 +186,8 @@ before(async () => {
     authModule,
     authzModule,
     eventsModule,
-    orchestrationModule,
   ] = await Promise.all([
     import('./events.controller.ts'),
-    import('../jobs/jobs.controller.ts'),
-    import('../devices/devices.controller.ts'),
     import('../security.ts'),
     import('../auth/auth.guard.ts'),
     import('../jobs/jobs.service.ts'),
@@ -200,11 +195,8 @@ before(async () => {
     import('../auth/auth.service.ts'),
     import('../auth/authorize-action.ts'),
     import('../devices/device-events.service.ts'),
-    import('../orchestration/orchestration.service.ts'),
   ]);
   const { EventsController } = eventsControllerModule;
-  const { JobsController } = jobsControllerModule;
-  const { DevicesController } = devicesControllerModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
   const { AuthGuard } = guardModule;
   const { JobsService } = jobsServiceModule;
@@ -212,15 +204,11 @@ before(async () => {
   const { AuthService } = authModule;
   const { authorizeAction } = authzModule;
   const { DeviceEventsService } = eventsModule;
-  const { OrchestrationService } = orchestrationModule;
 
   // The real ConfigurationService reads the deployment file, which a unit test does not have.
   // The harness names the phase-3 configuration that the route reads its deployment phase from.
   class TestConfiguration {}
   const configuration = { deployment: { phase: 3 } };
-  // The Devices controller builds its domain refresh around this service. These tests call no route
-  // of it, so the harness leaves it empty.
-  class TestConnection {}
 
   // esbuild does not emit decorator metadata, so the harness names the constructor tokens.
   Reflect.defineMetadata(
@@ -234,16 +222,6 @@ before(async () => {
     ],
     EventsController,
   );
-  Reflect.defineMetadata(
-    'design:paramtypes',
-    [JobsService, AuthService, DeviceEventsService, OrchestrationService],
-    JobsController,
-  );
-  Reflect.defineMetadata(
-    'design:paramtypes',
-    [DevicesService, AuthService, DeviceEventsService, TestConnection],
-    DevicesController,
-  );
 
   const store = {
     connection: {
@@ -256,7 +234,7 @@ before(async () => {
 
   class EventRoutesModule {}
   Module({
-    controllers: [EventsController, JobsController, DevicesController],
+    controllers: [EventsController],
     providers: [
       { provide: JobsService, useValue: jobs },
       { provide: DevicesService, useValue: devices },
@@ -281,12 +259,7 @@ before(async () => {
         },
       },
       { provide: DeviceEventsService, useValue: { fanout } },
-      {
-        provide: OrchestrationService,
-        useValue: { startDeviceUpdateReconcile: async () => 'execution' },
-      },
       { provide: TestConfiguration, useValue: configuration },
-      { provide: TestConnection, useValue: {} },
     ],
   })(EventRoutesModule);
 
@@ -482,8 +455,6 @@ test('a caller without devices:read receives the job feed alone when the sync re
   // The protected read denies the caller before the audit rule runs, as the Devices stream does.
   assert.deepEqual(authorizeCalls, []);
   assert.deepEqual(auditEvents, []);
-  // The Devices stream still refuses this caller, as its open rule decides today.
-  assert.equal((await answer('/api/devices/events')).status, 403);
   assert.equal(
     stream.ended,
     false,
@@ -580,7 +551,7 @@ test('a sync of another customer leaves the device feed out', async () => {
   assert.deepEqual(authorizeCalls, []);
 });
 
-test('a failed device open refuses the stream as the Devices stream refuses it', async () => {
+test('a failed device open refuses the stream', async () => {
   const db = database([
     ['cc.job_reader', [{ customer_id: CUSTOMER }]],
     [
@@ -596,8 +567,6 @@ test('a failed device open refuses the stream as the Devices stream refuses it',
 
   assert.equal(refused.status, 503);
   assert.deepEqual(refused.body, { reason: 'device-store-unavailable' });
-  // The Devices stream answers the same failure the same way.
-  assert.deepEqual(refused, await answer('/api/devices/events'));
   assert.deepEqual(fanout.feeds, [], 'A refused stream subscribes nothing.');
 });
 
@@ -609,7 +578,6 @@ test('a caller that the Jobs stream refuses receives the same refusal', async ()
 
   assert.equal(refused.status, 503);
   assert.deepEqual(refused.body, { reason: 'connection-required' });
-  assert.deepEqual(refused, await answer('/api/jobs/events'));
   assert.deepEqual(fanout.feeds, [], 'A refused stream subscribes nothing.');
 });
 

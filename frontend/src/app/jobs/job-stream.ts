@@ -31,8 +31,11 @@ export interface JobStreamOptions {
   gate?: () => StreamGate | Promise<StreamGate>;
   /** One open attempt has finished: a stream exists, a retry waits, or the gate stopped it. */
   settled?: () => void;
-  /** Every stream open, first or after a reconnect, resynchronizes the reader (section 3.4). */
-  opened: () => void;
+  /**
+   * Every stream open, first or after a reconnect, resynchronizes the reader (section 3.4).
+   * `replaced` is true when this open belongs to a connection that replaced an earlier one.
+   */
+  opened: (replaced: boolean) => void;
   /** One message payload of a requested event. */
   changed: (name: string, data: string) => void;
   /** Every close or lost connection. Live updates end until the next open. */
@@ -57,6 +60,8 @@ export class JobStream {
   private attempts = 0;
   /** Invalidates a gate answer that a close made obsolete. */
   private attempt = 0;
+  /** The connections that this stream has opened. A later one replaced an earlier one. */
+  private sources = 0;
 
   constructor(private readonly options: JobStreamOptions) {}
 
@@ -151,6 +156,8 @@ export class JobStream {
   }
 
   private connect(): void {
+    const replaced = this.sources > 0;
+    this.sources += 1;
     const stream = this.options.open();
     this.stream = stream;
     const current = () => this.stream === stream;
@@ -159,7 +166,7 @@ export class JobStream {
       this.isOpen = true;
       this.attempts = 0;
       this.watch();
-      this.options.opened();
+      this.options.opened(replaced);
     });
     stream.addEventListener('ping', () => {
       if (current()) this.watch();

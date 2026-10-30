@@ -1,26 +1,29 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
-import { JobStream, type JobEventSource, type StreamGate } from './job-stream';
+import { JobStream, type JobEventSource } from './job-stream';
+
+/**
+ * Every frame name of the one stream (`GET /api/events`). The stream carries the frame names
+ * and payloads of the two former feeds, so the connection reads them all.
+ */
+const STREAM_EVENTS = [
+  'job-changed',
+  'entity-batch',
+  'job-finished',
+  'full-sync',
+] as const;
 
 /** One store that follows a feed. */
 export interface LiveFeedHandlers {
   /** Opens the feed. The first subscriber's factory owns the connection. */
   open: () => JobEventSource;
-  /** Milliseconds before a closed connection reopens. */
-  reopenDelay: () => number;
-  /** Milliseconds without any event, pings included, before the connection counts as dead. */
-  timeout: () => number;
   /** The event names that `changed` receives. */
   events: readonly string[];
-  /** The longest reopen wait, when failed attempts back off. */
-  reopenCap?: () => number;
   /**
-   * Asks whether the connection may open. `retry` waits again.
-   * `stop` leaves it closed until a resume or a restart.
+   * Every open, including an open that this subscriber joined late.
+   * `replaced` is true when the open belongs to a connection that replaced an earlier one.
    */
-  gate?: () => StreamGate | Promise<StreamGate>;
-  /** Every open, including an open that this subscriber joined late. */
-  opened: () => void;
+  opened: (replaced: boolean) => void;
   /** One message of a requested event. */
   changed: (data: string) => void;
   /** Every close or lost connection. */
@@ -32,42 +35,49 @@ export interface LiveFeedSubscription {
   readonly active: boolean;
   /** The connection has opened since the last close. */
   readonly connected: boolean;
-  /** Resolves after the first open attempt: a connection, a waiting retry, or a stopped feed. */
+  /** Resolves after the first open attempt: a connection or a waiting retry. */
   readonly ready: Promise<void>;
   /** Leaves the feed. The last subscriber closes the tab's connection. */
   close(): void;
   /** Replaces the connection, as a new person needs a new session cookie. */
   restart(): void;
-  /** Opens a connection that a gate or a close left closed. */
+  /** Opens a connection that a close left closed. */
   resume(): void;
 }
 
 interface Feed {
   url: string;
   subscribers: Set<LiveFeedHandlers>;
-  /** The subscriber whose factory and reconnect rules own the connection. */
+  /** The subscriber whose factory owns the connection. */
   owner: LiveFeedHandlers;
   stream: JobStream;
   settle: () => void;
   ready: Promise<void>;
-  /** The event names registered on the current connection. */
-  names: readonly string[];
 }
 
 /**
- * One EventSource per feed URL in each tab (finding 7).
+ * One EventSource for each feed URL in a tab (finding 7).
  *
- * Every store subscribes here instead of opening its own connection. A subscriber
- * receives each event of its feed, reads on every open, and the last subscriber
- * closes the connection. A hidden tab holds no connection, and a visible tab
- * opens its feeds again. The watchdog and reopen rules of `JobStream` apply to
- * the shared connection, so a dead connection reopens once for every subscriber.
+ * Every store subscribes here instead of opening its own connection. The browser uses one URL,
+ * `GET /api/events`, so a visible tab holds one connection for every store on the page. A
+ * subscriber receives each event that it names, reads on every open, and the last subscriber
+ * closes the connection. A hidden tab holds no connection, and a visible tab opens it again.
+ *
+ * One reopen rule serves the connection: 5 seconds after a close, doubling up to 60 seconds
+ * after failed attempts, and dead after 60 seconds without an event. A subscriber cannot gate,
+ * delay, or close the connection of another subscriber.
  */
 @Injectable({ providedIn: 'root' })
 export class LiveFeeds {
   private readonly doc = inject(DOCUMENT);
   private readonly feeds = new Map<string, Feed>();
   private hidden = false;
+  /** Milliseconds before a closed connection reopens. */
+  reopenDelay = 5000;
+  /** Milliseconds that a doubled reopen wait never exceeds. */
+  reopenCap = 60_000;
+  /** Milliseconds without any event, pings included, before the connection counts as dead. */
+  timeout = 60_000;
 
   constructor() {
     this.hidden = this.doc.visibilityState === 'hidden';
@@ -75,12 +85,11 @@ export class LiveFeeds {
   }
 
   /**
-   * Follows one feed. The first subscriber opens the tab's connection. A subscriber
-   * that joins an open connection reads at once, as on an open.
+   * Follows one feed. The first subscriber opens the tab's connection. A subscriber that joins
+   * an open connection reads at once, as on an open.
    */
   subscribe(url: string, subscriber: LiveFeedHandlers): LiveFeedSubscription {
     let feed = this.feeds.get(url);
-    const joined = feed;
     if (!feed) {
       let settle: () => void = () => undefined;
       const ready = new Promise<void>((resolve) => {
@@ -93,23 +102,16 @@ export class LiveFeeds {
         stream: null as unknown as JobStream,
         settle,
         ready,
-        names: [],
       };
       created.stream = new JobStream({
         open: () => created.owner.open(),
-        reopenDelay: () => created.owner.reopenDelay(),
-        timeout: () => created.owner.timeout(),
-        reopenCap: () => created.owner.reopenCap?.(),
-        gate: () => (created.owner.gate ? created.owner.gate() : 'open'),
-        events: () => {
-          created.names = [
-            ...new Set([...created.subscribers].flatMap((item) => item.events)),
-          ];
-          return created.names;
-        },
+        reopenDelay: () => this.reopenDelay,
+        reopenCap: () => this.reopenCap,
+        timeout: () => this.timeout,
+        events: () => STREAM_EVENTS,
         settled: () => created.settle(),
-        opened: () => {
-          for (const item of created.subscribers) item.opened();
+        opened: (replaced) => {
+          for (const item of created.subscribers) item.opened(replaced);
         },
         changed: (name, data) => {
           for (const item of created.subscribers) {
@@ -124,19 +126,10 @@ export class LiveFeeds {
       feed = created;
     }
     feed.subscribers.add(subscriber);
-    // A late subscriber can bring an event name that the open connection does not read.
-    const missing = subscriber.events.some(
-      (name) => !feed.names.includes(name),
-    );
-    if (!this.hidden && joined && missing && feed.stream.active) {
-      // The next connection registers the names of every subscriber.
-      feed.stream.restart();
-    } else {
-      if (this.hidden) feed.settle();
-      else feed.stream.start();
-      // The connection is already open. This subscriber missed its open event.
-      if (joined?.stream.connected) subscriber.opened();
-    }
+    if (this.hidden) feed.settle();
+    else feed.stream.start();
+    // The connection is already open. This subscriber missed its open event.
+    if (feed.stream.connected) subscriber.opened(false);
     return {
       get active() {
         return feed.stream.active;
@@ -153,7 +146,7 @@ export class LiveFeeds {
       },
       resume: () => {
         if (this.feeds.get(url) !== feed || this.hidden) return;
-        if (feed.stream.connected) subscriber.opened();
+        if (feed.stream.connected) subscriber.opened(false);
         else feed.stream.resume();
       },
     };

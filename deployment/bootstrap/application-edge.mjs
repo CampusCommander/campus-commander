@@ -102,7 +102,7 @@ export const importUploadLimit = 1073741824;
  */
 export const requestDeadlines = { request: 10000, importUpload: 1800000 };
 const jobRead = new RegExp(
-  `^/api/jobs(?:/(?:activity|requesters|events|${jobDisplayIdPath}(?:/operations)?))?$`,
+  `^/api/jobs(?:/(?:activity|requesters|${jobDisplayIdPath}(?:/operations)?))?$`,
 );
 // An operation number is a whole number from 1. The route rejects the rest. The cancel route
 // takes no part of the path after the display ID.
@@ -171,14 +171,10 @@ export function requestDeadline(method, path, deadlines = requestDeadlines) {
 export const upstreamTimeouts = { request: 45000, events: 75000 };
 
 /**
- * The event streams take the event idle timeout. The one stream of `/api/events` carries the job
- * feed and the device feed, so it holds the connection open between pings like they do.
+ * The event stream takes the event idle timeout. The one stream of `/api/events` carries the job
+ * feed and the device feed, so it holds the connection open between pings.
  */
-const eventStreams = new Set([
-  '/api/events',
-  '/api/devices/events',
-  '/api/jobs/events',
-]);
+const eventStreams = new Set(['/api/events']);
 
 /** Proxy only released pages and bounded application requests. */
 export async function proxyApplication(

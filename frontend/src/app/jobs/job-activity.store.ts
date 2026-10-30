@@ -26,7 +26,7 @@ export const ACTIVITY_EXPIRY_FLOOR_MS = 60_000;
  * The activity summary of the shell (design 2.5 and 3.4).
  *
  * One `JobReader` reads `GET /api/jobs/activity`. The tab's shared jobs stream
- * listens on `/api/jobs/events`. The badge reads `running.count` and attention reads
+ * listens on `/api/events`. The badge reads `running.count` and attention reads
  * `attention` from the latest answer. A successful `seen` request marks the reader
  * dirty. After each successful read, one timed reread follows at `recent.nextExpiryAt`.
  */
@@ -34,12 +34,8 @@ export const ACTIVITY_EXPIRY_FLOOR_MS = 60_000;
 export class JobActivityStore {
   private readonly auth = inject(AuthStore);
   private readonly feeds = inject(LiveFeeds);
-  /** Opens the jobs event stream. Tests replace it. */
+  /** Opens the one live stream of the tab. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
-  /** Milliseconds before a closed stream reopens. */
-  reopenDelay = 5000;
-  /** Milliseconds without any event, pings included, before the stream counts as dead. */
-  streamTimeout = 60_000;
 
   readonly summary = signal<JobActivity | null>(null);
   /** The first read has no answer yet. */
@@ -137,13 +133,11 @@ export class JobActivityStore {
     void this.reader.request();
   }
 
-  /** Subscribes to the tab's jobs connection. The subscription is shared with every store. */
+  /** Subscribes to the tab's one live connection. The subscription is shared with every store. */
   private follow(): void {
     if (this.subscription) return;
-    this.subscription = this.feeds.subscribe('/api/jobs/events', {
-      open: () => this.eventSource('/api/jobs/events'),
-      reopenDelay: () => this.reopenDelay,
-      timeout: () => this.streamTimeout,
+    this.subscription = this.feeds.subscribe('/api/events', {
+      open: () => this.eventSource('/api/events'),
       events: ['job-changed'],
       // Every stream open marks the reader dirty (section 3.4).
       opened: () => {

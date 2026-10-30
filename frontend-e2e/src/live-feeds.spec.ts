@@ -226,7 +226,7 @@ async function shot(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
-test('holds one connection per feed URL and none in a hidden tab', async ({
+test('holds one connection on every page and none in a hidden tab', async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -237,7 +237,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
   await expect(page.getByRole('cell', { name: /UPD-014/ })).toBeVisible();
   await expect
     .poll(async () => liveStreams(page).openUrls())
-    .toEqual(['/api/jobs/events']);
+    .toEqual(['/api/events']);
   await shot(page, testInfo, 'live-feeds-jobs.png');
 
   await page.goto('/jobs/UPD-014');
@@ -246,7 +246,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
   ).toBeVisible();
   await expect
     .poll(async () => liveStreams(page).openUrls())
-    .toEqual(['/api/jobs/events']);
+    .toEqual(['/api/events']);
   await shot(page, testInfo, 'live-feeds-job-detail.png');
 
   await page.goto('/devices');
@@ -255,7 +255,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
   ).toBeVisible();
   await expect
     .poll(async () => liveStreams(page).openUrls())
-    .toEqual(['/api/devices/events', '/api/jobs/events']);
+    .toEqual(['/api/events']);
   await shot(page, testInfo, 'live-feeds-devices.png');
 
   // A hidden tab holds no connection. The service keeps its subscribers.
@@ -268,7 +268,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
   });
   await expect.poll(async () => liveStreams(page).openUrls()).toEqual([]);
 
-  // A visible tab opens each feed again.
+  // A visible tab opens the feed again.
   await page.evaluate(() => {
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -278,7 +278,7 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
   });
   await expect
     .poll(async () => liveStreams(page).openUrls())
-    .toEqual(['/api/devices/events', '/api/jobs/events']);
+    .toEqual(['/api/events']);
 });
 
 /**
@@ -288,15 +288,12 @@ test('holds one connection per feed URL and none in a hidden tab', async ({
  * seconds would see another `by-ids` read. The construction history shows that
  * replacement, which an open-count snapshot alone hides.
  */
-test('keeps both idle feeds mounted past the app watchdog', async ({
-  page,
-}) => {
+test('keeps the idle feed mounted past the app watchdog', async ({ page }) => {
   test.setTimeout(120_000);
   const nativeEventRequests: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
-    if (path === '/api/devices/events' || path === '/api/jobs/events')
-      nativeEventRequests.push(path);
+    if (path === '/api/events') nativeEventRequests.push(path);
   });
   await page.setViewportSize({ width: 1280, height: 900 });
   await installLiveStreams(page);
@@ -308,19 +305,13 @@ test('keeps both idle feeds mounted past the app watchdog', async ({
   ).toBeVisible();
   await expect
     .poll(async () => liveStreams(page).openUrls())
-    .toEqual(['/api/devices/events', '/api/jobs/events']);
+    .toEqual(['/api/events']);
 
   // Past the 60-second idle timeout and the 5-second reopen delay that follows it.
   await page.waitForTimeout(65_500);
 
-  // Both feeds still hold their first stream: one construction each, no native request.
-  expect(await liveStreams(page).openUrls()).toEqual([
-    '/api/devices/events',
-    '/api/jobs/events',
-  ]);
-  expect((await liveStreams(page).constructions()).sort()).toEqual([
-    '/api/devices/events',
-    '/api/jobs/events',
-  ]);
+  // The one feed still holds its first stream: one construction, no native request.
+  expect(await liveStreams(page).openUrls()).toEqual(['/api/events']);
+  expect(await liveStreams(page).constructions()).toEqual(['/api/events']);
   expect(nativeEventRequests).toEqual([]);
 });

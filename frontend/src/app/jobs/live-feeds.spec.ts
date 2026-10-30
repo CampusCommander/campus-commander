@@ -2,7 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, expect, it, vi } from 'vitest';
 import { LiveFeeds, type LiveFeedHandlers } from './live-feeds';
-import type { JobEventSource, StreamGate } from './job-stream';
+import type { JobEventSource } from './job-stream';
 
 /** A document whose visibility a test sets. */
 class FakeDocument {
@@ -51,11 +51,7 @@ class FakeSource {
 const source = (fake: FakeSource) => fake as unknown as JobEventSource;
 
 /** One store that follows a feed, with the calls that the service makes on it. */
-function follower(
-  sources: FakeSource[],
-  events: string[] = ['job-changed'],
-  gate?: () => StreamGate | Promise<StreamGate>,
-) {
+function follower(sources: FakeSource[], events: string[] = ['job-changed']) {
   const opened = vi.fn();
   const changed = vi.fn();
   const closed = vi.fn();
@@ -66,10 +62,7 @@ function follower(
   });
   const handlers: LiveFeedHandlers = {
     open,
-    reopenDelay: () => 5000,
-    timeout: () => 60_000,
     events,
-    gate,
     opened,
     changed,
     closed,
@@ -86,11 +79,18 @@ function setup() {
   return { feeds, doc };
 }
 
-const changedEvent = (data: string) =>
-  new MessageEvent('job-changed', { data });
+const changedEvent = (name: string, data: string) =>
+  new MessageEvent(name, { data });
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+it('states the one reopen rule of the shared connection', () => {
+  const { feeds } = setup();
+  expect(feeds.reopenDelay).toBe(5000);
+  expect(feeds.reopenCap).toBe(60_000);
+  expect(feeds.timeout).toBe(60_000);
 });
 
 it('opens one connection for two subscribers of one feed URL', () => {
@@ -99,9 +99,9 @@ it('opens one connection for two subscribers of one feed URL', () => {
   const second: FakeSource[] = [];
   const one = follower(first);
   const two = follower(second);
-  const oneFeed = feeds.subscribe('/api/jobs/events', one.handlers);
+  const oneFeed = feeds.subscribe('/api/events', one.handlers);
 
-  feeds.subscribe('/api/jobs/events', two.handlers);
+  feeds.subscribe('/api/events', two.handlers);
 
   expect(first).toHaveLength(1);
   expect(second).toHaveLength(0);
@@ -114,7 +114,10 @@ it('opens one connection for two subscribers of one feed URL', () => {
   expect(two.opened).toHaveBeenCalledTimes(1);
   expect(oneFeed.connected).toBe(true);
 
-  fake.emit('job-changed', changedEvent('{"type":"job-changed"}'));
+  fake.emit(
+    'job-changed',
+    changedEvent('job-changed', '{"type":"job-changed"}'),
+  );
   expect(one.changed).toHaveBeenCalledWith('{"type":"job-changed"}');
   expect(two.changed).toHaveBeenCalledWith('{"type":"job-changed"}');
 
@@ -123,13 +126,47 @@ it('opens one connection for two subscribers of one feed URL', () => {
   expect(fake.readyState).toBe(1);
 });
 
+it('holds one connection for the job feed and the device feed', () => {
+  const { feeds } = setup();
+  const sources: FakeSource[] = [];
+  const jobs = follower(sources, ['job-changed']);
+  const devices = follower(sources, [
+    'entity-batch',
+    'job-finished',
+    'full-sync',
+  ]);
+  feeds.subscribe('/api/events', jobs.handlers);
+  feeds.subscribe('/api/events', devices.handlers);
+  expect(sources).toHaveLength(1);
+
+  const fake = sources[0];
+  fake.readyState = 1;
+  fake.emit('open');
+
+  fake.emit(
+    'job-changed',
+    changedEvent('job-changed', '{"type":"job-changed"}'),
+  );
+  fake.emit(
+    'entity-batch',
+    changedEvent('entity-batch', '{"type":"entity-batch"}'),
+  );
+  fake.emit('full-sync', changedEvent('full-sync', '{"type":"full-sync"}'));
+
+  expect(jobs.changed).toHaveBeenCalledTimes(1);
+  expect(jobs.changed).toHaveBeenCalledWith('{"type":"job-changed"}');
+  expect(devices.changed).toHaveBeenCalledTimes(2);
+  expect(devices.changed).toHaveBeenCalledWith('{"type":"entity-batch"}');
+  expect(devices.changed).toHaveBeenCalledWith('{"type":"full-sync"}');
+});
+
 it('closes the tab connection when the last subscriber leaves', () => {
   const { feeds } = setup();
   const sources: FakeSource[] = [];
   const one = follower(sources);
   const two = follower(sources);
-  const oneFeed = feeds.subscribe('/api/jobs/events', one.handlers);
-  const twoFeed = feeds.subscribe('/api/jobs/events', two.handlers);
+  const oneFeed = feeds.subscribe('/api/events', one.handlers);
+  const twoFeed = feeds.subscribe('/api/events', two.handlers);
 
   oneFeed.close();
   twoFeed.close();
@@ -141,12 +178,12 @@ it('reads at once for a store that subscribes to an open feed', () => {
   const sources: FakeSource[] = [];
   const first = follower(sources);
   const second = follower(sources);
-  feeds.subscribe('/api/jobs/events', first.handlers);
+  feeds.subscribe('/api/events', first.handlers);
   sources[0].readyState = 1;
   sources[0].emit('open');
   expect(first.opened).toHaveBeenCalledTimes(1);
 
-  feeds.subscribe('/api/jobs/events', second.handlers);
+  feeds.subscribe('/api/events', second.handlers);
 
   expect(second.opened).toHaveBeenCalledTimes(1);
   expect(sources).toHaveLength(1);
@@ -158,7 +195,7 @@ it('waits for the next open before a late subscriber reads on a reconnecting fee
   const sources: FakeSource[] = [];
   const first = follower(sources);
   const second = follower(sources);
-  const one = feeds.subscribe('/api/jobs/events', first.handlers);
+  const one = feeds.subscribe('/api/events', first.handlers);
   sources[0].readyState = 1;
   sources[0].emit('open');
   first.opened.mockClear();
@@ -168,7 +205,7 @@ it('waits for the next open before a late subscriber reads on a reconnecting fee
   sources[0].emit('error');
   expect(one.connected).toBe(false);
 
-  feeds.subscribe('/api/jobs/events', second.handlers);
+  feeds.subscribe('/api/events', second.handlers);
 
   // The connection is not open, so the late subscriber has nothing to read yet.
   expect(second.opened).not.toHaveBeenCalled();
@@ -184,7 +221,7 @@ it('waits for the next open before a resume reads on a reconnecting feed', () =>
   const { feeds } = setup();
   const sources: FakeSource[] = [];
   const one = follower(sources);
-  const feed = feeds.subscribe('/api/jobs/events', one.handlers);
+  const feed = feeds.subscribe('/api/events', one.handlers);
   sources[0].readyState = 1;
   sources[0].emit('open');
   one.opened.mockClear();
@@ -201,44 +238,34 @@ it('waits for the next open before a resume reads on a reconnecting feed', () =>
   expect(one.opened).toHaveBeenCalledTimes(1);
 });
 
-it('holds no connection while the tab is hidden and reopens every feed when it is visible', () => {
+it('holds no connection while the tab is hidden and reopens it when it is visible', () => {
   const { feeds, doc } = setup();
-  const jobs: FakeSource[] = [];
-  const devices: FakeSource[] = [];
-  const first = follower(jobs);
-  const second = follower(jobs);
-  const third = follower(devices, ['entity-batch']);
-  feeds.subscribe('/api/jobs/events', first.handlers);
-  feeds.subscribe('/api/jobs/events', second.handlers);
-  feeds.subscribe('/api/devices/events', third.handlers);
-  jobs[0].readyState = 1;
-  jobs[0].emit('open');
-  devices[0].readyState = 1;
-  devices[0].emit('open');
+  const sources: FakeSource[] = [];
+  const first = follower(sources);
+  const second = follower(sources);
+  feeds.subscribe('/api/events', first.handlers);
+  feeds.subscribe('/api/events', second.handlers);
+  sources[0].readyState = 1;
+  sources[0].emit('open');
   first.opened.mockClear();
   second.opened.mockClear();
-  third.opened.mockClear();
 
   doc.hide();
 
-  expect(jobs[0].readyState).toBe(2);
-  expect(devices[0].readyState).toBe(2);
+  expect(sources[0].readyState).toBe(2);
   expect(first.closed).toHaveBeenCalledTimes(1);
   expect(second.closed).toHaveBeenCalledTimes(1);
-  expect(third.closed).toHaveBeenCalledTimes(1);
 
   doc.show();
 
-  // One connection for each feed URL, not one for each store.
-  expect(jobs).toHaveLength(2);
-  expect(devices).toHaveLength(2);
-  jobs[1].readyState = 1;
-  jobs[1].emit('open');
-  devices[1].readyState = 1;
-  devices[1].emit('open');
+  // One connection for both stores, not one for each store.
+  expect(sources).toHaveLength(2);
+  sources[1].readyState = 1;
+  sources[1].emit('open');
   expect(first.opened).toHaveBeenCalledTimes(1);
   expect(second.opened).toHaveBeenCalledTimes(1);
-  expect(third.opened).toHaveBeenCalledTimes(1);
+  // The replacement open tells each store that the connection is new.
+  expect(first.opened).toHaveBeenCalledWith(true);
 });
 
 it('reopens a dead shared connection once for every subscriber', () => {
@@ -247,8 +274,8 @@ it('reopens a dead shared connection once for every subscriber', () => {
   const sources: FakeSource[] = [];
   const one = follower(sources);
   const two = follower(sources);
-  feeds.subscribe('/api/jobs/events', one.handlers);
-  feeds.subscribe('/api/jobs/events', two.handlers);
+  feeds.subscribe('/api/events', one.handlers);
+  feeds.subscribe('/api/events', two.handlers);
   sources[0].readyState = 1;
   sources[0].emit('open');
   one.opened.mockClear();
@@ -275,8 +302,8 @@ it('reopens once when a shared connection closes', () => {
   const sources: FakeSource[] = [];
   const one = follower(sources);
   const two = follower(sources);
-  feeds.subscribe('/api/jobs/events', one.handlers);
-  feeds.subscribe('/api/jobs/events', two.handlers);
+  feeds.subscribe('/api/events', one.handlers);
+  feeds.subscribe('/api/events', two.handlers);
   sources[0].readyState = 1;
   sources[0].emit('open');
 
@@ -287,80 +314,54 @@ it('reopens once when a shared connection closes', () => {
   expect(sources).toHaveLength(2);
 });
 
-it('registers the event names of a late subscriber on the shared connection', () => {
+it('backs a failed reopen off to its cap', async () => {
+  vi.useFakeTimers();
   const { feeds } = setup();
+  feeds.reopenDelay = 1000;
+  feeds.reopenCap = 4000;
   const sources: FakeSource[] = [];
-  const first = follower(sources);
-  const second = follower(sources, ['job-changed', 'entity-batch']);
-  feeds.subscribe('/api/jobs/events', first.handlers);
+  const one = follower(sources);
+  feeds.subscribe('/api/events', one.handlers);
   sources[0].readyState = 1;
   sources[0].emit('open');
 
-  feeds.subscribe('/api/jobs/events', second.handlers);
+  /** Fails the open connection and checks the wait of the next attempt. */
+  const failAndWait = async (index: number, wait: number) => {
+    const before = sources.length;
+    sources[index].readyState = 2;
+    sources[index].emit('error');
+    await vi.advanceTimersByTimeAsync(wait - 1);
+    expect(sources).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sources).toHaveLength(before + 1);
+  };
 
-  // One connection, replaced so the new event name is read.
+  // Each failed attempt doubles the wait until the cap holds it at 4 s.
+  await failAndWait(0, 1000);
+  await failAndWait(1, 2000);
+  await failAndWait(2, 4000);
+  await failAndWait(3, 4000);
+});
+
+it('replaces the connection for a new person and opens it for the same one', () => {
+  const { feeds } = setup();
+  const sources: FakeSource[] = [];
+  const one = follower(sources);
+  const second = follower(sources);
+  feeds.subscribe('/api/events', one.handlers);
+  const two = feeds.subscribe('/api/events', second.handlers);
+  sources[0].readyState = 1;
+  sources[0].emit('open');
+  one.opened.mockClear();
+  second.opened.mockClear();
+
+  // A new person: one replacement connection for every store.
+  two.restart();
+
   expect(sources).toHaveLength(2);
+  expect(sources[0].readyState).toBe(2);
   sources[1].readyState = 1;
   sources[1].emit('open');
-  sources[1].emit(
-    'entity-batch',
-    new MessageEvent('entity-batch', { data: '{"type":"entity-batch"}' }),
-  );
-  expect(second.changed).toHaveBeenCalledWith('{"type":"entity-batch"}');
-  expect(first.changed).not.toHaveBeenCalled();
-});
-
-it('settles the first attempt when its subscriber leaves during the gate', async () => {
-  const { feeds } = setup();
-  const sources: FakeSource[] = [];
-  let answer!: (value: StreamGate) => void;
-  const gate = () =>
-    new Promise<StreamGate>((resolve) => {
-      answer = resolve;
-    });
-  const one = follower(sources, ['job-changed'], gate);
-  const feed = feeds.subscribe('/api/jobs/events', one.handlers);
-  feed.close();
-
-  answer('open');
-  await Promise.race([
-    feed.ready,
-    new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error('the ready promise did not settle')),
-        1000,
-      ),
-    ),
-  ]);
-  expect(sources).toHaveLength(0);
-});
-
-it('keeps a stopped feed closed until a resume', async () => {
-  const { feeds } = setup();
-  const sources: FakeSource[] = [];
-  let verdict: StreamGate = 'stop';
-  const one = follower(sources, ['job-changed'], () => verdict);
-  const feed = feeds.subscribe('/api/jobs/events', one.handlers);
-  await feed.ready;
-  expect(sources).toHaveLength(0);
-
-  verdict = 'open';
-  feed.resume();
-  await feed.ready;
-  expect(sources).toHaveLength(1);
-});
-
-it('waits for a retry when the gate refuses an attempt', async () => {
-  vi.useFakeTimers();
-  const { feeds } = setup();
-  const sources: FakeSource[] = [];
-  let verdict: StreamGate = 'retry';
-  const one = follower(sources, ['job-changed'], () => verdict);
-  const feed = feeds.subscribe('/api/jobs/events', one.handlers);
-  await feed.ready;
-  expect(sources).toHaveLength(0);
-
-  verdict = 'open';
-  await vi.advanceTimersByTimeAsync(5000);
-  expect(sources).toHaveLength(1);
+  expect(one.opened).toHaveBeenCalledWith(true);
+  expect(second.opened).toHaveBeenCalledWith(true);
 });

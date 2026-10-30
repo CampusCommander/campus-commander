@@ -8,7 +8,6 @@ import {
 } from '@angular/core';
 import {
   DEVICE_BY_IDS_LIMIT,
-  ENTITY_EVENTS_PING_SECONDS,
   deviceDetailSchema,
   deviceDomainRefreshSchema,
   deviceFreshnessSchema,
@@ -35,7 +34,6 @@ import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { LiveFeeds, type LiveFeedSubscription } from '../jobs/live-feeds';
-import { type StreamGate } from '../jobs/job-stream';
 import { GROUP_LIMIT, type DeviceView } from './device-datasource';
 import { samePredicates } from './device-filter-model';
 import {
@@ -183,17 +181,15 @@ export class DevicesStore {
   private readonly customer = inject(CustomerStore);
   private readonly connection = inject(ConnectionStore);
   private readonly feeds = inject(LiveFeeds);
-  /** Opens the device event stream. Tests replace it. */
+  /** Opens the one live stream of the tab. Tests replace it. */
   eventSource: (url: string) => DeviceEventSource = (url) =>
     new EventSource(url);
   /** Milliseconds between a refresh signal and the stale count that it triggers. */
   recountDelay = 1000;
-  /** Milliseconds before a closed stream reopens. Each failed attempt doubles the wait. */
-  reopenDelay = 5000;
-  /** Milliseconds that the doubled reopen wait never exceeds. */
-  reopenCap = 60_000;
-  /** Milliseconds without any event, pings included, before the stream counts as dead. */
-  streamTimeout = ENTITY_EVENTS_PING_SECONDS * 2000 + 10_000;
+  /** Milliseconds before a failed status read is retried. Each failed attempt doubles the wait. */
+  statusRetryDelay = 5000;
+  /** Milliseconds that the doubled status-read retry never exceeds. */
+  statusRetryCap = 60_000;
   readonly sync = signal<DeviceSyncState | null>(null);
   readonly syncLoaded = signal(false);
   readonly predicates = signal<DevicePredicate[]>([]);
@@ -262,15 +258,41 @@ export class DevicesStore {
   /** The next refresh request replaces the answer of an earlier one. */
   private refreshSequence = 0;
   readonly readable = computed(() => devicesReadable(this.auth));
-  /** The tab's shared devices connection. The last store to leave closes it. */
+  /** The tab's shared connection. The last store to leave closes it. */
   private feed: LiveFeedSubscription | null = null;
   /** Devices is mounted. */
   private streamWanted = false;
-  /** A stream opened once since mount. The next open is a reconnect. */
+  /** The status read before the store follows the device events, while it runs. */
+  private connecting: Promise<void> | null = null;
+  /** The person and admission token of the read in `connecting`. */
+  private connectingEpoch = -1;
+  private connectingAdmission = -1;
+  /** The person whose explicit recovery waits for the admission in `connecting` to finish. */
+  private recoveryEpoch: number | null = null;
+  /** A stream opened once since the store subscribed. The next open is a reconnect. */
   private streamOpened = false;
-  private recountTimer?: ReturnType<typeof setTimeout>;
   /** The status from before the stream dropped. The reconcile after the next open compares against it. */
   private dropped: { state: DeviceSyncState | null } | null = null;
+  /** Device events of an open that waits for its status read. */
+  private held: string[] = [];
+  /** An open waits for its status read before it follows the device events. */
+  private holding = false;
+  /** Invalidates a status read whose open a stop replaced. */
+  private openGeneration = 0;
+  /**
+   * Invalidates an admission read that a newer open or a stop replaced. A reopen that reads the
+   * status itself takes the decision from an admission that is still in flight, so its answer
+   * cannot clear the newer retry, release its frames, or start a stopped subscription again.
+   */
+  private admission = 0;
+  /** The person whose admission, open, or stop owns the current admission token. */
+  private admissionEpoch = 0;
+  /** Failed status reads since the last successful one. */
+  private statusFailures = 0;
+  private statusRetryTimer?: ReturnType<typeof setTimeout>;
+  /** The open that owns the retry timer. An older open cannot suppress a newer retry. */
+  private statusRetryGeneration = -1;
+  private recountTimer?: ReturnType<typeof setTimeout>;
   /** Increments on sign-in by another person. Late answers for the old person are dropped. */
   private epoch = 0;
   private identity: string | null = null;
@@ -297,6 +319,7 @@ export class DevicesStore {
   /** Browsing state belongs to one person. Another sign-in starts clean. */
   private reset(): void {
     this.epoch++;
+    this.recoveryEpoch = null;
     this.refreshSequence++;
     this.refreshStatus.set('');
     this.refreshRequests.set(new Set());
@@ -321,11 +344,29 @@ export class DevicesStore {
     this.error.set('');
     this.position.set(null);
     this.revision.update((value) => value + 1);
-    // The stream carries the session cookie. A new person needs a new stream.
-    if (this.feed) this.feed.restart();
-    // The new person's stream is a first stream. Its open recovers nothing.
-    this.streamOpened = false;
-    this.dropped = null;
+    // The previous person's held rows and status retries end here.
+    this.openGeneration += 1;
+    this.dropHeld();
+    this.clearStatusRetry();
+    if (!this.streamWanted) {
+      this.stopFeed();
+      return;
+    }
+    // Device events wait for the new person's status. Only this store waits.
+    this.holding = true;
+    if (this.feed) {
+      // The stream carries the session cookie. A new person needs a new stream.
+      this.feed.restart();
+      // The new person's stream is a first stream. Its open recovers nothing.
+      this.streamOpened = false;
+      this.dropped = null;
+    } else {
+      // A denied status read or a missing sync stopped this store. The new person follows again.
+      this.follow();
+    }
+    // The new person's status decides whether this store follows the device events. The shared
+    // connection serves every other store without waiting for this read.
+    void this.connect();
   }
 
   private async call(path: string, body?: unknown): Promise<Response | null> {
@@ -339,39 +380,148 @@ export class DevicesStore {
     }
   }
 
-  /** Devices mounted: read the status and open the event stream (D12). */
+  /** Devices mounted: read the status, then follow the device events (D12). */
   async init(): Promise<void> {
     this.streamWanted = true;
+    await this.connect();
+  }
+
+  /**
+   * The status read that comes before this store follows the device events. A denied read or a
+   * customer without a sync leaves this store stopped. The tab keeps its connection for the
+   * stores that follow the job feed.
+   */
+  private connect(): Promise<void> {
+    if (this.connecting) {
+      // This person's admission is still current. It answers for this request.
+      if (
+        this.connectingEpoch === this.epoch &&
+        this.connectingAdmission === this.admission
+      )
+        return this.connecting;
+      // The read in flight belongs to a replaced person, open, or stop. An explicit recovery
+      // keeps its demand, and the handover after that read answers it.
+      this.recoveryEpoch = this.epoch;
+      return this.connecting;
+    }
+    const epoch = this.epoch;
+    const admission = ++this.admission;
+    this.admissionEpoch = epoch;
+    const read = this.admit(epoch, admission).finally(() => {
+      this.connecting = null;
+      const demand = this.recoveryEpoch;
+      this.recoveryEpoch = null;
+      // A recovery requested after the read became obsolete asks for this person's admission.
+      if (demand === this.epoch && this.streamWanted) {
+        void this.connect();
+        return;
+      }
+      // A reset during the read gave the admission to another person. That person still needs
+      // it, unless a newer open or a stop of that person already decided.
+      if (
+        epoch !== this.epoch &&
+        this.admissionEpoch !== this.epoch &&
+        this.streamWanted
+      )
+        void this.connect();
+    });
+    this.connecting = read;
+    this.connectingEpoch = epoch;
+    this.connectingAdmission = admission;
+    return read;
+  }
+
+  private async admit(epoch: number, admission: number): Promise<void> {
+    // A newer open that reads the status itself, or a stop, owns the decision from here on.
+    const current = () =>
+      epoch === this.epoch && admission === this.admission && this.streamWanted;
+    const result = await this.readSync(current);
+    // A leave, a reset, a stop, or a newer open made this read obsolete.
+    if (!current() || result === 'superseded') return;
+    if (this.stopOnStatusResult(result)) return;
+    if (result === 'failed') {
+      this.scheduleStatusRetry('connect', this.openGeneration);
+      return;
+    }
+    this.clearStatusRetry();
+    this.releaseHeld();
+    // A store that a denial or a missing sync stopped follows again for this person.
+    if (!this.feed) this.follow();
+  }
+
+  /** Subscribes to the tab's one connection. Other stores keep it while this store follows. */
+  private follow(): void {
     if (this.feed) return;
     this.streamOpened = false;
     this.dropped = null;
-    this.feed = this.feeds.subscribe('/api/devices/events', {
-      open: () => this.eventSource('/api/devices/events'),
-      reopenDelay: () => this.reopenDelay,
-      reopenCap: () => this.reopenCap,
-      timeout: () => this.streamTimeout,
+    this.feed = this.feeds.subscribe('/api/events', {
+      open: () => this.eventSource('/api/events'),
       events: ['entity-batch', 'job-finished', 'full-sync'],
-      // A status read gates every open, first and reconnect (S1 to S5).
-      gate: () => this.reopenGate(),
-      opened: () => this.onStreamOpen(),
+      opened: (replaced) => this.onStreamOpen(replaced),
       changed: (data) => this.onEvent(data),
       closed: () => {
         this.dropped ??= { state: this.sync() };
       },
     });
-    await this.feed.ready;
   }
 
-  /** Devices left: close the stream and drop pending timers. */
-  leave(): void {
-    this.streamWanted = false;
+  /** Stops this store's subscription. The tab's connection stays for every other store. */
+  private stopFeed(): void {
+    this.openGeneration += 1;
+    // A stop is the current decision. An admission that is still in flight cannot undo it.
+    this.admission += 1;
+    this.admissionEpoch = this.epoch;
+    // A recovery request from before this stop has no demand left.
+    this.recoveryEpoch = null;
     this.feed?.close();
     this.feed = null;
     this.dropped = null;
+  }
+
+  /** Devices left: close the subscription and drop pending timers. */
+  leave(): void {
+    this.streamWanted = false;
+    this.stopFeed();
+    this.clearStatusRetry();
+    this.dropHeld();
     // A late refresh answer must not reach the footer after the page closes.
     this.refreshSequence++;
     this.refreshStatus.set('');
     clearTimeout(this.recountTimer);
+  }
+
+  /** Reads the status again after a failed read. The device store alone waits. */
+  private scheduleStatusRetry(
+    action: 'connect' | 'open',
+    generation: number,
+  ): void {
+    if (!this.streamWanted) return;
+    // A timer that an older open scheduled cannot serve this open: it returns at its stale
+    // generation check. The current open takes the retry over.
+    if (this.statusRetryTimer !== undefined) {
+      if (generation <= this.statusRetryGeneration) return;
+      clearTimeout(this.statusRetryTimer);
+      this.statusRetryTimer = undefined;
+    }
+    const delay = Math.min(
+      this.statusRetryDelay * 2 ** this.statusFailures,
+      this.statusRetryCap,
+    );
+    this.statusFailures += 1;
+    this.statusRetryGeneration = generation;
+    this.statusRetryTimer = setTimeout(() => {
+      this.statusRetryTimer = undefined;
+      if (action === 'connect') void this.connect();
+      else void this.retryOpen(generation);
+    }, delay);
+  }
+
+  private clearStatusRetry(): void {
+    if (this.statusRetryTimer !== undefined)
+      clearTimeout(this.statusRetryTimer);
+    this.statusRetryTimer = undefined;
+    this.statusRetryGeneration = -1;
+    this.statusFailures = 0;
   }
 
   /** Returns false when the status could not be read. */
@@ -379,12 +529,18 @@ export class DevicesStore {
     return (await this.readSync()) === 'read';
   }
 
-  /** Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure. */
-  private async readSync(): Promise<'read' | 'denied' | 'failed'> {
+  /**
+   * Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure.
+   * `superseded` means a newer open or a stop replaced this read, which then changed nothing.
+   * `current` fences every write of the answer against that replacement.
+   */
+  private async readSync(
+    current: () => boolean = () => true,
+  ): Promise<'read' | 'denied' | 'failed' | 'superseded'> {
     // Another person signed in while this read was in flight. Its answer belongs to the old person.
     const epoch = this.epoch;
     const response = await this.call('/api/devices/sync');
-    if (epoch !== this.epoch) return 'failed';
+    if (epoch !== this.epoch || !current()) return 'superseded';
     if (!response) return 'failed';
     if (!response.ok) {
       this.error.set('Device inventory status is unavailable.');
@@ -398,12 +554,12 @@ export class DevicesStore {
         .nullable()
         .parse((await response.json()).sync);
     } catch {
-      if (epoch !== this.epoch) return 'failed';
+      if (epoch !== this.epoch || !current()) return 'superseded';
       // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
       this.error.set('Device inventory status is unavailable.');
       return 'failed';
     }
-    if (epoch !== this.epoch) return 'failed';
+    if (epoch !== this.epoch || !current()) return 'superseded';
     this.error.set('');
     this.setSync(answer);
     this.syncLoaded.set(true);
@@ -569,8 +725,12 @@ export class DevicesStore {
   async reconnect(): Promise<void> {
     if (!(await this.loadSync())) return;
     this.revision.update((value) => value + 1);
-    if (this.streamWanted && !this.feed?.active && this.sync())
-      this.feed?.resume();
+    if (!this.streamWanted) return;
+    if (!this.feed) {
+      void this.connect();
+      return;
+    }
+    if (!this.feed.active && this.sync()) this.feed.resume();
   }
 
   async rows(offset: number, limit: number): Promise<DevicePage | null> {
@@ -716,30 +876,97 @@ export class DevicesStore {
   }
 
   /**
-   * A status read gates every open. A denied session stays closed until a resume.
-   * A failed read waits for the shared connection's next attempt.
+   * A shared connection opened. The status read before the subscription answers for the first
+   * open of a replaced connection; a client that replaces the connection reads the status before
+   * it follows the device events again (S1 to S5, D12). A native reconnect reuses the connection.
    */
-  private async reopenGate(): Promise<StreamGate> {
-    const result = await this.readSync();
-    if (result === 'denied') return 'stop';
-    if (result === 'failed') return 'retry';
-    return this.sync() ? 'open' : 'stop';
-  }
-
-  /**
-   * A shared connection opened. The first open reads the status; a reopen reconciles (D12).
-   * A stream that closed before its first open loses events too, so that open is a reopen.
-   */
-  private onStreamOpen(): void {
+  private onStreamOpen(replaced: boolean): void {
     const first = !this.streamOpened;
     this.streamOpened = true;
+    const generation = ++this.openGeneration;
+    // A first open after the subscription read has the status it needs. Every other open reads.
+    const read = !(first && this.dropped === null) && replaced;
+    if (read) {
+      this.holding = true;
+      // This open answers for the status itself. An admission that is still in flight is obsolete.
+      this.admission += 1;
+      this.admissionEpoch = this.epoch;
+      // The open's read is the current decision for this person. No handover answers for it.
+      this.recoveryEpoch = null;
+    }
+    void this.afterOpen(generation, first, read);
+  }
+
+  private async afterOpen(
+    generation: number,
+    first: boolean,
+    read: boolean,
+  ): Promise<void> {
     // Only a first open with no closed stream behind it has missed no event.
     if (first && this.dropped === null) {
+      // The admission read may still run. It answers for this first open.
+      if (this.connecting) await this.connecting;
+      if (generation !== this.openGeneration) return;
       if (this.sync()?.status !== 'running') return;
-      // A full sync can end between the gate read and this first open. Reconcile from the gate read.
+      // A full sync can end between the read before the subscription and this first open.
       this.dropped = { state: this.sync() };
+    } else if (read) {
+      const result = await this.readSync(() => this.ownsOpen(generation));
+      if (generation !== this.openGeneration) return;
+      if (result === 'superseded' || this.stopOnStatusResult(result)) return;
+      if (result === 'failed') {
+        // The status read comes before the device events. A failed one waits for its retry.
+        this.scheduleStatusRetry('open', generation);
+        return;
+      }
+      this.clearStatusRetry();
     }
-    void this.reconcile();
+    await this.reconcile();
+    if (generation !== this.openGeneration) return;
+    this.releaseHeld();
+  }
+
+  /** True while this open still follows the stream and owns its status read. */
+  private ownsOpen(generation: number): boolean {
+    return generation === this.openGeneration && this.feed !== null;
+  }
+
+  /** Retries the status read of one open. The device events wait until it answers. */
+  private async retryOpen(generation: number): Promise<void> {
+    if (!this.ownsOpen(generation)) return;
+    const result = await this.readSync(() => this.ownsOpen(generation));
+    if (!this.ownsOpen(generation)) return;
+    if (result === 'superseded' || this.stopOnStatusResult(result)) return;
+    if (result === 'failed') {
+      this.scheduleStatusRetry('open', generation);
+      return;
+    }
+    this.clearStatusRetry();
+    await this.reconcile();
+    if (generation !== this.openGeneration) return;
+    this.releaseHeld();
+  }
+
+  /** Stops this store when its status read denies it or the customer has no sync. */
+  private stopOnStatusResult(result: 'read' | 'denied' | 'failed'): boolean {
+    if (result !== 'denied' && !(result === 'read' && !this.sync()))
+      return false;
+    // A denied read or a missing sync stops only this store. The tab keeps the connection.
+    this.stopFeed();
+    this.dropHeld();
+    return true;
+  }
+
+  /** Follows the device events that an open held for its status read. */
+  private releaseHeld(): void {
+    this.holding = false;
+    for (const data of this.held.splice(0)) this.applyEvent(data);
+  }
+
+  /** Drops the device events of a stopped store. They belong to no followed feed. */
+  private dropHeld(): void {
+    this.holding = false;
+    this.held = [];
   }
 
   /** The same person resumed an interrupted session. A stream that a 401 stopped opens again. */
@@ -747,10 +974,20 @@ export class DevicesStore {
     // The grid retries the blocks whose loads failed while the session was interrupted (S5).
     this.resumeRevision.update((value) => value + 1);
     if (!this.streamWanted) return;
-    this.feed?.resume();
+    if (!this.feed) {
+      void this.connect();
+      return;
+    }
+    this.feed.resume();
   }
 
   private onEvent(data: string): void {
+    // A status read comes before this store follows the device events of an open.
+    if (this.holding) this.held.push(data);
+    else this.applyEvent(data);
+  }
+
+  private applyEvent(data: string): void {
     let parsed: unknown;
     try {
       parsed = JSON.parse(data);

@@ -4,6 +4,7 @@ import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
   devicePageSchema,
 } from '@campus/application-contracts';
+import { installLiveStreams, liveStreams } from './live-streams';
 
 /**
  * States 09 to 15 and 18 to 24 of the Import steps
@@ -471,6 +472,7 @@ async function signIn(
   name: ImportCase = 'completed',
   theme: 'light' | 'dark' = 'light',
 ) {
+  await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -551,12 +553,6 @@ async function signIn(
       });
     if (path === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
-    if (path === '/api/devices/events' || path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (path === '/api/devices/updates/access')
       return route.fulfill({
         json: {
@@ -640,6 +636,9 @@ async function openDevices(
 
 const dialog = (page: Page) =>
   page.locator('section[role="dialog"][aria-labelledby="export-dialog-title"]');
+/** The Close of the dialog header. Some steps also put a Close in the action bar. */
+const closeDialog = (page: Page) =>
+  dialog(page).locator('header.export-head button[aria-label="Close"]');
 const bulk = (page: Page) =>
   page.getByRole('button', { name: 'Bulk Actions', exact: true });
 
@@ -1060,9 +1059,32 @@ test.describe('Import', () => {
     page,
   }) => {
     await openDevices(page, 'completed');
+    // Hold the report answer, so the shell renders before its facts. The header Close and the
+    // Close of the validation action bar then both exist, as the strict-mode race needs.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      '**/api/devices/imports/IMP-001/report**',
+      async (route) => {
+        await held;
+        const url = new URL(route.request().url());
+        const view = url.searchParams.get('view') ?? 'proposed';
+        const pageIndex = Number(url.searchParams.get('page') ?? '0');
+        return route.fulfill({
+          json: reportAnswer('completed', view, pageIndex),
+        });
+      },
+    );
     await page.goto('/devices?job=IMP-001');
     await expect(dialog(page)).toBeVisible();
-    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await expect(dialog(page)).not.toContainText(
+      '7 field changes on 6 devices',
+    );
+    release();
+    // Wait for the report that the note describes, then use the intended Close control.
+    await expect(dialog(page)).toContainText('7 field changes on 6 devices');
+    await expect(dialog(page)).toContainText('Cancel import');
+    await closeDialog(page).click();
     await expect(dialog(page)).toBeHidden();
     await expect(page.locator('.action-note')).toContainText(
       'Import IMP-001 is validated and waits for Execute.',
@@ -1079,7 +1101,7 @@ test.describe('Import', () => {
     await dialog(page).getByRole('button', { name: 'Cancel import' }).click();
     await expect(dialog(page)).toContainText('Cancelled');
     await expect(dialog(page)).toContainText('Nothing ran.');
-    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await closeDialog(page).click();
     await expect(dialog(page)).toBeHidden();
     // The job detail still carries the plan that the cancellation replaced (R9).
     await expect(page.locator('.action-note')).not.toContainText(
@@ -1094,7 +1116,7 @@ test.describe('Import', () => {
     await page.goto('/devices?job=IMP-001');
     await expect(dialog(page)).toBeVisible();
     await expect(dialog(page)).toContainText('Expires');
-    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await closeDialog(page).click();
     await expect(dialog(page)).toBeHidden();
     await expect(page.locator('.action-note')).toContainText(
       'waits for Execute',
@@ -1121,7 +1143,7 @@ test.describe('Import', () => {
     await openDevices(page, 'completed');
     await page.goto('/devices?job=IMP-001');
     await expect(dialog(page)).toContainText('Cancel import');
-    await dialog(page).getByRole('button', { name: 'Close' }).click();
+    await closeDialog(page).click();
     await expect(dialog(page)).toBeHidden();
     // Start and finish an export of the same dialog, then release it with Done.
     await bulk(page).click();
@@ -1150,12 +1172,7 @@ test.describe('Import', () => {
     page,
   }) => {
     await openDevices(page, 'completed');
-    // Keep the shared feed connecting, so no feed-driven reread can mask the cache path.
-    await page.route(
-      '**/api/jobs/events',
-      () => new Promise<void>(() => undefined),
-    );
-    // The Proposed page fails while the listed views answer in full.
+    // The proposed page fails while the listed views answer in full.
     await page.route(
       '**/api/devices/imports/IMP-001/report**',
       async (route) => {
@@ -1203,29 +1220,15 @@ test.describe('Import', () => {
     await expect(dialog(page)).toContainText('Cancel import');
   });
 
-  test('the dialog opens one shared jobs feed and no second connection', async ({
+  test('the dialog opens one shared live feed and no second connection', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      const Original = window.EventSource;
-      const opened: string[] = [];
-      (window as unknown as { __feeds: string[] }).__feeds = opened;
-      window.EventSource = class extends Original {
-        constructor(url: string | URL) {
-          super(url);
-          opened.push(String(url));
-        }
-      } as typeof EventSource;
-    });
     await openDevices(page, 'completed');
     await page.goto('/devices?job=IMP-001');
     await expect(dialog(page)).toBeVisible();
-    await page.waitForTimeout(500);
-    const feeds = await page.evaluate(
-      () => (window as unknown as { __feeds: string[] }).__feeds,
-    );
-    expect(
-      feeds.filter((url) => url.includes('/api/jobs/events')),
-    ).toHaveLength(1);
+    const streams = liveStreams(page);
+    await streams.waitForOpen('/api/events');
+    expect(await streams.openUrls()).toEqual(['/api/events']);
+    expect(await streams.constructedCount('/api/events')).toBe(1);
   });
 });

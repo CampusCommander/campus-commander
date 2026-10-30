@@ -334,7 +334,7 @@ test('the ten-second body deadline covers unfinished GET, HEAD, and POST input',
 test('completed input and event answers outlive the ten-second deadline', async () => {
   const fixture = await startEdge({
     answer: (request, response) => {
-      if (request.url.startsWith('/api/devices/events')) {
+      if (request.url.startsWith('/api/events')) {
         response.writeHead(200, { 'content-type': 'text/event-stream' });
         const timer = setInterval(
           () => response.write('event: ping\ndata: {}\n\n'),
@@ -375,7 +375,7 @@ test('completed input and event answers outlive the ten-second deadline', async 
       }),
       send(fixture.port, fixture.cert, {
         method: 'GET',
-        path: '/api/devices/events',
+        path: '/api/events',
       }),
     ]);
     assert.equal(get.status, 200, 'A completed GET body kept its answer.');

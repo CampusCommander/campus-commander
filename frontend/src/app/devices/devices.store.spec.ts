@@ -9,6 +9,7 @@ import type { DevicePredicate, DeviceRow } from '@campus/application-contracts';
 import { deviceSyncStateSchema } from '@campus/application-contracts';
 import { DevicesStore } from './devices.store';
 import type { DeviceEventSource } from './devices.store';
+import { LiveFeeds } from '../jobs/live-feeds';
 
 const state = (status: string, extra: Record<string, unknown> = {}) => ({
   customerId: 'C0123456',
@@ -69,7 +70,10 @@ function setup(
   if (doc) providers.push({ provide: DOCUMENT, useValue: doc });
   TestBed.configureTestingModule({ providers });
   const store = TestBed.inject(DevicesStore);
-  store.streamTimeout = 0;
+  // The tab's shared connection. A test that needs a delay sets it on the service.
+  const feeds = TestBed.inject(LiveFeeds);
+  feeds.timeout = 0;
+  feeds.reopenDelay = 0;
   return store;
 }
 
@@ -234,6 +238,538 @@ it('starts the next person with a first stream and nothing to recover', async ()
     expect.anything(),
   );
   expect(store.revision()).toBe(before);
+});
+
+describe('a new person over a followed device stream', () => {
+  function ready() {
+    return routes({
+      '/api/devices/sync': () => Response.json({ sync: state('ready') }),
+      '/api/devices/by-ids': () =>
+        Response.json({ rows: [rowFor('d1', false)] }),
+      '/api/devices/freshness': () =>
+        Response.json({ freshness: { stale: 0, refreshing: false } }),
+    });
+  }
+
+  it('reads the new person status on the replaced connection', async () => {
+    const session = signal(sessionFor('actor'));
+    const request = ready();
+    const store = setup(request, session);
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+    expect(statusReads(request)).toBe(1);
+
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The replacement connection carries the new session cookie.
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    // The new person's status decides whether this store follows the device events.
+    await vi.waitFor(() => expect(store.syncLoaded()).toBe(true));
+    expect(store.sync()?.status).toBe('ready');
+    expect(statusReads(request)).toBe(2);
+
+    // The new person's first open recovers nothing and reads nothing more.
+    opened[1].open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(statusReads(request)).toBe(2);
+  });
+
+  it('reads the new person status when the previous read is still in flight', async () => {
+    let held = false;
+    let release: () => void = () => undefined;
+    const request = vi.fn(async (path: string) => {
+      if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+      if (held) await new Promise<void>((resolve) => (release = resolve));
+      return Response.json({ sync: state('ready') });
+    });
+    const session = signal(sessionFor('actor'));
+    const store = setup(request, session);
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+
+    held = true;
+    const reading = store.init();
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The answer of the read that the reset interrupted belongs to the person before.
+    held = false;
+    release();
+    await reading;
+    await vi.waitFor(() => expect(statusReads(request)).toBe(3));
+    await vi.waitFor(() => expect(store.syncLoaded()).toBe(true));
+    expect(store.sync()?.status).toBe('ready');
+  });
+
+  it('reconciles a first open that arrives while the admission read runs', async () => {
+    let held = false;
+    let release: () => void = () => undefined;
+    let current: object = state('ready');
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/sync') {
+        const answer = current;
+        if (held) await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: answer });
+      }
+      if (path === '/api/devices/freshness')
+        return Response.json({ freshness: { stale: 0, refreshing: false } });
+      throw new TypeError('Failed to fetch');
+    });
+    const session = signal(sessionFor('actor'));
+    const store = setup(request, session);
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+
+    // The new person's admission read answers `running`. The sync ends before the open.
+    held = true;
+    current = running(null);
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    const before = store.revision();
+    opened[1].open();
+    current = state('ready', { observedAt: LATER });
+    held = false;
+    release();
+    // The first open uses the admission read that is still in flight, then reconciles.
+    await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
+    expect(store.sync()?.status).toBe('ready');
+  });
+
+  it.each([
+    ['a denied status read', 'denied'],
+    ['a customer without a sync', 'missing'],
+  ] as const)(
+    'restores the device subscription after %s stopped it',
+    async (_case, stop) => {
+      let status: 'denied' | 'missing' | object = stop;
+      const request = routes({
+        '/api/devices/sync': () =>
+          status === 'denied'
+            ? Response.json({ code: 'forbidden' }, { status: 403 })
+            : Response.json({ sync: status === 'missing' ? null : status }),
+        '/api/devices/by-ids': () =>
+          Response.json({ rows: [rowFor('d1', false)] }),
+        '/api/devices/freshness': () =>
+          Response.json({ freshness: { stale: 0, refreshing: false } }),
+      });
+      const session = signal(sessionFor('actor'));
+      const store = setup(request, session);
+      const opened = streams(store);
+      TestBed.tick();
+      await store.init();
+      // The status stopped this store before it subscribed.
+      expect(opened).toHaveLength(0);
+      expect(store.sync()).toBeNull();
+
+      const { api } = grid([rowFor('d1', false)]);
+      store.gridRows.attach(api);
+      status = state('ready');
+      session.set(sessionFor('someone-else'));
+      TestBed.tick();
+      // The new person's read restores the subscription and loads the status.
+      await vi.waitFor(() => expect(opened).toHaveLength(1));
+      await vi.waitFor(() => expect(store.syncLoaded()).toBe(true));
+      expect(store.sync()?.status).toBe('ready');
+      expect(statusReads(request)).toBe(2);
+
+      // The store follows the device events again on the restored subscription.
+      opened[0].open();
+      opened[0].send('entity-batch', batchEvent(['d1']));
+      await vi.waitFor(() =>
+        expect(request).toHaveBeenCalledWith('/api/devices/by-ids', {
+          deviceIds: ['d1'],
+        }),
+      );
+    },
+  );
+});
+
+/**
+ * An admission read that is still in flight when a newer open reads the status itself. The newer
+ * open's decision owns the store from then on, so the older answer changes nothing.
+ */
+describe('an admission answer that a newer open replaced', () => {
+  /**
+   * Opens Devices for one person, changes the person while the admission read is held, and lets a
+   * replacement open read the status. Status reads after the first two answer from `answer`.
+   */
+  async function delayedAdmission(answer: (read: number) => Response) {
+    let reads = 0;
+    let release: () => void = () => undefined;
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/freshness')
+        return Response.json({ freshness: { stale: 0, refreshing: false } });
+      if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+      reads += 1;
+      // The second read is the new person's admission. It answers only when the test says so.
+      if (reads === 2) {
+        await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: running(null) });
+      }
+      return answer(reads);
+    });
+    const session = signal(sessionFor('actor'));
+    const store = setup(request, session);
+    const opened = streams(store);
+    TestBed.tick();
+    await store.init();
+    opened[0].open();
+
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The reset source closes before its first open, so the replacement open reads the status.
+    opened[1].fail(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened).toHaveLength(3);
+    return {
+      request,
+      store,
+      opened,
+      reads: () => reads,
+      release: () => release(),
+    };
+  }
+
+  it('keeps the current retry and recovers without the older answer', async () => {
+    vi.useFakeTimers();
+    try {
+      let status = 200;
+      const admission = await delayedAdmission(() =>
+        status === 200
+          ? Response.json({ sync: state('ready') })
+          : Response.json({}, { status }),
+      );
+
+      // The replacement open fails its own status read and schedules the current retry.
+      status = 503;
+      admission.opened[2].open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(admission.reads()).toBe(3);
+      expect(admission.store.error()).toBe(
+        'Device inventory status is unavailable.',
+      );
+
+      // A device frame waits for the current open's status read.
+      const before = admission.store.revision();
+      admission.opened[2].send('full-sync', {
+        type: 'full-sync',
+        sync: state('ready', { observedAt: LATER }),
+      });
+      expect(admission.store.revision()).toBe(before);
+
+      // The older admission answers after the newer open owns the decision. It changes nothing.
+      admission.release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(admission.reads()).toBe(3);
+      expect(admission.store.sync()).toBeNull();
+      expect(admission.store.error()).toBe(
+        'Device inventory status is unavailable.',
+      );
+
+      // The current open still retries, then follows its held frame.
+      status = 200;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(admission.reads()).toBe(5);
+      expect(admission.store.sync()?.status).toBe('ready');
+      expect(admission.store.sync()?.observedAt).toBe(LATER);
+      expect(admission.store.error()).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      'a denied status read',
+      () => Response.json({ code: 'forbidden' }, { status: 403 }),
+      false,
+      'Device inventory status is unavailable.',
+    ],
+    [
+      'a customer without a sync',
+      () => Response.json({ sync: null }),
+      true,
+      '',
+    ],
+  ] as const)(
+    'does not restore the subscription that %s stopped',
+    async (_case, answer, loaded, error) => {
+      vi.useFakeTimers();
+      try {
+        let stopped = false;
+        const admission = await delayedAdmission(() =>
+          stopped ? answer() : Response.json({ sync: state('ready') }),
+        );
+
+        // The replacement open reads a stop of this store alone.
+        stopped = true;
+        admission.opened[2].open();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(admission.opened[2].closed).toBe(true);
+
+        // The older successful admission answers after the newer stop. It must not follow again.
+        admission.release();
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(admission.opened).toHaveLength(3);
+        expect(admission.reads()).toBe(3);
+        expect(admission.store.sync()).toBeNull();
+        expect(admission.store.syncLoaded()).toBe(loaded);
+        expect(admission.store.error()).toBe(error);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
+/**
+ * The admission of the person before is still in flight when the next person's open reads a stop.
+ * The older answer belongs to a replaced person, so its cleanup starts no admission and follows
+ * no device events.
+ */
+describe('an admission of the person before a stop', () => {
+  /**
+   * Opens Devices for one person and holds the admission read. The next person's reset source
+   * closes before its first open, and the replacement open reads `stop`. Later reads answer ready.
+   */
+  async function delayedPersonAndStop(stop: () => Response) {
+    let reads = 0;
+    let release: () => void = () => undefined;
+    let stopped = false;
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/freshness')
+        return Response.json({ freshness: { stale: 0, refreshing: false } });
+      if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+      reads += 1;
+      // The first read is the person before. It answers only when the test says so.
+      if (reads === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: state('ready') });
+      }
+      return stopped ? stop() : Response.json({ sync: state('ready') });
+    });
+    const session = signal<ReturnType<typeof sessionFor> | null>(
+      sessionFor('actor'),
+    );
+    const store = setup(request, session);
+    const feeds = TestBed.inject(LiveFeeds);
+    // The production reopen delay. The replacement open follows the failed reset source.
+    feeds.reopenDelay = 5000;
+    const opened = streams(store);
+    TestBed.tick();
+    const first = store.init();
+
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The reset source closes before its first open. Its replacement reads the status.
+    opened[0].fail(2);
+    await vi.advanceTimersByTimeAsync(5000);
+    stopped = true;
+    opened[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened[1].closed).toBe(true);
+    expect(reads).toBe(2);
+    expect(store.sync()).toBeNull();
+
+    return {
+      store,
+      opened,
+      first,
+      session,
+      reads: () => reads,
+      // The stop answered. The person before's answer arrives after status reads succeed again.
+      recover: () => {
+        stopped = false;
+      },
+      release: () => release(),
+    };
+  }
+
+  it.each([
+    [
+      'a denied status read',
+      () => Response.json({ code: 'forbidden' }, { status: 403 }),
+      false,
+      'Device inventory status is unavailable.',
+    ],
+    [
+      'a customer without a sync',
+      () => Response.json({ sync: null }),
+      true,
+      '',
+    ],
+  ] as const)(
+    'starts no admission when the person before answers after %s',
+    async (_case, stop, loaded, error) => {
+      vi.useFakeTimers();
+      try {
+        const admission = await delayedPersonAndStop(stop);
+
+        admission.recover();
+        admission.release();
+        await admission.first;
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        // The older answer starts no admission and restores no subscription.
+        expect(admission.reads()).toBe(2);
+        expect(admission.opened).toHaveLength(2);
+        expect(admission.store.sync()).toBeNull();
+        expect(admission.store.syncLoaded()).toBe(loaded);
+        expect(admission.store.error()).toBe(error);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('reads the newest person when another person took the admission meanwhile', async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      let releaseFirst: () => void = () => undefined;
+      let releaseSecond: () => void = () => undefined;
+      const request = vi.fn(async (path: string) => {
+        if (path === '/api/devices/freshness')
+          return Response.json({ freshness: { stale: 0, refreshing: false } });
+        if (path !== '/api/devices/sync')
+          throw new TypeError('Failed to fetch');
+        const read = ++reads;
+        if (read === 1)
+          await new Promise<void>((resolve) => (releaseFirst = resolve));
+        if (read === 2)
+          await new Promise<void>((resolve) => (releaseSecond = resolve));
+        return Response.json({ sync: state('ready') });
+      });
+      const session = signal(sessionFor('actor'));
+      const store = setup(request, session);
+      const feeds = TestBed.inject(LiveFeeds);
+      feeds.reopenDelay = 5000;
+      const opened = streams(store);
+      TestBed.tick();
+      const first = store.init();
+
+      // The second person's open reads the status while the first admission still waits.
+      session.set(sessionFor('second'));
+      TestBed.tick();
+      opened[0].fail(2);
+      await vi.advanceTimersByTimeAsync(5000);
+      opened[1].open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toBe(2);
+
+      // A third person arrives while both earlier reads wait. The newest person needs a read.
+      session.set(sessionFor('third'));
+      TestBed.tick();
+      releaseFirst();
+      await first;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toBe(3);
+      expect(store.sync()?.status).toBe('ready');
+      expect(store.syncLoaded()).toBe(true);
+
+      // The second person's answer belongs to the person before. It changes nothing.
+      releaseSecond();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toBe(3);
+      expect(store.sync()?.status).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  type Recovery = 'init' | 'remount' | 'resume' | 'reconnect';
+
+  /** Requests the recovery of the stopped store while the person before's answer waits. */
+  async function requestRecovery(
+    kind: Recovery,
+    person: Awaited<ReturnType<typeof delayedPersonAndStop>>,
+  ): Promise<void> {
+    if (kind === 'init') {
+      void person.store.init();
+      return;
+    }
+    if (kind === 'remount') {
+      person.store.leave();
+      void person.store.init();
+      return;
+    }
+    if (kind === 'resume') {
+      // The session is interrupted, then the same person resumes it.
+      person.session.set(null);
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(0);
+      person.session.set(sessionFor('someone-else'));
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(0);
+      return;
+    }
+    // The browser comes back from offline.
+    void person.store.reconnect();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it.each(
+    (['denied', 'missing'] as const).flatMap((stop) =>
+      (
+        [
+          ['an init', 'init'],
+          ['a leave and init', 'remount'],
+          ['a session resume', 'resume'],
+          ['an offline reconnect', 'reconnect'],
+        ] as const
+      ).map(
+        ([label, kind]) =>
+          [`${label} after a ${stop} stop`, kind, stop] as const,
+      ),
+    ),
+  )('recovers on %s', async (_case, kind, stopKind) => {
+    vi.useFakeTimers();
+    try {
+      const stop = () =>
+        stopKind === 'denied'
+          ? Response.json({ code: 'forbidden' }, { status: 403 })
+          : Response.json({ sync: null });
+      const person = await delayedPersonAndStop(stop);
+      const before = person.reads();
+
+      // The explicit request arrives while the person before's answer still waits.
+      person.recover();
+      await requestRecovery(kind, person);
+      // A reconnect reads the status directly. Every other entry waits for the handover.
+      expect(person.reads()).toBe(kind === 'reconnect' ? before + 1 : before);
+
+      person.release();
+      await person.first;
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The handover answered the request: this person's own status read followed.
+      expect(person.reads()).toBe(
+        kind === 'reconnect' ? before + 2 : before + 1,
+      );
+      expect(person.store.sync()?.status).toBe('ready');
+      expect(person.store.syncLoaded()).toBe(true);
+      expect(person.store.error()).toBe('');
+
+      // The restored subscription follows the device events again.
+      expect(person.opened).toHaveLength(3);
+      person.opened[2].open();
+      await vi.advanceTimersByTimeAsync(0);
+      const revision = person.store.revision();
+      person.opened[2].send('full-sync', {
+        type: 'full-sync',
+        sync: state('ready', { observedAt: LATER }),
+      });
+      expect(person.store.revision()).toBe(revision + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 const groupBody = {
@@ -716,7 +1252,6 @@ it('reopens a closed stream after a status read and stays closed after the sessi
         : Response.json({ code: 'access-changed' }, { status: 401 }),
   });
   const store = setup(request);
-  store.reopenDelay = 0;
   const opened = streams(store);
   await store.init();
   opened[0].open();
@@ -725,11 +1260,18 @@ it('reopens a closed stream after a status read and stays closed after the sessi
   expect(opened[0].closed).toBe(true);
   opened[0].send('full-sync', { type: 'full-sync', sync: state('running') });
   expect(store.sync()?.status).toBe('ready');
+  // The replacement reads the status before it follows the device events.
+  opened[1].open();
+  await vi.waitFor(() => expect(statusReads(request)).toBe(3));
   signedIn = false;
   opened[1].fail(2);
-  await vi.waitFor(() => expect(statusReads(request)).toBe(3));
+  await vi.waitFor(() => expect(opened).toHaveLength(3));
+  // The denied read stops this store. The tab connection opens for no second store.
+  opened[2].open();
+  await vi.waitFor(() => expect(statusReads(request)).toBe(4));
   await new Promise((resolve) => setTimeout(resolve, 10));
-  expect(opened).toHaveLength(2);
+  expect(opened).toHaveLength(3);
+  expect(opened[2].closed).toBe(true);
 });
 
 it('reopens a stream that stays silent past the timeout', async () => {
@@ -739,8 +1281,7 @@ it('reopens a stream that stays silent past the timeout', async () => {
       '/api/devices/sync': () => Response.json({ sync: state('ready') }),
     });
     const store = setup(request);
-    store.streamTimeout = 1000;
-    store.reopenDelay = 0;
+    TestBed.inject(LiveFeeds).timeout = 1000;
     const opened = streams(store);
     await store.init();
     opened[0].open();
@@ -766,7 +1307,6 @@ describe('reconcile after the stream closed', () => {
         Response.json({ freshness: { stale: 0, refreshing: false } }),
     });
     const store = setup(request);
-    store.reopenDelay = 0;
     const opened = streams(store);
     const { api } = grid([rowFor('d1', true)]);
     store.gridRows.attach(api);
@@ -815,7 +1355,6 @@ describe('reconcile after the stream closed', () => {
         Response.json({ freshness: { stale: 0, refreshing: false } }),
     });
     const store = setup(request);
-    store.reopenDelay = 0;
     const opened = streams(store);
     await store.init();
     opened[0].open();
@@ -847,34 +1386,44 @@ describe('reopen after a failed status read', () => {
     });
   }
 
-  it('retries after a server error and opens once the status read succeeds', async () => {
+  it('retries a failed status read until it succeeds', async () => {
     const request = statusSequence([200, 502, 503]);
     const store = setup(request);
-    store.reopenDelay = 0;
+    store.statusRetryDelay = 0;
     const opened = streams(store);
     await store.init();
     opened[0].open();
     opened[0].fail(2);
     await vi.waitFor(() => expect(opened).toHaveLength(2));
-    expect(statusReads(request)).toBe(4);
+    // The replacement reads the status before it follows the device events.
+    opened[1].open();
+    await vi.waitFor(() => expect(statusReads(request)).toBe(5));
+    expect(store.sync()?.status).toBe('ready');
     expect(store.error()).toBe('');
   });
 
-  it.each([401, 403])('stays closed after a %i status read', async (status) => {
-    const request = statusSequence([200, status]);
-    const store = setup(request);
-    store.reopenDelay = 0;
-    const opened = streams(store);
-    await store.init();
-    opened[0].open();
-    opened[0].fail(2);
-    await vi.waitFor(() => expect(statusReads(request)).toBe(2));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(statusReads(request)).toBe(2);
-    expect(opened).toHaveLength(1);
-  });
+  it.each([401, 403])(
+    'stops only this store after a %i status read',
+    async (status) => {
+      const request = statusSequence([200, status]);
+      const store = setup(request);
+      const opened = streams(store);
+      await store.init();
+      opened[0].open();
+      opened[0].fail(2);
+      await vi.waitFor(() => expect(opened).toHaveLength(2));
+      opened[1].open();
+      await vi.waitFor(() =>
+        expect(store.error()).toBe('Device inventory status is unavailable.'),
+      );
+      await vi.waitFor(() => expect(opened[1].closed).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(statusReads(request)).toBe(2);
+      expect(opened).toHaveLength(2);
+    },
+  );
 
-  it('backs off up to the cap and starts over after an open', async () => {
+  it('backs a failed status read off to the cap and starts over after a success', async () => {
     vi.useFakeTimers();
     try {
       let status = 200;
@@ -890,28 +1439,101 @@ describe('reopen after a failed status read', () => {
           Response.json({ freshness: { stale: 0, refreshing: false } }),
       });
       const store = setup(request);
-      store.reopenDelay = 1000;
-      store.reopenCap = 4000;
+      store.statusRetryDelay = 1000;
+      store.statusRetryCap = 4000;
       const opened = streams(store);
       await store.init();
       opened[0].open();
       status = 503;
       opened[0].fail(2);
+      await vi.waitFor(() => expect(opened).toHaveLength(2));
+      // The replacement open reads the status before it follows the device events.
+      opened[1].open();
+      await vi.advanceTimersByTimeAsync(0);
+      const failed = reads.length;
       await vi.advanceTimersByTimeAsync(11_000);
-      expect(reads.slice(1).map((time, index) => time - reads[index])).toEqual([
-        1000, 2000, 4000, 4000,
-      ]);
+      // Each failed read doubles the wait until the cap holds it at 4 s.
+      expect(
+        reads
+          .slice(failed)
+          .map((time, index) => time - reads[failed - 1 + index]),
+      ).toEqual([1000, 2000, 4000, 4000]);
+
+      // A successful read starts the waits over.
       status = 200;
       await vi.advanceTimersByTimeAsync(4000);
+      expect(store.sync()?.status).toBe('ready');
+      status = 503;
+      opened[1].fail(2);
+      await vi.waitFor(() => expect(opened).toHaveLength(3));
+      opened[2].open();
+      await vi.advanceTimersByTimeAsync(0);
+      const next = reads.length;
+      await vi.advanceTimersByTimeAsync(999);
+      expect(reads).toHaveLength(next);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(reads).toHaveLength(next + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('recovers when a retry of an older open is pending', async () => {
+    vi.useFakeTimers();
+    try {
+      let status = 200;
+      const request = routes({
+        '/api/devices/sync': () =>
+          status === 200
+            ? Response.json({ sync: state('ready') })
+            : Response.json({}, { status }),
+        '/api/devices/freshness': () =>
+          Response.json({ freshness: { stale: 0, refreshing: false } }),
+      });
+      const store = setup(request);
+      store.statusRetryDelay = 1000;
+      store.statusRetryCap = 4000;
+      const opened = streams(store);
+      await store.init();
+      opened[0].open();
+
+      // The first open fails its status read and schedules a retry.
+      status = 503;
+      opened[0].fail(2);
+      await vi.advanceTimersByTimeAsync(0);
       expect(opened).toHaveLength(2);
       opened[1].open();
       await vi.advanceTimersByTimeAsync(0);
-      const before = reads.length;
+      expect(statusReads(request)).toBe(2);
+      // The retry of that open fails again and schedules the next one.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(statusReads(request)).toBe(3);
+
+      // A replacement open fails too while the older retry still waits.
       opened[1].fail(2);
-      await vi.advanceTimersByTimeAsync(999);
-      expect(reads).toHaveLength(before);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(opened).toHaveLength(3);
+      opened[2].open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(statusReads(request)).toBe(4);
+      // The current open owns the retry. The older timer cannot strand it.
+      const revision = store.revision();
+      opened[2].send('full-sync', {
+        type: 'full-sync',
+        sync: state('ready', { observedAt: LATER }),
+      });
+      await vi.advanceTimersByTimeAsync(3999);
+      expect(statusReads(request)).toBe(4);
+      expect(store.revision()).toBe(revision);
+
+      // The status answers again. The current open redoes its read and releases the held frame.
+      status = 200;
       await vi.advanceTimersByTimeAsync(1);
-      expect(reads).toHaveLength(before + 1);
+      expect(statusReads(request)).toBe(6);
+      expect(store.sync()?.status).toBe('ready');
+      expect(store.sync()?.observedAt).toBe(LATER);
+      expect(store.revision()).toBe(revision + 1);
+      expect(store.error()).toBe('');
     } finally {
       vi.useRealTimers();
     }
@@ -929,23 +1551,25 @@ describe('reopen after a failed status read', () => {
           : Response.json({ code: 'access-changed' }, { status: 401 }),
     });
     const store = setup(request, session);
-    store.reopenDelay = 0;
     const opened = streams(store);
     TestBed.tick();
     await store.init();
     opened[0].open();
     signedIn = false;
     opened[0].fail(2);
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    // The replacement reads the status before it follows the device events; the 401 stops it.
+    opened[1].open();
     await vi.waitFor(() => expect(statusReads(request)).toBe(2));
     // AuthStore clears the session on the 401 and restores it on resume.
     session.set(null);
     TestBed.tick();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(opened).toHaveLength(1);
+    expect(opened).toHaveLength(2);
     signedIn = true;
     session.set(sessionFor('actor'));
     TestBed.tick();
-    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    await vi.waitFor(() => expect(opened).toHaveLength(3));
   });
 
   it('keeps the baseline of a first stream that closes before it opens', async () => {
@@ -958,7 +1582,6 @@ describe('reopen after a failed status read', () => {
         Response.json({ freshness: { stale: 0, refreshing: false } }),
     });
     const store = setup(request);
-    store.reopenDelay = 0;
     const opened = streams(store);
     const { api } = grid([rowFor('d1', false)]);
     store.gridRows.attach(api);
@@ -1492,14 +2115,14 @@ describe('a status answer with an unreadable body', () => {
     expect(store.sync()).toBeNull();
   });
 
-  it.each(bodies)('reopens the stream after $name', async ({ body }) => {
+  it.each(bodies)('follows the feed after $name', async ({ body }) => {
     let bad = true;
     const request = routes({
       '/api/devices/sync': () =>
         bad ? body() : Response.json({ sync: state('ready') }),
     });
     const store = setup(request);
-    store.reopenDelay = 0;
+    store.statusRetryDelay = 0;
     const opened = streams(store);
     await store.init();
     expect(opened).toHaveLength(0);
@@ -1520,24 +2143,15 @@ describe('a status answer with an unreadable body', () => {
   );
 });
 
-describe('a failed post-open read', () => {
-  const failed = () => new Response('{"sync":', { status: 503 });
-
-  /** A store whose stream dropped while a sync ran. `failNext()` breaks the next status read. */
+describe('a post-open status read', () => {
+  /** A store whose stream dropped while a sync ran. The status route answers `current`. */
   async function dropped(current: object) {
-    const status = current;
-    let failures = 0;
     const request = routes({
-      '/api/devices/sync': () => {
-        if (failures < 1) return Response.json({ sync: status });
-        failures -= 1;
-        return failed();
-      },
+      '/api/devices/sync': () => Response.json({ sync: current }),
       '/api/devices/freshness': () =>
         Response.json({ freshness: { stale: 0, refreshing: false } }),
     });
     const store = setup(request);
-    store.reopenDelay = 0;
     const opened = streams(store);
     await store.init();
     opened[0].open();
@@ -1545,37 +2159,37 @@ describe('a failed post-open read', () => {
     const before = store.revision();
     opened[0].fail(2);
     await vi.waitFor(() => expect(opened).toHaveLength(2));
-    return { request, store, opened, before, failNext: () => (failures = 1) };
+    return { request, store, opened, before };
   }
 
-  it('reloads the grid when the gate read shows the sync ended', async () => {
-    const { request, store, opened, before, failNext } = await dropped(
+  it('reloads the grid when the read after the drop shows the sync ended', async () => {
+    const { request, store, opened, before } = await dropped(
       state('ready', { observedAt: LATER }),
     );
-    failNext();
     opened[1].open();
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
     expect(store.sync()?.status).toBe('ready');
-    expect(store.error()).toBe('Device inventory status is unavailable.');
+    // The read before the device events and the read after the open.
     expect(statusReads(request)).toBe(3);
   });
 
-  it('keeps the baseline when the gate read matches the status from before the drop', async () => {
-    const { store, opened, before, failNext } = await dropped(running(null));
-    failNext();
+  it('keeps the baseline when the read after the drop matches the status from before it', async () => {
+    const { request, store, opened, before } = await dropped(running(null));
     opened[1].open();
     await vi.waitFor(() =>
-      expect(store.error()).toBe('Device inventory status is unavailable.'),
+      expect(request).toHaveBeenCalledWith('/api/devices/freshness', {
+        predicates: [],
+        selection: null,
+      }),
     );
     expect(store.revision()).toBe(before);
     expect(store.sync()?.status).toBe('running');
   });
 
-  it('compares the next reconnect against the gate read', async () => {
-    const { request, store, opened, before, failNext } = await dropped(
+  it('compares the next reconnect against the read of this open', async () => {
+    const { request, store, opened, before } = await dropped(
       state('ready', { observedAt: LATER }),
     );
-    failNext();
     opened[1].open();
     await vi.waitFor(() => expect(store.revision()).toBe(before + 1));
     opened[1].fail(2);
@@ -1665,7 +2279,6 @@ describe('a resumed session', () => {
           : Response.json({ code: 'access-changed' }, { status: 401 }),
     });
     const store = setup(request, session);
-    store.reopenDelay = 0;
     const opened = streams(store);
     TestBed.tick();
     return {
@@ -1684,9 +2297,11 @@ describe('a resumed session', () => {
     opened[0].open();
     signOut();
     opened[0].fail(2);
-    // The gate read denies the ended session, so the stream stays closed.
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    // The read before the device events denies the ended session, so this store stops.
+    opened[1].open();
     await vi.waitFor(() => expect(reads()).toBe(2));
-    expect(opened).toHaveLength(1);
+    expect(opened).toHaveLength(2);
     const before = store.resumeRevision();
     session.set(null);
     TestBed.tick();
@@ -1695,8 +2310,8 @@ describe('a resumed session', () => {
     session.set(sessionFor('actor'));
     TestBed.tick();
     await vi.waitFor(() => expect(store.resumeRevision()).toBe(before + 1));
-    // The stream reopens as before.
-    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    // The store reads the status again and follows the shared connection.
+    await vi.waitFor(() => expect(opened).toHaveLength(3));
   });
 
   it('keeps the reset of another sign-in without a retry', () => {

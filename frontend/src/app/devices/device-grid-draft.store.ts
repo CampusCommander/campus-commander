@@ -431,10 +431,8 @@ export class DeviceGridDraftStore {
   /** Follow the jobs channel while an accepted cell waits for its owning job (B4). */
   private syncJobStream(): void {
     if (this.acceptedSignal().length && this.jobEventSource) {
-      this.jobEvents ??= this.feeds.subscribe('/api/jobs/events', {
-        open: () => this.jobEventSource!('/api/jobs/events'),
-        reopenDelay: () => 5000,
-        timeout: () => 60_000,
+      this.jobEvents ??= this.feeds.subscribe('/api/events', {
+        open: () => this.jobEventSource!('/api/events'),
         events: ['job-changed'],
         opened: () => void this.reconcileAccepted(),
         changed: (data) => this.onJobEvent(data),

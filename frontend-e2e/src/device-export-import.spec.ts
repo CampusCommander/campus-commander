@@ -4,6 +4,7 @@ import {
   devicePageSchema,
   type JobSummary,
 } from '@campus/application-contracts';
+import { installLiveStreams } from './live-streams';
 
 /**
  * States 01 to 08 of the Export, Reports, and Import dialog
@@ -157,6 +158,7 @@ interface MockOptions {
 
 /** The Devices page needs the session, a published inventory, and the export routes. */
 async function signIn(page: Page, options: MockOptions = {}) {
+  await installLiveStreams(page);
   const selectedCount = options.selectedCount ?? rows.length;
   const state = {
     job: options.state ?? ('running' as 'running' | 'completed'),
@@ -239,12 +241,6 @@ async function signIn(page: Page, options: MockOptions = {}) {
       });
     if (path === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
-    if (path === '/api/devices/events' || path === '/api/jobs/events')
-      return route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-        body: '',
-      });
     if (path === '/api/devices/updates/access')
       return route.fulfill({
         json: {

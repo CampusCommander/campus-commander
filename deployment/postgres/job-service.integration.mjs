@@ -662,7 +662,7 @@ export async function qualifyJobService({ runtime, migrator, issuer }) {
         throw new ForbiddenException({ reason: 'forbidden' });
     },
   };
-  const controller = new JobsController(jobs, authorizer, {}, orchestration);
+  const controller = new JobsController(jobs, authorizer, orchestration);
   const request = (current) => ({
     session: current,
     headers: {},
