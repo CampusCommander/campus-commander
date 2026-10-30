@@ -157,7 +157,6 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/devices/domain/refresh', 'api'],
       ['POST', '/api/devices/by-ids', 'api'],
       ['POST', '/api/devices/freshness', 'api'],
-      ['GET', '/api/devices/events', 'api'],
       ['GET', '/api/devices/synthetic-device-1', 'api'],
       ['GET', '/api/devices/org-units', 'api'],
       // A single device segment still reads as a device route, and only a POST to it streams.
@@ -178,7 +177,6 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/jobs/activity', 'api'],
       ['POST', '/api/jobs/activity/seen', 'api'],
       ['GET', '/api/jobs/requesters', 'api'],
-      ['GET', '/api/jobs/events', 'api'],
       // The one stream carries the job feed and the device feed.
       ['GET', '/api/events', 'api'],
       ['GET', '/api/devices/updates/access', 'api'],
@@ -240,7 +238,6 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/api/devices/${'x'.repeat(129)}`, 404],
       ['POST', '/api/devices/synthetic-device-1', 405],
       ['POST', '/api/devices/selection/other', 404],
-      ['POST', '/api/devices/events', 405],
       ['POST', '/api/devices/by-ids/extra', 404],
       ['GET', '/api/devices/selection/ops', 405],
       ['PUT', '/api/devices/groups', 405],
@@ -274,7 +271,6 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/jobs/UPD-001', 405],
       ['POST', '/api/jobs/UPD-001/operations', 405],
       ['GET', '/api/jobs/UPD-001/operations/1/reconcile', 405],
-      ['POST', '/api/jobs/events', 405],
       ['POST', '/api/events', 405],
       // The one stream answers GET alone. Its HEAD request answers 405, not the upstream.
       ['HEAD', '/api/events', 405],
@@ -432,17 +428,12 @@ test('application routes require Phase 3 and exact methods and paths', async () 
   }
 });
 
-test('the device event stream outlives the request timeout while pings flow', async () => {
+test('the live event stream outlives the request timeout while pings flow', async () => {
   const listen = (server) =>
     new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = (server) => `http://127.0.0.1:${server.address().port}`;
   const api = http.createServer((request, response) => {
-    if (
-      !request.url.startsWith('/api/devices/events') &&
-      !request.url.startsWith('/api/jobs/events') &&
-      !request.url.startsWith('/api/events')
-    )
-      return;
+    if (!request.url.startsWith('/api/events')) return;
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.write('retry: 3000\n\n');
     // A silent stream must end at the edge.
@@ -479,41 +470,7 @@ test('the device event stream outlives the request timeout while pings flow', as
     );
     await listen(edge);
     const guard = () => ({ signal: AbortSignal.timeout(2000) });
-    const events = await fetch(`${origin(edge)}/api/devices/events`, guard());
-    assert.equal(events.headers.get('content-type'), 'text/event-stream');
-    assert.equal(events.headers.get('cache-control'), 'no-store');
-    const text = await events.text();
-    assert.equal(
-      text.split('event: ping').length - 1,
-      6,
-      'The stream ran past the 120 ms request timeout.',
-    );
-    const silent = await fetch(
-      `${origin(edge)}/api/devices/events?silent=1`,
-      guard(),
-    );
-    const quiet = Date.now();
-    await assert.rejects(silent.text());
-    assert.ok(Date.now() - quiet < 1000, 'The edge ended the silent stream.');
-    // The Jobs stream carries the same event idle timeout.
-    const jobs = await fetch(`${origin(edge)}/api/jobs/events`, guard());
-    assert.equal(jobs.headers.get('content-type'), 'text/event-stream');
-    assert.equal(
-      (await jobs.text()).split('event: ping').length - 1,
-      6,
-      'The Jobs stream ran past the 120 ms request timeout.',
-    );
-    const silentJobs = await fetch(
-      `${origin(edge)}/api/jobs/events?silent=1`,
-      guard(),
-    );
-    const quietJobs = Date.now();
-    await assert.rejects(silentJobs.text());
-    assert.ok(
-      Date.now() - quietJobs < 1000,
-      'The edge ended the silent stream.',
-    );
-    // The one stream of /api/events carries the same event idle timeout.
+    // The one stream of /api/events carries the event idle timeout.
     const all = await fetch(`${origin(edge)}/api/events`, guard());
     assert.equal(all.headers.get('content-type'), 'text/event-stream');
     assert.equal(all.headers.get('cache-control'), 'no-store');

@@ -180,7 +180,6 @@ before(async () => {
     jobsServiceModule,
     authModule,
     authzModule,
-    eventsModule,
     orchestrationModule,
   ] = await Promise.all([
     import('./jobs.controller.ts'),
@@ -189,7 +188,6 @@ before(async () => {
     import('./jobs.service.ts'),
     import('../auth/auth.service.ts'),
     import('../auth/authorize-action.ts'),
-    import('../devices/device-events.service.ts'),
     import('../orchestration/orchestration.service.ts'),
   ]);
   const { JobsController } = controllerModule;
@@ -198,13 +196,12 @@ before(async () => {
   const { JobsService } = jobsServiceModule;
   const { AuthService } = authModule;
   const { authorizeAction } = authzModule;
-  const { DeviceEventsService } = eventsModule;
   const { OrchestrationService } = orchestrationModule;
 
   // esbuild does not emit decorator metadata, so the harness names the constructor tokens.
   Reflect.defineMetadata(
     'design:paramtypes',
-    [JobsService, AuthService, DeviceEventsService, OrchestrationService],
+    [JobsService, AuthService, OrchestrationService],
     JobsController,
   );
 
@@ -239,7 +236,6 @@ before(async () => {
             ),
         },
       },
-      { provide: DeviceEventsService, useValue: {} },
       {
         provide: OrchestrationService,
         useValue: {

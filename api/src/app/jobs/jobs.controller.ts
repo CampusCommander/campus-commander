@@ -7,11 +7,8 @@ import {
   Post,
   Query,
   Req,
-  Res,
-  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
 import { z } from 'zod';
 import {
   jobActionSchema,
@@ -23,13 +20,10 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
-import { DeviceEventsService } from '../devices/device-events.service';
-import { streamEvents } from '../devices/device-events';
 import { requireReconcileActions } from '../devices/device-updates-actions';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { JobsService } from './jobs.service';
-import { operationCursorSchema, seesEveryJob } from './jobs';
-import { recheckJobStream } from './jobs-stream';
+import { operationCursorSchema } from './jobs';
 
 /** A repeated query key or a comma-separated value. */
 const many = <Schema extends z.ZodTypeAny>(schema: Schema, max = 100) =>
@@ -102,7 +96,6 @@ export class JobsController {
   constructor(
     private readonly jobs: JobsService,
     private readonly auth: AuthService,
-    private readonly deviceEvents: DeviceEventsService,
     private readonly orchestration: OrchestrationService,
   ) {}
 
@@ -145,58 +138,6 @@ export class JobsController {
       input.query ?? '',
       input.limit,
     );
-  }
-
-  /** Server-Sent Events for this customer's visible jobs (section 3.3). */
-  @Get('events')
-  async events(
-    @Req() request: AuthenticatedRequest,
-    @Res() response: Response,
-  ): Promise<void> {
-    const customerId = await this.jobs.customer(request.session);
-    const everyJob = seesEveryJob(request.session, customerId);
-    const started = await streamEvents<JobEvent>(response, {
-      customerId,
-      fanout: this.deviceEvents.fanout,
-      feeds: [
-        {
-          listener: jobListener,
-          forward: async (event, failed) => {
-            if (failed || event.type !== 'job-changed') return null;
-            if (everyJob) return { event };
-            // The same predicate as every job read decides the event of another person's job.
-            const visible = await this.jobs.visible(
-              request.session,
-              customerId,
-              event.requestedBy,
-            );
-            return visible ? { event } : null;
-          },
-        },
-      ],
-      begin: () => {
-        response.writeHead(200, {
-          'content-type': 'text/event-stream; charset=utf-8',
-          'cache-control': 'no-store',
-          'x-accel-buffering': 'no',
-        });
-      },
-      // A ping goes out only while the session and its read actions still hold for this customer.
-      recheck: async () => {
-        const checked = await recheckJobStream({
-          auth: this.auth,
-          jobs: this.jobs,
-          cookie: request.headers.cookie,
-          correlationId: request.correlationId,
-          customerId,
-          everyJob,
-        });
-        if (checked.session) request.session = checked.session;
-        return checked.allowed;
-      },
-    });
-    if (!started && !response.headersSent)
-      throw new ServiceUnavailableException({ reason: 'events-unavailable' });
   }
 
   @Get(':displayId')

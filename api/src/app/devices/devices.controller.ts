@@ -8,7 +8,6 @@ import {
   Post,
   Req,
   Res,
-  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -30,11 +29,8 @@ import {
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { GoogleConnectionService } from '../auth/google-connection.service';
-import { DeviceEventsService } from './device-events.service';
-import { streamEvents } from './device-events';
 import { DeviceDomainRefresh } from './device-domain-refresh';
 import { selectionRefreshStatus } from './device-selection-refresh';
-import { deviceForward, recheckDeviceStream } from './device-stream';
 import { DevicesService } from './devices.service';
 
 const deviceIdSchema = z.string().min(1).max(128);
@@ -60,7 +56,6 @@ export class DevicesController {
   constructor(
     private readonly devices: DevicesService,
     private readonly auth: AuthService,
-    private readonly deviceEvents: DeviceEventsService,
     connection: GoogleConnectionService,
   ) {
     this.domainRefresh = new DeviceDomainRefresh({
@@ -257,70 +252,6 @@ export class DevicesController {
   async orgUnits(@Req() request: AuthenticatedRequest) {
     await this.current(request);
     return { orgUnits: await this.devices.orgUnits(request.session) };
-  }
-
-  /** Server-Sent Events for this customer's device refreshes (D6, D12). */
-  @Get('events')
-  async events(
-    @Req() request: AuthenticatedRequest,
-    @Res() response: Response,
-  ): Promise<void> {
-    const current = await this.current(request);
-    if (!current)
-      throw new ConflictException({ reason: 'connection-required' });
-    // A holder of jobs:read or jobs:manage at platform or district scope receives every failure.
-    const seesEveryJob = this.devices.jobVisibility(
-      request.session,
-      current.customerId,
-    );
-    const started = await streamEvents<EntityEvent>(response, {
-      customerId: current.customerId,
-      fanout: this.deviceEvents.fanout,
-      feeds: [
-        {
-          listener: entityListener,
-          // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
-          forward: deviceForward(seesEveryJob, {
-            jobFailure: (jobId) =>
-              this.devices.jobFailure(
-                request.session,
-                current.customerId,
-                jobId,
-              ),
-            sync: () => this.devices.sync(request.session),
-          }),
-        },
-      ],
-      begin: () => {
-        response.writeHead(200, {
-          'content-type': 'text/event-stream; charset=utf-8',
-          'cache-control': 'no-store',
-          'x-accel-buffering': 'no',
-        });
-      },
-      // A ping goes out only while the session and devices:read still hold for this customer, and
-      // while its jobs:read visibility is unchanged.
-      // The recheck leaves the idle timeout alone. An open tab must not keep an unattended session alive.
-      recheck: async () => {
-        const checked = await recheckDeviceStream({
-          auth: this.auth,
-          reads: {
-            current: (session) =>
-              this.currentFor(session, request.correlationId),
-            jobVisibility: (session, customerId) =>
-              this.devices.jobVisibility(session, customerId),
-          },
-          cookie: request.headers.cookie,
-          correlationId: request.correlationId,
-          customerId: current.customerId,
-          seesEveryJob,
-        });
-        if (checked.session) request.session = checked.session;
-        return checked.allowed;
-      },
-    });
-    if (!started && !response.headersSent)
-      throw new ServiceUnavailableException({ reason: 'events-unavailable' });
   }
 
   @Get(':deviceId')
