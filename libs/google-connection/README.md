@@ -16,6 +16,13 @@ Changing that context requires a new envelope.
 Requests use fixed endpoints, deadlines, response limits, and no retries or redirects.
 Provider failures expose bounded categories without response payloads.
 
+`GoogleDriveClient` makes the Drive and Sheets calls of the device export and import as the signed-in person.
+`personDriveClient` mints one `drive.file` token for the session subject and sends it on every call.
+The client reads file metadata, the media stream, the tabs of a Sheet, and its value windows in 1,000-row pages.
+It creates one Sheet, its text format, and its `RAW` values.
+`googleRequestAllowed` admits only the Drive and Sheets paths that the client builds.
+A fake transport in `drive-fake.mjs` serves tests only; no production source imports it.
+
 Database functions enforce current authority, candidate expiry, confirmation, and atomic security events.
 `GoogleConnectionProvider` coordinates encrypted token reuse and renewal through a database lease.
 It rejects stale credential generations and separates token ciphertext from service-account ciphertext.
