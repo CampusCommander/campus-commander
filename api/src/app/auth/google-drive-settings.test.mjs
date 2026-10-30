@@ -54,7 +54,10 @@ const READER = [platform('connection:read')];
 const MANAGER = [platform('connection:read'), platform('connection:manage')];
 const DISTRICT_MANAGER = [
   platform('connection:read'),
-  { action: 'connection:manage', scope: { kind: 'district', customerId: CUSTOMER } },
+  {
+    action: 'connection:manage',
+    scope: { kind: 'district', customerId: CUSTOMER },
+  },
 ];
 
 /**
