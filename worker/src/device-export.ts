@@ -3,6 +3,7 @@ import { GOOGLE_SHEET_TAB_TITLE } from '@campus/google-connection';
 import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
   DEVICE_REPORT_FIELD_LABELS,
+  createCsvReader,
   createCsvWriter,
   deviceEditEscapeCell,
   deviceEditRowChecksum,
@@ -24,8 +25,8 @@ import {
   type SyncTimers,
 } from './device-sync';
 import type {
+  DeviceArtifactStore,
   DeviceExportDescriptor,
-  DeviceExportStore,
 } from './device-export-store';
 
 /**
@@ -468,7 +469,7 @@ function reportCells(
 /** Run one export job (design section 5). */
 export class DeviceExportJobs {
   private readonly database: DeviceSyncDatabase;
-  private readonly store: DeviceExportStore;
+  private readonly store: DeviceArtifactStore;
   private readonly batchSize: number;
   private readonly maxBytes: number;
   private readonly timers: SyncTimers;
@@ -476,7 +477,7 @@ export class DeviceExportJobs {
 
   constructor(
     database: DeviceSyncDatabase,
-    store: DeviceExportStore,
+    store: DeviceArtifactStore,
     options: DeviceExportOptions = {},
   ) {
     this.database = database;
@@ -905,32 +906,39 @@ export class DeviceExportJobs {
   }
 
   /**
-   * The rows of the Sheet, the header first, re-read from the frozen scope in ordinal order
-   * (design section 6, step 6). A lost lease or a stopping worker stops the write at a batch
+   * The rows of the staged template file, the header first and in staged order (design section 6,
+   * step 6). The stage is the frozen copy of the export, so an inventory edit or a removed device
+   * after the stage changes no row. A lost lease or a stopping worker stops the read at a batch
    * boundary.
    */
-  private async *sheetRows(
-    input: DeviceExportRequest,
-    claim: ClaimedExport,
+  private async *stagedRows(
+    descriptor: DeviceExportDescriptor,
     signal: AbortSignal,
     ticker: ExportTicker,
   ): AsyncIterable<string[]> {
-    yield [...DEVICE_EDIT_TEMPLATE_HEADERS];
-    let after = 0;
-    for (;;) {
+    const reader = createCsvReader();
+    const decoder = new TextDecoder();
+    const stopped = (): void => {
       if (ticker.fenced || signal.aborted)
         throw new ExportStop({ kind: 'stopped' });
-      const batch = await this.readBatch(input.customerId, input.jobId, after);
-      if (batch.length === 0) break;
-      for (const record of batch) yield await editValues(record);
-      after = batch[batch.length - 1].ordinal + 1;
+    };
+    let count = 0;
+    for await (const chunk of await this.store.openRead(descriptor.artifactId)) {
+      stopped();
+      for (const record of reader.push(decoder.decode(chunk, { stream: true }))) {
+        yield record.cells;
+        count += 1;
+        if (count % this.batchSize === 0) stopped();
+      }
     }
+    for (const record of reader.push(decoder.decode())) yield record.cells;
+    for (const record of reader.end()) yield record.cells;
   }
 
   /**
    * Create the one Sheet of a claimed Sheet export and write the staged rows into it (design
-   * section 6, steps 3 to 7). The Sheet is the artifact: the staged rows never publish, and the
-   * worker removes them after the finish.
+   * section 6, steps 3 to 7). The Sheet is the artifact. The run publishes the stage only to read
+   * it back, and it removes the stage after the finish.
    */
   private async writeSheet(
     input: DeviceExportRequest,
@@ -965,11 +973,19 @@ export class DeviceExportJobs {
         const client = await this.sheetClient(input, claim, signal);
         sheet = await client.createSheet(title);
         await client.setTextFormat(sheet.spreadsheetId, sheet.sheetId, columns);
+        // The store reads a file only after publication, so this run publishes the completed
+        // stage and writes those bytes. The stage stays frozen: a later inventory change alters
+        // no row of the Sheet (design section 6, steps 1 and 6).
+        try {
+          await this.store.publish(descriptor);
+        } catch {
+          throw new DeviceExportError('storage-unavailable');
+        }
         written = await client.writeRows(
           sheet.spreadsheetId,
           GOOGLE_SHEET_TAB_TITLE,
           columns,
-          this.sheetRows(input, claim, signal, ticker),
+          this.stagedRows(descriptor, signal, ticker),
         );
       } catch (error) {
         if (error instanceof ExportStop) {

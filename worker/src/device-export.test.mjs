@@ -84,10 +84,12 @@ function fakeTimers() {
 
 /**
  * A store that behaves as the artifact store does: it consumes the stream, removes the partial
- * file when the stream fails, and keeps the published files.
+ * file when the stream fails, reads a published file only, and keeps the published files.
  */
 function fakeStore(options = {}) {
-  const calls = { manifests: [], published: [], removed: [] };
+  const calls = { manifests: [], published: [], removed: [], opened: [] };
+  /** The files of the store, by artifact ID: their state and their bytes. */
+  const files = new Map();
   let removed = false;
   let staged = null;
   return {
@@ -109,7 +111,7 @@ function fakeStore(options = {}) {
         throw new Error('Artifact stageStream failed.');
       }
       staged = Buffer.concat(chunks);
-      return {
+      const descriptor = {
         artifactId: randomUUID(),
         attemptId: randomUUID(),
         schemaVersion: manifest.schemaVersion,
@@ -117,15 +119,34 @@ function fakeStore(options = {}) {
         sha256: 'f'.repeat(64),
         expiresAt: '2026-11-28T00:00:00.000Z',
       };
+      files.set(descriptor.artifactId, { state: 'staging', bytes: staged });
+      return descriptor;
     },
     async publish(descriptor) {
       calls.published.push(descriptor);
+      const file = files.get(descriptor.artifactId);
       // The store verifies the whole file and syncs the filesystem before it answers.
       await options.onPublish?.(descriptor);
+      if (file === undefined || file.state !== 'staging')
+        throw new Error('Artifact cannot be published.');
+      file.state = 'ready';
+    },
+    async *openRead(artifactId) {
+      calls.opened.push(artifactId);
+      const file = files.get(artifactId);
+      // The store reads a ready file only.
+      if (file === undefined || file.state !== 'ready')
+        throw new Error('Artifact is not ready.');
+      await options.onOpenRead?.(artifactId);
+      // Small chunks split multi-byte characters and record ends, as a file read does.
+      for (let index = 0; index < file.bytes.length; index += 7)
+        yield file.bytes.subarray(index, index + 7);
     },
     async remove(descriptor) {
       calls.removed.push(descriptor);
       removed = true;
+      const file = files.get(descriptor.artifactId);
+      if (file !== undefined) file.state = 'deleted';
       return true;
     },
     close: () => Promise.resolve(),
@@ -1042,7 +1063,7 @@ test('a Sheet export creates the Devices tab, freezes the header, and writes RAW
       orgUnitPath: '/Schools/North',
     }),
   );
-  // Step 7: the finish records the Sheet facts, and the staged rows never publish.
+  // Step 7: the finish records the Sheet facts, and the run removes the stage it read.
   assert.deepEqual(sheet.database.calls.finish, [
     {
       file: {
@@ -1056,7 +1077,12 @@ test('a Sheet export creates the Devices tab, freezes the header, and writes RAW
     },
   ]);
   assert.deepEqual(answer.file, sheet.database.calls.finish[0].file);
-  assert.equal(sheet.store.calls.published.length, 0);
+  // The store reads a ready file only, so the run publishes the stage, reads it once, and removes
+  // it (design section 6, step 7).
+  assert.equal(sheet.store.calls.published.length, 1);
+  assert.deepEqual(sheet.store.calls.opened, [
+    sheet.store.calls.published[0].artifactId,
+  ]);
   assert.equal(sheet.store.calls.removed.length, 1);
 });
 
@@ -1094,6 +1120,97 @@ test('the Sheet stamp precedes the first Sheets call', async () => {
     'stamp',
     'sheets:POST /v4/spreadsheets',
   ]);
+});
+
+test('an inventory edit after staging keeps the staged values in the Sheet', async () => {
+  const devices = [
+    deviceRow(0, { notes: 'staged note — ünïcode' }),
+    deviceRow(1, { notes: 'second staged note' }),
+  ];
+  const sheet = sheetHarness({
+    devices,
+    answer: (call) => {
+      // A person edits the live inventory after the rows staged and before the Sheet fills.
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets') {
+        devices[0].notes = 'later note';
+        devices[1].notes = 'later second note';
+      }
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  // The stage is the only inventory read: one page of two rows, then the empty page.
+  assert.equal(sheet.database.calls.read.length, 2);
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.deepEqual(
+    write.body.values.slice(1).map((row) => row[7]),
+    ['staged note — ünïcode', 'second staged note'],
+  );
+  // The checksum still covers the staged value, so a later import detects an edit against it.
+  assert.equal(
+    write.body.values[1][9],
+    await deviceEditRowChecksum({
+      deviceId: 'device-0',
+      status: 'ACTIVE',
+      annotatedAssetId: 'ASSET-0',
+      annotatedLocation: 'Room 12',
+      annotatedUser: 'person@example.org',
+      notes: 'staged note — ünïcode',
+      orgUnitPath: '/Schools/North',
+    }),
+  );
+  assert.equal(answer.file.rows, 2);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a device removed after staging still fills the staged rows', async () => {
+  const devices = [deviceRow(0), deviceRow(1)];
+  const sheet = sheetHarness({
+    devices,
+    answer: (call) => {
+      // Another session removes both devices after the rows staged.
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets')
+        devices.length = 0;
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(sheet.database.calls.read.length, 2);
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.deepEqual(
+    write.body.values.slice(1).map((row) => row[0]),
+    ['device-0', 'device-1'],
+  );
+  assert.equal(answer.file.rows, 2);
+  assert.equal(sheet.store.calls.removed.length, 1);
+});
+
+test('a failed inventory read after staging changes no staged row', async () => {
+  let failReads = false;
+  const sheet = sheetHarness({
+    devices: [deviceRow(0)],
+    readFailure: () => failReads,
+    answer: (call) => {
+      // Every inventory read after the stage fails, as an unreachable database does.
+      if (call.method === 'POST' && call.path === '/v4/spreadsheets')
+        failReads = true;
+      return sheetAnswer(call);
+    },
+  });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.file.rows, 1);
+  assert.equal(sheet.database.calls.read.length, 2);
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.deepEqual(
+    write.body.values.slice(1).map((row) => row[0]),
+    ['device-0'],
+  );
 });
 
 test('a lost create answer fails the job without a second create', async () => {
