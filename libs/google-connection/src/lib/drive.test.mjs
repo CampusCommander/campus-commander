@@ -41,7 +41,10 @@ const sheetProperties = {
   gridProperties: { columnCount: 2, rowCount: 100 },
 };
 
-const rows = (...items) => items;
+/** The rows a write sends, in order. */
+async function* rows(...items) {
+  yield* items;
+}
 const ok = (data) => ({ status: 200, data });
 
 /** Collect an async iterable into an array. */
@@ -335,6 +338,29 @@ test('reads a tab in windows of one thousand rows and pads each row', async () =
     valueRenderOption: 'FORMATTED_VALUE',
     fields: 'values',
   });
+});
+
+test('an empty window ends the read before the grid ends', async () => {
+  const google = fakeDrive((call) => {
+    if (call.path === '/v4/spreadsheets/fixture-sheet')
+      return sheetAnswer([
+        {
+          ...sheetProperties,
+          gridProperties: { columnCount: 1, rowCount: 5000 },
+        },
+      ]);
+    const start = Number(/!A(\d+):/.exec(decodeURIComponent(call.path))[1]) - 1;
+    return start === 0
+      ? valuesAnswer([['Device ID'], ['device-1']])
+      : valuesAnswer(undefined);
+  });
+  const client = new GoogleDriveClient(google.client, signal);
+  const tab = await client.readTab('fixture-sheet', 0);
+  assert.equal((await collected(tab.rows())).length, 2);
+  assert.equal(
+    google.sent.filter((call) => call.path.includes('/values/')).length,
+    2,
+  );
 });
 
 test('a value right of the header refuses as ragged-record', async () => {

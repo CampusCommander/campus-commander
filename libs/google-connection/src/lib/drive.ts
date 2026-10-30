@@ -468,6 +468,8 @@ export class GoogleDriveClient {
     let dataRows = 0;
     for (let start = 0; start < total; start += GOOGLE_DRIVE_WINDOW_ROWS) {
       const window = await this.valuesWindow(fileId, title, start, columns);
+      // The API trims a range of blank rows to nothing, so an empty window ends the read.
+      if (window.length === 0) return;
       for (const [offset, row] of window.entries()) {
         if (start === 0 && offset === 0) headerWidth = row.length;
         if (row.length > headerWidth)
