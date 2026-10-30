@@ -635,8 +635,10 @@ export class Jobs {
           u.confirmed_by, u.action, c.changes, pr.deprovision_reason,
           cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id,
           e.purpose AS export_purpose,
+          e.format AS export_format, e.spreadsheet_id,
           e.file_name, e.file_size_bytes, e.file_row_count, e.file_column_count, e.file_expires_at,
-          i.mode AS import_mode, i.source_name, i.source_size_bytes, i.rows_read, i.candidate_rows,
+          i.mode AS import_mode, i.source_type, i.source_name, i.source_tab_title,
+          i.source_size_bytes, i.rows_read, i.candidate_rows,
           i.proposed, i.rejected,
           i.refusal, i.refusal_text, i.plan_id, i.plan_revision, i.plan_state, i.plan_expires_at,
           i.plan_changed_by, i.plan_changed_at, pc.display_name AS plan_changed_by_name,
@@ -770,25 +772,38 @@ export class Jobs {
           : null,
       deprovisionReason: job['deprovision_reason'] ?? null,
       targetOrgUnitPaths: job['target_org_unit_paths'] ?? null,
-      // The detail blocks of design section 1, from the export and import detail rows.
+      // The file of an export job (design sections 1 and 6). A Sheet keeps a null size and expiry,
+      // and its link comes from the stored spreadsheet ID alone.
       exportFile:
         job['file_name'] == null
           ? null
           : {
               name: job['file_name'],
-              sizeBytes: counted(job['file_size_bytes']),
+              format: job['export_format'],
+              sizeBytes:
+                job['file_size_bytes'] == null
+                  ? null
+                  : Number(job['file_size_bytes']),
               rows: counted(job['file_row_count']),
               columns: counted(job['file_column_count']),
-              expiresAt: measuredAt(job['file_expires_at']),
+              expiresAt: measuredAtOrNull(job['file_expires_at']),
+              sheetUrl:
+                job['spreadsheet_id'] == null
+                  ? null
+                  : `https://docs.google.com/spreadsheets/d/${String(job['spreadsheet_id'])}/edit`,
             },
+      // The source of a validation job (design sections 1 and 7). A Drive source names its type,
+      // and a Sheet adds the title of its chosen tab.
       importSource:
         job['source_name'] == null
           ? null
           : {
               name: job['source_name'],
+              sourceType: job['source_type'],
               sizeBytes: counted(job['source_size_bytes']),
               rowsRead: counted(job['rows_read']),
               candidateRows: counted(job['candidate_rows']),
+              tabTitle: (job['source_tab_title'] as string | null) ?? null,
               refusalText: (job['refusal_text'] as string | null) ?? null,
             },
       plan:
