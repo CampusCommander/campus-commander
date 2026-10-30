@@ -1165,6 +1165,17 @@ test('an inventory edit after staging keeps the staged values in the Sheet', asy
   assert.equal(sheet.store.calls.removed.length, 1);
 });
 
+test('a staged cell keeps its quote and its line end in the Sheet', async () => {
+  const notes = 'first "quoted" line\r\nsecond line';
+  const sheet = sheetHarness({ devices: [deviceRow(0, { notes })] });
+  const answer = await sheet.run();
+
+  assert.equal(answer.outcome, 'completed');
+  const write = sheet.calls.find((call) => call.method === 'PUT');
+  assert.equal(write.body.values[1][7], notes);
+  assert.equal(answer.file.rows, 1);
+});
+
 test('a device removed after staging still fills the staged rows', async () => {
   const devices = [deviceRow(0), deviceRow(1)];
   const sheet = sheetHarness({
