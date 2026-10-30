@@ -25,6 +25,7 @@ import {
 export const GOOGLE_CONNECTION_SCOPES = GOOGLE_CUSTOMER_SCOPES;
 const directory = 'https://admin.googleapis.com/admin/directory/v1';
 const management = 'https://chromemanagement.googleapis.com/v1';
+const drive = 'https://www.googleapis.com/drive/v3';
 const responseLimit = 262144;
 
 export class GoogleConnectionError extends Error {
@@ -197,6 +198,13 @@ const telemetryHealthPage = z.object({
     .max(1)
     .optional(),
 });
+/** A Drive health read asks for one file ID. An empty Drive omits the list. */
+const driveHealthPage = z.object({
+  files: z
+    .array(z.object({ id: z.string().min(1).max(128) }))
+    .max(1)
+    .optional(),
+});
 
 function domainObservation(
   customerId: string,
@@ -226,7 +234,7 @@ function domainObservation(
   });
 }
 
-/** The only Google URLs the application may call. Token exchange, customer reads, and device reads. */
+/** The only Google URLs the application may call. Token exchange, customer reads, device reads, and the Drive health read. */
 export function googleRequestAllowed(url: URL): boolean {
   return (
     (url.origin === 'https://oauth2.googleapis.com' &&
@@ -237,7 +245,9 @@ export function googleRequestAllowed(url: URL): boolean {
           url.pathname,
         ))) ||
     (url.origin === 'https://www.googleapis.com' &&
-      url.pathname === '/batch/admin/directory_v1') ||
+      ['/batch/admin/directory_v1', '/drive/v3/files'].includes(
+        url.pathname,
+      )) ||
     (url.origin === 'https://chromemanagement.googleapis.com' &&
       /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices(?:\/[A-Za-z0-9_-]{1,128})?$/.test(
         url.pathname,
@@ -499,6 +509,18 @@ export class GoogleCustomerVerifier {
               break;
             // device-changes checks its delegated token only. A health check never writes.
             case 'device-changes':
+              break;
+            // drive-files reads one file ID as the delegated administrator. It never writes.
+            case 'drive-files':
+              driveHealthPage.parse(
+                (
+                  await client.request({
+                    url: `${drive}/files`,
+                    method: 'GET',
+                    params: { pageSize: 1, fields: 'files(id)' },
+                  })
+                ).data,
+              );
               break;
           }
           return { capability, scopeVerified, failure: null };

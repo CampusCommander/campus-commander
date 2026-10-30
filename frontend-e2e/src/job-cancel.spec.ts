@@ -737,6 +737,7 @@ async function signIn(
               'device-inventory',
               'device-telemetry',
               'device-changes',
+              'drive-files',
             ].map((capability) => ({
               capability,
               scopeVerified: true,

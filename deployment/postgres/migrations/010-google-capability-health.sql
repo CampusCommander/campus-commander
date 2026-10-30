@@ -4,10 +4,10 @@ LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog AS $$
 DECLARE item jsonb;
 BEGIN
   IF p_value IS NULL OR jsonb_typeof(p_value)<>'array' THEN RETURN false; END IF;
-  IF jsonb_array_length(p_value) NOT BETWEEN 1 AND 6 THEN RETURN false; END IF;
+  IF jsonb_array_length(p_value) NOT BETWEEN 1 AND 7 THEN RETURN false; END IF;
   FOR item IN SELECT * FROM jsonb_array_elements(p_value) LOOP
     IF item NOT IN ('"customer-identity"'::jsonb,'"domain-observations"'::jsonb,'"school-ou-references"'::jsonb,
-      '"device-inventory"'::jsonb,'"device-telemetry"'::jsonb,'"device-changes"'::jsonb) THEN RETURN false; END IF;
+      '"device-inventory"'::jsonb,'"device-telemetry"'::jsonb,'"device-changes"'::jsonb,'"drive-files"'::jsonb) THEN RETURN false; END IF;
   END LOOP;
   RETURN (SELECT count(DISTINCT value)=jsonb_array_length(p_value) FROM jsonb_array_elements(p_value));
 END;
@@ -31,7 +31,7 @@ CREATE TABLE cc.google_health_checks (
 CREATE TABLE cc.google_capability_health (
   customer_id text NOT NULL,
   generation integer NOT NULL,
-  capability text NOT NULL CHECK(capability IN ('customer-identity','domain-observations','school-ou-references','device-inventory','device-telemetry','device-changes')),
+  capability text NOT NULL CHECK(capability IN ('customer-identity','domain-observations','school-ou-references','device-inventory','device-telemetry','device-changes','drive-files')),
   scope_verified boolean NOT NULL,
   failure text CHECK(failure IN ('credential-rejected','delegation-not-authorized','api-not-enabled','policy-restricted','network-failure','scope-mismatch','permission-denied','quota','provider-unavailable','invalid-response','wrong-customer','request-failed','license-restricted','key-unavailable')),
   checked_at timestamptz NOT NULL,
@@ -54,7 +54,7 @@ LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
       'lastSucceededAt',COALESCE(r.last_succeeded_at,CASE WHEN v.setup_verified THEN c.observed_at END),
       'correlationId',r.correlation_id) ORDER BY v.capability)
       FROM (VALUES ('customer-identity',true),('domain-observations',true),('school-ou-references',false),
-        ('device-inventory',false),('device-telemetry',false),('device-changes',false)) AS v(capability,setup_verified)
+        ('device-inventory',false),('device-telemetry',false),('device-changes',false),('drive-files',false)) AS v(capability,setup_verified)
       LEFT JOIN cc.google_capability_health r ON r.customer_id=c.customer_id AND r.generation=c.generation AND r.capability=v.capability))
     FROM cc.google_connection c
     LEFT JOIN cc.google_health_checks h ON h.customer_id=c.customer_id AND h.generation=c.generation
@@ -117,7 +117,7 @@ BEGIN
   IF p_results IS NULL OR jsonb_typeof(p_results)<>'array' THEN
     RAISE EXCEPTION 'The capability results are invalid.' USING ERRCODE='22023';
   END IF;
-  IF jsonb_array_length(p_results) NOT BETWEEN 0 AND 6 THEN
+  IF jsonb_array_length(p_results) NOT BETWEEN 0 AND 7 THEN
     RAISE EXCEPTION 'The capability result count is invalid.' USING ERRCODE='22023';
   END IF;
   -- An inconclusive combined read preserves every capability observation.

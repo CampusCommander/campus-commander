@@ -17,12 +17,17 @@ const allowed = [
   'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/orgunits',
   'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos',
   'https://www.googleapis.com/batch/admin/directory_v1',
+  'https://www.googleapis.com/drive/v3/files',
   'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices',
   'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/abc-123_DEF',
 ];
 const rejected = [
   'https://www.googleapis.com/batch/admin/directory_v1/extra',
   'https://www.googleapis.com/batch/other/v1',
+  'https://www.googleapis.com/drive/v3/files/abc',
+  'https://www.googleapis.com/drive/v3/files/',
+  'http://www.googleapis.com/drive/v3/files',
+  'https://evil.example/drive/v3/files',
   'http://www.googleapis.com/batch/admin/directory_v1',
   'https://evil.example/batch/admin/directory_v1',
   'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/a/b',
