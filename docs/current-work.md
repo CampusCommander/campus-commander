@@ -49,6 +49,11 @@ On 2026-10-28 the owner approved an Unknown outcome on the Failed tab. Owner: "U
 
 The approved mockup is [2026-10-28-device-export-import.html](ui/designs/2026-10-28-device-export-import.html).
 The CSV slice of the [batch update through export and import record](workflows/batch-update-export-import.md) builds from it. Its design addendum comes first.
+
+On 2026-10-30 the owner approved version 1 of the Google Drive slice mockup. Owner: "approve, all recommended".
+The approved mockup is [2026-10-30-device-drive-slice.html](ui/designs/2026-10-30-device-drive-slice.html).
+Its six answers sit in the record under "2026-10-30, main chat: the Google Drive slice mockup".
+
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -72,7 +77,8 @@ Version 4 of the CSV slice mockup applies the UI changes of 2026-10-28 and two p
 The owner approved it on 2026-10-28: "This is perfect. Please go ahead and execute on this."
 The [mockup](ui/designs/2026-10-28-device-export-import.html) and its [notes](ui/designs/2026-10-28-device-export-import-notes.md) set the screens. A design addendum comes before the build cards.
 
-The universal job cancel is built. The CSV slice builds next: Export, Reports, and Import with CSV files. The Google Drive slice follows.
+The universal job cancel is built. The CSV slice is built and waits for the owner sign-off.
+The Google Drive slice has an approved mockup. Its design addendum comes next.
 A live Google Sheet export creates a Google file. It needs the owner's authorization, as live device writes do.
 
 ### Cancel pending work on any job (signed off 2026-10-28)
