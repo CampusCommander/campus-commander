@@ -1471,14 +1471,21 @@ describe('Execute and its results', () => {
 
   it('keeps the Failed tab chosen during a held next page when a job event arrives', async () => {
     const fixture = heldNextPage();
-    const { store, render, text, emit } = setup(fixture.request);
+    const { store, element, render, text, emit } = setup(fixture.request);
     store.openJob('IMP-001');
     await render();
     expect(store.step()).toBe('results');
     expect(text()).toContain('Rows 1–10 of 12 changes');
+    const next = element.querySelector<HTMLButtonElement>(
+      'button[aria-label="Next results page"]',
+    );
+    const failed = [...element.querySelectorAll<HTMLButtonElement>('.report-tabs button')]
+      .find((tab) => tab.textContent?.includes('Failed'));
+    expect(next?.disabled).toBe(false);
+    expect(failed).toBeDefined();
 
     // The next page reads its report and then holds its operations.
-    void store.nextReportPage();
+    next?.click();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(store.reportPage()).toBe(1);
     expect(fixture.state().held).toBe(true);
@@ -1486,7 +1493,7 @@ describe('Execute and its results', () => {
 
     // The person chooses Failed while that page still holds its operations, and a newer
     // plan-job event arrives. No detail read starts during the held navigation (R4).
-    void store.setReportView('failed');
+    failed?.click();
     emit('job-changed', jobEvent(statusJobId, 'STS-002', 5));
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(fixture.state()).toEqual(held);
@@ -1501,17 +1508,23 @@ describe('Execute and its results', () => {
     expect(store.reportView()).toBe('failed');
     expect(store.reportPage()).toBe(0);
     expect(text()).toContain('No change failed.');
+    expect(failed?.textContent).toContain('Failed');
     store.close();
   });
 
   it('keeps the Failed tab chosen during a held next page when the shared feed reopens', async () => {
     const fixture = heldNextPage();
-    const { store, render, text, emit } = setup(fixture.request);
+    const { store, element, render, text, emit } = setup(fixture.request);
     store.openJob('IMP-001');
     await render();
     expect(store.step()).toBe('results');
+    const next = element.querySelector<HTMLButtonElement>(
+      'button[aria-label="Next results page"]',
+    );
+    const failed = [...element.querySelectorAll<HTMLButtonElement>('.report-tabs button')]
+      .find((tab) => tab.textContent?.includes('Failed'));
 
-    void store.nextReportPage();
+    next?.click();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(store.reportPage()).toBe(1);
     expect(fixture.state().held).toBe(true);
@@ -1519,7 +1532,7 @@ describe('Execute and its results', () => {
 
     // The shared feed reopens after a reconnect, and the person chooses Failed while the
     // held page still owns the cycle.
-    void store.setReportView('failed');
+    failed?.click();
     emit('open', {});
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(fixture.state()).toEqual(held);
