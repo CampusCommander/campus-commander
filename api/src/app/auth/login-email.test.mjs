@@ -61,6 +61,7 @@ const configuration = {
   secret: () => Buffer.from(`${clientSecret}\n`),
 };
 
+const audited = [];
 const database = {
   connection: {
     async query() {
@@ -70,7 +71,9 @@ const database = {
       };
     },
   },
-  async audit() {},
+  async audit(...entry) {
+    audited.push(entry);
+  },
 };
 
 function cacheDouble() {
@@ -153,6 +156,7 @@ function provider() {
 
 /** Sign in once through the real service. `claims` overrides the ID token claims. */
 async function signIn(claims = { email: delegatedEmail, email_verified: true }) {
+  audited.length = 0;
   const cache = cacheDouble();
   const service = new AuthService(
     configuration,
@@ -204,6 +208,10 @@ test('login asks openid profile email and keeps the verified sign-in email', asy
   assert.equal(session.driveSubject, delegatedEmail);
   assert.equal(session.principalId, principalId);
   assert.equal(cache.seconds.get(sessionKey), 1800);
+  assert.deepEqual(
+    audited.map(([event]) => event),
+    ['login-started', 'login-succeeded'],
+  );
   assert.equal(
     await service.driveSubject(`${sessionCookie}=${finished.token}`),
     delegatedEmail,
