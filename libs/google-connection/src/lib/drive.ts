@@ -531,13 +531,13 @@ export class GoogleDriveClient {
         if (!headerRead) {
           headerRead = true;
           headerWidth = row.length;
+        } else if (row.length > headerWidth) {
+          throw new GoogleDriveError('ragged-record');
         } else {
           dataRows += 1;
           if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
             throw new GoogleDriveError('too-many-rows');
         }
-        if (row.length > headerWidth)
-          throw new GoogleDriveError('ragged-record');
         for (; blanks > 0; blanks -= 1)
           yield Array<string>(headerWidth).fill('');
         yield row.length === headerWidth
