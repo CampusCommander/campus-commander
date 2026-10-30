@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
@@ -6,6 +7,7 @@ import {
   OnApplicationShutdown,
   OnModuleInit,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -28,6 +30,8 @@ import {
   type GoogleObservation,
   googleConnectionSchema,
   googleCredentialImportSchema,
+  googleDriveSettingsSchema,
+  type GoogleDriveSettings,
   type SessionResponse,
 } from '@campus/application-contracts';
 import {
@@ -41,6 +45,27 @@ import {
 } from '@campus/google-connection';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
+
+const DRIVE_SETTINGS_FIELDS = ['pickerApiKey', 'projectNumber'] as const;
+
+/**
+ * Parse a Drive settings save. A refused field answers 422 with its own name, because the generic
+ * 400 body of the error filter would not name the field that failed (design section 3). A body
+ * that names no save field answers 400, because the request itself is not the save.
+ */
+export function googleDriveSettingsInput(body: unknown): GoogleDriveSettings {
+  const parsed = googleDriveSettingsSchema.safeParse(body);
+  if (parsed.success) return parsed.data;
+  const field = DRIVE_SETTINGS_FIELDS.find((name) =>
+    parsed.error.issues.some((issue) => issue.path[0] === name),
+  );
+  if (field)
+    throw new UnprocessableEntityException({
+      reason: 'invalid-drive-settings',
+      field,
+    });
+  throw new BadRequestException({ reason: 'invalid-drive-settings' });
+}
 
 @Injectable()
 export class GoogleConnectionService
@@ -184,6 +209,40 @@ export class GoogleConnectionService
           this.actor(session),
         ),
       );
+  }
+
+  /** The saved Drive settings, or null before the first save (design section 3). */
+  async driveSettings(session: SessionResponse) {
+    return googleDriveSettingsSchema
+      .nullable()
+      .parse(
+        await this.query(
+          'SELECT cc.read_google_drive_settings($1,$2) AS result',
+          this.actor(session),
+        ),
+      );
+  }
+
+  /**
+   * Save the Drive settings (design section 3). The SQL function checks `connection:manage` again
+   * and writes the one `drive-settings-changed` event of a changed save.
+   */
+  async saveDriveSettings(
+    session: SessionResponse,
+    input: GoogleDriveSettings,
+    correlation: string,
+  ) {
+    return googleDriveSettingsSchema.parse(
+      await this.query(
+        'SELECT cc.save_google_drive_settings($1,$2,$3,$4,$5) AS result',
+        [
+          ...this.actor(session),
+          input.pickerApiKey,
+          input.projectNumber,
+          correlation,
+        ],
+      ),
+    );
   }
 
   async schoolReferences(session: SessionResponse) {
