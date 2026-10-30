@@ -157,7 +157,7 @@ it('reads the activity summary and exposes the badge and the dot', async () => {
   );
   await vi.waitFor(() => expect(store.loaded()).toBe(true));
   expect(requestMock).toHaveBeenCalledWith('/api/jobs/activity');
-  expect(openSource).toHaveBeenCalledWith('/api/jobs/events');
+  expect(openSource).toHaveBeenCalledWith('/api/events');
   expect(store.runningCount()).toBe(2);
   expect(store.attention()).toBe(true);
   expect(store.loading()).toBe(false);
@@ -257,10 +257,8 @@ it('stays non-live while the shared connection reconnects', async () => {
 
   // Another store follows the same feed, so this store's leave keeps the connection.
   const feeds = TestBed.inject(LiveFeeds);
-  feeds.subscribe('/api/jobs/events', {
+  feeds.subscribe('/api/events', {
     open: () => stream as unknown as JobEventSource,
-    reopenDelay: () => 5000,
-    timeout: () => 60_000,
     events: ['job-changed'],
     opened: () => undefined,
     changed: () => undefined,

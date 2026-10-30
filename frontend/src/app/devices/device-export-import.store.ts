@@ -92,10 +92,8 @@ interface ReportRead {
 @Injectable({ providedIn: 'root' })
 export class DeviceExportImportStore {
   private readonly auth = inject(AuthStore);
-  /** Opens the jobs event stream. Tests replace it. */
+  /** Opens the one live stream of the tab. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
-  reopenDelay = 5000;
-  streamTimeout = 60_000;
 
   readonly open = signal(false);
   readonly purpose = signal<JobExportPurpose>('edit');
@@ -199,7 +197,7 @@ export class DeviceExportImportStore {
 
   private readonly reader = new JobReader(() => this.read());
   private readonly feeds = inject(LiveFeeds);
-  /** The one shared connection of `/api/jobs/events` in this tab (finding 7). */
+  /** The one shared connection of `/api/events` in this tab (finding 7). */
   private subscription: LiveFeedSubscription | null = null;
   /** The header check of the last chosen file, so a mode change rechecks the same file. */
   private chosenFile: File | null = null;
@@ -1111,10 +1109,8 @@ export class DeviceExportImportStore {
   /** The one shared feed of this tab. The dialog opens no connection of its own (finding 7). */
   private startFeed(): void {
     if (this.subscription) return;
-    this.subscription = this.feeds.subscribe('/api/jobs/events', {
-      open: () => this.eventSource('/api/jobs/events'),
-      reopenDelay: () => this.reopenDelay,
-      timeout: () => this.streamTimeout,
+    this.subscription = this.feeds.subscribe('/api/events', {
+      open: () => this.eventSource('/api/events'),
       events: ['job-changed'],
       opened: () => this.reader.opened(),
       changed: (data) => this.onEvent(data),

@@ -31,12 +31,8 @@ export const OPERATIONS_PAGE_SIZE = 6;
 export class JobDetailStore {
   private readonly auth = inject(AuthStore);
   private readonly feeds = inject(LiveFeeds);
-  /** Opens the jobs event stream. Tests replace it. */
+  /** Opens the one live stream of the tab. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
-  /** Milliseconds before a closed stream reopens. */
-  reopenDelay = 5000;
-  /** Milliseconds without any event, pings included, before the stream counts as dead. */
-  streamTimeout = 60_000;
 
   readonly displayId = signal<string | null>(null);
   readonly job = signal<JobDetail | null>(null);
@@ -407,13 +403,11 @@ export class JobDetailStore {
     else this.subscription.resume();
   }
 
-  /** Subscribes to the tab's jobs connection. The subscription is shared with every store. */
+  /** Subscribes to the tab's one live connection. The subscription is shared with every store. */
   private follow(): void {
     if (this.subscription) return;
-    this.subscription = this.feeds.subscribe('/api/jobs/events', {
-      open: () => this.eventSource('/api/jobs/events'),
-      reopenDelay: () => this.reopenDelay,
-      timeout: () => this.streamTimeout,
+    this.subscription = this.feeds.subscribe('/api/events', {
+      open: () => this.eventSource('/api/events'),
       events: ['job-changed'],
       opened: () => this.reader.opened(),
       changed: (data) => this.onEvent(data),

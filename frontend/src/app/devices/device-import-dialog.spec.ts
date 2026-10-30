@@ -747,7 +747,7 @@ describe('the Import step of the dialog', () => {
     try {
       store.openJob('IMP-001');
       await render();
-      expect(feedUrls).toEqual(['/api/jobs/events']);
+      expect(feedUrls).toEqual(['/api/events']);
       expect(spy).not.toHaveBeenCalled();
     } finally {
       globalThis.EventSource = original;
@@ -1450,7 +1450,7 @@ describe('the Import entry ownership and report facts', () => {
     store.openImport();
     await render();
     // A same-revision reconnect reads the shown page again.
-    feedHandlers.at(-1)?.opened();
+    feedHandlers.at(-1)?.opened(true);
     await new Promise((resolve) => setTimeout(resolve, 350));
     await render();
     expect(store.reportCounts()).not.toBeNull();
