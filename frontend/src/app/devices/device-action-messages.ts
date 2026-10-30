@@ -293,6 +293,10 @@ export const GOOGLE_ACCEPTING =
 export const DEPROVISION_LOCAL_DATA =
   'Deprovision does not erase local data. Send Powerwash first to erase a device that leaves the district.';
 
+/** The consequence of a Deprovision of the Confirm step and of the Execute confirmation. */
+export const DEPROVISION_MANAGEMENT =
+  'Deprovision removes these devices from active management. This workflow cannot restore their previous management state.';
+
 /** "Deprovision reason: Retiring from fleet", or an empty string. */
 export function deprovisionReasonLine(
   reason: DeprovisionReason | null,
@@ -326,7 +330,7 @@ export function confirmationParagraphs(
     ];
   if (action === 'deprovision')
     return [
-      'Deprovision removes these devices from active management. This workflow cannot restore their previous management state.',
+      DEPROVISION_MANAGEMENT,
       DEPROVISION_LOCAL_DATA,
       deprovisionReasonLine(reason),
       `${eligible.toLocaleString(
