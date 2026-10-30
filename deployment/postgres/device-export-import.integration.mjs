@@ -334,19 +334,6 @@ export async function qualifyDeviceExportImport({
         correlation,
       ])
       .then((r) => r.rows[0].result);
-  /** One Drive import of a Sheet tab, with the example values of the design. */
-  const driveSheetImport = (overrides = {}) =>
-    createImport({
-      actor: importer,
-      sourceType: 'drive-sheet',
-      name: 'Devices',
-      sizeBytes: 2048,
-      fileId: 'example-sheet-file-1',
-      tabId: 0,
-      tabTitle: 'Devices',
-      subject: 'reader@example.org',
-      ...overrides,
-    });
   try {
     const exporter = await principal(exportGrants());
     const importer = await principal(importGrants());
@@ -4499,6 +4486,31 @@ export async function qualifyDeviceExportImport({
         `SELECT * FROM cc.security_events WHERE event='drive-settings-changed'
           ORDER BY occurred_at,id`,
       );
+    /** One Drive import of a Sheet tab, with the example values of the design. */
+    const driveSheetImport = (overrides = {}) =>
+      createImport({
+        actor: importer,
+        sourceType: 'drive-sheet',
+        name: 'Devices',
+        sizeBytes: 2048,
+        fileId: 'example-sheet-file-1',
+        tabId: 0,
+        tabTitle: 'Devices',
+        subject: 'reader@example.org',
+        ...overrides,
+      });
+    /** A pending call of a race check, so no promise is left floating when a client closes. */
+    const settle = (promise) =>
+      promise.then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+    /** A race client reports a closed connection as a settled result, never as a process error. */
+    const raceClient = async (user) => {
+      const client = await connect(user, 'cc-app');
+      client.on('error', () => undefined);
+      return client;
+    };
     try {
       await check(
         'S2 a Sheet export and both Drive sources pass their checks',
@@ -4846,9 +4858,13 @@ export async function qualifyDeviceExportImport({
       await check(
         'S3 the Sheet stamp races a cancel, and one wins',
         async () => {
-          const holder = await connect('postgres', 'cc-app');
-          const starter = await connect('cc-app', 'cc-app');
-          const canceller = await connect('cc-app', 'cc-app');
+          const holder = await raceClient('postgres');
+          const starter = await raceClient('cc-app');
+          const canceller = await raceClient('cc-app');
+          let started = null;
+          let lateCancel = null;
+          let cancelledFirst = null;
+          let lateStamp = null;
           try {
             const holderPid = await backendPid(holder);
             const starterPid = await backendPid(starter);
@@ -4861,23 +4877,23 @@ export async function qualifyDeviceExportImport({
             });
             jobs.push(first.receipt.jobId);
             const firstLease = randomUUID();
-            await claimExport(first.receipt.jobId, firstLease);
+            assert.equal(
+              (await claimExport(first.receipt.jobId, firstLease)).outcome,
+              'claimed',
+            );
             await holder.query('BEGIN');
             await holder.query('SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE', [
               first.receipt.jobId,
             ]);
-            const started = startSheet(first.receipt.jobId, firstLease, starter);
+            started = settle(startSheet(first.receipt.jobId, firstLease, starter));
             await waitBlocked(starterPid, holderPid, 'the stamp');
-            const lateCancel = cancelAs(
-              exporter,
-              first.receipt.displayId,
-              1,
-              canceller,
+            lateCancel = settle(
+              cancelAs(exporter, first.receipt.displayId, 1, canceller),
             );
             await waitBlocked(cancellerPid, holderPid, 'the cancel');
             await holder.query('COMMIT');
-            assert.equal((await started).outcome, 'started');
-            await rejects(lateCancel, null, 'nothing-to-stop');
+            assert.equal((await started).value?.outcome, 'started');
+            assert.equal((await lateCancel).error?.detail, 'nothing-to-stop');
             assert.equal(
               (await jobRow(first.receipt.jobId)).cancel_requested_at,
               null,
@@ -4891,27 +4907,23 @@ export async function qualifyDeviceExportImport({
             });
             jobs.push(second.receipt.jobId);
             const secondLease = randomUUID();
-            await claimExport(second.receipt.jobId, secondLease);
+            assert.equal(
+              (await claimExport(second.receipt.jobId, secondLease)).outcome,
+              'claimed',
+            );
             await holder.query('BEGIN');
             await holder.query('SELECT 1 FROM cc.jobs WHERE job_id=$1 FOR UPDATE', [
               second.receipt.jobId,
             ]);
-            const cancelledFirst = cancelAs(
-              exporter,
-              second.receipt.displayId,
-              1,
-              canceller,
+            cancelledFirst = settle(
+              cancelAs(exporter, second.receipt.displayId, 1, canceller),
             );
             await waitBlocked(cancellerPid, holderPid, 'the cancel');
-            const lateStamp = startSheet(
-              second.receipt.jobId,
-              secondLease,
-              starter,
-            );
+            lateStamp = settle(startSheet(second.receipt.jobId, secondLease, starter));
             await waitBlocked(starterPid, holderPid, 'the stamp');
             await holder.query('COMMIT');
-            assert.equal((await cancelledFirst).outcome, 'requested');
-            assert.equal((await lateStamp).outcome, 'cancelled');
+            assert.equal((await cancelledFirst).value?.outcome, 'requested');
+            assert.equal((await lateStamp).value?.outcome, 'cancelled');
             const ended = await jobRow(second.receipt.jobId);
             assert.equal(ended.status, 'cancelled');
             assert.notEqual(ended.cancel_requested_at, null);
@@ -4926,7 +4938,20 @@ export async function qualifyDeviceExportImport({
             );
           } catch (error) {
             await holder.query('ROLLBACK').catch(() => undefined);
-            throw error;
+            // The settled results name the cause, because a race check that throws hides them.
+            const seen = {
+              started: await started,
+              lateCancel: await lateCancel,
+              cancelledFirst: await cancelledFirst,
+              lateStamp: await lateStamp,
+            };
+            throw new Error(
+              `${error.message} ${JSON.stringify(seen, (key, value) =>
+                value instanceof Error
+                  ? { message: value.message, code: value.code, detail: value.detail }
+                  : value,
+              )}`,
+            );
           } finally {
             await close(holder);
             await close(starter);
