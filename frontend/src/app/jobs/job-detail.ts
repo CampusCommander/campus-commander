@@ -207,14 +207,19 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     if (!job) return null;
     const file = job.exportFile;
     if (!file) return null;
-    const expired = Date.parse(file.expiresAt) <= this.now();
+    // A Sheet never expires, so it holds no expiry (Drive slice design section 1).
+    const expiresAt = file.expiresAt;
+    const expired = expiresAt !== null && Date.parse(expiresAt) <= this.now();
     return {
       name: file.name,
       facts: exportFileFactList(file).join(' · '),
       expired,
-      line: expired
-        ? exportExpiredText(file.expiresAt)
-        : `Available until ${formatTimestamp(file.expiresAt)}`,
+      line:
+        expiresAt === null
+          ? ''
+          : expired
+            ? exportExpiredText(expiresAt)
+            : `Available until ${formatTimestamp(expiresAt)}`,
       href: exportFileHref(job.displayId),
     };
   });

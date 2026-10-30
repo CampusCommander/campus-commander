@@ -716,10 +716,12 @@ test('the detail carries the file of a completed export', async () => {
   const detail = await new Jobs(db).detail(session(), 'C0123456', 'EXP-001');
   assert.deepEqual(detail.exportFile, {
     name: 'devices-for-editing-EXP-001.csv',
+    format: 'csv',
     sizeBytes: 7987,
     rows: 48,
     columns: 10,
     expiresAt: '2026-11-27T15:31:00.000Z',
+    sheetUrl: null,
   });
   assert.deepEqual(detail.exportSummary, { purpose: 'edit' });
   assert.deepEqual(detail.phase, {
@@ -779,9 +781,11 @@ test('the detail carries the source and the open plan of a validation job', asyn
   });
   assert.deepEqual(detail.importSource, {
     name: 'devices-for-editing-EXP-001.csv',
+    sourceType: 'csv',
     sizeBytes: 7987,
     rowsRead: 48,
     candidateRows: 13,
+    tabTitle: null,
     refusalText: null,
   });
   assert.equal(detail.plan.planId, planId);

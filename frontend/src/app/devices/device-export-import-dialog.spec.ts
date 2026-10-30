@@ -293,10 +293,12 @@ describe('DeviceExportImportDialog', () => {
         phase: null,
         exportFile: {
           name: 'devices-for-editing-EXP-001.csv',
+          format: 'csv',
           sizeBytes: 7987,
           rows: 48,
           columns: 10,
           expiresAt,
+          sheetUrl: null,
         },
       }),
     );
@@ -324,10 +326,12 @@ describe('DeviceExportImportDialog', () => {
         phase: null,
         exportFile: {
           name: 'devices-for-editing-EXP-001.csv',
+          format: 'csv',
           sizeBytes: 7987,
           rows: 48,
           columns: 10,
           expiresAt: new Date(Date.now() - 86_400_000).toISOString(),
+          sheetUrl: null,
         },
       }),
     );
@@ -350,10 +354,12 @@ describe('DeviceExportImportDialog', () => {
         phase: null,
         exportFile: {
           name: 'devices-for-editing-EXP-001.csv',
+          format: 'csv',
           sizeBytes: 7987,
           rows: 48,
           columns: 10,
           expiresAt: new Date(Date.now() + 300).toISOString(),
+          sheetUrl: null,
         },
       }),
     );
@@ -387,10 +393,12 @@ describe('DeviceExportImportDialog', () => {
         phase: null,
         exportFile: {
           name: 'devices-for-editing-EXP-001.csv',
+          format: 'csv',
           sizeBytes: 7987,
           rows: 48,
           columns: 10,
           expiresAt: new Date(deadline).toISOString(),
+          sheetUrl: null,
         },
       }),
     );
