@@ -688,28 +688,29 @@ test('the detail joins the write fields and derives Latest activity from every o
 });
 
 test('the detail carries the file of a completed export', async () => {
+  const stored = jobRow({
+    kind: 'device-export',
+    display_id: 'EXP-001',
+    scope_kind: 'rows',
+    status: 'completed',
+    target_count: 48,
+    succeeded: 48,
+    phase: 'prepare-download',
+    phase_done: 0,
+    phase_total: null,
+    export_purpose: 'edit',
+    export_format: 'csv',
+    file_name: 'devices-for-editing-EXP-001.csv',
+    file_size_bytes: 7987,
+    file_row_count: 48,
+    file_column_count: 10,
+    file_expires_at: new Date('2026-11-27T15:31:00.000Z'),
+    spreadsheet_id: null,
+  });
   const db = database([
     [
       'LEFT JOIN cc.device_update_jobs u',
-      [
-        jobRow({
-          kind: 'device-export',
-          display_id: 'EXP-001',
-          scope_kind: 'rows',
-          status: 'completed',
-          target_count: 48,
-          succeeded: 48,
-          phase: 'prepare-download',
-          phase_done: 0,
-          phase_total: null,
-          export_purpose: 'edit',
-          file_name: 'devices-for-editing-EXP-001.csv',
-          file_size_bytes: 7987,
-          file_row_count: 48,
-          file_column_count: 10,
-          file_expires_at: new Date('2026-11-27T15:31:00.000Z'),
-        }),
-      ],
+      (values, text) => [headerRow(text, stored)],
     ],
     ['WHERE job_id=$1 AND status=$2', []],
   ]);
@@ -735,39 +736,200 @@ test('the detail carries the file of a completed export', async () => {
   assert.equal(detail.executionCounts, null);
 });
 
-test('the detail carries the source and the open plan of a validation job', async () => {
-  const planId = '77777777-7777-4777-8777-777777777777';
+test('the detail builds a Sheet link from the stored spreadsheet ID', async () => {
+  const stored = jobRow({
+    kind: 'device-export',
+    display_id: 'EXP-002',
+    scope_kind: 'rows',
+    status: 'completed',
+    target_count: 48,
+    succeeded: 48,
+    phase: 'create-sheet',
+    phase_done: 0,
+    phase_total: null,
+    export_purpose: 'edit',
+    export_format: 'sheet',
+    file_name: 'Devices for editing EXP-002',
+    // A Sheet carries no size, no expiry, and no artifact (design section 6).
+    file_size_bytes: null,
+    file_row_count: 48,
+    file_column_count: 10,
+    file_expires_at: null,
+    spreadsheet_id: '1Abc_def-ghi',
+  });
   const db = database([
     [
       'LEFT JOIN cc.device_update_jobs u',
+      (values, text) => [headerRow(text, stored)],
+    ],
+    ['WHERE job_id=$1 AND status=$2', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'EXP-002');
+  assert.deepEqual(detail.exportFile, {
+    name: 'Devices for editing EXP-002',
+    format: 'sheet',
+    sizeBytes: null,
+    rows: 48,
+    columns: 10,
+    expiresAt: null,
+    sheetUrl: 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit',
+  });
+  assert.deepEqual(detail.phase, {
+    name: 'create-sheet',
+    done: 0,
+    total: null,
+  });
+  // The link comes from the stored ID alone, so the header must read both columns.
+  const [header] = db.calls;
+  assert.ok(header[0].includes('e.format AS export_format'));
+  assert.ok(header[0].includes('e.spreadsheet_id'));
+});
+
+test('the detail names the source type and the tab of each Drive source', async () => {
+  const cases = [
+    {
+      stored: {
+        source_type: 'drive-sheet',
+        source_name: 'Devices for editing',
+        source_tab_title: 'Devices',
+        source_size_bytes: 21504,
+        rows_read: 48,
+        candidate_rows: 13,
+        refusal: null,
+        refusal_text: null,
+      },
+      expected: {
+        name: 'Devices for editing',
+        sourceType: 'drive-sheet',
+        sizeBytes: 21504,
+        rowsRead: 48,
+        candidateRows: 13,
+        tabTitle: 'Devices',
+        refusalText: null,
+      },
+    },
+    {
+      stored: {
+        source_type: 'drive-csv',
+        source_name: 'devices-for-editing.csv',
+        source_tab_title: null,
+        source_size_bytes: 8020,
+        rows_read: 48,
+        candidate_rows: 13,
+        refusal: null,
+        refusal_text: null,
+      },
+      expected: {
+        name: 'devices-for-editing.csv',
+        sourceType: 'drive-csv',
+        sizeBytes: 8020,
+        rowsRead: 48,
+        candidateRows: 13,
+        tabTitle: null,
+        refusalText: null,
+      },
+    },
+    {
+      // A lost Drive read stores its sentence for state 13 (design section 7).
+      stored: {
+        source_type: 'drive-sheet',
+        source_name: 'Devices for editing',
+        source_tab_title: 'Devices',
+        source_size_bytes: 21504,
+        rows_read: 0,
+        candidate_rows: 0,
+        refusal: 'drive-source-unavailable',
+        refusal_text:
+          'Google Drive did not return the file Devices for editing.',
+      },
+      expected: {
+        name: 'Devices for editing',
+        sourceType: 'drive-sheet',
+        sizeBytes: 21504,
+        rowsRead: 0,
+        candidateRows: 0,
+        tabTitle: 'Devices',
+        refusalText:
+          'Google Drive did not return the file Devices for editing.',
+      },
+    },
+  ];
+  for (const { stored, expected } of cases) {
+    const row = jobRow({
+      kind: 'device-import',
+      display_id: 'IMP-010',
+      scope_kind: 'rows',
+      status: 'failed',
+      target_count: null,
+      phase: 'drive-read',
+      phase_done: 0,
+      phase_total: null,
+      import_mode: 'sync-changes',
+      plan_id: null,
+      plan_revision: null,
+      plan_state: null,
+      plan_expires_at: null,
+      plan_changed_by: null,
+      plan_changed_at: null,
+      proposed: 0,
+      rejected: 0,
+      ...stored,
+    });
+    const db = database([
       [
-        jobRow({
-          kind: 'device-import',
-          display_id: 'IMP-001',
-          scope_kind: 'rows',
-          status: 'completed',
-          target_count: 48,
-          phase: 'report',
-          phase_done: 11,
-          phase_total: 11,
-          import_mode: 'sync-changes',
-          source_name: 'devices-for-editing-EXP-001.csv',
-          source_size_bytes: 7987,
-          rows_read: 48,
-          candidate_rows: 13,
-          refusal: null,
-          refusal_text: null,
-          plan_id: planId,
-          plan_revision: 1,
-          plan_state: 'open',
-          // The plan is still open on the read clock.
-          plan_expires_at: new Date(Date.now() + 3_600_000),
-          plan_changed_by: null,
-          plan_changed_at: null,
-          proposed: 7,
-          rejected: 0,
-        }),
+        'LEFT JOIN cc.device_update_jobs u',
+        (values, text) => [headerRow(text, row)],
       ],
+      ['WHERE job_id=$1 AND status=$2', []],
+    ]);
+    const detail = await new Jobs(db).detail(session(), 'C0123456', 'IMP-010');
+    assert.deepEqual(
+      detail.importSource,
+      expected,
+      `${stored.source_type} carries its source block.`,
+    );
+    assert.equal(detail.exportFile, null);
+    assert.equal(detail.importSummary.refusal, stored.refusal);
+    const [header] = db.calls;
+    assert.ok(header[0].includes('i.source_type'));
+    assert.ok(header[0].includes('i.source_tab_title'));
+  }
+});
+
+test('the detail carries the source and the open plan of a validation job', async () => {
+  const planId = '77777777-7777-4777-8777-777777777777';
+  const stored = jobRow({
+    kind: 'device-import',
+    display_id: 'IMP-001',
+    scope_kind: 'rows',
+    status: 'completed',
+    target_count: 48,
+    phase: 'report',
+    phase_done: 11,
+    phase_total: 11,
+    import_mode: 'sync-changes',
+    source_type: 'csv',
+    source_name: 'devices-for-editing-EXP-001.csv',
+    source_tab_title: null,
+    source_size_bytes: 7987,
+    rows_read: 48,
+    candidate_rows: 13,
+    refusal: null,
+    refusal_text: null,
+    plan_id: planId,
+    plan_revision: 1,
+    plan_state: 'open',
+    // The plan is still open on the read clock.
+    plan_expires_at: new Date(Date.now() + 3_600_000),
+    plan_changed_by: null,
+    plan_changed_at: null,
+    proposed: 7,
+    rejected: 0,
+  });
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      (values, text) => [headerRow(text, stored)],
     ],
     ['WHERE job_id=$1 AND status=$2', []],
   ]);
