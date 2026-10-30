@@ -28,7 +28,11 @@ function assertSecurityHeaders(headers) {
   assert.equal(headers['x-content-type-options'], 'nosniff');
   assert.equal(headers['referrer-policy'], 'no-referrer');
   const policy = headers['content-security-policy'];
-  assert.equal(typeof policy, 'string', 'The edge sent no content security policy.');
+  assert.equal(
+    typeof policy,
+    'string',
+    'The edge sent no content security policy.',
+  );
   const directives = {};
   for (const directive of policy.split(';')) {
     const [name, ...values] = directive.trim().split(' ');
@@ -38,7 +42,8 @@ function assertSecurityHeaders(headers) {
     'default-src': "'self'",
     'script-src': "'self' https://apis.google.com",
     'frame-src': 'https://docs.google.com',
-    'connect-src': "'self' https://sheets.googleapis.com https://www.googleapis.com",
+    'connect-src':
+      "'self' https://sheets.googleapis.com https://www.googleapis.com",
     'img-src': "'self' data:",
     'style-src': "'self' 'unsafe-inline'",
     'frame-ancestors': "'none'",
