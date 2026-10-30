@@ -377,6 +377,14 @@ test('a save fills the card and shows the ready line of state 15', async ({
     selector: 'app-drive-settings',
     offset: 20,
   });
+
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await capture(page, testInfo, 'state-15-dark', {
+    selector: 'app-drive-settings',
+    offset: 20,
+  });
 });
 
 test('a refused save reports the drafted failure and keeps the values', async ({
