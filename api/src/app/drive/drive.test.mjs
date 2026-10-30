@@ -22,8 +22,32 @@ import {
  * transport mocks below answer the one exchange, so no test reaches Google.
  */
 registerHooks({
+  resolve(specifier, context, nextResolve) {
+    // The production tsconfig maps `deployment` to the workspace source. Node needs the same map
+    // before the module graph of a Nest module can load.
+    if (specifier === 'deployment')
+      return {
+        url: new URL('../../../../deployment/src/index.ts', import.meta.url)
+          .href,
+        shortCircuit: true,
+      };
+    try {
+      return nextResolve(specifier, context);
+    } catch (error) {
+      if (
+        error.code === 'ERR_MODULE_NOT_FOUND' &&
+        specifier.startsWith('.') &&
+        context.parentURL?.includes('/deployment/')
+      )
+        return nextResolve(`${specifier}.ts`, context);
+      throw error;
+    }
+  },
   load(url, context, nextLoad) {
-    if (url.endsWith('.ts') && url.includes('/api/src/')) {
+    if (
+      url.endsWith('.ts') &&
+      (url.includes('/api/src/') || url.includes('/deployment/src/'))
+    ) {
       const file = fileURLToPath(url);
       const { code } = esbuild.transformSync(readFileSync(file, 'utf8'), {
         loader: 'ts',
@@ -781,4 +805,34 @@ test('a malformed file ID answers 404 before any Google or store read', async ()
   assert.equal(answer.status, 404);
   assert.deepEqual(answer.body, { reason: 'drive-file-unavailable' });
   assert.deepEqual(db.calls.filter(([text]) => text.includes('cc.')).length, 0);
+});
+
+test('the Drive module imports every module that its guard and its service resolve', async () => {
+  const [
+    { DriveModule },
+    { AuthModule },
+    { CacheModule },
+    { ConfigurationModule },
+    { DevicesModule },
+  ] = await Promise.all([
+    import('./drive.module.ts'),
+    import('../auth/auth.module.ts'),
+    import('../cache/cache.module.ts'),
+    import('../configuration/configuration.module.ts'),
+    import('../devices/devices.module.ts'),
+  ]);
+
+  // `@UseGuards(AuthGuard)` registers the guard in this module, so AuthGuard resolves
+  // ConfigurationService here. DriveService resolves the other three modules.
+  const imports = Reflect.getMetadata('imports', DriveModule) ?? [];
+  for (const required of [
+    AuthModule,
+    CacheModule,
+    ConfigurationModule,
+    DevicesModule,
+  ])
+    assert.ok(
+      imports.includes(required),
+      `DriveModule must import ${required.name}.`,
+    );
 });
