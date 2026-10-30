@@ -489,7 +489,7 @@ test('the execute answer holds the plan, its jobs, and the excluded changes', ()
   );
 });
 
-test('each refusal code answers the text of states 23 and 26', () => {
+test('each refusal code answers the text of states 13, 23, and 26', () => {
   assert.deepEqual(DEVICE_IMPORT_REFUSALS, [
     'unreadable-file',
     'ragged-record',
@@ -498,16 +498,21 @@ test('each refusal code answers the text of states 23 and 26', () => {
     'cell-too-long',
     'too-many-rows',
     'header-refused',
+    'drive-source-unavailable',
+    'source-too-large',
+    'rows-too-large',
   ]);
   for (const refusal of DEVICE_IMPORT_REFUSALS)
     assert.equal(deviceImportRefusalSchema.safeParse(refusal).success, true);
   assert.deepEqual(
-    DEVICE_IMPORT_REFUSALS.map((refusal) =>
-      deviceImportRefusalText(
-        refusal,
-        'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
-      ),
-    ),
+    [
+      'unreadable-file',
+      'ragged-record',
+      'unterminated-quote',
+      'malformed-quote',
+      'cell-too-long',
+      'too-many-rows',
+    ].map((refusal) => deviceImportRefusalText(refusal)),
     [
       'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.',
       'A row holds a different number of columns. Correct the row and import the file again.',
@@ -515,8 +520,30 @@ test('each refusal code answers the text of states 23 and 26', () => {
       'A cell holds a misplaced quote. Correct the file and import it again.',
       'A cell holds more than 16,384 characters.',
       'A file holds at most 50,000 rows.',
-      'The file is missing the Checksum column. Sync changes needs the Checksum column. Sync all rows ignores it.',
     ],
+  );
+  // A Drive source refusal names the file that Drive answered (state 13).
+  assert.equal(
+    deviceImportRefusalText(
+      'drive-source-unavailable',
+      undefined,
+      'devices-for-editing-EXP-001.csv',
+    ),
+    'Campus Commander cannot read devices-for-editing-EXP-001.csv from Google Drive. Choose the file again in Google Drive, then import again.',
+  );
+  assert.throws(
+    () => deviceImportRefusalText('drive-source-unavailable'),
+    /file name/,
+    'The contract invents no file name.',
+  );
+  // The two limit refusals name their limit (design section 7).
+  assert.equal(
+    deviceImportRefusalText('source-too-large'),
+    'The file holds more than 1 GiB of data. Remove rows or columns, then import again.',
+  );
+  assert.equal(
+    deviceImportRefusalText('rows-too-large'),
+    '1,000 rows of this tab hold more than 64 MiB of data. Shorten the long cells, then import again.',
   );
   // Every fault of the CSV reader answers an import refusal, so a worker never meets an
   // unmapped code.
