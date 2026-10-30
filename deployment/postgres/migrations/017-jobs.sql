@@ -4711,6 +4711,35 @@ BEGIN
 END;
 $$;
 
+-- The Drive access facts of the devices dialog (Drive slice design section 1). A device reader reads
+-- the Picker settings and the last `drive-files` result. The route combines them with the session
+-- cause and the session subject. It calls no Google API and returns no token.
+CREATE FUNCTION cc.read_google_drive_access(p_actor uuid,p_version integer) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE connection cc.google_connection; settings cc.google_drive_settings; drive jsonb;
+BEGIN
+  SELECT * INTO connection FROM cc.google_connection WHERE singleton;
+  -- A device reader reads the facts at platform scope or at the connected customer's district. A
+  -- district reader passes before the first connection, because the answer is then `setup`.
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND g.action='devices:read' AND (
+      g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND (connection.customer_id IS NULL OR g.scope->>'customerId'=connection.customer_id)))) THEN
+    RAISE EXCEPTION 'Device read authority is required.' USING ERRCODE='42501';
+  END IF;
+  IF connection.customer_id IS NULL THEN RETURN NULL; END IF;
+  SELECT * INTO settings FROM cc.google_drive_settings WHERE singleton;
+  SELECT jsonb_build_object('failure',r.failure,'checkedAt',r.checked_at)
+    INTO drive FROM cc.google_capability_health r
+    WHERE r.customer_id=connection.customer_id AND r.generation=connection.generation AND r.capability='drive-files';
+  RETURN jsonb_build_object('customerId',connection.customer_id,'generation',connection.generation,
+    'settings',CASE WHEN settings.singleton IS NULL THEN NULL ELSE
+      jsonb_build_object('pickerApiKey',settings.picker_api_key,'projectNumber',settings.project_number) END,
+    'driveFiles',drive);
+END;
+$$;
+
 -- Eng-lead ruling 2: store the caller's activity seen time and return it. It locks only that row.
 CREATE FUNCTION cc.record_job_activity_seen(p_actor uuid,p_version integer) RETURNS timestamptz
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -4766,7 +4795,8 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.release_device_command_poll(text,uuid,uuid),
   cc.claim_device_command_polls(text,uuid,uuid,uuid),
   cc.settle_device_command_polls(text,uuid,uuid,uuid,jsonb,timestamptz),
-  cc.job_reader(uuid,integer),cc.record_job_activity_seen(uuid,integer),
+  cc.job_reader(uuid,integer),cc.read_google_drive_access(uuid,integer),
+  cc.record_job_activity_seen(uuid,integer),
   cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid),
   cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid,text),
   cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text,text,integer,text,text),
