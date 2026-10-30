@@ -4511,6 +4511,26 @@ export async function qualifyDeviceExportImport({
       client.on('error', () => undefined);
       return client;
     };
+    /**
+     * Wait until the call on that client waits on a lock. `pg_locks` reports the ungranted request
+     * for every role, while `pg_stat_activity` masks the wait columns of another role's session.
+     */
+    const waitWaiting = async (pid, label) => {
+      let last = null;
+      for (let attempt = 0; attempt < 250; attempt += 1) {
+        const row = (
+          await migrator.query(
+            `SELECT (SELECT count(*)::integer FROM pg_locks WHERE pid=$1 AND NOT granted) AS waits,
+              cardinality(pg_blocking_pids($1)) AS blockers`,
+            [pid],
+          )
+        ).rows[0];
+        last = row ?? null;
+        if (row && (row.waits > 0 || row.blockers > 0)) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(`${label} never waited: ${JSON.stringify(last)}`);
+    };
     try {
       await check(
         'S2 a Sheet export and both Drive sources pass their checks',
@@ -4866,7 +4886,6 @@ export async function qualifyDeviceExportImport({
           let cancelledFirst = null;
           let lateStamp = null;
           try {
-            const holderPid = await backendPid(holder);
             const starterPid = await backendPid(starter);
             const cancellerPid = await backendPid(canceller);
             // The stamp arrives first: it holds the header queue, and the cancel then refuses.
@@ -4886,11 +4905,11 @@ export async function qualifyDeviceExportImport({
               first.receipt.jobId,
             ]);
             started = settle(startSheet(first.receipt.jobId, firstLease, starter));
-            await waitBlocked(starterPid, holderPid, 'the stamp');
+            await waitWaiting(starterPid, 'the stamp');
             lateCancel = settle(
               cancelAs(exporter, first.receipt.displayId, 1, canceller),
             );
-            await waitBlocked(cancellerPid, holderPid, 'the cancel');
+            await waitWaiting(cancellerPid, 'the cancel');
             await holder.query('COMMIT');
             assert.equal((await started).value?.outcome, 'started');
             assert.equal((await lateCancel).error?.detail, 'nothing-to-stop');
@@ -4918,9 +4937,9 @@ export async function qualifyDeviceExportImport({
             cancelledFirst = settle(
               cancelAs(exporter, second.receipt.displayId, 1, canceller),
             );
-            await waitBlocked(cancellerPid, holderPid, 'the cancel');
+            await waitWaiting(cancellerPid, 'the cancel');
             lateStamp = settle(startSheet(second.receipt.jobId, secondLease, starter));
-            await waitBlocked(starterPid, holderPid, 'the stamp');
+            await waitWaiting(starterPid, 'the stamp');
             await holder.query('COMMIT');
             assert.equal((await cancelledFirst).value?.outcome, 'requested');
             assert.equal((await lateStamp).value?.outcome, 'cancelled');
