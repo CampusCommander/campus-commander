@@ -5,6 +5,80 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { kestraImage } from '../deployment/profiles/all-docker/render.mjs';
 
+/**
+ * Start one worker process inside the test-owned network.
+ *
+ * The worker loads `deployment/storage/index.mjs` from its working directory
+ * (`worker/src/device-export-store.ts`). A run without a worker image holds no
+ * repository files at `/app`, so the repository `deployment` folder mounts
+ * read-only there. The worker image copies the same modules at build time.
+ *
+ * The artifacts location of the config lies inside the run directory, which
+ * mounts read-only. The worker writes export files and reads uploaded files
+ * there, so that folder mounts read-write over the read-only parent. The mount
+ * applies with and without a worker image.
+ */
+export function startWorkerContainer({
+  docker,
+  name,
+  network,
+  directory,
+  config,
+  nodeImage,
+  workerImage,
+  environment = {},
+  extraCaCerts,
+  // The in-process Google preload. A mock-backed run turns it off and trusts the CA.
+  inProcessGoogle = false,
+}) {
+  const repository = process.cwd();
+  const artifacts = config.artifacts?.location;
+  return docker(
+    'run',
+    '-d',
+    '--name',
+    name,
+    '--network',
+    network,
+    '-p',
+    '127.0.0.1::3001',
+    '--user',
+    `${process.getuid()}:${process.getgid()}`,
+    ...(workerImage
+      ? []
+      : [
+          '-v',
+          `${repository}/dist/worker/main.js:/app/main.js:ro`,
+          '-v',
+          `${repository}/node_modules:/app/node_modules:ro`,
+          '-v',
+          `${repository}/deployment:/app/deployment:ro`,
+        ]),
+    '--workdir',
+    '/app',
+    '-v',
+    `${directory}/secrets:/run/secrets:ro`,
+    '-e',
+    `CC_CONFIG_FILE=${join(directory, 'profile.json')}`,
+    '-v',
+    `${directory}:${directory}:ro`,
+    ...(artifacts ? ['-v', `${artifacts}:${artifacts}:rw`] : []),
+    '-e',
+    `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
+    ...Object.entries(environment).flatMap(([key, value]) => [
+      '-e',
+      `${key}=${value}`,
+    ]),
+    ...(extraCaCerts ? ['-e', `NODE_EXTRA_CA_CERTS=${extraCaCerts}`] : []),
+    workerImage ?? nodeImage,
+    'node',
+    ...(inProcessGoogle
+      ? ['--require', join(directory, 'google-connection-preload.cjs')]
+      : []),
+    '/app/main.js',
+  );
+}
+
 /** Start real Kestra and worker processes inside the test-owned network. */
 export async function startKestraFixture({
   docker,
@@ -75,47 +149,21 @@ export async function startKestraFixture({
     { mode: 0o600 },
   );
   const startWorker = (name, environment = {}) =>
-    docker(
-      'run',
-      '-d',
-      '--name',
+    startWorkerContainer({
+      docker,
       name,
-      '--network',
       network,
-      '-p',
-      '127.0.0.1::3001',
-      '--user',
-      `${process.getuid()}:${process.getgid()}`,
-      ...(workerImage
-        ? []
-        : [
-            '-v',
-            `${process.cwd()}/dist/worker/main.js:/app/main.js:ro`,
-            '-v',
-            `${process.cwd()}/node_modules:/app/node_modules:ro`,
-          ]),
-      '--workdir',
-      '/app',
-      '-v',
-      `${directory}/secrets:/run/secrets:ro`,
-      '-e',
-      `CC_CONFIG_FILE=${join(directory, 'profile.json')}`,
-      '-v',
-      `${directory}:${directory}:ro`,
-      '-e',
-      `WORKER_DISPATCH_SECRET_FILE=${join(directory, 'secrets/worker-dispatch')}`,
-      ...Object.entries(environment).flatMap(([key, value]) => [
-        '-e',
-        `${key}=${value}`,
-      ]),
-      ...(extraCaCerts ? ['-e', `NODE_EXTRA_CA_CERTS=${extraCaCerts}`] : []),
-      workerImage ?? nodeImage,
-      'node',
-      ...(inProcessGoogle
-        ? ['--require', join(directory, 'google-connection-preload.cjs')]
-        : []),
-      '/app/main.js',
-    );
+      directory,
+      config,
+      nodeImage,
+      workerImage,
+      environment,
+      extraCaCerts,
+      inProcessGoogle,
+    });
+  // The worker writes its export and validation artifacts here.
+  if (config.artifacts?.location)
+    await mkdir(config.artifacts.location, { recursive: true, mode: 0o700 });
   startWorker(workerName);
   const startKestra = (listenerPort = '') =>
     docker(
