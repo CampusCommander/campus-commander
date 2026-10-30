@@ -52,7 +52,10 @@ async function mount(
         provide: AuthStore,
         useValue: {
           request,
-          session: () => ({ identity: { id: 'operator', permissionVersion: 1 }, csrfToken: 'session' }),
+          session: () => ({
+            identity: { id: 'operator', permissionVersion: 1 },
+            csrfToken: 'session',
+          }),
           interrupted: () => false,
           can: () => options.canManage ?? true,
         },
@@ -102,17 +105,28 @@ const failed: Result = {
 };
 
 it('shows the saved key in full, keeps Save disabled, and claims Drive is ready only on a passed check', async () => {
-  const request = vi.fn(async () => Response.json({ drive: { pickerApiKey: key, projectNumber: number } }));
+  const request = vi.fn(async () =>
+    Response.json({ drive: { pickerApiKey: key, projectNumber: number } }),
+  );
   const { fixture, element } = await mount(request, { result: passed });
-  await vi.waitFor(() => expect(element.textContent).toContain('Google Drive is ready'));
-  const keyField = element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!;
+  await vi.waitFor(() =>
+    expect(element.textContent).toContain('Google Drive is ready'),
+  );
+  const keyField = element.querySelector<HTMLInputElement>(
+    'input[name="pickerApiKey"]',
+  )!;
   expect(keyField.value).toBe(key);
-  expect(element.querySelector<HTMLInputElement>('input[name="projectNumber"]')!.value).toBe(number);
+  expect(
+    element.querySelector<HTMLInputElement>('input[name="projectNumber"]')!
+      .value,
+  ).toBe(number);
   const save = [...element.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Save Drive settings',
   )!;
   expect(save.disabled).toBe(true);
-  expect(element.textContent).toContain('https://www.googleapis.com/auth/drive.file');
+  expect(element.textContent).toContain(
+    'https://www.googleapis.com/auth/drive.file',
+  );
   expect(element.textContent).toContain('Last check passed');
   expect(element.textContent).not.toContain('No check result');
   fixture.destroy();
@@ -143,7 +157,10 @@ it('saves both fields and then runs the drive-files check', async () => {
     pickerApiKey: key,
     projectNumber: number,
   });
-  expect(component.saved()).toEqual({ pickerApiKey: key, projectNumber: number });
+  expect(component.saved()).toEqual({
+    pickerApiKey: key,
+    projectNumber: number,
+  });
   expect(element.textContent).toContain('Drive settings saved.');
   expect(element.querySelector('details')!.open).toBe(false);
   results.set({ 'drive-files': passed });
@@ -157,11 +174,15 @@ it('refuses a short key and a project number that is not digits', async () => {
   const { fixture, component, element } = await mount(request);
   await vi.waitFor(() => expect(component.loaded()).toBe(true));
   fixture.detectChanges();
-  const keyField = element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!;
+  const keyField = element.querySelector<HTMLInputElement>(
+    'input[name="pickerApiKey"]',
+  )!;
   keyField.value = 'a'.repeat(38);
   keyField.dispatchEvent(new Event('input'));
   keyField.dispatchEvent(new Event('blur'));
-  const numberField = element.querySelector<HTMLInputElement>('input[name="projectNumber"]')!;
+  const numberField = element.querySelector<HTMLInputElement>(
+    'input[name="projectNumber"]',
+  )!;
   numberField.value = '12ab';
   numberField.dispatchEvent(new Event('input'));
   numberField.dispatchEvent(new Event('blur'));
@@ -187,7 +208,8 @@ it('reports a refused save and blocks a second save until the saved settings are
       return mode === 'saved'
         ? Response.json({ drive: { pickerApiKey: key, projectNumber: number } })
         : Response.json({ drive: null });
-    if (mode === 'refuse') return Response.json({ reason: 'unavailable' }, { status: 503 });
+    if (mode === 'refuse')
+      return Response.json({ reason: 'unavailable' }, { status: 503 });
     return Response.json({ drive: body });
   });
   const { fixture, component, element } = await mount(request);
@@ -208,7 +230,10 @@ it('reports a refused save and blocks a second save until the saved settings are
   await component.refresh();
   fixture.detectChanges();
   expect(component.uncertain()).toBe(false);
-  expect(component.saved()).toEqual({ pickerApiKey: key, projectNumber: number });
+  expect(component.saved()).toEqual({
+    pickerApiKey: key,
+    projectNumber: number,
+  });
   fixture.destroy();
 });
 
@@ -222,7 +247,9 @@ it('keeps the form closed and offers another read when the settings do not load'
   });
   const { fixture, element } = await mount(request);
   await vi.waitFor(() =>
-    expect(element.textContent).toContain('Campus Commander did not read the Drive settings.'),
+    expect(element.textContent).toContain(
+      'Campus Commander did not read the Drive settings.',
+    ),
   );
   expect(element.querySelector('input[name="pickerApiKey"]')).toBeNull();
   const retry = [...element.querySelectorAll('button')].find(
@@ -239,9 +266,15 @@ it('shows the Drive check failure with its recovery and the pre-filled delegatio
   const request = vi.fn(async () => Response.json({ drive: null }));
   const { fixture, element } = await mount(request, { result: failed });
   const text = element.textContent!.replace(/\s+/g, ' ');
-  expect(text).toContain(GOOGLE_HEALTH_RECOVERY['delegation-not-authorized'].label);
-  expect(text).toContain(GOOGLE_HEALTH_RECOVERY['delegation-not-authorized'].recovery);
-  const link = element.querySelector<HTMLAnchorElement>('a[href*="clientScopeToAdd"]')!;
+  expect(text).toContain(
+    GOOGLE_HEALTH_RECOVERY['delegation-not-authorized'].label,
+  );
+  expect(text).toContain(
+    GOOGLE_HEALTH_RECOVERY['delegation-not-authorized'].recovery,
+  );
+  const link = element.querySelector<HTMLAnchorElement>(
+    'a[href*="clientScopeToAdd"]',
+  )!;
   expect(link.href).toBe(delegationHref);
   expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   expect(element.querySelector('dd.error')?.textContent?.trim()).toBe(
@@ -251,8 +284,12 @@ it('shows the Drive check failure with its recovery and the pre-filled delegatio
 });
 
 it('does not show the Drive form to a person without connection:manage', async () => {
-  const request = vi.fn(async () => Response.json({ drive: { pickerApiKey: key, projectNumber: number } }));
-  const { fixture, component, element } = await mount(request, { canManage: false });
+  const request = vi.fn(async () =>
+    Response.json({ drive: { pickerApiKey: key, projectNumber: number } }),
+  );
+  const { fixture, component, element } = await mount(request, {
+    canManage: false,
+  });
   await vi.waitFor(() => expect(component.loaded()).toBe(true));
   fixture.detectChanges();
   expect(element.querySelector('input[name="pickerApiKey"]')).toBeNull();
@@ -278,7 +315,9 @@ it('discards a save answer for the previous session and prevents duplicate submi
           finishBody = () => {
             controller.enqueue(
               new TextEncoder().encode(
-                JSON.stringify({ drive: { pickerApiKey: key, projectNumber: number } }),
+                JSON.stringify({
+                  drive: { pickerApiKey: key, projectNumber: number },
+                }),
               ),
             );
             controller.close();
@@ -302,7 +341,10 @@ it('discards a save answer for the previous session and prevents duplicate submi
           can: () => true,
         },
       },
-      { provide: ConnectionStore, useValue: { connection: signal(connection) } },
+      {
+        provide: ConnectionStore,
+        useValue: { connection: signal(connection) },
+      },
       {
         provide: GoogleHealthStore,
         useValue: {
@@ -326,7 +368,9 @@ it('discards a save answer for the previous session and prevents duplicate submi
   fixture.detectChanges();
   const pending = component.save();
   await component.save();
-  expect(request.mock.calls.filter(([, body]) => body !== undefined)).toHaveLength(1);
+  expect(
+    request.mock.calls.filter(([, body]) => body !== undefined),
+  ).toHaveLength(1);
   session.update((value) => ({ ...value, csrfToken: 'renewed' }));
   fixture.detectChanges();
   finishBody();

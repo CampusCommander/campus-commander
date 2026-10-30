@@ -17,8 +17,7 @@
     @if (delegationHref(); as href) {
     <a [href]="href" target="_blank" rel="noopener noreferrer"
       >Open domain-wide delegation in the Google Admin console</a
-    >.
-    } @else { Open domain-wide delegation in the Google Admin console. }
+    >. } @else { Open domain-wide delegation in the Google Admin console. }
   </p>
   <p class="secondary">
     This link opens Google Admin with the client ID and these scopes filled in.
@@ -45,8 +44,8 @@
   </div>
   } @else if (!canManage()) {
   <p>
-    A platform administrator with Manage Google credentials access must change the
-    Drive settings.
+    A platform administrator with Manage Google credentials access must change
+    the Drive settings.
   </p>
   } @else {
   <form (ngSubmit)="save()">
@@ -124,13 +123,13 @@
     <summary>Configure Google Drive</summary>
     <ol>
       <li>
-        Enable the Google Drive API, the Google Sheets API, and the Google Picker
-        API in the service-account project.
+        Enable the Google Drive API, the Google Sheets API, and the Google
+        Picker API in the service-account project.
       </li>
       <li>Create an API key. Restrict it to the Google Picker API.</li>
       <li>
-        Add no website restriction to the key. Campus Commander sends no referrer,
-        so a website restriction blocks the Picker.
+        Add no website restriction to the key. Campus Commander sends no
+        referrer, so a website restriction blocks the Picker.
       </li>
       <li>
         Copy the project number from the project dashboard. The key file holds

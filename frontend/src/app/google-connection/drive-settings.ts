@@ -79,12 +79,16 @@ export class DriveSettings implements OnDestroy {
   readonly result = computed(() => this.health.result(DRIVE_CAPABILITY.id));
   readonly failure = computed(() => this.result()?.failure ?? null);
   /** The key must hold exactly 39 letters, digits, hyphens, or underscores (design section 3). */
-  readonly keyValid = computed(() =>
-    googleDrivePickerApiKeySchema.safeParse(this.pickerApiKey().trim()).success,
+  readonly keyValid = computed(
+    () =>
+      googleDrivePickerApiKeySchema.safeParse(this.pickerApiKey().trim())
+        .success,
   );
   /** The project number holds 1 to 20 digits and no leading zero (design section 3). */
-  readonly numberValid = computed(() =>
-    googleDriveProjectNumberSchema.safeParse(this.projectNumber().trim()).success,
+  readonly numberValid = computed(
+    () =>
+      googleDriveProjectNumberSchema.safeParse(this.projectNumber().trim())
+        .success,
   );
   readonly valid = computed(() => this.keyValid() && this.numberValid());
   readonly dirty = computed(() => {
@@ -188,7 +192,9 @@ export class DriveSettings implements OnDestroy {
       const response = await this.auth.request('/api/google-connection/drive');
       if (!this.accepts(sequence, authority)) return;
       if (!response.ok) throw new Error();
-      const answer = googleDriveSettingsAnswerSchema.parse(await response.json());
+      const answer = googleDriveSettingsAnswerSchema.parse(
+        await response.json(),
+      );
       if (!this.accepts(sequence, authority)) return;
       this.saved.set(answer.drive);
       this.pickerApiKey.set(answer.drive?.pickerApiKey ?? '');
@@ -198,7 +204,9 @@ export class DriveSettings implements OnDestroy {
     } catch {
       if (!this.accepts(sequence, authority)) return;
       this.loaded.set(false);
-      this.error.set('Campus Commander did not read the Drive settings. Try again.');
+      this.error.set(
+        'Campus Commander did not read the Drive settings. Try again.',
+      );
     } finally {
       if (this.accepts(sequence, authority)) this.loading.set(false);
     }
@@ -226,7 +234,9 @@ export class DriveSettings implements OnDestroy {
         return;
       }
       if (!response.ok) throw new Error();
-      const answer = googleDriveSettingsAnswerSchema.parse(await response.json());
+      const answer = googleDriveSettingsAnswerSchema.parse(
+        await response.json(),
+      );
       if (!this.accepts(sequence, authority)) return;
       if (!answer.drive) throw new Error();
       this.saved.set(answer.drive);

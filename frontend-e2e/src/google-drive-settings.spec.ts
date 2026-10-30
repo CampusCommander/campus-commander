@@ -121,9 +121,13 @@ async function fixture(page: Page, overrides: Partial<State> = {}) {
     navigationCollapsed: false,
   });
   const grants = [
-    ...['devices:read', 'jobs:read', 'schools:read', 'connection:read', 'connection:diagnose'].map(
-      (action) => ({ action, scope: { kind: 'district', customerId } }),
-    ),
+    ...[
+      'devices:read',
+      'jobs:read',
+      'schools:read',
+      'connection:read',
+      'connection:diagnose',
+    ].map((action) => ({ action, scope: { kind: 'district', customerId } })),
     ...[
       'connection:read',
       'connection:manage',
@@ -215,9 +219,7 @@ async function fixture(page: Page, overrides: Partial<State> = {}) {
     return route.fulfill({ json: { drive: state.drive } });
   });
   await page.route('**/api/google-connection/health/check', async (route) => {
-    const input = googleHealthCheckSchema.parse(
-      route.request().postDataJSON(),
-    );
+    const input = googleHealthCheckSchema.parse(route.request().postDataJSON());
     expect(input.capabilities).toEqual(['drive-files']);
     state.health = health(null);
     return route.fulfill({ status: 201, json: { health: state.health } });
@@ -279,12 +281,18 @@ test('the Drive card before setup matches state 14 in both themes', async ({
   await fixture(page);
   await page.goto('/google-connection');
   const card = page.locator('app-drive-settings');
-  await expect(card.getByRole('heading', { name: 'Google Drive' })).toBeVisible();
+  await expect(
+    card.getByRole('heading', { name: 'Google Drive' }),
+  ).toBeVisible();
   await expect(card).toContainText(
     'Google Sheet export and Google Drive import use these settings.',
   );
-  await expect(card).toContainText('https://www.googleapis.com/auth/drive.file');
-  await expect(card.locator('dd.error')).toHaveText('Delegation not authorized');
+  await expect(card).toContainText(
+    'https://www.googleapis.com/auth/drive.file',
+  );
+  await expect(card.locator('dd.error')).toHaveText(
+    'Delegation not authorized',
+  );
   await expect(card).toContainText(
     'Verify the service-account numeric client ID and this capability scope in domain-wide delegation. Recheck after approval propagates.',
   );
@@ -470,9 +478,7 @@ test('Diagnostics matches state 16 and lists the seven setup scopes', async ({
   await expect(
     details.getByLabel('Required Google capability scopes'),
   ).toHaveText(scopes.join(',\n'));
-  await expect(details).toContainText(
-    `Service account client ID: ${clientId}`,
-  );
+  await expect(details).toContainText(`Service account client ID: ${clientId}`);
   await capture(page, testInfo, 'state-16-light', {
     selector: 'article[aria-labelledby="drive-files-title"]',
     offset: 36,
