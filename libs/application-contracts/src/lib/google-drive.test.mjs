@@ -248,7 +248,7 @@ test('the session request is empty and the answer carries the one-hour token', (
     false,
   );
   const session = {
-    accessToken: 'ya29.example-token',
+    accessToken: 'example-drive-access-token',
     expiresAt: at,
     apiKey,
     appId: '123456789012',
