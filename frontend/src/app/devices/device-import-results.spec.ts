@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import type {
   DeviceImportReport,
   JobDetail,
+  JobImportPlan,
   JobOperation,
   JobSummary,
 } from '@campus/application-contracts';
@@ -374,6 +375,15 @@ const executeAnswer = () => ({
   excluded: 0,
 });
 
+/** One `job-changed` message of the tab's shared feed. */
+const jobEvent = (jobId: string, displayId: string, revision: number) => ({
+  type: 'job-changed' as const,
+  jobId,
+  displayId,
+  revision,
+  requestedBy: person.id,
+});
+
 /** The API of one executed import: its detail, its report views, and its operations. */
 function api(
   state: {
@@ -422,15 +432,24 @@ function setup(
   );
   const store = TestBed.inject(DeviceExportImportStore);
   const sources: { url: string }[] = [];
+  const listeners = new Map<string, (message: MessageEvent<string>) => void>();
   store.eventSource = (url: string) => {
     sources.push({ url });
     return {
-      addEventListener: () => undefined,
+      addEventListener: (name: string, handler: EventListener) => {
+        listeners.set(name, handler as (message: MessageEvent<string>) => void);
+      },
       close: () => undefined,
     } as never;
   };
   fixture.detectChanges();
   const element: HTMLElement = fixture.nativeElement;
+  /** One message of the tab's shared `/api/events` feed. */
+  const emit = (name: string, data: unknown) => {
+    const listener = listeners.get(name);
+    if (!listener) throw new Error(`The feed holds no ${name} listener.`);
+    listener({ data: JSON.stringify(data) } as MessageEvent<string>);
+  };
   const render = async () => {
     // The job read, the report page, and the operations settle on microtasks and timers.
     for (let turn = 0; turn < 4; turn += 1) {
@@ -460,6 +479,7 @@ function setup(
     request,
     sources,
     detail,
+    emit,
   };
 }
 
@@ -855,7 +875,20 @@ describe('Execute and its results', () => {
             notRun: 0,
           },
         }),
-      proposed: () => report({ plan: executedPlan }),
+      proposed: () =>
+        report({
+          plan: executedPlan,
+          // The proposed row count names devices. The All changes pill counts change lines,
+          // which the report total carries (R2).
+          counts: {
+            rows: 6,
+            unchanged: 0,
+            noChangeNeeded: 0,
+            proposed: 2,
+            rejected: 4,
+          },
+          total: 4,
+        }),
       failed: () =>
         report({ view: 'failed', plan: executedPlan, lines: [], total: 0 }),
       operations: () => [operation('UPD-001-1', 'succeeded')],
@@ -1032,5 +1065,629 @@ describe('Execute and its results', () => {
     await render();
 
     expect(sources).toEqual([{ url: '/api/events' }]);
+  });
+
+  it('keeps the Execute confirmation and its phrase across unchanged-plan rereads', async () => {
+    let plan: JobImportPlan = { ...openPlan };
+    const request = api({
+      detail: () => importDetail({ plan }),
+      proposed: () => report({ plan }),
+      failed: () => report({ view: 'failed', plan, lines: [], total: 0 }),
+      operations: () => [],
+    });
+    const { store, render, text } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    store.openConfirm();
+    await render();
+    store.typedPhrase.set('DEPROVISION');
+    await render();
+
+    // A late initial-open read and a later reread of the same frozen plan keep the step.
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('confirm');
+    expect(store.typedPhrase()).toBe('DEPROVISION');
+    expect(text()).toContain('Execute 4 changes on 4 devices?');
+
+    // A relevant plan change invalidates the confirmation and reads the new plan.
+    plan = { ...openPlan, revision: 3 };
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('report');
+    expect(store.plan()?.revision).toBe(3);
+  });
+
+  it('leaves the confirmation when the plan is cancelled', async () => {
+    let plan: JobImportPlan = { ...openPlan };
+    const request = api({
+      detail: () => importDetail({ plan }),
+      proposed: () => report({ plan }),
+      failed: () => report({ view: 'failed', plan, lines: [], total: 0 }),
+      operations: () => [],
+    });
+    const { store, render, text } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    store.openConfirm();
+    await render();
+    expect(store.step()).toBe('confirm');
+
+    plan = {
+      ...openPlan,
+      revision: 3,
+      state: 'cancelled',
+      changedBy: person,
+      changedAt: at(30),
+    };
+    store.openJob('IMP-001');
+    await render();
+
+    expect(store.step()).toBe('report');
+    expect(store.plan()?.state).toBe('cancelled');
+    expect(text()).toContain('Cancelled by Review administrator');
+  });
+
+  it('counts devices, changes, and status jobs in their own units', async () => {
+    const overlapping = report({
+      counts: {
+        rows: 8,
+        unchanged: 0,
+        noChangeNeeded: 0,
+        proposed: 4,
+        rejected: 4,
+      },
+      changes: {
+        fieldChanges: 5,
+        fieldChangeDevices: 3,
+        disable: 2,
+        reenable: 0,
+        deprovision: [],
+      },
+      total: 7,
+    });
+    const request = api({
+      detail: () => importDetail(),
+      proposed: () => overlapping,
+      failed: () => report({ view: 'failed', lines: [], total: 0 }),
+      operations: () => [],
+    });
+    const { store, render, text, panel } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    store.openConfirm();
+    await render();
+
+    // Seven change lines on four proposed rows. A field change and a Disable of one device
+    // count once in the device total (R2).
+    expect(text()).toContain('Execute 7 changes on 4 devices?');
+    // One status job for the Disable action, not one for each disabled device (R2).
+    expect(text()).toContain(
+      'Execute creates two jobs. The update job runs first. The status job starts after it ends.',
+    );
+    const actions = [...(panel()?.querySelectorAll('.seq-job') ?? [])]
+      .map((job) =>
+        job.querySelector('.seq-action > span')?.textContent?.trim(),
+      )
+      .filter((action) => action);
+    expect(actions).toEqual(['Update device annotations', 'Disable devices']);
+  });
+
+  it('matches the API phrase comparison exactly', async () => {
+    let executed = false;
+    const request = api(
+      {
+        detail: () =>
+          executed
+            ? importDetail({
+                plan: executedPlan,
+                planJobs: runningJobs,
+                executionCounts: {
+                  succeeded: 0,
+                  failed: 0,
+                  unknown: 0,
+                  skipped: 0,
+                  expired: 0,
+                  cancelled: 0,
+                  pending: 1,
+                  notRun: 0,
+                },
+              })
+            : importDetail(),
+        proposed: () =>
+          report({
+            plan: executed ? executedPlan : openPlan,
+            changes: {
+              fieldChanges: 3,
+              fieldChangeDevices: 3,
+              disable: 0,
+              reenable: 1,
+              deprovision: [
+                { reason: 'DEPROVISION_REASON_RETIRING_DEVICE', devices: 1 },
+              ],
+            },
+          }),
+        failed: () => report({ view: 'failed', lines: [], total: 0 }),
+        operations: () => [],
+      },
+      () => {
+        executed = true;
+        return response(executeAnswer());
+      },
+    );
+    const { store, render, text, panel, request: calls } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    store.openConfirm();
+    await render();
+
+    const input = panel()?.querySelector<HTMLInputElement>('input');
+    if (!input) throw new Error('the typed phrase field is missing');
+    const execute = () =>
+      [...(panel()?.querySelectorAll('button') ?? [])].find((candidate) =>
+        /^Execute \d+ changes$/.test(
+          candidate.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+        ),
+      );
+
+    // The API compares the trimmed phrase exactly, so lowercase never enables Execute (R3).
+    input.value = 'deprovision';
+    input.dispatchEvent(new Event('input'));
+    await render();
+    expect(execute()?.disabled).toBe(true);
+    expect(text()).toContain('The phrase does not match. Type DEPROVISION.');
+
+    // Whitespace around the exact phrase matches, and the request sends the trimmed phrase.
+    input.value = ' DEPROVISION ';
+    input.dispatchEvent(new Event('input'));
+    await render();
+    expect(execute()?.disabled).toBe(false);
+    await execute()?.click();
+    await render();
+
+    const post = calls.mock.calls.find(([path]) =>
+      String(path).endsWith('/execute'),
+    );
+    expect(post?.[1]).toEqual({
+      planId,
+      planRevision: 2,
+      typedPhrase: 'DEPROVISION',
+    });
+    expect(store.step()).toBe('results');
+  });
+
+  it('runs one complete results read at a time and coalesces an event during it', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let detailReads = 0;
+    let reportReads = 0;
+    let operationsReads = 0;
+    let impRevision = 8;
+    const request = vi.fn(async (path: string) => {
+      if (path.includes('/operations?')) {
+        operationsReads += 1;
+        await gate;
+        return response(
+          operationsPage([
+            operation('UPD-001-1', 'succeeded'),
+            operation('STS-002-1', 'pending', {
+              operation: 'reenable',
+              field: null,
+            }),
+          ]),
+        );
+      }
+      if (path.includes('/report?')) {
+        reportReads += 1;
+        const view = new URL(path, 'http://localhost').searchParams.get('view');
+        return response(
+          view === 'failed'
+            ? report({
+                view: 'failed',
+                plan: executedPlan,
+                lines: [],
+                total: 0,
+              })
+            : report({ plan: executedPlan }),
+        );
+      }
+      detailReads += 1;
+      return response(
+        importDetail({
+          revision: impRevision,
+          plan: executedPlan,
+          planJobs: runningJobs,
+          executionCounts: {
+            succeeded: 1,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: 1,
+            notRun: 0,
+          },
+        }),
+      );
+    });
+    const { store, render, emit } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    expect(detailReads).toBe(1);
+    expect(reportReads).toBe(2);
+    expect(operationsReads).toBe(2);
+
+    // Two newer plan-job events arrive while the first operations read is held.
+    emit('job-changed', jobEvent(statusJobId, 'STS-002', 5));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    impRevision = 9;
+    emit('job-changed', jobEvent(statusJobId, 'STS-002', 6));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // The detail read waits for the whole cycle, so no second page or operations read starts
+    // while the first one is held (R4).
+    expect(detailReads).toBe(1);
+    expect(reportReads).toBe(2);
+    expect(operationsReads).toBe(2);
+    release();
+    await render();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await render();
+
+    // The events coalesce into one later complete cycle of the page and its operations (R4).
+    expect(detailReads).toBe(2);
+    expect(reportReads).toBe(4);
+    expect(operationsReads).toBe(4);
+  });
+
+  it('reconciles the results page after reentry when only a child job changed', async () => {
+    let childRevision = 4;
+    let status: 'running' | 'failed' = 'running';
+    let outcome: 'pending' | 'failed' = 'pending';
+    const jobs = (): JobSummary[] => [
+      runningJobs[0],
+      {
+        ...runningJobs[1],
+        revision: childRevision,
+        status,
+        progress: {
+          total: 1,
+          succeeded: status === 'failed' ? 0 : 0,
+          failed: status === 'failed' ? 1 : 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: status === 'failed' ? 0 : 1,
+        },
+      },
+    ];
+    const proposedLines = () => [
+      report().lines[0],
+      report().lines[1],
+      report().lines[2],
+      { ...report().lines[3], outcome },
+    ];
+    const request = vi.fn(async (path: string) => {
+      if (path.includes('/operations?')) {
+        return response(
+          operationsPage([
+            operation('UPD-001-1', 'succeeded'),
+            operation('UPD-001-2', 'succeeded'),
+            operation('UPD-001-3', 'succeeded'),
+            operation('STS-002-1', outcome, {
+              operation: 'reenable',
+              field: null,
+              baselineValue: 'DISABLED',
+              requestedValue: 'ACTIVE',
+              outcomeReason: outcome === 'failed' ? 'status-conflict' : null,
+              googleReason:
+                outcome === 'failed'
+                  ? 'A device with status ACTIVE does not allow this action.'
+                  : null,
+            }),
+          ]),
+        );
+      }
+      if (path.includes('/report?')) {
+        const view = new URL(path, 'http://localhost').searchParams.get('view');
+        if (view === 'failed') {
+          const lines = outcome === 'failed' ? [proposedLines()[3]] : [];
+          return response(
+            report({
+              view: 'failed',
+              plan: executedPlan,
+              lines,
+              total: lines.length,
+            }),
+          );
+        }
+        return response(report({ plan: executedPlan, lines: proposedLines() }));
+      }
+      return response(
+        importDetail({
+          // The IMP header revision stays the same; only the child job changes (R5).
+          revision: 8,
+          plan: executedPlan,
+          planJobs: jobs(),
+          executionCounts: {
+            succeeded: outcome === 'failed' ? 3 : 2,
+            failed: outcome === 'failed' ? 1 : 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: outcome === 'failed' ? 0 : 1,
+            notRun: 0,
+          },
+        }),
+      );
+    });
+    const { store, render, panel } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    const resultCells = () =>
+      [...(panel()?.querySelectorAll('td.col-result') ?? [])].map((cell) =>
+        cell.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+    expect(resultCells()[3]).toBe('Pending Starts after UPD-001 ends');
+
+    // The dialog closes, the child job fails, and the IMP revision never changes.
+    store.close();
+    status = 'failed';
+    outcome = 'failed';
+    childRevision = 5;
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('results');
+    expect(resultCells()[3]).toContain('Failed');
+    expect(resultCells()[3]).toContain(
+      'A device with status ACTIVE does not allow this action.',
+    );
+
+    // The Failed tab keeps its page. A change that moves from failed to unknown leaves it.
+    await store.setReportView('failed');
+    await render();
+    expect(resultCells()).toHaveLength(1);
+
+    store.close();
+    outcome = 'pending';
+    childRevision = 6;
+    store.openJob('IMP-001');
+    await render();
+    expect(store.reportView()).toBe('failed');
+    expect(store.reportPage()).toBe(0);
+    expect(resultCells()).toHaveLength(0);
+  });
+
+  it('describes a lost Execute answer as unconfirmed and keeps the plan identity', async () => {
+    let failNext = true;
+    let executed = false;
+    const request = vi.fn(async (path: string, _body?: unknown) => {
+      if (path.endsWith('/execute')) {
+        if (failNext) {
+          failNext = false;
+          throw new TypeError('The answer was lost.');
+        }
+        executed = true;
+        return response(executeAnswer());
+      }
+      if (path.includes('/operations?')) {
+        return response(operationsPage([operation('UPD-001-1', 'pending')]));
+      }
+      if (path.includes('/report?')) {
+        const view = new URL(path, 'http://localhost').searchParams.get('view');
+        return response(
+          view === 'failed'
+            ? report({
+                view: 'failed',
+                plan: executedPlan,
+                lines: [],
+                total: 0,
+              })
+            : report({ plan: executed ? executedPlan : openPlan }),
+        );
+      }
+      return response(
+        importDetail(
+          executed
+            ? {
+                plan: executedPlan,
+                planJobs: runningJobs,
+                executionCounts: {
+                  succeeded: 0,
+                  failed: 0,
+                  unknown: 0,
+                  skipped: 0,
+                  expired: 0,
+                  cancelled: 0,
+                  pending: 1,
+                  notRun: 0,
+                },
+              }
+            : {},
+        ),
+      );
+    });
+    const { store, render, text, request: calls } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    store.openConfirm();
+    await render();
+
+    await expect(store.execute()).resolves.toBe(false);
+    await render();
+
+    // The lost answer never claims that the plan did not run (R6).
+    expect(text()).toContain(
+      'Cannot reach Campus Commander. The plan may have run. Check this import before you execute again.',
+    );
+    expect(text()).not.toContain('The plan did not run.');
+    // The reread keeps the confirmation and the original plan identity.
+    expect(store.step()).toBe('confirm');
+    expect(store.plan()?.planId).toBe(planId);
+    expect(store.plan()?.revision).toBe(2);
+
+    // A retry reuses the same plan identity.
+    await expect(store.execute()).resolves.toBe(true);
+    await render();
+    const posts = calls.mock.calls.filter(([path]) =>
+      String(path).endsWith('/execute'),
+    );
+    expect(posts).toHaveLength(2);
+    expect(posts[0][1]).toEqual(posts[1][1]);
+    expect(store.step()).toBe('results');
+  });
+
+  it('drops the wait note once the update job has finished', async () => {
+    const jobs = (): JobSummary[] => [
+      {
+        ...runningJobs[0],
+        status: 'completed',
+        finishedAt: at(60),
+        progress: {
+          total: 3,
+          succeeded: 3,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: 0,
+        },
+      },
+      {
+        ...runningJobs[1],
+        revision: 5,
+        status: 'running',
+        progress: {
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: 1,
+        },
+      },
+    ];
+    const request = api({
+      detail: () =>
+        importDetail({
+          plan: executedPlan,
+          planJobs: jobs(),
+          executionCounts: {
+            succeeded: 0,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: 1,
+            notRun: 0,
+          },
+        }),
+      proposed: () =>
+        report({
+          plan: executedPlan,
+          lines: [
+            report().lines[0],
+            report().lines[1],
+            report().lines[2],
+            { ...report().lines[3], outcome: 'pending' },
+          ],
+        }),
+      failed: () =>
+        report({ view: 'failed', plan: executedPlan, lines: [], total: 0 }),
+      operations: () => [
+        operation('UPD-001-1', 'succeeded'),
+        operation('UPD-001-2', 'succeeded'),
+        operation('UPD-001-3', 'succeeded'),
+        operation('STS-002-1', 'pending', {
+          operation: 'reenable',
+          field: null,
+          baselineValue: 'DISABLED',
+          requestedValue: 'ACTIVE',
+        }),
+      ],
+    });
+    const { store, render, panel } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    const cells = [...(panel()?.querySelectorAll('td.col-result') ?? [])].map(
+      (cell) => cell.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    // The update job ended, so its wait note is gone (R7).
+    expect(cells[3]).toBe('Pending');
+  });
+
+  it('shows no wait note for a status-only plan', async () => {
+    const request = api({
+      detail: () =>
+        importDetail({
+          plan: executedPlan,
+          planJobs: [
+            {
+              ...runningJobs[1],
+              revision: 5,
+              status: 'running',
+              progress: {
+                total: 1,
+                succeeded: 0,
+                failed: 0,
+                unknown: 0,
+                skipped: 0,
+                expired: 0,
+                cancelled: 0,
+                pending: 1,
+              },
+            },
+          ],
+          executionCounts: {
+            succeeded: 0,
+            failed: 0,
+            unknown: 0,
+            skipped: 0,
+            expired: 0,
+            cancelled: 0,
+            pending: 1,
+            notRun: 0,
+          },
+        }),
+      proposed: () =>
+        report({
+          plan: executedPlan,
+          lines: [
+            report().lines[0],
+            report().lines[1],
+            report().lines[2],
+            { ...report().lines[3], outcome: 'pending' },
+          ],
+        }),
+      failed: () =>
+        report({ view: 'failed', plan: executedPlan, lines: [], total: 0 }),
+      operations: () => [
+        operation('UPD-001-1', 'succeeded'),
+        operation('UPD-001-2', 'succeeded'),
+        operation('UPD-001-3', 'succeeded'),
+        operation('STS-002-1', 'pending', {
+          operation: 'reenable',
+          field: null,
+          baselineValue: 'DISABLED',
+          requestedValue: 'ACTIVE',
+        }),
+      ],
+    });
+    const { store, render, panel } = setup(request);
+    store.openJob('IMP-001');
+    await render();
+    const cells = [...(panel()?.querySelectorAll('td.col-result') ?? [])].map(
+      (cell) => cell.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    // A status-only plan has no update job to wait for (R7).
+    expect(cells[3]).toBe('Pending');
   });
 });

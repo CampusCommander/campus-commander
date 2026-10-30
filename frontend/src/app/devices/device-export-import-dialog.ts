@@ -89,7 +89,6 @@ import {
   VALIDATION_CLOSING_LINE,
   VALIDATION_FAILED_LINE,
   VALIDATION_STOPPED_LINE,
-  DEPROVISION_PHRASE_LABEL,
   executeActionLabel,
   executeConfirmTitle,
   executeJobsLine,
@@ -119,6 +118,7 @@ import {
   DEPROVISION_MANAGEMENT,
   phraseError,
   phraseLabel,
+  phraseMatches,
 } from './device-action-messages';
 import {
   NOT_RUN_LABEL,
@@ -587,27 +587,10 @@ export class DeviceExportImportDialog {
   protected readonly executeLabel = computed(() =>
     executeActionLabel(this.executeCount()),
   );
-  protected readonly executeCount = computed(
-    () =>
-      (this.store.reportChanges()?.fieldChanges ?? 0) +
-      (this.store.reportChanges()?.disable ?? 0) +
-      (this.store.reportChanges()?.reenable ?? 0) +
-      (this.store.reportChanges()?.deprovision ?? []).reduce(
-        (sum, entry) => sum + entry.devices,
-        0,
-      ),
-  );
-  /** The devices of the plan: each field-change device, and each status device (state 16). */
-  protected readonly planDeviceCount = computed(
-    () =>
-      (this.store.reportChanges()?.fieldChangeDevices ?? 0) +
-      (this.store.reportChanges()?.disable ?? 0) +
-      (this.store.reportChanges()?.reenable ?? 0) +
-      (this.store.reportChanges()?.deprovision ?? []).reduce(
-        (sum, entry) => sum + entry.devices,
-        0,
-      ),
-  );
+  /** The complete change total of the plan (R2). */
+  protected readonly executeCount = this.store.planChanges;
+  /** The devices of the plan: the proposed rows of the report, each one device (R2). */
+  protected readonly planDeviceCount = this.store.planDevices;
   protected readonly NO_UPDATE_VIEW_LINE = NO_UPDATE_VIEW_LINE;
   /** The empty line of the shown view (states 14 and 15). */
   protected readonly emptyViewLine = computed(
@@ -628,9 +611,13 @@ export class DeviceExportImportDialog {
     () =>
       this.needsPhrase() &&
       this.store.typedPhrase().trim().length > 0 &&
-      !this.executeReady(),
+      !this.phraseOk(),
   );
   protected readonly phraseError = phraseError('deprovision');
+  /** The typed phrase matches the API's case-sensitive, trimmed comparison (R3). */
+  protected readonly phraseOk = computed(() =>
+    phraseMatches('deprovision', this.store.typedPhrase()),
+  );
   /** The question, the jobs that Execute creates, and the rows that stay out (state 16). */
   protected readonly confirmView = computed(() => {
     const changes = this.store.reportChanges();
@@ -650,9 +637,7 @@ export class DeviceExportImportDialog {
     () =>
       !this.store.executeBusy() &&
       this.store.plan()?.state === 'open' &&
-      (!this.needsPhrase() ||
-        this.store.typedPhrase().trim().toUpperCase() ===
-          DEPROVISION_PHRASE_LABEL),
+      (!this.needsPhrase() || this.phraseOk()),
   );
 
   /* ---------- States 17 and 17b: the execution results (design section 8) ---------- */
@@ -687,16 +672,14 @@ export class DeviceExportImportDialog {
   /** The two tabs of the results, each with its count pill (design section 8, ruling 4). */
   protected readonly resultTabs = computed<readonly ReportTabView[]>(() => {
     const totals = this.store.reportTotals();
-    const counts = this.store.reportCounts();
-    return RESULTS_TABS.map((view) => {
-      const total = view === 'proposed' ? counts?.proposed : totals.failed;
-      return {
-        view,
-        label: RESULTS_TAB_LABELS[view],
-        // A missing count is not a count of zero (R4).
-        count: total === null || total === undefined ? '' : thousands(total),
-      };
-    });
+    return RESULTS_TABS.map((view) => ({
+      view,
+      label: RESULTS_TAB_LABELS[view],
+      // Both pills count change lines: the view total of the report route. The proposed row
+      // count of `counts` names devices, not changes (R2).
+      // A missing count is not a count of zero (R4).
+      count: totals[view] === null ? '' : thousands(totals[view]),
+    }));
   });
   protected readonly resultPagerText = computed(() =>
     resultPagerText(

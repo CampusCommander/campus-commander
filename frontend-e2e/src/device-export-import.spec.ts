@@ -302,10 +302,17 @@ const planLines = (
     ...statusLines,
     ...fieldLines.slice(7),
   ];
+  // A source row holds one device. The changes of one device share its Row and Device cells
+  // (ruling 2), so the row number follows the first appearance of the device.
+  const rows = new Map<string, number>();
+  let nextRow = 2;
+  for (const line of ordered) {
+    if (!rows.has(line.deviceId)) rows.set(line.deviceId, nextRow++);
+  }
   return ordered.map((line, index) => {
     const status = line.kind === 'status' ? line.change : null;
     return {
-      row: index + 2,
+      row: rows.get(line.deviceId),
       deviceId: line.deviceId,
       serialNumber: line.serialNumber,
       change: line.change,
@@ -366,10 +373,11 @@ const importReport = (
     page,
     pageCount: view === 'failed' ? 1 : 2,
     counts: {
-      rows: 16,
+      // Twelve source rows: eight proposed devices and four rejected rows.
+      rows: 12,
       unchanged: 0,
       noChangeNeeded: 0,
-      proposed: 12,
+      proposed: 8,
       rejected: 4,
     },
     refresh: { staleDevicesRead: 8, oldestObservedAt: at(3600) },
@@ -388,6 +396,8 @@ const summaryOf = (
   deviceCount: number,
   progress: Record<string, number>,
   finishedAt: string | null,
+  /** The operations of the job. The update job holds one for each device and field. */
+  operations: number = deviceCount,
 ) => ({
   jobId,
   displayId,
@@ -400,7 +410,7 @@ const summaryOf = (
   startedAt: at(280),
   finishedAt,
   progress: {
-    total: deviceCount,
+    total: operations,
     failed: 0,
     unknown: 0,
     skipped: 0,
@@ -424,9 +434,10 @@ const planJobs = (run: 'running' | 'finished') =>
           'UPD-001',
           'update-device-annotations',
           'completed',
-          9,
+          5,
           { succeeded: 9, pending: 0 },
           at(150),
+          9,
         ),
         summaryOf(
           stsDisableId,
@@ -462,9 +473,10 @@ const planJobs = (run: 'running' | 'finished') =>
           'UPD-001',
           'update-device-annotations',
           'running',
-          9,
+          5,
           { succeeded: 3, pending: 6 },
           null,
+          9,
         ),
         summaryOf(
           stsDisableId,
@@ -502,14 +514,14 @@ const importDetail = (run: 'open' | 'running' | 'finished') => ({
   revision: run === 'open' ? 6 : 8,
   action: 'validate-device-import',
   status: 'completed',
-  scope: { kind: 'rows', deviceCount: 16 },
+  scope: { kind: 'rows', deviceCount: 12 },
   requestedBy: person,
   createdAt: at(600),
   startedAt: at(580),
   finishedAt: at(540),
   progress: {
-    total: 16,
-    succeeded: 16,
+    total: 12,
+    succeeded: 12,
     failed: 0,
     unknown: 0,
     skipped: 0,
@@ -532,14 +544,14 @@ const importDetail = (run: 'open' | 'running' | 'finished') => ({
   importSummary: {
     mode: 'sync-changes',
     planState: run === 'open' ? 'open' : 'executed',
-    proposed: 12,
+    proposed: 8,
     rejected: 4,
     refusal: null,
   },
   importSource: {
     name: 'devices-for-editing-EXP-001.csv',
     sizeBytes: 8064,
-    rowsRead: 16,
+    rowsRead: 12,
     candidateRows: 12,
     refusalText: null,
   },
@@ -1204,7 +1216,13 @@ test.describe('Execute and the results', () => {
     await expect(phrase).toBeVisible();
     const execute = panel.getByRole('button', { name: 'Execute 12 changes' });
     await expect(execute).toBeDisabled();
-    await phrase.fill('DEPROVISION');
+    // The API compares the trimmed phrase exactly, so lowercase stays disabled (R3).
+    await phrase.fill('deprovision');
+    await expect(execute).toBeDisabled();
+    await expect(panel).toContainText(
+      'The phrase does not match. Type DEPROVISION.',
+    );
+    await phrase.fill(' DEPROVISION ');
     await expect(execute).toBeEnabled();
     await page.screenshot({
       path: testInfo.outputPath('16-execute-confirm.png'),
@@ -1256,6 +1274,8 @@ test.describe('Execute and the results', () => {
 
     const tabs = panel.locator('.report-tabs button');
     await expect(tabs.nth(0)).toContainText('All changes');
+    // Both pills count change lines: 12 changes in all, one of them failed (R2).
+    await expect(tabs.nth(0)).toContainText('12');
     await expect(tabs.nth(1)).toContainText('Failed');
     await expect(tabs.nth(1)).toContainText('1');
     // The Re-enable failure shows its Google reason under the chip (state 17b).

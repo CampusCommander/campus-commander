@@ -249,10 +249,15 @@ export function resultCell(
   const operation = operationOfLine(line, operations);
   const failure =
     operation && job ? (rowFailureText(job, operation) ?? '') : '';
-  // A status job starts after the update job of the plan ends (design section 3).
+  // A status job starts after the update job of the plan ends (design section 3). The wait
+  // note stays only while that update still blocks the status job (R7).
+  const update = updateJobOf(jobs);
   const waitsFor =
-    outcome === 'pending' && line.change?.type === 'status'
-      ? updateJobOf(jobs)?.displayId
+    outcome === 'pending' &&
+    line.change?.type === 'status' &&
+    update !== null &&
+    !isFinal(update.status)
+      ? update.displayId
       : null;
   return {
     chip: { label: OUTCOME_LABELS[outcome], tone: outcomeTone(outcome) },

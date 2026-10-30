@@ -176,12 +176,39 @@ export class DeviceExportImportStore {
   readonly planHasDeprovision = computed(
     () => (this.reportChanges()?.deprovision.length ?? 0) > 0,
   );
-  /** The number of status jobs that Execute creates: one per action of the plan. */
+  /**
+   * The complete change total of the plan: one line for each field change and each status
+   * change (state 16 and the All changes pill of section 8). A status action counts its
+   * changes, never the devices of an overlapping field change (R2).
+   */
+  readonly planChanges = computed(() => {
+    const changes = this.reportChanges();
+    if (!changes) return 0;
+    return (
+      changes.fieldChanges +
+      changes.disable +
+      changes.reenable +
+      changes.deprovision.reduce((sum, entry) => sum + entry.devices, 0)
+    );
+  });
+  /**
+   * The devices that the plan changes: the proposed source rows of the report, one row per
+   * device (state 16). A field change and a status change of the same device count once (R2).
+   */
+  readonly planDevices = computed(() => this.reportCounts()?.proposed ?? 0);
+  /**
+   * The number of status jobs that Execute creates: one job for each nonempty action or
+   * reason group (section 7, step 8). The counts of a change summary are change counts, so
+   * each nonempty action adds one job (R2).
+   */
   readonly planStatusJobs = computed(() => {
     const changes = this.reportChanges();
-    return changes
-      ? changes.disable + changes.reenable + changes.deprovision.length
-      : 0;
+    if (!changes) return 0;
+    return (
+      Number(changes.disable > 0) +
+      Number(changes.reenable > 0) +
+      changes.deprovision.length
+    );
   });
   /** The views of the results table: All changes and Failed (design section 8, ruling 4). */
   readonly resultsView = computed<ResultsView>(() =>
@@ -274,6 +301,17 @@ export class DeviceExportImportStore {
   private reportTotalsRequest = 0;
   /** The one results read of the page and its operations. Only its own answer writes. */
   private resultsRequest = 0;
+  /** One complete results cycle runs at a time, and a request during it coalesces (R4). */
+  private resultsBusy = false;
+  private resultsQueued = false;
+  private resultsFresh = false;
+  private resultsWait: Promise<void> = Promise.resolve();
+  /** The page and view of the next results cycle. The latest request wins (R4). */
+  private resultsTarget: { page: number; view: ResultsView } | null = null;
+  /** The request count of the running cycle, so a stopped cycle cannot clear a newer one. */
+  private resultsCycle = 0;
+  /** A feed open, a job reentry, or a child revision requires a results reconcile (R5). */
+  private resultsReconcile = false;
   /** An event of a plan job reached the dialog, so the results read again (section 8). */
   private planEventPending = false;
   /** The plan revision that the report already accepted, so an older page cannot replace it. */
@@ -354,6 +392,8 @@ export class DeviceExportImportStore {
     this.error.set('');
     this.displayId.set(displayId);
     this.loading.set(true);
+    // A reentry reconciles the retained results page, even without an IMP revision change (R5).
+    this.resultsReconcile = true;
     this.startFeed();
     void this.reader.request();
   }
@@ -697,14 +737,18 @@ export class DeviceExportImportStore {
    * The IMP detail supplies the jobs and the counts, and one page of the report route supplies
    * the changes.
    */
-  private openResults(displayId: string, detail: JobDetail): void {
+  private async openResults(
+    displayId: string,
+    detail: JobDetail,
+  ): Promise<void> {
     this.step.set('results');
     this.helpTopic.set(null);
     this.resetReportFacts();
     this.reportJob = displayId;
     this.reportRevision = detail.revision;
     this.cache.delete(displayId);
-    void this.readResults(displayId, 0, 'proposed');
+    // The first results read owns the whole cycle, so the read that opened it waits (R4).
+    await this.requestResults('proposed', 0, true);
   }
 
   /** A tab of the report step or of the results table (states 14, 15, and 17b). */
@@ -712,11 +756,9 @@ export class DeviceExportImportStore {
     if (view === this.reportView()) return;
     if (this.step() === 'results') {
       // The results table holds the two views of design section 8, and each tab starts on
-      // the first page.
+      // the first page. A read in flight coalesces this tab into the next cycle (R4).
       if (view !== 'proposed' && view !== 'failed') return;
-      const displayId = this.reportJob;
-      if (!displayId) return;
-      await this.readResults(displayId, 0, view);
+      await this.requestResults(view, 0);
       return;
     }
     await this.showReportPage(view, 0);
@@ -726,9 +768,7 @@ export class DeviceExportImportStore {
     const pages = this.reportPages()[this.reportView()];
     if (this.reportPage() + 1 >= pages) return;
     if (this.step() === 'results') {
-      const displayId = this.reportJob;
-      if (!displayId) return;
-      await this.readResults(displayId, this.reportPage() + 1);
+      await this.requestResults(this.resultsView(), this.reportPage() + 1);
       return;
     }
     await this.showReportPage(this.reportView(), this.reportPage() + 1);
@@ -737,9 +777,7 @@ export class DeviceExportImportStore {
   async previousReportPage(): Promise<void> {
     if (this.reportPage() === 0) return;
     if (this.step() === 'results') {
-      const displayId = this.reportJob;
-      if (!displayId) return;
-      await this.readResults(displayId, this.reportPage() - 1);
+      await this.requestResults(this.resultsView(), this.reportPage() - 1);
       return;
     }
     await this.showReportPage(this.reportView(), this.reportPage() - 1);
@@ -915,7 +953,9 @@ export class DeviceExportImportStore {
         {
           planId: plan.planId,
           planRevision: plan.revision,
-          typedPhrase: this.planHasDeprovision() ? this.typedPhrase() : null,
+          typedPhrase: this.planHasDeprovision()
+            ? this.typedPhrase().trim()
+            : null,
         },
       );
       if (!owned()) return false;
@@ -954,10 +994,14 @@ export class DeviceExportImportStore {
       void this.reader.request();
       return true;
     } catch {
-      if (owned())
+      if (owned()) {
+        // A lost answer does not establish that the plan did not run. Keep the plan identity,
+        // say that the outcome is unconfirmed, and read the durable job (R6).
         this.executeError.set(
-          'Cannot reach Campus Commander. The plan did not run.',
+          'Cannot reach Campus Commander. The plan may have run. Check this import before you execute again.',
         );
+        void this.reader.request();
+      }
       return false;
     } finally {
       if (this.actionRequest === requestId) this.executeBusy.set(false);
@@ -966,14 +1010,64 @@ export class DeviceExportImportStore {
 
   /* ---------- States 17 and 17b: the execution results (design section 8) ---------- */
 
-  /** One read of the shown results page: its lines, its tab counts, and its operations. */
-  private async readResults(
-    displayId: string,
-    page: number = this.reportPage(),
+  /**
+   * A results request. One complete cycle runs at a time, and a request that arrives during
+   * a cycle coalesces into one later read of its page and view (R4). The latest request wins.
+   */
+  private requestResults(
     view: ResultsView = this.resultsView(),
+    page: number = this.reportPage(),
+    fresh = false,
   ): Promise<void> {
+    this.resultsTarget = { page, view };
+    this.resultsFresh = this.resultsFresh || fresh;
+    if (this.resultsBusy) {
+      this.resultsQueued = true;
+      return this.resultsWait;
+    }
+    this.resultsBusy = true;
+    const cycle = ++this.resultsCycle;
+    const run = this.runResults(cycle);
+    // A cycle that finished on its first turn holds no wait for a successor.
+    if (this.resultsBusy && cycle === this.resultsCycle) this.resultsWait = run;
+    return run;
+  }
+
+  /** The one loop of a results cycle: its page, its tab total, and its operations. */
+  private async runResults(cycle: number): Promise<void> {
+    try {
+      do {
+        const target = this.resultsTarget;
+        const fresh = this.resultsFresh;
+        this.resultsQueued = false;
+        this.resultsFresh = false;
+        if (!target) break;
+        if (fresh) {
+          const displayId = this.reportJob;
+          if (displayId) this.cache.delete(displayId);
+        }
+        await this.readResults(target.view, target.page);
+      } while (
+        this.resultsQueued &&
+        this.step() === 'results' &&
+        cycle === this.resultsCycle
+      );
+    } finally {
+      if (cycle === this.resultsCycle) {
+        this.resultsBusy = false;
+        this.resultsQueued = false;
+        this.resultsFresh = false;
+        this.resultsTarget = null;
+        this.resultsWait = Promise.resolve();
+      }
+    }
+  }
+
+  /** One read of the shown results page: its lines, its tab counts, and its operations. */
+  private async readResults(view: ResultsView, page: number): Promise<void> {
     if (this.step() !== 'results') return;
-    if (displayId !== this.reportJob || displayId !== this.displayId()) return;
+    const displayId = this.reportJob;
+    if (!displayId || displayId !== this.displayId()) return;
     const token = ++this.resultsRequest;
     this.resultsError.set('');
     await this.showReportPage(view, page);
@@ -984,11 +1078,20 @@ export class DeviceExportImportStore {
   }
 
   /** A newer revision of the plan refreshes the page and the operations on screen. */
-  private async refreshResults(): Promise<void> {
-    const displayId = this.reportJob;
-    if (!displayId || displayId !== this.displayId()) return;
-    this.cache.delete(displayId);
-    await this.readResults(displayId);
+  private refreshResults(): Promise<void> {
+    // The selected page and view of the results read again (design section 8).
+    return this.requestResults(this.resultsView(), this.reportPage(), true);
+  }
+
+  /** A new import entry drops the cycle in flight and keeps its late answer out (R4). */
+  private stopResults(): void {
+    this.resultsCycle++;
+    this.resultsRequest++;
+    this.resultsBusy = false;
+    this.resultsQueued = false;
+    this.resultsFresh = false;
+    this.resultsTarget = null;
+    this.resultsWait = Promise.resolve();
   }
 
   /**
@@ -1346,7 +1449,8 @@ export class DeviceExportImportStore {
     this.reportView.set('proposed');
     this.reportPage.set(0);
     this.reportLines.set([]);
-    this.resultsRequest++;
+    this.stopResults();
+    this.resultsReconcile = false;
     this.resultOps.set(new Map());
     this.resultsLoading.set(false);
     this.resultsError.set('');
@@ -1416,7 +1520,11 @@ export class DeviceExportImportStore {
     this.subscription = this.feeds.subscribe('/api/events', {
       open: () => this.eventSource('/api/events'),
       events: ['job-changed'],
-      opened: () => this.reader.opened(),
+      opened: () => {
+        // Every open, first or after a reconnect, reconciles the retained results page (R5).
+        this.resultsReconcile = true;
+        this.reader.opened();
+      },
       changed: (data) => this.onEvent(data),
     });
   }
@@ -1519,10 +1627,11 @@ export class DeviceExportImportStore {
           const executed =
             detail.data.plan?.state === 'executed' ||
             (detail.data.planJobs?.length ?? 0) > 0;
+          const priorStep = this.step();
           if (executed) {
             if (this.reportJob !== detail.data.displayId) {
               // The results belong to this job, not to the one that the dialog showed before.
-              this.openResults(detail.data.displayId, detail.data);
+              await this.openResults(detail.data.displayId, detail.data);
             } else {
               // The retained results own this job's screen, even when their facts need no read.
               this.step.set('results');
@@ -1531,34 +1640,55 @@ export class DeviceExportImportStore {
                 this.reportView() !== 'failed'
               )
                 this.reportView.set('proposed');
+              // A child job can change without a change of the IMP revision, and a reopen of
+              // the feed or a reentry leaves the shown page stale until it reads again (R5).
+              const childChanged = (detail.data.planJobs ?? []).some(
+                (job) => job.revision > this.reader.revision(job.displayId),
+              );
               const changed =
                 this.reportRevision !== detail.data.revision ||
-                this.planEventPending;
+                this.planEventPending ||
+                this.resultsReconcile ||
+                childChanged ||
+                priorStep !== 'results';
               this.reportRevision = detail.data.revision;
               this.planEventPending = false;
+              this.resultsReconcile = false;
               if (changed || this.reportCounts() === null) {
                 // A newer revision may change a line, so the shown page reads again (section 8).
-                void this.refreshResults();
+                await this.refreshResults();
               }
             }
           } else if (report) {
             if (this.reportJob !== detail.data.displayId) {
               // The report belongs to this job, not to the one that the dialog showed before.
-              void this.openImportReport();
+              await this.openImportReport();
+            } else if (
+              priorStep === 'confirm' &&
+              sameOpenPlan(this.plan(), detail.data.plan)
+            ) {
+              // The same frozen plan remains valid, so the confirmation and its typed phrase
+              // stay. A late initial-open read or a reconnect never dismisses them (R1).
+              this.reportRevision = detail.data.revision;
+              if (this.reportCounts() === null && !this.reportLoading()) {
+                await this.openImportReport();
+              }
             } else {
               // The retained report owns this job's screen, even when its facts need no
               // read. Another flow's Done resets the shared step, so restore it here (R3).
               this.step.set('report');
-              if (this.reportRevision !== detail.data.revision) {
-                // A newer revision may change the plan, so the shown page reads again (R4).
+              const planChanged = !samePlan(this.plan(), detail.data.plan);
+              if (this.reportRevision !== detail.data.revision || planChanged) {
+                // A newer revision or another plan may change the screen, so the shown page
+                // reads again (R4).
                 this.reportRevision = detail.data.revision;
-                void this.refreshReportFacts();
+                await this.refreshReportFacts();
               } else if (
                 this.reportCounts() === null &&
                 !this.reportLoading()
               ) {
                 // A report that never loaded is read again on reentry (R4).
-                void this.openImportReport();
+                await this.openImportReport();
               }
             }
           } else {
@@ -1633,6 +1763,33 @@ function finished(job: JobDetail): boolean {
     job.status === 'failed' ||
     job.status === 'cancelled' ||
     job.status === 'needs-review'
+  );
+}
+
+/** The same plan identity: its ID, its revision, and its state (R1). */
+function samePlan(
+  current: JobImportPlan | null,
+  reread: JobImportPlan | null,
+): boolean {
+  if (current === null || reread === null) return current === reread;
+  return (
+    current.planId === reread.planId &&
+    current.revision === reread.revision &&
+    current.state === reread.state
+  );
+}
+
+/** The same frozen plan, still open: the confirmation that it produced stays valid (R1). */
+function sameOpenPlan(
+  current: JobImportPlan | null,
+  reread: JobImportPlan | null,
+): boolean {
+  return (
+    current !== null &&
+    reread !== null &&
+    current.state === 'open' &&
+    reread.state === 'open' &&
+    samePlan(current, reread)
   );
 }
 
