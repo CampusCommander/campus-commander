@@ -379,6 +379,20 @@ test('a values answer above 64 MiB refuses as rows-too-large', async () => {
   });
 });
 
+test('a values answer of another shape is invalid-response', async () => {
+  const google = fakeDrive((call) =>
+    call.path === '/v4/spreadsheets/fixture-sheet'
+      ? sheetAnswer([sheetProperties])
+      : ok({ values: 'not rows' }),
+  );
+  const client = new GoogleDriveClient(google.client, signal);
+  const tab = await client.readTab('fixture-sheet', 0);
+  await assert.rejects(collected(tab.rows()), {
+    name: 'GoogleConnectionError',
+    code: 'invalid-response',
+  });
+});
+
 test('streams the bytes of one file', async () => {
   const google = fakeDrive(() =>
     streamAnswer([Buffer.from('Device ID,Serial\n'), Buffer.from('d1,s1\n')]),
@@ -496,6 +510,16 @@ test('a lost create answer never repeats', async () => {
   const client = new GoogleDriveClient(google.client, signal, {
     sleep: async () => undefined,
   });
+  await assert.rejects(client.createSheet('Devices'), {
+    name: 'GoogleDriveError',
+    code: 'sheet-write-failed',
+  });
+  assert.equal(google.sent.length, 1);
+});
+
+test('a create answer without a spreadsheet ID is sheet-write-failed', async () => {
+  const google = fakeDrive(() => ok({}));
+  const client = new GoogleDriveClient(google.client, signal);
   await assert.rejects(client.createSheet('Devices'), {
     name: 'GoogleDriveError',
     code: 'sheet-write-failed',

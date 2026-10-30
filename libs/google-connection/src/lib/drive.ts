@@ -446,7 +446,7 @@ export class GoogleDriveClient {
     );
     // The 64 MiB cap reads the JSON text of the answer, before any row is built (design section 7).
     if (
-      Buffer.byteLength(JSON.stringify(data), 'utf8') >
+      Buffer.byteLength(JSON.stringify(data) ?? '', 'utf8') >
       GOOGLE_DRIVE_WINDOW_BYTES
     )
       throw new GoogleDriveError('rows-too-large');
@@ -551,7 +551,13 @@ export class GoogleDriveClient {
       },
       1,
     );
-    const answer = parsed(createdSheet, data);
+    let answer: z.infer<typeof createdSheet>;
+    try {
+      answer = parsed(createdSheet, data);
+    } catch {
+      // A create answer that contradicts the contract leaves the Sheet unconfirmed.
+      throw new GoogleDriveError('sheet-write-failed');
+    }
     return {
       spreadsheetId: answer.spreadsheetId,
       sheetId: answer.sheets[0].properties.sheetId,
