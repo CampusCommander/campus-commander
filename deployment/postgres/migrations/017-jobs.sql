@@ -1407,8 +1407,9 @@ $$;
 -- The source of a Drive import, after the worker stored what it read (design section 7 step 7). It locks
 -- the header, then the detail row, and fences the lease and the attempt as the line store does. The
 -- artifact must be a ready file of this job or of no job, of the recorded size, so the two built passes
--- read the stored stage as they read an upload. A CSV upload carries its link from creation and never
--- calls this.
+-- read the stored stage as they read an upload. The artifact lock can wait, so the lease, the attempt,
+-- and the retention read the clock again after it; a wait that crosses either deadline writes nothing.
+-- A CSV upload carries its link from creation and never calls this.
 CREATE FUNCTION cc.store_device_import_source(p_customer text,p_job uuid,p_lease uuid,p_attempt integer,
   p_artifact_id text,p_size_bytes bigint) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -1438,10 +1439,22 @@ BEGIN
   END IF;
   SELECT * INTO artifact FROM cc.artifacts a WHERE a.id=p_artifact_id
     AND a.publication_state='ready' AND a.size_bytes=p_size_bytes
-    AND (a.retention_until IS NULL OR a.retention_until>now_at)
     AND (a.job_id IS NULL OR a.job_id=p_job::text)
     FOR UPDATE;
   IF artifact.id IS NULL THEN
+    RAISE EXCEPTION 'The import source is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- The artifact lock can wait, so the lease, the attempt, and the retention read the clock again
+  -- after it, before any write.
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','done');
+  END IF;
+  IF detail.attempt<>p_attempt OR detail.lease_id IS DISTINCT FROM p_lease OR
+    detail.lease_expires_at IS NULL OR detail.lease_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  IF artifact.retention_until IS NOT NULL AND artifact.retention_until<=now_at THEN
     RAISE EXCEPTION 'The import source is invalid.' USING ERRCODE='22023';
   END IF;
   UPDATE cc.artifacts SET job_id=p_job::text WHERE id=p_artifact_id;
@@ -1551,8 +1564,10 @@ $$;
 
 -- The stamp before the one Sheet create of an export (design section 6 step 3). It locks the header, then
 -- the detail row, as the cancel does, so the stamp and a cancel order one after the other and one wins.
--- A stored cancel request ends the run Cancelled here, before any Sheet exists. Otherwise the first call
--- stamps sheet_started_at and phase create-sheet, and a repeat keeps the first stamp.
+-- A stored cancel request ends the run Cancelled here, before any Sheet exists. The first call stamps
+-- sheet_started_at and phase create-sheet and answers `started`, the one permission to create the Sheet.
+-- A repeat, including a second run of the lease that claimed before the stamp, keeps the first stamp and
+-- answers `repeated`, so one job never creates two Sheets (design section 6).
 CREATE FUNCTION cc.start_device_export_sheet(p_customer text,p_job uuid,p_lease uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.device_export_jobs; now_at timestamptz;
@@ -1580,6 +1595,12 @@ BEGIN
   IF job.status<>'running' THEN
     RETURN jsonb_build_object('outcome','finished','status',job.status);
   END IF;
+  -- The first stamp is the one permission to create the Sheet. A second run of the same lease that
+  -- claimed before the stamp reads it here and answers `repeated` without a write, so two runs never both
+  -- reach `spreadsheets.create` (design section 6).
+  IF detail.sheet_started_at IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','repeated','startedAt',detail.sheet_started_at);
+  END IF;
   IF job.cancel_requested_at IS NOT NULL THEN
     -- The request landed before the stamp, so no Sheet exists and the run ends Cancelled at once.
     UPDATE cc.jobs SET status='cancelled',finished_at=now_at,
@@ -1587,10 +1608,10 @@ BEGIN
     PERFORM cc.record_job_change(p_job,true);
     RETURN jsonb_build_object('outcome','cancelled');
   END IF;
-  UPDATE cc.device_export_jobs SET sheet_started_at=COALESCE(sheet_started_at,now_at) WHERE job_id=p_job;
+  UPDATE cc.device_export_jobs SET sheet_started_at=now_at WHERE job_id=p_job;
   UPDATE cc.jobs SET phase='create-sheet',phase_done=0,phase_total=NULL WHERE job_id=p_job;
   PERFORM cc.record_job_change(p_job,false);
-  RETURN jsonb_build_object('outcome','started','startedAt',COALESCE(detail.sheet_started_at,now_at));
+  RETURN jsonb_build_object('outcome','started','startedAt',now_at);
 END;
 $$;
 

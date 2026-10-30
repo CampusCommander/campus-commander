@@ -150,12 +150,14 @@ export async function qualifyDeviceExportImport({
         randomUUID(),
       ])
       .then((r) => r.rows[0].result);
-  const claimExport = (jobId, lease) =>
-    result('SELECT cc.claim_device_export_job($1,$2,$3) AS result', [
-      customer,
-      jobId,
-      lease,
-    ]);
+  const claimExport = (jobId, lease, client = null) =>
+    (client ?? runtime)
+      .query('SELECT cc.claim_device_export_job($1,$2,$3) AS result', [
+        customer,
+        jobId,
+        lease,
+      ])
+      .then((r) => r.rows[0].result);
   const claimImport = async (jobId, lease) => {
     const answer = await result(
       'SELECT cc.claim_device_import_job($1,$2,$3) AS result',
@@ -4828,9 +4830,9 @@ export async function qualifyDeviceExportImport({
             )[0].sheet_started_at.getTime(),
             stamp.getTime(),
           );
-          // A repeat of the stamp keeps the first time.
+          // A repeat of the stamp keeps the first time and grants no second create.
           const again = await startSheet(created.receipt.jobId, lease);
-          assert.equal(again.outcome, 'started');
+          assert.equal(again.outcome, 'repeated');
           assert.equal(new Date(again.startedAt).getTime(), stamp.getTime());
           // A replaced lease is fenced, and a CSV export has no Sheet to stamp.
           assert.equal(
@@ -4871,6 +4873,79 @@ export async function qualifyDeviceExportImport({
             )[0].sheet_started_at,
             null,
           );
+        },
+      );
+
+      await check(
+        'S2 two claims of one lease authorize one Sheet create',
+        async () => {
+          const first = await raceClient('cc-app');
+          const second = await raceClient('cc-app');
+          try {
+            const created = await createExport({
+              actor: exporter,
+              format: 'sheet',
+              subject: 'editor@example.org',
+            });
+            jobs.push(created.receipt.jobId);
+            const lease = randomUUID();
+            // Two runs of one dispatch lease claim before either stamps the Sheet. The second claim
+            // admits the same lease, because only another lease is busy (design section 6 step 1).
+            assert.equal(
+              (await claimExport(created.receipt.jobId, lease, first)).outcome,
+              'claimed',
+            );
+            assert.equal(
+              (await claimExport(created.receipt.jobId, lease, second)).outcome,
+              'claimed',
+            );
+            const started = await startSheet(
+              created.receipt.jobId,
+              lease,
+              first,
+            );
+            assert.equal(started.outcome, 'started');
+            const stamp = (
+              await admin(
+                'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                [created.receipt.jobId],
+              )
+            )[0].sheet_started_at;
+            assert.notEqual(stamp, null);
+            assert.equal(
+              new Date(started.startedAt).getTime(),
+              stamp.getTime(),
+            );
+            const before = await jobRow(created.receipt.jobId);
+            // The second run of the same lease receives no second create permission, and it writes
+            // nothing: one stamp, one phase, one revision.
+            const repeated = await startSheet(
+              created.receipt.jobId,
+              lease,
+              second,
+            );
+            assert.equal(repeated.outcome, 'repeated');
+            assert.equal(
+              new Date(repeated.startedAt).getTime(),
+              stamp.getTime(),
+            );
+            const after = await jobRow(created.receipt.jobId);
+            assert.equal(after.status, 'running');
+            assert.equal(after.phase, 'create-sheet');
+            assert.equal(after.revision, before.revision);
+            assert.equal(
+              (
+                await admin(
+                  'SELECT sheet_started_at FROM cc.device_export_jobs WHERE job_id=$1',
+                  [created.receipt.jobId],
+                )
+              )[0].sheet_started_at.getTime(),
+              stamp.getTime(),
+            );
+          } finally {
+            await close(first);
+            await close(second);
+          }
         },
       );
 
@@ -5557,6 +5632,229 @@ export async function qualifyDeviceExportImport({
             ),
             '22023',
           );
+        },
+      );
+
+      await check(
+        'S4 a source store that waits past its lease or its retention writes nothing',
+        async () => {
+          const holder = await raceClient('postgres');
+          const writer = await raceClient('cc-app');
+          const writerPid = await backendPid(writer);
+          const pause = (ms) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
+          const publications = (jobId) =>
+            admin(
+              'SELECT count(*)::integer AS rows FROM cc.job_publications WHERE job_id=$1',
+              [jobId],
+            ).then((r) => r[0].rows);
+          /** A refused call changes none of the four writes: the link, the size, the revision, the row. */
+          const refusesWrite = async (
+            jobId,
+            artifactId,
+            revision,
+            publicationCount,
+            label,
+          ) => {
+            assert.equal(
+              (
+                await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [
+                  artifactId,
+                ])
+              )[0].job_id,
+              null,
+              `${label} links nothing`,
+            );
+            assert.equal(
+              Number(
+                (
+                  await admin(
+                    'SELECT source_size_bytes FROM cc.device_import_jobs WHERE job_id=$1',
+                    [jobId],
+                  )
+                )[0].source_size_bytes,
+              ),
+              2048,
+              `${label} keeps the size`,
+            );
+            assert.equal(
+              (await jobRow(jobId)).revision,
+              revision,
+              `${label} keeps the revision`,
+            );
+            assert.equal(
+              await publications(jobId),
+              publicationCount,
+              `${label} publishes nothing`,
+            );
+          };
+          /**
+           * Hold the artifact row, start the store, confirm that it waits on that lock, let the
+           * deadline pass, then release the lock.
+           */
+          const storeWhileWaiting = async (
+            jobId,
+            lease,
+            attemptNumber,
+            artifactId,
+            label,
+          ) => {
+            await holder.query('BEGIN');
+            await holder.query(
+              'SELECT 1 FROM cc.artifacts WHERE id=$1 FOR UPDATE',
+              [artifactId],
+            );
+            const call = settle(
+              storeSource(
+                jobId,
+                lease,
+                attemptNumber,
+                artifactId,
+                1024,
+                writer,
+              ),
+            );
+            await waitWaiting(writerPid, label);
+            await pause(1700);
+            await holder.query('COMMIT');
+            return call;
+          };
+          const sources = [
+            ['drive-sheet', () => driveSheetImport()],
+            [
+              'drive-csv',
+              () =>
+                createImport({
+                  actor: importer,
+                  sourceType: 'drive-csv',
+                  name: 'devices.csv',
+                  sizeBytes: 2048,
+                  fileId: 'example-csv-file-1',
+                  subject: 'reader@example.org',
+                }),
+            ],
+          ];
+          try {
+            for (const [sourceType, create] of sources) {
+              // The ordinary control: a live lease and a retained artifact store the source.
+              const control = await create();
+              jobs.push(control.receipt.jobId);
+              const controlLease = randomUUID();
+              const controlClaim = await claimImport(
+                control.receipt.jobId,
+                controlLease,
+              );
+              assert.equal(controlClaim.outcome, 'claimed');
+              const controlArtifact = await seedDriveArtifact(1024);
+              const controlStored = await storeSource(
+                control.receipt.jobId,
+                controlLease,
+                controlClaim.attempt,
+                controlArtifact,
+                1024,
+              );
+              assert.equal(controlStored.outcome, 'stored', sourceType);
+              assert.equal(
+                (
+                  await admin('SELECT job_id FROM cc.artifacts WHERE id=$1', [
+                    controlArtifact,
+                  ])
+                )[0].job_id,
+                control.receipt.jobId,
+              );
+              assert.equal(
+                Number(
+                  (
+                    await admin(
+                      'SELECT source_size_bytes FROM cc.device_import_jobs WHERE job_id=$1',
+                      [control.receipt.jobId],
+                    )
+                  )[0].source_size_bytes,
+                ),
+                1024,
+              );
+              // The lease lapses while the call waits on the artifact lock.
+              const lapsed = await create();
+              jobs.push(lapsed.receipt.jobId);
+              const lapsedLease = randomUUID();
+              const lapsedClaim = await claimImport(
+                lapsed.receipt.jobId,
+                lapsedLease,
+              );
+              assert.equal(lapsedClaim.outcome, 'claimed');
+              const lapsedArtifact = await seedDriveArtifact(1024);
+              await migrator.query(
+                "UPDATE cc.device_import_jobs SET lease_expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE job_id=$1",
+                [lapsed.receipt.jobId],
+              );
+              const lapsedBefore = await jobRow(lapsed.receipt.jobId);
+              const lapsedPublications = await publications(
+                lapsed.receipt.jobId,
+              );
+              const lapsedCall = await storeWhileWaiting(
+                lapsed.receipt.jobId,
+                lapsedLease,
+                lapsedClaim.attempt,
+                lapsedArtifact,
+                `the ${sourceType} store past its lease`,
+              );
+              assert.equal(
+                (await lapsedCall).value?.outcome,
+                'fenced',
+                sourceType,
+              );
+              await refusesWrite(
+                lapsed.receipt.jobId,
+                lapsedArtifact,
+                lapsedBefore.revision,
+                lapsedPublications,
+                `${sourceType} past its lease`,
+              );
+              // The retention ends while the call waits on the artifact lock.
+              const expired = await create();
+              jobs.push(expired.receipt.jobId);
+              const expiredLease = randomUUID();
+              const expiredClaim = await claimImport(
+                expired.receipt.jobId,
+                expiredLease,
+              );
+              assert.equal(expiredClaim.outcome, 'claimed');
+              const expiredArtifact = await seedDriveArtifact(1024);
+              await migrator.query(
+                "UPDATE cc.artifacts SET retention_until=clock_timestamp()+interval '1500 milliseconds' WHERE id=$1",
+                [expiredArtifact],
+              );
+              const expiredBefore = await jobRow(expired.receipt.jobId);
+              const expiredPublications = await publications(
+                expired.receipt.jobId,
+              );
+              const expiredCall = await storeWhileWaiting(
+                expired.receipt.jobId,
+                expiredLease,
+                expiredClaim.attempt,
+                expiredArtifact,
+                `the ${sourceType} store past its retention`,
+              );
+              assert.equal(
+                (await expiredCall).error?.code,
+                '22023',
+                sourceType,
+              );
+              await refusesWrite(
+                expired.receipt.jobId,
+                expiredArtifact,
+                expiredBefore.revision,
+                expiredPublications,
+                `${sourceType} past its retention`,
+              );
+            }
+          } catch (error) {
+            await holder.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            await close(holder);
+            await close(writer);
+          }
         },
       );
     } finally {
