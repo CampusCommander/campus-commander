@@ -88,9 +88,11 @@ const importDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   targetOrgUnitPaths: null,
   importSource: {
     name: 'devices.csv',
+    sourceType: 'csv',
     sizeBytes: 7_936,
     rowsRead: 5,
     candidateRows: 48,
+    tabTitle: null,
     refusalText: null,
   },
   plan: null,
@@ -458,9 +460,11 @@ describe('the Import step of the dialog', () => {
         failure: 'storage-unavailable',
         importSource: {
           name: 'devices.csv',
+          sourceType: 'csv',
           sizeBytes: 7_936,
           rowsRead: 2,
           candidateRows: 0,
+          tabTitle: null,
           refusalText:
             'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.',
         },
@@ -790,9 +794,11 @@ const reportDetail = (overrides: Partial<JobDetail> = {}): JobDetail =>
     },
     importSource: {
       name: 'devices.csv',
+      sourceType: 'csv',
       sizeBytes: 7_936,
       rowsRead: 48,
       candidateRows: 48,
+      tabTitle: null,
       refusalText: null,
     },
     plan: openPlan() as JobDetail['plan'],
@@ -1130,10 +1136,12 @@ describe('the Import entry ownership and report facts', () => {
         surface === 'file'
           ? {
               name: 'devices-for-editing-EXP-001.csv',
+              format: 'csv',
               sizeBytes: 7_987,
               rows: 48,
               columns: 10,
               expiresAt: future(),
+              sheetUrl: null,
             }
           : null,
       importSummary: null,
@@ -1550,9 +1558,11 @@ describe('the approved Import composition', () => {
         phase: { name: 'compare', done: 1000, total: 2000 },
         importSource: {
           name: 'devices.csv',
+          sourceType: 'csv',
           sizeBytes: 7_936,
           rowsRead: 3000,
           candidateRows: 3000,
+          tabTitle: null,
           refusalText: null,
         },
       }),
@@ -1655,9 +1665,11 @@ describe('the approved Import composition', () => {
         phase: { name: 'refresh', done: 4, total: 12 },
         importSource: {
           name: 'devices.csv',
+          sourceType: 'csv',
           sizeBytes: 7_936,
           rowsRead: 30,
           candidateRows: 30,
+          tabTitle: null,
           refusalText: null,
         },
         plan: null,
@@ -1690,9 +1702,11 @@ describe('the approved Import composition', () => {
           },
           importSource: {
             name: 'devices.csv',
+            sourceType: 'csv',
             sizeBytes: 7_936,
             rowsRead: 0,
             candidateRows: 0,
+            tabTitle: null,
             refusalText: null,
           },
         }),
@@ -1711,14 +1725,57 @@ describe('the approved Import composition', () => {
           },
           importSource: {
             name: 'devices.csv',
+            sourceType: 'csv',
             sizeBytes: 7_936,
             rowsRead: 0,
             candidateRows: 0,
+            tabTitle: null,
             refusalText: 'The Checksum column is missing.',
           },
         }),
       ),
     ).toBe('The Checksum column is missing.');
+    // A Drive source refusal names the file, and a missing name keeps the built sentence.
+    expect(
+      importFailureText(
+        importDetail({
+          status: 'failed',
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'drive-source-unavailable',
+          },
+          importSource: {
+            name: 'devices-for-editing-EXP-001.csv',
+            sourceType: 'drive-csv',
+            sizeBytes: 7_936,
+            rowsRead: 0,
+            candidateRows: 0,
+            tabTitle: null,
+            refusalText: null,
+          },
+        }),
+      ),
+    ).toBe(
+      'Campus Commander cannot read devices-for-editing-EXP-001.csv from Google Drive. Choose the file again in Google Drive, then import again.',
+    );
+    expect(
+      importFailureText(
+        importDetail({
+          status: 'failed',
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'drive-source-unavailable',
+          },
+          importSource: null,
+        }),
+      ),
+    ).toBe('The validation stopped before it finished. Import the file again.');
   });
 
   it('lists the field limits of the import template in the help (R12)', async () => {

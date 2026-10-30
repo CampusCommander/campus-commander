@@ -7,8 +7,17 @@ import {
   type DeviceBattery,
   type DeviceRow,
 } from './devices';
-import { jobDisplayIdSchema, jobExportPurposeSchema } from './jobs';
-import type { JobDisplayId, JobExportPurpose } from './jobs';
+import {
+  JOB_EXPORT_FILE_FORMATS,
+  jobDisplayIdSchema,
+  jobExportFileFormatSchema,
+  jobExportPurposeSchema,
+} from './jobs';
+import type {
+  JobDisplayId,
+  JobExportFileFormat,
+  JobExportPurpose,
+} from './jobs';
 
 const count = z.number().int().min(0);
 
@@ -21,10 +30,11 @@ const count = z.number().int().min(0);
  * stay in `device-edit-template.ts`, and no other module copies them.
  */
 
-/** The one format of this slice. The Drive slice adds `sheet` (design section 5). */
-export const DEVICE_EXPORT_FORMATS = ['csv'] as const;
-export const deviceExportFormatSchema = z.enum(DEVICE_EXPORT_FORMATS);
-export type DeviceExportFormat = z.infer<typeof deviceExportFormatSchema>;
+/** The two export formats of the Drive slice (design section 1). The job answer names the same two
+ * (`JOB_EXPORT_FILE_FORMATS`), so a request and a job never differ. */
+export const DEVICE_EXPORT_FORMATS = JOB_EXPORT_FILE_FORMATS;
+export const deviceExportFormatSchema = jobExportFileFormatSchema;
+export type DeviceExportFormat = JobExportFileFormat;
 
 /**
  * The ten report field IDs, in the order of the device contract. A report request lists the IDs of
@@ -154,6 +164,12 @@ export const deviceExportRequestSchema = z
       message:
         'A report export names its columns, and an edit export names none.',
     },
+  )
+  .refine(
+    (request) => request.format !== 'sheet' || request.purpose === 'edit',
+    {
+      message: 'A Sheet export has the edit purpose.',
+    },
   );
 export type DeviceExportRequest = z.infer<typeof deviceExportRequestSchema>;
 
@@ -169,12 +185,14 @@ export type DeviceExportReceipt = z.infer<typeof deviceExportReceiptSchema>;
 
 /**
  * The file name of an export (notes section "Scenario and data"): `devices-for-editing-EXP-001.csv`
- * and `device-report-EXP-002.csv`.
+ * and `device-report-EXP-002.csv`. A Sheet takes the CSV name without `.csv` (Drive slice design
+ * section 1, `notes:227`).
  */
 export function deviceExportFileName(
   purpose: JobExportPurpose,
   displayId: JobDisplayId,
+  format: DeviceExportFormat = 'csv',
 ): string {
   const stem = purpose === 'edit' ? 'devices-for-editing' : 'device-report';
-  return `${stem}-${displayId}.csv`;
+  return `${stem}-${displayId}${format === 'sheet' ? '' : '.csv'}`;
 }

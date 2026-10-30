@@ -53,7 +53,8 @@ export type DeviceImportReceipt = z.infer<typeof deviceImportReceiptSchema>;
 
 /**
  * The file faults that stop a validation before any row check (design section 6). The header
- * refusal of the template module carries its own text, so it keeps the code `header-refused`.
+ * refusal of the template module carries its own text, so it keeps the code `header-refused`. The
+ * Drive slice adds its three codes (Drive slice design section 1).
  */
 export const DEVICE_IMPORT_REFUSALS = [
   'unreadable-file',
@@ -63,18 +64,23 @@ export const DEVICE_IMPORT_REFUSALS = [
   'cell-too-long',
   'too-many-rows',
   'header-refused',
+  'drive-source-unavailable',
+  'source-too-large',
+  'rows-too-large',
 ] as const;
 export const deviceImportRefusalSchema = z.enum(DEVICE_IMPORT_REFUSALS);
 export type DeviceImportRefusal = z.infer<typeof deviceImportRefusalSchema>;
 
 /**
- * The text of a refusal, for states 23 and 26. A `header-refused` refusal carries the sentence of
- * `matchDeviceEditHeaders`, which names each missing column and the Checksum rule, so the caller
- * passes that sentence rather than a copy.
+ * The text of a refusal, for states 13, 23, and 26. A `header-refused` refusal carries the sentence
+ * of `matchDeviceEditHeaders`, which names each missing column and the Checksum rule, so the caller
+ * passes that sentence rather than a copy. A `drive-source-unavailable` refusal names the source
+ * file, so the caller passes the name that Drive answered (Drive slice design section 1).
  */
 export function deviceImportRefusalText(
   refusal: DeviceImportRefusal,
   headerReason?: string,
+  sourceName?: string,
 ): string {
   switch (refusal) {
     case 'unreadable-file':
@@ -99,6 +105,14 @@ export function deviceImportRefusalText(
           'A header refusal carries the reason of matchDeviceEditHeaders.',
         );
       return headerReason;
+    case 'drive-source-unavailable':
+      if (!sourceName)
+        throw new Error('A Drive source refusal carries the file name.');
+      return `Campus Commander cannot read ${sourceName} from Google Drive. Choose the file again in Google Drive, then import again.`;
+    case 'source-too-large':
+      return 'The file holds more than 1 GiB of data. Remove rows or columns, then import again.';
+    case 'rows-too-large':
+      return '1,000 rows of this tab hold more than 64 MiB of data. Shorten the long cells, then import again.';
   }
 }
 

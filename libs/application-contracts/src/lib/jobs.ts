@@ -113,7 +113,8 @@ export const jobProgressSchema = z
 export type JobProgress = z.infer<typeof jobProgressSchema>;
 
 /** The job failure codes of section 1.2: the sync codes, the two revalidation codes, and the three
- * export and import codes of design section 1. */
+ * export and import codes of design section 1. A Sheet export adds its two codes (Drive slice
+ * design section 6). */
 export const jobFailureSchema = z.union([
   deviceSyncFailureSchema,
   z.enum([
@@ -122,15 +123,20 @@ export const jobFailureSchema = z.union([
     'storage-unavailable',
     'inventory-unavailable',
     'export-too-large',
+    'drive-unavailable',
+    'sheet-write-failed',
   ]),
 ]);
 export type JobFailure = z.infer<typeof jobFailureSchema>;
 
 /** The progress phases of design section 2, in job order. An export writes rows and prepares a
- * download. A validation reads a header, refreshes, compares, and writes a report. */
+ * download. A validation reads a header, refreshes, compares, and writes a report. The Drive slice
+ * adds the Sheet write and the Drive read (design section 1). */
 export const JOB_PHASES = [
   'write-rows',
+  'create-sheet',
   'prepare-download',
+  'drive-read',
   'header-check',
   'refresh',
   'compare',
@@ -154,6 +160,12 @@ export type JobPhase = z.infer<typeof jobPhaseSchema>;
 export const JOB_EXPORT_PURPOSES = ['edit', 'report'] as const;
 export const jobExportPurposeSchema = z.enum(JOB_EXPORT_PURPOSES);
 export type JobExportPurpose = z.infer<typeof jobExportPurposeSchema>;
+
+/** The two export file formats of the Drive slice (design section 1). A CSV export writes a file,
+ * and a Sheet export writes a Google Sheet. `DEVICE_EXPORT_FORMATS` names the same list. */
+export const JOB_EXPORT_FILE_FORMATS = ['csv', 'sheet'] as const;
+export const jobExportFileFormatSchema = z.enum(JOB_EXPORT_FILE_FORMATS);
+export type JobExportFileFormat = z.infer<typeof jobExportFileFormatSchema>;
 
 /** The export summary block of the Jobs grid (state 26). It stays null for another kind of job. */
 export const jobExportSummarySchema = z.strictObject({
@@ -215,6 +227,17 @@ export const jobImportSummarySchema = z.strictObject({
   refusal: z.string().min(1).max(64).nullable(),
 });
 export type JobImportSummary = z.infer<typeof jobImportSummarySchema>;
+
+/** The three import source types of the Drive slice (design section 1). `csv` is the uploaded
+ * file. `drive-sheet` names a Sheet tab, and `drive-csv` a CSV file in Drive.
+ * `DEVICE_IMPORT_SOURCE_TYPES` names the same list. */
+export const JOB_IMPORT_SOURCE_TYPES = [
+  'csv',
+  'drive-sheet',
+  'drive-csv',
+] as const;
+export const jobImportSourceTypeSchema = z.enum(JOB_IMPORT_SOURCE_TYPES);
+export type JobImportSourceType = z.infer<typeof jobImportSourceTypeSchema>;
 
 /** The changes of an executed import plan by outcome (design section 8). A change that Execute
  * never ran counts under `notRun`. */
@@ -404,28 +427,36 @@ export const jobDetailSchema = jobSummarySchema
     /** The frozen reason of a Deprovision job. It stays null for another job. */
     deprovisionReason: deprovisionReasonSchema.nullable(),
     targetOrgUnitPaths: z.array(orgUnitPath).max(10000).nullable(),
-    /** The published file of an export job (design sections 1 and 5). It stays null for another
-     * job. */
+    /** The file of an export job (design sections 1 and 5). It stays null for another job. A Sheet
+     * file carries a null size and expiry, because it never expires (Drive slice design section 1). */
     exportFile: z
       .strictObject({
         name: z.string().min(1).max(255),
-        sizeBytes: count,
+        /** The file format. A built CSV answer fills it (Drive slice design section 1). */
+        format: jobExportFileFormatSchema.default('csv'),
+        sizeBytes: count.nullable(),
         rows: count,
         columns: count,
-        expiresAt: timestamp,
+        expiresAt: timestamp.nullable(),
+        /** The link of a Sheet, built from the stored spreadsheet ID. A CSV file carries none. */
+        sheetUrl: z.url().max(2048).nullable().default(null),
       })
       .nullable(),
-    /** The uploaded file of a validation job (design sections 1 and 6). It stays null for another
-     * job. */
+    /** The source of a validation job (design sections 1 and 6). It stays null for another job. */
     importSource: z
       .strictObject({
         name: z.string().min(1).max(255),
+        /** The source type. A built answer fills the uploaded file (Drive slice design section 1). */
+        sourceType: jobImportSourceTypeSchema.default('csv'),
         sizeBytes: count,
         rowsRead: count,
         candidateRows: count,
+        /** The chosen tab of a Sheet. A CSV file carries none. */
+        tabTitle: z.string().min(1).max(255).nullable().default(null),
         /** The refusal text of a failed header check, for states 23 and 26. The header refusal of
          * `matchDeviceEditHeaders` repeats a whole header label, so the bound follows that
-         * producer (`DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH`). */
+         * producer (`DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH`). A lost Drive source also
+         * stores its sentence here, for state 13. */
         refusalText: z
           .string()
           .min(1)

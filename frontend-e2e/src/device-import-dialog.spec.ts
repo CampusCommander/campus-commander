@@ -294,6 +294,7 @@ const importJob = (name: ImportCase) => ({
   targetOrgUnitPaths: null,
   importSource: {
     name: 'devices.csv',
+    sourceType: 'csv',
     sizeBytes: 7_936,
     rowsRead:
       name === 'running'
@@ -304,6 +305,7 @@ const importJob = (name: ImportCase) => ({
             ? 3000
             : 30,
     candidateRows: name === 'failed' ? 0 : 30,
+    tabTitle: null,
     refusalText:
       name === 'failed'
         ? 'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.'
@@ -368,10 +370,12 @@ const exportJob = {
   exportSummary: { purpose: 'edit' },
   exportFile: {
     name: 'devices-for-editing-EXP-001.csv',
+    format: 'csv',
     sizeBytes: 7_987,
     rows: rows.length,
     columns: 10,
     expiresAt: future(),
+    sheetUrl: null,
   },
   importSummary: null,
   cancelRequest: null,
