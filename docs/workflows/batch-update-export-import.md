@@ -1,6 +1,6 @@
 # Batch update devices through export and import
 
-Status: proposed, and the CSV slice mockup is approved. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
+Status: proposed, and the owner signed off the CSV slice on 2026-10-30. On 2026-10-26 the owner answered decisions D1 to D4 and added the import modes (D5). He also supplied notes on his earlier implementation.
 Later that day he answered the open defaults, directed a universal job cancel (D6), and set its rules.
 
 On 2026-10-28 the owner signed off the universal job cancel (D6). Owner: "Agreed I sign off on that."
@@ -11,13 +11,15 @@ On 2026-10-26 the owner approved the job cancel mockup. Owner, in the main chat:
 On 2026-10-28 the owner approved version 4 of the CSV slice mockup and directed its build. Owner, in the main chat: "This is perfect. Please go ahead and execute on this."
 The approved [mockup](../ui/designs/2026-10-28-device-export-import.html) and its [notes](../ui/designs/2026-10-28-device-export-import-notes.md) set the CSV slice screens. They outrank this record on composition.
 
-The Google Drive slice stays proposed.
+On 2026-10-30 the owner signed off the CSV slice. The sign-off package README asked: "Reply `sign off` to accept the CSV slice as built." Owner, in the main chat: "sign off".
+
+The Google Drive slice stays proposed. Its mockup is approved, and its build is not.
 On 2026-10-30 the owner approved version 1 of the Google Drive slice mockup. Owner, in the main chat: "approve, all recommended".
 The approved [Drive slice mockup](../ui/designs/2026-10-30-device-drive-slice.html) and its [notes](../ui/designs/2026-10-30-device-drive-slice-notes.md) set the Drive slice screens.
 
 Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, 2026-10-26, 2026-10-28, and 2026-10-30, quoted under [Owner direction](#owner-direction).
 
-Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). The approved CSV slice mockup closes the CSV design gaps. Gaps 2 and 7 stay open for the Google Drive slice.
+Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). The approved CSV slice mockup closes the CSV design gaps. The approved Google Drive slice mockup closes gaps 2 and 7.
 Technical design: [batch update through export and import](../research/batch-update-export-import-technical-design.md).
 Replaces: the stored-baseline comparison of `docs/portfolio/02-domain-model.md:120-151` and CSV-01 to CSV-03 (`docs/ui/patterns.md:221-254`).
 
@@ -321,6 +323,18 @@ The six answers, each the recommended option of the [mockup notes](../ui/designs
 5. The Google connection page shows the saved Picker API key in full.
 6. Every person reads the fix in the Drive notes, as the built device notes do.
 
+### 2026-10-30, main chat: the CSV slice sign-off
+
+The eng-lead sent the sign-off package for the CSV slice. Its README asked:
+
+> Reply `sign off` to accept the CSV slice as built.
+
+The owner answered:
+
+> sign off
+
+The sign-off accepts the 124 drafted strings of `owner-review-wording.md` as built.
+
 ## Implementation defaults
 
 The owner settled these points on 2026-10-26:
@@ -445,7 +459,8 @@ The cancel slice demonstration is complete and signed off on 2026-10-28.
 CQ1 cancelled a queued job and a running job of each kind on admin-sdk-mock.
 Each job page showed the actual outcomes, and nothing rolled back.
 
-Then demonstrate the CSV slice on admin-sdk-mock:
+The CSV slice demonstration is complete and signed off on 2026-10-30.
+Rehearsal XQ1 (card `t_dabeb6f5`) passed steps 1 to 9 at `1d6bc38`. The dry run (card `t_6cc7c0df`) passed every step at `c734ada`.
 
 1. Export selected devices for editing to a CSV file. The file holds the template, Google's status values, and the checksums.
 2. Import the unedited file with Sync changes. Every row is unchanged, and Execute stays disabled.

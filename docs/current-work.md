@@ -54,6 +54,8 @@ On 2026-10-30 the owner approved version 1 of the Google Drive slice mockup. Own
 The approved mockup is [2026-10-30-device-drive-slice.html](ui/designs/2026-10-30-device-drive-slice.html).
 Its six answers sit in the record under "2026-10-30, main chat: the Google Drive slice mockup".
 
+On 2026-10-30 the owner signed off the CSV slice. The sign-off package README asked: "Reply `sign off` to accept the CSV slice as built." Owner, in the main chat: "sign off".
+
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -77,8 +79,15 @@ Version 4 of the CSV slice mockup applies the UI changes of 2026-10-28 and two p
 The owner approved it on 2026-10-28: "This is perfect. Please go ahead and execute on this."
 The [mockup](ui/designs/2026-10-28-device-export-import.html) and its [notes](ui/designs/2026-10-28-device-export-import-notes.md) set the screens. A design addendum comes before the build cards.
 
-The universal job cancel is built. The CSV slice is built and waits for the owner sign-off.
-The Google Drive slice has an approved mockup. Its design addendum comes next.
+The universal job cancel is built. The owner signed off the CSV slice on 2026-10-30. Owner, in the main chat: "sign off".
+The sign-off accepts the 124 drafted strings of the package's `owner-review-wording.md` as built.
+
+Rehearsal XQ1 (card `t_dabeb6f5`) passed steps 1 to 9 at `1d6bc38`, on a review build whose worker it patched.
+PR #184 fixed that review build worker, and PR #185 fixed the status chip of a partial job.
+The dry run (card `t_6cc7c0df`) then passed every walkthrough step at `c734ada`, on the review build as it ships.
+Finding 7 held in both runs.
+
+The Google Drive slice has an approved mockup. Its design addendum (card `t_a3eea4be`) comes next.
 A live Google Sheet export creates a Google file. It needs the owner's authorization, as live device writes do.
 
 ### Cancel pending work on any job (signed off 2026-10-28)
