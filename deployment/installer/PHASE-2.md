@@ -6,7 +6,7 @@ Setup obtains the OIDC issuer, client identifier, session limits, and a protecte
 Setup never requests a client secret as a command argument or terminal answer.
 
 Register the exact callback `${publicOrigin}/api/auth/callback` with the identity provider.
-Use the public HTTPS origin from setup. Request `openid profile` scopes.
+Use the public HTTPS origin from setup. Request the `openid profile email` scopes.
 Keep background Google authorization separate from application sign-in.
 
 ## Protected answers

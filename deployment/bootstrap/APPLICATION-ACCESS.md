@@ -29,7 +29,7 @@ See [guided onboarding](../installer/HOSTED.md#guided-google-setup-and-administr
 ## Advanced provider configuration
 
 Register a confidential web client with the district identity provider.
-Enable authorization code flow, S256 PKCE, and the `openid profile` scopes.
+Enable authorization code flow, S256 PKCE, and the `openid profile email` scopes.
 Register exactly `https://<application-host>/api/auth/callback` as its redirect URI.
 Obtain the initial administrator's stable issuer and subject from the provider's administrative records.
 Do not substitute an email address for the subject.

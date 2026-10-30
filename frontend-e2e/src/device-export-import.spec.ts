@@ -633,9 +633,11 @@ const importDetail = (run: ImportRun) => ({
   },
   importSource: {
     name: 'devices-for-editing-EXP-001.csv',
+    sourceType: 'csv',
     sizeBytes: 8064,
     rowsRead: run === 'partial' ? 2 : 12,
     candidateRows: run === 'partial' ? 2 : 12,
+    tabTitle: null,
     refusalText: null,
   },
   plan: run === 'open' ? openPlan : executedPlan,

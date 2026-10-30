@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   BATTERY_LABELS,
+  DEVICE_EXPORT_FORMATS,
   DEVICE_REPORT_FIELD_IDS,
   DEVICE_REPORT_FIELD_LABELS,
   DEVICE_STATUS_LABELS,
@@ -79,8 +80,16 @@ test('an edit export names no column and a report export names its grid columns'
   assert.equal(
     deviceExportRequestSchema.safeParse({ ...request, format: 'sheet' })
       .success,
+    true,
+    'A Sheet export names the edit purpose.',
+  );
+  assert.equal(
+    deviceExportRequestSchema.safeParse({
+      ...report,
+      format: 'sheet',
+    }).success,
     false,
-    'The Drive slice adds sheet.',
+    'Reports stays a CSV file.',
   );
   assert.equal(
     deviceExportRequestSchema.safeParse({ ...request, extra: true }).success,
@@ -259,6 +268,20 @@ test('the battery and status labels serve the grid and the report', () => {
   assert.equal(statusText('OTHER'), 'OTHER');
 });
 
+test('the export formats are the CSV file and the Google Sheet', () => {
+  assert.deepEqual(DEVICE_EXPORT_FORMATS, ['csv', 'sheet']);
+  for (const format of DEVICE_EXPORT_FORMATS)
+    assert.equal(
+      deviceExportRequestSchema.safeParse({ ...request, format }).success,
+      true,
+      `${format} parses.`,
+    );
+  assert.equal(
+    deviceExportRequestSchema.safeParse({ ...request, format: 'xlsx' }).success,
+    false,
+  );
+});
+
 test('the export file name follows the scenario data of the notes', () => {
   assert.equal(
     deviceExportFileName('edit', 'EXP-001'),
@@ -267,5 +290,10 @@ test('the export file name follows the scenario data of the notes', () => {
   assert.equal(
     deviceExportFileName('report', 'EXP-002'),
     'device-report-EXP-002.csv',
+  );
+  // A Sheet takes the CSV name without `.csv` (Drive slice design section 1, notes:227).
+  assert.equal(
+    deviceExportFileName('edit', 'EXP-003', 'sheet'),
+    'devices-for-editing-EXP-003',
   );
 });

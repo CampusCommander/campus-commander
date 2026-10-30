@@ -318,14 +318,19 @@ export class DeviceExportImportDialog {
   protected readonly file = computed(() => {
     const file = this.store.job()?.exportFile ?? null;
     if (!file) return null;
-    const expired = Date.parse(file.expiresAt) <= this.now();
+    // A Sheet never expires, so it holds no expiry (Drive slice design section 1).
+    const expiresAt = file.expiresAt;
+    const expired = expiresAt !== null && Date.parse(expiresAt) <= this.now();
     return {
       ...file,
       expired,
       facts: exportFileFactList(file),
-      until: expired
-        ? exportExpiredText(file.expiresAt)
-        : `Available until ${formatTimestamp(file.expiresAt)}`,
+      until:
+        expiresAt === null
+          ? ''
+          : expired
+            ? exportExpiredText(expiresAt)
+            : `Available until ${formatTimestamp(expiresAt)}`,
     };
   });
   protected readonly fileHref = computed(() => {

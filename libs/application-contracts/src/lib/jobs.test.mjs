@@ -855,7 +855,9 @@ const detailOf = (row) => ({
 test('the export phases and purpose parse', () => {
   assert.deepEqual(jobPhaseNameSchema.options, [
     'write-rows',
+    'create-sheet',
     'prepare-download',
+    'drive-read',
     'header-check',
     'refresh',
     'compare',
@@ -901,11 +903,38 @@ test('an export job carries its phase, its summary, and its file', () => {
       expiresAt: at,
     },
   };
-  assert.deepEqual(jobDetailSchema.parse(detail), detail);
+  // A built fixture takes the CSV defaults (Drive slice design section 1).
+  const parsed = jobDetailSchema.parse(detail);
+  assert.deepEqual(parsed.exportFile, {
+    ...detail.exportFile,
+    format: 'csv',
+    sheetUrl: null,
+  });
   assert.equal(
     jobDetailSchema.safeParse({
       ...detail,
       exportFile: { ...detail.exportFile, columns: -1 },
+    }).success,
+    false,
+  );
+  // A Sheet file carries its link and no size or expiry (design section 1, notes:225).
+  const sheet = {
+    ...detail,
+    exportFile: {
+      name: 'devices-for-editing-EXP-003',
+      format: 'sheet',
+      sizeBytes: null,
+      rows: 48,
+      columns: 10,
+      expiresAt: null,
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit',
+    },
+  };
+  assert.deepEqual(jobDetailSchema.parse(sheet), sheet);
+  assert.equal(
+    jobDetailSchema.safeParse({
+      ...sheet,
+      exportFile: { ...sheet.exportFile, sheetUrl: 'not a url' },
     }).success,
     false,
   );
@@ -964,8 +993,24 @@ test('a validation job carries its phase, its summary, the plan, and the counts'
       notRun: 2,
     },
   };
-  assert.deepEqual(jobDetailSchema.parse(detail), detail);
-  // The plan states of design section 1.
+  // A built fixture takes the CSV defaults (Drive slice design section 1).
+  const parsed = jobDetailSchema.parse(detail);
+  assert.deepEqual(parsed.importSource, {
+    ...detail.importSource,
+    sourceType: 'csv',
+    tabTitle: null,
+  });
+  // A Drive source names its type and, for a Sheet, the chosen tab (design section 1).
+  const drive = {
+    ...detail,
+    importSource: {
+      ...detail.importSource,
+      name: 'devices-for-editing-EXP-003',
+      sourceType: 'drive-sheet',
+      tabTitle: 'Devices',
+    },
+  };
+  assert.deepEqual(jobDetailSchema.parse(drive), drive);
   for (const state of ['open', 'executed', 'cancelled', 'expired'])
     assert.equal(
       jobImportPlanStateSchema.safeParse(state).success,
@@ -1027,9 +1072,11 @@ test('the longest header refusal fits the import source of a validation job', ()
     ...validation,
     importSource: {
       name: 'devices-for-editing-EXP-001.csv',
+      sourceType: 'csv',
       sizeBytes: 7987,
       rowsRead: 0,
       candidateRows: 0,
+      tabTitle: null,
       refusalText,
     },
   };
@@ -1126,6 +1173,8 @@ test('the export and import failure codes parse', () => {
     'storage-unavailable',
     'inventory-unavailable',
     'export-too-large',
+    'drive-unavailable',
+    'sheet-write-failed',
   ])
     assert.equal(
       jobSummarySchema.safeParse({ ...summary, failure }).success,

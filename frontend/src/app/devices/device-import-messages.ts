@@ -259,6 +259,9 @@ const DEVICE_IMPORT_REFUSALS_BY_CODE: Readonly<
   'cell-too-long': 'cell-too-long',
   'too-many-rows': 'too-many-rows',
   'header-refused': 'header-refused',
+  'drive-source-unavailable': 'drive-source-unavailable',
+  'source-too-large': 'source-too-large',
+  'rows-too-large': 'rows-too-large',
 });
 
 /** The report step of states 13 to 15 and 18 to 22. */
@@ -681,6 +684,14 @@ export function importFailureText(job: JobDetail | null): string {
       headerReason ??
       'The header check failed. Correct the file and import it again.'
     );
+  // A Drive source refusal names the file that Google Drive answered (state 13).
+  if (known === 'drive-source-unavailable') {
+    const name = job?.importSource?.name;
+    return name
+      ? deviceImportRefusalText(known, undefined, name)
+      : (headerReason ??
+          'The validation stopped before it finished. Import the file again.');
+  }
   if (known) return deviceImportRefusalText(known);
   switch (job?.failure) {
     case 'storage-unavailable':

@@ -184,9 +184,11 @@ const importDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   },
   importSource: {
     name: 'devices-for-editing-EXP-001.csv',
+    sourceType: 'csv',
     sizeBytes: 1024,
     rowsRead: 11,
     candidateRows: 9,
+    tabTitle: null,
     refusalText: null,
   },
   plan: openPlan,

@@ -99,15 +99,16 @@ export function exportFailureText(failure: JobFailure | null): string {
   }
 }
 
-/** The file line of a ready export (states 05 and 08). */
+/** The facts of a ready export file. A Sheet holds no byte size, so it names none (Drive slice
+ * design section 1). */
 export function exportFileFactList(file: {
-  sizeBytes: number;
+  sizeBytes: number | null;
   rows: number;
   columns: number;
 }): readonly string[] {
   return [
     'CSV file',
-    fileSizeText(file.sizeBytes),
+    ...(file.sizeBytes === null ? [] : [fileSizeText(file.sizeBytes)]),
     `${file.rows.toLocaleString('en-US')} ${file.rows === 1 ? 'row' : 'rows'}`,
     `${file.columns.toLocaleString('en-US')} ${
       file.columns === 1 ? 'column' : 'columns'
@@ -116,7 +117,7 @@ export function exportFileFactList(file: {
 }
 
 export function exportFileFacts(file: {
-  sizeBytes: number;
+  sizeBytes: number | null;
   rows: number;
   columns: number;
 }): string {
