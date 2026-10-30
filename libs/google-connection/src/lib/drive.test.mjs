@@ -56,8 +56,8 @@ async function collected(source) {
 }
 
 /** A response body of exactly `bytes` bytes, streamed as a Google answer arrives. */
-function filled(bytes, prefix = '', suffix = '') {
-  let fill = bytes - prefix.length - suffix.length;
+function filled(bytes, prefix = '', suffix = '', padding = 0) {
+  let fill = bytes - prefix.length - suffix.length - padding;
   return new ReadableStream({
     start(controller) {
       if (prefix !== '') controller.enqueue(Buffer.from(prefix));
@@ -68,11 +68,20 @@ function filled(bytes, prefix = '', suffix = '') {
         fill -= take;
       }
       if (suffix !== '') controller.enqueue(Buffer.from(suffix));
+      // Trailing JSON whitespace, which a parse drops and a re-serialization loses.
+      const spaces = new Uint8Array(64 * 1024).fill(0x20);
+      let left = padding;
+      while (left > 0) {
+        const take = Math.min(left, spaces.length);
+        controller.enqueue(spaces.subarray(0, take));
+        left -= take;
+      }
       controller.close();
     },
   });
 }
-const jsonWindow = (bytes) => filled(bytes, '{"values":[["', '"]]}');
+const jsonWindow = (bytes, padding = 0) =>
+  filled(bytes, '{"values":[["', '"]]}', padding);
 const rawWindow = (bytes) => filled(bytes);
 
 /**
@@ -589,8 +598,13 @@ for (const contentLength of [true, false])
     const size = GOOGLE_DRIVE_WINDOW_BYTES + 1;
     const client = new GoogleDriveClient(
       byteClient(
-        () => jsonWindow(size),
-        contentLength ? { 'content-length': String(size) } : {},
+        () => jsonWindow(size, 4096),
+        contentLength
+          ? {
+              'content-type': 'application/json',
+              'content-length': String(size),
+            }
+          : { 'content-type': 'application/json' },
       ),
       AbortSignal.timeout(30_000),
     );
@@ -604,7 +618,10 @@ for (const contentLength of [true, false])
 test('a window of exactly 64 MiB is read', async () => {
   const size = GOOGLE_DRIVE_WINDOW_BYTES;
   const client = new GoogleDriveClient(
-    byteClient(() => jsonWindow(size), { 'content-length': String(size) }),
+    byteClient(() => jsonWindow(size), {
+      'content-type': 'application/json',
+      'content-length': String(size),
+    }),
     AbortSignal.timeout(30_000),
   );
   const tab = await client.readTab('fixture-sheet', 0);
