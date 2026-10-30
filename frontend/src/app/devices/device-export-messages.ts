@@ -202,12 +202,22 @@ export const REPORT_HELP_LIMITS: readonly string[] = Object.freeze([
   'The download expires 30 days after the export.',
 ]);
 
-/** The two help topics that this card builds (states 06 and 07). */
-export const EXPORT_HELP_TOPICS = ['export', 'report'] as const;
+/** The help topics that this dialog builds (states 06, 07, 11, and 13 to 15). */
+export const EXPORT_HELP_TOPICS = [
+  'export',
+  'report',
+  'import',
+  'review',
+] as const;
 export type ExportHelpTopic = (typeof EXPORT_HELP_TOPICS)[number];
 export const EXPORT_HELP_TOPIC_LABELS: Readonly<
   Record<ExportHelpTopic, string>
-> = Object.freeze({ export: 'Export', report: 'Reports' });
+> = Object.freeze({
+  export: 'Export',
+  report: 'Reports',
+  import: 'Import',
+  review: 'Review',
+});
 
 /** The copy of one Bulk Actions entry, in the order of the built notes. */
 interface EntryCopy {

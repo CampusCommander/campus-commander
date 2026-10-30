@@ -466,6 +466,8 @@ describe('DeviceExportImportDialog', () => {
     expect(toggles.map((toggle) => toggle.textContent?.trim())).toEqual([
       'Export',
       'Reports',
+      'Import',
+      'Review',
     ]);
     toggles[1].click();
     await render();

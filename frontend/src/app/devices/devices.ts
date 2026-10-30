@@ -35,6 +35,13 @@ import { DeviceGridRevertDialog } from './device-grid-revert-dialog';
 import { DeviceExportImportDialog } from './device-export-import-dialog';
 import { DeviceExportImportStore } from './device-export-import.store';
 import { exportEntryNote } from './device-export-messages';
+import {
+  gridImportRefusalLine,
+  gridOpenPlanLine,
+  importFailureText,
+} from './device-import-messages';
+import { formatTimestamp } from '../jobs/job-fields';
+import { expiryClock } from '../expiry-clock';
 import { DEVICE_GRID_ID } from './device-selection';
 import { DeviceOrgUnitTreeStore } from './device-org-unit-tree.store';
 import { deviceActionNote } from './device-action-messages';
@@ -123,6 +130,11 @@ export class DevicesPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   /** The Export, Reports, and Import dialog. It lives for the browser tab (behavior 6). */
   protected readonly exportDialog = inject(DeviceExportImportStore);
+  /** The clock that drops the grid note when its open plan expires (state 26, R9). */
+  private readonly importPlanNow = expiryClock(() => {
+    const plan = this.exportDialog.importPlan();
+    return plan?.state === 'open' ? plan.expiresAt : null;
+  });
   /** The grid ID that the export request names (design section 1). */
   protected readonly gridId = DEVICE_GRID_ID;
   /** The ?job= value that opened the dialog, so a repeat does not reopen it. */
@@ -377,6 +389,29 @@ export class DevicesPage implements OnInit, OnDestroy {
   });
   /** The Bulk Actions trigger references the note of Update device. */
   protected readonly note = computed(() => this.actionNotes().update);
+
+  /**
+   * The grid line of this tab's import (design section 9, behavior 7): an open plan that waits for
+   * Execute, or the reason of the last refused validation. It reads the dialog's job detail, so no
+   * second read is needed.
+   */
+  protected readonly importLine = computed(() => {
+    const displayId = this.exportDialog.activeImport();
+    if (!displayId) return '';
+    // The accepted plan of this import owns the note, so a cancelled plan or a plan past
+    // its expiry never reads as waiting for Execute (R9).
+    const plan = this.exportDialog.importPlan();
+    if (plan?.state === 'open') {
+      if (Date.parse(plan.expiresAt) <= this.importPlanNow()) return '';
+      return gridOpenPlanLine(displayId, formatTimestamp(plan.expiresAt));
+    }
+    const job = this.exportDialog.job();
+    if (job?.displayId !== displayId) return '';
+    if (job.status === 'failed' || job.status === 'needs-review') {
+      return gridImportRefusalLine(importFailureText(job));
+    }
+    return '';
+  });
 
   /** The actions authorize at the connected customer's district scope (design 2.1). */
   private authorized(action: Action): boolean {

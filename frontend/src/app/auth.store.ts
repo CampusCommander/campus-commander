@@ -139,22 +139,34 @@ export const AuthStore = signalStore(
         patchState(store, { loading: false });
       }
     },
-    async request(path: string, body?: unknown) {
+    /**
+     * One request to Campus Commander. A JSON body posts as `application/json`; a `raw` body
+     * posts as its own content type, for the raw CSV upload of design section 4.
+     */
+    async request(
+      path: string,
+      body?: unknown,
+      options: {
+        raw?: Blob;
+        contentType?: string;
+        timeoutMs?: number;
+      } = {},
+    ) {
       if (store.interrupted())
         return Response.json({ code: 'access-changed' }, { status: 401 });
       const requestedSession = store.session();
+      const hasBody = body !== undefined || options.raw !== undefined;
       const response = await fetch(path, {
-        method: body === undefined ? 'GET' : 'POST',
+        method: hasBody ? 'POST' : 'GET',
         credentials: 'same-origin',
-        signal: AbortSignal.timeout(45000),
-        headers:
-          body === undefined
-            ? {}
-            : {
-                'content-type': 'application/json',
-                'x-csrf-token': store.session()?.csrfToken ?? '',
-              },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(options.timeoutMs ?? 45000),
+        headers: hasBody
+          ? {
+              'content-type': options.contentType ?? 'application/json',
+              'x-csrf-token': store.session()?.csrfToken ?? '',
+            }
+          : {},
+        ...(hasBody ? { body: options.raw ?? JSON.stringify(body) } : {}),
       });
       if (
         response.status === 401 &&

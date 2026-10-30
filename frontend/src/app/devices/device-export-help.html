@@ -1,4 +1,8 @@
-<aside class="export-help" aria-labelledby="export-help-title">
+<aside
+  class="export-help"
+  [class.help-import-pane]="topic() === 'import'"
+  aria-labelledby="export-help-title"
+>
   <h3 id="export-help-title">{{ HELP_TITLE }}</h3>
   <mat-button-toggle-group
     class="help-topics"
@@ -49,13 +53,103 @@
       }
     </ul>
   </div>
-  } @else {
+  } @else if (topic() === 'report') {
   <div class="help-body">
     <p>{{ REPORT_HELP_INTRO }}</p>
     <h4>{{ EXPORT_HELP_LIMITS_HEAD }}</h4>
     <ul>
       @for (limit of REPORT_HELP_LIMITS; track limit) {
       <li>{{ limit }}</li>
+      }
+    </ul>
+  </div>
+  } @else if (topic() === 'import') {
+  <div class="help-body help-import">
+    <h4>{{ IMPORT_HELP_MODES_HEAD }}</h4>
+    <dl class="help-modes">
+      @for (mode of IMPORT_HELP_MODES; track mode.mode) {
+      <dt>{{ mode.mode }}</dt>
+      <dd>{{ mode.text }}</dd>
+      }
+    </dl>
+    <h4>{{ IMPORT_HELP_RULES_HEAD }}</h4>
+    <ul>
+      @for (rule of IMPORT_HELP_RULES; track rule) {
+      <li>{{ rule }}</li>
+      }
+    </ul>
+    <h4>{{ IMPORT_HELP_LIMITS_HEAD }}</h4>
+    <table class="help-table">
+      <thead>
+        <tr>
+          <th scope="col">Field</th>
+          <th scope="col">Limit</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of IMPORT_HELP_LIMITS; track row.field) {
+        <tr>
+          <th scope="row">{{ row.field }}</th>
+          <td>{{ row.limit }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+    <h4>{{ IMPORT_HELP_STATUS_HEAD }}</h4>
+    <table class="help-table">
+      <thead>
+        <tr>
+          <th scope="col">Status cell</th>
+          <th scope="col">Effect</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of IMPORT_HELP_STATUS_CODES; track row[0]) {
+        <tr>
+          <th scope="row"><code class="code-key">{{ row[0] }}</code></th>
+          <td>{{ row[1] }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+    <h4>{{ IMPORT_HELP_REASON_HEAD }}</h4>
+    <table class="help-table">
+      <thead>
+        <tr>
+          <th scope="col">Reason code</th>
+          <th scope="col">Label</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of IMPORT_HELP_REASON_CODES; track row[0]) {
+        <tr>
+          <th scope="row"><code class="code-key">{{ row[0] }}</code></th>
+          <td>{{ row[1] }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+    <p>{{ IMPORT_HELP_CODES_LINE }}</p>
+  </div>
+  } @else {
+  <div class="help-body">
+    <p>{{ REVIEW_HELP_INTRO }}</p>
+    <h4>{{ REVIEW_HELP_PLAN_HEAD }}</h4>
+    <ul>
+      @for (line of REVIEW_HELP_PLAN; track line) {
+      <li>{{ line }}</li>
+      }
+    </ul>
+    <h4>{{ REVIEW_HELP_EXECUTE_HEAD }}</h4>
+    <ul>
+      @for (line of REVIEW_HELP_EXECUTE; track line) {
+      <li>{{ line }}</li>
+      }
+    </ul>
+    <h4>{{ REVIEW_HELP_REJECTED_HEAD }}</h4>
+    <ul>
+      @for (line of REVIEW_HELP_REJECTED; track line) {
+      <li>{{ line }}</li>
       }
     </ul>
   </div>

@@ -754,3 +754,156 @@ describe('cancelled jobs', () => {
     ).toEqual(['1 device read · none saved', 'Refresh cancelled']);
   });
 });
+
+describe('progressLines of a validation job', () => {
+  const imp = (overrides: Partial<JobSummary> = {}) =>
+    summary({
+      action: 'validate-device-import',
+      displayId: 'IMP-002',
+      scope: { kind: 'rows', deviceCount: 48 },
+      importSummary: {
+        mode: 'sync-changes',
+        planState: null,
+        proposed: 0,
+        rejected: 0,
+        refusal: null,
+      },
+      ...overrides,
+    });
+
+  it('names the refresh phase of a running validation', () => {
+    expect(
+      progressLines(imp({ phase: { name: 'refresh', done: 4, total: 12 } })),
+    ).toEqual(['4 of 12 stale devices read', 'Refresh stale devices']);
+  });
+
+  it('names the compare phase with its checked rows', () => {
+    expect(
+      progressLines(imp({ phase: { name: 'compare', done: 6, total: 30 } })),
+    ).toEqual(['6 of 30 rows checked', 'Compare']);
+  });
+
+  it('counts the rows of a header check that has not finished', () => {
+    expect(
+      progressLines(
+        imp({ phase: { name: 'header-check', done: 0, total: null } }),
+      ),
+    ).toEqual(['48 rows read', 'Header check']);
+  });
+
+  it('names the refusal of a failed validation', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'failed',
+          scope: { kind: 'rows', deviceCount: 0 },
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'header-refused',
+          },
+        }),
+      ),
+    ).toEqual(['0 rows checked', 'Header check failed']);
+  });
+
+  it('counts the refresh reads of a cancelled validation and states that no report exists', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'cancelled',
+          phase: { name: 'refresh', done: 4, total: 12 },
+        }),
+      ),
+    ).toEqual(['4 of 12 stale devices read', 'No report']);
+  });
+
+  it('names the open plan of a validated import before Execute', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'completed',
+          importSummary: {
+            mode: 'sync-changes',
+            planState: 'open',
+            proposed: 12,
+            rejected: 0,
+            refusal: null,
+          },
+        }),
+      ),
+    ).toEqual(['48 rows checked', 'Plan open']);
+  });
+
+  it('names the executed, cancelled, and expired plans', () => {
+    const withPlan = (planState: 'executed' | 'cancelled' | 'expired') =>
+      imp({
+        status: 'completed',
+        importSummary: {
+          mode: 'sync-changes',
+          planState,
+          proposed: 12,
+          rejected: 0,
+          refusal: null,
+        },
+      });
+    expect(progressLines(withPlan('executed'))[1]).toBe('Plan executed');
+    expect(progressLines(withPlan('cancelled'))[1]).toBe('Plan cancelled');
+    expect(progressLines(withPlan('expired'))[1]).toBe('Plan expired');
+  });
+
+  it('counts the rejected rows of a file with no change', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'completed',
+          scope: { kind: 'rows', deviceCount: 6 },
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 4,
+            refusal: null,
+          },
+        }),
+      ),
+    ).toEqual(['6 rows checked', '4 rejected · no changes']);
+  });
+
+  it('shows the stored short reason of a refusal that is not a code', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'failed',
+          scope: { kind: 'rows', deviceCount: 0 },
+          importSummary: {
+            mode: 'sync-changes',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: 'Checksum column missing',
+          },
+        }),
+      ),
+    ).toEqual(['0 rows checked', 'Checksum column missing']);
+  });
+
+  it('states that a finished validation needs no update', () => {
+    expect(
+      progressLines(
+        imp({
+          status: 'completed',
+          importSummary: {
+            mode: 'sync-all-rows',
+            planState: null,
+            proposed: 0,
+            rejected: 0,
+            refusal: null,
+          },
+        }),
+      ),
+    ).toEqual(['48 rows checked', 'No update needed']);
+  });
+});

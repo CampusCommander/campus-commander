@@ -107,6 +107,47 @@ const secondPage = {
 };
 
 const allJobs = [running, refreshed, review];
+/** The validation jobs of state 26: one cancelled plan, and one file with no update. */
+const importCancelled = {
+  ...running,
+  jobId: '4f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  displayId: 'IMP-001',
+  revision: 5,
+  action: 'validate-device-import',
+  status: 'completed',
+  scope: { kind: 'rows', deviceCount: 48 },
+  progress: {
+    total: 48,
+    succeeded: 48,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  finishedAt: '2026-10-19T11:50:00.000Z',
+  phase: { name: 'report', done: 48, total: 48 },
+  importSummary: {
+    mode: 'sync-changes',
+    planState: 'cancelled',
+    proposed: 12,
+    rejected: 2,
+    refusal: null,
+  },
+};
+const importNoUpdate = {
+  ...importCancelled,
+  jobId: '5f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  displayId: 'IMP-002',
+  importSummary: {
+    mode: 'sync-changes',
+    planState: null,
+    proposed: 0,
+    rejected: 0,
+    refusal: null,
+  },
+};
 /** Fifty rows let the page-2 footer check the API page size. */
 const manyJobs = Array.from({ length: 50 }, (_, index) => ({
   ...review,
@@ -124,6 +165,7 @@ async function signIn(
   options: {
     empty?: boolean;
     many?: boolean;
+    imports?: boolean;
     delay?: number;
     grants?: string[];
     fail?: 'none' | 'http' | 'abort';
@@ -184,7 +226,11 @@ async function signIn(
         return route.fulfill({
           json: { jobs: [], matching: 0, nextCursor: null, observedAt },
         });
-      const matching = allJobs.filter(
+      const matching = (
+        options.imports
+          ? [...allJobs, importCancelled, importNoUpdate]
+          : allJobs
+      ).filter(
         (job) =>
           (!jobId || job.displayId === jobId) &&
           (!status || status.split(',').includes(job.status)),
@@ -305,6 +351,28 @@ test('renders the Jobs grid, footer, and every job state', async ({
     fullPage: true,
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('shows the IMP progress lines of state 26 in the Jobs grid', async ({
+  page,
+}) => {
+  await signIn(page, { imports: true });
+  await page.goto('/jobs');
+  await expect(
+    page.getByRole('heading', { name: 'Jobs', exact: true }),
+  ).toBeVisible();
+  // The real Jobs grid renders the Progress cells of a validation job (state 26).
+  const cancelled = page.getByRole('row', { name: /IMP-001/ });
+  await expect(cancelled).toContainText('48 rows checked');
+  await expect(cancelled).toContainText('Plan cancelled');
+  const noUpdate = page.getByRole('row', { name: /IMP-002/ });
+  await expect(noUpdate).toContainText('48 rows checked');
+  await expect(noUpdate).toContainText('No update needed');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: 'dist/e2e-evidence/export-import/26-jobs-imp-lines.png',
+  });
 });
 
 test('filters by status, edits the chip, and clears the filter', async ({

@@ -49,6 +49,50 @@
   text-transform: uppercase;
 }
 
+/* The mockup opens the topic on its first heading with no top margin (state 11). */
+.help-body > h4:first-child {
+  margin-block-start: 0;
+}
+
+/* The Import topic carries five tables and four headings. Its tighter spacing keeps the
+   complete topic, including the last reason code and its instruction, above the action bar
+   at 1440x900 (R12). */
+.help-body.help-import h4 {
+  margin: 6px 0 0;
+}
+
+.help-body.help-import .help-modes {
+  row-gap: 0;
+}
+
+.help-body.help-import li + li {
+  margin-block-start: 0;
+}
+
+.help-body.help-import .help-table th,
+.help-body.help-import .help-table td {
+  padding: 0 var(--cc-space-sm);
+}
+
+/* The Import topic is the longest: five tables and four headings. The pane and its first
+   rows give back their outer spacing so the last reason code and instruction stay above the
+   action bar at 1440x900, over the setup and over the wide report (R12). */
+.export-help.help-import-pane {
+  padding-block: 12px;
+}
+
+.export-help.help-import-pane .help-topics {
+  margin-block-start: 4px;
+}
+
+.export-help.help-import-pane .help-body {
+  margin-block-start: 8px;
+}
+
+.help-body p {
+  margin: var(--cc-space-sm) 0 0;
+}
+
 .help-body ul {
   margin: 0;
   padding-inline-start: 16px;
@@ -85,5 +129,29 @@
 
 .help-table tbody th {
   width: 40%;
+  font-weight: 500;
+}
+
+/* The mode pair of the Import topic: the term above its sentence (state 11). */
+.help-modes {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  margin: 0;
+  column-gap: var(--cc-space-md);
+  row-gap: 2px;
+}
+
+.help-modes dt {
+  font-weight: 500;
+}
+
+.help-modes dd {
+  margin: 0;
+  color: var(--cc-text-secondary);
+}
+
+.code-key {
+  font-family: var(--cc-font-mono, monospace);
+  font-size: 11.5px;
   font-weight: 500;
 }

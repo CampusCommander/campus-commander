@@ -1,0 +1,541 @@
+/*
+ * The Import steps of the dialog (design section 9, states 09 to 15 and 18 to 24).
+ * The surface, the header, the action bar, and the shared chips come from
+ * `device-export-import-dialog.css`. This file adds the drop zone, the file item, the counters,
+ * the count equation, and the report table. Every value is a token of `theme/tokens.css`.
+ */
+.tone-info {
+  color: var(--cc-accent);
+}
+
+.tone-info .dot {
+  background: var(--cc-accent);
+}
+
+/* The stopping phase of a stopped validation reads with the stop glyph (state 24). */
+.phase.is-stopped .phase-dot {
+  background: var(--cc-text-secondary);
+}
+
+.phase-dot .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* The 1120 px steps: the report of states 13 to 15 and 18 to 22. The dialog takes the full area
+   under the header less the 16 px wrap padding, so the action bar stays in place (notes, choice 3). */
+.export-dialog.is-wide {
+  position: relative;
+  width: 1120px;
+  height: 100%;
+}
+
+/* The help of a wide step lies over the right 520 px of the body, above the action bar. */
+.export-dialog.is-wide.has-help {
+  display: flex;
+  width: 1120px;
+}
+
+.export-main > app-device-export-help {
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 0 auto;
+  width: 520px;
+  border-block-start: 1px solid var(--cc-border);
+  border-inline-start: 1px solid var(--cc-border);
+  border-end-start-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  box-shadow: -8px 0 24px rgb(32 33 36 / 8%);
+}
+
+/* The setup step of states 09 and 10: the mode pair takes two columns. */
+.option-cards.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* The file choice of states 09 and 10: a compact drop zone and the chosen file as one item. */
+.file-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-sm);
+  margin-block-start: var(--cc-space-sm);
+}
+
+.drop-zone {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-md);
+  min-height: 64px;
+  padding: var(--cc-space-sm) var(--cc-space-lg);
+  border: 1px dashed var(--cc-border-control);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-app);
+}
+
+.drop-zone > .material-symbols-outlined {
+  color: var(--cc-text-secondary);
+}
+
+.drop-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--cc-text-secondary);
+}
+
+/* The chosen file of states 09 and 10: the name, the facts, and the header check line. */
+.file-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--cc-space-md);
+  align-items: start;
+  padding: var(--cc-space-md) var(--cc-space-lg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.file-item.is-error {
+  border-color: var(--cc-status-error-text);
+}
+
+.file-item .file-glyph {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+}
+
+.file-text {
+  min-width: 0;
+}
+
+.file-item .file-name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.check-line {
+  display: flex;
+  gap: var(--cc-space-xs);
+  align-items: flex-start;
+  margin: var(--cc-space-sm) 0 0;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.check-line .material-symbols-outlined {
+  flex: none;
+  font-size: 16px;
+}
+
+.check-line.ok {
+  color: var(--cc-status-success-text);
+}
+
+.file-check.bad {
+  color: var(--cc-status-error-text);
+}
+
+/* The counters of states 12 and 24: a value over its label, in plain columns (mockup). */
+.counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--cc-space-md);
+  margin: 0;
+}
+
+.counter {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+
+.counter dt {
+  color: var(--cc-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.counter dd {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The stopped note of state 24: a one-way statement, not an error. */
+.action-note.stopped {
+  border-color: var(--cc-border);
+}
+
+/* The report of states 13 to 15 and 18 to 22: the counts, then one bordered panel. */
+.step.report {
+  flex: 1;
+  min-height: 0;
+  gap: var(--cc-space-lg);
+}
+
+.report-counts {
+  flex: none;
+}
+
+/* The count equation: one line of `48 Rows = 35 Unchanged + 7 Proposed`, in reading order. */
+.count-equation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cc-space-md);
+  margin: 0;
+}
+
+.count-term {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cc-space-xs);
+}
+
+.count-term dd {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-term dt {
+  color: var(--cc-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.count-term.tone-success dd {
+  color: var(--cc-status-success-text);
+}
+
+.count-term.tone-warning dd {
+  color: var(--cc-status-warning-text);
+}
+
+.count-term.tone-error dd {
+  color: var(--cc-status-error-text);
+}
+
+.count-sign {
+  color: var(--cc-text-secondary);
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.change-line {
+  max-width: none;
+  margin: var(--cc-space-xs) 0 0;
+  font-weight: 500;
+}
+
+/* One text line: the refresh sentence, then the oldest observation, in the mockup order. */
+.meta-line {
+  /* The global prose measure is narrower than the dialog body. */
+  max-width: none;
+  margin: var(--cc-space-xs) 0 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* One bounded panel: the views, one page of rows, and the pager (UI-03). */
+.report-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
+
+.report-views {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  padding-inline-end: var(--cc-space-sm);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.report-panel > mat-tab-nav-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.report-tabs {
+  display: flex;
+  flex: none;
+  align-items: center;
+  --mat-tab-container-height: 44px;
+  --mat-tab-divider-height: 0;
+}
+
+.report-tabs .download-rejected {
+  margin-inline-start: auto;
+}
+
+/* The tabs sit at the start of the row, next to each other, each as wide as its label. The
+   stretch class of the tab bar grows every link, so the link keeps its own width here. */
+.report-tabs ::ng-deep .mat-mdc-tab-links {
+  justify-content: flex-start;
+}
+
+.report-tabs ::ng-deep .mat-mdc-tab-links .mat-mdc-tab-link {
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-inline: var(--cc-space-lg);
+}
+
+/* The count of a tab: the surface chip of the approved mockup (states 13 to 15). */
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  margin-inline-start: var(--cc-space-sm);
+  padding: 0 6px;
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-count.tone-error {
+  color: var(--cc-status-error-text);
+}
+
+.tab-count.tone-warning {
+  color: var(--cc-status-warning-text);
+}
+
+.report-table-wrap {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.report-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 36px;
+  padding: 0 var(--cc-space-md);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-align: start;
+}
+
+.report-table td {
+  height: 34px;
+  padding: 7px var(--cc-space-md);
+  border-block-start: 1px solid var(--cc-border);
+  vertical-align: top;
+}
+
+.report-table tbody tr:first-child td {
+  border-block-start: 0;
+}
+
+/* The approved column widths, so the columns stay in place across the three views. */
+.report-table col:nth-child(1) {
+  width: 48px;
+}
+
+.report-table col:nth-child(2) {
+  width: 124px;
+}
+
+.report-table.rv col:nth-child(3) {
+  width: 172px;
+}
+
+.report-table.rv col:nth-child(4) {
+  width: 408px;
+}
+
+.report-table.rj col:nth-child(3) {
+  width: 160px;
+}
+
+.report-table.rj col:nth-child(4) {
+  width: 300px;
+}
+
+.report-table .col-row {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty view: the message in the middle of the bounded table (states 14 and 15). */
+.report-table .message-row td {
+  height: auto;
+  padding: var(--cc-space-xxxl) var(--cc-space-md);
+  border-block-start: 0;
+  color: var(--cc-text-secondary);
+  text-align: center;
+}
+
+.device-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+  /* The 24 px glyph keeps the compact row height of the approved table. */
+  margin-block: -4px;
+}
+
+.device-cell .nw {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-link {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--cc-text-link);
+  vertical-align: middle;
+}
+
+.device-link .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.muted {
+  color: var(--cc-text-secondary);
+}
+
+/* A long path or value takes one line and a start cut, and its tooltip holds the whole text
+   (design section 9, ruling 3). */
+.cut {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cut.clear {
+  color: var(--cc-text-secondary);
+  font-style: italic;
+}
+
+.value-note,
+.value-length {
+  display: block;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* A value cell keeps its cut on one line, with the arrow of the New value before it. */
+.value-cell {
+  display: flex;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+}
+
+.value-cell .cut {
+  flex: 1;
+  min-width: 0;
+}
+
+.arrow {
+  flex: none;
+  color: var(--cc-text-secondary);
+}
+
+.change-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 24px;
+  /* The chip keeps the compact 34 px row of the approved table. */
+  margin-block: -2px;
+  padding-inline: var(--cc-space-md);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.change-chip.tone-success .dot {
+  background: var(--cc-status-success);
+}
+
+.change-chip.tone-warning .dot {
+  background: var(--cc-status-warning);
+}
+
+.change-chip.tone-error .dot {
+  background: var(--cc-status-error);
+}
+
+.warn-icon {
+  margin-inline-end: var(--cc-space-xs);
+  color: var(--cc-status-warning-text);
+  font-family: 'Material Symbols Outlined';
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+.col-reason .warn-icon {
+  color: var(--cc-status-error-text);
+}
+
+/* The pager of the report: 10 lines a page, with the page text at the start (UI-03). */
+.report-pager {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  min-height: 48px;
+  padding: var(--cc-space-xs) var(--cc-space-md) var(--cc-space-xs)
+    var(--cc-space-lg);
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.pager-text {
+  flex: 1;
+  color: var(--cc-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-buttons {
+  display: flex;
+  flex: none;
+  align-items: center;
+}

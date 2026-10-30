@@ -90,6 +90,11 @@ app-device-export-help {
   letter-spacing: 0;
 }
 
+/* The title takes the opening focus, so the ring would only mark a heading. */
+.export-head h2:focus {
+  outline: none;
+}
+
 .export-sub {
   margin: var(--cc-space-xs) 0 0;
   color: var(--cc-text-secondary);

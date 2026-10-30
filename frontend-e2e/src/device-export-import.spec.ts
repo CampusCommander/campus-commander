@@ -151,6 +151,8 @@ interface MockOptions {
   selectedCount?: number;
   /** The job state that a read of EXP-001 answers. */
   state?: 'running' | 'completed';
+  /** The theme of the stored preferences (state 13 of the dark theme). */
+  theme?: 'light' | 'dark';
 }
 
 /** The Devices page needs the session, a published inventory, and the export routes. */
@@ -178,7 +180,10 @@ async function signIn(page: Page, options: MockOptions = {}) {
             permissionVersion: 1,
             permissions: [],
             grants,
-            preferences: { theme: 'light', navigationCollapsed: false },
+            preferences: {
+              theme: options.theme ?? 'light',
+              navigationCollapsed: false,
+            },
           },
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
