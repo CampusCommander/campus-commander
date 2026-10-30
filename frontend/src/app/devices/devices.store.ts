@@ -280,6 +280,8 @@ export class DevicesStore {
    * cannot clear the newer retry, release its frames, or start a stopped subscription again.
    */
   private admission = 0;
+  /** The person whose admission, open, or stop owns the current admission token. */
+  private admissionEpoch = 0;
   /** Failed status reads since the last successful one. */
   private statusFailures = 0;
   private statusRetryTimer?: ReturnType<typeof setTimeout>;
@@ -387,10 +389,13 @@ export class DevicesStore {
     if (this.connecting) return this.connecting;
     const epoch = this.epoch;
     const admission = ++this.admission;
+    this.admissionEpoch = epoch;
     const read = this.admit(epoch, admission).finally(() => {
       this.connecting = null;
-      // A reset during the read gave the admission to another person. That person still needs it.
-      if (epoch !== this.epoch && this.streamWanted) void this.connect();
+      // A reset during the read gave the admission to another person. That person still needs
+      // it, unless a newer open or a stop of that person already decided.
+      if (epoch !== this.epoch && this.admissionEpoch !== this.epoch && this.streamWanted)
+        void this.connect();
     });
     this.connecting = read;
     return read;
@@ -435,6 +440,7 @@ export class DevicesStore {
     this.openGeneration += 1;
     // A stop is the current decision. An admission that is still in flight cannot undo it.
     this.admission += 1;
+    this.admissionEpoch = this.epoch;
     this.feed?.close();
     this.feed = null;
     this.dropped = null;
@@ -852,6 +858,7 @@ export class DevicesStore {
       this.holding = true;
       // This open answers for the status itself. An admission that is still in flight is obsolete.
       this.admission += 1;
+      this.admissionEpoch = this.epoch;
     }
     void this.afterOpen(generation, first, read);
   }

@@ -528,6 +528,156 @@ describe('an admission answer that a newer open replaced', () => {
   );
 });
 
+/**
+ * The admission of the person before is still in flight when the next person's open reads a stop.
+ * The older answer belongs to a replaced person, so its cleanup starts no admission and follows
+ * no device events.
+ */
+describe('an admission of the person before a stop', () => {
+  /**
+   * Opens Devices for one person and holds the admission read. The next person's reset source
+   * closes before its first open, and the replacement open reads `stop`. Later reads answer ready.
+   */
+  async function delayedPersonAndStop(stop: () => Response) {
+    let reads = 0;
+    let release: () => void = () => undefined;
+    let stopped = false;
+    const request = vi.fn(async (path: string) => {
+      if (path === '/api/devices/freshness')
+        return Response.json({ freshness: { stale: 0, refreshing: false } });
+      if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+      reads += 1;
+      // The first read is the person before. It answers only when the test says so.
+      if (reads === 1) {
+        await new Promise<void>((resolve) => (release = resolve));
+        return Response.json({ sync: state('ready') });
+      }
+      return stopped ? stop() : Response.json({ sync: state('ready') });
+    });
+    const session = signal(sessionFor('actor'));
+    const store = setup(request, session);
+    const feeds = TestBed.inject(LiveFeeds);
+    // The production reopen delay. The replacement open follows the failed reset source.
+    feeds.reopenDelay = 5000;
+    const opened = streams(store);
+    TestBed.tick();
+    const first = store.init();
+
+    session.set(sessionFor('someone-else'));
+    TestBed.tick();
+    // The reset source closes before its first open. Its replacement reads the status.
+    opened[0].fail(2);
+    await vi.advanceTimersByTimeAsync(5000);
+    stopped = true;
+    opened[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened[1].closed).toBe(true);
+    expect(reads).toBe(2);
+    expect(store.sync()).toBeNull();
+
+    return {
+      store,
+      opened,
+      first,
+      reads: () => reads,
+      // The stop answered. The person before's answer arrives after status reads succeed again.
+      recover: () => {
+        stopped = false;
+      },
+      release: () => release(),
+    };
+  }
+
+  it.each([
+    [
+      'a denied status read',
+      () => Response.json({ code: 'forbidden' }, { status: 403 }),
+      false,
+      'Device inventory status is unavailable.',
+    ],
+    [
+      'a customer without a sync',
+      () => Response.json({ sync: null }),
+      true,
+      '',
+    ],
+  ] as const)(
+    'starts no admission when the person before answers after %s',
+    async (_case, stop, loaded, error) => {
+      vi.useFakeTimers();
+      try {
+        const admission = await delayedPersonAndStop(stop);
+
+        admission.recover();
+        admission.release();
+        await admission.first;
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        // The older answer starts no admission and restores no subscription.
+        expect(admission.reads()).toBe(2);
+        expect(admission.opened).toHaveLength(2);
+        expect(admission.store.sync()).toBeNull();
+        expect(admission.store.syncLoaded()).toBe(loaded);
+        expect(admission.store.error()).toBe(error);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('reads the newest person when another person took the admission meanwhile', async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      let releaseFirst: () => void = () => undefined;
+      let releaseSecond: () => void = () => undefined;
+      const request = vi.fn(async (path: string) => {
+        if (path === '/api/devices/freshness')
+          return Response.json({ freshness: { stale: 0, refreshing: false } });
+        if (path !== '/api/devices/sync') throw new TypeError('Failed to fetch');
+        const read = ++reads;
+        if (read === 1) await new Promise<void>((resolve) => (releaseFirst = resolve));
+        if (read === 2) await new Promise<void>((resolve) => (releaseSecond = resolve));
+        return Response.json({ sync: state('ready') });
+      });
+      const session = signal(sessionFor('actor'));
+      const store = setup(request, session);
+      const feeds = TestBed.inject(LiveFeeds);
+      feeds.reopenDelay = 5000;
+      const opened = streams(store);
+      TestBed.tick();
+      const first = store.init();
+
+      // The second person's open reads the status while the first admission still waits.
+      session.set(sessionFor('second'));
+      TestBed.tick();
+      opened[0].fail(2);
+      await vi.advanceTimersByTimeAsync(5000);
+      opened[1].open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toBe(2);
+
+      // A third person arrives while both earlier reads wait. The newest person needs a read.
+      session.set(sessionFor('third'));
+      TestBed.tick();
+      releaseFirst();
+      await first;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toBe(3);
+      expect(store.sync()?.status).toBe('ready');
+      expect(store.syncLoaded()).toBe(true);
+
+      // The second person's answer belongs to the person before. It changes nothing.
+      releaseSecond();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toBe(3);
+      expect(store.sync()?.status).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 const groupBody = {
   groups: [{ key: '/School A', devices: 150 }],
   groupCount: 2,
