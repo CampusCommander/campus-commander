@@ -20,7 +20,10 @@ import {
 import { z } from 'zod';
 import { AuthGuard, type AuthenticatedRequest } from './auth.guard';
 import { AuthService } from './auth.service';
-import { GoogleConnectionService } from './google-connection.service';
+import {
+  GoogleConnectionService,
+  googleDriveSettingsInput,
+} from './google-connection.service';
 
 @Controller('api/google-connection')
 @UseGuards(AuthGuard)
@@ -211,5 +214,24 @@ export class GoogleConnectionController {
       googleCredentialActivationSchema.parse(body),
       request.correlationId,
     );
+  }
+
+  /** The saved Drive settings, or null before the first save (design section 3). */
+  @Get('drive')
+  async drive(@Req() request: AuthenticatedRequest) {
+    return { drive: await this.connection.driveSettings(request.session) };
+  }
+
+  /** Save the Drive settings (design section 3). */
+  @Post('drive')
+  async saveDrive(@Req() request: AuthenticatedRequest, @Body() body: unknown) {
+    await this.manage(request);
+    return {
+      drive: await this.connection.saveDriveSettings(
+        request.session,
+        googleDriveSettingsInput(body),
+        request.correlationId,
+      ),
+    };
   }
 }
