@@ -17,6 +17,7 @@ const TELEMETRY =
 const WRITE = 'https://www.googleapis.com/auth/admin.directory.device.chromeos';
 const SCHOOL_OU =
   'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+const DRIVE = 'https://www.googleapis.com/auth/drive.file';
 
 test('the setup scope list holds the connection scopes and the device scopes in order', () => {
   assert.deepEqual(GOOGLE_SETUP_SCOPES, [
@@ -26,6 +27,7 @@ test('the setup scope list holds the connection scopes and the device scopes in 
     TELEMETRY,
     WRITE,
     SCHOOL_OU,
+    DRIVE,
   ]);
   assert.equal(
     new Set(GOOGLE_SETUP_SCOPES).size,
@@ -71,4 +73,24 @@ test('the device-changes evidence names the four Google methods', () => {
   ])
     assert.ok(evidence.includes(method), `The evidence names ${method}.`);
   assert.match(evidence, /admin-sdk-mock v0\.2\.0 only/);
+});
+
+test('the drive-files capability names its label, scope, method, flags, and evidence', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.find((capability) => capability.id === 'drive-files'),
+    {
+      id: 'drive-files',
+      requiredForConnection: false,
+      label: 'Google Drive files',
+      enabled: true,
+      qualified: false,
+      scope: DRIVE,
+      method: 'files.list',
+      source:
+        'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list',
+      evidence:
+        'Not verified on a live domain. The Drive slice demonstration verifies it.',
+    },
+  );
+  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), DRIVE);
 });
