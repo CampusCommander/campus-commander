@@ -517,9 +517,9 @@ export function importPlanLine(
   const importId = job.importDisplayId;
   if (!importId) return null;
   const waiting = job.waitingDisplayIds ?? [];
-  return waiting.length > 0
-    ? `Import ${importId} · ${andList(waiting)}`
-    : `Import ${importId}`;
+  if (waiting.length === 0) return `Import ${importId}`;
+  const verb = waiting.length === 1 ? 'starts' : 'start';
+  return `Import ${importId} · ${andList(waiting)} ${verb} after this job ends`;
 }
 
 /**
