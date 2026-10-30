@@ -264,6 +264,11 @@ export class DevicesStore {
   private streamWanted = false;
   /** The status read before the store follows the device events, while it runs. */
   private connecting: Promise<void> | null = null;
+  /** The person and admission token of the read in `connecting`. */
+  private connectingEpoch = -1;
+  private connectingAdmission = -1;
+  /** The person whose explicit recovery waits for the admission in `connecting` to finish. */
+  private recoveryEpoch: number | null = null;
   /** A stream opened once since the store subscribed. The next open is a reconnect. */
   private streamOpened = false;
   /** The status from before the stream dropped. The reconcile after the next open compares against it. */
@@ -314,6 +319,7 @@ export class DevicesStore {
   /** Browsing state belongs to one person. Another sign-in starts clean. */
   private reset(): void {
     this.epoch++;
+    this.recoveryEpoch = null;
     this.refreshSequence++;
     this.refreshStatus.set('');
     this.refreshRequests.set(new Set());
@@ -386,12 +392,30 @@ export class DevicesStore {
    * stores that follow the job feed.
    */
   private connect(): Promise<void> {
-    if (this.connecting) return this.connecting;
+    if (this.connecting) {
+      // This person's admission is still current. It answers for this request.
+      if (
+        this.connectingEpoch === this.epoch &&
+        this.connectingAdmission === this.admission
+      )
+        return this.connecting;
+      // The read in flight belongs to a replaced person, open, or stop. An explicit recovery
+      // keeps its demand, and the handover after that read answers it.
+      this.recoveryEpoch = this.epoch;
+      return this.connecting;
+    }
     const epoch = this.epoch;
     const admission = ++this.admission;
     this.admissionEpoch = epoch;
     const read = this.admit(epoch, admission).finally(() => {
       this.connecting = null;
+      const demand = this.recoveryEpoch;
+      this.recoveryEpoch = null;
+      // A recovery requested after the read became obsolete asks for this person's admission.
+      if (demand === this.epoch && this.streamWanted) {
+        void this.connect();
+        return;
+      }
       // A reset during the read gave the admission to another person. That person still needs
       // it, unless a newer open or a stop of that person already decided.
       if (
@@ -402,6 +426,8 @@ export class DevicesStore {
         void this.connect();
     });
     this.connecting = read;
+    this.connectingEpoch = epoch;
+    this.connectingAdmission = admission;
     return read;
   }
 
@@ -445,6 +471,8 @@ export class DevicesStore {
     // A stop is the current decision. An admission that is still in flight cannot undo it.
     this.admission += 1;
     this.admissionEpoch = this.epoch;
+    // A recovery request from before this stop has no demand left.
+    this.recoveryEpoch = null;
     this.feed?.close();
     this.feed = null;
     this.dropped = null;
@@ -863,6 +891,8 @@ export class DevicesStore {
       // This open answers for the status itself. An admission that is still in flight is obsolete.
       this.admission += 1;
       this.admissionEpoch = this.epoch;
+      // The open's read is the current decision for this person. No handover answers for it.
+      this.recoveryEpoch = null;
     }
     void this.afterOpen(generation, first, read);
   }
