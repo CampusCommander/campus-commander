@@ -1479,8 +1479,9 @@ describe('Execute and its results', () => {
     const next = element.querySelector<HTMLButtonElement>(
       'button[aria-label="Next results page"]',
     );
-    const failed = [...element.querySelectorAll<HTMLButtonElement>('.report-tabs button')]
-      .find((tab) => tab.textContent?.includes('Failed'));
+    const failed = [
+      ...element.querySelectorAll<HTMLButtonElement>('.report-tabs button'),
+    ].find((tab) => tab.textContent?.includes('Failed'));
     expect(next?.disabled).toBe(false);
     expect(failed).toBeDefined();
 
@@ -1521,8 +1522,9 @@ describe('Execute and its results', () => {
     const next = element.querySelector<HTMLButtonElement>(
       'button[aria-label="Next results page"]',
     );
-    const failed = [...element.querySelectorAll<HTMLButtonElement>('.report-tabs button')]
-      .find((tab) => tab.textContent?.includes('Failed'));
+    const failed = [
+      ...element.querySelectorAll<HTMLButtonElement>('.report-tabs button'),
+    ].find((tab) => tab.textContent?.includes('Failed'));
 
     next?.click();
     await new Promise((resolve) => setTimeout(resolve, 20));
