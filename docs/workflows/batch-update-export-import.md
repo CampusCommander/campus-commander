@@ -10,9 +10,12 @@ On 2026-10-26 the owner approved the job cancel mockup. Owner, in the main chat:
 
 On 2026-10-28 the owner approved version 4 of the CSV slice mockup and directed its build. Owner, in the main chat: "This is perfect. Please go ahead and execute on this."
 The approved [mockup](../ui/designs/2026-10-28-device-export-import.html) and its [notes](../ui/designs/2026-10-28-device-export-import-notes.md) set the CSV slice screens. They outrank this record on composition.
-The Google Drive slice stays proposed.
 
-Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, 2026-10-26, and 2026-10-28, quoted under [Owner direction](#owner-direction).
+The Google Drive slice stays proposed.
+On 2026-10-30 the owner approved version 1 of the Google Drive slice mockup. Owner, in the main chat: "approve, all recommended".
+The approved [Drive slice mockup](../ui/designs/2026-10-30-device-drive-slice.html) and its [notes](../ui/designs/2026-10-30-device-drive-slice-notes.md) set the Drive slice screens.
+
+Source: owner direction of 2026-09-03, 2026-10-21, 2026-10-24, 2026-10-26, 2026-10-28, and 2026-10-30, quoted under [Owner direction](#owner-direction).
 
 Design: [Figma page 09](https://www.figma.com/design/lqZx6qpWevsN3AAfWkworl/Campus-Commander?node-id=94-2), with the frame table under [Design](#design). The approved CSV slice mockup closes the CSV design gaps. Gaps 2 and 7 stay open for the Google Drive slice.
 Technical design: [batch update through export and import](../research/batch-update-export-import-technical-design.md).
@@ -298,6 +301,26 @@ Design section 8 also proposed that an Unknown outcome joins the Failed tab. The
 
 > Unknown yes
 
+### 2026-10-30, main chat: the Google Drive slice mockup
+
+The owner directed the eng-lead to finish the export and import work:
+
+> keep at it. Lets get this import export work past the goal line.
+
+The eng-lead built version 1 of the Google Drive slice mockup for design gaps 2 and 7.
+It showed the mockup with six questions, each with a recommended option. The owner answered:
+
+> approve, all recommended
+
+The six answers, each the recommended option of the [mockup notes](../ui/designs/2026-10-30-device-drive-slice-notes.md):
+
+1. Reports offers a CSV file only. It hides the Google Sheet card until the report Sheet ships in the third slice.
+2. The import step checks the header row of a chosen Drive file before Start validation. The browser reads the row with the one-hour Drive token.
+3. The Picker lists My Drive only: the Google Sheets and CSV files of the person.
+4. A Sheet export lands at the top level of My Drive.
+5. The Google connection page shows the saved Picker API key in full.
+6. Every person reads the fix in the Drive notes, as the built device notes do.
+
 ## Implementation defaults
 
 The owner settled these points on 2026-10-26:
@@ -369,12 +392,14 @@ Design gaps:
 The approved [CSV slice mockup](../ui/designs/2026-10-28-device-export-import.html) closes the CSV gaps. The state numbers below are its PNG numbers.
 
 1. No frame shows the import mode selector. **Closed** by state 09.
-2. No frame shows the Google Sheet export, the Picker, or the tab choice. **Open** for the Google Drive slice. The CSV slice mockup shows the Google choices as unavailable.
+2. **Closed** by states 01 to 13 of the approved [Google Drive slice mockup](../ui/designs/2026-10-30-device-drive-slice.html).
+   No frame shows the Google Sheet export, the Picker, or the tab choice.
 3. No frame shows status codes, the code list, or status actions in the review. **Closed** by states 11 and 13.
 4. No frame shows rejected rows or warnings beside proposed changes. The frames show "0 invalid" only. **Closed** by states 13 to 15.
 5. No frame shows Execute and Cancel on the validation job page. **Closed** by states 13, 16, and 20. Execute and Cancel import sit in the import dialog.
 6. No frame shows the typed phrase in the import flow. The Deprovision frame `97:93` supplies the pattern. **Closed** by state 16.
-7. No frame shows the Google connection inputs: the Picker API key and the project number. **Open** for the Drive slice.
+7. **Closed** by states 14 and 15 of the approved Google Drive slice mockup.
+   No frame shows the Google connection inputs: the Picker API key and the project number.
 8. The frames use full pages. The built bulk actions use the side sheet. **Closed** by the UI changes of 2026-10-28 and the approved mockup.
    Export, Reports, and Import open one dialog. Its setup steps take the built 480 px dialog width, and the results widen it to 1120 px.
 9. The conflict cards and the baseline expiry (`99:145`, `106:514`, `104:479`) contradict D1. **Superseded.** The mockup removes them.
@@ -398,7 +423,7 @@ Excluded from this workflow:
 Open decisions:
 
 - The CSV slice builds from the approved mockup and its notes. The owner can change any engineering default.
-- The Google Drive slice needs its own mockup for design gaps 2 and 7.
+- The approved Google Drive slice mockup closes design gaps 2 and 7. A design addendum comes before the Drive build cards.
 - G16 keeps one open question: where explicit creation applies. A user CSV import stays a later workflow.
 - Live device writes need explicit owner authorization and an enrolled test device.
 - A live Google Sheet export creates a Google file. It needs explicit owner authorization.
