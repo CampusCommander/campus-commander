@@ -54,9 +54,14 @@ const principalRead =
 const principalWrite =
   /^\/api\/platform-users\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:review|access)$/;
 const connectionRead =
-  /^\/api\/google-connection(?:\/health|\/credentials|\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
+  /^\/api\/google-connection(?:\/health|\/credentials|\/drive|\/candidates\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const connectionWrite =
-  /^\/api\/google-connection\/(?:health\/check|check|credentials\/(?:rotate-key|disconnect)|replacements(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/activate)?|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
+  /^\/api\/google-connection\/(?:health\/check|check|drive|credentials\/(?:rotate-key|disconnect)|replacements(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/activate)?|candidates(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
+// The three Drive routes of design section 1: the access read, the session mint, and the tab
+// list of one file. A Drive file ID holds 1 to 128 letters, digits, hyphens, or underscores.
+const driveRead =
+  /^\/api\/google\/drive(?:\/files\/[A-Za-z0-9_-]{1,128}\/tabs)?$/;
+const driveWrite = /^\/api\/google\/drive\/session$/;
 const customerRead =
   /^\/api\/customer(?:\/receipts\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/;
 const schoolIdPath =
@@ -89,7 +94,7 @@ const deviceImportRejected = new RegExp(
   `^/api/devices/imports/${importDisplayIdPath}/rejected$`,
 );
 const deviceImportWrite = new RegExp(
-  `^/api/devices/imports(?:/${importDisplayIdPath}/(?:revalidate|execute|cancel))?$`,
+  `^/api/devices/imports(?:/${importDisplayIdPath}/(?:revalidate|execute|cancel)|/drive)?$`,
 );
 // The one path that streams its body. Every other POST buffers its body under a cap.
 export const importUploadPath = '/api/devices/imports';
@@ -203,6 +208,7 @@ export async function proxyApplication(
       (invitationReads.has(pathname) ||
         principalRead.test(pathname) ||
         connectionRead.test(pathname) ||
+        driveRead.test(pathname) ||
         customerRead.test(pathname) ||
         pathname === '/api/schools/references' ||
         eventStreams.has(pathname) ||
@@ -221,6 +227,7 @@ export async function proxyApplication(
         invitationChange.test(pathname) ||
         principalWrite.test(pathname) ||
         connectionWrite.test(pathname) ||
+        driveWrite.test(pathname) ||
         pathname === '/api/customer/settings' ||
         pathname === '/api/schools/references/refresh' ||
         deviceWrite.test(pathname) ||
