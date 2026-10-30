@@ -104,6 +104,56 @@ function byteClient(body, headers = {}) {
   return oauth;
 }
 
+/** A values answer as the JSON text of a response body. */
+const jsonBody = (values) => JSON.stringify({ values });
+
+/** A dropped connection, as a body read raises it. */
+const resetError = () =>
+  Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+/** A body that answers a JSON prefix and then drops the connection. */
+function resetWindow(prefix) {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(Buffer.from(prefix));
+      controller.error(resetError());
+    },
+  });
+}
+
+/**
+ * A real OAuth2Client whose values answers come from `window(index, url)`. The index counts values
+ * requests from zero, and every answer is a byte stream, so the client counts real response bytes.
+ */
+function streamClient(properties, window) {
+  const oauth = new OAuth2Client();
+  oauth.setCredentials({ access_token: mintedToken });
+  const sent = [];
+  let windows = 0;
+  oauth.transporter.defaults.fetchImplementation = async (input) => {
+    const url = new URL(String(input));
+    sent.push(url);
+    if (!url.pathname.includes('/values/'))
+      return new Response(JSON.stringify(sheetAnswer([properties]).data), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const body = window(windows, url);
+    windows += 1;
+    return new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  return { oauth, sent };
+}
+
+/** The values ranges that the transport answered, in request order. */
+const windowRanges = (sent) =>
+  sent
+    .filter((url) => url.pathname.includes('/values/'))
+    .map((url) => decodeURIComponent(url.pathname.split('/values/')[1]));
+
 /** Read the rows of a tab through the CSV writer and reader that the import stage uses. */
 async function csvRecords(rows) {
   const writer = createCsvWriter();
@@ -658,6 +708,70 @@ test('a window that is not JSON is invalid-response', async () => {
     name: 'GoogleConnectionError',
     code: 'invalid-response',
   });
+});
+
+test('a values body that resets repeats the same window without duplicate rows', async () => {
+  const sleeps = [];
+  const { oauth, sent } = streamClient(
+    { ...sheetProperties, gridProperties: { columnCount: 1, rowCount: 2000 } },
+    (index, url) => {
+      const row = Number(/!A(\d+):/.exec(decodeURIComponent(url.pathname))[1]);
+      if (row === 1) return jsonBody([['Device ID'], ['device-1']]);
+      // The first body of the second window drops after one row, before the JSON closes.
+      if (index === 1) return resetWindow('{"values":[["device-1001"');
+      return jsonBody([['device-1001']]);
+    },
+  );
+  const client = new GoogleDriveClient(oauth, signal, {
+    sleep: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+    random: () => 1,
+  });
+  const tab = await client.readTab('fixture-sheet', 0);
+  assert.deepEqual(
+    (await csvRecords(tab.rows())).map((record) => [
+      record.row,
+      record.cells[0],
+    ]),
+    [
+      [1, 'Device ID'],
+      [2, 'device-1'],
+      [1001, 'device-1001'],
+    ],
+    'The completed first window is not repeated.',
+  );
+  assert.deepEqual(windowRanges(sent), [
+    "'Devices'!A1:A1000",
+    "'Devices'!A1001:A2000",
+    "'Devices'!A1001:A2000",
+  ]);
+  assert.deepEqual(sleeps, [1_000], 'One backoff covers the dropped body.');
+});
+
+test('a values body that keeps resetting ends network-failure after five tries', async () => {
+  const sleeps = [];
+  const { oauth, sent } = streamClient(
+    { ...sheetProperties, gridProperties: { columnCount: 1, rowCount: 1 } },
+    () => resetWindow('{"values":[['),
+  );
+  const client = new GoogleDriveClient(oauth, signal, {
+    sleep: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+    random: () => 1,
+  });
+  const tab = await client.readTab('fixture-sheet', 0);
+  await assert.rejects(collected(tab.rows()), {
+    name: 'GoogleConnectionError',
+    code: 'network-failure',
+  });
+  assert.deepEqual(
+    windowRanges(sent),
+    Array.from({ length: 5 }, () => "'Devices'!A1:A1000"),
+    'Every try repeats the same range.',
+  );
+  assert.deepEqual(sleeps, [1_000, 2_000, 4_000, 8_000]);
 });
 
 test('a values answer of another shape is invalid-response', async () => {
