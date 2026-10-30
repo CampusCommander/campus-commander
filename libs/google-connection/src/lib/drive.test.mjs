@@ -714,11 +714,13 @@ test('column letters follow the A1 notation', () => {
 test('only a *.test.mjs file names the fake transport', () => {
   const roots = [
     'libs',
+    'packages',
     'api/src',
     'worker/src',
     'frontend/src',
     'deployment',
     'api-e2e',
+    'frontend-e2e',
   ];
   const found = [];
   const walk = (directory) => {
