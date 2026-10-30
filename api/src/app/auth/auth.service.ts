@@ -50,6 +50,24 @@ const opaqueToken = () => randomBytes(32).toString('hex');
 const key = (kind: string, token: string) =>
   `cc:auth:${kind}:${createHash('sha256').update(token).digest('hex')}`;
 
+/** The sign-in scope. `email` supplies the verified sign-in email of the Drive token path. */
+export const loginScope = 'openid profile email';
+
+/**
+ * The person's Google Workspace subject for Drive: the sign-in email, kept only when the provider
+ * marks it verified. Every other claim set answers null.
+ */
+export function driveSubjectFromClaims(
+  claims: { [claim: string]: unknown } | undefined,
+): string | null {
+  const email = claims?.['email'];
+  return claims?.['email_verified'] === true &&
+    typeof email === 'string' &&
+    email.length > 0
+    ? email
+    : null;
+}
+
 export function equalToken(
   actual: string | undefined,
   expected: string,
@@ -124,7 +142,7 @@ export class AuthService {
     const token = opaqueToken();
     const url = oidc.buildAuthorizationUrl(provider, {
       redirect_uri: `${this.configuration.auth.publicOrigin}/api/auth/callback`,
-      scope: 'openid profile',
+      scope: loginScope,
       response_type: 'code',
       state: login.state,
       nonce: login.nonce,
@@ -203,6 +221,7 @@ export class AuthService {
       expiresAt:
         Date.now() + this.configuration.auth.sessionLifetimeSeconds * 1000,
       csrfToken: opaqueToken(),
+      driveSubject: driveSubjectFromClaims(claims),
     });
     const sessionToken = opaqueToken();
     await this.database.audit(
@@ -318,6 +337,22 @@ export class AuthService {
       csrfToken: session.csrfToken,
       expiresAt: new Date(session.expiresAt).toISOString(),
     };
+  }
+
+  /**
+   * The verified sign-in email of the session. The Drive token path reads the subject from here,
+   * never from a request. A missing, expired, or revoked session answers null.
+   */
+  async driveSubject(cookie: string | undefined): Promise<string | null> {
+    const token = readCookie(cookie, sessionCookie);
+    if (!token) return null;
+    const raw = await this.cache.get(key('session', token));
+    if (!raw) return null;
+    const entry = readSessionEntry(raw);
+    if (entry.kind === 'access-changed') return null;
+    return entry.session.expiresAt > Date.now()
+      ? entry.session.driveSubject
+      : null;
   }
 
   async recordDeniedLogin(correlationId: string) {

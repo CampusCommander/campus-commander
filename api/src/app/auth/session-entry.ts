@@ -5,6 +5,11 @@ export const sessionSchema = z.strictObject({
   permissionVersion: z.number().int(),
   expiresAt: z.number().int(),
   csrfToken: z.string().regex(/^[a-f0-9]{64}$/),
+  /**
+   * The verified sign-in email, the person's Google Workspace subject for Drive. Null without a
+   * verified email. An entry written before this key existed reads as null.
+   */
+  driveSubject: z.string().nullable().default(null),
 });
 
 /** How long a revoked session key keeps reporting the access change to the old cookie. */
