@@ -428,12 +428,13 @@ export class GoogleDriveClient {
   private async openStream(
     url: string,
     params: Record<string, string | number | boolean>,
+    attempts: number = this.clock.maxAttempts,
   ): Promise<AsyncIterable<Uint8Array>> {
     let response: GoogleDriveHttpResponse;
     try {
       response = await this.send(
         { url, method: 'GET', params, responseType: 'stream' },
-        this.clock.maxAttempts,
+        attempts,
       );
     } catch (error) {
       if (
@@ -460,6 +461,10 @@ export class GoogleDriveClient {
    * One values window, padded to the header width by `tabRows`. The 64 MiB cap counts the bytes of
    * the answer before any row is parsed (design section 7). A JSON parse removes whitespace and
    * rewrites escapes, so the count must run on the response itself.
+   *
+   * One attempt covers the request and the whole body. A body fault discards its partial bytes and
+   * repeats the same range, so the five-attempt budget spans both halves (design section 7). A cap
+   * violation or a malformed answer is definitive and never repeats.
    */
   private async valuesWindow(
     fileId: string,
@@ -470,16 +475,39 @@ export class GoogleDriveClient {
     const range = `${quoteTitle(title)}!A${start + 1}:${columnName(columns)}${
       start + GOOGLE_DRIVE_WINDOW_ROWS
     }`;
-    const body = await this.openStream(
-      `${GOOGLE_SHEETS_API}/spreadsheets/${fileId}/values/${encodeURIComponent(
-        range,
-      )}`,
-      {
-        majorDimension: 'ROWS',
-        valueRenderOption: 'FORMATTED_VALUE',
-        fields: 'values',
-      },
-    );
+    const url = `${GOOGLE_SHEETS_API}/spreadsheets/${fileId}/values/${encodeURIComponent(
+      range,
+    )}`;
+    const params = {
+      majorDimension: 'ROWS',
+      valueRenderOption: 'FORMATTED_VALUE',
+      fields: 'values',
+    };
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.windowRows(url, params);
+      } catch (error) {
+        // A Drive condition, the cap, and a malformed answer are final answers.
+        if (error instanceof GoogleDriveError) throw error;
+        if (
+          attempt >= this.clock.maxAttempts ||
+          this.signal.aborted ||
+          !retryable(error)
+        )
+          throw error instanceof GoogleConnectionError ? error : failure(error);
+        await this.clock.sleep(this.delay(attempt), this.signal);
+        if (this.signal.aborted)
+          throw error instanceof GoogleConnectionError ? error : failure(error);
+      }
+    }
+  }
+
+  /** One buffered values answer. The caller retries the range when the body fails. */
+  private async windowRows(
+    url: string,
+    params: Record<string, string | number | boolean>,
+  ): Promise<string[][]> {
+    const body = await this.openStream(url, params, 1);
     const chunks: Buffer[] = [];
     let bytes = 0;
     for await (const chunk of body) {
