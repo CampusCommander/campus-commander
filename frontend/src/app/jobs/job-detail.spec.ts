@@ -1459,6 +1459,35 @@ it('flips an open export file to Expired at its deadline', async () => {
   expect(download?.disabled).toBe(true);
 });
 
+it('shows a Sheet export file without a byte size or an expiry line', () => {
+  const exportJob = job({
+    displayId: 'EXP-003',
+    action: 'export-devices',
+    status: 'completed',
+    scope: { kind: 'devices', deviceCount: 6 },
+    phase: null,
+    exportSummary: { purpose: 'edit' },
+    exportFile: {
+      name: 'devices-for-editing-EXP-003',
+      format: 'sheet',
+      sizeBytes: null,
+      rows: 6,
+      columns: 10,
+      expiresAt: null,
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit',
+    },
+    changes: null,
+    finishedAt: new Date().toISOString(),
+  });
+  const { element } = setup({ job: exportJob, operations: [] });
+  expect(text(element)).toContain('devices-for-editing-EXP-003');
+  expect(text(element)).toContain('6 rows');
+  expect(text(element)).toContain('10 columns');
+  // A Sheet never expires and holds no byte size (Drive slice design section 1).
+  expect(text(element)).not.toContain('Available until');
+  expect(text(element)).not.toContain('KB');
+});
+
 it('expires a 30-day file at its deadline on the job page', async () => {
   vi.useFakeTimers();
   const start = Date.now();

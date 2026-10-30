@@ -346,6 +346,34 @@ describe('DeviceExportImportDialog', () => {
     ).toBe(true);
   });
 
+  it('shows a Sheet file without a byte size or an expiry line', async () => {
+    const { store, render, text } = setup(
+      exportDetail({
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        phase: null,
+        exportFile: {
+          name: 'devices-for-editing-EXP-003',
+          format: 'sheet',
+          sizeBytes: null,
+          rows: 48,
+          columns: 10,
+          expiresAt: null,
+          sheetUrl: 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit',
+        },
+      }),
+    );
+    store.openJob('EXP-003');
+    await render();
+    expect(text()).toContain('devices-for-editing-EXP-003');
+    expect(text()).toContain('Ready');
+    expect(text()).toContain('48 rows');
+    expect(text()).toContain('10 columns');
+    // A Sheet never expires and holds no byte size (Drive slice design section 1).
+    expect(text()).not.toContain('Available until');
+    expect(text()).not.toContain('KB');
+  });
+
   it('expires an open ready file at its deadline', async () => {
     const { store, render, panel, text } = setup(
       exportDetail({
