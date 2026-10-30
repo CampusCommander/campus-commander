@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-29.
+Updated: 2026-10-30.
 
 ## Authorized now
 
@@ -30,6 +30,16 @@ Under that fallback, PR #165 reverted PRs #156 and #163. It merged as `567c602` 
 
 On 2026-10-29 the owner chose option 1 for finding 7, the page freeze with many tabs open. Option 1 pauses the live updates of a background tab, and the tab catches up when the person switches back. Point 2 was one live connection per tab, as Firestore does. Owner: "1 for now, but persue point 2".
 Card `t_51ec6f43` builds option 1 and the frontend part of point 2. Each tab opens each feed once, and a background tab holds no feed.
+
+On 2026-10-29 the eng-lead asked: "Rest of point 2 (the server change that gets the Devices page to 1 connection): reply yes (build it now) or no (not now, recommended)."
+The owner replied: "yes".
+
+PR #177 (card `t_51ec6f43`, merged as `c47a5b1`) built `LiveFeeds`. Each tab opens each feed once, and a hidden tab holds no feed.
+
+PR #178 (card `t_a74f4a7c`, merged as `8108fb6`) built `GET /api/events`. It is one Server-Sent Events stream with the job feed and the device feed.
+The device feed joins under the open rule of the Devices stream. Without `devices:read` or a sync, the stream carries the job feed only. A ping closes the stream when that changes.
+
+PR #181 (card `t_31ebc0b2`, merged as `e770ee5`) moved every live feed of the browser to `/api/events`. `GET /api/jobs/events` and `GET /api/devices/events` no longer exist. A visible tab holds one live connection, and a hidden tab holds none.
 
 Early on 2026-10-28 the owner directed the export and import build. Owner: "Go ahead and execute on the import and export work."
 On 2026-10-28 the owner sent UI changes for export and import. Owner: "Seperate the export for editing and export for reporting as two bulk edit actions. Call one export and the other reports." He asked for a dialog instead of a sidebar, a validation progress indicator and its report in the same dialog, and a help icon button for instructions outside the normal flow. Owner: "Go ahead and make those changes then we will do the next polish pass on the design." The [record](workflows/batch-update-export-import.md#2026-10-28-main-chat-ui-changes-for-export-and-import) holds the full message.
@@ -90,7 +100,7 @@ The sign-off accepts these defaults as built:
 - The request is not optimistic. The banner and the disabled Cancellation requested control show after the server answers and the page reads the job again.
 - A refused request closes the question and shows an alert above the identity card. After a 404 or a 409, the page reads the job again. The next request clears the alert.
 - Focus returns to the control when the question closes. A job that ends at once moves focus to Refresh. A job that no longer exists moves focus to Back to jobs.
-- The question shows the live counts while it stays open. A page stops updating when the browser already holds six connections to the app (finding 7).
+- The question shows the live counts while it stays open. A page stops updating when the browser already holds six connections to the app (finding 7). PR #181 fixed finding 7.
 - While the page reports offline, Cancel pending work stays available on the cached job, and Refresh is disabled. A request then shows "Cannot reach Campus Commander. Cancel did not start."
 - The running question names "confirmed status changes" for a status job and "confirmed commands" for a command job. PR #154 changed four sentences to the singular form for a count of 1.
 
@@ -99,7 +109,7 @@ Two examples are "This job no longer exists." for a missing job and "Cancellatio
 
 Findings 1, 3, 4, and 5 stay as built.
 PR #156 fixed finding 7 at the edge (card `t_82e670d2`), and revert PR #165 reopened it.
-Card `t_51ec6f43` fixes it: each tab opens each feed once, and a background tab holds no feed.
+PRs #177, #178, and #181 fixed finding 7. A visible tab holds one live connection, and a hidden tab holds none.
 
 Three runs support the sign-off:
 

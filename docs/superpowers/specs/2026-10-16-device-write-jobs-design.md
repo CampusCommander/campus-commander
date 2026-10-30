@@ -747,12 +747,15 @@ Card B4 changes the Devices stream (`api/src/app/devices/devices.controller.ts:1
 
 ### 3.3 `GET /api/jobs/events`
 
+Since PR #181, `GET /api/events` carries the job feed under the rules of this section. `GET /api/jobs/events` no longer exists.
+
 - A Jobs controller serves the stream with `streamEvents`. Its `forward` function maps every channel event other than `job-changed` to none.
 - The stream requires `jobs:read` or `devices:read` at open. Each ping rechecks the session and those actions, as the Devices stream rechecks its access (`api/src/app/devices/devices.controller.ts:186-202`).
   A failed recheck closes the stream. A recheck that changes the visibility of section 2.1 also closes it. The browser then reopens it under the new grants.
 - The stream sends a `job-changed` event only when the visibility predicate passes for its `requestedBy`.
 - The edge proxies the stream with the event idle timeout. Today only `/api/devices/events` gets that timeout (`deployment/bootstrap/application-edge.mjs:196-197`). Card P1 adds the jobs path.
 - The shell opens the jobs stream on every page, because the activity area lives in the shell. The Devices page keeps its own stream.
+- Since PR #181, the Devices page shares the one stream of its tab.
 
 ### 3.4 Client resynchronization
 
