@@ -31,6 +31,7 @@ const credential = {
   },
 };
 const person = 'person@example.org';
+const mintedToken = 'fixture-drive-token';
 const signal = AbortSignal.timeout(10_000);
 const sheetProperties = {
   sheetId: 0,
@@ -74,7 +75,7 @@ test('one drive.file token for the person, sent on every call', async (t) => {
   const mints = [];
   t.mock.method(JWT.prototype, 'getAccessToken', async function () {
     mints.push({ subject: this.subject, scopes: this.scopes });
-    return { token: 'fixture-drive-token' };
+    return { token: mintedToken };
   });
   t.mock.method(JWT.prototype, 'getTokenInfo', async function () {
     return { scopes: [...this.scopes], expiry_date: Date.now() + 3_500_000 };
@@ -116,9 +117,10 @@ test('one drive.file token for the person, sent on every call', async (t) => {
   assert.equal(mints[0].subject, person);
   assert.equal(tabs.fileId, 'fixture-sheet');
   assert.ok(sent.length >= 7);
+  const authorization = `Bearer ${mintedToken}`;
   assert.deepEqual(
     sent.map((item) => item.authorization),
-    Array.from({ length: sent.length }, () => 'Bearer fixture-drive-token'),
+    Array.from({ length: sent.length }, () => authorization),
   );
   assert.deepEqual(
     sent.filter((item) => item.path.includes('/values/')).length,
