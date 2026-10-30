@@ -131,6 +131,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/google-connection/candidates', 'api'],
       ['POST', '/api/google-connection/check', 'api'],
       ['POST', `/api/google-connection/candidates/${id}/confirm`, 'api'],
+      ['GET', '/api/google-connection/drive', 'api'],
+      ['POST', '/api/google-connection/drive', 'api'],
       ['GET', '/invitations', 'frontend'],
       ['GET', '/platform-users', 'frontend'],
       ['GET', '/invitation', 'frontend'],
@@ -219,6 +221,13 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/jobs/IMP-001/cancel', 'api'],
       ['GET', '/jobs/EXP-001', 'frontend'],
       ['GET', '/jobs/IMP-001', 'frontend'],
+      // The three Drive routes of design section 1 and the Drive import submission. A file ID
+      // holds 1 to 128 letters, digits, hyphens, or underscores.
+      ['GET', '/api/google/drive', 'api'],
+      ['POST', '/api/google/drive/session', 'api'],
+      ['GET', '/api/google/drive/files/synthetic-file-1/tabs', 'api'],
+      ['GET', `/api/google/drive/files/${'x'.repeat(128)}/tabs`, 'api'],
+      ['POST', '/api/devices/imports/drive', 'api'],
     ];
     for (const [method, path, expected] of routes) {
       const response = await fetch(`${origin(edge)}${path}`, { method });
@@ -320,6 +329,19 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/devices/imports/IMP-001/execute/extra', 404],
       ['GET', '/api/jobs/EXP-1', 404],
       ['GET', '/api/jobs/IMP-1/operations', 404],
+      // A bad Drive file ID answers 404, and each Drive path keeps one method.
+      ['GET', `/api/google/drive/files/${'x'.repeat(129)}/tabs`, 404],
+      ['GET', '/api/google/drive/files/not.a.file/tabs', 404],
+      ['GET', '/api/google/drive/files/synthetic-file-1', 404],
+      ['GET', '/api/google/drive/files/synthetic-file-1/tabs/extra', 404],
+      ['GET', '/api/google/drive/session', 405],
+      ['POST', '/api/google/drive', 405],
+      ['POST', '/api/google/drive/files/synthetic-file-1/tabs', 405],
+      ['PUT', '/api/google/drive/session', 405],
+      ['POST', '/api/google/drive/session/extra', 404],
+      ['GET', '/api/devices/imports/drive', 405],
+      ['DELETE', '/api/devices/imports/drive', 405],
+      ['GET', '/api/google-connection/drive/extra', 404],
     ]) {
       assert.equal(
         (await fetch(`${origin(edge)}${path}`, { method })).status,
@@ -396,7 +418,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         413,
         `${path} 4097 bytes`,
       );
-    // Every import path but the upload keeps the 4,096-byte buffered cap.
+    // Every import path but the upload keeps the 4,096-byte buffered cap. The Drive import sends
+    // a file ID and a tab ID, so it buffers under the same cap.
     for (const [size, status] of [
       [4096, 200],
       [4097, 413],
@@ -410,6 +433,20 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         ).status,
         status,
         `revalidate ${size} bytes`,
+      );
+    for (const [size, status] of [
+      [4096, 200],
+      [4097, 413],
+    ])
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/devices/imports/drive`, {
+            method: 'POST',
+            body: 'x'.repeat(size),
+          })
+        ).status,
+        status,
+        `imports/drive ${size} bytes`,
       );
     phase = 2;
     for (const [method, path] of routes) {

@@ -10,6 +10,27 @@ import {
   requestDeadlines,
 } from './application-edge.mjs';
 
+// The Google origins of the Picker (design section 5). The script loads the Picker, the frame
+// draws it, and the connect origins serve the browser header read. Every other origin stays out.
+const googleOrigins = {
+  script: 'https://apis.google.com',
+  frame: 'https://docs.google.com',
+  connect: ['https://sheets.googleapis.com', 'https://www.googleapis.com'],
+};
+// AG Grid draws its icons from data: SVG images. Every other directive keeps its value,
+// `frame-ancestors 'none'` included.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src 'self' ${googleOrigins.script}`,
+  `frame-src ${googleOrigins.frame}`,
+  `connect-src 'self' ${googleOrigins.connect.join(' ')}`,
+  "img-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join('; ');
+
 const assetPath =
   /^\/(?:assets\/)?[A-Za-z0-9_/-]+\.(?:js|css|ico|png|svg|woff2?)$/;
 const finish = (response, status, message) => {
@@ -108,11 +129,7 @@ export async function createBootstrapEdge({
     response.setHeader('strict-transport-security', 'max-age=31536000');
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');
-    response.setHeader(
-      'content-security-policy',
-      // AG Grid draws its icons from data: SVG images. Scripts stay same-origin.
-      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-    );
+    response.setHeader('content-security-policy', contentSecurityPolicy);
     const path = request.url || '';
     if (path === '/health/live') return finish(response, 200, 'live\n');
     if (path === '/health' || path === '/health/ready') {

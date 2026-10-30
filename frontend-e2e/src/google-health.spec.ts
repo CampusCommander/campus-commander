@@ -146,7 +146,7 @@ test('preserves partial access, uses only the selected scope, and shares the foo
   await expect(customer).toContainText('Last check passed');
   await expect(domains).toContainText('Delegation not authorized');
   await expect(page.locator('footer')).toContainText(
-    '1 of 6 capabilities need attention',
+    '1 of 7 capabilities need attention',
   );
   await page.route('**/api/google-connection/health/check', (route) => {
     const input = googleHealthCheckSchema.parse(route.request().postDataJSON());
@@ -160,7 +160,7 @@ test('preserves partial access, uses only the selected scope, and shares the foo
     .getByRole('button', { name: 'Recheck Customer domains', exact: true })
     .click();
   await expect(domains).toContainText('Last check passed');
-  await expect(page.locator('footer')).toContainText('6 last checks passed');
+  await expect(page.locator('footer')).toContainText('7 last checks passed');
   await expect(
     page.locator('#google-health [role=status]').first(),
   ).toBeFocused();
@@ -177,11 +177,11 @@ test('preserves partial access, uses only the selected scope, and shares the foo
     page.getByLabel('Required Google capability scopes'),
   ).toContainText('domain.readonly');
   await expect(
-    page.getByText('Add these 6 scopes to allow the checks on this page.'),
+    page.getByText('Add these 7 scopes to allow the checks on this page.'),
   ).toBeVisible();
 });
 
-test('renders six capability rows and one pre-filled delegation link', async ({
+test('renders seven capability rows and one pre-filled delegation link', async ({
   page,
 }) => {
   await fixture(page);
@@ -207,7 +207,7 @@ test('renders six capability rows and one pre-filled delegation link', async ({
     ),
   );
   await expect(
-    page.getByText('Add these 6 scopes to allow the checks on this page.'),
+    page.getByText('Add these 7 scopes to allow the checks on this page.'),
   ).toBeVisible();
 });
 

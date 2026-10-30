@@ -171,7 +171,7 @@ it('reports a capability that was never checked as out of date', async () => {
   expect(store.summary()).toBe('Google results are out of date');
 });
 
-it('lists all six capabilities in contract order', () => {
+it('lists all seven capabilities in contract order', () => {
   const request = vi.fn().mockResolvedValue(Response.json({ health: null }));
   const { store } = fixture(request);
   expect(store.capabilities.map((item) => item.id)).toEqual(
@@ -179,7 +179,7 @@ it('lists all six capabilities in contract order', () => {
   );
 });
 
-it('requests all six capabilities from Check Google access', async () => {
+it('requests all seven capabilities from Check Google access', async () => {
   const request = vi
     .fn()
     .mockResolvedValue(Response.json({ health: initial() }));
@@ -204,10 +204,10 @@ it('counts a failed school OU check, because setup grants its scope', async () =
   const request = vi.fn().mockResolvedValue(Response.json({ health }));
   const { store } = fixture(request);
   await vi.waitFor(() => expect(store.loaded()).toBe(true));
-  expect(store.summary()).toBe('Google: 1 of 6 capabilities need attention');
+  expect(store.summary()).toBe('Google: 1 of 7 capabilities need attention');
 });
 
-it('counts a failed setup capability out of the six', async () => {
+it('counts a failed setup capability out of the seven', async () => {
   const health = initial();
   health.capabilities.find(
     (item) => item.capability === 'device-changes',
@@ -215,7 +215,7 @@ it('counts a failed setup capability out of the six', async () => {
   const request = vi.fn().mockResolvedValue(Response.json({ health }));
   const { store } = fixture(request);
   await vi.waitFor(() => expect(store.loaded()).toBe(true));
-  expect(store.summary()).toBe('Google: 1 of 6 capabilities need attention');
+  expect(store.summary()).toBe('Google: 1 of 7 capabilities need attention');
 });
 
 it('lists the setup scopes plus every verified scope once in the delegation link', async () => {
