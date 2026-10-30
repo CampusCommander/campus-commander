@@ -1,7 +1,7 @@
 # Technical design: annotated-location writes, write jobs, the admission hold, and the jobs API
 
 Status: approved technical design, revision 6, 2026-10-17. Author: architect. The reviewer approved it at `057b990`.
-Slice: development order step 4 (`docs/current-work.md:64`). The intake brief (eng-lead, 2026-10-16, revision 3) is the contract.
+Slice: development order step 4 (`docs/current-work.md:340`). The intake brief (eng-lead, 2026-10-16, revision 3) is the contract.
 Owner decisions D1 to D6 in that brief are binding. This record invents no product behavior.
 The owner merged the workflow record `docs/workflows/update-device-annotated-location.md` through PR #36 as commit `3eab39a`, on 2026-10-16 at 23:39 EDT.
 The eng-lead note of 23:39 states that the merge confirms the record. This design follows that record on origin/main.
