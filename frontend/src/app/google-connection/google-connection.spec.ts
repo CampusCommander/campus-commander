@@ -187,6 +187,7 @@ const setupScopes = [
   'https://www.googleapis.com/auth/chrome.management.telemetry.readonly',
   'https://www.googleapis.com/auth/admin.directory.device.chromeos',
   'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
+  'https://www.googleapis.com/auth/drive.file',
 ];
 
 async function setupImportPage() {
