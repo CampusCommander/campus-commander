@@ -384,6 +384,111 @@ const jobEvent = (jobId: string, displayId: string, revision: number) => ({
   requestedBy: person.id,
 });
 
+/**
+ * A running import with twelve changes on two pages. The operations of the second page stay
+ * held until the test releases them, so a navigation read owns the results cycle (R4).
+ */
+function heldNextPage() {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  let detailReads = 0;
+  let reportReads = 0;
+  const line = (row: number) => ({
+    ...report().lines[0],
+    row,
+    deviceId: `C0A1-${String(row).padStart(4, '0')}`,
+    jobDisplayId: 'UPD-001',
+    operationNumber: row,
+    outcome: 'succeeded' as const,
+  });
+  const counts = {
+    rows: 14,
+    unchanged: 0,
+    noChangeNeeded: 0,
+    proposed: 12,
+    rejected: 2,
+  };
+  const pages = [
+    report({
+      plan: executedPlan,
+      pageCount: 2,
+      total: 12,
+      counts,
+      lines: Array.from({ length: 10 }, (_, index) => line(index + 1)),
+    }),
+    report({
+      plan: executedPlan,
+      page: 1,
+      pageCount: 2,
+      total: 12,
+      counts,
+      lines: [line(11), line(12)],
+    }),
+  ];
+  const failedView = report({
+    view: 'failed',
+    plan: executedPlan,
+    pageCount: 1,
+    total: 0,
+    counts,
+    lines: [],
+  });
+  const request = vi.fn(async (path: string) => {
+    if (path.includes('/operations?')) {
+      const numbers =
+        new URL(path, 'http://localhost').searchParams.get('number') ?? '';
+      if (numbers === '11,12') {
+        held = true;
+        await gate;
+      }
+      return response(
+        operationsPage(
+          numbers
+            .split(',')
+            .filter(Boolean)
+            .map((number) => operation(`UPD-001-${number}`, 'succeeded')),
+        ),
+      );
+    }
+    if (path.includes('/report?')) {
+      reportReads += 1;
+      const url = new URL(path, 'http://localhost');
+      const page = Number(url.searchParams.get('page') ?? '0');
+      return response(
+        url.searchParams.get('view') === 'failed'
+          ? failedView
+          : pages[Math.min(page, pages.length - 1)],
+      );
+    }
+    detailReads += 1;
+    return response(
+      importDetail({
+        revision: 8,
+        plan: executedPlan,
+        planJobs: runningJobs,
+        executionCounts: {
+          succeeded: 1,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: 1,
+          notRun: 0,
+        },
+      }),
+    );
+  });
+  return {
+    request,
+    release,
+    state: () => ({ detailReads, reportReads, held }),
+  };
+}
+
 /** The API of one executed import: its detail, its report views, and its operations. */
 function api(
   state: {
@@ -1362,6 +1467,73 @@ describe('Execute and its results', () => {
     expect(detailReads).toBe(2);
     expect(reportReads).toBe(4);
     expect(operationsReads).toBe(4);
+  });
+
+  it('keeps the Failed tab chosen during a held next page when a job event arrives', async () => {
+    const fixture = heldNextPage();
+    const { store, render, text, emit } = setup(fixture.request);
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('results');
+    expect(text()).toContain('Rows 1–10 of 12 changes');
+
+    // The next page reads its report and then holds its operations.
+    void store.nextReportPage();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(store.reportPage()).toBe(1);
+    expect(fixture.state().held).toBe(true);
+    const held = fixture.state();
+
+    // The person chooses Failed while that page still holds its operations, and a newer
+    // plan-job event arrives. No detail read starts during the held navigation (R4).
+    void store.setReportView('failed');
+    emit('job-changed', jobEvent(statusJobId, 'STS-002', 5));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(fixture.state()).toEqual(held);
+    expect(store.reportView()).toBe('proposed');
+
+    fixture.release();
+    await render();
+    await render();
+    await render();
+
+    // The queued tab opens, and the background reconcile keeps it (R4).
+    expect(store.reportView()).toBe('failed');
+    expect(store.reportPage()).toBe(0);
+    expect(text()).toContain('No change failed.');
+    store.close();
+  });
+
+  it('keeps the Failed tab chosen during a held next page when the shared feed reopens', async () => {
+    const fixture = heldNextPage();
+    const { store, render, text, emit } = setup(fixture.request);
+    store.openJob('IMP-001');
+    await render();
+    expect(store.step()).toBe('results');
+
+    void store.nextReportPage();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(store.reportPage()).toBe(1);
+    expect(fixture.state().held).toBe(true);
+    const held = fixture.state();
+
+    // The shared feed reopens after a reconnect, and the person chooses Failed while the
+    // held page still owns the cycle.
+    void store.setReportView('failed');
+    emit('open', {});
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(fixture.state()).toEqual(held);
+    expect(store.reportView()).toBe('proposed');
+
+    fixture.release();
+    await render();
+    await render();
+    await render();
+
+    expect(store.reportView()).toBe('failed');
+    expect(store.reportPage()).toBe(0);
+    expect(text()).toContain('No change failed.');
+    store.close();
   });
 
   it('reconciles the results page after reentry when only a child job changed', async () => {

@@ -306,8 +306,11 @@ export class DeviceExportImportStore {
   private resultsQueued = false;
   private resultsFresh = false;
   private resultsWait: Promise<void> = Promise.resolve();
-  /** The page and view of the next results cycle. The latest request wins (R4). */
-  private resultsTarget: { page: number; view: ResultsView } | null = null;
+  /**
+   * The page and tab that the results must show. A person's choice owns it until a read shows
+   * that page, and a background reconcile re-reads it without replacing it (R4).
+   */
+  private resultsDesired: { page: number; view: ResultsView } | null = null;
   /** The request count of the running cycle, so a stopped cycle cannot clear a newer one. */
   private resultsCycle = 0;
   /** A feed open, a job reentry, or a child revision requires a results reconcile (R5). */
@@ -748,7 +751,7 @@ export class DeviceExportImportStore {
     this.reportRevision = detail.revision;
     this.cache.delete(displayId);
     // The first results read owns the whole cycle, so the read that opened it waits (R4).
-    await this.requestResults('proposed', 0, true);
+    await this.requestResults('proposed', 0, true, true);
   }
 
   /** A tab of the report step or of the results table (states 14, 15, and 17b). */
@@ -758,7 +761,7 @@ export class DeviceExportImportStore {
       // The results table holds the two views of design section 8, and each tab starts on
       // the first page. A read in flight coalesces this tab into the next cycle (R4).
       if (view !== 'proposed' && view !== 'failed') return;
-      await this.requestResults(view, 0);
+      await this.requestResults(view, 0, false, true);
       return;
     }
     await this.showReportPage(view, 0);
@@ -768,7 +771,12 @@ export class DeviceExportImportStore {
     const pages = this.reportPages()[this.reportView()];
     if (this.reportPage() + 1 >= pages) return;
     if (this.step() === 'results') {
-      await this.requestResults(this.resultsView(), this.reportPage() + 1);
+      await this.requestResults(
+        this.resultsView(),
+        this.reportPage() + 1,
+        false,
+        true,
+      );
       return;
     }
     await this.showReportPage(this.reportView(), this.reportPage() + 1);
@@ -777,7 +785,12 @@ export class DeviceExportImportStore {
   async previousReportPage(): Promise<void> {
     if (this.reportPage() === 0) return;
     if (this.step() === 'results') {
-      await this.requestResults(this.resultsView(), this.reportPage() - 1);
+      await this.requestResults(
+        this.resultsView(),
+        this.reportPage() - 1,
+        false,
+        true,
+      );
       return;
     }
     await this.showReportPage(this.reportView(), this.reportPage() - 1);
@@ -1012,14 +1025,18 @@ export class DeviceExportImportStore {
 
   /**
    * A results request. One complete cycle runs at a time, and a request that arrives during
-   * a cycle coalesces into one later read of its page and view (R4). The latest request wins.
+   * a cycle coalesces into one later read of the desired page and tab (R4). A navigation
+   * request sets that page and tab. A background reconcile re-reads it, and never replaces
+   * it with the last page that a read showed.
    */
   private requestResults(
-    view: ResultsView = this.resultsView(),
-    page: number = this.reportPage(),
-    fresh = false,
+    view: ResultsView,
+    page: number,
+    fresh: boolean,
+    navigation: boolean,
   ): Promise<void> {
-    this.resultsTarget = { page, view };
+    if (navigation) this.resultsDesired = { page, view };
+    else if (this.resultsDesired === null) this.resultsDesired = { page, view };
     this.resultsFresh = this.resultsFresh || fresh;
     if (this.resultsBusy) {
       this.resultsQueued = true;
@@ -1037,7 +1054,7 @@ export class DeviceExportImportStore {
   private async runResults(cycle: number): Promise<void> {
     try {
       do {
-        const target = this.resultsTarget;
+        const target = this.resultsDesired;
         const fresh = this.resultsFresh;
         this.resultsQueued = false;
         this.resultsFresh = false;
@@ -1057,7 +1074,6 @@ export class DeviceExportImportStore {
         this.resultsBusy = false;
         this.resultsQueued = false;
         this.resultsFresh = false;
-        this.resultsTarget = null;
         this.resultsWait = Promise.resolve();
       }
     }
@@ -1079,8 +1095,14 @@ export class DeviceExportImportStore {
 
   /** A newer revision of the plan refreshes the page and the operations on screen. */
   private refreshResults(): Promise<void> {
-    // The selected page and view of the results read again (design section 8).
-    return this.requestResults(this.resultsView(), this.reportPage(), true);
+    // A background reconcile re-reads the chosen page and tab. It never replaces them with
+    // the last page that a read showed (R4).
+    return this.requestResults(
+      this.resultsView(),
+      this.reportPage(),
+      true,
+      false,
+    );
   }
 
   /** A new import entry drops the cycle in flight and keeps its late answer out (R4). */
@@ -1090,7 +1112,7 @@ export class DeviceExportImportStore {
     this.resultsBusy = false;
     this.resultsQueued = false;
     this.resultsFresh = false;
-    this.resultsTarget = null;
+    this.resultsDesired = null;
     this.resultsWait = Promise.resolve();
   }
 
@@ -1404,6 +1426,13 @@ export class DeviceExportImportStore {
     this.reportView.set(answer.view);
     this.reportPage.set(answer.page);
     this.reportLines.set(answer.lines);
+    // The shown answer becomes the desired page, unless a newer choice is already queued (R4).
+    if (this.step() === 'results' && !this.resultsQueued) {
+      this.resultsDesired = {
+        page: answer.page,
+        view: answer.view === 'failed' ? 'failed' : 'proposed',
+      };
+    }
   }
 
   private resetImport(): void {
@@ -1569,6 +1598,9 @@ export class DeviceExportImportStore {
 
   /** One read of the open job (design section 9, states 04, 05, and 08). */
   private async read(): Promise<JobRevisions | null> {
+    // A results cycle owns the IMP screen while it runs. A detail read waits for the whole
+    // cycle, so no detail read starts during a held page or operations read (R4).
+    if (this.resultsBusy) await this.resultsWait;
     const displayId = this.displayId();
     if (!displayId) return [];
     const epoch = this.epoch;
