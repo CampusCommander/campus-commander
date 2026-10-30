@@ -117,7 +117,7 @@ BEGIN
   IF p_results IS NULL OR jsonb_typeof(p_results)<>'array' THEN
     RAISE EXCEPTION 'The capability results are invalid.' USING ERRCODE='22023';
   END IF;
-  IF jsonb_array_length(p_results) NOT BETWEEN 0 AND 6 THEN
+  IF jsonb_array_length(p_results) NOT BETWEEN 0 AND 7 THEN
     RAISE EXCEPTION 'The capability result count is invalid.' USING ERRCODE='22023';
   END IF;
   -- An inconclusive combined read preserves every capability observation.
