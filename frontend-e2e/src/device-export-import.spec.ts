@@ -1366,7 +1366,7 @@ test.describe('Execute and the results', () => {
 
   test('the dialog follows its jobs through the shared feed and opens no feed', async ({
     page,
-  }) => {
+  }, testInfo) => {
     const panel = await openImport(page, { importRun: 'running' });
     const streams = await installLiveStreams(page);
     await expect(panel).toContainText('Updated live');
@@ -1375,6 +1375,17 @@ test.describe('Execute and the results', () => {
     // A tab switch reads the failed view and still adds no stream.
     await panel.locator('.report-tabs button').nth(1).click();
     await expect(panel).toContainText('No change failed.');
+    // The empty view keeps its centered message, not a collapsed results row.
+    await expect
+      .poll(async () => {
+        const box = await panel
+          .locator('.report-table.rs .message-row td')
+          .first()
+          .boundingBox();
+        return box?.height ?? 0;
+      })
+      .toBeGreaterThan(60);
+    await page.screenshot({ path: testInfo.outputPath('17-failed-empty.png') });
     expect(await streams.constructions()).toEqual(['/api/events']);
   });
 });

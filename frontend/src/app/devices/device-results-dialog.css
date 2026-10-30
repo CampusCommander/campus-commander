@@ -343,7 +343,7 @@
 /* The results table shares the report columns, with a shallower row so one page of ten
    results, including a Failed row and its reason, fits above the pager (design section 9,
    state 17 and 17b). */
-.report-table.rs td {
+.report-table.rs tbody tr:not(.message-row) td {
   height: 26px;
   padding-block: 2px;
 }
