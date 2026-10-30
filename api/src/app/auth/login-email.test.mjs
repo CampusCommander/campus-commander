@@ -155,16 +155,12 @@ function provider() {
 }
 
 /** Sign in once through the real service. `claims` overrides the ID token claims. */
-async function signIn(claims = { email: delegatedEmail, email_verified: true }) {
+async function signIn(
+  claims = { email: delegatedEmail, email_verified: true },
+) {
   audited.length = 0;
   const cache = cacheDouble();
-  const service = new AuthService(
-    configuration,
-    database,
-    cache,
-    {},
-    {},
-  );
+  const service = new AuthService(configuration, database, cache, {}, {});
   const { config, answered } = provider();
   service.discovery = Promise.resolve(config);
   answered.claims = claims;
@@ -250,7 +246,10 @@ test('the Drive subject of a session answers null without a live session', async
     await service.driveSubject(`${sessionCookie}=${'b'.repeat(64)}`),
     null,
   );
-  assert.equal(await service.driveSubject(`${sessionCookie}=not-a-token`), null);
+  assert.equal(
+    await service.driveSubject(`${sessionCookie}=not-a-token`),
+    null,
+  );
 });
 
 test('the claim helper keeps only a verified non-empty email', () => {
@@ -268,7 +267,10 @@ test('the claim helper keeps only a verified non-empty email', () => {
     driveSubjectFromClaims({ email: delegatedEmail, email_verified: 'true' }),
     null,
   );
-  assert.equal(driveSubjectFromClaims({ email: '', email_verified: true }), null);
+  assert.equal(
+    driveSubjectFromClaims({ email: '', email_verified: true }),
+    null,
+  );
   assert.equal(
     driveSubjectFromClaims({ email: 42, email_verified: true }),
     null,

@@ -456,10 +456,7 @@ test(
             });
           if (url.pathname === '/jwks') return json({ keys: [jwk] });
           if (url.pathname === '/authorize') {
-            assert.equal(
-              url.searchParams.get('scope'),
-              'openid profile email',
-            );
+            assert.equal(url.searchParams.get('scope'), 'openid profile email');
             assert.equal(
               url.searchParams.get('redirect_uri'),
               `${publicOrigin}/api/auth/callback`,
