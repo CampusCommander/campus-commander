@@ -13,9 +13,9 @@ const customerId = 'C0123456';
 const actor = '44444444-4444-4444-8444-444444444444';
 const now = Date.now();
 
-const sessionFor = (actions: string[]) => ({
+const sessionFor = (actions: string[], id = actor) => ({
   identity: {
-    id: actor,
+    id,
     displayName: 'District operator',
     permissionVersion: 1,
     grants: actions.map((action) => ({
@@ -144,6 +144,7 @@ function setup(actions: string[], sync: () => Response) {
     activity: activityStore,
     devices: devicesStore,
     feeds,
+    session,
     sources,
     requests,
     reads: (path: string) => requests.filter((item) => item === path).length,
@@ -237,6 +238,37 @@ it('keeps the job feed live when a denied device read stops the devices store', 
   expect(reads('/api/jobs/activity')).toBe(3);
   expect(reads('/api/devices/sync')).toBe(1);
   expect(sources).toHaveLength(1);
+});
+
+it('reads the new person status when both stores follow a replaced connection', async () => {
+  vi.useFakeTimers();
+  const { activity, devices, session, sources, reads } = setup(
+    ['jobs:read', 'devices:read'],
+    () => Response.json({ sync: syncState() }),
+  );
+  TestBed.tick();
+  await devices.init();
+  sources[0].open();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(activity.live()).toBe(true);
+  const jobReads = reads('/api/jobs/activity');
+  const statusReads = reads('/api/devices/sync');
+
+  // The next person gets a replaced connection. Both stores read on it.
+  session.set(sessionFor(['jobs:read', 'devices:read'], 'someone-else'));
+  TestBed.tick();
+  await vi.advanceTimersByTimeAsync(0);
+  const live = sources[sources.length - 1];
+  live.open();
+  await vi.advanceTimersByTimeAsync(250);
+  // The job feed stays live and the devices store loads the new person's status.
+  expect(activity.live()).toBe(true);
+  expect(reads('/api/jobs/activity')).toBeGreaterThan(jobReads);
+  expect(reads('/api/devices/sync')).toBeGreaterThan(statusReads);
+  expect(devices.sync()?.status).toBe('ready');
+  expect(devices.syncLoaded()).toBe(true);
+  // Every replacement source but the live one is closed.
+  expect(sources.filter((source) => source.readyState !== 2)).toHaveLength(1);
 });
 
 it('keeps the job feed live when the customer has no device sync', async () => {
