@@ -204,14 +204,16 @@ it('carries the job feed and the device feed on one connection through a reopen'
   expect(reads('/api/jobs/activity')).toBe(events + 1);
   // The status read before the device events and the read after the open.
   expect(reads('/api/devices/sync')).toBe(statuses + 2);
-  expect(sources.map((fake) => fake.url)).toEqual(['/api/events', '/api/events']);
+  expect(sources.map((fake) => fake.url)).toEqual([
+    '/api/events',
+    '/api/events',
+  ]);
 });
 
 it('keeps the job feed live when a denied device read stops the devices store', async () => {
   vi.useFakeTimers();
-  const { activity, devices, sources, reads } = setup(
-    ['jobs:read'],
-    () => Response.json({ code: 'forbidden' }, { status: 403 }),
+  const { activity, devices, sources, reads } = setup(['jobs:read'], () =>
+    Response.json({ code: 'forbidden' }, { status: 403 }),
   );
   TestBed.tick();
   await devices.init();

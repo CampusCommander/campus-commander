@@ -416,7 +416,10 @@ export class DevicesStore {
   }
 
   /** Reads the status again after a failed read. The device store alone waits. */
-  private scheduleStatusRetry(action: 'connect' | 'open', generation = 0): void {
+  private scheduleStatusRetry(
+    action: 'connect' | 'open',
+    generation = 0,
+  ): void {
     if (this.statusRetryTimer !== undefined || !this.streamWanted) return;
     const delay = Math.min(
       this.statusRetryDelay * 2 ** this.statusFailures,
@@ -431,7 +434,8 @@ export class DevicesStore {
   }
 
   private clearStatusRetry(): void {
-    if (this.statusRetryTimer !== undefined) clearTimeout(this.statusRetryTimer);
+    if (this.statusRetryTimer !== undefined)
+      clearTimeout(this.statusRetryTimer);
     this.statusRetryTimer = undefined;
     this.statusFailures = 0;
   }
@@ -840,7 +844,8 @@ export class DevicesStore {
 
   /** Stops this store when its status read denies it or the customer has no sync. */
   private stopOnStatusResult(result: 'read' | 'denied' | 'failed'): boolean {
-    if (result !== 'denied' && !(result === 'read' && !this.sync())) return false;
+    if (result !== 'denied' && !(result === 'read' && !this.sync()))
+      return false;
     // A denied read or a missing sync stops only this store. The tab keeps the connection.
     this.stopFeed();
     this.dropHeld();

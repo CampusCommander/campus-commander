@@ -114,7 +114,10 @@ it('opens one connection for two subscribers of one feed URL', () => {
   expect(two.opened).toHaveBeenCalledTimes(1);
   expect(oneFeed.connected).toBe(true);
 
-  fake.emit('job-changed', changedEvent('job-changed', '{"type":"job-changed"}'));
+  fake.emit(
+    'job-changed',
+    changedEvent('job-changed', '{"type":"job-changed"}'),
+  );
   expect(one.changed).toHaveBeenCalledWith('{"type":"job-changed"}');
   expect(two.changed).toHaveBeenCalledWith('{"type":"job-changed"}');
 
@@ -127,7 +130,11 @@ it('holds one connection for the job feed and the device feed', () => {
   const { feeds } = setup();
   const sources: FakeSource[] = [];
   const jobs = follower(sources, ['job-changed']);
-  const devices = follower(sources, ['entity-batch', 'job-finished', 'full-sync']);
+  const devices = follower(sources, [
+    'entity-batch',
+    'job-finished',
+    'full-sync',
+  ]);
   feeds.subscribe('/api/events', jobs.handlers);
   feeds.subscribe('/api/events', devices.handlers);
   expect(sources).toHaveLength(1);
@@ -136,15 +143,15 @@ it('holds one connection for the job feed and the device feed', () => {
   fake.readyState = 1;
   fake.emit('open');
 
-  fake.emit('job-changed', changedEvent('job-changed', '{"type":"job-changed"}'));
+  fake.emit(
+    'job-changed',
+    changedEvent('job-changed', '{"type":"job-changed"}'),
+  );
   fake.emit(
     'entity-batch',
     changedEvent('entity-batch', '{"type":"entity-batch"}'),
   );
-  fake.emit(
-    'full-sync',
-    changedEvent('full-sync', '{"type":"full-sync"}'),
-  );
+  fake.emit('full-sync', changedEvent('full-sync', '{"type":"full-sync"}'));
 
   expect(jobs.changed).toHaveBeenCalledTimes(1);
   expect(jobs.changed).toHaveBeenCalledWith('{"type":"job-changed"}');

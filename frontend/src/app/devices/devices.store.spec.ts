@@ -870,21 +870,26 @@ describe('reopen after a failed status read', () => {
     expect(store.error()).toBe('');
   });
 
-  it.each([401, 403])('stops only this store after a %i status read', async (status) => {
-    const request = statusSequence([200, status]);
-    const store = setup(request);
-    const opened = streams(store);
-    await store.init();
-    opened[0].open();
-    opened[0].fail(2);
-    await vi.waitFor(() => expect(opened).toHaveLength(2));
-    opened[1].open();
-    await vi.waitFor(() => expect(store.error()).toBe('Device inventory status is unavailable.'));
-    await vi.waitFor(() => expect(opened[1].closed).toBe(true));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(statusReads(request)).toBe(2);
-    expect(opened).toHaveLength(2);
-  });
+  it.each([401, 403])(
+    'stops only this store after a %i status read',
+    async (status) => {
+      const request = statusSequence([200, status]);
+      const store = setup(request);
+      const opened = streams(store);
+      await store.init();
+      opened[0].open();
+      opened[0].fail(2);
+      await vi.waitFor(() => expect(opened).toHaveLength(2));
+      opened[1].open();
+      await vi.waitFor(() =>
+        expect(store.error()).toBe('Device inventory status is unavailable.'),
+      );
+      await vi.waitFor(() => expect(opened[1].closed).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(statusReads(request)).toBe(2);
+      expect(opened).toHaveLength(2);
+    },
+  );
 
   it('backs a failed status read off to the cap and starts over after a success', async () => {
     vi.useFakeTimers();
