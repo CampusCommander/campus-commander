@@ -923,9 +923,13 @@ export class DeviceExportJobs {
         throw new ExportStop({ kind: 'stopped' });
     };
     let count = 0;
-    for await (const chunk of await this.store.openRead(descriptor.artifactId)) {
+    for await (const chunk of await this.store.openRead(
+      descriptor.artifactId,
+    )) {
       stopped();
-      for (const record of reader.push(decoder.decode(chunk, { stream: true }))) {
+      for (const record of reader.push(
+        decoder.decode(chunk, { stream: true }),
+      )) {
         yield record.cells;
         count += 1;
         if (count % this.batchSize === 0) stopped();
