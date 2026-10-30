@@ -274,6 +274,12 @@ export class DevicesStore {
   private holding = false;
   /** Invalidates a status read whose open a stop replaced. */
   private openGeneration = 0;
+  /**
+   * Invalidates an admission read that a newer open or a stop replaced. A reopen that reads the
+   * status itself takes the decision from an admission that is still in flight, so its answer
+   * cannot clear the newer retry, release its frames, or start a stopped subscription again.
+   */
+  private admission = 0;
   /** Failed status reads since the last successful one. */
   private statusFailures = 0;
   private statusRetryTimer?: ReturnType<typeof setTimeout>;
@@ -380,7 +386,8 @@ export class DevicesStore {
   private connect(): Promise<void> {
     if (this.connecting) return this.connecting;
     const epoch = this.epoch;
-    const read = this.admit(epoch).finally(() => {
+    const admission = ++this.admission;
+    const read = this.admit(epoch, admission).finally(() => {
       this.connecting = null;
       // A reset during the read gave the admission to another person. That person still needs it.
       if (epoch !== this.epoch && this.streamWanted) void this.connect();
@@ -389,10 +396,13 @@ export class DevicesStore {
     return read;
   }
 
-  private async admit(epoch: number): Promise<void> {
-    const result = await this.readSync();
-    // A leave or a reset made this read obsolete.
-    if (epoch !== this.epoch || !this.streamWanted) return;
+  private async admit(epoch: number, admission: number): Promise<void> {
+    // A newer open that reads the status itself, or a stop, owns the decision from here on.
+    const current = () =>
+      epoch === this.epoch && admission === this.admission && this.streamWanted;
+    const result = await this.readSync(current);
+    // A leave, a reset, a stop, or a newer open made this read obsolete.
+    if (!current() || result === 'superseded') return;
     if (this.stopOnStatusResult(result)) return;
     if (result === 'failed') {
       this.scheduleStatusRetry('connect', this.openGeneration);
@@ -423,6 +433,8 @@ export class DevicesStore {
   /** Stops this store's subscription. The tab's connection stays for every other store. */
   private stopFeed(): void {
     this.openGeneration += 1;
+    // A stop is the current decision. An admission that is still in flight cannot undo it.
+    this.admission += 1;
     this.feed?.close();
     this.feed = null;
     this.dropped = null;
@@ -479,12 +491,18 @@ export class DevicesStore {
     return (await this.readSync()) === 'read';
   }
 
-  /** Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure. */
-  private async readSync(): Promise<'read' | 'denied' | 'failed'> {
+  /**
+   * Read the status. `denied` means a 401 or 403 answer. `failed` means any other failure.
+   * `superseded` means a newer open or a stop replaced this read, which then changed nothing.
+   * `current` fences every write of the answer against that replacement.
+   */
+  private async readSync(
+    current: () => boolean = () => true,
+  ): Promise<'read' | 'denied' | 'failed' | 'superseded'> {
     // Another person signed in while this read was in flight. Its answer belongs to the old person.
     const epoch = this.epoch;
     const response = await this.call('/api/devices/sync');
-    if (epoch !== this.epoch) return 'failed';
+    if (epoch !== this.epoch || !current()) return 'superseded';
     if (!response) return 'failed';
     if (!response.ok) {
       this.error.set('Device inventory status is unavailable.');
@@ -498,12 +516,12 @@ export class DevicesStore {
         .nullable()
         .parse((await response.json()).sync);
     } catch {
-      if (epoch !== this.epoch) return 'failed';
+      if (epoch !== this.epoch || !current()) return 'superseded';
       // A 200 answer with an unreadable body counts as a failed read. The reopen then retries.
       this.error.set('Device inventory status is unavailable.');
       return 'failed';
     }
-    if (epoch !== this.epoch) return 'failed';
+    if (epoch !== this.epoch || !current()) return 'superseded';
     this.error.set('');
     this.setSync(answer);
     this.syncLoaded.set(true);
@@ -830,7 +848,11 @@ export class DevicesStore {
     const generation = ++this.openGeneration;
     // A first open after the subscription read has the status it needs. Every other open reads.
     const read = !(first && this.dropped === null) && replaced;
-    if (read) this.holding = true;
+    if (read) {
+      this.holding = true;
+      // This open answers for the status itself. An admission that is still in flight is obsolete.
+      this.admission += 1;
+    }
     void this.afterOpen(generation, first, read);
   }
 
@@ -848,9 +870,9 @@ export class DevicesStore {
       // A full sync can end between the read before the subscription and this first open.
       this.dropped = { state: this.sync() };
     } else if (read) {
-      const result = await this.readSync();
+      const result = await this.readSync(() => this.ownsOpen(generation));
       if (generation !== this.openGeneration) return;
-      if (this.stopOnStatusResult(result)) return;
+      if (result === 'superseded' || this.stopOnStatusResult(result)) return;
       if (result === 'failed') {
         // The status read comes before the device events. A failed one waits for its retry.
         this.scheduleStatusRetry('open', generation);
@@ -863,12 +885,17 @@ export class DevicesStore {
     this.releaseHeld();
   }
 
+  /** True while this open still follows the stream and owns its status read. */
+  private ownsOpen(generation: number): boolean {
+    return generation === this.openGeneration && this.feed !== null;
+  }
+
   /** Retries the status read of one open. The device events wait until it answers. */
   private async retryOpen(generation: number): Promise<void> {
-    if (generation !== this.openGeneration || !this.feed) return;
-    const result = await this.readSync();
-    if (generation !== this.openGeneration || !this.feed) return;
-    if (this.stopOnStatusResult(result)) return;
+    if (!this.ownsOpen(generation)) return;
+    const result = await this.readSync(() => this.ownsOpen(generation));
+    if (!this.ownsOpen(generation)) return;
+    if (result === 'superseded' || this.stopOnStatusResult(result)) return;
     if (result === 'failed') {
       this.scheduleStatusRetry('open', generation);
       return;
