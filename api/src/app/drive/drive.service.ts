@@ -241,7 +241,10 @@ export class DriveService {
   }
 
   /** A refused exchange marks the session for delegation or account refusals only. */
-  private async refuse(session: SessionResponse, error: unknown): Promise<never> {
+  private async refuse(
+    session: SessionResponse,
+    error: unknown,
+  ): Promise<never> {
     if (error instanceof GoogleConnectionError) {
       const cause: GoogleDriveCause | null =
         error.code === 'delegation-not-authorized' ||

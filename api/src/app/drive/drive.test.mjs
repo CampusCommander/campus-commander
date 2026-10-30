@@ -165,10 +165,7 @@ function driveDatabase({
 } = {}) {
   return database([
     ['cc.expire_google_candidates', [{ result: 0 }]],
-    [
-      'cc.read_device_sync',
-      () => [{ result: sync }],
-    ],
+    ['cc.read_device_sync', () => [{ result: sync }]],
     [
       'cc.read_google_drive_access',
       () => {
@@ -386,7 +383,9 @@ const tabs = (fileId) => request(`/api/google/drive/files/${fileId}/tabs`);
 
 /** Answer the one token exchange of the test. */
 function exchange(t) {
-  t.mock.method(JWT.prototype, 'getAccessToken', async () => ({ token: TOKEN }));
+  t.mock.method(JWT.prototype, 'getAccessToken', async () => ({
+    token: TOKEN,
+  }));
   t.mock.method(JWT.prototype, 'getTokenInfo', async () => ({
     scopes: ['https://www.googleapis.com/auth/drive.file'],
     expiry_date: Date.now() + 3_500_000,
@@ -593,7 +592,10 @@ test('the session answers the token once with no-store and stores no copy', asyn
   assert.ok(expiry > Date.now() + 3_000_000);
   assert.ok(expiry <= Date.now() + 3_605_000);
   // The answer is the only place that holds the token.
-  assert.ok(!output.includes(TOKEN), 'The token must not reach the process output.');
+  assert.ok(
+    !output.includes(TOKEN),
+    'The token must not reach the process output.',
+  );
   assert.ok(![...activeCache.entries.values()].some((v) => v.includes(TOKEN)));
   const reads = statements(db, 'cc.device_write_credential');
   assert.equal(reads.length, 1);
@@ -609,10 +611,7 @@ test('a successful exchange clears the stored cause', async (t) => {
   exchange(t);
   const db = driveDatabase();
   arrange({ db });
-  activeCache.entries.set(
-    causeKey(),
-    JSON.stringify({ cause: 'delegation' }),
-  );
+  activeCache.entries.set(causeKey(), JSON.stringify({ cause: 'delegation' }));
 
   const answer = await mint();
 
@@ -759,10 +758,7 @@ test('the tab list answers 404 for a file that Google refuses', async (t) => {
 test('the tab list answers 409 with the stored cause and reads no credential', async () => {
   const db = driveDatabase();
   arrange({ db });
-  activeCache.entries.set(
-    causeKey(),
-    JSON.stringify({ cause: 'account' }),
-  );
+  activeCache.entries.set(causeKey(), JSON.stringify({ cause: 'account' }));
 
   const answer = await tabs(SHEET_ID);
 
