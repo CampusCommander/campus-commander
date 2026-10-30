@@ -8,6 +8,7 @@ import {
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
+import { GoogleHealthStore } from './health.store';
 import { GoogleConnectionPage } from './google-connection';
 
 const identity = {
@@ -396,3 +397,67 @@ it.each(['delegation-not-authorized', 'scope-mismatch'] as const)(
     sessionStorage.clear();
   },
 );
+
+it('shows the Google Drive card after the background credential card when a customer is connected', async () => {
+  const health = {
+    refresh: vi.fn(async () => undefined),
+    check: vi.fn(async () => true),
+    delegationHref: signal(null),
+    result: () => undefined,
+    stale: () => false,
+    error: signal(''),
+    loading: signal(false),
+    loaded: signal(true),
+  };
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/credentials'))
+      return Response.json({ credential: null, configuredKeyIds: [] });
+    if (path.endsWith('/drive')) return Response.json({ drive: null });
+    return Response.json({ connection });
+  });
+  await TestBed.configureTestingModule({
+    imports: [GoogleConnectionPage],
+    providers: [
+      provideRouter([]),
+      {
+        provide: AuthStore,
+        useValue: {
+          request,
+          metadata: () => ({ phase: 3 }),
+          session: () => ({ identity, csrfToken: 'session' }),
+          interrupted: () => false,
+          can: () => true,
+        },
+      },
+      {
+        provide: ConnectionStore,
+        useValue: {
+          connection: signal(connection),
+          loaded: signal(true),
+          loading: signal(false),
+          stale: signal(false),
+          error: signal(''),
+          refresh: vi.fn(async () => undefined),
+        },
+      },
+      { provide: GoogleHealthStore, useValue: health },
+    ],
+  }).compileComponents();
+  const fixture = TestBed.createComponent(GoogleConnectionPage);
+  fixture.detectChanges();
+  const element = fixture.nativeElement as HTMLElement;
+  await vi.waitFor(() =>
+    expect(element.querySelector('h2#drive-title')).not.toBeNull(),
+  );
+  const headings = [...element.querySelectorAll('h2')].map((heading) =>
+    heading.textContent!.trim(),
+  );
+  expect(headings.indexOf('Google Drive')).toBeGreaterThan(
+    headings.indexOf('Background Google credentials'),
+  );
+  expect(element.textContent).toContain(
+    'Google Sheet export and Google Drive import use these settings.',
+  );
+  expect(element.querySelector('app-drive-settings')).not.toBeNull();
+  fixture.destroy();
+});

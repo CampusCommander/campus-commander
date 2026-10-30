@@ -1,0 +1,136 @@
+<section
+  class="card"
+  aria-labelledby="drive-title"
+  [attr.aria-busy]="loading() || busy()"
+>
+  <h2 id="drive-title">Google Drive</h2>
+  <p>Google Sheet export and Google Drive import use these settings.</p>
+  <dl>
+    <dt>Drive scope</dt>
+    <dd class="identifier">{{ scope }}</dd>
+    <dt>Drive check</dt>
+    <dd [class.error]="!!failure()">{{ label() }}</dd>
+  </dl>
+  @if (failure(); as failure) {
+  <p>{{ recovery[failure].recovery }}</p>
+  <p>
+    @if (delegationHref(); as href) {
+    <a [href]="href" target="_blank" rel="noopener noreferrer"
+      >Open domain-wide delegation in the Google Admin console</a
+    >.
+    } @else { Open domain-wide delegation in the Google Admin console. }
+  </p>
+  <p class="secondary">
+    This link opens Google Admin with the client ID and these scopes filled in.
+    Authorize replaces the scope list of that client with the listed scopes.
+  </p>
+  }
+  <div #status tabindex="-1" role="status" aria-atomic="true">
+    @if (error()) {
+    <p class="error">{{ error() }}</p>
+    } @if (message()) {
+    <p>{{ message() }}</p>
+    } @if (health.error()) {
+    <p class="error">{{ health.error() }}</p>
+    }
+  </div>
+  @if (loading() && !loaded()) {
+  <p>Loading Drive settings.</p>
+  <div class="skeleton" aria-hidden="true"></div>
+  } @else if (!loaded()) {
+  <div class="actions">
+    <button mat-stroked-button (click)="refresh()" [disabled]="loading()">
+      Refresh Drive settings
+    </button>
+  </div>
+  } @else if (!canManage()) {
+  <p>
+    A platform administrator with Manage Google credentials access must change the
+    Drive settings.
+  </p>
+  } @else {
+  <form (ngSubmit)="save()">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+      <mat-label>Picker API key</mat-label>
+      <input
+        matInput
+        name="pickerApiKey"
+        [ngModel]="pickerApiKey()"
+        (ngModelChange)="pickerApiKey.set($event)"
+        #keyField="ngModel"
+        required
+        pattern="[A-Za-z0-9_-]{39}"
+        maxlength="39"
+        autocomplete="off"
+        spellcheck="false"
+        [disabled]="busy()"
+      />
+      <mat-hint
+        >A browser API key of the service-account project. Restrict it to the
+        Google Picker API.</mat-hint
+      >
+      @if (keyField.invalid && keyField.touched) {
+      <mat-error>Enter the 39-character API key.</mat-error>
+      }
+    </mat-form-field>
+    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+      <mat-label>Project number</mat-label>
+      <input
+        matInput
+        name="projectNumber"
+        inputmode="numeric"
+        [ngModel]="projectNumber()"
+        (ngModelChange)="projectNumber.set($event)"
+        #numberField="ngModel"
+        required
+        pattern="[1-9][0-9]{0,19}"
+        maxlength="20"
+        autocomplete="off"
+        spellcheck="false"
+        [disabled]="busy()"
+      />
+      <mat-hint
+        >The Picker uses this number as its App ID. Google Cloud shows it on the
+        project dashboard.</mat-hint
+      >
+      @if (numberField.invalid && numberField.touched) {
+      <mat-error>Enter the project number. It holds digits only.</mat-error>
+      }
+    </mat-form-field>
+    <div class="actions">
+      <button mat-flat-button type="submit" [disabled]="!canSave()">
+        {{ busy() ? 'Saving Drive settings' : 'Save Drive settings' }}
+      </button>
+      <a mat-stroked-button routerLink="/diagnostics" fragment="google-health"
+        >Check Google access</a
+      >
+    </div>
+    @if (ready()) {
+    <p role="status">
+      Google Drive is ready for Google Sheet export and Google Drive import.
+    </p>
+    }
+  </form>
+  }
+  <details [open]="!saved()">
+    <summary>Configure Google Drive</summary>
+    <ol>
+      <li>
+        Enable the Google Drive API, the Google Sheets API, and the Google Picker
+        API in the service-account project.
+      </li>
+      <li>Create an API key. Restrict it to the Google Picker API.</li>
+      <li>
+        Add no website restriction to the key. Campus Commander sends no referrer,
+        so a website restriction blocks the Picker.
+      </li>
+      <li>
+        Copy the project number from the project dashboard. The key file holds
+        only the project ID.
+      </li>
+      <li>
+        Add the Drive scope to domain-wide delegation, then check Google access.
+      </li>
+    </ol>
+  </details>
+</section>
