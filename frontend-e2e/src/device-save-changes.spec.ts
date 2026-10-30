@@ -596,7 +596,7 @@ async function openEditor(
 
 /** Dispatch one device refresh through the page's own stream handler. */
 async function emitDevices(page: Page, ids: string[]): Promise<void> {
-  await liveStreams(page).send('/api/devices/events', 'entity-batch', {
+  await liveStreams(page).send('/api/events', 'entity-batch', {
     type: 'entity-batch',
     entityType: 'device',
     deviceIds: ids,
@@ -605,39 +605,32 @@ async function emitDevices(page: Page, ids: string[]): Promise<void> {
 }
 
 /**
- * The ordinary startup of this file holds both feeds with the fake streams. No case that
+ * The ordinary startup of this file holds the one live feed with the fake streams. No case that
  * navigates through `openDevices` may fall back to a native EventSource: that stream would
  * answer with a complete 404 body, end, and reopen with another `by-ids` read.
  */
-test('the ordinary Devices startup holds both feeds without a native stream', async ({
+test('the ordinary Devices startup holds the one feed without a native stream', async ({
   page,
 }) => {
   const nativeEventRequests: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
-    if (path === '/api/devices/events' || path === '/api/jobs/events')
-      nativeEventRequests.push(path);
+    if (path === '/api/events') nativeEventRequests.push(path);
   });
 
   await openDevices(page, new SaveChangesSimulator(seedDevices()));
 
-  // The startup installed the fake before navigation, and the app's own feeds use it.
+  // The startup installed the fake before navigation, and the app's own feed uses it.
   await expect
     .poll(async () => liveStreams(page).openUrls())
-    .toEqual(['/api/devices/events', '/api/jobs/events']);
+    .toEqual(['/api/events']);
   expect(nativeEventRequests).toEqual([]);
 
-  // Past the app's five-second reopen delay each feed still holds its first stream, so no
+  // Past the app's five-second reopen delay the feed still holds its first stream, so no
   // stream ended and no stream was replaced.
   await page.waitForTimeout(5_500);
-  expect(await liveStreams(page).openUrls()).toEqual([
-    '/api/devices/events',
-    '/api/jobs/events',
-  ]);
-  expect(await liveStreams(page).constructedCount('/api/devices/events')).toBe(
-    1,
-  );
-  expect(await liveStreams(page).constructedCount('/api/jobs/events')).toBe(1);
+  expect(await liveStreams(page).openUrls()).toEqual(['/api/events']);
+  expect(await liveStreams(page).constructedCount('/api/events')).toBe(1);
   expect(nativeEventRequests).toEqual([]);
 });
 
@@ -1552,7 +1545,7 @@ test('a successful terminal job keeps its value until its row read recovers (B4)
  * answer stays mocked; this is the test EventSource boundary that the application opens.
  */
 async function emitJobChanged(page: Page): Promise<void> {
-  await liveStreams(page).send('/api/jobs/events', 'job-changed', {
+  await liveStreams(page).send('/api/events', 'job-changed', {
     type: 'job-changed',
     jobId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     displayId: jobDisplayId,

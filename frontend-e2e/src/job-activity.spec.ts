@@ -253,7 +253,7 @@ const dot = (page: Page) => page.locator('.attention-dot');
 
 /** Relays one job-changed event through the page's own stream handler. */
 async function relay(page: Page, payload: Record<string, unknown>) {
-  await liveStreams(page).send('/api/jobs/events', 'job-changed', payload);
+  await liveStreams(page).send('/api/events', 'job-changed', payload);
 }
 
 test.beforeEach(async ({ page }) => {

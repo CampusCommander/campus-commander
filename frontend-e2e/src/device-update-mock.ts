@@ -208,8 +208,8 @@ export async function mockApi(
     settle: async () => {
       const changed = sim.settle();
       const streams = liveStreams(page);
-      await streams.waitForOpen('/api/devices/events');
-      await streams.send('/api/devices/events', 'entity-batch', {
+      await streams.waitForOpen('/api/events');
+      await streams.send('/api/events', 'entity-batch', {
         type: 'entity-batch',
         entityType: 'device',
         deviceIds: changed,
