@@ -26,7 +26,6 @@ export async function qualifyDeviceCommandAnswers({
     serviceModule,
     guardModule,
     authModule,
-    eventsModule,
     orchestrationModule,
     securityModule,
   ] = await Promise.all([
@@ -36,7 +35,6 @@ export async function qualifyDeviceCommandAnswers({
     load('api/src/app/jobs/jobs.service.ts'),
     load('api/src/app/auth/auth.guard.ts'),
     load('api/src/app/auth/auth.service.ts'),
-    load('api/src/app/devices/device-events.service.ts'),
     load('api/src/app/orchestration/orchestration.service.ts'),
     load('api/src/app/security.ts'),
   ]);
@@ -46,7 +44,6 @@ export async function qualifyDeviceCommandAnswers({
   const { JobsService } = serviceModule;
   const { AuthGuard } = guardModule;
   const { AuthService } = authModule;
-  const { DeviceEventsService } = eventsModule;
   const { OrchestrationService } = orchestrationModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
   const connection = (
@@ -144,7 +141,7 @@ export async function qualifyDeviceCommandAnswers({
     // rehearsal's 400 passed through. The guard override supplies the seeded session only.
     Reflect.defineMetadata(
       'design:paramtypes',
-      [JobsService, AuthService, DeviceEventsService, OrchestrationService],
+      [JobsService, AuthService, OrchestrationService],
       JobsController,
     );
     class DeviceCommandAnswersModule {}
@@ -153,7 +150,6 @@ export async function qualifyDeviceCommandAnswers({
       providers: [
         { provide: JobsService, useValue: api },
         { provide: AuthService, useValue: {} },
-        { provide: DeviceEventsService, useValue: {} },
         { provide: OrchestrationService, useValue: {} },
       ],
     })(DeviceCommandAnswersModule);

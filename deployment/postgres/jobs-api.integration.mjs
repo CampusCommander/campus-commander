@@ -1485,17 +1485,11 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     const startJobRoutes = async () => {
       const common = (await import('@nestjs/common')).default;
       const core = (await import('@nestjs/core')).default;
-      class DeviceEventsServiceToken {}
       class OrchestrationServiceToken {}
       class ConfigurationServiceToken {}
       Reflect.defineMetadata(
         'design:paramtypes',
-        [
-          JobsService,
-          AuthService,
-          DeviceEventsServiceToken,
-          OrchestrationServiceToken,
-        ],
+        [JobsService, AuthService, OrchestrationServiceToken],
         JobsController,
       );
       Reflect.defineMetadata(
@@ -1519,7 +1513,6 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
             provide: ConfigurationServiceToken,
             useValue: { auth: { publicOrigin: 'http://127.0.0.1' } },
           },
-          { provide: DeviceEventsServiceToken, useValue: {} },
           { provide: OrchestrationServiceToken, useValue: {} },
           { provide: core.Reflector, useValue: new core.Reflector() },
         ],
