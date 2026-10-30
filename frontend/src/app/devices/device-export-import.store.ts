@@ -306,6 +306,8 @@ export class DeviceExportImportStore {
   private resultsQueued = false;
   private resultsFresh = false;
   private resultsWait: Promise<void> = Promise.resolve();
+  /** Resolves the wait of the running cycle when that cycle releases the slot (R4). */
+  private resultsDone: (() => void) | null = null;
   /**
    * The page and tab that the results must show. A person's choice owns it until a read shows
    * that page, and a background reconcile re-reads it without replacing it (R4).
@@ -1037,17 +1039,70 @@ export class DeviceExportImportStore {
   ): Promise<void> {
     if (navigation) this.resultsDesired = { page, view };
     else if (this.resultsDesired === null) this.resultsDesired = { page, view };
-    this.resultsFresh = this.resultsFresh || fresh;
     if (this.resultsBusy) {
+      // A request during any cycle, a held detail read included, joins one later read (R4).
       this.resultsQueued = true;
+      this.resultsFresh = this.resultsFresh || fresh;
       return this.resultsWait;
     }
+    return this.startResultsCycle(fresh);
+  }
+
+  /** Claims the one results slot and runs one complete cycle of the page and its operations. */
+  private startResultsCycle(fresh: boolean): Promise<void> {
     this.resultsBusy = true;
+    this.resultsQueued = false;
+    this.resultsFresh = fresh;
     const cycle = ++this.resultsCycle;
-    const run = this.runResults(cycle);
-    // A cycle that finished on its first turn holds no wait for a successor.
-    if (this.resultsBusy && cycle === this.resultsCycle) this.resultsWait = run;
-    return run;
+    this.holdResultsCycle();
+    return this.runResults(cycle);
+  }
+
+  /**
+   * A detail read of the retained results claims the one results slot before its IMP request.
+   * A tab or pager choice during the held detail then queues behind the whole cycle (R4).
+   * Returns the cycle that the read owns, or null when another cycle or screen owns it.
+   */
+  private claimDetailResults(): number | null {
+    if (this.step() !== 'results') return null;
+    const displayId = this.displayId();
+    if (!displayId || this.reportJob !== displayId) return null;
+    if (this.resultsBusy) return null;
+    this.resultsBusy = true;
+    this.resultsQueued = false;
+    this.resultsFresh = false;
+    const cycle = ++this.resultsCycle;
+    this.holdResultsCycle();
+    return cycle;
+  }
+
+  /**
+   * The page and operations phase of a cycle that a detail read owns. The read advances into
+   * the same cycle, so it never waits on the slot that it holds (R4).
+   */
+  private async runOwnedResults(cycle: number): Promise<void> {
+    if (cycle !== this.resultsCycle || !this.resultsBusy) {
+      // A newer cycle replaced this read's claim, so the ordinary path owns the read (R4).
+      await this.refreshResults();
+      return;
+    }
+    this.resultsFresh = true;
+    if (this.resultsDesired === null)
+      this.resultsDesired = { page: this.reportPage(), view: this.resultsView() };
+    await this.runResults(cycle);
+  }
+
+  /**
+   * Ends the slot that a detail read held. A navigation that arrived during the held detail
+   * still runs, also when the detail itself asked for no read (R4).
+   */
+  private finishDetailResults(cycle: number): void {
+    if (cycle !== this.resultsCycle || !this.resultsBusy) return;
+    const queued = this.resultsQueued;
+    const fresh = this.resultsFresh;
+    this.endResultsCycle(cycle);
+    if (queued && this.step() === 'results')
+      void this.requestResults(this.resultsView(), this.reportPage(), fresh, false);
   }
 
   /** The one loop of a results cycle: its page, its tab total, and its operations. */
@@ -1070,13 +1125,27 @@ export class DeviceExportImportStore {
         cycle === this.resultsCycle
       );
     } finally {
-      if (cycle === this.resultsCycle) {
-        this.resultsBusy = false;
-        this.resultsQueued = false;
-        this.resultsFresh = false;
-        this.resultsWait = Promise.resolve();
-      }
+      this.endResultsCycle(cycle);
     }
+  }
+
+  /** Releases the one results slot and resolves every request that waits on it (R4). */
+  private endResultsCycle(cycle: number): void {
+    if (cycle !== this.resultsCycle) return;
+    this.resultsBusy = false;
+    this.resultsQueued = false;
+    this.resultsFresh = false;
+    const done = this.resultsDone;
+    this.resultsDone = null;
+    this.resultsWait = Promise.resolve();
+    done?.();
+  }
+
+  /** The wait of a cycle that a successor request can join. */
+  private holdResultsCycle(): void {
+    this.resultsWait = new Promise<void>((resolve) => {
+      this.resultsDone = resolve;
+    });
   }
 
   /** One read of the shown results page: its lines, its tab counts, and its operations. */
@@ -1113,7 +1182,10 @@ export class DeviceExportImportStore {
     this.resultsQueued = false;
     this.resultsFresh = false;
     this.resultsDesired = null;
+    const done = this.resultsDone;
+    this.resultsDone = null;
     this.resultsWait = Promise.resolve();
+    done?.();
   }
 
   /**
@@ -1600,7 +1672,20 @@ export class DeviceExportImportStore {
   private async read(): Promise<JobRevisions | null> {
     // A results cycle owns the IMP screen while it runs. A detail read waits for the whole
     // cycle, so no detail read starts during a held page or operations read (R4).
-    if (this.resultsBusy) await this.resultsWait;
+    while (this.resultsBusy) await this.resultsWait;
+    // A detail read of the retained results claims the same slot before its IMP request, so a
+    // tab or pager choice during the held detail queues behind the whole cycle (R4).
+    const owned = this.claimDetailResults();
+    try {
+      return await this.readDetail(owned);
+    } finally {
+      // The read ends its own slot. A navigation that arrived during it still runs (R4).
+      if (owned !== null) this.finishDetailResults(owned);
+    }
+  }
+
+  /** The `GET /api/jobs/{displayId}` read that names the step and the facts of the job. */
+  private async readDetail(owned: number | null): Promise<JobRevisions | null> {
     const displayId = this.displayId();
     if (!displayId) return [];
     const epoch = this.epoch;
@@ -1688,7 +1773,9 @@ export class DeviceExportImportStore {
               this.resultsReconcile = false;
               if (changed || this.reportCounts() === null) {
                 // A newer revision may change a line, so the shown page reads again (section 8).
-                await this.refreshResults();
+                // The read advances into the cycle that it owns, so it never waits on it (R4).
+                if (owned !== null) await this.runOwnedResults(owned);
+                else await this.refreshResults();
               }
             }
           } else if (report) {

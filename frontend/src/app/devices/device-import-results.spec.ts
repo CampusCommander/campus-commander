@@ -597,6 +597,200 @@ beforeEach(() => {
   TestBed.resetTestingModule();
 });
 
+/**
+ * A running import with twelve changes on two pages. The detail read that an event or a shared
+ * feed reopen starts stays held until the test releases it, so the detail owns the cycle (R4).
+ */
+function heldDetail() {
+  let release: () => void = () => undefined;
+  let holdNext = false;
+  let detailReads = 0;
+  let reportReads = 0;
+  let operationsReads = 0;
+  const line = (row: number) => ({
+    ...report().lines[0],
+    row,
+    deviceId: `C0A1-${String(row).padStart(4, '0')}`,
+    jobDisplayId: 'UPD-001',
+    operationNumber: row,
+    outcome: 'succeeded' as const,
+  });
+  const counts = {
+    rows: 14,
+    unchanged: 0,
+    noChangeNeeded: 0,
+    proposed: 12,
+    rejected: 2,
+  };
+  const pages = [
+    report({
+      plan: executedPlan,
+      pageCount: 2,
+      total: 12,
+      counts,
+      lines: Array.from({ length: 10 }, (_, index) => line(index + 1)),
+    }),
+    report({
+      plan: executedPlan,
+      page: 1,
+      pageCount: 2,
+      total: 12,
+      counts,
+      lines: [line(11), line(12)],
+    }),
+  ];
+  const failedView = report({
+    view: 'failed',
+    plan: executedPlan,
+    pageCount: 1,
+    total: 0,
+    counts,
+    lines: [],
+  });
+  const request = vi.fn(async (path: string) => {
+    if (path.includes('/operations?')) {
+      operationsReads += 1;
+      const numbers =
+        new URL(path, 'http://localhost').searchParams.get('number') ?? '';
+      return response(
+        operationsPage(
+          numbers
+            .split(',')
+            .filter(Boolean)
+            .map((number) => operation(`UPD-001-${number}`, 'succeeded')),
+        ),
+      );
+    }
+    if (path.includes('/report?')) {
+      reportReads += 1;
+      const url = new URL(path, 'http://localhost');
+      const page = Number(url.searchParams.get('page') ?? '0');
+      return response(
+        url.searchParams.get('view') === 'failed'
+          ? failedView
+          : pages[Math.min(page, pages.length - 1)],
+      );
+    }
+    detailReads += 1;
+    if (holdNext) {
+      holdNext = false;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    return response(
+      importDetail({
+        revision: 8,
+        plan: executedPlan,
+        planJobs: runningJobs,
+        executionCounts: {
+          succeeded: 1,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: 1,
+          notRun: 0,
+        },
+      }),
+    );
+  });
+  return {
+    request,
+    hold: () => {
+      holdNext = true;
+    },
+    release: () => release(),
+    state: () => ({ detailReads, reportReads, operationsReads }),
+  };
+}
+
+/** One tab or pager control of the results table (states 17 and 17b). */
+type ResultsControl = 'Next' | 'Previous' | 'Failed' | 'All changes';
+
+function clickControl(element: HTMLElement, control: ResultsControl): void {
+  const button =
+    control === 'Next' || control === 'Previous'
+      ? element.querySelector<HTMLButtonElement>(
+          `button[aria-label="${control} results page"]`,
+        )
+      : [...element.querySelectorAll<HTMLButtonElement>('.report-tabs button')].find(
+          (tab) => tab.textContent?.includes(control),
+        );
+  expect(button).toBeDefined();
+  button?.click();
+}
+
+/**
+ * The reciprocal of the held-navigation cases: the IMP detail read owns the results cycle, and
+ * the chosen tab or pager control waits for the whole cycle without starting a read of its own.
+ */
+async function expectHeldDetailQueues(
+  control: ResultsControl,
+  invalidation: 'event' | 'reopen',
+) {
+  const fixture = heldDetail();
+  const { store, element, render, text, emit } = setup(fixture.request);
+  store.openJob('IMP-001');
+  await render();
+  expect(store.step()).toBe('results');
+
+  // Put the control where it changes the page or the tab.
+  if (control === 'Previous') {
+    clickControl(element, 'Next');
+    await render();
+    expect(store.reportPage()).toBe(1);
+  }
+  if (control === 'All changes') {
+    clickControl(element, 'Failed');
+    await render();
+    expect(store.reportView()).toBe('failed');
+  }
+
+  // The invalidation starts the IMP detail read, and its answer stays held.
+  fixture.hold();
+  if (invalidation === 'event')
+    emit('job-changed', jobEvent(statusJobId, 'STS-002', 5));
+  else emit('open', {});
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  const held = fixture.state();
+  expect(held.detailReads).toBe(2);
+
+  // The chosen control waits for the whole cycle and starts no read of its own (R4).
+  clickControl(element, control);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(fixture.state()).toEqual(held);
+  if (control === 'Next') expect(store.reportPage()).toBe(0);
+  if (control === 'Previous') expect(store.reportPage()).toBe(1);
+  if (control === 'Failed') expect(store.reportView()).toBe('proposed');
+  if (control === 'All changes') expect(store.reportView()).toBe('failed');
+
+  fixture.release();
+  await render();
+  await render();
+  await render();
+
+  // The detail ended, so the queued choice shows its own page or tab (R4).
+  if (control === 'Next') {
+    expect(store.reportPage()).toBe(1);
+    expect(text()).toContain('Rows 11–12 of 12 changes');
+  }
+  if (control === 'Previous') {
+    expect(store.reportPage()).toBe(0);
+    expect(text()).toContain('Rows 1–10 of 12 changes');
+  }
+  if (control === 'Failed') {
+    expect(store.reportView()).toBe('failed');
+    expect(text()).toContain('No change failed.');
+  }
+  if (control === 'All changes') {
+    expect(store.reportView()).toBe('proposed');
+    expect(text()).toContain('Rows 1–10 of 12 changes');
+  }
+  store.close();
+}
+
 describe('Execute and its results', () => {
   it('opens the Execute confirmation with the sequence, the rows that stay out, and the phrase', async () => {
     const request = api({
@@ -1549,6 +1743,40 @@ describe('Execute and its results', () => {
     expect(store.reportPage()).toBe(0);
     expect(text()).toContain('No change failed.');
     store.close();
+  });
+
+  // The reciprocal R4 cases: the detail read owns the slot first, and every results control
+  // queues behind it while keeping the page or tab that the person chose.
+  it('holds Next behind a detail read that a job event started', async () => {
+    await expectHeldDetailQueues('Next', 'event');
+  });
+
+  it('holds Previous behind a detail read that a feed reopen started', async () => {
+    await expectHeldDetailQueues('Previous', 'reopen');
+  });
+
+  it('holds the Failed tab behind a detail read that a job event started', async () => {
+    await expectHeldDetailQueues('Failed', 'event');
+  });
+
+  it('holds All changes behind a detail read that a feed reopen started', async () => {
+    await expectHeldDetailQueues('All changes', 'reopen');
+  });
+
+  it('holds Next behind a detail read that a feed reopen started', async () => {
+    await expectHeldDetailQueues('Next', 'reopen');
+  });
+
+  it('holds Previous behind a detail read that a job event started', async () => {
+    await expectHeldDetailQueues('Previous', 'event');
+  });
+
+  it('holds the Failed tab behind a detail read that a feed reopen started', async () => {
+    await expectHeldDetailQueues('Failed', 'reopen');
+  });
+
+  it('holds All changes behind a detail read that a job event started', async () => {
+    await expectHeldDetailQueues('All changes', 'event');
   });
 
   it('reconciles the results page after reentry when only a child job changed', async () => {
