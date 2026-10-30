@@ -1087,7 +1087,10 @@ export class DeviceExportImportStore {
     }
     this.resultsFresh = true;
     if (this.resultsDesired === null)
-      this.resultsDesired = { page: this.reportPage(), view: this.resultsView() };
+      this.resultsDesired = {
+        page: this.reportPage(),
+        view: this.resultsView(),
+      };
     await this.runResults(cycle);
   }
 
@@ -1101,7 +1104,12 @@ export class DeviceExportImportStore {
     const fresh = this.resultsFresh;
     this.endResultsCycle(cycle);
     if (queued && this.step() === 'results')
-      void this.requestResults(this.resultsView(), this.reportPage(), fresh, false);
+      void this.requestResults(
+        this.resultsView(),
+        this.reportPage(),
+        fresh,
+        false,
+      );
   }
 
   /**
