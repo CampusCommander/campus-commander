@@ -51,7 +51,13 @@ registerHooks({
 });
 
 const require = createRequire(import.meta.url);
-const { ForbiddenException, Module } = require('@nestjs/common');
+const {
+  ConflictException,
+  ForbiddenException,
+  Module,
+  NotFoundException,
+  UnprocessableEntityException,
+} = require('@nestjs/common');
 const { Test } = require('@nestjs/testing');
 const { Reflector } = require('@nestjs/core');
 
@@ -174,6 +180,12 @@ let stageFails;
 let startFails;
 /** The probe of the streaming upload test. */
 let probe;
+/** The recorded Drive source reads. */
+let driveCalls;
+/** The facts that the Drive read answers. */
+let driveSource;
+/** The refusal that the Drive read raises, if any. */
+let driveFails;
 
 const statusGrant = (action) => ({
   action: action === 'deprovision' ? 'devices:deprovision' : 'devices:status',
@@ -339,6 +351,20 @@ before(async () => {
       return 'execution-1';
     },
   };
+  // The Drive read of the import route. The production service answers the facts of the file or
+  // the body of a refusal; this double records each call.
+  const drive = {
+    importSource: async (currentSession, cookie, current, value) => {
+      driveCalls.push({
+        session: currentSession,
+        cookie,
+        current,
+        request: value,
+      });
+      if (driveFails) throw driveFails;
+      return driveSource;
+    },
+  };
   const devices = {
     sync: async () => {
       // `cc.read_device_sync` refuses a caller without devices:read.
@@ -390,7 +416,12 @@ before(async () => {
       { provide: DevicesService, useValue: devices },
       {
         provide: DeviceImportsService,
-        useValue: new DeviceImportsService(database, storage, orchestration),
+        useValue: new DeviceImportsService(
+          database,
+          storage,
+          orchestration,
+          drive,
+        ),
       },
       {
         provide: DeviceImportExecuteService,
@@ -442,6 +473,15 @@ function reset({
   stageFails = false;
   createThrows = false;
   startFails = false;
+  driveCalls = [];
+  driveSource = {
+    subject: 'person@example.org',
+    sourceType: 'drive-sheet',
+    name: 'devices-for-editing',
+    sizeBytes: 0,
+    tabTitle: 'Devices',
+  };
+  driveFails = null;
   report = {
     summary: {
       field_changes: 1,
@@ -633,6 +673,10 @@ test('an upload streams the file into the store and creates its job', async () =
     'artifact-IMP-001',
     'The job creation links the staged artifact.',
   );
+  assert.equal(create.values[10], null, 'A CSV upload names no Drive file.');
+  assert.equal(create.values[11], null, 'A CSV upload names no tab.');
+  assert.equal(create.values[12], null, 'A CSV upload names no tab title.');
+  assert.equal(create.values[13], null, 'A CSV upload names no Drive subject.');
   assert.equal(starts.length, 1, 'The route starts one flow run.');
   assert.equal(starts[0].customerId, customer);
   assert.equal(starts[0].jobId, jobId);
@@ -641,6 +685,163 @@ test('an upload streams the file into the store and creates its job', async () =
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
   assert.equal(starts[0].correlationId, create.values[8]);
+});
+
+test('a Drive import creates the validation job from the Drive facts', async () => {
+  reset();
+  createResult = {
+    outcome: 'created',
+    receipt: {
+      jobId: newJobId,
+      displayId: 'IMP-002',
+      status: 'accepted',
+      mode: 'sync-changes',
+      name: 'devices-for-editing',
+      sizeBytes: 0,
+    },
+  };
+  const answer = await post('/api/devices/imports/drive', {
+    mode: 'sync-changes',
+    fileId: 'fixture-file',
+    tabId: 0,
+  });
+  assert.equal(answer.status, 201, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, {
+    jobId: newJobId,
+    displayId: 'IMP-002',
+    status: 'accepted',
+    mode: 'sync-changes',
+    name: 'devices-for-editing',
+    sourceType: 'drive-sheet',
+    tabTitle: 'Devices',
+  });
+  assert.deepEqual(
+    checks,
+    ['devices:read', 'devices:write', 'devices:bulk-actions'],
+    'The route checks the three import actions in order.',
+  );
+  assert.equal(driveCalls.length, 1, 'The route reads one Drive source.');
+  assert.equal(driveCalls[0].request.fileId, 'fixture-file');
+  assert.equal(driveCalls[0].request.tabId, 0);
+  assert.equal(driveCalls[0].cookie, undefined);
+  const create = createStatement();
+  assert.ok(create, 'The route creates the job.');
+  assert.equal(create.values[2], customer);
+  assert.equal(create.values[3], 'sync-changes');
+  assert.equal(create.values[4], 'drive-sheet');
+  assert.equal(create.values[5], 'devices-for-editing');
+  assert.equal(create.values[6], 0, 'A Sheet job takes the size of its facts.');
+  assert.deepEqual(create.values[7], ['disable', 'reenable', 'deprovision']);
+  assert.equal(create.values[9], null, 'A Drive job links no artifact.');
+  assert.equal(create.values[10], 'fixture-file');
+  assert.equal(create.values[11], 0);
+  assert.equal(create.values[12], 'Devices');
+  assert.equal(
+    create.values[13],
+    'person@example.org',
+    'The job stores the verified subject of the exchange.',
+  );
+  assert.equal(starts.length, 1, 'The route starts one flow run.');
+  assert.equal(starts[0].jobId, newJobId);
+});
+
+test('a Drive import checks the import actions before it reads Drive', async () => {
+  reset({ actions: ['devices:read', 'devices:bulk-actions'] });
+  const answer = await post('/api/devices/imports/drive', {
+    mode: 'sync-changes',
+    fileId: 'fixture-file',
+    tabId: 0,
+  });
+  assert.equal(answer.status, 403, JSON.stringify(answer.body));
+  assert.deepEqual(checks, ['devices:read', 'devices:write']);
+  assert.equal(driveCalls.length, 0, 'The refusal reads no Drive file.');
+  assert.equal(statementCount(), 0);
+});
+
+test('an invalid Drive import body answers 400 before any check', async () => {
+  reset();
+  const answer = await post('/api/devices/imports/drive', {
+    mode: 'sync-changes',
+    fileId: 'bad$file',
+    tabId: 0,
+  });
+  assert.equal(answer.status, 400, JSON.stringify(answer.body));
+  assert.equal(answer.body.code, 'invalid-request');
+  assert.deepEqual(checks, []);
+  assert.equal(driveCalls.length, 0);
+});
+
+test('each Drive refusal answers its status and creates no job', async () => {
+  const refusals = [
+    [
+      new NotFoundException({ reason: 'drive-file-unavailable' }),
+      404,
+      { reason: 'drive-file-unavailable' },
+    ],
+    [
+      new ConflictException({ reason: 'drive-unavailable', cause: 'setup' }),
+      409,
+      { reason: 'drive-unavailable', cause: 'setup' },
+    ],
+    [
+      new ConflictException({
+        reason: 'drive-unavailable',
+        cause: 'delegation',
+      }),
+      409,
+      { reason: 'drive-unavailable', cause: 'delegation' },
+    ],
+    [
+      new ConflictException({ reason: 'drive-unavailable', cause: 'account' }),
+      409,
+      { reason: 'drive-unavailable', cause: 'account' },
+    ],
+    [
+      new UnprocessableEntityException({ reason: 'wrong-file-type' }),
+      422,
+      { reason: 'wrong-file-type' },
+    ],
+    [
+      new UnprocessableEntityException({ reason: 'tab-missing' }),
+      422,
+      { reason: 'tab-missing' },
+    ],
+    [
+      new UnprocessableEntityException({ reason: 'source-too-large' }),
+      422,
+      { reason: 'source-too-large' },
+    ],
+  ];
+  for (const [error, status, body] of refusals) {
+    reset();
+    driveFails = error;
+    const answer = await post('/api/devices/imports/drive', {
+      mode: 'sync-changes',
+      fileId: 'fixture-file',
+      tabId: 0,
+    });
+    assert.equal(answer.status, status, JSON.stringify(answer.body));
+    assert.deepEqual(answer.body, body);
+    assert.equal(createStatement(), undefined, 'A refusal creates no job.');
+    assert.equal(starts.length, 0);
+  }
+});
+
+test("another person's file ID answers 404 and creates no job", async () => {
+  reset();
+  // What the Drive read raises when Google refuses a file to the subject.
+  driveFails = new NotFoundException({ reason: 'drive-file-unavailable' });
+  const answer = await post('/api/devices/imports/drive', {
+    mode: 'sync-changes',
+    fileId: 'other-persons-file',
+    tabId: null,
+  });
+  assert.equal(answer.status, 404, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, { reason: 'drive-file-unavailable' });
+  assert.equal(driveCalls.length, 1);
+  assert.equal(driveCalls[0].request.fileId, 'other-persons-file');
+  assert.equal(createStatement(), undefined);
+  assert.equal(starts.length, 0);
 });
 
 test('the upload hands the store each chunk while the body is still sending', async () => {

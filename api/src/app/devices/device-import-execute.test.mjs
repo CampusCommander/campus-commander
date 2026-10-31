@@ -950,7 +950,11 @@ before(async () => {
       { provide: DevicesService, useValue: devicesService },
       {
         provide: DeviceImportsService,
-        useValue: new DeviceImportsService(database, storage, orchestration),
+        useValue: new DeviceImportsService(database, storage, orchestration, {
+          importSource: async () => {
+            throw new Error('The execute suite uses no Drive import.');
+          },
+        }),
       },
       {
         provide: DeviceImportExecuteService,

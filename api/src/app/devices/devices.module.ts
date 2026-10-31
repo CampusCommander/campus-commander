@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CacheModule } from '../cache/cache.module';
 import { ConfigurationModule } from '../configuration/configuration.module';
 import { DatabaseModule } from '../database/database.module';
+import { DriveService } from '../drive/drive.service';
 import { JobServiceModule } from '../jobs/job-service.module';
 import { OrchestrationModule } from '../orchestration/orchestration.module';
 import { StorageModule } from '../storage/storage.module';
@@ -52,8 +53,11 @@ import { DevicesService } from './devices.service';
     DeviceActionsService,
     DeviceWriteAccessService,
     DeviceFreshReadService,
+    // The export and import routes run the Drive exchange of this service, and the Drive module
+    // declares its controller against it.
+    DriveService,
   ],
   // One subscriber connection serves the devices stream and the jobs stream.
-  exports: [DeviceEventsService, DevicesService],
+  exports: [DeviceEventsService, DevicesService, DriveService],
 })
 export class DevicesModule {}

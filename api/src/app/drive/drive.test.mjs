@@ -127,6 +127,13 @@ const IMPORT_GRANTS = [
   { action: 'devices:bulk-actions', scope: district() },
 ];
 
+/** The export permissions of a district administrator (design section 1). */
+const EXPORT_GRANTS = [
+  { action: 'devices:read', scope: district() },
+  { action: 'devices:bulk-actions', scope: district() },
+  { action: 'devices:export', scope: district() },
+];
+
 /** The connected customer, as `cc.read_device_sync` answers it. */
 const SYNC = {
   customerId: CUSTOMER,
@@ -192,6 +199,7 @@ function driveDatabase({
   access = facts(),
   accessError,
   credentialError,
+  sheetCredentialError,
   envelope: sealed = envelope,
 } = {}) {
   return database([
@@ -208,6 +216,22 @@ function driveDatabase({
       'cc.device_write_credential',
       () => {
         if (credentialError) throw credentialError;
+        return [
+          {
+            result: {
+              customerId: CUSTOMER,
+              generation: GENERATION,
+              credentialId: CREDENTIAL_ID,
+              envelope: sealed,
+            },
+          },
+        ];
+      },
+    ],
+    [
+      'cc.device_export_credential',
+      () => {
+        if (sheetCredentialError) throw sheetCredentialError;
         return [
           {
             result: {
@@ -246,6 +270,8 @@ let activeCache;
 let auditEvents;
 /** The credential envelope that the fixture credential cipher seals. */
 let envelope;
+/** The production Drive service, so a test can call the export and import methods directly. */
+let driveService;
 
 /** The cache double. It records every entry, so a test can prove that no token was stored. */
 function cacheDouble() {
@@ -342,6 +368,7 @@ before(async () => {
     driveSubject: async () => currentSubject,
   };
   const drive = new DriveService(auth, devices, connection, activeCache);
+  driveService = drive;
 
   class DriveTestModule {}
   Module({
@@ -991,32 +1018,457 @@ test('a malformed file ID answers 404 before any Google or store read', async ()
   assert.deepEqual(db.calls.filter(([text]) => text.includes('cc.')).length, 0);
 });
 
-test('the Drive module imports every module that its guard and its service resolve', async () => {
+test('the Sheet export exchange answers the subject and keeps no token', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db, grants: EXPORT_GRANTS });
+
+  const { answer: subject, output } = await captured(() =>
+    driveService.sheetExportSubject(currentSession, undefined, SYNC),
+  );
+
+  assert.equal(subject, SUBJECT);
+  assert.ok(!output.includes(TOKEN), 'No log line holds the token.');
+  const [read] = statements(db, 'cc.device_export_credential');
+  assert.ok(read, 'The export credential read runs once.');
+  assert.deepEqual(read[1], [ACTOR, PERMISSION_VERSION, CUSTOMER, GENERATION]);
+  assert.equal(
+    statements(db, 'cc.device_write_credential').length,
+    0,
+    'The export path never reads the update credential.',
+  );
+  assert.deepEqual([...activeCache.entries.keys()], []);
+});
+
+test('the Sheet export exchange answers delegation when the Drive check failed', async (t) => {
+  // A mint that this test would fail on: the refusal must come before the credential read.
+  t.mock.method(JWT.prototype, 'getAccessToken', async () => {
+    throw new Error('A refused session mints no token.');
+  });
+  const db = driveDatabase({
+    access: facts({
+      driveFiles: { failure: 'delegation-not-authorized', checkedAt: NOW },
+    }),
+  });
+  arrange({ db, grants: EXPORT_GRANTS });
+
+  await assert.rejects(
+    () => driveService.sheetExportSubject(currentSession, undefined, SYNC),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'drive-unavailable',
+        cause: 'delegation',
+      });
+      return true;
+    },
+  );
+  assert.equal(statements(db, 'cc.device_export_credential').length, 0);
+});
+
+test('the Sheet export exchange answers account without a verified email', async () => {
+  const db = driveDatabase();
+  arrange({ db, grants: EXPORT_GRANTS, subject: null });
+
+  await assert.rejects(
+    () => driveService.sheetExportSubject(currentSession, undefined, SYNC),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'drive-unavailable',
+        cause: 'account',
+      });
+      return true;
+    },
+  );
+  assert.equal(statements(db, 'cc.device_export_credential').length, 0);
+});
+
+test('the Sheet export exchange answers delegation without a connection', async () => {
+  const db = driveDatabase({ access: null });
+  arrange({ db, grants: EXPORT_GRANTS });
+
+  await assert.rejects(
+    () => driveService.sheetExportSubject(currentSession, undefined, SYNC),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'drive-unavailable',
+        cause: 'delegation',
+      });
+      return true;
+    },
+  );
+  assert.equal(statements(db, 'cc.device_export_credential').length, 0);
+});
+
+test('a refused Sheet export exchange marks the session', async (t) => {
+  refuseExchange(t, 'credential-rejected');
+  const db = driveDatabase();
+  arrange({ db, grants: EXPORT_GRANTS });
+
+  await assert.rejects(
+    () => driveService.sheetExportSubject(currentSession, undefined, SYNC),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'drive-unavailable',
+        cause: 'account',
+      });
+      return true;
+    },
+  );
+  const [entry] = [...activeCache.entries.values()];
+  assert.equal(entry, JSON.stringify({ cause: 'account' }));
+});
+
+/** Answer the Drive metadata and Sheet reads of one test by path. */
+function driveAnswers(t, answers) {
+  const transporter = Object.getPrototypeOf(new OAuth2Client().transporter);
+  const sent = [];
+  t.mock.method(transporter, 'request', async (options) => {
+    const url = new URL(options.url);
+    sent.push({
+      path: url.pathname,
+      authorization: options.headers?.get('authorization'),
+    });
+    const answer = answers[url.pathname];
+    if (!answer) throw new Error(`Unexpected Google request: ${url.pathname}`);
+    return { status: 200, headers: new Headers(), data: answer };
+  });
+  return sent;
+}
+
+const filePath = (fileId) => `/drive/v3/files/${fileId}`;
+const sheetPath = (fileId) => `/v4/spreadsheets/${fileId}`;
+
+test('a Drive Sheet import answers the facts of its tab', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  const sent = driveAnswers(t, {
+    [filePath('fixture-sheet')]: {
+      name: 'Devices for editing',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      modifiedTime: NOW,
+    },
+    [sheetPath('fixture-sheet')]: {
+      sheets: [
+        {
+          properties: {
+            sheetId: 0,
+            title: 'Devices',
+            index: 0,
+            gridProperties: { columnCount: 2, rowCount: 3 },
+          },
+        },
+      ],
+    },
+  });
+
+  const source = await driveService.importSource(
+    currentSession,
+    undefined,
+    SYNC,
+    { mode: 'sync-changes', fileId: 'fixture-sheet', tabId: 0 },
+  );
+
+  assert.deepEqual(source, {
+    subject: SUBJECT,
+    sourceType: 'drive-sheet',
+    name: 'Devices for editing',
+    sizeBytes: 0,
+    tabTitle: 'Devices',
+  });
+  assert.deepEqual(
+    statements(db, 'cc.device_write_credential').length,
+    1,
+    'The import reads the update credential.',
+  );
+  assert.equal(statements(db, 'cc.device_export_credential').length, 0);
+  assert.deepEqual(
+    sent.map((item) => item.path),
+    [filePath('fixture-sheet'), sheetPath('fixture-sheet')],
+  );
+  assert.deepEqual(
+    sent.map((item) => item.authorization),
+    [`Bearer ${TOKEN}`, `Bearer ${TOKEN}`],
+  );
+});
+
+test('a Drive CSV import takes its name and size from Drive', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  const sent = driveAnswers(t, {
+    [filePath('fixture-file')]: {
+      name: 'devices.csv',
+      mimeType: 'text/csv',
+      size: '2048',
+      modifiedTime: NOW,
+    },
+  });
+
+  const source = await driveService.importSource(
+    currentSession,
+    undefined,
+    SYNC,
+    { mode: 'sync-changes', fileId: 'fixture-file', tabId: null },
+  );
+
+  assert.deepEqual(source, {
+    subject: SUBJECT,
+    sourceType: 'drive-csv',
+    name: 'devices.csv',
+    sizeBytes: 2048,
+    tabTitle: null,
+  });
+  assert.deepEqual(
+    sent.map((item) => item.path),
+    [filePath('fixture-file')],
+  );
+});
+
+test('a Drive CSV past 1 GiB answers source-too-large', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  driveAnswers(t, {
+    [filePath('fixture-file')]: {
+      name: 'devices.csv',
+      mimeType: 'text/csv',
+      size: String(1024 * 1024 * 1024 + 1),
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'fixture-file',
+        tabId: null,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'source-too-large' });
+      return true;
+    },
+  );
+});
+
+test('a Drive file of another type answers wrong-file-type', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  driveAnswers(t, {
+    [filePath('fixture-file')]: {
+      name: 'notes',
+      mimeType: 'application/pdf',
+      size: '512',
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'fixture-file',
+        tabId: null,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'wrong-file-type' });
+      return true;
+    },
+  );
+});
+
+test('a Drive Sheet without a tab answers tab-missing before reading the tab', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  const sent = driveAnswers(t, {
+    [filePath('fixture-sheet')]: {
+      name: 'Devices for editing',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'fixture-sheet',
+        tabId: null,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'tab-missing' });
+      return true;
+    },
+  );
+  assert.deepEqual(
+    sent.map((item) => item.path),
+    [filePath('fixture-sheet')],
+    'The refusal reads no Sheet.',
+  );
+});
+
+test('a CSV with a tab answers tab-missing before the size check', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  driveAnswers(t, {
+    [filePath('fixture-file')]: {
+      name: 'devices.csv',
+      mimeType: 'text/csv',
+      size: '2048',
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'fixture-file',
+        tabId: 0,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'tab-missing' });
+      return true;
+    },
+  );
+});
+
+test('a tab that the Sheet no longer lists answers tab-missing', async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  driveAnswers(t, {
+    [filePath('fixture-sheet')]: {
+      name: 'Devices for editing',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+    },
+    [sheetPath('fixture-sheet')]: {
+      sheets: [{ properties: { sheetId: 1, title: 'Other', index: 0 } }],
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'fixture-sheet',
+        tabId: 0,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 422);
+      assert.deepEqual(error.getResponse(), { reason: 'tab-missing' });
+      return true;
+    },
+  );
+});
+
+test("another person's file ID answers 404 and reads no tab", async (t) => {
+  exchange(t);
+  const db = driveDatabase();
+  arrange({ db });
+  const sent = [];
+  const transporter = Object.getPrototypeOf(new OAuth2Client().transporter);
+  t.mock.method(transporter, 'request', async (options) => {
+    sent.push({ path: new URL(options.url).pathname });
+    // The response shape of a Gaxios error in production.
+    throw Object.assign(new Error('not found'), {
+      response: {
+        status: 404,
+        statusText: 'Not Found',
+        headers: new Headers(),
+        config: {},
+        data: { error: { code: 404, errors: [{ reason: 'notFound' }] } },
+      },
+    });
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'other-persons-file',
+        tabId: 0,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 404);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'drive-file-unavailable',
+      });
+      return true;
+    },
+  );
+  assert.deepEqual(
+    sent.map((item) => item.path),
+    [filePath('other-persons-file')],
+  );
+});
+
+test('a retained refusal ends the Drive import before any file read', async (t) => {
+  const db = driveDatabase();
+  arrange({ db });
+  activeCache.entries.set(causeKey(), JSON.stringify({ cause: 'account' }));
+  const transporter = Object.getPrototypeOf(new OAuth2Client().transporter);
+  t.mock.method(transporter, 'request', async () => {
+    throw new Error('A retained refusal reads no file.');
+  });
+
+  await assert.rejects(
+    () =>
+      driveService.importSource(currentSession, undefined, SYNC, {
+        mode: 'sync-changes',
+        fileId: 'fixture-file',
+        tabId: null,
+      }),
+    (error) => {
+      assert.equal(error.getStatus(), 409);
+      assert.deepEqual(error.getResponse(), {
+        reason: 'drive-unavailable',
+        cause: 'account',
+      });
+      return true;
+    },
+  );
+  assert.equal(statements(db, 'cc.device_write_credential').length, 0);
+});
+
+test('the Drive module imports every module that its guard resolves', async () => {
   const [
     { DriveModule },
     { AuthModule },
-    { CacheModule },
     { ConfigurationModule },
     { DevicesModule },
   ] = await Promise.all([
     import('./drive.module.ts'),
     import('../auth/auth.module.ts'),
-    import('../cache/cache.module.ts'),
     import('../configuration/configuration.module.ts'),
     import('../devices/devices.module.ts'),
   ]);
 
   // `@UseGuards(AuthGuard)` registers the guard in this module, so AuthGuard resolves
-  // ConfigurationService here. DriveService resolves the other three modules.
+  // ConfigurationService and AuthService here. The Drive service comes from the device module,
+  // because the export and import routes run the same exchange as this controller.
   const imports = Reflect.getMetadata('imports', DriveModule) ?? [];
-  for (const required of [
-    AuthModule,
-    CacheModule,
-    ConfigurationModule,
-    DevicesModule,
-  ])
+  for (const required of [AuthModule, ConfigurationModule, DevicesModule])
     assert.ok(
       imports.includes(required),
       `DriveModule must import ${required.name}.`,
     );
+  const providers = Reflect.getMetadata('providers', DevicesModule) ?? [];
+  const exports = Reflect.getMetadata('exports', DevicesModule) ?? [];
+  assert.ok(
+    providers.some((provider) => provider?.name === 'DriveService'),
+    'DevicesModule provides the Drive service.',
+  );
+  assert.ok(
+    exports.some((exported) => exported?.name === 'DriveService'),
+    'DevicesModule exports the Drive service.',
+  );
 });

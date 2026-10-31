@@ -39,7 +39,11 @@ registerHooks({
 });
 
 const require = createRequire(import.meta.url);
-const { ForbiddenException, Module } = require('@nestjs/common');
+const {
+  ConflictException,
+  ForbiddenException,
+  Module,
+} = require('@nestjs/common');
 const { Test } = require('@nestjs/testing');
 
 const customer = 'C0123456';
@@ -95,6 +99,12 @@ let startFails;
 let statements;
 /** The recorded flow starts. */
 let starts;
+/** The recorded Drive exchanges. */
+let driveCalls;
+/** The subject that the Drive exchange answers. */
+let driveSubjectAnswer;
+/** The refusal that the Drive exchange raises, if any. */
+let driveFails;
 
 before(async () => {
   const [
@@ -179,6 +189,15 @@ before(async () => {
       return 'execution-1';
     },
   };
+  // The Drive exchange of the Sheet export. The production service answers a subject or the body
+  // of a refused exchange; this double records each call.
+  const drive = {
+    sheetExportSubject: async (currentSession, cookie, current) => {
+      driveCalls.push({ session: currentSession, cookie, current });
+      if (driveFails) throw driveFails;
+      return driveSubjectAnswer;
+    },
+  };
   const devices = {
     sync: async () => {
       // `cc.read_device_sync` refuses a caller without devices:read.
@@ -216,6 +235,7 @@ before(async () => {
           cache,
           storage,
           orchestration,
+          drive,
         ),
       },
       { provide: AuthService, useValue: auth },
@@ -255,6 +275,9 @@ function reset({
   starts = [];
   jobs = new Map();
   reads = 0;
+  driveCalls = [];
+  driveSubjectAnswer = 'person@example.org';
+  driveFails = null;
   // A current selection: it stays inside the 12-hour lifetime of the run that reads it.
   selectionRaw = JSON.stringify({
     terms: [],
@@ -393,6 +416,63 @@ test('an edit export freezes the selection in grid order and starts its flow', a
     create.values[9],
     'The flow run carries the correlation ID of the job.',
   );
+});
+
+test('a Sheet export runs the Drive exchange and stores its subject', async () => {
+  reset();
+  const answer = await post(
+    '/api/devices/exports',
+    editRequest({ format: 'sheet' }),
+  );
+  assert.equal(answer.status, 201, JSON.stringify(answer.body));
+  assert.equal(driveCalls.length, 1, 'The route runs one exchange.');
+  assert.equal(
+    driveCalls[0].cookie,
+    undefined,
+    'The request carries no cookie, so the exchange names no session.',
+  );
+  assert.deepEqual(driveCalls[0].current, connected);
+  const create = createStatement();
+  assert.ok(create, 'The route creates the job.');
+  assert.equal(create.values[4], 'sheet');
+  assert.equal(
+    create.values[10],
+    'person@example.org',
+    'The job stores the verified subject of the exchange.',
+  );
+  assert.equal(starts.length, 1);
+});
+
+test('a CSV export reads no Drive exchange and names no subject', async () => {
+  reset();
+  const answer = await post('/api/devices/exports', editRequest());
+  assert.equal(answer.status, 201, JSON.stringify(answer.body));
+  assert.equal(driveCalls.length, 0, 'A CSV export opens no exchange.');
+  assert.equal(createStatement().values[10], null);
+});
+
+test('a refused Sheet exchange answers 409 with its cause and creates no job', async () => {
+  reset();
+  driveFails = new ConflictException({
+    reason: 'drive-unavailable',
+    cause: 'delegation',
+  });
+  const answer = await post(
+    '/api/devices/exports',
+    editRequest({ format: 'sheet' }),
+  );
+  assert.equal(answer.status, 409, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, {
+    reason: 'drive-unavailable',
+    cause: 'delegation',
+  });
+  assert.equal(
+    selectionStatement(),
+    undefined,
+    'The refusal reads no selection and writes no job.',
+  );
+  assert.equal(createStatement(), undefined);
+  assert.equal(starts.length, 0);
 });
 
 test('a report export sends its columns in grid order', async () => {

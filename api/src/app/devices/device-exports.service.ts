@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { DriveService } from '../drive/drive.service';
 import { CacheService } from '../cache/cache.service';
 import { DatabaseService } from '../database/database.service';
 import { OrchestrationService } from '../orchestration/orchestration.service';
@@ -12,7 +13,8 @@ export class DeviceExportsService extends DeviceExports {
     cache: CacheService,
     storage: StorageService,
     orchestration: OrchestrationService,
+    drive: DriveService,
   ) {
-    super(database, cache, storage, orchestration);
+    super(database, cache, storage, orchestration, drive);
   }
 }

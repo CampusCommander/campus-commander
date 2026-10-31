@@ -286,6 +286,39 @@ export class GoogleConnectionService
     customerId: string,
     generation: number,
   ): Promise<DelegatedCredential> {
+    return this.driveEnvelope(
+      'cc.device_write_credential',
+      session,
+      customerId,
+      generation,
+    );
+  }
+
+  /**
+   * Open the active Google credential for a Sheet export, whose permissions are the three export
+   * actions (design section 1). `cc.device_export_credential` checks them and the connection
+   * generation. The export route keeps no copy of the credential or of the token that it mints.
+   */
+  async driveExportCredential(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+  ): Promise<DelegatedCredential> {
+    return this.driveEnvelope(
+      'cc.device_export_credential',
+      session,
+      customerId,
+      generation,
+    );
+  }
+
+  /** Open one sealed credential that a credential read answered. */
+  private async driveEnvelope(
+    read: 'cc.device_write_credential' | 'cc.device_export_credential',
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+  ): Promise<DelegatedCredential> {
     const claim = z
       .strictObject({
         customerId: z.string().min(1),
@@ -294,10 +327,11 @@ export class GoogleConnectionService
         envelope: z.unknown(),
       })
       .parse(
-        await this.query(
-          'SELECT cc.device_write_credential($1,$2,$3,$4) AS result',
-          [...this.actor(session), customerId, generation],
-        ),
+        await this.query(`SELECT ${read}($1,$2,$3,$4) AS result`, [
+          ...this.actor(session),
+          customerId,
+          generation,
+        ]),
       );
     try {
       return this.cipher().open(claim.envelope, {

@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -13,13 +14,17 @@ import {
   googleDriveFileIdSchema,
   googleDriveSessionSchema,
   googleDriveTabListSchema,
+  type DeviceSyncState,
   type GoogleDriveAccess,
   type GoogleDriveCause,
+  type GoogleDriveImportRequest,
   type GoogleDriveSession,
   type GoogleDriveTabList,
   type SessionResponse,
 } from '@campus/application-contracts';
 import {
+  GOOGLE_DRIVE_SOURCE_BYTES,
+  GOOGLE_SHEET_MIME_TYPE,
   GoogleConnectionError,
   GoogleDriveError,
   personDriveClient,
@@ -33,7 +38,10 @@ import {
   type GoogleDriveAccessFacts,
 } from '../auth/google-connection.service';
 import { CacheService } from '../cache/cache.service';
-import { DEVICE_IMPORT_ACTIONS } from '../devices/device-imports';
+import {
+  DEVICE_IMPORT_ACTIONS,
+  type DeviceImportDriveSource,
+} from '../devices/device-imports';
 import { DevicesService } from '../devices/devices.service';
 import { requireDeviceActions } from '../devices/device-updates-actions';
 
@@ -46,6 +54,9 @@ import { requireDeviceActions } from '../devices/device-updates-actions';
  * session subject and keeps no copy. The tab list reads one Sheet as the same person. The session
  * cause stays in the session cache; no answer, log, or cache entry holds a token.
  */
+
+/** The MIME type of a CSV file in Drive (design section 7). */
+const GOOGLE_CSV_MIME_TYPE = 'text/csv';
 
 /** The two `drive-files` results that name a delegation refusal (design section 1). */
 const DELEGATION_FAILURES = new Set<string>([
@@ -189,6 +200,135 @@ export class DriveService {
       await this.refuse(session, error);
       throw error;
     }
+  }
+
+  /**
+   * Run the exchange of section 4 for one Sheet export (design section 6). The answer is the
+   * subject that the job stores, and the route keeps no token. The export actions are checked at
+   * the route, and the credential read checks them again, so a person who may export but not update
+   * devices still reaches the exchange.
+   */
+  async sheetExportSubject(
+    session: SessionResponse,
+    cookie: string | undefined,
+    current: DeviceSyncState,
+  ): Promise<string> {
+    const facts = await this.connection.driveAccess(session);
+    const cause = await this.sessionCause(session);
+    const subject = await this.auth.driveSubject(cookie);
+    const refused = this.sheetExportCause(facts, cause, subject);
+    if (refused !== null) throw this.unavailable(refused);
+    const credential = await this.connection.driveExportCredential(
+      session,
+      current.customerId,
+      current.generation,
+    );
+    try {
+      // The exchange proves the person's delegation. The token is discarded here on purpose.
+      await personDriveToken(
+        credential,
+        subject as string,
+        AbortSignal.timeout(GOOGLE_TIMEOUT_MILLISECONDS),
+      );
+    } catch (error) {
+      await this.refuse(session, error);
+      throw error;
+    }
+    return subject as string;
+  }
+
+  /**
+   * Read the facts of one Drive import source as the person (design section 7). The access read and
+   * the exchange run first, so a refused session answers its cause and reads no file. A Sheet needs
+   * one of its tabs, a CSV file names no tab and holds at most 1 GiB, and another file type is
+   * refused. The job takes its name and size from Drive, never from the browser.
+   */
+  async importSource(
+    session: SessionResponse,
+    cookie: string | undefined,
+    current: DeviceSyncState,
+    request: GoogleDriveImportRequest,
+  ): Promise<DeviceImportDriveSource> {
+    const facts = await this.connection.driveAccess(session);
+    const cause = await this.sessionCause(session);
+    const subject = await this.auth.driveSubject(cookie);
+    const refused = this.driveImportCause(facts, cause, subject);
+    if (refused !== null) throw this.unavailable(refused);
+    const credential = await this.connection.driveCredential(
+      session,
+      current.customerId,
+      current.generation,
+    );
+    let client: GoogleDriveClient;
+    try {
+      client = await personDriveClient(
+        credential,
+        subject as string,
+        AbortSignal.timeout(GOOGLE_TIMEOUT_MILLISECONDS),
+      );
+    } catch (error) {
+      await this.refuse(session, error);
+      throw error;
+    }
+    try {
+      const file = await client.file(request.fileId);
+      if (file.mimeType === GOOGLE_SHEET_MIME_TYPE) {
+        if (request.tabId === null)
+          throw new UnprocessableEntityException({ reason: 'tab-missing' });
+        const tab = await client.readTab(request.fileId, request.tabId);
+        return {
+          subject: subject as string,
+          sourceType: 'drive-sheet',
+          name: file.name,
+          // A Google Sheet answers no byte size. The worker records the staged size it reads.
+          sizeBytes: 0,
+          tabTitle: tab.title,
+        };
+      }
+      if (file.mimeType === GOOGLE_CSV_MIME_TYPE) {
+        // The chosen file holds no tab, so a tab ID names no tab of this source.
+        if (request.tabId !== null)
+          throw new UnprocessableEntityException({ reason: 'tab-missing' });
+        if (
+          file.sizeBytes === null ||
+          file.sizeBytes > GOOGLE_DRIVE_SOURCE_BYTES
+        )
+          throw new UnprocessableEntityException({
+            reason: 'source-too-large',
+          });
+        return {
+          subject: subject as string,
+          sourceType: 'drive-csv',
+          name: file.name,
+          sizeBytes: file.sizeBytes,
+          tabTitle: null,
+        };
+      }
+      throw new UnprocessableEntityException({ reason: 'wrong-file-type' });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      return this.sourceFailure(session, error);
+    }
+  }
+
+  /**
+   * The route body of one Google failure after the exchange (design sections 1 and 7). A file or
+   * tab that Google refuses names the source; every other Google failure keeps the section 4
+   * refusal, so a refused token marks the session.
+   */
+  private async sourceFailure(
+    session: SessionResponse,
+    error: unknown,
+  ): Promise<never> {
+    if (error instanceof GoogleDriveError) {
+      if (error.code === 'drive-file-unavailable')
+        throw new NotFoundException({ reason: 'drive-file-unavailable' });
+      if (error.code === 'tab-missing')
+        throw new UnprocessableEntityException({ reason: 'tab-missing' });
+      if (error.code === 'not-a-sheet')
+        throw new UnprocessableEntityException({ reason: 'wrong-file-type' });
+    }
+    return this.refuse(session, error);
   }
 
   /**

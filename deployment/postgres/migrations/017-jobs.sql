@@ -1026,6 +1026,31 @@ BEGIN
 END;
 $$;
 
+-- The credential read of a Sheet export submission (design sections 1 and 6). A Sheet export needs the
+-- three export actions, and `cc.device_write_credential` checks the update actions instead, so the route
+-- that runs the token exchange reads the envelope through this check. The caller opens the envelope,
+-- mints one `drive.file` token for the person, and keeps no copy of either.
+CREATE FUNCTION cc.device_export_credential(p_actor uuid,p_version integer,p_customer text,
+  p_generation integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE connection cc.google_connection; encrypted jsonb;
+BEGIN
+  PERFORM pg_advisory_xact_lock(7240173008);
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    (SELECT count(DISTINCT g.action) FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action IN ('devices:read','devices:bulk-actions','devices:export') AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)))<>3 THEN
+    RAISE EXCEPTION 'Export devices requires permission.' USING ERRCODE='42501';
+  END IF;
+  connection:=cc.google_current_generation(p_customer,p_generation);
+  SELECT envelope INTO encrypted FROM cc.google_credentials WHERE id=connection.credential_id;
+  RETURN jsonb_build_object('customerId',p_customer,'generation',p_generation,
+    'credentialId',connection.credential_id,'envelope',encrypted);
+END;
+$$;
+
 -- One validation job and its detail row, after the upload. A caller without the three import actions
 -- receives no job. The row count stays null until the header check reads the file. The optional
 -- artifact is the uploaded file: the same transaction links it to the new job through
@@ -4807,6 +4832,7 @@ REVOKE ALL ON FUNCTION cc.job_display_id(text,bigint),cc.job_visible(uuid,intege
   cc.record_job_activity_seen(uuid,integer),
   cc.job_cancel_requested(text,uuid),cc.request_job_cancel(uuid,integer,text,text,uuid),
   cc.create_device_export_job(uuid,integer,text,text,text,text,text,text[],jsonb,uuid,text),
+  cc.device_export_credential(uuid,integer,text,integer),
   cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text,text,integer,text,text),
   cc.claim_device_export_job(text,uuid,uuid),cc.claim_device_import_job(text,uuid,uuid),
   cc.renew_device_export_job(text,uuid,uuid,text,integer,integer),
