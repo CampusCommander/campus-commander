@@ -33,6 +33,18 @@
     <p class="error">{{ health.error() }}</p>
     }
   </div>
+  @if (uncertain() && loaded()) {
+  <div class="actions">
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="refresh()"
+      [disabled]="loading()"
+    >
+      Refresh Drive settings
+    </button>
+  </div>
+  }
   @if (loading() && !loaded()) {
   <p>Loading Drive settings.</p>
   <div class="skeleton" aria-hidden="true"></div>

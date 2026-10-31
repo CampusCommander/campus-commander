@@ -201,7 +201,7 @@ it('refuses a short key and a project number that is not digits', async () => {
   fixture.destroy();
 });
 
-it('reports a refused save and blocks a second save until the saved settings are read', async () => {
+it('reports a refused save and offers the save again with the values in place', async () => {
   let mode: 'empty' | 'refuse' | 'saved' = 'empty';
   const request = vi.fn(async (path: string, body?: unknown) => {
     if (body === undefined)
@@ -223,17 +223,120 @@ it('reports a refused save and blocks a second save until the saved settings are
   expect(element.textContent).toContain(
     'Campus Commander did not save the Drive settings. Try again.',
   );
-  expect(component.uncertain()).toBe(true);
-  expect(component.canSave()).toBe(false);
-  expect(component.saved()).toBeNull();
-  mode = 'saved';
-  await component.refresh();
-  fixture.detectChanges();
+  // A definite refusal saved nothing, so Save itself offers the retry (UI-05, UI-08).
   expect(component.uncertain()).toBe(false);
+  expect(component.saved()).toBeNull();
+  expect(
+    element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!.value,
+  ).toBe(key);
+  expect(
+    element.querySelector<HTMLInputElement>('input[name="projectNumber"]')!
+      .value,
+  ).toBe(number);
+  expect(
+    [...element.querySelectorAll('button')].some(
+      (button) => button.textContent?.trim() === 'Refresh Drive settings',
+    ),
+  ).toBe(false);
+  const save = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Save Drive settings',
+  )!;
+  expect(save.disabled).toBe(false);
+  mode = 'saved';
+  element
+    .querySelector('form')!
+    .dispatchEvent(new Event('submit', { cancelable: true }));
+  await vi.waitFor(() =>
+    expect(component.saved()).toEqual({
+      pickerApiKey: key,
+      projectNumber: number,
+    }),
+  );
+  expect(element.textContent).toContain('Drive settings saved.');
+  fixture.destroy();
+});
+
+it('settles a lost save answer through the rendered refresh control', async () => {
+  let stored = false;
+  const request = vi.fn(async (path: string, body?: unknown) => {
+    if (body !== undefined) throw new TypeError('Failed to fetch');
+    return Response.json({
+      drive: stored
+        ? { pickerApiKey: key, projectNumber: number }
+        : null,
+    });
+  });
+  const { fixture, component, element } = await mount(request);
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  component.pickerApiKey.set(key);
+  component.projectNumber.set(number);
+  fixture.detectChanges();
+  await component.save();
+  fixture.detectChanges();
+  expect(element.textContent).toContain(
+    'The Drive settings save result is unknown. Refresh Drive settings to read the saved settings.',
+  );
+  expect(component.uncertain()).toBe(true);
+  expect(component.saved()).toBeNull();
+  const save = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Save Drive settings',
+  )!;
+  expect(save.disabled).toBe(true);
+  const refresh = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Refresh Drive settings',
+  )!;
+  expect(refresh).toBeTruthy();
+  refresh.click();
+  await vi.waitFor(() => expect(component.uncertain()).toBe(false));
+  fixture.detectChanges();
+  // The save did not land: the draft stays and Save offers the retry.
+  expect(component.saved()).toBeNull();
+  expect(
+    element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!.value,
+  ).toBe(key);
+  expect(
+    [...element.querySelectorAll('button')].some(
+      (button) => button.textContent?.trim() === 'Refresh Drive settings',
+    ),
+  ).toBe(false);
+  expect(save.disabled).toBe(false);
+  fixture.destroy();
+});
+
+it('reads a lost save that landed through the refresh control', async () => {
+  let stored = false;
+  const request = vi.fn(async (path: string, body?: unknown) => {
+    if (body !== undefined) {
+      stored = true;
+      throw new TypeError('Failed to fetch');
+    }
+    return Response.json({
+      drive: stored ? { pickerApiKey: key, projectNumber: number } : null,
+    });
+  });
+  const { fixture, component, element } = await mount(request);
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  component.pickerApiKey.set(key);
+  component.projectNumber.set(number);
+  fixture.detectChanges();
+  await component.save();
+  fixture.detectChanges();
+  expect(component.uncertain()).toBe(true);
+  const refresh = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Refresh Drive settings',
+  )!;
+  refresh.click();
+  await vi.waitFor(() => expect(component.uncertain()).toBe(false));
+  fixture.detectChanges();
   expect(component.saved()).toEqual({
     pickerApiKey: key,
     projectNumber: number,
   });
+  expect(element.textContent).toContain('Drive settings saved.');
+  const save = [...element.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Save Drive settings',
+  )!;
+  expect(save.disabled).toBe(true);
   fixture.destroy();
 });
 

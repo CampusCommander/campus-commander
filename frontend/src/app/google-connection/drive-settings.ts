@@ -181,11 +181,15 @@ export class DriveSettings implements OnDestroy {
       : 'Last check passed';
   }
 
-  /** Read the saved settings. A failure keeps the form closed and offers this read again. */
+  /**
+   * Read the saved settings. A failure keeps the form closed and offers this read again.
+   * A read after a save settles a save whose answer was lost, so it keeps the draft.
+   */
   async refresh() {
     if (this.busy() || this.loading()) return;
     const sequence = ++this.sequence;
     const authority = this.authority();
+    const keepDraft = this.loaded();
     this.loading.set(true);
     this.error.set('');
     try {
@@ -197,19 +201,35 @@ export class DriveSettings implements OnDestroy {
       );
       if (!this.accepts(sequence, authority)) return;
       this.saved.set(answer.drive);
-      this.pickerApiKey.set(answer.drive?.pickerApiKey ?? '');
-      this.projectNumber.set(answer.drive?.projectNumber ?? '');
+      if (!keepDraft) {
+        this.pickerApiKey.set(answer.drive?.pickerApiKey ?? '');
+        this.projectNumber.set(answer.drive?.projectNumber ?? '');
+      }
       this.uncertain.set(false);
       this.loaded.set(true);
+      if (keepDraft) {
+        if (this.draftSaved(answer.drive))
+          this.message.set('Drive settings saved.');
+        this.focus(sequence, authority);
+      }
     } catch {
       if (!this.accepts(sequence, authority)) return;
       this.loaded.set(false);
       this.error.set(
         'Campus Commander did not read the Drive settings. Try again.',
       );
+      if (keepDraft) this.focus(sequence, authority);
     } finally {
       if (this.accepts(sequence, authority)) this.loading.set(false);
     }
+  }
+  /** The read found exactly the values in the form, so the lost save did land. */
+  private draftSaved(drive: GoogleDriveSettings | null) {
+    return (
+      !!drive &&
+      drive.pickerApiKey === this.pickerApiKey().trim() &&
+      drive.projectNumber === this.projectNumber().trim()
+    );
   }
 
   /** Save the settings, then run the `drive-files` check of the design state table. */
@@ -233,7 +253,14 @@ export class DriveSettings implements OnDestroy {
         this.focus(sequence, authority);
         return;
       }
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        // A definite refusal saved nothing, so Save offers the retry with the values in place.
+        this.error.set(
+          'Campus Commander did not save the Drive settings. Try again.',
+        );
+        this.focus(sequence, authority);
+        return;
+      }
       const answer = googleDriveSettingsAnswerSchema.parse(
         await response.json(),
       );
@@ -246,10 +273,12 @@ export class DriveSettings implements OnDestroy {
       this.message.set('Drive settings saved.');
       this.focus(sequence, authority);
     } catch {
+      // A lost answer cannot tell whether the save landed (UI-06, UI-08).
+      // Read the settings before another save.
       if (!this.accepts(sequence, authority)) return;
       this.uncertain.set(true);
       this.error.set(
-        'Campus Commander did not save the Drive settings. Try again.',
+        'The Drive settings save result is unknown. Refresh Drive settings to read the saved settings.',
       );
       this.focus(sequence, authority);
       return;
