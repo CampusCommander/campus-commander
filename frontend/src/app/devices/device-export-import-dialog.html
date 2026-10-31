@@ -231,7 +231,8 @@
             <mat-radio-group
               class="option-cards"
               aria-labelledby="source-label"
-              value="upload"
+              [value]="importSource()"
+              (change)="chooseSource($event.value)"
             >
               <mat-radio-button class="option-card" value="upload">
                 <span class="option-label">{{ UPLOAD_SOURCE_LABEL }}</span>
@@ -239,15 +240,88 @@
               <mat-radio-button
                 class="option-card"
                 value="drive"
-                [disabled]="true"
+                [disabled]="!driveAvailable()"
               >
                 <span class="option-label">{{ DRIVE_SOURCE_LABEL }}</span>
-                <span class="option-line why">{{ DRIVE_SOURCE_NOTE }}</span>
+                @if (driveSourceNote(); as note) {
+                <span class="option-line why">{{ note }}</span>
+                }
               </mat-radio-button>
             </mat-radio-group>
           </section>
 
           <div class="file-block">
+            @if (importSource() === 'drive') {
+            <div class="drop-zone drive-zone">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >add_to_drive</span
+              >
+              <span class="drop-text">{{ DRIVE_ZONE_TEXT }}</span>
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="chooseFromDrive()"
+              >
+                {{ DRIVE_CHOOSE_LABEL }}
+              </button>
+            </div>
+            @if (driveFile(); as chosen) {
+            <div
+              class="file-item"
+              [class.is-error]="chosen.check !== 'passed'"
+              role="group"
+              [attr.aria-label]="SELECTED_FILE_LABEL"
+              aria-live="polite"
+            >
+              <span class="file-glyph" aria-hidden="true">
+                <span class="material-symbols-outlined"
+                  >{{ chosen.kind === 'sheet' ? 'table_chart' : 'csv' }}</span
+                >
+              </span>
+              <div class="file-text">
+                <p class="file-name">{{ chosen.name }}</p>
+                <ul class="meta-items">
+                  @for (fact of driveFacts(); track fact) {
+                  <li>{{ fact }}</li>
+                  }
+                </ul>
+                @if (chosen.kind === 'sheet' && chosen.tabs.length) {
+                <mat-form-field class="tab-field" subscriptSizing="dynamic">
+                  <mat-label>{{ DRIVE_TAB_LABEL }}</mat-label>
+                  <mat-select
+                    [value]="chosen.tabId"
+                    (selectionChange)="chooseTab($event.value)"
+                  >
+                    @for (tab of chosen.tabs; track tab.tabId) {
+                    <mat-option [value]="tab.tabId">{{ tab.title }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+                } @if (chosen.check === 'reading') {
+                <p class="check-line checking" role="status">
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >hourglass</span
+                  >
+                  <span>{{ DRIVE_CHECKING_LINE }}</span>
+                </p>
+                } @else if (chosen.check === 'passed') {
+                <p class="check-line ok" role="status">
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >check_circle</span
+                  >
+                  <span>{{ HEADER_PASSED_LINE }}</span>
+                </p>
+                } @else {
+                <p class="check-line bad" role="alert">
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >error</span
+                  >
+                  <span>{{ chosen.refusal }}</span>
+                </p>
+                }
+              </div>
+            </div>
+            } } @else {
             <div
               class="drop-zone"
               (dragover)="dragOver($event)"
@@ -310,10 +384,14 @@
                 }
               </div>
             </div>
-            }
+            } }
           </div>
 
-          @if (uploadError(); as error) {
+          @if (importDriveAlert(); as alert) {
+          <div class="action-note error" role="alert">
+            <p>{{ alert }}</p>
+          </div>
+          } @if (uploadError(); as error) {
           <div class="action-note error" role="alert">
             <p>{{ error }}</p>
           </div>

@@ -13,6 +13,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatRadioModule } from '@angular/material/radio';
+import { MatSelectModule } from '@angular/material/select';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import {
@@ -65,10 +66,19 @@ import {
 import {
   CANCEL_IMPORT_LABEL,
   DOWNLOAD_REJECTED_LABEL,
+  IMPORT_DRIVE_CHECKING_LINE,
+  IMPORT_DRIVE_CHOOSE_LABEL,
+  IMPORT_DRIVE_TAB_LABEL,
+  IMPORT_DRIVE_ZONE_TEXT,
   deviceCountText,
+  driveFileFactList,
   IMPORT_AGAIN_LABEL,
   IMPORT_BROWSE_LABEL,
   IMPORT_DROP_LABEL,
+  IMPORT_DRIVE_ACCOUNT_NOTE,
+  IMPORT_DRIVE_DELEGATION_NOTE,
+  IMPORT_DRIVE_SETUP_NOTE,
+  IMPORT_DRIVE_SUBMITTED_LINE,
   IMPORT_HEADER_PASSED_LINE,
   IMPORT_MODE_LABEL,
   IMPORT_SELECTED_FILE_LABEL,
@@ -174,6 +184,7 @@ const thousands = (value: number) => value.toLocaleString('en-US');
     MatInputModule,
     MatProgressBarModule,
     MatRadioModule,
+    MatSelectModule,
     MatTabsModule,
     MatTooltipModule,
     DeviceExportHelp,
@@ -265,7 +276,10 @@ export class DeviceExportImportDialog {
   });
   /** The selection line of a step that has no job yet (states 02, 07, and 09). */
   protected readonly subtitleText = computed(() => {
-    if (this.store.step() === 'import') return IMPORT_SUBMITTED_LINE;
+    if (this.store.step() === 'import')
+      return this.store.importSource() === 'drive'
+        ? IMPORT_DRIVE_SUBMITTED_LINE
+        : IMPORT_SUBMITTED_LINE;
     const count = this.store.count();
     return `${thousands(count)} selected ${count === 1 ? 'device' : 'devices'} · Not submitted`;
   });
@@ -276,9 +290,13 @@ export class DeviceExportImportDialog {
   protected readonly importLine = computed(() => {
     if (!this.isImport()) return '';
     const mode = DEVICE_IMPORT_MODE_LABELS[this.store.mode()];
-    const name =
-      this.store.job()?.importSource?.name ?? this.store.importName();
-    return name ? `${mode} · ${name}` : mode;
+    const source = this.store.job()?.importSource;
+    const name = source?.name ?? this.store.importName();
+    if (!name) return mode;
+    // A Sheet names its tab after the file (state 10).
+    return source?.tabTitle
+      ? `${mode} · ${name} › ${source.tabTitle}`
+      : `${mode} · ${name}`;
   });
   private readonly isImport = computed(() => {
     const step = this.store.step();
@@ -417,7 +435,6 @@ export class DeviceExportImportDialog {
   protected readonly SOURCE_LABEL = IMPORT_SOURCE_LABEL;
   protected readonly UPLOAD_SOURCE_LABEL = IMPORT_SOURCE_UPLOAD_LABEL;
   protected readonly DRIVE_SOURCE_LABEL = IMPORT_SOURCE_DRIVE_LABEL;
-  protected readonly DRIVE_SOURCE_NOTE = SHEET_FORMAT_NOTE;
   protected readonly DROP_LABEL = IMPORT_DROP_LABEL;
   protected readonly BROWSE_LABEL = IMPORT_BROWSE_LABEL;
   protected readonly SELECTED_FILE_LABEL = IMPORT_SELECTED_FILE_LABEL;
@@ -441,6 +458,36 @@ export class DeviceExportImportDialog {
     const file = this.store.importFile();
     if (!file) return [];
     return [formatBytes(file.sizeBytes), importColumnCountText(file.columns)];
+  });
+
+  /* The Drive source of states 05 to 13. */
+  protected readonly importSource = this.store.importSource;
+  protected readonly driveFile = this.store.driveFile;
+  protected readonly driveAvailable = this.store.driveImportAvailable;
+  protected readonly importDriveAlert = this.store.importDriveAlert;
+  protected readonly DRIVE_ZONE_TEXT = IMPORT_DRIVE_ZONE_TEXT;
+  protected readonly DRIVE_CHOOSE_LABEL = IMPORT_DRIVE_CHOOSE_LABEL;
+  protected readonly DRIVE_TAB_LABEL = IMPORT_DRIVE_TAB_LABEL;
+  protected readonly DRIVE_CHECKING_LINE = IMPORT_DRIVE_CHECKING_LINE;
+  /** The facts of the chosen Drive file (states 07 and 08). */
+  protected readonly driveFacts = computed(() => {
+    const file = this.store.driveFile();
+    if (!file) return [];
+    return driveFileFactList({
+      kind: file.kind,
+      tabCount: file.tabs.length,
+      sizeBytes: file.sizeBytes,
+      columns: file.columns,
+      lastEditedUtc: file.lastEditedUtc,
+    });
+  });
+  /** The note under the disabled Drive card, by cause (states 11 and 12). */
+  protected readonly driveSourceNote = computed(() => {
+    const access = this.store.driveImportAccess();
+    if (access === null || access.available) return '';
+    if (access.cause === 'setup') return IMPORT_DRIVE_SETUP_NOTE;
+    if (access.cause === 'delegation') return IMPORT_DRIVE_DELEGATION_NOTE;
+    return IMPORT_DRIVE_ACCOUNT_NOTE;
   });
 
   /** The validation step of states 12, 23, and 24. */
@@ -859,6 +906,22 @@ export class DeviceExportImportDialog {
   /** The mode card of state 09 rechecks the chosen file with the mode's Checksum rule. */
   protected chooseMode(mode: DeviceImportMode): void {
     this.store.setImportMode(mode);
+  }
+
+  /** The Source card of the import (state 05). */
+  protected chooseSource(source: unknown): void {
+    if (source === 'upload' || source === 'drive')
+      this.store.setImportSource(source);
+  }
+
+  /** The Picker of states 06 to 08, with the session token and the saved key. */
+  protected chooseFromDrive(): void {
+    void this.store.openDrivePicker();
+  }
+
+  /** Another tab of the chosen Sheet (state 07). */
+  protected chooseTab(tabId: number): void {
+    void this.store.chooseDriveTab(tabId);
   }
 
   /** Choose CSV file opens the native picker, and a drop reads the dropped file. */

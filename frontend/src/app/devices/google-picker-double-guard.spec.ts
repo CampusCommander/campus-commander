@@ -1,6 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PICKER_SCRIPT_URL } from './google-drive-picker';
 
@@ -17,12 +16,21 @@ const roots = [
   'worker/src',
   'frontend/src',
   ...readdirSync(repoRoot('libs'))
-    .filter((name: string) => statSync(repoRoot(join('libs', name))).isDirectory())
+    .filter((name: string) =>
+      statSync(repoRoot(join('libs', name))).isDirectory(),
+    )
     .map((name: string) => join('libs', name, 'src')),
 ];
 
 function repoRoot(relative: string): string {
-  return join(fileURLToPath(new URL('../../../../', import.meta.url)), relative);
+  // The Nx test run starts at the workspace root. Walk up to the marked root for another caller.
+  let directory = process.cwd();
+  for (let step = 0; step < 6; step++) {
+    if (existsSync(join(directory, 'nx.json')))
+      return join(directory, relative);
+    directory = dirname(directory);
+  }
+  return join(process.cwd(), relative);
 }
 
 function walk(directory: string, visit: (path: string) => void): void {

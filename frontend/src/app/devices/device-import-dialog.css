@@ -92,6 +92,11 @@
   margin-block-start: var(--cc-space-sm);
 }
 
+/* The Drive header check runs: the line names the wait, in the secondary text color. */
+.check-line.checking {
+  color: var(--cc-text-secondary);
+}
+
 .drop-text {
   flex: 1;
   min-width: 0;

@@ -52,6 +52,122 @@ export function importColumnCountText(columns: number): string {
   return `${columns.toLocaleString('en-US')} ${columns === 1 ? 'column' : 'columns'}`;
 }
 
+/* The Drive source of states 05 to 13. The owner approved each string in the notes. */
+
+/** State 05. The Drive zone takes the shape of the drop zone. */
+export const IMPORT_DRIVE_ZONE_TEXT = 'A Sheet or a CSV file';
+export const IMPORT_DRIVE_CHOOSE_LABEL = 'Choose from Google Drive';
+/** The subtitle of the setup step while no Drive file is chosen (state 05). */
+export const IMPORT_DRIVE_SUBMITTED_LINE = 'Google Drive · Not submitted';
+/** The tab field of a chosen Sheet (state 07). A CSV file carries none. */
+export const IMPORT_DRIVE_TAB_LABEL = 'Tab';
+/** The note under a disabled Drive card, by cause (states 11 and 12). */
+export const IMPORT_DRIVE_SETUP_NOTE =
+  'Google Drive needs the Picker API key and the project number. Add them on the Google connection page.';
+export const IMPORT_DRIVE_ACCOUNT_NOTE =
+  'Google Drive is not available for your account.';
+export const IMPORT_DRIVE_DELEGATION_NOTE =
+  'Google denied Drive access. Add https://www.googleapis.com/auth/drive.file to the delegation client in the Google Admin Console.';
+/** The alert of a refused Drive session (state 12). Upload takes over. */
+export const IMPORT_DRIVE_ACCOUNT_ALERT =
+  'Google refused Drive access for your account. Upload a CSV file instead.';
+/** The alert of a Drive answer that did not arrive. */
+export const IMPORT_DRIVE_UNREACHABLE_ALERT =
+  'Google Drive is not reachable. Try again, or upload a CSV file.';
+/** The alert of a Picker script that did not load. */
+export const IMPORT_PICKER_FAILED_ALERT =
+  'The Google Picker did not open. Try again, or upload a CSV file.';
+/** The alert of a Sheet whose tab list did not arrive (design section 1). */
+export const IMPORT_DRIVE_TABS_ALERT =
+  'Campus Commander cannot read the tabs of this Sheet. Choose the file again.';
+export const IMPORT_DRIVE_WRONG_TYPE_ALERT =
+  'Choose a Google Sheet or a CSV file.';
+export const IMPORT_DRIVE_SOURCE_TOO_LARGE_ALERT =
+  'The file holds more than 1 GiB of data. Remove rows or columns, then import again.';
+export const IMPORT_DRIVE_ROWS_TOO_LARGE_ALERT =
+  '1,000 rows of this tab hold more than 64 MiB of data. Shorten the long cells, then import again.';
+/** A Drive session is renewed inside this window before it expires (design section 5). */
+export const DRIVE_SESSION_RENEW_MS = 5 * 60_000;
+
+/** The first phase of a Drive validation reads the file from Google (state 10). */
+export const IMPORT_DRIVE_READ_LABEL = 'Read from Google Drive';
+
+/** The header row of a chosen Drive file is under check. */
+export const IMPORT_DRIVE_CHECKING_LINE = 'Checking the header row…';
+
+/** The facts line of a chosen Drive file (states 07 and 08). */
+export function driveFileFactList(file: {
+  readonly kind: 'sheet' | 'csv';
+  readonly tabCount: number;
+  readonly sizeBytes: number | null;
+  readonly columns: number;
+  readonly lastEditedUtc: number | null;
+}): readonly string[] {
+  const facts: string[] =
+    file.kind === 'sheet' ? ['Google Sheet'] : ['CSV file'];
+  if (file.kind === 'sheet') {
+    if (file.tabCount > 0) facts.push(driveTabCountText(file.tabCount));
+  } else {
+    if (file.sizeBytes !== null) facts.push(formatBytes(file.sizeBytes));
+    if (file.columns > 0) facts.push(importColumnCountText(file.columns));
+  }
+  if (file.lastEditedUtc !== null)
+    facts.push(
+      `Edited ${formatTimestamp(new Date(file.lastEditedUtc).toISOString())}`,
+    );
+  return facts;
+}
+
+/** "2 tabs" (state 07). */
+export function driveTabCountText(tabs: number): string {
+  return `${tabs.toLocaleString('en-US')} ${tabs === 1 ? 'tab' : 'tabs'}`;
+}
+
+/** The failure of `POST /api/devices/imports/drive` (design section 1). */
+export function importDriveFailureText(
+  status: number,
+  reason: string | null,
+  name: string,
+): string {
+  switch (reason) {
+    case 'wrong-file-type':
+      return IMPORT_DRIVE_WRONG_TYPE_ALERT;
+    case 'tab-missing':
+      return IMPORT_DRIVE_TABS_ALERT;
+    case 'source-too-large':
+      return IMPORT_DRIVE_SOURCE_TOO_LARGE_ALERT;
+    case 'rows-too-large':
+      return IMPORT_DRIVE_ROWS_TOO_LARGE_ALERT;
+    case 'drive-file-unavailable':
+      return deviceImportRefusalText(
+        'drive-source-unavailable',
+        undefined,
+        name,
+      );
+  }
+  return importUploadFailureText(status, reason);
+}
+
+/** The Google Drive topic of the help pane (state 09). */
+export const IMPORT_DRIVE_HELP_EXPORT_HEAD = 'Export';
+export const IMPORT_DRIVE_HELP_IMPORT_HEAD = 'Import';
+export const IMPORT_DRIVE_HELP_ACCESS_HEAD = 'Access';
+export const IMPORT_DRIVE_HELP_INTRO =
+  'Google Sheet export and Google Drive import use your own Google Drive.';
+export const IMPORT_DRIVE_HELP_EXPORT: readonly string[] = [
+  'A Google Sheet export creates a Sheet in your Google Drive. You own the Sheet.',
+  'Campus Commander keeps only the link. Share the Sheet in Google Drive.',
+];
+export const IMPORT_DRIVE_HELP_IMPORT: readonly string[] = [
+  'Choose from Google Drive opens the Google Picker. It lists your Google Sheets and CSV files.',
+  'For a Google Sheet, choose the tab. The first tab starts selected.',
+  'Hidden and filtered rows count as rows.',
+  'Validation reads the file when it starts. Import again after later edits.',
+];
+export const IMPORT_DRIVE_HELP_ACCESS: readonly string[] = [
+  'Campus Commander opens only its own files and the files that you choose.',
+];
+
 /** The name of the upload, as the route query carries it. */
 export function importUploadPath(mode: DeviceImportMode, name: string): string {
   return `/api/devices/imports?mode=${encodeURIComponent(mode)}&name=${encodeURIComponent(name)}`;
@@ -163,8 +279,15 @@ export function importPhases(
   const completed =
     job?.status === 'completed' || job?.status === 'completed-with-errors';
   const reached = phase
-    ? IMPORT_PHASES.indexOf(phase.name as (typeof IMPORT_PHASES)[number])
+    ? IMPORT_PHASES.indexOf(
+        (phase.name === 'drive-read'
+          ? 'upload'
+          : phase.name) as (typeof IMPORT_PHASES)[number],
+      )
     : -1;
+  const drive =
+    job?.importSource?.sourceType === 'drive-sheet' ||
+    job?.importSource?.sourceType === 'drive-csv';
   return IMPORT_PHASES.map((name, index) => {
     let state: ImportPhaseView['state'];
     if (failed || cancelled) {
@@ -187,7 +310,16 @@ export function importPhases(
       name === 'refresh' && state === 'current' && phase?.name === 'refresh'
         ? percentOf(phase.done, phase.total)
         : null;
-    return { name, label: IMPORT_PHASE_LABELS[name], detail, state, percent };
+    return {
+      name,
+      label:
+        name === 'upload' && drive
+          ? IMPORT_DRIVE_READ_LABEL
+          : IMPORT_PHASE_LABELS[name],
+      detail,
+      state,
+      percent,
+    };
   });
 }
 
@@ -197,12 +329,26 @@ function importPhaseDetail(
   job: JobDetail | null,
   phase: JobPhase | null,
 ): string {
-  if (name === 'upload')
-    return job?.importSource
-      ? formatBytes(job.importSource.sizeBytes)
+  if (name === 'upload') {
+    const source = job?.importSource;
+    if (
+      source?.sourceType === 'drive-sheet' ||
+      source?.sourceType === 'drive-csv'
+    ) {
+      if (state === 'failed') return 'Failed';
+      if (state === 'stopped') return 'Stopped';
+      if (source.rowsRead > 0)
+        return `${source.rowsRead.toLocaleString('en-US')} ${
+          source.rowsRead === 1 ? 'row' : 'rows'
+        }`;
+      return state === 'current' ? 'Reading the file' : '';
+    }
+    return source
+      ? formatBytes(source.sizeBytes)
       : state === 'current'
         ? 'Sending the file'
         : '';
+  }
   if (name === 'header-check')
     return state === 'failed'
       ? 'Failed'

@@ -21,6 +21,13 @@ import {
   type ExportHelpTopic,
 } from './device-export-messages';
 import {
+  IMPORT_DRIVE_HELP_ACCESS,
+  IMPORT_DRIVE_HELP_ACCESS_HEAD,
+  IMPORT_DRIVE_HELP_EXPORT,
+  IMPORT_DRIVE_HELP_EXPORT_HEAD,
+  IMPORT_DRIVE_HELP_IMPORT,
+  IMPORT_DRIVE_HELP_IMPORT_HEAD,
+  IMPORT_DRIVE_HELP_INTRO,
   IMPORT_HELP_CODES_LINE,
   IMPORT_HELP_LIMITS,
   IMPORT_HELP_LIMITS_HEAD,
@@ -81,6 +88,17 @@ export class DeviceExportHelp {
   protected readonly IMPORT_HELP_REASON_CODES = IMPORT_HELP_REASON_CODES;
   protected readonly IMPORT_HELP_CODES_LINE = IMPORT_HELP_CODES_LINE;
 
+  protected readonly IMPORT_DRIVE_HELP_INTRO = IMPORT_DRIVE_HELP_INTRO;
+  protected readonly IMPORT_DRIVE_HELP_EXPORT_HEAD =
+    IMPORT_DRIVE_HELP_EXPORT_HEAD;
+  protected readonly IMPORT_DRIVE_HELP_EXPORT = IMPORT_DRIVE_HELP_EXPORT;
+  protected readonly IMPORT_DRIVE_HELP_IMPORT_HEAD =
+    IMPORT_DRIVE_HELP_IMPORT_HEAD;
+  protected readonly IMPORT_DRIVE_HELP_IMPORT = IMPORT_DRIVE_HELP_IMPORT;
+  protected readonly IMPORT_DRIVE_HELP_ACCESS_HEAD =
+    IMPORT_DRIVE_HELP_ACCESS_HEAD;
+  protected readonly IMPORT_DRIVE_HELP_ACCESS = IMPORT_DRIVE_HELP_ACCESS;
+
   protected readonly REVIEW_HELP_INTRO = REVIEW_HELP_INTRO;
   protected readonly REVIEW_HELP_PLAN_HEAD = REVIEW_HELP_PLAN_HEAD;
   protected readonly REVIEW_HELP_PLAN = REVIEW_HELP_PLAN;
@@ -94,7 +112,8 @@ export class DeviceExportHelp {
       value === 'export' ||
       value === 'report' ||
       value === 'import' ||
-      value === 'review'
+      value === 'review' ||
+      value === 'drive'
     ) {
       this.topicChange.emit(value);
     }

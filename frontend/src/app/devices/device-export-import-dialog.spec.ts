@@ -832,11 +832,21 @@ describe('DeviceExportImportDialog', () => {
       'Reports',
       'Import',
       'Review',
+      'Google Drive',
     ]);
     toggles[1].click();
     await render();
     expect(help?.textContent).toContain(
       'Reports writes the visible grid columns of the selected devices, in grid order.',
+    );
+    // The Drive topic of state 09 states the access rule last.
+    toggles[4].click();
+    await render();
+    expect(help?.textContent).toContain(
+      'Google Sheet export and Google Drive import use your own Google Drive.',
+    );
+    expect(help?.textContent).toContain(
+      'Campus Commander opens only its own files and the files that you choose.',
     );
   });
 
