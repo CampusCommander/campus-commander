@@ -48,7 +48,7 @@ The `admin-sdk-mock-fixture-test` probes seed `small` directly.
 A shell `CC_MOCK_TIER` overrides every default.
 Set `CC_MOCK_DELAYS=off` to remove the modeled latency. The default is `on`.
 The seed is fixed at `campus-commander-review`, so the customer ID and the district are stable.
-Every mock district is `Easton Consulting` on `easton-consulting.com` with admin-sdk-mock 0.3.0.
+Every mock district is `Easton Consulting` on the administrator domain below, with admin-sdk-mock 0.3.0.
 The review seed yields the customer ID `C0mw85f16` and the administrator `admin@easton-consulting.com`.
 
 The harness starts the mock container before the app and watches it during the run.
