@@ -9,7 +9,7 @@
     "@angular/compiler-cli": "22.2.1",
     "@angular/language-service": "22.2.1",
     "@axe-core/playwright": "4.13.0",
-    "@campuscommander/admin-sdk-mock": "https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.2.0/campuscommander-admin-sdk-mock-0.2.0.tgz",
+    "@campuscommander/admin-sdk-mock": "https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.3.0/campuscommander-admin-sdk-mock-0.3.0.tgz",
     "@eslint/js": "^9.8.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.0",

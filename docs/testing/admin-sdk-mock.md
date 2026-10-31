@@ -1,6 +1,6 @@
 # Run the Admin SDK mock
 
-The Admin SDK mock is a local stand-in for the Google Admin SDK Directory API and the Chrome Management telemetry API.
+The Admin SDK mock is a local stand-in for the Google Admin SDK Directory API, the Chrome Management telemetry API, Google Drive v3, and Google Sheets v4.
 It seeds K-12 domains for scale and quota testing, from an empty domain to the 400,000-device `xlarge` tier.
 The mock is test infrastructure. It never serves production traffic, and it never holds a real Google credential.
 
@@ -13,18 +13,24 @@ The [client review runbook](client-review.md#review-against-admin-sdk-mock) desc
 The root `package.json` pins the release tarball in `devDependencies`:
 
 ```text
-https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.2.0/campuscommander-admin-sdk-mock-0.2.0.tgz
+https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.3.0/campuscommander-admin-sdk-mock-0.3.0.tgz
 ```
 
-The `package-lock.json` records that URL, the version `0.2.0`, and this sha512 integrity hash:
+The `package-lock.json` records that URL, the version `0.3.0`, and this sha512 integrity hash:
 
 ```text
-sha512-zwUl0MR5ludnJYq7CwqlhnepRvGDT62UMJR87jertYhkDEhNj+RaLlATfjlqmGBtNmZFDYD4Kqh748EkiBnEPQ==
+sha512-V0Z15zyB5OFmemFZ82Ss77J/2z6iS7eqxdsi7okHHV6upqLYCoMW+CtI4eNz/Ovh878UUzSRgEpGWA2EW9j12Q==
 ```
 
 The package needs Node 24.11 or later. CI pins Node 24.19.0.
 
-Version 0.2.0 adds the seed specification field `primaryDomain`.
+Version 0.3.0 adds Google Drive v3 and Google Sheets v4.
+The mock serves `files.list`, the metadata read of `files.get`, the media read of `files.get`, and the five Sheets calls on `www.googleapis.com` and `sheets.googleapis.com`.
+It adds the `drive.file` scope and a per-user file store.
+The proxy, the CA, and the review overlay serve the fifth hostname.
+A data directory from 0.2.0 keeps its CA and receives a new server certificate for `sheets.googleapis.com`.
+
+Version 0.2.0 added the seed specification field `primaryDomain`.
 The mock serves the given domain as the primary domain and derives the student and alias domains under it.
 A specification without `primaryDomain` keeps the 0.1.0 seed data byte for byte.
 
@@ -96,7 +102,7 @@ The committed `admin-sdk-mock.json` at the repository root holds these settings:
 | Data directory   | `./.admin-sdk-mock/data`                                                         | Disposable. Delete it to seed again.                            |
 | Control listener | `127.0.0.1:18080`                                                                | Port 8080 is often taken on a developer machine.                |
 | Proxy            | `127.0.0.1:3128`                                                                 | The client reaches the mock through this port.                  |
-| Google listener  | `127.0.0.1:8443`                                                                 | The default. The proxy tunnels the four Google hostnames to it. |
+| Google listener  | `127.0.0.1:8443`                                                                 | The default. The proxy tunnels the five Google hostnames to it. |
 
 The seed `campus-commander-dev` always yields the customer ID `C0cmfin9i` and the district `Easton Consulting` on `easton-consulting.com`.
 The mock derives `k12.easton-consulting.com` as an alias domain, and `students.easton-consulting.com` when the seed picks a separate student domain.
@@ -179,6 +185,18 @@ The lockfile entry holds the tarball URL, the version `0.2.0`, and the integrity
 The standalone `start` reported the customer `C0cmfin9i`, the primary domain `easton-consulting.com`, and the administrator `admin@easton-consulting.com`.
 The `medium` tier served 180 organizational units, 6,703 users, 7,000 devices, and 1,161 groups.
 A `SIGTERM` closed every listener. Ports 8443, 18080, and 3128 were free after the stop.
+
+## Verified on 2026-10-30
+
+The 0.3.0 pin installed with `npm install` on Node 24.19.0 and npm 11.19.1.
+The lockfile entry holds the tarball URL, the version `0.3.0`, and the integrity hash above.
+`npm exec -- admin-sdk-mock config validate admin-sdk-mock.json` printed `admin-sdk-mock.json is valid.`
+
+The standalone `start` reported version `0.3.0`, the customer `C0cmfin9i`, and the `drive.file` scope in the read-write service account.
+The Directory devices call returned HTTP 200 with five devices.
+`files.list` on `www.googleapis.com` returned HTTP 200 with an empty list.
+`spreadsheets.create` on `sheets.googleapis.com` returned HTTP 200 with a spreadsheet ID.
+The stop closed every listener. Ports 8443, 18080, and 3128 were free after the stop.
 
 ## Scale observation
 
