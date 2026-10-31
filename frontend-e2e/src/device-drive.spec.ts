@@ -769,7 +769,7 @@ test.describe('Drive import', () => {
       .click();
     await expect(dialog(page)).toContainText('Job IMP-010 · Running');
     await expect(dialog(page)).toContainText(
-      'Sync changes · devices-for-editing-EXP-003 › Devices',
+      /Sync changes\s*·\s*devices-for-editing-EXP-003\s*›\s*Devices/,
     );
     const phases = dialog(page).locator('.phase');
     await expect(phases.first()).toContainText('Read from Google Drive');
@@ -841,6 +841,8 @@ test.describe('Drive import', () => {
     await expect(page.locator('mat-tooltip-component')).toBeHidden();
     await tabToken.hover();
     await expect(page.locator('mat-tooltip-component')).toContainText(longTab);
+    await page.mouse.move(4, 4);
+    await shot(page, '10-drive-validation-long-values');
   });
 
   test('state 13: a long lost-file name cuts in one token and keeps its full value (B5)', async ({
@@ -868,6 +870,8 @@ test.describe('Drive import', () => {
     expect((note?.width ?? 0) <= (box?.width ?? 0)).toBe(true);
     await token.hover();
     await expect(page.locator('mat-tooltip-component')).toContainText(longName);
+    await page.mouse.move(4, 4);
+    await shot(page, '13-drive-source-lost-long-name');
   });
 
   test('state 11: a missing setup disables Google Drive and keeps Upload', async ({
@@ -920,7 +924,7 @@ test.describe('Drive import', () => {
       .click();
     await expect(dialog(page)).toContainText('Job IMP-009 · Failed');
     await expect(dialog(page)).toContainText(
-      'Sync changes · devices-for-editing-EXP-001.csv',
+      /Sync changes\s*·\s*devices-for-editing-EXP-001\.csv/,
     );
     const first = dialog(page).locator('.phase').first();
     await expect(first).toContainText('Read from Google Drive');
