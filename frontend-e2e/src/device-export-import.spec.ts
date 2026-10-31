@@ -1191,6 +1191,27 @@ test.describe('Export, Reports, and Import', () => {
     await shot(page, '01-bulk-actions-menu');
   });
 
+  test('the import Source group offers the Drive file', async ({ page }) => {
+    await openDevices(page);
+    await openEntry(page, 'Import');
+    const panel = exportDialog(page);
+    await expect(panel).toContainText('Source');
+    const cards = panel.locator(
+      'section[aria-labelledby="source-label"] mat-radio-button',
+    );
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toContainText('Upload a CSV file');
+    await expect(cards.nth(1)).toContainText('Google Drive');
+    // The access answer of this spec makes the Drive card available (state 05).
+    await expect(cards.nth(1).locator('input')).toBeEnabled();
+    await cards.nth(1).click();
+    await expect(panel).toContainText('A Sheet or a CSV file');
+    await expect(panel).toContainText('Google Drive · Not submitted');
+    await expect(
+      panel.getByRole('button', { name: 'Choose from Google Drive' }),
+    ).toBeVisible();
+  });
+
   test('state 02: configure at 480 px', async ({ page }) => {
     await openDevices(page);
     await openEntry(page, 'Export');

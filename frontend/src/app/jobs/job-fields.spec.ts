@@ -950,4 +950,28 @@ describe('progressLines of a validation job', () => {
       ),
     ).toEqual(['48 rows checked', 'No update needed']);
   });
+
+  it('names the short refusal of a Drive source', () => {
+    for (const [refusal, label] of [
+      ['drive-file-unavailable', 'Drive file unavailable'],
+      ['drive-source-unavailable', 'Drive file unavailable'],
+      ['source-too-large', 'File too large'],
+      ['rows-too-large', 'Rows too large'],
+    ] as const) {
+      expect(
+        progressLines(
+          imp({
+            status: 'failed',
+            importSummary: {
+              mode: 'sync-changes',
+              planState: null,
+              proposed: 0,
+              rejected: 0,
+              refusal,
+            },
+          }),
+        ),
+      ).toEqual(['48 rows checked', label]);
+    }
+  });
 });

@@ -237,6 +237,7 @@ export const EXPORT_HELP_TOPICS = [
   'report',
   'import',
   'review',
+  'drive',
 ] as const;
 export type ExportHelpTopic = (typeof EXPORT_HELP_TOPICS)[number];
 export const EXPORT_HELP_TOPIC_LABELS: Readonly<
@@ -246,6 +247,7 @@ export const EXPORT_HELP_TOPIC_LABELS: Readonly<
   report: 'Reports',
   import: 'Import',
   review: 'Review',
+  drive: 'Google Drive',
 });
 
 /** The copy of one Bulk Actions entry, in the order of the built notes. */

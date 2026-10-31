@@ -1,0 +1,39 @@
+/*
+ * A value that Google sets, such as a Sheet, tab, or file name. The value keeps one line, ends in
+ * an ellipsis when it does not fit, and offers its whole text in a tooltip (design choice 12).
+ *
+ * The 480 px import step needs the rule in three places, so it lives in its own stylesheet instead
+ * of pushing the dialog stylesheet above its build budget.
+ */
+.sub-item,
+.value-token {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The subtitle row: the mode and each value token keep one line inside the step width. */
+.job-sub,
+.job-parts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cc-space-xs);
+  max-width: 100%;
+}
+
+.sub-item {
+  min-width: 0;
+}
+
+/* The wide subtitle joins the job status, so the first separator needs the same gap. */
+.job-parts {
+  margin-left: var(--cc-space-xs);
+}
+
+/* The mode is an app label, so it never takes the cut that a Google value may need. */
+.sub-item.mode,
+.sub-sep {
+  flex: none;
+}

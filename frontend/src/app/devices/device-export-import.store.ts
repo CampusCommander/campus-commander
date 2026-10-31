@@ -15,6 +15,9 @@ import {
   deviceImportReportSchema,
   googleDriveAccessSchema,
   googleDriveCauseSchema,
+  googleDriveImportReceiptSchema,
+  googleDriveSessionSchema,
+  googleDriveTabListSchema,
   jobDetailSchema,
   jobEventSchema,
   jobOperationsPageSchema,
@@ -32,6 +35,10 @@ import {
   type DeviceImportReportView,
   type DeviceReportFieldId,
   type GoogleDriveAccess,
+  type GoogleDriveCause,
+  type GoogleDriveImportAccess,
+  type GoogleDriveSession,
+  type GoogleDriveTab,
   type JobDetail,
   type JobExecutionCounts,
   type JobExportPurpose,
@@ -51,16 +58,28 @@ import {
   type ExportHelpTopic,
 } from './device-export-messages';
 import {
+  DRIVE_SESSION_RENEW_MS,
+  IMPORT_DRIVE_ACCOUNT_ALERT,
+  IMPORT_DRIVE_TABS_ALERT,
+  IMPORT_DRIVE_UNREACHABLE_ALERT,
+  IMPORT_DRIVE_WRONG_TYPE_ALERT,
   IMPORT_EMPTY_FILE_REFUSAL,
   IMPORT_FILE_LIMIT_BYTES,
   IMPORT_HEADER_SAMPLE_BYTES,
   IMPORT_NOT_UTF8_REFUSAL,
+  IMPORT_PICKER_FAILED_ALERT,
   IMPORT_READ_FAILURE,
   executeFailureText,
+  importDriveFailureText,
   importSizeRefusal,
   importUploadFailureText,
   importUploadPath,
 } from './device-import-messages';
+import {
+  GoogleDrivePicker,
+  type GooglePickerDocument,
+} from './google-drive-picker';
+import { GoogleDriveRead } from './google-drive-read';
 import { type ResultsView } from './device-import-results';
 
 /** The surfaces of one dialog, in the order of design section 9 (states 02 to 24). */
@@ -87,6 +106,28 @@ export interface ImportFileState {
   readonly columns: number;
 }
 
+/** The two Source cards of the import (states 05 to 13). */
+export type ImportSource = 'upload' | 'drive';
+
+/** The Drive file that the Picker returned, and the state of its header check (states 07 and 08). */
+export interface DriveFileChoice {
+  readonly fileId: string;
+  readonly name: string;
+  readonly kind: 'sheet' | 'csv';
+  readonly sizeBytes: number | null;
+  readonly lastEditedUtc: number | null;
+  /** The tabs of a Sheet, in the order of the tab answer. Empty for a CSV file. */
+  readonly tabs: readonly GoogleDriveTab[];
+  /** The chosen tab of a Sheet. A CSV file carries null. */
+  readonly tabId: number | null;
+  /** `reading` keeps Start validation disabled until the header answer arrives. */
+  readonly check: 'reading' | 'passed' | 'refused';
+  /** The header refusal or the file note, one sentence per paragraph. */
+  readonly refusal: string;
+  /** The columns of the checked header, for the file facts. */
+  readonly columns: number;
+}
+
 /** The job that the browser tab returns to after the dialog closes (design section 9, behavior 6). */
 export interface ActiveExportJob {
   displayId: string;
@@ -110,6 +151,9 @@ interface ReportRead {
 @Injectable({ providedIn: 'root' })
 export class DeviceExportImportStore {
   private readonly auth = inject(AuthStore);
+  /** The Google Picker and the browser header reads of the Drive import (states 05 to 08). */
+  private readonly picker = inject(GoogleDrivePicker);
+  private readonly driveReader = inject(GoogleDriveRead);
   /** Opens the one live stream of the tab. Tests replace it. */
   eventSource: (url: string) => JobEventSource = (url) => new EventSource(url);
 
@@ -144,6 +188,37 @@ export class DeviceExportImportStore {
   >({ edit: null, report: null });
   /** The tab's own import, so Import returns to a running validation or an open plan. */
   readonly activeImport = signal<string | null>(null);
+
+  /** The Source group of the import (states 05 to 13). Upload is the first card. */
+  readonly importSource = signal<ImportSource>('upload');
+  /** The file that the Picker returned, with its checked tab (states 07 and 08). */
+  readonly driveFile = signal<DriveFileChoice | null>(null);
+  /** The Drive access that `GET /api/google/drive` answers (states 05, 11, and 12). */
+  readonly driveImportAccess = signal<GoogleDriveImportAccess | null>(null);
+  /** The alert of a refused or an unreachable Drive (states 12 and 13). */
+  readonly importDriveAlert = signal('');
+  /** The tab read or the header check of a chosen Drive file runs. */
+  readonly driveBusy = signal(false);
+  /**
+   * The last Drive session, bound to the person who minted it. The browser sends its token to the
+   * Picker and to Google, so another person never receives it (B1).
+   */
+  private driveSession: {
+    readonly principal: string | null;
+    readonly session: GoogleDriveSession;
+    readonly expiresAt: number;
+  } | null = null;
+  /** The one session mint of this person and entry. A late answer of another one is dropped. */
+  private driveMint: {
+    readonly principal: string | null;
+    readonly epoch: number;
+    readonly entry: number;
+    readonly promise: Promise<GoogleDriveSession | null>;
+  } | null = null;
+  /** The chosen Drive file's read count, so a late read cannot replace a newer choice. */
+  private driveChoice = 0;
+  /** The open Picker. A callback of an earlier open never chooses a file. */
+  private driveOpen = 0;
 
   /** The setup step of the import (states 09 and 10). */
   readonly mode = signal<DeviceImportMode>(DEVICE_IMPORT_MODE_DEFAULT);
@@ -239,9 +314,22 @@ export class DeviceExportImportStore {
 
   /** The header check refuses a file, so the primary action stays disabled (state 10). */
   readonly importReady = computed(() => {
+    if (this.importSource() === 'drive') {
+      const file = this.driveFile();
+      return (
+        file?.check === 'passed' &&
+        !this.uploading() &&
+        !this.driveBusy() &&
+        !this.submitting()
+      );
+    }
     const file = this.importFile();
     return file?.check === 'passed' && !this.uploading() && !this.readingFile();
   });
+  /** The Drive card is enabled only when the access answer allows it (states 05 and 11). */
+  readonly driveImportAvailable = computed(
+    () => this.driveImportAccess()?.available === true,
+  );
   /** A running validation can be stopped, and closing the dialog keeps it running. */
   readonly validating = computed(() => {
     const job = this.job();
@@ -388,12 +476,15 @@ export class DeviceExportImportStore {
     const read = ++this.driveRead;
     this.driveReading.set(true);
     this.driveAlert.set('');
+    this.importDriveAlert.set('');
     this.driveAccess.set(null);
+    this.driveImportAccess.set(null);
     try {
       const response = await this.auth.request('/api/google/drive');
       if (read !== this.driveRead) return;
       if (!response.ok) {
         this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+        this.importDriveAlert.set(IMPORT_DRIVE_UNREACHABLE_ALERT);
         return;
       }
       const answer = googleDriveAccessSchema.safeParse(
@@ -402,11 +493,16 @@ export class DeviceExportImportStore {
       if (read !== this.driveRead) return;
       if (!answer.success) {
         this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+        this.importDriveAlert.set(IMPORT_DRIVE_UNREACHABLE_ALERT);
         return;
       }
       this.driveAccess.set(answer.data.sheetExport);
+      this.driveImportAccess.set(answer.data.driveImport);
     } catch {
-      if (read === this.driveRead) this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+      if (read === this.driveRead) {
+        this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+        this.importDriveAlert.set(IMPORT_DRIVE_UNREACHABLE_ALERT);
+      }
     } finally {
       if (read === this.driveRead) this.driveReading.set(false);
     }
@@ -417,8 +513,496 @@ export class DeviceExportImportStore {
     this.driveRead++;
     this.format.set('csv');
     this.driveAccess.set(null);
+    this.driveImportAccess.set(null);
     this.driveAlert.set('');
+    this.importDriveAlert.set('');
     this.driveReading.set(false);
+  }
+
+  /** The Source card of the import. A disabled Drive card never takes the source (state 11). */
+  setImportSource(source: ImportSource): void {
+    if (source === 'drive' && !this.driveImportAvailable()) return;
+    if (this.importSource() === source) return;
+    this.importSource.set(source);
+    this.importError.set('');
+    this.uploadError.set('');
+    this.importDriveAlert.set('');
+  }
+
+  /**
+   * Open the Google Picker with a session token, the saved API key, and the project number
+   * (design section 5). Cancel answers null and keeps state 05 unchanged. A Picker of an earlier
+   * entry, person, or open never chooses a file (B2).
+   */
+  async openDrivePicker(): Promise<void> {
+    const open = ++this.driveOpen;
+    const entry = this.importEntry;
+    const epoch = this.epoch;
+    const principal = this.identity;
+    /** The dialog still shows this Picker open, for the same person and entry. */
+    const current = () =>
+      open === this.driveOpen &&
+      entry === this.importEntry &&
+      epoch === this.epoch &&
+      principal === this.identity &&
+      this.importSource() === 'drive';
+    const session = await this.driveToken();
+    if (session === null || !current()) return;
+    this.importDriveAlert.set('');
+    let document: GooglePickerDocument | null;
+    try {
+      document = await this.picker.open(
+        session.accessToken,
+        session.apiKey,
+        session.appId,
+      );
+    } catch {
+      if (current()) this.importDriveAlert.set(IMPORT_PICKER_FAILED_ALERT);
+      return;
+    }
+    if (!current() || document === null) return;
+    await this.chooseDriveFile(document, current);
+  }
+
+  /** Read the tabs of a Sheet and check the first tab (state 07). A CSV file needs no tab. */
+  private async chooseDriveFile(
+    document: GooglePickerDocument,
+    before: () => boolean,
+  ): Promise<void> {
+    const choice = ++this.driveChoice;
+    const entry = this.importEntry;
+    const fence = this.driveFence(entry, choice);
+    /** The answer belongs to the current Picker open, person, entry, and file choice. */
+    const current = () => before() && fence();
+    const refused = (refusal: string): void => {
+      this.driveFile.set({
+        fileId: document.fileId,
+        name: document.name,
+        kind: document.mimeType === 'text/csv' ? 'csv' : 'sheet',
+        sizeBytes: document.sizeBytes,
+        lastEditedUtc: document.lastEditedUtc,
+        tabs: [],
+        tabId: null,
+        check: 'refused',
+        refusal,
+        columns: 0,
+      });
+    };
+    const spreadsheet = 'application/vnd.google-apps.spreadsheet';
+    if (document.mimeType !== spreadsheet && document.mimeType !== 'text/csv') {
+      this.driveFile.set({
+        fileId: document.fileId,
+        name: document.name,
+        kind: 'csv',
+        sizeBytes: null,
+        lastEditedUtc: document.lastEditedUtc,
+        tabs: [],
+        tabId: null,
+        check: 'refused',
+        refusal: IMPORT_DRIVE_WRONG_TYPE_ALERT,
+        columns: 0,
+      });
+      return;
+    }
+    if (document.mimeType === 'text/csv') {
+      const base: DriveFileChoice = {
+        fileId: document.fileId,
+        name: document.name,
+        kind: 'csv',
+        sizeBytes: document.sizeBytes,
+        lastEditedUtc: document.lastEditedUtc,
+        tabs: [],
+        tabId: null,
+        check: 'reading',
+        refusal: '',
+        columns: 0,
+      };
+      if (
+        document.sizeBytes !== null &&
+        document.sizeBytes > IMPORT_FILE_LIMIT_BYTES
+      ) {
+        this.driveFile.set({
+          ...base,
+          check: 'refused',
+          refusal: importSizeRefusal(document.sizeBytes),
+        });
+        return;
+      }
+      this.driveFile.set(base);
+      this.driveBusy.set(true);
+      try {
+        // A Picker may stay open past the token window, so the header read asks for a current
+        // token of this person and entry (B6).
+        const session = await this.driveToken();
+        if (!current()) return;
+        if (session === null) {
+          this.driveFile.set({
+            ...base,
+            check: 'refused',
+            refusal: IMPORT_READ_FAILURE,
+          });
+          return;
+        }
+        const bytes = await this.driveReader.fileHead(
+          session.accessToken,
+          document.fileId,
+        );
+        if (!current()) return;
+        this.checkDriveCsv(base, bytes);
+      } catch {
+        if (current()) {
+          this.driveFile.set({
+            ...base,
+            check: 'refused',
+            refusal: IMPORT_READ_FAILURE,
+          });
+        }
+      } finally {
+        if (current()) this.driveBusy.set(false);
+      }
+      return;
+    }
+    this.driveFile.set({
+      fileId: document.fileId,
+      name: document.name,
+      kind: 'sheet',
+      sizeBytes: null,
+      lastEditedUtc: document.lastEditedUtc,
+      tabs: [],
+      tabId: null,
+      check: 'reading',
+      refusal: '',
+      columns: 0,
+    });
+    this.driveBusy.set(true);
+    try {
+      let response: Response;
+      try {
+        response = await this.auth.request(
+          `/api/google/drive/files/${encodeURIComponent(document.fileId)}/tabs`,
+        );
+      } catch {
+        // A transport failure is the drafted tab read refusal, not an unhandled rejection (B3).
+        if (current()) refused(IMPORT_DRIVE_TABS_ALERT);
+        return;
+      }
+      if (!current()) return;
+      const answer = response.ok
+        ? googleDriveTabListSchema.safeParse(
+            await response.json().catch(() => null),
+          )
+        : null;
+      // The body wait can outlive this entry or file choice, so the write waits for the fence.
+      if (!current()) return;
+      if (answer === null || !answer.success) {
+        refused(IMPORT_DRIVE_TABS_ALERT);
+        return;
+      }
+      const first = answer.data.tabs[0];
+      const base: DriveFileChoice = {
+        fileId: document.fileId,
+        name: document.name,
+        kind: 'sheet',
+        sizeBytes: null,
+        lastEditedUtc: document.lastEditedUtc,
+        tabs: answer.data.tabs,
+        tabId: first.tabId,
+        check: 'reading',
+        refusal: '',
+        columns: 0,
+      };
+      this.driveFile.set(base);
+      const session = await this.driveToken();
+      if (!current()) return;
+      if (session === null) {
+        this.driveFile.set({
+          ...base,
+          check: 'refused',
+          refusal: IMPORT_DRIVE_TABS_ALERT,
+        });
+        return;
+      }
+      await this.checkDriveSheet(base, first.title, session);
+    } finally {
+      if (current()) this.driveBusy.set(false);
+    }
+  }
+
+  /** Another tab of the chosen Sheet (state 07). The header check follows the tab. */
+  async chooseDriveTab(tabId: number): Promise<void> {
+    const file = this.driveFile();
+    if (file?.kind !== 'sheet' || file.tabId === tabId) return;
+    const tab = file.tabs.find((candidate) => candidate.tabId === tabId);
+    if (!tab) return;
+    // The tab choice owns the busy slot and the fence before the token wait (B2).
+    const choice = ++this.driveChoice;
+    const entry = this.importEntry;
+    const current = this.driveFence(entry, choice);
+    const base: DriveFileChoice = {
+      ...file,
+      tabId,
+      check: 'reading',
+      refusal: '',
+    };
+    this.driveFile.set(base);
+    this.driveBusy.set(true);
+    try {
+      const session = await this.driveToken();
+      if (!current()) return;
+      if (session === null) {
+        this.driveFile.set({
+          ...base,
+          check: 'refused',
+          refusal: IMPORT_DRIVE_TABS_ALERT,
+        });
+        return;
+      }
+      await this.checkDriveSheet(base, tab.title, session);
+    } finally {
+      if (current()) this.driveBusy.set(false);
+    }
+  }
+
+  /** A mode change rechecks the header of the chosen Drive file (states 07 and 08). */
+  private async recheckDriveFile(): Promise<void> {
+    const file = this.driveFile();
+    if (!file || file.check === 'reading' || this.driveBusy()) return;
+    // The recheck owns the busy slot and the fence before the token wait (B2).
+    const choice = ++this.driveChoice;
+    const entry = this.importEntry;
+    const current = this.driveFence(entry, choice);
+    const base: DriveFileChoice = { ...file, check: 'reading', refusal: '' };
+    this.driveFile.set(base);
+    this.driveBusy.set(true);
+    try {
+      const session = await this.driveToken();
+      if (!current()) return;
+      if (session === null) {
+        this.driveFile.set({
+          ...base,
+          check: 'refused',
+          refusal:
+            file.kind === 'sheet'
+              ? IMPORT_DRIVE_TABS_ALERT
+              : IMPORT_READ_FAILURE,
+        });
+        return;
+      }
+      if (file.kind === 'sheet') {
+        const tab = file.tabs.find(
+          (candidate) => candidate.tabId === file.tabId,
+        );
+        if (tab === undefined) return;
+        await this.checkDriveSheet(base, tab.title, session);
+      } else {
+        const bytes = await this.driveReader.fileHead(
+          session.accessToken,
+          file.fileId,
+        );
+        if (!current()) return;
+        this.checkDriveCsv(base, bytes);
+      }
+    } catch {
+      if (current())
+        this.driveFile.set({
+          ...base,
+          check: 'refused',
+          refusal:
+            file.kind === 'sheet'
+              ? IMPORT_DRIVE_TABS_ALERT
+              : IMPORT_READ_FAILURE,
+        });
+    } finally {
+      if (current()) this.driveBusy.set(false);
+    }
+  }
+
+  /** Check the header of one Sheet tab with the browser read (ruling 2). */
+  private async checkDriveSheet(
+    file: DriveFileChoice,
+    tabTitle: string,
+    session: GoogleDriveSession,
+  ): Promise<void> {
+    const current = this.driveFence(this.importEntry, this.driveChoice);
+    let header: readonly string[];
+    try {
+      const rows = await this.driveReader.sheetRows(
+        session.accessToken,
+        file.fileId,
+        tabTitle,
+      );
+      header = rows[0] ?? [];
+    } catch {
+      if (current())
+        this.driveFile.set({
+          ...file,
+          check: 'refused',
+          refusal: IMPORT_DRIVE_TABS_ALERT,
+        });
+      return;
+    }
+    if (!current()) return;
+    this.applyDriveHeader(file, header);
+  }
+
+  /** The header facts of a Drive CSV, from its first 64 KiB (ruling 2). */
+  private checkDriveCsv(file: DriveFileChoice, bytes: Uint8Array): void {
+    let text: string;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, {
+        stream: true,
+      });
+    } catch {
+      this.driveFile.set({
+        ...file,
+        check: 'refused',
+        refusal: IMPORT_NOT_UTF8_REFUSAL,
+      });
+      return;
+    }
+    const records = createCsvReader().push(text);
+    this.applyDriveHeader(file, records.length > 0 ? records[0].cells : []);
+  }
+
+  /** The shared header verdict of a Sheet tab and a Drive CSV file. */
+  private applyDriveHeader(
+    file: DriveFileChoice,
+    header: readonly string[],
+  ): void {
+    this.driveFile.set(
+      header.length === 0
+        ? {
+            ...file,
+            check: 'refused',
+            refusal: IMPORT_EMPTY_FILE_REFUSAL,
+            columns: 0,
+          }
+        : (() => {
+            const match = matchDeviceEditHeaders(header, this.mode());
+            return match.ok
+              ? { ...file, check: 'passed' as const, columns: header.length }
+              : {
+                  ...file,
+                  check: 'refused' as const,
+                  refusal: match.reason,
+                  columns: header.length,
+                };
+          })(),
+    );
+  }
+
+  /**
+   * The fence of one Drive read: its person, entry, and file choice. A late answer of an earlier
+   * person, entry, or choice never touches the current one (B2).
+   */
+  private driveFence(entry: number, choice: number): () => boolean {
+    const epoch = this.epoch;
+    const principal = this.identity;
+    return () =>
+      choice === this.driveChoice &&
+      entry === this.importEntry &&
+      epoch === this.epoch &&
+      principal === this.identity;
+  }
+
+  /**
+   * The session token of the Picker and the browser reads. It renews before it expires, it belongs
+   * to the signed-in person, and one mint serves the callers of this entry (B1, B2, B6).
+   */
+  private async driveToken(): Promise<GoogleDriveSession | null> {
+    const principal = this.identity;
+    const epoch = this.epoch;
+    const entry = this.importEntry;
+    /** The answer belongs to this person, epoch, and import entry. */
+    const current = () =>
+      principal === this.identity &&
+      epoch === this.epoch &&
+      entry === this.importEntry;
+    const held = this.driveSession;
+    if (
+      held &&
+      held.principal === principal &&
+      held.expiresAt - Date.now() > DRIVE_SESSION_RENEW_MS
+    )
+      return held.session;
+    if (held && held.principal !== principal) this.driveSession = null;
+    const pending = this.driveMint;
+    if (
+      pending &&
+      pending.principal === principal &&
+      pending.epoch === epoch &&
+      pending.entry === entry
+    ) {
+      const session = await pending.promise;
+      return session !== null && current() ? session : null;
+    }
+    const promise = this.mintDriveSession(principal, current);
+    this.driveMint = { principal, epoch, entry, promise };
+    try {
+      const session = await promise;
+      return session !== null && current() ? session : null;
+    } finally {
+      if (this.driveMint?.promise === promise) this.driveMint = null;
+    }
+  }
+
+  /** One mint of the session route, cached only for the person and entry that asked (B1). */
+  private async mintDriveSession(
+    principal: string | null,
+    current: () => boolean,
+  ): Promise<GoogleDriveSession | null> {
+    try {
+      const response = await this.auth.request('/api/google/drive/session', {});
+      if (!current()) return null;
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => null);
+        if (!current()) return null;
+        const reason = (body as { reason?: unknown } | null)?.reason;
+        const cause = googleDriveCauseSchema.safeParse(
+          (body as { cause?: unknown } | null)?.cause,
+        );
+        this.refuseDriveSession(
+          typeof reason === 'string' ? reason : null,
+          cause.success ? cause.data : null,
+        );
+        return null;
+      }
+      const answer = googleDriveSessionSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (!current()) return null;
+      if (!answer.success) {
+        this.importDriveAlert.set(IMPORT_DRIVE_UNREACHABLE_ALERT);
+        return null;
+      }
+      this.driveSession = {
+        principal,
+        session: answer.data,
+        expiresAt: Date.parse(answer.data.expiresAt),
+      };
+      return answer.data;
+    } catch {
+      if (current()) this.importDriveAlert.set(IMPORT_DRIVE_UNREACHABLE_ALERT);
+      return null;
+    }
+  }
+
+  /** A refused session leaves Upload as the source (state 12). */
+  private refuseDriveSession(
+    reason: string | null,
+    cause: GoogleDriveCause | null,
+  ): void {
+    this.driveSession = null;
+    if (reason === 'drive-unavailable' && cause !== null) {
+      this.driveImportAccess.set({ available: false, cause });
+      if (cause === 'account')
+        this.importDriveAlert.set(IMPORT_DRIVE_ACCOUNT_ALERT);
+      // The card is now disabled, so Upload takes over and Start stays disabled until a file.
+      this.importSource.set('upload');
+      this.driveBusy.set(false);
+      return;
+    }
+    this.importDriveAlert.set(IMPORT_DRIVE_UNREACHABLE_ALERT);
   }
 
   /**
@@ -458,6 +1042,8 @@ export class DeviceExportImportStore {
     this.detachImport();
     this.resetImport();
     this.step.set('import');
+    this.resetDriveAccess();
+    void this.readDriveAccess();
   }
 
   /** The Activity row of an export or an import opens the dialog at the job's step (behavior 5). */
@@ -505,10 +1091,15 @@ export class DeviceExportImportStore {
 
   /** Import again starts a new import and releases the finished one (states 19 to 24). */
   importAgain(): void {
+    // Import again keeps the Source card of the failed run, with no file chosen (state 13).
+    const source = this.importSource();
     this.activeImport.set(null);
     this.reader.stop();
     this.stopFeed();
     this.resetImport();
+    this.importSource.set(
+      source === 'drive' && this.driveImportAvailable() ? 'drive' : 'upload',
+    );
     this.displayId.set(null);
     this.job.set(null);
     this.loading.set(false);
@@ -641,6 +1232,10 @@ export class DeviceExportImportStore {
   setImportMode(mode: DeviceImportMode): void {
     if (this.mode() === mode) return;
     this.mode.set(mode);
+    if (this.importSource() === 'drive') {
+      void this.recheckDriveFile();
+      return;
+    }
     if (this.chosenFile) void this.chooseImportFile(this.chosenFile);
   }
 
@@ -723,6 +1318,7 @@ export class DeviceExportImportStore {
    * receipt, and a stop that arrived first cancels the job as soon as its ID exists.
    */
   async startValidation(): Promise<boolean> {
+    if (this.importSource() === 'drive') return this.startDriveValidation();
     const chosen = this.importFile();
     if (!chosen || !this.importReady() || this.uploadPending) return false;
     const requestId = ++this.nextRequest;
@@ -792,6 +1388,101 @@ export class DeviceExportImportStore {
       return true;
     } catch {
       if (sameUpload()) {
+        this.uploadPending = false;
+        this.uploading.set(false);
+        this.uploadError.set(
+          'Cannot reach Campus Commander. The file did not upload.',
+        );
+        if (showing()) this.step.set('import');
+      }
+      return false;
+    } finally {
+      if (this.activeRequest === requestId) this.activeRequest = null;
+    }
+  }
+
+  /**
+   * Submit the Drive file by its ID and tab (design section 1). The API reads its own facts, so
+   * the browser sends no name and no size.
+   */
+  private async startDriveValidation(): Promise<boolean> {
+    const file = this.driveFile();
+    if (!file || !this.importReady() || this.uploadPending) return false;
+    const requestId = ++this.nextRequest;
+    const token = ++this.uploadToken;
+    const entry = this.importEntry;
+    const epoch = this.epoch;
+    const identity = this.identity;
+    /** The answer belongs to the current principal, entry, and submit. */
+    const owned = () => epoch === this.epoch && identity === this.identity;
+    const sameSubmit = () =>
+      owned() && token === this.uploadToken && entry === this.importEntry;
+    /** The dialog still shows this submit, so an answer may change its step. */
+    const showing = () =>
+      sameSubmit() &&
+      this.open() &&
+      this.purpose() === 'edit' &&
+      (this.step() === 'validation' || this.step() === 'import');
+    // The submit reserves its busy slot before the token wait, so a second Start never sends a
+    // second import and a late answer never adopts a successor entry (B2).
+    this.uploadPending = true;
+    this.activeRequest = requestId;
+    this.uploading.set(true);
+    this.uploadError.set('');
+    this.stopRequested.set(false);
+    this.actionError.set('');
+    this.displayId.set(null);
+    this.job.set(null);
+    this.loading.set(false);
+    this.error.set('');
+    this.importName.set(file.name);
+    this.step.set('validation');
+    // The report of the entry before this submit is not this submit's report (R4).
+    this.resetReportFacts();
+    try {
+      const session = await this.driveToken();
+      if (!sameSubmit()) return false;
+      if (session === null) {
+        // The session answer already names its cause and, for a refused account, selects Upload.
+        this.uploadPending = false;
+        this.uploading.set(false);
+        if (showing()) this.step.set('import');
+        return false;
+      }
+      const response = await this.auth.request('/api/devices/imports/drive', {
+        mode: this.mode(),
+        fileId: file.fileId,
+        tabId: file.kind === 'sheet' ? file.tabId : null,
+      });
+      if (!sameSubmit()) return false;
+      if (!response.ok) {
+        const reason = await refusalReason(response);
+        if (!sameSubmit()) return false;
+        this.uploadPending = false;
+        this.uploading.set(false);
+        this.uploadError.set(
+          importDriveFailureText(response.status, reason, file.name),
+        );
+        if (showing()) this.step.set('import');
+        return false;
+      }
+      const receipt = googleDriveImportReceiptSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (!sameSubmit()) return false;
+      if (!receipt.success) {
+        this.uploadPending = false;
+        this.uploading.set(false);
+        this.uploadError.set(
+          'Campus Commander answered an unexpected import receipt. Try again.',
+        );
+        if (showing()) this.step.set('import');
+        return false;
+      }
+      this.accepted(receipt.data, showing());
+      return true;
+    } catch {
+      if (sameSubmit()) {
         this.uploadPending = false;
         this.uploading.set(false);
         this.uploadError.set(
@@ -1376,7 +2067,10 @@ export class DeviceExportImportStore {
    * A receipt accepted the upload. The job belongs to the tab's Import entry even when the dialog
    * moved to another entry, but only its own entry changes step (R3).
    */
-  private accepted(receipt: DeviceImportReceipt, apply: boolean): void {
+  private accepted(
+    receipt: Pick<DeviceImportReceipt, 'displayId' | 'mode' | 'name'>,
+    apply: boolean,
+  ): void {
     this.uploadPending = false;
     // The owning upload ends here, whether or not the dialog still shows its entry (R3).
     this.uploading.set(false);
@@ -1635,7 +2329,15 @@ export class DeviceExportImportStore {
     this.reportTotalsRequest++;
     this.uploadPending = false;
     this.mode.set(DEVICE_IMPORT_MODE_DEFAULT);
+    this.importSource.set('upload');
     this.importFile.set(null);
+    this.driveFile.set(null);
+    this.driveChoice++;
+    this.driveOpen++;
+    // A mint that the entry before this reset started answers that entry, not this one (B2).
+    this.driveMint = null;
+    this.driveBusy.set(false);
+    this.importDriveAlert.set('');
     this.chosenFile = null;
     this.importError.set('');
     this.readingFile.set(false);
@@ -1770,6 +2472,10 @@ export class DeviceExportImportStore {
 
   private reset(): void {
     this.epoch++;
+    // The credential belongs to the person who minted it, so another person never receives it (B1).
+    this.driveSession = null;
+    this.driveMint = null;
+    this.driveOpen++;
     this.activeRequest = null;
     this.activeJobs.set({ edit: null, report: null });
     this.activeImport.set(null);

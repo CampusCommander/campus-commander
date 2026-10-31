@@ -75,6 +75,28 @@
   color: var(--cc-text-secondary);
 }
 
+/* The Drive zone of states 05, 07, and 08: the shape of the drop zone with one outlined
+   action, one compact row (composition choice 5). */
+.drop-zone.drive-zone {
+  min-height: 48px;
+  padding-block: var(--cc-space-xs);
+}
+
+.drive-zone > .material-symbols-outlined {
+  color: var(--cc-text-secondary);
+}
+
+/* The Tab select of state 07 sits in the file's text column, under its facts. */
+.tab-field {
+  width: 100%;
+  margin-block-start: var(--cc-space-sm);
+}
+
+/* The Drive header check runs: the line names the wait, in the secondary text color. */
+.check-line.checking {
+  color: var(--cc-text-secondary);
+}
+
 .drop-text {
   flex: 1;
   min-width: 0;
