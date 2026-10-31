@@ -395,24 +395,36 @@ export async function qualifyDeviceExportImport({
     await check(
       'the Sheet export credential read needs the three export actions',
       async () => {
-        const claim = await result(
-          'SELECT cc.device_export_credential($1,$2,$3,$4) AS result',
-          [exporter, 1, customer, generation],
-        );
-        assert.equal(claim.customerId, customer);
-        assert.equal(claim.generation, generation);
-        assert.equal(typeof claim.credentialId, 'string');
-        assert.equal(typeof claim.envelope, 'object');
-        // A person without the three export actions is refused.
-        await rejects(
-          statement('SELECT cc.device_export_credential($1,$2,$3,$4) AS result', [
-            outsider,
-            1,
-            customer,
-            generation,
-          ]),
-          '42501',
-        );
+        // The shared fixture leaves the connection as it found it; this read needs it connected.
+        await migrator.query('UPDATE cc.google_connection SET active=true');
+        try {
+          const claim = await result(
+            'SELECT cc.device_export_credential($1,$2,$3,$4) AS result',
+            [exporter, 1, customer, generation],
+          );
+          const stored = (
+            await migrator.query(
+              'SELECT envelope FROM cc.google_credentials WHERE id=$1',
+              [connection.credential_id],
+            )
+          ).rows[0].envelope;
+          assert.equal(claim.customerId, customer);
+          assert.equal(claim.generation, generation);
+          assert.equal(claim.credentialId, connection.credential_id);
+          assert.deepEqual(claim.envelope, stored);
+          // A person without the three export actions is refused.
+          await rejects(
+            statement(
+              'SELECT cc.device_export_credential($1,$2,$3,$4) AS result',
+              [outsider, 1, customer, generation],
+            ),
+            '42501',
+          );
+        } finally {
+          await migrator.query('UPDATE cc.google_connection SET active=$1', [
+            connection.active,
+          ]);
+        }
       },
     );
 
