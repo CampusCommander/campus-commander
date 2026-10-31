@@ -11,6 +11,23 @@ import { GoogleHealthStore } from './health.store';
 /** 39 characters, the length of a Google browser key, without the form of one. */
 const key = 'synthetic-picker-api-key-00000000000000';
 const number = '123456789012';
+
+/** The button with the exact visible name, from the rendered card. */
+function formButton(element: HTMLElement, name: string) {
+  return [...element.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent?.trim() === name,
+  )!;
+}
+/** The rendered field with the exact form-control name. */
+function formInput(element: HTMLElement, name: string) {
+  return element.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+}
+/** Type into the rendered field, as a person does. */
+function type(element: HTMLElement, name: string, value: string) {
+  const field = formInput(element, name);
+  field.value = value;
+  field.dispatchEvent(new Event('input'));
+}
 const connection = {
   customerId: 'C0123456',
   generation: 1,
@@ -297,6 +314,100 @@ it('settles a lost save answer through the rendered refresh control', async () =
     ),
   ).toBe(false);
   expect(save.disabled).toBe(false);
+  fixture.destroy();
+});
+
+it('keeps the draft through a failed recovery read before an empty read', async () => {
+  let readFails = false;
+  const request = vi.fn(async (path: string, body?: unknown) => {
+    if (body !== undefined) throw new TypeError('Failed to fetch');
+    return readFails
+      ? Response.json({ reason: 'unavailable' }, { status: 503 })
+      : Response.json({ drive: null });
+  });
+  const { fixture, component, element } = await mount(request);
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  fixture.detectChanges();
+  type(element, 'pickerApiKey', key);
+  type(element, 'projectNumber', number);
+  fixture.detectChanges();
+  element
+    .querySelector('form')!
+    .dispatchEvent(new Event('submit', { cancelable: true }));
+  await vi.waitFor(() => expect(component.uncertain()).toBe(true));
+  fixture.detectChanges();
+  readFails = true;
+  formButton(element, 'Refresh Drive settings').click();
+  await vi.waitFor(() =>
+    expect(element.textContent).toContain(
+      'Campus Commander did not read the Drive settings. Try again.',
+    ),
+  );
+  fixture.detectChanges();
+  // The failed read closes the form and does not take the draft (UI-05, UI-08).
+  expect(component.loaded()).toBe(false);
+  expect(element.querySelector('input[name="pickerApiKey"]')).toBeNull();
+  readFails = false;
+  formButton(element, 'Refresh Drive settings').click();
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  fixture.detectChanges();
+  expect(component.saved()).toBeNull();
+  expect(component.uncertain()).toBe(false);
+  expect(formInput(element, 'pickerApiKey').value).toBe(key);
+  expect(formInput(element, 'projectNumber').value).toBe(number);
+  expect(element.textContent).not.toContain('Drive settings saved.');
+  expect(formButton(element, 'Save Drive settings').disabled).toBe(false);
+  fixture.destroy();
+});
+
+it('keeps the draft through a failed recovery read when earlier settings were stored', async () => {
+  const storedKey = 'previous-picker-api-key-000000000000000';
+  const storedNumber = '987654321098';
+  let readFails = false;
+  const request = vi.fn(async (path: string, body?: unknown) => {
+    if (body !== undefined) throw new TypeError('Failed to fetch');
+    return readFails
+      ? Response.json({ reason: 'unavailable' }, { status: 503 })
+      : Response.json({
+          drive: { pickerApiKey: storedKey, projectNumber: storedNumber },
+        });
+  });
+  const { fixture, component, element } = await mount(request);
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  fixture.detectChanges();
+  expect(formInput(element, 'pickerApiKey').value).toBe(storedKey);
+  expect(formInput(element, 'projectNumber').value).toBe(storedNumber);
+  type(element, 'pickerApiKey', key);
+  type(element, 'projectNumber', number);
+  fixture.detectChanges();
+  element
+    .querySelector('form')!
+    .dispatchEvent(new Event('submit', { cancelable: true }));
+  await vi.waitFor(() => expect(component.uncertain()).toBe(true));
+  fixture.detectChanges();
+  readFails = true;
+  formButton(element, 'Refresh Drive settings').click();
+  await vi.waitFor(() =>
+    expect(element.textContent).toContain(
+      'Campus Commander did not read the Drive settings. Try again.',
+    ),
+  );
+  fixture.detectChanges();
+  expect(element.querySelector('input[name="pickerApiKey"]')).toBeNull();
+  // A read that returns the earlier saved values must not replace the draft.
+  readFails = false;
+  formButton(element, 'Refresh Drive settings').click();
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  fixture.detectChanges();
+  expect(component.saved()).toEqual({
+    pickerApiKey: storedKey,
+    projectNumber: storedNumber,
+  });
+  expect(component.uncertain()).toBe(false);
+  expect(formInput(element, 'pickerApiKey').value).toBe(key);
+  expect(formInput(element, 'projectNumber').value).toBe(number);
+  expect(element.textContent).not.toContain('Drive settings saved.');
+  expect(formButton(element, 'Save Drive settings').disabled).toBe(false);
   fixture.destroy();
 });
 

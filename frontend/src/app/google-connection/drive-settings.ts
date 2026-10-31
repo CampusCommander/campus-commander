@@ -120,6 +120,8 @@ export class DriveSettings implements OnDestroy {
       !this.loading() &&
       !this.uncertain(),
   );
+  /** The person's save attempt owns the draft, so a read must not replace it (UI-05, UI-08). */
+  private draftOwned = false;
   private sequence = 0;
   private identity = '';
   private destroyed = false;
@@ -136,6 +138,7 @@ export class DriveSettings implements OnDestroy {
       this.loading.set(false);
       this.busy.set(false);
       this.uncertain.set(false);
+      this.draftOwned = false;
       this.error.set('');
       this.message.set('');
       this.pickerApiKey.set('');
@@ -184,12 +187,13 @@ export class DriveSettings implements OnDestroy {
   /**
    * Read the saved settings. A failure keeps the form closed and offers this read again.
    * A read after a save settles a save whose answer was lost, so it keeps the draft.
+   * Draft ownership outlives a failed read, so a later read cannot replace the values.
    */
   async refresh() {
     if (this.busy() || this.loading()) return;
     const sequence = ++this.sequence;
     const authority = this.authority();
-    const keepDraft = this.loaded();
+    const keepDraft = this.draftOwned;
     this.loading.set(true);
     this.error.set('');
     try {
@@ -208,8 +212,10 @@ export class DriveSettings implements OnDestroy {
       this.uncertain.set(false);
       this.loaded.set(true);
       if (keepDraft) {
-        if (this.draftSaved(answer.drive))
+        if (this.draftSaved(answer.drive)) {
+          this.draftOwned = false;
           this.message.set('Drive settings saved.');
+        }
         this.focus(sequence, authority);
       }
     } catch {
@@ -235,6 +241,8 @@ export class DriveSettings implements OnDestroy {
   /** Save the settings, then run the `drive-files` check of the design state table. */
   async save() {
     if (!this.canSave()) return;
+    // From here the form values are the person's draft, which a read must not replace.
+    this.draftOwned = true;
     const sequence = ++this.sequence;
     const authority = this.authority();
     this.busy.set(true);
@@ -269,6 +277,7 @@ export class DriveSettings implements OnDestroy {
       this.saved.set(answer.drive);
       this.pickerApiKey.set(answer.drive.pickerApiKey);
       this.projectNumber.set(answer.drive.projectNumber);
+      this.draftOwned = false;
       this.uncertain.set(false);
       this.message.set('Drive settings saved.');
       this.focus(sequence, authority);
