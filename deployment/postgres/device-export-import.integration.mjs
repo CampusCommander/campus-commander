@@ -1940,6 +1940,11 @@ export async function qualifyDeviceExportImport({
             ],
           ],
           [
+            'cc.device_export_credential(uuid,integer,text,integer)',
+            'SELECT cc.device_export_credential($1,$2,$3,$4)',
+            [exporter, 1, customer, generation],
+          ],
+          [
             'cc.create_device_import_job(uuid,integer,text,text,text,text,bigint,text[],uuid,text,text,integer,text,text)',
             'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
             [
