@@ -917,10 +917,7 @@ export function importFailureView(job: JobDetail | null): ImportFailureView {
     : importFailureText(job);
   return {
     // The file name stays whole through the sentence split (B5).
-    paragraphs: importRefusalParagraphs(
-      reason,
-      job?.importSource?.name ?? '',
-    ),
+    paragraphs: importRefusalParagraphs(reason, job?.importSource?.name ?? ''),
     note:
       rows === 0
         ? VALIDATION_FAILED_LINE
