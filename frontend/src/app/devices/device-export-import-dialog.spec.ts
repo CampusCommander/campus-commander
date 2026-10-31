@@ -307,6 +307,92 @@ describe('DeviceExportImportDialog', () => {
     expect(store.step()).toBe('configure');
   });
 
+  it('selects CSV and names the unreachable Drive after a refused Sheet export', async () => {
+    const request = async (path: string) =>
+      path === '/api/devices/exports'
+        ? response({ reason: 'google-unavailable' }, 503)
+        : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    // A transient failure selects CSV and leaves the Sheet card for another attempt.
+    expect(text()).toContain(
+      'Google Drive is not reachable. Try again, or export a CSV file.',
+    );
+    expect(text()).toContain('Saved in your Google Drive');
+    expect(store.format()).toBe('csv');
+    expect(store.step()).toBe('configure');
+  });
+
+  it('keeps a delayed account refusal out of Reports', async () => {
+    const answer = deferred<Response>();
+    const request = async (path: string) =>
+      path === '/api/devices/exports' ? answer.promise : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    // The person leaves Export and opens the CSV-only Reports before the answer arrives.
+    store.close();
+    store.openReport(48, ['serialNumber']);
+    await render();
+    answer.resolve(
+      response({ reason: 'drive-unavailable', cause: 'account' }, 409),
+    );
+    await render();
+    // The refusal belongs to the export entry, so the report keeps its own composition.
+    expect(store.purpose()).toBe('report');
+    expect(store.step()).toBe('configure');
+    expect(store.format()).toBe('csv');
+    expect(store.driveAlert()).toBe('');
+    expect(store.driveAccess()).toBeNull();
+    expect(text()).not.toContain('Google refused Drive access');
+    expect(text()).not.toContain('Google Sheet');
+  });
+
+  it('keeps a delayed unreachable Drive out of Reports', async () => {
+    const answer = deferred<Response>();
+    const request = async (path: string) =>
+      path === '/api/devices/exports' ? answer.promise : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    store.close();
+    store.openReport(48, ['serialNumber']);
+    await render();
+    answer.resolve(response({ reason: 'google-unavailable' }, 503));
+    await render();
+    expect(store.purpose()).toBe('report');
+    expect(store.step()).toBe('configure');
+    expect(store.format()).toBe('csv');
+    expect(store.driveAlert()).toBe('');
+    expect(text()).not.toContain('Google Drive is not reachable');
+    expect(text()).not.toContain('Google Sheet');
+  });
+
   it('names the reachability alert when the access read fails', async () => {
     const request = async (path: string) =>
       path === '/api/google/drive' ? response({}, 503) : response({});

@@ -565,22 +565,28 @@ export class DeviceExportImportStore {
         const body: unknown = await response.json().catch(() => null);
         if (!owned()) return false;
         // A Sheet export that Google refused names its cause, and CSV stays available
-        // (states 04 and 12, Drive slice design sections 1 and 6).
+        // (states 04 and 12, Drive slice design sections 1 and 6). The answer of an entry
+        // that the dialog left changes no visible state: another flow may own the screen.
         const cause = driveRefusal(body);
         if (request.format === 'sheet' && cause !== null) {
-          this.driveAccess.set({ available: false, cause });
-          this.format.set('csv');
-          if (cause === 'account') this.driveAlert.set(SHEET_ACCOUNT_ALERT);
+          if (sameEntry()) {
+            this.driveAccess.set({ available: false, cause });
+            this.format.set('csv');
+            if (cause === 'account') this.driveAlert.set(SHEET_ACCOUNT_ALERT);
+          }
           return false;
         }
-        // A Sheet export that Google could not reach keeps CSV available (section 6).
+        // A Sheet export that Google could not reach keeps CSV available (section 6). Its
+        // alert and format stay with the entry that submitted, like the refusal above.
         if (
           request.format === 'sheet' &&
           response.status === 503 &&
           reasonOf(body) === 'google-unavailable'
         ) {
-          this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
-          this.format.set('csv');
+          if (sameEntry()) {
+            this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+            this.format.set('csv');
+          }
           return false;
         }
         const message = submitFailureText(response.status, body);
