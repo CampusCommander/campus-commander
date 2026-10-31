@@ -120,6 +120,13 @@ const session = (grants) => ({
   csrfToken: CSRF,
 });
 
+/** The import permissions of a district administrator (record:109-115). */
+const IMPORT_GRANTS = [
+  { action: 'devices:read', scope: district() },
+  { action: 'devices:write', scope: district() },
+  { action: 'devices:bulk-actions', scope: district() },
+];
+
 /** The connected customer, as `cc.read_device_sync` answers it. */
 const SYNC = {
   customerId: CUSTOMER,
@@ -369,18 +376,20 @@ after(async () => {
 });
 
 /** Name one test's caller, subject, database, and cache. */
-function arrange({ db, grants, subject = SUBJECT } = {}) {
+function arrange({ db, grants = IMPORT_GRANTS, subject = SUBJECT } = {}) {
   activeDb = db;
-  currentSession = session(
-    grants ?? [
-      { action: 'devices:read', scope: district() },
-      { action: 'devices:write', scope: district() },
-      { action: 'devices:bulk-actions', scope: district() },
-    ],
-  );
+  currentSession = session(grants);
   currentSubject = subject;
   activeCache.entries.clear();
   auditEvents = [];
+}
+
+/**
+ * The next request after a new sign-in. A new sign-in starts a new session with a new CSRF token,
+ * which makes a new cause key (design section 4).
+ */
+function newSignIn(grants = IMPORT_GRANTS) {
+  currentSession = { ...session(grants), csrfToken: 'b'.repeat(64) };
 }
 
 /** One request through the real route. */
@@ -421,6 +430,27 @@ function refuseExchange(t, code) {
   t.mock.method(JWT.prototype, 'getAccessToken', async () => {
     throw new GoogleConnectionError(code);
   });
+}
+
+/**
+ * Answer each token exchange of the test with the next answer. A thrown answer refuses that
+ * exchange, a function answer runs itself, and a token string succeeds. The last answer repeats.
+ * The returned array records one entry per exchange that ran.
+ */
+function exchangeSequence(t, answers) {
+  const attempts = [];
+  t.mock.method(JWT.prototype, 'getAccessToken', async () => {
+    const answer = answers[Math.min(attempts.length, answers.length - 1)];
+    attempts.push(answer);
+    if (typeof answer === 'function') return answer();
+    if (answer instanceof Error) throw answer;
+    return { token: answer };
+  });
+  t.mock.method(JWT.prototype, 'getTokenInfo', async () => ({
+    scopes: ['https://www.googleapis.com/auth/drive.file'],
+    expiry_date: Date.now() + 3_500_000,
+  }));
+  return attempts;
 }
 
 /** The cache key of the session cause, as the production service computes it. */
@@ -632,16 +662,143 @@ test('the session answers the token once with no-store and stores no copy', asyn
   ]);
 });
 
-test('a successful exchange clears the stored cause', async (t) => {
-  exchange(t);
+test('a retained account refusal refuses the session until a new sign-in', async (t) => {
+  const attempts = exchangeSequence(t, [
+    new GoogleConnectionError('credential-rejected'),
+    TOKEN,
+  ]);
   const db = driveDatabase();
   arrange({ db });
-  activeCache.entries.set(causeKey(), JSON.stringify({ cause: 'delegation' }));
 
-  const answer = await mint();
+  const refused = await mint();
 
-  assert.equal(answer.status, 200);
-  assert.deepEqual([...activeCache.entries.keys()], []);
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.deepEqual(refused.body, {
+    reason: 'drive-unavailable',
+    cause: 'account',
+  });
+
+  // A repeat request of the same session may not read the credential or exchange again.
+  const retained = await mint();
+
+  assert.equal(retained.status, 409, JSON.stringify(retained.body));
+  assert.deepEqual(retained.body, {
+    reason: 'drive-unavailable',
+    cause: 'account',
+  });
+  assert.equal(attempts.length, 1);
+  assert.equal(statements(db, 'cc.device_write_credential').length, 1);
+  assert.deepEqual([...activeCache.entries.values()], [
+    JSON.stringify({ cause: 'account' }),
+  ]);
+
+  const later = await access();
+  assert.deepEqual(later.body, {
+    sheetExport: { available: false, cause: 'account' },
+    driveImport: { available: false, cause: 'account' },
+  });
+
+  // A new sign-in starts a new session, so the retained refusal no longer applies.
+  newSignIn();
+  const minted = await mint();
+
+  assert.equal(minted.status, 200, JSON.stringify(minted.body));
+  assert.equal(minted.body.accessToken, TOKEN);
+});
+
+test('a retained delegation refusal refuses the session until a new sign-in', async (t) => {
+  const attempts = exchangeSequence(t, [
+    new GoogleConnectionError('delegation-not-authorized'),
+    TOKEN,
+  ]);
+  const db = driveDatabase();
+  arrange({ db });
+
+  const refused = await mint();
+
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.deepEqual(refused.body, {
+    reason: 'drive-unavailable',
+    cause: 'delegation',
+  });
+
+  const retained = await mint();
+
+  assert.equal(retained.status, 409, JSON.stringify(retained.body));
+  assert.deepEqual(retained.body, {
+    reason: 'drive-unavailable',
+    cause: 'delegation',
+  });
+  assert.equal(attempts.length, 1);
+  assert.equal(statements(db, 'cc.device_write_credential').length, 1);
+
+  const later = await access();
+  assert.deepEqual(later.body, {
+    sheetExport: { available: false, cause: 'delegation' },
+    driveImport: { available: false, cause: 'delegation' },
+  });
+
+  newSignIn();
+  const minted = await mint();
+
+  assert.equal(minted.status, 200, JSON.stringify(minted.body));
+  assert.equal(minted.body.accessToken, TOKEN);
+});
+
+test('a refusal during a running exchange keeps the session unavailable', async (t) => {
+  const db = driveDatabase();
+  arrange({ db });
+  let release;
+  const running = new Promise((resolve) => {
+    release = resolve;
+  });
+  let started;
+  const begun = new Promise((resolve) => {
+    started = resolve;
+  });
+  const attempts = exchangeSequence(t, [
+    async () => {
+      started();
+      await running;
+      return { token: TOKEN };
+    },
+    new GoogleConnectionError('credential-rejected'),
+  ]);
+
+  // The first exchange starts before the refusal and ends after it.
+  const first = mint();
+  await begun;
+
+  const refused = await mint();
+
+  assert.equal(refused.status, 409, JSON.stringify(refused.body));
+  assert.deepEqual(refused.body, {
+    reason: 'drive-unavailable',
+    cause: 'account',
+  });
+
+  release();
+  const answered = await first;
+
+  assert.equal(answered.status, 200, JSON.stringify(answered.body));
+  assert.equal(answered.body.accessToken, TOKEN);
+
+  // The exchange that was already running may not delete the refusal it outran.
+  const retained = await mint();
+
+  assert.equal(retained.status, 409, JSON.stringify(retained.body));
+  assert.deepEqual(retained.body, {
+    reason: 'drive-unavailable',
+    cause: 'account',
+  });
+  assert.equal(attempts.length, 2);
+  assert.equal(statements(db, 'cc.device_write_credential').length, 2);
+
+  const later = await access();
+  assert.deepEqual(later.body, {
+    sheetExport: { available: false, cause: 'account' },
+    driveImport: { available: false, cause: 'account' },
+  });
 });
 
 test('the session answers setup before any exchange without saved settings', async (t) => {

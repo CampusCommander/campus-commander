@@ -97,8 +97,8 @@ export class DriveService {
 
   /**
    * Mint the one-hour `drive.file` token of the session subject (design section 4). A refused
-   * exchange marks the session, so later access reads answer the same cause until the next sign-in.
-   * The answer carries the token once and stores no copy of it.
+   * exchange marks the session, so every later session or access read answers that cause until the
+   * next sign-in. The answer carries the token once and stores no copy of it.
    */
   async session(
     session: SessionResponse,
@@ -108,6 +108,9 @@ export class DriveService {
     const current = await this.current(session, correlationId);
     const facts = await this.connection.driveAccess(session);
     if (!facts?.settings) throw this.unavailable('setup');
+    // A retained refusal forbids another credential read and another exchange in this session.
+    const cause = await this.sessionCause(session);
+    if (cause !== null) throw this.unavailable(cause);
     const subject = await this.auth.driveSubject(cookie);
     if (subject === null) {
       await this.markCause(session, 'account');
@@ -129,7 +132,6 @@ export class DriveService {
       await this.refuse(session, error);
       throw error;
     }
-    await this.clearCause(session);
     return googleDriveSessionSchema.parse({
       accessToken: token.accessToken,
       expiresAt: new Date(token.expiresAt).toISOString(),
@@ -300,10 +302,5 @@ export class DriveService {
       JSON.stringify({ cause }),
       seconds,
     );
-  }
-
-  /** A later successful exchange proves access, so the stored cause no longer applies. */
-  private async clearCause(session: SessionResponse): Promise<void> {
-    await this.cache.remove(this.causeKey(session));
   }
 }
