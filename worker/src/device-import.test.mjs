@@ -2372,6 +2372,57 @@ test('a tab of more than 50,000 data rows refuses as too-many-rows', async () =>
   assert.equal(harnessed.database.calls.source.length, 0);
 });
 
+test('a Drive CSV file above 50,000 data rows refuses as too-many-rows', async () => {
+  const lines = ['Device ID'];
+  for (let index = 0; index < DEVICE_IMPORT_ROW_LIMIT + 1; index += 1)
+    lines.push(`dev-${index}`);
+  const csv = csvDrive([Buffer.from(`${lines.join('\r\n')}\r\n`, 'utf8')]);
+  const harnessed = driveHarness({
+    client: csv.client,
+    sourceType: 'drive-csv',
+    sourceFileId: CSV_FILE_ID,
+    sourceTabId: null,
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'invalid-response');
+  assert.equal(answer.refusal, 'too-many-rows');
+  assert.equal(
+    harnessed.database.calls.finish[0].refusalText,
+    deviceImportRefusalText('too-many-rows'),
+  );
+  assert.deepEqual(harnessed.store.published, []);
+  assert.equal(harnessed.database.calls.source.length, 0);
+});
+
+test('a Drive CSV file that is not UTF-8 refuses as unreadable', async () => {
+  // A truncated two-byte sequence at the end of the stream.
+  const csv = csvDrive([
+    Buffer.from('Device ID\r\ndev-a', 'utf8'),
+    Buffer.from([0xe2, 0x82]),
+  ]);
+  const harnessed = driveHarness({
+    client: csv.client,
+    sourceType: 'drive-csv',
+    sourceFileId: CSV_FILE_ID,
+    sourceTabId: null,
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'invalid-response');
+  assert.equal(answer.refusal, 'unreadable-file');
+  assert.equal(
+    harnessed.database.calls.finish[0].refusalText,
+    deviceImportRefusalText('unreadable-file'),
+  );
+  assert.deepEqual(harnessed.store.published, []);
+  assert.equal(harnessed.database.calls.source.length, 0);
+});
+
 test('a source past its cap keeps the refusal of the cap', async () => {
   const oversized = async () => ({
     async readTab() {
