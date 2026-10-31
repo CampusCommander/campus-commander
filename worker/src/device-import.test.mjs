@@ -2728,6 +2728,8 @@ test('a CSV body reset after a delivered prefix fails as network-failure', async
     assert.deepEqual(harnessed.store.published, [], at);
     assert.equal(harnessed.database.calls.source.length, 0, at);
     assert.equal(csv.calls.length, 1, at);
+    // The stage consumed the prefix before the body reset.
+    assert.deepEqual(harnessed.events, ['stage', 'stage-failed'], at);
   }
 });
 
