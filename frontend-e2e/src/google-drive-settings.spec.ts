@@ -106,6 +106,8 @@ interface State {
   theme: 'light' | 'dark';
   saveStatus: number;
   saveLost: boolean;
+  /** The number of Drive settings reads that answer with a 503. */
+  readFailures: number;
 }
 
 /** Answers every read of the shell, the connection page, and Diagnostics. */
@@ -116,6 +118,7 @@ async function fixture(page: Page, overrides: Partial<State> = {}) {
     theme: 'light',
     saveStatus: 201,
     saveLost: false,
+    readFailures: 0,
     ...overrides,
   };
   const preferences = () => ({
@@ -218,6 +221,13 @@ async function fixture(page: Page, overrides: Partial<State> = {}) {
       const input = route.request().postDataJSON();
       state.drive = input;
       return route.fulfill({ status: 201, json: { drive: input } });
+    }
+    if (state.readFailures > 0) {
+      state.readFailures -= 1;
+      return route.fulfill({
+        status: 503,
+        json: { reason: 'unavailable' },
+      });
     }
     return route.fulfill({ json: { drive: state.drive } });
   });
@@ -450,6 +460,55 @@ test('a lost save answer offers a refresh that reads the saved settings', async 
   await expect(card).toContainText('Drive settings saved.');
   await expect(card.getByLabel('Picker API key')).toHaveValue(pickerKey);
   await expect(save).toBeDisabled();
+});
+
+test('a failed recovery read keeps the draft for the next read', async ({
+  page,
+}, testInfo) => {
+  const earlierKey = 'previous-picker-api-key-000000000000000';
+  const earlierNumber = '987654321098';
+  const state = await fixture(page, {
+    drive: { pickerApiKey: earlierKey, projectNumber: earlierNumber },
+    saveLost: true,
+  });
+  await page.goto('/google-connection');
+  const card = page.locator('app-drive-settings');
+  await expect(card.getByLabel('Picker API key')).toHaveValue(earlierKey);
+  await expect(card.getByLabel('Project number')).toHaveValue(earlierNumber);
+  await card.getByLabel('Picker API key').fill(pickerKey);
+  await card.getByLabel('Project number').fill(projectNumber);
+  // The save never reaches the mock, so the earlier stored values remain.
+  const save = card.getByRole('button', { name: 'Save Drive settings' });
+  await save.click();
+  await expect(card.locator('[role=status]').first()).toContainText(
+    'The Drive settings save result is unknown. Refresh Drive settings to read the saved settings.',
+  );
+  await expect(save).toBeDisabled();
+  // The first recovery read fails, so the card closes the form and offers another read.
+  state.readFailures = 1;
+  await card.getByRole('button', { name: 'Refresh Drive settings' }).click();
+  await expect(card.locator('[role=status]').first()).toContainText(
+    'Campus Commander did not read the Drive settings. Try again.',
+  );
+  await expect(card.getByLabel('Picker API key')).toHaveCount(0);
+  await capture(page, testInfo, 'recovery-read-failed-light', {
+    selector: 'app-drive-settings',
+    offset: 20,
+  });
+  // The next read returns the earlier saved values. The draft must survive it.
+  await card.getByRole('button', { name: 'Refresh Drive settings' }).click();
+  await expect(card.getByLabel('Picker API key')).toHaveValue(pickerKey);
+  await expect(card.getByLabel('Project number')).toHaveValue(projectNumber);
+  expect(state.drive).toEqual({
+    pickerApiKey: earlierKey,
+    projectNumber: earlierNumber,
+  });
+  await expect(save).toBeEnabled();
+  await expect(card).not.toContainText('Drive settings saved.');
+  await capture(page, testInfo, 'recovered-draft-light', {
+    selector: 'app-drive-settings',
+    offset: 20,
+  });
 });
 
 test('the fields refuse a short key and a project number that is not digits', async ({
