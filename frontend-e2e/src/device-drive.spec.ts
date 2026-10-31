@@ -588,6 +588,11 @@ test.describe('Drive import', () => {
     // Upload is the first source, and the available Drive card follows it.
     await expect(uploadCard(page).locator('input')).toBeChecked();
     await expect(driveCard(page).locator('input')).toBeEnabled();
+    // The Source cards take the keyboard: focus the Drive input, then select it with Space.
+    await driveCard(page).locator('input').focus();
+    await page.keyboard.press('Space');
+    await expect(driveCard(page).locator('input')).toBeChecked();
+    await expect(dialog(page)).toContainText('A Sheet or a CSV file');
     await chooseDrive(page);
     await expect(dialog(page)).toContainText('Google Drive · Not submitted');
     await expect(dialog(page)).toContainText('A Sheet or a CSV file');
