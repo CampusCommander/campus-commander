@@ -814,6 +814,19 @@ test.describe('Drive import', () => {
     await expect(page.locator('mat-tooltip-component')).toContainText(longName);
     await page.mouse.move(4, 4);
     await expect(page.locator('mat-tooltip-component')).toBeHidden();
+    // The Tab field cuts the long tab on one line and offers the whole title (choice 12).
+    const tabField = item.getByRole('combobox');
+    await expect(tabField).toContainText(longTab);
+    const tabValue = tabField.locator('.mat-mdc-select-value');
+    expect(await tabValue.evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(
+      await tabValue.evaluate((el) => el.scrollWidth > el.clientWidth),
+    ).toBe(true);
+    await tabField.hover();
+    await expect(page.locator('mat-tooltip-component')).toContainText(longTab);
+    await page.mouse.move(4, 4);
+    await expect(page.locator('mat-tooltip-component')).toBeHidden();
+    await shot(page, '07-drive-sheet-chosen-long-values');
     await dialog(page)
       .getByRole('button', { name: 'Start validation' })
       .click();
