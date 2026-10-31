@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
@@ -123,16 +124,25 @@ interface SetupOptions {
   readonly picker?: GoogleDrivePicker['open'];
   readonly sheetRows?: GoogleDriveRead['sheetRows'];
   readonly fileHead?: GoogleDriveRead['fileHead'];
-  readonly tabs?: (fileId: string) => Response;
+  readonly tabs?: (fileId: string) => Response | Promise<Response>;
   readonly session?: () => Promise<Response>;
   readonly submit?: (body: unknown) => Response;
   readonly job?: JobDetail;
+  /** The session of the signed-in person. A switch runs the store reset. */
+  readonly person?: () => { identity: { id: string } } | null;
 }
 
 const accessAvailable = {
   sheetExport: { available: false, cause: 'account' },
   driveImport: { available: true },
 };
+
+/** An answer that a test holds until it resolves (B1 and B2 interleavings). */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => (resolve = settle));
+  return { promise, resolve };
+}
 
 function setup(options: SetupOptions = {}) {
   const picker = { open: vi.fn(options.picker ?? (async () => null)) };
@@ -189,7 +199,11 @@ function setup(options: SetupOptions = {}) {
       provideRouter([]),
       {
         provide: AuthStore,
-        useValue: { session: () => null, can: () => true, request },
+        useValue: {
+          session: options.person ?? (() => null),
+          can: () => true,
+          request,
+        },
       },
       { provide: GoogleDrivePicker, useValue: picker },
       { provide: GoogleDriveRead, useValue: read },
@@ -512,5 +526,353 @@ describe('Drive import', () => {
     expect(panel()?.textContent).toContain(
       'Google Drive is not available for your account.',
     );
+  });
+
+  /** The two people of the session boundary tests. */
+  const personA = { identity: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } };
+  const personB = { identity: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } };
+  const mint = (access: string, minutes = 60) =>
+    response({
+      accessToken: access,
+      expiresAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+      apiKey,
+      appId,
+    });
+
+  it('never hands the cached token of one person to the next (B1)', async () => {
+    const session = signal<{ identity: { id: string } } | null>(personA);
+    let issued = 0;
+    const { store, render, picker, request } = setup({
+      person: () => session(),
+      session: async () => {
+        issued++;
+        return mint(`example-drive-token-000${issued}`);
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    expect(picker.open).toHaveBeenLastCalledWith(token, apiKey, appId);
+    // Another person takes the session. The store reset clears the bearer credential.
+    session.set(personB);
+    TestBed.tick();
+    await render();
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    expect(picker.open).toHaveBeenLastCalledWith(
+      'example-drive-token-0002',
+      apiKey,
+      appId,
+    );
+    const posts = request.mock.calls.filter(
+      ([path]) => path === '/api/google/drive/session',
+    );
+    expect(posts).toHaveLength(2);
+  });
+
+  it('drops a mint that answers after the person changed (B1)', async () => {
+    const session = signal<{ identity: { id: string } } | null>(personA);
+    const held = deferred<Response>();
+    let issued = 0;
+    const { store, render, picker, request } = setup({
+      person: () => session(),
+      session: () => {
+        issued++;
+        return issued === 1
+          ? held.promise
+          : Promise.resolve(mint('example-drive-token-0002'));
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    const first = store.openDrivePicker();
+    await Promise.resolve();
+    session.set(personB);
+    TestBed.tick();
+    await render();
+    // The answer of person A arrives after the switch, and it must not reach person B.
+    held.resolve(mint('example-drive-token-0001'));
+    await first;
+    expect(picker.open).not.toHaveBeenCalled();
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    expect(picker.open).toHaveBeenCalledTimes(1);
+    expect(picker.open).toHaveBeenCalledWith(
+      'example-drive-token-0002',
+      apiKey,
+      appId,
+    );
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/google/drive/session',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('renews the token before the header read of a Sheet after an idle Picker (B6)', async () => {
+    const start = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(start);
+    const pickerAnswer = deferred<typeof sheetDocument | null>();
+    let issued = 0;
+    const { store, render, read } = setup({
+      picker: () => pickerAnswer.promise,
+      session: async () => {
+        issued++;
+        return mint(`example-drive-token-000${issued}`);
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    const open = store.openDrivePicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    // The Picker stays open past the one-hour token.
+    vi.setSystemTime(start + 61 * 60_000);
+    pickerAnswer.resolve(sheetDocument);
+    await open;
+    expect(issued).toBe(2);
+    expect(read.sheetRows).toHaveBeenCalledWith(
+      'example-drive-token-0002',
+      sheetId,
+      'Devices',
+    );
+    expect(store.driveFile()?.check).toBe('passed');
+  });
+
+  it('renews the token before the header read of a Drive CSV after an idle Picker (B6)', async () => {
+    const start = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(start);
+    const pickerAnswer = deferred<typeof csvDocument | null>();
+    let issued = 0;
+    const { store, render, read } = setup({
+      picker: () => pickerAnswer.promise,
+      session: async () => {
+        issued++;
+        return mint(`example-drive-token-000${issued}`);
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    const open = store.openDrivePicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.setSystemTime(start + 61 * 60_000);
+    pickerAnswer.resolve(csvDocument);
+    await open;
+    expect(issued).toBe(2);
+    expect(read.fileHead).toHaveBeenCalledWith(
+      'example-drive-token-0002',
+      csvId,
+    );
+    expect(store.driveFile()?.check).toBe('passed');
+  });
+
+  it('shows the tab refusal when the tab request rejects (B3)', async () => {
+    const { store, render, panel } = setup({
+      picker: async () => sheetDocument,
+      tabs: () => Promise.reject(new TypeError('Failed to fetch')),
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await expect(store.openDrivePicker()).resolves.toBeUndefined();
+    await render();
+    expect(store.driveFile()?.check).toBe('refused');
+    expect(store.driveFile()?.refusal).toBe(
+      'Campus Commander cannot read the tabs of this Sheet. Choose the file again.',
+    );
+    expect(store.driveBusy()).toBe(false);
+    expect(store.importReady()).toBe(false);
+    expect(panel()?.textContent).toContain(
+      'Campus Commander cannot read the tabs of this Sheet. Choose the file again.',
+    );
+  });
+
+  it('keeps a pending Drive submit for the same entry without replacing Reports (B2)', async () => {
+    const held = deferred<Response>();
+    let issued = 0;
+    const { store, render, request } = setup({
+      picker: async () => sheetDocument,
+      session: () => {
+        issued++;
+        return issued === 3
+          ? held.promise
+          : Promise.resolve(mint(`example-drive-token-000${issued}`, 4));
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    const submit = store.startValidation();
+    // The submit owns its busy slot before the token wait.
+    expect(store.step()).toBe('validation');
+    expect(store.importReady()).toBe(false);
+    expect(store.validating()).toBe(true);
+    // The person closes the import and opens Reports while the mint is held.
+    store.close();
+    store.openReport(6, []);
+    expect(store.step()).toBe('configure');
+    held.resolve(mint('example-drive-token-0003'));
+    await submit;
+    await render();
+    // The retained receipt belongs to the import, and Reports keeps its screen.
+    expect(store.step()).toBe('configure');
+    expect(store.purpose()).toBe('report');
+    expect(store.activeImport()).toBe('IMP-010');
+    expect(store.uploading()).toBe(false);
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/devices/imports/drive',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('sends one import when Start validation is pressed twice during the token wait (B2)', async () => {
+    const held = deferred<Response>();
+    let issued = 0;
+    const { store, render, request } = setup({
+      picker: async () => sheetDocument,
+      session: () => {
+        issued++;
+        return issued === 3
+          ? held.promise
+          : Promise.resolve(mint(`example-drive-token-000${issued}`, 4));
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    const first = store.startValidation();
+    const second = store.startValidation();
+    expect(await second).toBe(false);
+    held.resolve(mint('example-drive-token-0003', 4));
+    expect(await first).toBe(true);
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/devices/imports/drive',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('drops a tab change that answers after a fresh Import (B2)', async () => {
+    const held = deferred<Response>();
+    let issued = 0;
+    const { store, render } = setup({
+      picker: async () => sheetDocument,
+      session: () => {
+        issued++;
+        return issued === 3
+          ? held.promise
+          : Promise.resolve(mint(`example-drive-token-000${issued}`, 4));
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    const change = store.chooseDriveTab(1);
+    await Promise.resolve();
+    store.close();
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    held.resolve(mint('example-drive-token-0003', 4));
+    await change;
+    await render();
+    expect(store.driveFile()).toBeNull();
+    expect(store.importReady()).toBe(false);
+  });
+
+  it('drops a mode recheck that answers after a fresh Import (B2)', async () => {
+    const held = deferred<Response>();
+    let issued = 0;
+    const { store, render } = setup({
+      picker: async () => sheetDocument,
+      session: () => {
+        issued++;
+        return issued === 3
+          ? held.promise
+          : Promise.resolve(mint(`example-drive-token-000${issued}`, 4));
+      },
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    store.setImportMode('sync-all-rows');
+    await Promise.resolve();
+    store.close();
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    held.resolve(mint('example-drive-token-0003', 4));
+    await render();
+    expect(store.driveFile()).toBeNull();
+  });
+
+  it('drops an account refusal of the entry before a fresh Import (B2)', async () => {
+    const held = deferred<Response>();
+    const { store, render } = setup({
+      picker: async () => sheetDocument,
+      session: () => held.promise,
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    const open = store.openDrivePicker();
+    await Promise.resolve();
+    store.close();
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    held.resolve(
+      response({ reason: 'drive-unavailable', cause: 'account' }, 409),
+    );
+    await open;
+    await render();
+    expect(store.importSource()).toBe('drive');
+    expect(store.driveImportAvailable()).toBe(true);
+    expect(store.importDriveAlert()).toBe('');
+    expect(store.driveFile()).toBeNull();
+  });
+
+  it('drops an invalid tab list that answers after a fresh Import (B2)', async () => {
+    const body = deferred<unknown>();
+    const { store, render } = setup({
+      picker: async () => sheetDocument,
+      tabs: () =>
+        ({
+          ok: true,
+          status: 200,
+          json: () => body.promise,
+        }) as unknown as Response,
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    const open = store.openDrivePicker();
+    await Promise.resolve();
+    await Promise.resolve();
+    store.close();
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    body.resolve({ tabs: 'not a list' });
+    await open;
+    await render();
+    expect(store.driveFile()).toBeNull();
+    expect(store.importReady()).toBe(false);
   });
 });
