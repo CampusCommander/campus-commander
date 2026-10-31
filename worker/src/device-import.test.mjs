@@ -2295,6 +2295,8 @@ test('a Drive CSV file streams its bytes and gives the uploaded file report', as
 
 test('the drive-read phase counts the data rows of the source', async () => {
   const rows = [
+    // A blank row above the header keeps its source row and counts no data row.
+    [],
     [...DEVICE_EDIT_TEMPLATE_HEADERS],
     cellsOf({ deviceId: 'dev-a', orgUnitPath: '/Schools/North' }),
     cellsOf({ deviceId: 'dev-b', orgUnitPath: '/Schools/North' }),

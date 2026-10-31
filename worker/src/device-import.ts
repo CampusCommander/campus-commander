@@ -1310,11 +1310,11 @@ export class DeviceImportJobs {
 
     const batchSize = this.batchSize;
     const writer = createCsvWriter();
-    /** The records of the file, the header included. */
-    let rowsRead = 0;
     /** The data rows that the phase counts (design section 7, step 6). */
     let dataRows = 0;
     let reported = 0;
+    /** Whether the first nonblank row, the header, has arrived. A blank row counts no data row. */
+    let headerSeen = false;
     const count = async (): Promise<void> => {
       if (dataRows - reported < batchSize) return;
       reported = dataRows;
@@ -1338,19 +1338,21 @@ export class DeviceImportJobs {
               deviceImportRefusalText('source-too-large'),
             );
           yield Buffer.from(text, 'utf8');
-          rowsRead += 1;
-          // The header row counts no data row. A blank gap row keeps its source position and
+          // The first nonblank row is the header. A blank gap row keeps its source position and
           // counts none, as the client counts it (design section 7, steps 3 and 6).
-          if (rowsRead > 1 && !row.every((cell) => cell.trim() === '')) {
-            dataRows += 1;
-            // The tab refuses data row 50,001 (design section 7, the limits). The client refuses
-            // it first; this count keeps the same answer for a tab that another reader serves.
-            if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
-              throw new ImportRefusal(
-                'too-many-rows',
-                deviceImportRefusalText('too-many-rows'),
-              );
+          if (row.every((cell) => cell.trim() === '')) continue;
+          if (!headerSeen) {
+            headerSeen = true;
+            continue;
           }
+          dataRows += 1;
+          // The tab refuses data row 50,001 (design section 7, the limits). The client refuses
+          // it first; this count keeps the same answer for a tab that another reader serves.
+          if (dataRows > DEVICE_IMPORT_ROW_LIMIT)
+            throw new ImportRefusal(
+              'too-many-rows',
+              deviceImportRefusalText('too-many-rows'),
+            );
           await count();
         }
         return;
@@ -1358,6 +1360,8 @@ export class DeviceImportJobs {
       const decoder = new TextDecoder('utf-8', { fatal: true });
       const reader = createCsvReader();
       let bytes = 0;
+      /** The records of the file, the header included. The reader drops a blank record. */
+      let recordsRead = 0;
       const decode = (chunk: Uint8Array | undefined): string => {
         try {
           return chunk === undefined
@@ -1372,8 +1376,8 @@ export class DeviceImportJobs {
       };
       const tally = (records: readonly CsvRecord[]): void => {
         for (let index = 0; index < records.length; index += 1) {
-          rowsRead += 1;
-          if (rowsRead > 1) {
+          recordsRead += 1;
+          if (recordsRead > 1) {
             dataRows += 1;
             // The read refuses data row 50,001, as the tab read does (design section 7, the
             // limits). The built passes hold the same cap for an uploaded file.
