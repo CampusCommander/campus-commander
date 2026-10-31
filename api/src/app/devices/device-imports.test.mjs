@@ -355,7 +355,12 @@ before(async () => {
   // the body of a refusal; this double records each call.
   const drive = {
     importSource: async (currentSession, cookie, current, value) => {
-      driveCalls.push({ session: currentSession, cookie, current, request: value });
+      driveCalls.push({
+        session: currentSession,
+        cookie,
+        current,
+        request: value,
+      });
       if (driveFails) throw driveFails;
       return driveSource;
     },
@@ -411,7 +416,12 @@ before(async () => {
       { provide: DevicesService, useValue: devices },
       {
         provide: DeviceImportsService,
-        useValue: new DeviceImportsService(database, storage, orchestration, drive),
+        useValue: new DeviceImportsService(
+          database,
+          storage,
+          orchestration,
+          drive,
+        ),
       },
       {
         provide: DeviceImportExecuteService,
@@ -721,11 +731,7 @@ test('a Drive import creates the validation job from the Drive facts', async () 
   assert.equal(create.values[4], 'drive-sheet');
   assert.equal(create.values[5], 'devices-for-editing');
   assert.equal(create.values[6], 0, 'A Sheet job takes the size of its facts.');
-  assert.deepEqual(create.values[7], [
-    'disable',
-    'reenable',
-    'deprovision',
-  ]);
+  assert.deepEqual(create.values[7], ['disable', 'reenable', 'deprovision']);
   assert.equal(create.values[9], null, 'A Drive job links no artifact.');
   assert.equal(create.values[10], 'fixture-file');
   assert.equal(create.values[11], 0);

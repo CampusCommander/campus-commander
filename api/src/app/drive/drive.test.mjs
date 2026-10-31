@@ -1223,7 +1223,10 @@ test('a Drive CSV import takes its name and size from Drive', async (t) => {
     sizeBytes: 2048,
     tabTitle: null,
   });
-  assert.deepEqual(sent.map((item) => item.path), [filePath('fixture-file')]);
+  assert.deepEqual(
+    sent.map((item) => item.path),
+    [filePath('fixture-file')],
+  );
 });
 
 test('a Drive CSV past 1 GiB answers source-too-large', async (t) => {
@@ -1402,9 +1405,10 @@ test("another person's file ID answers 404 and reads no tab", async (t) => {
       return true;
     },
   );
-  assert.deepEqual(sent.map((item) => item.path), [
-    filePath('other-persons-file'),
-  ]);
+  assert.deepEqual(
+    sent.map((item) => item.path),
+    [filePath('other-persons-file')],
+  );
 });
 
 test('a retained refusal ends the Drive import before any file read', async (t) => {

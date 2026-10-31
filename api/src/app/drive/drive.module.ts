@@ -7,8 +7,8 @@ import { DriveController } from './drive.controller';
 /**
  * The Drive routes of the devices dialog (design section 1). The module imports the device module,
  * which provides the Drive service: the export and import routes of that module run the same
- * exchange, so one provider serves both. The imported module also holds the Google connection
- * service, the connected customer read, and the session cache.
+ * exchange, so one provider serves both. The service resolves the Google connection service, the
+ * connected customer read, and the session cache inside that module.
  *
  * ConfigurationModule provides the ConfigurationService that AuthGuard resolves. The guard is an
  * injectable of this module, because `@UseGuards(AuthGuard)` registers it here.

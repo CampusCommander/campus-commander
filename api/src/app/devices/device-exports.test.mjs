@@ -39,7 +39,11 @@ registerHooks({
 });
 
 const require = createRequire(import.meta.url);
-const { ConflictException, ForbiddenException, Module } = require('@nestjs/common');
+const {
+  ConflictException,
+  ForbiddenException,
+  Module,
+} = require('@nestjs/common');
 const { Test } = require('@nestjs/testing');
 
 const customer = 'C0123456';

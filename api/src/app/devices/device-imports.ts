@@ -635,8 +635,9 @@ export class DeviceImports {
     correlationId: string,
     discard?: StagedUpload,
   ): Promise<Record<string, unknown>> {
-    const result = (await this.database.connection.query(createImportSql, values))
-      .rows[0]?.['result'] as Record<string, unknown> | undefined;
+    const result = (
+      await this.database.connection.query(createImportSql, values)
+    ).rows[0]?.['result'] as Record<string, unknown> | undefined;
     // A lost or unrecognized answer is not a refusal: the create transaction may have committed,
     // and the job then owns the file. The link sets no reference count, so the purge removes a file
     // that no job linked (design section 4).
