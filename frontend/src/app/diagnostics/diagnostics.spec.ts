@@ -209,3 +209,22 @@ it('lists the school OU scope before Google verifies it', () => {
       ?.textContent,
   ).toContain('orgunit');
 });
+
+it('names the four Google APIs and lists the seven setup scopes including drive.file', () => {
+  const { element } = diagnosticsPage(
+    GOOGLE_CAPABILITIES.map((capability) => capability.id),
+  );
+  const text = element.textContent!.replace(/\s+/g, ' ');
+  expect(text).toContain(
+    'Enable the Admin SDK API, the Google Drive API, the Google Sheets API, and the Google Picker API in the service-account project.',
+  );
+  const scopes = (
+    element.querySelector('pre[aria-label="Required Google capability scopes"]')
+      ?.textContent ?? ''
+  )
+    .trim()
+    .split(',\n');
+  expect(scopes).toHaveLength(7);
+  expect(scopes).toContain('https://www.googleapis.com/auth/drive.file');
+  expect(scopes).toEqual([...scopes].sort());
+});
