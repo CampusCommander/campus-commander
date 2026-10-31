@@ -20,8 +20,10 @@
         </h2>
         @if (subtitleJob(); as job) {
         <p id="export-dialog-sub" class="export-sub">
-          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{ subtitleStatus()
-          }}@if (wide() && importLineParts(); as line) {<span class="job-parts">
+          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
+          subtitleStatus() }}@if (wide() && importLineParts(); as line) {<span
+            class="job-parts"
+          >
             <span class="sub-sep">·</span>
             <span class="sub-item mode">{{ line.mode }}</span>
             @if (line.name) {
@@ -483,8 +485,8 @@
 
           @if (failureView(); as failure) {
           <div class="action-note error" role="alert">
-            @for (paragraph of failure.paragraphs; track paragraph) {
-            @if (namedParts(paragraph); as parts) {
+            @for (paragraph of failure.paragraphs; track paragraph) { @if
+            (namedParts(paragraph); as parts) {
             <p>
               {{ parts.before }}<span
                 class="value-token"
