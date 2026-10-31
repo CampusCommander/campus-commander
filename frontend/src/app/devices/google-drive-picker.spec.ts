@@ -16,6 +16,7 @@ interface PickerConfig {
   appId: string;
   origin: string;
   mimeTypes: string[];
+  ownedByMe: boolean;
   callback: (answer: unknown) => void;
 }
 
@@ -35,6 +36,8 @@ function stubPicker(answer: unknown): PickerConfig[] {
       ViewId: { DOCS: 'docs' },
       Action: { PICKED: 'picked', CANCEL: 'cancel' },
       DocsView: class {
+        readonly mimeTypes = PICKER_MIME_TYPES;
+        ownedByMe = false;
         setIncludeFolders() {
           return this;
         }
@@ -42,6 +45,10 @@ function stubPicker(answer: unknown): PickerConfig[] {
           return this;
         }
         setMimeTypes() {
+          return this;
+        }
+        setOwnedByMe(value: boolean) {
+          this.ownedByMe = value;
           return this;
         }
       },
@@ -63,8 +70,9 @@ function stubPicker(answer: unknown): PickerConfig[] {
           this.config.origin = value;
           return this;
         }
-        addView() {
-          this.config.mimeTypes = [PICKER_MIME_TYPES];
+        addView(view: { mimeTypes: string; ownedByMe: boolean }) {
+          this.config.mimeTypes = [view.mimeTypes];
+          this.config.ownedByMe = view.ownedByMe;
           return this;
         }
         setCallback(value: (answer: unknown) => void) {
@@ -130,6 +138,8 @@ describe('GoogleDrivePicker', () => {
       appId: '123456789012',
       origin: window.location.origin,
       mimeTypes: [PICKER_MIME_TYPES],
+      // Ruling 3: the view lists the owned files, never the shared ones (B4).
+      ownedByMe: true,
     });
     expect(chosen).toEqual({
       fileId: 'drive-file-1',

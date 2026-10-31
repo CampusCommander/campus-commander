@@ -107,6 +107,17 @@ const pickerFiles = [
     lastEditedUtc: Date.UTC(2026, 9, 14, 15, 0),
     when: 'Oct 14',
   },
+  {
+    // The shared-file control: an owned-only view hides it (ruling 3, B4).
+    id: 'drive-sheet-shared-control',
+    name: 'shared-device-roster',
+    mimeType: 'application/vnd.google-apps.spreadsheet',
+    sizeBytes: null,
+    lastEditedUtc: Date.UTC(2026, 9, 12, 15, 0),
+    when: 'Oct 12',
+    shared: true,
+    owner: 'someone@example.org',
+  },
 ];
 
 /** The access cause that `GET /api/google/drive` answers for the import (states 05, 11, 12). */
@@ -617,6 +628,10 @@ test.describe('Drive import', () => {
     const picker = await openPicker(page);
     await expect(picker).toContainText('My Drive');
     await expect(picker.getByRole('option')).toHaveCount(5);
+    // The owned-only view hides the shared control (ruling 3, B4).
+    await expect(
+      picker.getByRole('option', { name: /shared-device-roster/ }),
+    ).toHaveCount(0);
     const call = await page.evaluate(
       () =>
         (window as unknown as { __googlePicker: { calls: unknown[] } })
@@ -627,6 +642,7 @@ test.describe('Drive import', () => {
       apiKey: examplePickerKey,
       appId: exampleAppId,
       mimeTypes: ['application/vnd.google-apps.spreadsheet,text/csv'],
+      ownedByMe: true,
     });
     expect((call as { origin: string }).origin).toBe(
       new URL(page.url()).origin,

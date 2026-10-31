@@ -12,7 +12,7 @@
 (() => {
   if (window.__googlePicker) return;
 
-  /** The five files of the approved walkthrough, owned by "me" (state 06). */
+  /** The five files of the approved walkthrough, owned by "me" (state 06), and one shared control. */
   const DEFAULT_FILES = [
     {
       id: 'drive-sheet-exp-003',
@@ -53,6 +53,17 @@
       sizeBytes: null,
       lastEditedUtc: Date.UTC(2026, 9, 14, 15, 0),
       when: 'Oct 14',
+    },
+    {
+      // The shared-file control: an owned-only view hides it (ruling 3, B4).
+      id: 'drive-sheet-shared-control',
+      name: 'shared-device-roster',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      sizeBytes: null,
+      lastEditedUtc: Date.UTC(2026, 9, 12, 15, 0),
+      when: 'Oct 12',
+      shared: true,
+      owner: 'someone@example.org',
     },
   ];
 
@@ -95,6 +106,8 @@
       : DEFAULT_FILES,
     openCount: 0,
     lastAction: null,
+    /** The ownership filter of the open view. An unset filter lists every shared file. */
+    ownedByMe: false,
     /** The chosen file of the open Picker, if any. */
     selection: null,
   };
@@ -174,42 +187,44 @@
     table.setAttribute('role', 'listbox');
     table.setAttribute('aria-label', 'Files in My Drive');
 
-    const rows = state.files.map((file) => {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'gp-row';
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', 'false');
-      row.dataset.fileId = file.id;
+    const rows = state.files
+      .filter((file) => !state.ownedByMe || file.shared !== true)
+      .map((file) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'gp-row';
+        row.setAttribute('role', 'option');
+        row.setAttribute('aria-selected', 'false');
+        row.dataset.fileId = file.id;
 
-      const name = document.createElement('span');
-      name.className = 'gp-name';
-      const glyph = document.createElement('span');
-      glyph.className = `gp-glyph ${
-        file.mimeType === 'application/vnd.google-apps.spreadsheet'
-          ? 'sheet'
-          : 'csv'
-      }`;
-      glyph.setAttribute('aria-hidden', 'true');
-      const text = document.createElement('span');
-      text.textContent = file.name;
-      name.append(glyph, text);
+        const name = document.createElement('span');
+        name.className = 'gp-name';
+        const glyph = document.createElement('span');
+        glyph.className = `gp-glyph ${
+          file.mimeType === 'application/vnd.google-apps.spreadsheet'
+            ? 'sheet'
+            : 'csv'
+        }`;
+        glyph.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span');
+        text.textContent = file.name;
+        name.append(glyph, text);
 
-      const owner = document.createElement('span');
-      owner.textContent = 'me';
-      const when = document.createElement('span');
-      when.textContent = file.when ?? '';
+        const owner = document.createElement('span');
+        owner.textContent = file.owner ?? 'me';
+        const when = document.createElement('span');
+        when.textContent = file.when ?? '';
 
-      row.append(name, owner, when);
-      row.addEventListener('click', () => {
-        state.selection = file;
-        for (const option of table.querySelectorAll('.gp-row'))
-          option.setAttribute('aria-selected', String(option === row));
-        selectButton.disabled = false;
+        row.append(name, owner, when);
+        row.addEventListener('click', () => {
+          state.selection = file;
+          for (const option of table.querySelectorAll('.gp-row'))
+            option.setAttribute('aria-selected', String(option === row));
+          selectButton.disabled = false;
+        });
+        row.addEventListener('dblclick', () => pick(file));
+        return row;
       });
-      row.addEventListener('dblclick', () => pick(file));
-      return row;
-    });
     table.append(...rows);
 
     const actions = document.createElement('div');
@@ -241,6 +256,8 @@
     this.includeFolders = true;
     this.selectFolder = true;
     this.mimeTypes = '';
+    // The DocsView default: all documents, including the files that others share.
+    this.ownedByMe = false;
   }
   DocsView.prototype.setIncludeFolders = function (value) {
     this.includeFolders = value;
@@ -252,6 +269,10 @@
   };
   DocsView.prototype.setMimeTypes = function (value) {
     this.mimeTypes = value;
+    return this;
+  };
+  DocsView.prototype.setOwnedByMe = function (value) {
+    this.ownedByMe = value;
     return this;
   };
 
@@ -301,12 +322,15 @@
           return;
         }
         state.openCount += 1;
+        // The first view owns the ownership filter; an unset filter lists shared files (B4).
+        state.ownedByMe = config.views[0]?.ownedByMe === true;
         state.calls.push({
           token: config.token,
           apiKey: config.apiKey,
           appId: config.appId,
           origin: config.origin,
           mimeTypes: config.views.map((view) => view.mimeTypes),
+          ownedByMe: state.ownedByMe,
         });
         callback = config.callback;
         render();

@@ -5,7 +5,7 @@ import { Injectable } from '@angular/core';
  * (`docs/superpowers/specs/2026-10-30-device-drive-slice-design.md`, section 5).
  *
  * Production loads the Picker script from Google and builds the Picker with the one-hour
- * `drive.file` token, the saved API key, and the project number. The view lists the person's
+ * `drive.file` token, the saved API key, and the project number. The view lists the person's owned
  * Google Sheets and CSV files in My Drive and allows one file. The browser sends only the chosen
  * file ID to the API.
  *
@@ -46,6 +46,8 @@ interface PickerDocsView {
   setIncludeFolders(value: boolean): PickerDocsView;
   setSelectFolderEnabled(value: boolean): PickerDocsView;
   setMimeTypes(value: string): PickerDocsView;
+  /** The filter of ruling 3: My Drive files of the person, never the files shared with them. */
+  setOwnedByMe(value: boolean): PickerDocsView;
 }
 
 interface PickerBuilder {
@@ -130,7 +132,9 @@ export class GoogleDrivePicker {
       const view = new picker.DocsView(picker.ViewId.DOCS)
         .setIncludeFolders(false)
         .setSelectFolderEnabled(false)
-        .setMimeTypes(PICKER_MIME_TYPES);
+        .setMimeTypes(PICKER_MIME_TYPES)
+        // An unset ownership filter lists every shared document too, so the Picker names it.
+        .setOwnedByMe(true);
       const builder = new picker.PickerBuilder()
         .setAppId(appId)
         .setOAuthToken(token)
