@@ -66,10 +66,7 @@ interface GooglePickerApi {
 }
 
 interface GapiApi {
-  load(
-    module: string,
-    options: { callback(): void; onerror?(): void },
-  ): void;
+  load(module: string, options: { callback(): void; onerror?(): void }): void;
 }
 
 /** The globals that the Picker script installs on the page. */
