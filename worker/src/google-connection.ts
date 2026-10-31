@@ -313,7 +313,8 @@ export class GoogleWorker {
 
   /**
    * One validation job, from its claim to its report and plan (design section 6). The store reads
-   * the uploaded file through the same artifact module that the export writes with.
+   * the uploaded file through the same artifact module that the export writes with. A Drive source
+   * mints the person's `drive.file` token for the subject of the job (design section 7).
    */
   async importDevices(
     input: DeviceImportRequest,
@@ -325,6 +326,10 @@ export class GoogleWorker {
       await this.exportStore(pool),
       new GoogleDeviceReader(),
       cipher,
+      {
+        drive: (credential, subject, runSignal) =>
+          personDriveClient(credential, subject, runSignal),
+      },
     ).run(input, signal);
   }
 
