@@ -125,6 +125,31 @@ export function driveTabCountText(tabs: number): string {
   return `${tabs.toLocaleString('en-US')} ${tabs === 1 ? 'tab' : 'tabs'}`;
 }
 
+/** A sentence that names a Drive file, split around the name (choice 12, B5). */
+export interface DriveNamedSentence {
+  readonly before: string;
+  readonly name: string;
+  readonly after: string;
+}
+
+/**
+ * Split a sentence around the file name that it carries, so the template can keep the name whole
+ * and offer its full value in a tooltip. A sentence without the name answers null.
+ */
+export function driveNamedSentence(
+  text: string,
+  name: string,
+): DriveNamedSentence | null {
+  if (name === '') return null;
+  const at = text.indexOf(name);
+  if (at < 0) return null;
+  return {
+    before: text.slice(0, at),
+    name,
+    after: text.slice(at + name.length),
+  };
+}
+
 /** The failure of `POST /api/devices/imports/drive` (design section 1). */
 export function importDriveFailureText(
   status: number,

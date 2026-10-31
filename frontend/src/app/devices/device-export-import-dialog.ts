@@ -72,6 +72,8 @@ import {
   IMPORT_DRIVE_ZONE_TEXT,
   deviceCountText,
   driveFileFactList,
+  driveNamedSentence,
+  type DriveNamedSentence,
   IMPORT_AGAIN_LABEL,
   IMPORT_BROWSE_LABEL,
   IMPORT_DROP_LABEL,
@@ -192,6 +194,7 @@ const thousands = (value: number) => value.toLocaleString('en-US');
   templateUrl: './device-export-import-dialog.html',
   styleUrls: [
     './device-dialog.css',
+    './device-value-token.css',
     './device-export-import-dialog.css',
     './device-import-dialog.css',
     './device-results-dialog.css',
@@ -285,18 +288,21 @@ export class DeviceExportImportDialog {
   });
   /**
    * The import line of the subtitle: the mode and the file (states 12, 19, and 23). A 480 px step
-   * shows it on a second line, and the report joins it to one line.
+   * shows it on a second line, and the report joins it to one line. Each item is its own value
+   * token, so a long Sheet, tab, or file name never breaks inside itself (choice 12, B5).
    */
-  protected readonly importLine = computed(() => {
-    if (!this.isImport()) return '';
-    const mode = DEVICE_IMPORT_MODE_LABELS[this.store.mode()];
+  protected readonly importLineParts = computed<{
+    mode: string;
+    name: string;
+    tab: string;
+  } | null>(() => {
+    if (!this.isImport()) return null;
     const source = this.store.job()?.importSource;
-    const name = source?.name ?? this.store.importName();
-    if (!name) return mode;
-    // A Sheet names its tab after the file (state 10).
-    return source?.tabTitle
-      ? `${mode} · ${name} › ${source.tabTitle}`
-      : `${mode} · ${name}`;
+    return {
+      mode: DEVICE_IMPORT_MODE_LABELS[this.store.mode()],
+      name: source?.name ?? this.store.importName(),
+      tab: source?.tabTitle ?? '',
+    };
   });
   private readonly isImport = computed(() => {
     const step = this.store.step();
@@ -488,6 +494,34 @@ export class DeviceExportImportDialog {
     if (access.cause === 'setup') return IMPORT_DRIVE_SETUP_NOTE;
     if (access.cause === 'delegation') return IMPORT_DRIVE_DELEGATION_NOTE;
     return IMPORT_DRIVE_ACCOUNT_NOTE;
+  });
+  /** The chosen tab title, so the Tab field can show a cut name whole in its tooltip (B5). */
+  protected readonly driveTabTitle = computed(() => {
+    const file = this.store.driveFile();
+    if (file?.kind !== 'sheet') return '';
+    return file.tabs.find((tab) => tab.tabId === file.tabId)?.title ?? '';
+  });
+  /**
+   * The parts of a failure paragraph that names the Drive source (state 13). The template keeps the
+   * file name whole and shows it in a tooltip when the sentence cuts it (choice 12, B5).
+   */
+  protected namedParts(paragraph: string): DriveNamedSentence | null {
+    return driveNamedSentence(
+      paragraph,
+      this.store.job()?.importSource?.name ?? '',
+    );
+  }
+  /** The refusal under the zone, with the Drive file name as its own value token (B5). */
+  protected readonly uploadErrorParts = computed(() => {
+    const text = this.store.uploadError();
+    if (!text) return null;
+    const name =
+      this.store.importSource() === 'drive'
+        ? (this.store.driveFile()?.name ?? '')
+        : '';
+    return (
+      driveNamedSentence(text, name) ?? { before: text, name: '', after: '' }
+    );
   });
 
   /** The validation step of states 12, 23, and 24. */

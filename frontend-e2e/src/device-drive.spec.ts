@@ -132,7 +132,16 @@ interface MockOptions {
   readonly session?: SessionCase;
   readonly job?: JobCase;
   readonly theme?: 'light' | 'dark';
+  /** The Picker rows of this case. The default is the approved five owned files. */
+  readonly files?: readonly unknown[];
+  /** The file name of the job and the receipt of this case. */
+  readonly jobName?: string;
+  /** The tab title of the job and of its tab list. */
+  readonly jobTab?: string;
 }
+
+const defaultJobName = 'devices-for-editing-EXP-003';
+const defaultJobTab = 'Devices';
 
 const accessAnswer = (access: DriveAccessCase) => {
   const driveImport =
@@ -142,7 +151,7 @@ const accessAnswer = (access: DriveAccessCase) => {
   return { sheetExport: { available: false, cause: 'account' }, driveImport };
 };
 
-const importJob = (job: JobCase) =>
+const importJob = (job: JobCase, name = defaultJobName, tab = defaultJobTab) =>
   job === 'running'
     ? {
         jobId: '2f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a12',
@@ -185,12 +194,12 @@ const importJob = (job: JobCase) =>
         deprovisionReason: null,
         targetOrgUnitPaths: null,
         importSource: {
-          name: 'devices-for-editing-EXP-003',
+          name,
           sourceType: 'drive-sheet',
           sizeBytes: 12_800,
           rowsRead: 48,
           candidateRows: 13,
-          tabTitle: 'Devices',
+          tabTitle: tab,
           refusalText: null,
         },
         plan: null,
@@ -247,14 +256,13 @@ const importJob = (job: JobCase) =>
         deprovisionReason: null,
         targetOrgUnitPaths: null,
         importSource: {
-          name: 'devices-for-editing-EXP-001.csv',
+          name,
           sourceType: 'drive-csv',
           sizeBytes: 7_987,
           rowsRead: 0,
           candidateRows: 0,
           tabTitle: null,
-          refusalText:
-            'Campus Commander cannot read devices-for-editing-EXP-001.csv from Google Drive. Choose the file again in Google Drive, then import again.',
+          refusalText: `Campus Commander cannot read ${name} from Google Drive. Choose the file again in Google Drive, then import again.`,
         },
         plan: null,
         importDisplayId: null,
@@ -305,7 +313,7 @@ async function signIn(page: Page, options: MockOptions = {}) {
     ({ files }) => {
       (window as unknown as { __pickerFiles: unknown }).__pickerFiles = files;
     },
-    { files: pickerFiles },
+    { files: options.files ?? pickerFiles },
   );
   await installLiveStreams(page);
   await page.route('https://apis.google.com/js/api.js', (route) =>
@@ -489,7 +497,7 @@ async function signIn(page: Page, options: MockOptions = {}) {
         json: {
           fileId: 'drive-sheet-exp-003',
           tabs: [
-            { tabId: 0, title: 'Devices', index: 0 },
+            { tabId: 0, title: options.jobTab ?? defaultJobTab, index: 0 },
             { tabId: 1, title: 'Notes', index: 1 },
           ],
         },
@@ -504,7 +512,7 @@ async function signIn(page: Page, options: MockOptions = {}) {
                 displayId: 'IMP-009',
                 status: 'accepted',
                 mode: 'sync-changes',
-                name: 'devices-for-editing-EXP-001.csv',
+                name: options.jobName ?? 'devices-for-editing-EXP-001.csv',
                 sourceType: 'drive-csv',
                 tabTitle: null,
               }
@@ -513,13 +521,22 @@ async function signIn(page: Page, options: MockOptions = {}) {
                 displayId: 'IMP-010',
                 status: 'accepted',
                 mode: 'sync-changes',
-                name: 'devices-for-editing-EXP-003',
+                name: options.jobName ?? defaultJobName,
                 sourceType: 'drive-sheet',
-                tabTitle: 'Devices',
+                tabTitle: options.jobTab ?? defaultJobTab,
               },
       });
     if (path === '/api/jobs/IMP-010' || path === '/api/jobs/IMP-009')
-      return route.fulfill({ json: importJob(options.job ?? 'running') });
+      return route.fulfill({
+        json: importJob(
+          options.job ?? 'running',
+          options.jobName ??
+            (options.job === 'lost'
+              ? 'devices-for-editing-EXP-001.csv'
+              : defaultJobName),
+          options.jobTab ?? defaultJobTab,
+        ),
+      });
     return route.fulfill({ status: 404, json: {} });
   });
   await page.goto('/devices');
@@ -772,6 +789,87 @@ test.describe('Drive import', () => {
     await shot(page, '10-drive-validation-running');
   });
 
+  test('state 07 and 10: long file and tab names keep one line with their full value (B5)', async ({
+    page,
+  }) => {
+    const longName =
+      'devices-for-editing-EXP-003-quarterly-inventory-review-for-every-school-in-the-district-2026-final';
+    const longTab =
+      'Devices imported from the district inventory review of every school and every grade';
+    await signIn(page, {
+      files: [{ ...pickerFiles[0], name: longName }, ...pickerFiles.slice(1)],
+      jobName: longName,
+      jobTab: longTab,
+    });
+    await openImport(page);
+    await pickFile(page, /quarterly-inventory-review/);
+    const item = dialog(page).locator('.file-item');
+    const fileName = item.locator('.file-name');
+    await expect(fileName).toHaveText(longName);
+    // The card cuts the name on one line and its tooltip holds the whole value (choice 12).
+    expect(
+      await fileName.evaluate((el) => el.scrollWidth > el.clientWidth),
+    ).toBe(true);
+    await fileName.hover();
+    await expect(page.locator('mat-tooltip-component')).toContainText(longName);
+    await page.mouse.move(4, 4);
+    await expect(page.locator('mat-tooltip-component')).toBeHidden();
+    await dialog(page)
+      .getByRole('button', { name: 'Start validation' })
+      .click();
+    await expect(dialog(page)).toContainText('Job IMP-010 · Running');
+    const nameToken = dialog(page).locator('.job-sub .sub-item.name');
+    const tabToken = dialog(page).locator('.job-sub .sub-item.tab');
+    // The subtitle keeps the mode, the file, and the tab on one 480 px line.
+    await expect(dialog(page).locator('.job-sub .sub-item')).toHaveCount(3);
+    expect(await nameToken.evaluate((el) => el.getClientRects().length)).toBe(
+      1,
+    );
+    expect(await tabToken.evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(
+      await nameToken.evaluate((el) => el.scrollWidth > el.clientWidth),
+    ).toBe(true);
+    expect(
+      await tabToken.evaluate((el) => el.scrollWidth > el.clientWidth),
+    ).toBe(true);
+    const row = await dialog(page).locator('.job-sub').boundingBox();
+    const box = await dialog(page).boundingBox();
+    expect((row?.width ?? 0) <= (box?.width ?? 0)).toBe(true);
+    await nameToken.hover();
+    await expect(page.locator('mat-tooltip-component')).toContainText(longName);
+    await page.mouse.move(4, 4);
+    await expect(page.locator('mat-tooltip-component')).toBeHidden();
+    await tabToken.hover();
+    await expect(page.locator('mat-tooltip-component')).toContainText(longTab);
+  });
+
+  test('state 13: a long lost-file name cuts in one token and keeps its full value (B5)', async ({
+    page,
+  }) => {
+    const longName =
+      'devices-for-editing-EXP-001-quarterly-inventory-review-for-every-school-in-the-district-2026-final.csv';
+    await signIn(page, { job: 'lost', jobName: longName });
+    await openImport(page);
+    await pickFile(page, /devices-for-editing-EXP-001\.csv/);
+    await dialog(page)
+      .getByRole('button', { name: 'Start validation' })
+      .click();
+    await expect(dialog(page)).toContainText('Job IMP-009 · Failed');
+    const token = dialog(page)
+      .locator('.action-note.error .value-token')
+      .first();
+    await expect(token).toHaveText(longName);
+    expect(await token.evaluate((el) => el.getClientRects().length)).toBe(1);
+    expect(await token.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
+      true,
+    );
+    const note = await dialog(page).locator('.action-note.error').boundingBox();
+    const box = await dialog(page).boundingBox();
+    expect((note?.width ?? 0) <= (box?.width ?? 0)).toBe(true);
+    await token.hover();
+    await expect(page.locator('mat-tooltip-component')).toContainText(longName);
+  });
+
   test('state 11: a missing setup disables Google Drive and keeps Upload', async ({
     page,
   }) => {
@@ -834,6 +932,12 @@ test.describe('Drive import', () => {
     await expect(dialog(page)).toContainText(
       'Choose the file again in Google Drive, then import again.',
     );
+    // The file name is its own whole token, never broken after a hyphen (choice 12, B5).
+    const lostName = dialog(page)
+      .locator('.action-note.error .value-token')
+      .first();
+    await expect(lostName).toHaveText('devices-for-editing-EXP-001.csv');
+    expect(await lostName.evaluate((el) => el.getClientRects().length)).toBe(1);
     await expect(dialog(page)).toContainText(
       'Validation stopped before any row check. No report and no plan exist. Nothing reached Google.',
     );

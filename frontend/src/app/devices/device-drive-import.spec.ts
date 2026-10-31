@@ -11,7 +11,10 @@ import { DeviceExportImportDialog } from './device-export-import-dialog';
 import { DeviceExportImportStore } from './device-export-import.store';
 import { GoogleDrivePicker } from './google-drive-picker';
 import { GoogleDriveRead } from './google-drive-read';
-import { importDriveFailureText } from './device-import-messages';
+import {
+  importDriveFailureText,
+  driveNamedSentence,
+} from './device-import-messages';
 
 /**
  * The Drive source of the import (design states 05 to 13, behaviors 2 to 8). The Picker and the
@@ -118,6 +121,29 @@ const runningImport = (): JobDetail => ({
     unknown: { count: 0, operations: [] },
   },
 });
+
+const lostImport = (): JobDetail => {
+  const base = runningImport();
+  const summary = base.importSummary;
+  const source = base.importSource;
+  return {
+    ...base,
+    status: 'failed',
+    phase: { name: 'drive-read', done: 0, total: null },
+    importSummary: summary
+      ? { ...summary, refusal: 'drive-source-unavailable' }
+      : null,
+    importSource: source
+      ? {
+          ...source,
+          name: csvDocument.name,
+          sourceType: 'drive-csv',
+          tabTitle: null,
+          refusalText: `Campus Commander cannot read ${csvDocument.name} from Google Drive. Choose the file again in Google Drive, then import again.`,
+        }
+      : null,
+  };
+};
 
 interface SetupOptions {
   readonly access?: unknown;
@@ -490,6 +516,37 @@ describe('Drive import', () => {
     ).toBe(
       'Campus Commander cannot read devices.csv from Google Drive. Choose the file again in Google Drive, then import again.',
     );
+  });
+
+  it('keeps the source-lost file name in its own whole token (B5)', async () => {
+    const { store, render, panel } = setup({
+      picker: async () => csvDocument,
+      job: lostImport(),
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    await store.startValidation();
+    await render();
+    await render();
+    const token = panel()?.querySelector<HTMLElement>(
+      '.action-note.error .value-token',
+    );
+    expect(token?.textContent?.trim()).toBe(csvDocument.name);
+    expect(panel()?.textContent?.replace(/\s+/g, ' ')).toContain(
+      `Campus Commander cannot read ${csvDocument.name} from Google Drive.`,
+    );
+  });
+
+  it('splits a named sentence and leaves an unnamed one whole (B5)', () => {
+    expect(driveNamedSentence('Read devices.csv now.', 'devices.csv')).toEqual({
+      before: 'Read ',
+      name: 'devices.csv',
+      after: ' now.',
+    });
+    expect(driveNamedSentence('Read devices.csv now.', '')).toBeNull();
+    expect(driveNamedSentence('Read devices.csv now.', 'other.csv')).toBeNull();
   });
 
   it('Import again keeps the Drive source and clears the file (state 13)', async () => {

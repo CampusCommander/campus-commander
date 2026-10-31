@@ -20,12 +20,39 @@
         </h2>
         @if (subtitleJob(); as job) {
         <p id="export-dialog-sub" class="export-sub">
-          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{
-          subtitleStatus() }}@if (wide() && importLine()) { · {{ importLine() }}
+          Job <a [routerLink]="['/jobs', job]">{{ job }}</a> · {{ subtitleStatus()
+          }}@if (wide() && importLineParts(); as line) {<span class="job-parts">
+            <span class="sub-sep">·</span>
+            <span class="sub-item mode">{{ line.mode }}</span>
+            @if (line.name) {
+            <span class="sub-sep">·</span>
+            <span class="sub-item name" tabindex="0" [matTooltip]="line.name"
+              >{{ line.name }}</span
+            >
+            } @if (line.tab) {
+            <span class="sub-sep">›</span>
+            <span class="sub-item tab" tabindex="0" [matTooltip]="line.tab"
+              >{{ line.tab }}</span
+            >
+            }
+          </span>
           }
         </p>
-        @if (!wide() && importLine(); as line) {
-        <p class="export-sub">{{ line }}</p>
+        @if (!wide() && importLineParts(); as line) {
+        <p class="export-sub job-sub">
+          <span class="sub-item mode">{{ line.mode }}</span>
+          @if (line.name) {
+          <span class="sub-sep">·</span>
+          <span class="sub-item name" tabindex="0" [matTooltip]="line.name"
+            >{{ line.name }}</span
+          >
+          } @if (line.tab) {
+          <span class="sub-sep">›</span>
+          <span class="sub-item tab" tabindex="0" [matTooltip]="line.tab"
+            >{{ line.tab }}</span
+          >
+          }
+        </p>
         } } @else if (subtitleText(); as line) {
         <p id="export-dialog-sub" class="export-sub">{{ line }}</p>
         } @else {
@@ -279,7 +306,9 @@
                 >
               </span>
               <div class="file-text">
-                <p class="file-name">{{ chosen.name }}</p>
+                <p class="file-name" tabindex="0" [matTooltip]="chosen.name">
+                  {{ chosen.name }}
+                </p>
                 <ul class="meta-items">
                   @for (fact of driveFacts(); track fact) {
                   <li>{{ fact }}</li>
@@ -294,6 +323,8 @@
                   <mat-label>{{ DRIVE_TAB_LABEL }}</mat-label>
                   <mat-select
                     [value]="chosen.tabId"
+                    matTooltipPosition="above"
+                    [matTooltip]="driveTabTitle()"
                     (selectionChange)="chooseTab($event.value)"
                   >
                     @for (tab of chosen.tabs; track tab.tabId) {
@@ -395,9 +426,16 @@
           <div class="action-note error" role="alert">
             <p>{{ alert }}</p>
           </div>
-          } @if (uploadError(); as error) {
+          } @if (uploadErrorParts(); as error) {
           <div class="action-note error" role="alert">
-            <p>{{ error }}</p>
+            <p>
+              {{ error.before }}@if (error.name) {<span
+                class="value-token"
+                tabindex="0"
+                [matTooltip]="error.name"
+                >{{ error.name }}</span
+              >}{{ error.after }}
+            </p>
           </div>
           } @if (importError(); as error) {
           <div class="action-note error" role="alert">
@@ -446,8 +484,18 @@
           @if (failureView(); as failure) {
           <div class="action-note error" role="alert">
             @for (paragraph of failure.paragraphs; track paragraph) {
+            @if (namedParts(paragraph); as parts) {
+            <p>
+              {{ parts.before }}<span
+                class="value-token"
+                tabindex="0"
+                [matTooltip]="parts.name"
+                >{{ parts.name }}</span
+              >{{ parts.after }}
+            </p>
+            } @else {
             <p>{{ paragraph }}</p>
-            }
+            } }
           </div>
           } @if (validationCancelled()) {
           <p class="action-note stopped">{{ VALIDATION_STOPPED_LINE }}</p>
