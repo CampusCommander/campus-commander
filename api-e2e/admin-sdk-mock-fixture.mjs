@@ -20,6 +20,7 @@ export const MOCK_GOOGLE_HOSTS = [
   'admin.googleapis.com',
   'www.googleapis.com',
   'chromemanagement.googleapis.com',
+  'sheets.googleapis.com',
 ];
 /** The scopes Campus Commander requests. The mock grants exactly this list. */
 export const MOCK_SCOPES = GOOGLE_CAPABILITIES.map(

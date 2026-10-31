@@ -1,7 +1,8 @@
 /**
- * The refresh and the organization unit tree read against admin-sdk-mock v0.2.0 (design section 6,
- * W3). The mock answers the Directory API in process, so the real reader runs and no live Google
- * call leaves the test. The store and the database are fakes.
+ * The worker reads against admin-sdk-mock 0.3.0 (design section 9, W3). The refresh and the
+ * organization unit tree read answer through the Directory API; a Sheet export, a tab read, and a
+ * Drive CSV read answer through the Drive and Sheets APIs. The mock runs in process, so the real
+ * clients run and no live Google call leaves the test. The store and the database are fakes.
  */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +10,7 @@ import { after, before, test } from 'node:test';
 import { startMock } from '@campuscommander/admin-sdk-mock';
 import {
   GoogleDeviceReader,
+  personDriveClient,
   validateServiceAccount,
 } from '@campus/google-connection';
 import {
@@ -17,15 +19,21 @@ import {
   GOOGLE_CAPABILITIES,
   deviceImportUnitRejectionText,
 } from '@campus/application-contracts';
+import { DeviceExportJobs } from './device-export.ts';
 import { DeviceImportJobs } from './device-import.ts';
 
-/** The two reads of the validation job: the device read and the unit tree read. */
-const scopes = ['device-inventory', 'school-ou-references'].map(
+/**
+ * The Google reads of the file: the device read, the unit tree read, and the person's Drive token
+ * (design sections 4 and 7).
+ */
+const scopes = ['device-inventory', 'school-ou-references', 'drive-files'].map(
   (id) => GOOGLE_CAPABILITIES.find((capability) => capability.id === id).scope,
 );
 
 /** The stamp that Postgres answers before each refresh read. */
 const stamp = '2026-10-29T12:00:00.000Z';
+/** The deadline of one Google call in the mock tests. */
+const timeout = 60_000;
 const artifactId = 'artifact-import-1';
 const jobId = randomUUID();
 const leaseId = randomUUID();
@@ -71,15 +79,69 @@ function csvText(rows) {
     .join('\r\n')}\r\n`;
 }
 
-/** A store that serves the uploaded file in small chunks. */
+/**
+ * A store that serves the uploaded file in small chunks, and stages, publishes, and removes the
+ * source of a Drive import, as `deployment/storage` does.
+ */
 function fakeStore(text) {
   const calls = [];
+  const manifests = [];
+  const published = [];
+  const removed = [];
+  const stages = new Map();
+  let sequence = 0;
+  const uploaded = Buffer.from(text ?? '', 'utf8');
   return {
     calls,
+    /** The stage manifests that the job asked for. */
+    manifests,
+    /** The artifacts that the job published, in order. */
+    published,
+    /** The artifacts that the job removed, in order. */
+    removed,
+    /** The staged bytes of one artifact, or undefined. */
+    staged(artifactId) {
+      return stages.get(artifactId)?.bytes;
+    },
+    async stageStream(manifest, source) {
+      manifests.push(manifest);
+      const parts = [];
+      for await (const chunk of source) parts.push(Buffer.from(chunk));
+      sequence += 1;
+      const artifactId = `stage-${sequence}`;
+      const bytes = Buffer.concat(parts);
+      stages.set(artifactId, { bytes, published: false });
+      return {
+        artifactId,
+        attemptId: `attempt-${sequence}`,
+        schemaVersion: manifest.schemaVersion,
+        sizeBytes: bytes.length,
+        sha256: '0'.repeat(64),
+        expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      };
+    },
+    async publish(descriptor) {
+      const stage = stages.get(descriptor.artifactId);
+      if (stage === undefined) throw new Error('The artifact is not staged.');
+      stage.published = true;
+      published.push(descriptor.artifactId);
+    },
+    async remove(descriptor) {
+      removed.push(descriptor.artifactId);
+      const stage = stages.get(descriptor.artifactId);
+      // The worker removes the source after the finish; the test still inspects the bytes.
+      if (stage !== undefined) stage.removed = true;
+      return true;
+    },
     async *openRead(id) {
       calls.push(id);
-      for (let start = 0; start < text.length; start += 7)
-        yield Buffer.from(text.slice(start, start + 7), 'utf8');
+      const stage = stages.get(id);
+      // The store reads a published artifact only (design section 4).
+      if (stage !== undefined && !stage.published)
+        throw new Error('The artifact is not ready.');
+      const bytes = stage?.bytes ?? uploaded;
+      for (let start = 0; start < bytes.length; start += 7)
+        yield bytes.subarray(start, start + 7);
     },
   };
 }
@@ -87,10 +149,17 @@ function fakeStore(text) {
 /**
  * The stored inventory of the job, and a database that answers the import functions. Each refresh
  * read writes the Google observation into `stored`, as `cc.upsert_devices` does, so the compare
- * pass reads the fresh values.
+ * pass reads the fresh values. The options carry the claim of a Drive source and the stage link.
  */
-function fakeDatabase(stored, events) {
-  const calls = { upsert: [], lines: [], finish: [], transactions: 0 };
+function fakeDatabase(stored, events, options = {}) {
+  const calls = {
+    upsert: [],
+    lines: [],
+    finish: [],
+    source: [],
+    renew: [],
+    transactions: 0,
+  };
   let lineCount = 0;
   return {
     calls,
@@ -109,7 +178,16 @@ function fakeDatabase(stored, events) {
                 attempt: 1,
                 displayId: 'IMP-001',
                 mode: 'sync-changes',
-                sourceArtifactId: artifactId,
+                sourceArtifactId:
+                  options.sourceArtifactId === undefined
+                    ? artifactId
+                    : options.sourceArtifactId,
+                sourceType: options.sourceType ?? 'csv',
+                sourceName: options.sourceName ?? 'devices.csv',
+                sourceFileId: options.sourceFileId ?? null,
+                sourceTabId: options.sourceTabId ?? null,
+                sourceTabTitle: options.sourceTabTitle ?? null,
+                driveSubject: options.driveSubject ?? null,
                 generation: 1,
                 credentialId: randomUUID(),
                 envelope: { ciphertext: 'cipher' },
@@ -118,8 +196,22 @@ function fakeDatabase(stored, events) {
             },
           ],
         };
-      if (name === 'renew_device_import_job')
+      if (name === 'renew_device_import_job') {
+        const [attempt, phase, done, total] = values.slice(3, 7);
+        calls.renew.push({ attempt, phase, done, total });
         return { rows: [{ result: { outcome: 'renewed' } }] };
+      }
+      if (name === 'store_device_import_source') {
+        const attempt = values[3];
+        const storedId = values[4];
+        const sizeBytes = values[5];
+        calls.source.push({ attempt, artifactId: storedId, sizeBytes });
+        return {
+          rows: [
+            { result: { outcome: 'stored', artifactId: storedId, sizeBytes } },
+          ],
+        };
+      }
       if (name === 'store_device_import_lines') {
         assert.equal(
           values[3],
@@ -447,4 +539,343 @@ test('each refresh batch keeps its own stamp before the Google call', async () =
   assert.equal(answer.counts.staleDevicesRead, 2);
   assert.equal(answer.status, 'completed');
   assert.equal(database.calls.transactions, 2);
+});
+
+/** The Drive service of one call, as the person of the job (design section 4). */
+function driveClient() {
+  return personDriveClient(
+    credential,
+    domain.adminEmail,
+    AbortSignal.timeout(timeout),
+  );
+}
+
+/** One row of the export scope, in the shape that `cc.device_export_targets` answers. */
+function exportRow(ordinal, device, overrides = {}) {
+  const time = new Date(Date.now() - 3 * 3_600_000);
+  return {
+    ordinal,
+    device_id: device.deviceId,
+    serial_number: device.serialNumber,
+    model: device.model,
+    status: device.status,
+    asset_tag: device.assetTag,
+    annotated_location: device.annotatedLocation,
+    annotated_user: device.annotatedUser,
+    notes: device.notes,
+    org_unit_path: device.orgUnitPath,
+    last_contact: time,
+    battery_status: 'reported',
+    battery_health: 'normal',
+    battery_capacity_percent: 88,
+    battery_reported_at: time,
+    last_entity_sync: time,
+    ...overrides,
+  };
+}
+
+/**
+ * A database that answers the Sheet export functions (design section 6, steps 1 to 7) and pages
+ * the frozen scope in ordinal order.
+ */
+function exportDatabase(rows) {
+  const calls = {
+    claim: [],
+    renew: [],
+    start: [],
+    cancel: [],
+    finish: [],
+    read: [],
+  };
+  return {
+    calls,
+    async query(sql, values) {
+      const name = /cc\.([a-z_]+)\(/.exec(sql)?.[1];
+      if (name === 'claim_device_export_job') {
+        calls.claim.push(values);
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'claimed',
+                displayId: 'EXP-001',
+                targetCount: rows.length,
+                purpose: 'edit',
+                format: 'sheet',
+                driveSubject: domain.adminEmail,
+                generation: 1,
+                credentialId: randomUUID(),
+                envelope: { ciphertext: 'cipher' },
+                columns: [],
+                sort: { field: 'serialNumber', direction: 'asc' },
+              },
+            },
+          ],
+        };
+      }
+      if (name === 'renew_device_export_job') {
+        calls.renew.push(values.slice(3, 6));
+        return { rows: [{ result: { outcome: 'renewed' } }] };
+      }
+      if (name === 'start_device_export_sheet') {
+        calls.start.push(values);
+        return {
+          rows: [{ result: { outcome: 'started', startedAt: new Date() } }],
+        };
+      }
+      if (name === 'job_cancel_requested') {
+        calls.cancel.push(values);
+        return { rows: [{ result: false }] };
+      }
+      if (name === 'finish_device_export_job') {
+        const file = values[3] === null ? null : JSON.parse(values[3]);
+        const failure = values[4] ?? null;
+        calls.finish.push({ file, failure });
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'finished',
+                status: failure === null ? 'completed' : 'failed',
+              },
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM cc.device_export_targets')) {
+        const [customer, job, after, limit] = values;
+        assert.equal(customer, domain.customerId);
+        assert.equal(job, jobId);
+        calls.read.push({ after, limit });
+        return {
+          rows: rows.filter((row) => row.ordinal >= after).slice(0, limit),
+        };
+      }
+      throw new Error(`Unexpected call: ${sql}`);
+    },
+  };
+}
+
+/** One Sheet export of the data set through the mock, with its fake store and database. */
+async function exportSheet(rows) {
+  const subjects = [];
+  const database = exportDatabase(rows);
+  const store = fakeStore('');
+  const jobs = new DeviceExportJobs(database, store, {
+    drive: async (access, signal) => {
+      subjects.push(access.subject);
+      return personDriveClient(credential, access.subject, signal);
+    },
+  });
+  const answer = await jobs.run(
+    { customerId: domain.customerId, jobId, leaseId, correlationId },
+    AbortSignal.timeout(timeout),
+  );
+  return { answer, database, store, subjects };
+}
+
+/**
+ * One Drive import over one source, with the real Drive client and reader through the mock. The
+ * stored devices are stale, so the refresh reads each one from the mock (design section 6, step 8).
+ */
+function driveImport(options) {
+  const subjects = [];
+  const stored = new Map(
+    options.devices.map((device) => [
+      device.deviceId,
+      {
+        device_id: device.deviceId,
+        status: device.status,
+        asset_tag: device.assetTag,
+        annotated_location: device.annotatedLocation,
+        annotated_user: device.annotatedUser,
+        notes: device.notes,
+        org_unit_path: device.orgUnitPath,
+        last_entity_sync: new Date(0),
+        removed_at: null,
+      },
+    ]),
+  );
+  const database = fakeDatabase(stored, [], {
+    sourceArtifactId: null,
+    sourceType: options.sourceType,
+    sourceName: options.sourceName,
+    sourceFileId: options.fileId,
+    sourceTabId: options.tabId ?? null,
+    sourceTabTitle: options.tabTitle ?? null,
+    driveSubject: domain.adminEmail,
+  });
+  const store = fakeStore('');
+  const jobs = new DeviceImportJobs(
+    database,
+    store,
+    reader,
+    { open: () => credential },
+    {
+      batchSize: 1_000,
+      drive: (passed, subject, signal) => {
+        subjects.push(subject);
+        return personDriveClient(passed, subject, signal);
+      },
+    },
+  );
+  return {
+    database,
+    store,
+    subjects,
+    run: () =>
+      jobs.run(
+        { customerId: domain.customerId, jobId, leaseId, correlationId },
+        AbortSignal.timeout(timeout),
+      ),
+  };
+}
+
+test('a Sheet export writes the data set to the mock Drive', async () => {
+  const note = 'Imported "Drive" note, ready';
+  const rows = [
+    exportRow(0, devices[0], { notes: note }),
+    exportRow(1, devices[1]),
+    exportRow(2, devices[2]),
+  ];
+  const { answer, database, store, subjects } = await exportSheet(rows);
+
+  assert.equal(answer.outcome, 'completed');
+  assert.equal(answer.file.format, 'sheet');
+  assert.equal(answer.file.name, 'devices-for-editing-EXP-001');
+  assert.equal(answer.file.columns, DEVICE_EDIT_TEMPLATE_COLUMNS.length);
+  assert.equal(answer.file.rows, rows.length);
+  // The export opened one Drive client as the claim's subject (design section 6, step 4).
+  assert.deepEqual(subjects, [domain.adminEmail]);
+  // The one create permission ran, and the stage that the Sheet read is removed after the finish.
+  assert.equal(database.calls.start.length, 1);
+  assert.equal(database.calls.finish.length, 1);
+  assert.equal(database.calls.finish[0].failure, null);
+  assert.deepEqual(store.published, ['stage-1']);
+  assert.deepEqual(store.removed, ['stage-1']);
+
+  // The tab read answers the header and every data row of the export through the mock.
+  const client = await driveClient();
+  const tabs = await client.tabs(answer.file.spreadsheetId);
+  assert.deepEqual(
+    tabs.tabs.map((tab) => tab.title),
+    ['Devices'],
+  );
+  const tab = await client.readTab(
+    answer.file.spreadsheetId,
+    tabs.tabs[0].tabId,
+  );
+  const written = [];
+  for await (const row of tab.rows()) written.push(row);
+  assert.deepEqual(written[0], [...DEVICE_EDIT_TEMPLATE_HEADERS]);
+  assert.deepEqual(
+    written.slice(1).map((row) => [row[0], row[7]]),
+    [
+      [devices[0].deviceId, note],
+      [devices[1].deviceId, devices[1].notes ?? ''],
+      [devices[2].deviceId, devices[2].notes ?? ''],
+    ],
+  );
+});
+
+test('the same data set gives one report from a Sheet and from a Drive CSV', async () => {
+  const note = 'Imported "Drive" note, ready';
+  const rows = [
+    exportRow(0, devices[0]),
+    exportRow(1, devices[1]),
+    exportRow(2, devices[2]),
+  ];
+  const exported = await exportSheet(rows);
+  assert.equal(exported.answer.outcome, 'completed');
+  const spreadsheetId = exported.answer.file.spreadsheetId;
+
+  // A person edits one cell of the exported Sheet, as the edit template invites. The checksum
+  // stays the one of the export, so the row is checked in full (design section 6).
+  const client = await driveClient();
+  const tabs = await client.tabs(spreadsheetId);
+  const tabId = tabs.tabs[0].tabId;
+  const tab = await client.readTab(spreadsheetId, tabId);
+  const worked = [];
+  for await (const row of tab.rows()) worked.push(row);
+  worked[1] = [...worked[1]];
+  worked[1][7] = note;
+  await mock.control(
+    'PUT',
+    `/domains/${domain.customerId}/drive/files/${spreadsheetId}`,
+    { tabs: [{ title: tabs.tabs[0].title, rows: worked }] },
+  );
+  // The CSV source carries the same logical rows: the header and the edited data rows.
+  const text = csvText(worked.slice(1));
+  const seeded = await mock.control(
+    'POST',
+    `/domains/${domain.customerId}/drive/files`,
+    {
+      name: 'devices-for-editing-EXP-001.csv',
+      mimeType: 'text/csv',
+      content: text,
+      owner: domain.adminEmail,
+    },
+  );
+
+  const sheet = driveImport({
+    devices,
+    sourceType: 'drive-sheet',
+    sourceName: tabs.tabs[0].title,
+    fileId: spreadsheetId,
+    tabId,
+    tabTitle: tabs.tabs[0].title,
+  });
+  const sheetAnswer = await sheet.run();
+  const csv = driveImport({
+    devices,
+    sourceType: 'drive-csv',
+    sourceName: seeded.name,
+    fileId: seeded.id,
+  });
+  const csvAnswer = await csv.run();
+
+  assert.equal(sheetAnswer.outcome, 'completed');
+  assert.equal(csvAnswer.outcome, 'completed');
+  // Each source minted its Drive token for the subject of the claim (design section 4).
+  assert.deepEqual(sheet.subjects, [domain.adminEmail]);
+  assert.deepEqual(csv.subjects, [domain.adminEmail]);
+  // Both sources read their bytes into a stage: the Sheet adds the byte order mark of an export,
+  // and the CSV file keeps its own bytes (design section 7, step 5).
+  assert.deepEqual(sheet.store.staged('stage-1'), Buffer.from(`\uFEFF${text}`));
+  assert.deepEqual(csv.store.staged('stage-1'), Buffer.from(text));
+  assert.deepEqual(
+    sheet.database.calls.renew.slice(0, 2).map((call) => call.phase),
+    ['drive-read', 'header-check'],
+  );
+  // The report of the edited row through the Sheet holds the one change. The two untouched rows
+  // keep the checksum of the export, so each counts unchanged and reads no device.
+  assert.deepEqual(sheetAnswer.counts, {
+    rows: 3,
+    unchanged: 2,
+    noChangeNeeded: 0,
+    proposed: 1,
+    rejected: 0,
+    candidateRows: 1,
+    staleDevicesRead: 1,
+    oldestObservedAt: stamp,
+  });
+  assert.deepEqual(
+    sheet.database.calls.lines
+      .flat()
+      .filter((line) => line.kind === 'change')
+      .map((line) => [
+        line.deviceId,
+        line.field,
+        line.currentValue,
+        line.newValue,
+      ]),
+    [[devices[0].deviceId, 'notes', devices[0].notes, note]],
+  );
+  // One data set gives one report (td:1183).
+  assert.deepEqual(csvAnswer.counts, sheetAnswer.counts);
+  assert.deepEqual(csv.database.calls.lines, sheet.database.calls.lines);
+  assert.deepEqual(
+    csv.database.calls.finish.map((call) => call.counts),
+    sheet.database.calls.finish.map((call) => call.counts),
+  );
 });
