@@ -364,6 +364,11 @@ export function exportFailureLabel(failure: JobFailure | null): string {
       return 'Permission changed';
     case 'connection-changed':
       return 'Connection changed';
+    // A Sheet export that Google refused or that Sheets stopped (Drive slice design section 6).
+    case 'drive-unavailable':
+      return 'Drive unavailable';
+    case 'sheet-write-failed':
+      return 'Sheet write failed';
     default:
       return 'Export failed';
   }
@@ -371,6 +376,7 @@ export function exportFailureLabel(failure: JobFailure | null): string {
 
 /** The second line of a running export: the phase that holds the file (design section 2). */
 function exportPhaseLine(phase: JobPhase | null): string {
+  if (phase?.name === 'create-sheet') return 'Creating Google Sheet';
   return phase?.name === 'prepare-download'
     ? 'Preparing the download'
     : 'Writing rows';
@@ -381,8 +387,9 @@ function exportPhaseLine(phase: JobPhase | null): string {
  *
  * The worker writes `phase_done` and `phase_total` while it writes rows, and it leaves
  * `progress.succeeded` at zero until the finish. The write phase ends before the download
- * phase starts, and the worker resets the download phase to `{done: 0, total: null}`. The
- * scope holds the row count of the completed write phase.
+ * phase starts, and the worker resets the download phase to `{done: 0, total: null}`. A Sheet
+ * export stages every row before it creates the Sheet, so `create-sheet` holds the same fact
+ * (Drive slice design section 6). The scope holds the row count of the completed write phase.
  */
 export function exportRows(
   job: Pick<JobSummary, 'scope' | 'progress' | 'phase'>,
@@ -390,9 +397,12 @@ export function exportRows(
   const target = job.scope.deviceCount ?? job.progress.total ?? null;
   if (job.phase?.name === 'write-rows')
     return { written: job.phase.done, total: job.phase.total ?? target };
-  if (job.phase?.name === 'prepare-download') {
+  if (
+    job.phase?.name === 'prepare-download' ||
+    job.phase?.name === 'create-sheet'
+  ) {
     const total = target ?? job.progress.succeeded;
-    // Every row was written before the download phase began.
+    // Every row was written before the file phase began.
     return { written: total, total };
   }
   const written = job.progress.succeeded;
@@ -410,7 +420,9 @@ function exportProgress(job: JobSummary): [string, string] {
   const ready =
     job.exportSummary?.purpose === 'report'
       ? 'Report ready'
-      : 'Edit file ready';
+      : job.phase?.name === 'create-sheet'
+        ? 'Google Sheet ready'
+        : 'Edit file ready';
   switch (job.status) {
     case 'running':
       return [

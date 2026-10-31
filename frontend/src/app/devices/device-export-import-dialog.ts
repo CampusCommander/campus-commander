@@ -21,6 +21,7 @@ import {
   DEVICE_IMPORT_REPORT_PAGE_SIZE,
   DEPROVISION_REASON_LABELS,
   DEVICE_REPORT_FIELD_LABELS,
+  type DeviceExportFormat,
   type DeviceExportRequest,
   type DeviceImportChange,
   type DeviceImportCounts,
@@ -43,14 +44,18 @@ import {
   DOWNLOAD_CSV_LABEL,
   EXPORT_CANCELLED_LINE,
   EXPORT_CLOSING_LINE,
+  EXPORT_PHASE_LABELS,
   EXPORT_TITLE,
   FORMAT_LABEL,
   HELP_LABEL,
   IMPORT_TITLE,
   REPORT_COLUMNS_LABEL,
   REPORT_TITLE,
+  SHEET_DELEGATION_NOTE,
   SHEET_FORMAT_LABEL,
   SHEET_FORMAT_NOTE,
+  SHEET_OPEN_LABEL,
+  SHEET_SAVED_LINE,
   exportActionLabel,
   exportExpiredText,
   exportFailureText,
@@ -209,6 +214,24 @@ export class DeviceExportImportDialog {
   protected readonly CSV_FORMAT_LABEL = CSV_FORMAT_LABEL;
   protected readonly SHEET_FORMAT_LABEL = SHEET_FORMAT_LABEL;
   protected readonly SHEET_FORMAT_NOTE = SHEET_FORMAT_NOTE;
+  protected readonly SHEET_SAVED_LINE = SHEET_SAVED_LINE;
+  protected readonly SHEET_OPEN_LABEL = SHEET_OPEN_LABEL;
+  /** The Format choice and the access read of the Sheet card (states 01 and 04). */
+  protected readonly format = this.store.format;
+  protected readonly sheetAvailable = this.store.sheetAvailable;
+  protected readonly driveAlert = this.store.driveAlert;
+  /** Reports offers a CSV file only, so it hides the Sheet card (ruling 1). */
+  protected readonly showSheetFormat = computed(
+    () => this.store.purpose() === 'edit',
+  );
+  /** The line under the Sheet label: the cause note, or the saved line (states 01 and 04). */
+  protected readonly sheetNote = computed(() => {
+    const access = this.store.driveAccess();
+    if (access === null || access.available) return '';
+    return access.cause === 'delegation'
+      ? SHEET_DELEGATION_NOTE
+      : SHEET_FORMAT_NOTE;
+  });
   protected readonly REPORT_COLUMNS_LABEL = REPORT_COLUMNS_LABEL;
   protected readonly CREATE_REPORT_LABEL = CREATE_REPORT_LABEL;
   protected readonly DOWNLOAD_CSV_LABEL = DOWNLOAD_CSV_LABEL;
@@ -323,6 +346,7 @@ export class DeviceExportImportDialog {
     const expired = expiresAt !== null && Date.parse(expiresAt) <= this.now();
     return {
       ...file,
+      sheet: file.format === 'sheet',
       expired,
       facts: exportFileFactList(file),
       until:
@@ -339,8 +363,19 @@ export class DeviceExportImportDialog {
       ? `/api/devices/exports/${encodeURIComponent(displayId)}/file`
       : '';
   });
+  /** The export writes a Google Sheet, so its last phase is Create Google Sheet (state 02). */
+  protected readonly sheetExport = computed(() => {
+    const job = this.store.job();
+    if (!job) return this.store.format() === 'sheet';
+    if (job.exportFile?.format === 'sheet') return true;
+    if (job.phase?.name === 'create-sheet') return true;
+    const active = this.store.activeJobs()[this.store.purpose()];
+    return (
+      active?.displayId === this.store.displayId() && active.format === 'sheet'
+    );
+  });
 
-  /** The two dotted phases of an export, with the bar under the current one (state 04). */
+  /** The dotted phases of an export, with the bar under the current one (states 02 and 04). */
   protected readonly phases = computed<readonly ExportPhaseView[]>(() => {
     const job = this.store.job();
     const phase = job?.phase ?? null;
@@ -350,11 +385,13 @@ export class DeviceExportImportDialog {
       completed: job?.status === 'completed',
     };
     const rows = job ? exportRows(job) : { written: 0, total: null };
-    const writeState = phaseState(phase, 'write-rows', outcome);
+    const names = this.sheetExport() ? SHEET_EXPORT_PHASES : CSV_EXPORT_PHASES;
+    const [write, last] = names;
+    const writeState = phaseState(names, phase, write, outcome);
     return [
       {
-        name: 'write-rows',
-        label: 'Write rows',
+        name: write,
+        label: EXPORT_PHASE_LABELS[write],
         detail:
           rows.total === null
             ? ''
@@ -366,10 +403,10 @@ export class DeviceExportImportDialog {
             : null,
       },
       {
-        name: 'prepare-download',
-        label: 'Prepare download',
+        name: last,
+        label: EXPORT_PHASE_LABELS[last],
         detail: '',
-        state: phaseState(phase, 'prepare-download', outcome),
+        state: phaseState(names, phase, last, outcome),
         percent: null,
       },
     ];
@@ -807,11 +844,16 @@ export class DeviceExportImportDialog {
       gridId: this.gridId(),
       tabId: this.tabId(),
       purpose: this.store.purpose(),
-      format: 'csv',
+      format: this.store.format(),
       sort: this.sort(),
       columns:
         this.store.purpose() === 'report' ? [...this.store.columns()] : [],
     });
+  }
+
+  /** The Format choice of the configure step (state 01). */
+  protected chooseFormat(format: DeviceExportFormat): void {
+    this.store.setFormat(format);
   }
 
   /** The mode card of state 09 rechecks the chosen file with the mode's Checksum rule. */
@@ -895,8 +937,12 @@ export class DeviceExportImportDialog {
   }
 }
 
-/** The order of the two export phases (design section 2). */
-const EXPORT_PHASES = ['write-rows', 'prepare-download'] as const;
+/** The phase order of a CSV export (design section 2). */
+const CSV_EXPORT_PHASES = ['write-rows', 'prepare-download'] as const;
+
+/** The phase order of a Sheet export: the Sheet write follows the row write (Drive slice
+ * design section 6, state 02). */
+const SHEET_EXPORT_PHASES = ['write-rows', 'create-sheet'] as const;
 
 /**
  * The no-change line that the counts support (R10, state 21). Only a file whose every row is
@@ -915,14 +961,13 @@ function noChangeText(counts: DeviceImportCounts): string {
  * Failed or Stopped, and the phases after it untouched (R7).
  */
 function phaseState(
+  phases: readonly string[],
   phase: JobPhase | null,
   name: string,
   outcome: { failed: boolean; cancelled: boolean; completed: boolean },
 ): ExportPhaseView['state'] {
-  const index = EXPORT_PHASES.indexOf(name as (typeof EXPORT_PHASES)[number]);
-  const reached = phase
-    ? EXPORT_PHASES.indexOf(phase.name as (typeof EXPORT_PHASES)[number])
-    : -1;
+  const index = phases.indexOf(name);
+  const reached = phase ? phases.indexOf(phase.name) : -1;
   if (outcome.failed || outcome.cancelled) {
     // A job without a phase never reached a phase: it stopped before writing a row.
     const stopping = reached >= 0 ? reached : 0;

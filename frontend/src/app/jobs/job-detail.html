@@ -95,11 +95,23 @@
     <h2 id="job-file-title" class="file-title">File</h2>
     <div class="file-card">
       <span class="file-glyph" aria-hidden="true">
-        <span class="material-symbols-outlined">csv</span>
+        <span class="material-symbols-outlined"
+          >{{ file.sheet ? 'table_chart' : 'csv' }}</span
+        >
       </span>
       <div class="file-main">
         <div class="file-head">
+          @if (file.sheet && file.sheetUrl) {
+          <a
+            class="file-name"
+            [href]="file.sheetUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            >{{ file.name }}</a
+          >
+          } @else {
           <p class="file-name">{{ file.name }}</p>
+          }
           <span
             class="status-chip small"
             [class.tone-success]="!file.expired"
@@ -112,12 +124,20 @@
         <p class="meta-items">{{ file.facts }}</p>
         <p class="until">
           <span class="material-symbols-outlined" aria-hidden="true"
-            >schedule</span
+            >{{ file.sheet ? 'folder' : 'schedule' }}</span
           >
           {{ file.line }}
         </p>
       </div>
-      @if (!file.expired) {
+      @if (file.sheet) { @if (file.sheetUrl) {
+      <a
+        mat-stroked-button
+        [href]="file.sheetUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        >{{ SHEET_OPEN_LABEL }}</a
+      >
+      } } @else if (!file.expired) {
       <a mat-stroked-button [href]="file.href" download>Download CSV</a>
       } @else {
       <button mat-stroked-button type="button" disabled>Download CSV</button>

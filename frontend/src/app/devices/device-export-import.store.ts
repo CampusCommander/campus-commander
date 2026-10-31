@@ -13,11 +13,14 @@ import {
   deviceImportPlanCancelAnswerSchema,
   deviceImportReceiptSchema,
   deviceImportReportSchema,
+  googleDriveAccessSchema,
+  googleDriveCauseSchema,
   jobDetailSchema,
   jobEventSchema,
   jobOperationsPageSchema,
   matchDeviceEditHeaders,
   DEVICE_IMPORT_MODE_DEFAULT,
+  type DeviceExportFormat,
   type DeviceExportRequest,
   type DeviceImportChangeSummary,
   type DeviceImportCounts,
@@ -28,6 +31,7 @@ import {
   type DeviceImportReportLine,
   type DeviceImportReportView,
   type DeviceReportFieldId,
+  type GoogleDriveAccess,
   type JobDetail,
   type JobExecutionCounts,
   type JobExportPurpose,
@@ -42,6 +46,8 @@ import type { JobEventSource } from '../jobs/job-stream';
 import { operationNumber } from '../jobs/job-detail-fields';
 import {
   EXPORT_ROW_LIMIT,
+  SHEET_ACCOUNT_ALERT,
+  SHEET_UNREACHABLE_ALERT,
   type ExportHelpTopic,
 } from './device-export-messages';
 import {
@@ -85,6 +91,8 @@ export interface ImportFileState {
 export interface ActiveExportJob {
   displayId: string;
   purpose: JobExportPurpose;
+  /** The format of the job, so its phase list names the right last phase (states 02 and 03). */
+  format: DeviceExportFormat;
 }
 
 /** One read of the report: the answer, or the sentence that replaced it (R4). */
@@ -120,6 +128,16 @@ export class DeviceExportImportStore {
   readonly error = signal('');
   readonly submitting = signal(false);
   readonly submitError = signal('');
+  /** The chosen Format of the configure step (state 01). Reports keeps CSV (ruling 1). */
+  readonly format = signal<DeviceExportFormat>('csv');
+  /** The Sheet export access that `GET /api/google/drive` answers (states 01 and 04). */
+  readonly driveAccess = signal<GoogleDriveAccess['sheetExport'] | null>(null);
+  /** The access read of the open configure step. The card stays disabled until it answers. */
+  readonly driveReading = signal(false);
+  /** The alert of a refused or an unreachable Sheet access (states 04 and 12). */
+  readonly driveAlert = signal('');
+  /** The access read count, so a late answer cannot replace the answer of a newer open. */
+  private driveRead = 0;
   /** The jobs that the Bulk Actions entries return to until Done releases them (behavior 6). */
   readonly activeJobs = signal<
     Readonly<Record<JobExportPurpose, ActiveExportJob | null>>
@@ -348,6 +366,62 @@ export class DeviceExportImportStore {
   }
 
   /**
+   * The Format choice of the configure step (state 01). A Sheet stays unavailable while the
+   * access read refuses it, so the step never offers a format that cannot run.
+   */
+  setFormat(format: DeviceExportFormat): void {
+    if (format === 'sheet' && !this.sheetAvailable()) return;
+    this.format.set(format);
+    this.submitError.set('');
+  }
+
+  /** The Sheet export is available when the access read answers at all (state 01). */
+  readonly sheetAvailable = computed(
+    () => this.driveAccess()?.available === true,
+  );
+
+  /**
+   * Read the Sheet export access of `GET /api/google/drive` (states 01 and 04). The read calls no
+   * Google API, and a failed read names the reachability alert instead of a cause.
+   */
+  async readDriveAccess(): Promise<void> {
+    const read = ++this.driveRead;
+    this.driveReading.set(true);
+    this.driveAlert.set('');
+    this.driveAccess.set(null);
+    try {
+      const response = await this.auth.request('/api/google/drive');
+      if (read !== this.driveRead) return;
+      if (!response.ok) {
+        this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+        return;
+      }
+      const answer = googleDriveAccessSchema.safeParse(
+        await response.json().catch(() => null),
+      );
+      if (read !== this.driveRead) return;
+      if (!answer.success) {
+        this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+        return;
+      }
+      this.driveAccess.set(answer.data.sheetExport);
+    } catch {
+      if (read === this.driveRead) this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+    } finally {
+      if (read === this.driveRead) this.driveReading.set(false);
+    }
+  }
+
+  /** A new configure step starts on CSV and reads the access again. */
+  private resetDriveAccess(): void {
+    this.driveRead++;
+    this.format.set('csv');
+    this.driveAccess.set(null);
+    this.driveAlert.set('');
+    this.driveReading.set(false);
+  }
+
+  /**
    * Import opens its setup step, or the tab's own import while its validation runs or its plan
    * stays open (notes choice 14, eng-lead answer 3). A pending upload returns with its Stop
    * intent, so closing the dialog never starts a second upload (R3).
@@ -488,7 +562,28 @@ export class DeviceExportImportStore {
       const response = await this.auth.request('/api/devices/exports', request);
       if (!owned()) return false;
       if (!response.ok) {
-        const message = await submitFailureText(response);
+        const body: unknown = await response.json().catch(() => null);
+        if (!owned()) return false;
+        // A Sheet export that Google refused names its cause, and CSV stays available
+        // (states 04 and 12, Drive slice design sections 1 and 6).
+        const cause = driveRefusal(body);
+        if (request.format === 'sheet' && cause !== null) {
+          this.driveAccess.set({ available: false, cause });
+          this.format.set('csv');
+          if (cause === 'account') this.driveAlert.set(SHEET_ACCOUNT_ALERT);
+          return false;
+        }
+        // A Sheet export that Google could not reach keeps CSV available (section 6).
+        if (
+          request.format === 'sheet' &&
+          response.status === 503 &&
+          reasonOf(body) === 'google-unavailable'
+        ) {
+          this.driveAlert.set(SHEET_UNREACHABLE_ALERT);
+          this.format.set('csv');
+          return false;
+        }
+        const message = submitFailureText(response.status, body);
         if (!owned()) return false;
         if (sameEntry()) this.submitError.set(message);
         return false;
@@ -508,6 +603,7 @@ export class DeviceExportImportStore {
       this.retain({
         displayId: receipt.data.displayId,
         purpose: request.purpose,
+        format: request.format,
       });
       if (!sameEntry()) return true;
       this.step.set('monitor');
@@ -1614,6 +1710,10 @@ export class DeviceExportImportStore {
     this.error.set('');
     this.loading.set(false);
     this.stop();
+    // A fresh configure step starts on CSV. An export reads the Sheet access (state 01); Reports
+    // offers no Sheet at all (ruling 1).
+    this.resetDriveAccess();
+    if (purpose === 'edit') void this.readDriveAccess();
   }
 
   /** A job remains the entry's own until Done releases it (behavior 6). */
@@ -1682,6 +1782,7 @@ export class DeviceExportImportStore {
     this.error.set('');
     this.submitting.set(false);
     this.submitError.set('');
+    this.resetDriveAccess();
   }
 
   /** One read of the open job (design section 9, states 04, 05, and 08). */
@@ -1733,11 +1834,20 @@ export class DeviceExportImportStore {
       if (detail.data.exportSummary) {
         this.purpose.set(detail.data.exportSummary.purpose);
         // An export opened from Activity stays the entry's own until Done releases it.
-        if (detail.data.action === 'export-devices')
+        if (detail.data.action === 'export-devices') {
+          const purpose = detail.data.exportSummary.purpose;
+          const known = this.activeJobs()[purpose];
           this.retain({
             displayId: detail.data.displayId,
-            purpose: detail.data.exportSummary.purpose,
+            purpose,
+            // A running job names no format until its Sheet phase or its file exists (section 6),
+            // so the format of this tab's own export stands.
+            format:
+              known?.displayId === detail.data.displayId
+                ? known.format
+                : exportFormatOf(detail.data),
           });
+        }
       }
       // The job names its own step: a published file opens the file card (behavior 5). An
       // import row opens the validation or the report of that job (behavior 5).
@@ -1999,10 +2109,9 @@ async function importActionFailureText(response: Response): Promise<string> {
 }
 
 /** The refusal of the export route (design sections 1 and 5). */
-async function submitFailureText(response: Response): Promise<string> {
-  const body: unknown = await response.json().catch(() => null);
+function submitFailureText(status: number, body: unknown): string {
   const reason = (body as { reason?: unknown } | null)?.reason;
-  switch (response.status) {
+  switch (status) {
     case 409:
       return 'The selection expired. Select the devices again, then export.';
     case 413:
@@ -2018,4 +2127,30 @@ async function submitFailureText(response: Response): Promise<string> {
         ? 'The selection holds no devices. Select the devices again.'
         : 'Campus Commander could not start the export. Try again.';
   }
+}
+
+/** The stored reason of a refusal body. */
+function reasonOf(body: unknown): unknown {
+  return (body as { reason?: unknown } | null)?.reason;
+}
+
+/** The cause of a `drive-unavailable` refusal (Drive slice design section 1). An export opens
+ * no Picker, so `setup` never names its refusal. */
+function driveRefusal(body: unknown): 'delegation' | 'account' | null {
+  if (reasonOf(body) !== 'drive-unavailable') return null;
+  const parsed = googleDriveCauseSchema.safeParse(
+    (body as { cause?: unknown } | null)?.cause,
+  );
+  return parsed.success && parsed.data !== 'setup' ? parsed.data : null;
+}
+
+/**
+ * The format of an export job that this tab did not submit. A Sheet ends in the `create-sheet`
+ * phase and carries its file link, and a CSV file carries neither (Drive slice design section 6).
+ */
+function exportFormatOf(job: JobDetail): DeviceExportFormat {
+  return job.exportFile?.format === 'sheet' ||
+    job.phase?.name === 'create-sheet'
+    ? 'sheet'
+    : 'csv';
 }

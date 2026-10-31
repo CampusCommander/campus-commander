@@ -414,6 +414,10 @@ export function cancelState(
   if (job.action === 'refresh-inventory') return 'request';
   // An export or a validation has no per-device operations either. Cancel stops its worker
   // (design section 9, built behavior 8).
+  // A Sheet export offers no Cancel pending work once its Sheet write starts: the partial Sheet
+  // stays in My Drive and the job records no link (Drive slice design section 6, behavior 6).
+  if (job.action === 'export-devices' && job.phase?.name === 'create-sheet')
+    return 'none';
   if (
     job.action === 'export-devices' ||
     job.action === 'validate-device-import'
