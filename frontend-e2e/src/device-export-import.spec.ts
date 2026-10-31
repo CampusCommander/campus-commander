@@ -1307,6 +1307,19 @@ test.describe('Export, Reports, and Import', () => {
     await shot(page, 'drive-04-sheet-export-unavailable');
   });
 
+  test('drive state 01 in the dark theme keeps the Sheet card whole', async ({
+    page,
+  }) => {
+    await openDevices(page, { theme: 'dark' });
+    await openEntry(page, 'Export');
+    const cards = dialog(page).locator('mat-radio-button.option-card');
+    await expect(cards).toHaveCount(2);
+    await cards.nth(1).click();
+    await expect(cards.nth(1).locator('input')).toBeChecked();
+    await expect(cards.nth(1)).toContainText('Saved in your Google Drive');
+    await shot(page, 'drive-01-sheet-export-dialog-dark');
+  });
+
   test('state 04 and 05: running and ready', async ({ page }) => {
     const state = await openDevices(page);
     await openEntry(page, 'Export');
