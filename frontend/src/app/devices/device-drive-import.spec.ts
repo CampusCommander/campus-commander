@@ -401,6 +401,10 @@ describe('Drive import', () => {
     expect(store.driveFile()?.check).toBe('passed');
     expect(panel()?.textContent).toContain('7.8 KB');
     expect(panel()?.textContent).toContain(`${header.length} columns`);
+    // State 08 names the size, the columns, and the edit time, with no source label.
+    expect(panel()?.querySelector('.meta-items')?.textContent).not.toContain(
+      'CSV file',
+    );
     expect(panel()?.querySelector('mat-select')).toBeNull();
   });
 

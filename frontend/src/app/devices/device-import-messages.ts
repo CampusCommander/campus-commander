@@ -105,8 +105,7 @@ export function driveFileFactList(file: {
   readonly columns: number;
   readonly lastEditedUtc: number | null;
 }): readonly string[] {
-  const facts: string[] =
-    file.kind === 'sheet' ? ['Google Sheet'] : ['CSV file'];
+  const facts: string[] = file.kind === 'sheet' ? ['Google Sheet'] : [];
   if (file.kind === 'sheet') {
     if (file.tabCount > 0) facts.push(driveTabCountText(file.tabCount));
   } else {
