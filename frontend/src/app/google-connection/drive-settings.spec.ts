@@ -258,12 +258,9 @@ it('reports a refused save and offers the save again with the values in place', 
 });
 
 it('settles a lost save answer through the rendered refresh control', async () => {
-  let stored = false;
   const request = vi.fn(async (path: string, body?: unknown) => {
     if (body !== undefined) throw new TypeError('Failed to fetch');
-    return Response.json({
-      drive: stored ? { pickerApiKey: key, projectNumber: number } : null,
-    });
+    return Response.json({ drive: null });
   });
   const { fixture, component, element } = await mount(request);
   await vi.waitFor(() => expect(component.loaded()).toBe(true));
