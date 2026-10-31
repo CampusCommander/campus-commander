@@ -102,14 +102,12 @@
 
   let root = null;
   let callback = null;
-  let current = null;
 
   function close() {
     if (!root) return;
     root.remove();
     window.removeEventListener('keydown', onKeydown);
     root = null;
-    current = null;
   }
 
   function onKeydown(event) {
@@ -292,7 +290,7 @@
     return this;
   };
   PickerBuilder.prototype.build = function () {
-    const builder = this;
+    const config = this.config;
     let visible = false;
     return {
       setVisible: (next) => {
@@ -304,13 +302,13 @@
         }
         state.openCount += 1;
         state.calls.push({
-          token: builder.config.token,
-          apiKey: builder.config.apiKey,
-          appId: builder.config.appId,
-          origin: builder.config.origin,
-          mimeTypes: builder.config.views.map((view) => view.mimeTypes),
+          token: config.token,
+          apiKey: config.apiKey,
+          appId: config.appId,
+          origin: config.origin,
+          mimeTypes: config.views.map((view) => view.mimeTypes),
         });
-        callback = builder.config.callback;
+        callback = config.callback;
         render();
       },
     };
