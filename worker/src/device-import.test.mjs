@@ -2603,7 +2603,10 @@ test('the production stage boundary keeps the source refusal and failure', async
             async readTab() {
               throw new GoogleDriveError('rows-too-large');
             },
-            async *stream() {},
+            async *stream() {
+              // The Sheet branch never reads the media stream.
+              yield Buffer.alloc(0);
+            },
           }),
         }),
     },
@@ -2834,22 +2837,29 @@ test('a source link that the lease fences removes the stage and keeps no report'
 });
 
 test('a cancel during the Drive read publishes no stage and keeps no report', async () => {
-  const sheet = sheetDrive(await driveRows());
-  const harnessed = driveHarness({
-    client: sheet.client,
-    batchSize: 1,
-    database: {
-      renew: (phase) => (phase === 'drive-read' ? 'done' : 'renewed'),
-    },
-  });
+  for (const sanitizeStage of [false, true]) {
+    const sheet = sheetDrive(await driveRows());
+    const harnessed = driveHarness({
+      client: sheet.client,
+      batchSize: 1,
+      database: {
+        renew: (phase) => (phase === 'drive-read' ? 'done' : 'renewed'),
+      },
+      store: { sanitizeStage },
+    });
 
-  const answer = await harnessed.run();
+    const answer = await harnessed.run();
 
-  assert.equal(answer.outcome, 'cancelled');
-  assert.deepEqual(harnessed.store.published, []);
-  assert.equal(harnessed.database.calls.source.length, 0);
-  assert.equal(harnessed.database.calls.finish[0].counts, null);
-  assert.equal(harnessed.database.calls.finish[0].failure, null);
+    // A stop keeps its outcome through the production stage boundary too (review R1).
+    const at = sanitizeStage
+      ? 'behind the production stage boundary'
+      : 'behind the transparent stage';
+    assert.equal(answer.outcome, 'cancelled', at);
+    assert.deepEqual(harnessed.store.published, [], at);
+    assert.equal(harnessed.database.calls.source.length, 0, at);
+    assert.equal(harnessed.database.calls.finish[0].counts, null, at);
+    assert.equal(harnessed.database.calls.finish[0].failure, null, at);
+  }
 });
 
 test('the dispatch route answers one validation request', async () => {

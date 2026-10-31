@@ -38,6 +38,7 @@ import {
   GOOGLE_DRIVE_SOURCE_BYTES,
   GoogleConnectionError,
   GoogleDriveError,
+  failure,
   type DelegatedCredential,
   type DeviceState,
 } from '@campus/google-connection';
@@ -600,6 +601,30 @@ function driveFaultOf(
     return new DeviceImportError(error.code);
   }
   return null;
+}
+
+/**
+ * The bytes of one Drive media file, with a transport fault of the body classified as the Google
+ * failure it is (design section 7). The client maps a request fault but reads the body outside
+ * that mapping, so a reset after a delivered prefix arrives as a raw error. The stage boundary
+ * replaces every fault with its own error, so the read must name this one first.
+ */
+async function* mediaBytes(
+  client: DeviceImportDriveClient,
+  fileId: string,
+): AsyncIterable<Uint8Array> {
+  try {
+    yield* client.stream(fileId);
+  } catch (error) {
+    if (
+      error instanceof ImportRefusal ||
+      error instanceof ImportStop ||
+      error instanceof GoogleDriveError ||
+      error instanceof GoogleConnectionError
+    )
+      throw error;
+    throw failure(error);
+  }
 }
 
 /**
@@ -1321,7 +1346,8 @@ export class DeviceImportJobs {
       await progress.step({ phase: 'drive-read', done: dataRows, total: null });
     };
 
-    const source = async function* (): AsyncIterable<Buffer> {
+    /** The bytes of the source, before the stage boundary can replace their fault. */
+    const produce = async function* (): AsyncIterable<Buffer> {
       if (sheet) {
         // The stage of a Sheet is a generated CSV file, so it carries the byte order mark of an
         // export. A Drive CSV file streams its own bytes, which keep their own mark (step 5).
@@ -1389,7 +1415,7 @@ export class DeviceImportJobs {
           }
         }
       };
-      for await (const chunk of client.stream(fileId)) {
+      for await (const chunk of mediaBytes(client, fileId)) {
         const stop = run.reason();
         if (stop !== null) throw new ImportStop(stop);
         // The media stream passes 1 GiB of stored text (design section 7, step 5).
@@ -1418,6 +1444,21 @@ export class DeviceImportJobs {
       }
     };
 
+    /**
+     * The fault that the source raised, kept before the stage boundary. `createArtifactStore`
+     * replaces every stage fault with one error, including a fault of the supplied iterator
+     * (`deployment/storage/index.mjs`), so the read keeps the source outcome here.
+     */
+    let sourceFault: unknown = null;
+    const source = async function* (): AsyncIterable<Buffer> {
+      try {
+        yield* produce();
+      } catch (error) {
+        sourceFault = error;
+        throw error;
+      }
+    };
+
     let descriptor: DeviceExportDescriptor;
     try {
       descriptor = await this.store.stageStream(
@@ -1428,7 +1469,12 @@ export class DeviceImportJobs {
         source(),
       );
     } catch (error) {
-      // A source fault keeps its refusal or its job failure. Any other stage fault fails the job.
+      // The production store hides every stage fault, so the outcome that the iterator kept
+      // decides the refusal or the job failure. A stage with no source fault is a storage fault.
+      if (sourceFault !== null) {
+        const fault = driveFaultOf(sourceFault, sourceName);
+        throw fault ?? sourceFault;
+      }
       const fault = driveFaultOf(error, sourceName);
       if (fault !== null) throw fault;
       throw error;
