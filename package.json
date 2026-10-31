@@ -96,7 +96,7 @@
     "multer": "2.5.0",
     "qs": "6.16.1",
     "axios": "$axios",
-    "follow-redirects": "1.16.1",
+    "follow-redirects": "1.16.2",
     "brace-expansion": "5.0.9",
     "smol-toml": "1.8.0"
   }

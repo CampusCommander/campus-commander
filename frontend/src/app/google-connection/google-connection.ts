@@ -26,11 +26,13 @@ import {
 import { AuthStore } from '../auth.store';
 import { ConnectionStore } from './connection.store';
 import { CredentialManagement } from './credential-management';
+import { DriveSettings } from './drive-settings';
 
 @Component({
   selector: 'app-google-connection',
   imports: [
     CredentialManagement,
+    DriveSettings,
     DatePipe,
     RouterLink,
     NgTemplateOutlet,
