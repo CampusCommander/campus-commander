@@ -1760,6 +1760,29 @@ describe('cancel', () => {
     ).toBe('request');
   });
 
+  it('offers no cancel once a Sheet export writes its Sheet', () => {
+    // The Sheet write holds the row lock, and a partial Sheet stays in My Drive (section 6).
+    expect(
+      cancelState(
+        auth(['jobs:read']),
+        running({
+          action: 'export-devices',
+          phase: { name: 'create-sheet', done: 0, total: null },
+        }),
+      ),
+    ).toBe('none');
+    // The row write still stops, so the control stays before the Sheet write starts.
+    expect(
+      cancelState(
+        auth(['jobs:read']),
+        running({
+          action: 'export-devices',
+          phase: { name: 'write-rows', done: 12, total: 48 },
+        }),
+      ),
+    ).toBe('request');
+  });
+
   it('shows the stored request disabled until the job ends', () => {
     const request = {
       at: '2026-10-26T14:42:00.000Z',
