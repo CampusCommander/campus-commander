@@ -557,6 +557,15 @@ async function signIn(
       });
     if (path === '/api/devices/org-units')
       return route.fulfill({ json: { orgUnits: [] } });
+    if (path === '/api/google/drive')
+      // This spec exercises the import dialog. The export dialog of its R3 case keeps the
+      // unavailable Sheet card of the default look (Drive slice state 04).
+      return route.fulfill({
+        json: {
+          sheetExport: { available: false, cause: 'account' },
+          driveImport: { available: false, cause: 'delegation' },
+        },
+      });
     if (path === '/api/devices/updates/access')
       return route.fulfill({
         json: {

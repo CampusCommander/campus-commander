@@ -117,6 +117,7 @@ const exportJob = (
   displayId: string,
   purpose: 'edit' | 'report',
   state: 'running' | 'completed',
+  format: 'csv' | 'sheet' = 'csv',
 ) => ({
   jobId: displayId === 'EXP-001' ? expJobId : reportJobId,
   displayId,
@@ -130,33 +131,55 @@ const exportJob = (
   finishedAt: state === 'running' ? null : new Date().toISOString(),
   progress: {
     total: rows.length,
-    // Production writes the phase counters; the outcome counters stay zero while it runs.
-    succeeded: state === 'running' ? 0 : rows.length,
+    // Production writes the phase counters; the outcome counters stay zero while it runs. A
+    // Sheet export writes every row before it creates the Sheet.
+    succeeded:
+      state === 'running'
+        ? format === 'sheet'
+          ? rows.length
+          : 0
+        : rows.length,
     failed: 0,
     unknown: 0,
     skipped: 0,
     expired: 0,
     cancelled: 0,
-    pending: state === 'running' ? rows.length : 0,
+    pending: state === 'running' && format !== 'sheet' ? rows.length : 0,
   },
   phase:
     state === 'running'
-      ? { name: 'write-rows', done: 3, total: rows.length }
+      ? format === 'sheet'
+        ? { name: 'create-sheet', done: 0, total: null }
+        : { name: 'write-rows', done: 3, total: rows.length }
       : null,
   exportSummary: { purpose },
   exportFile:
     state === 'running'
       ? null
-      : {
-          name:
-            purpose === 'edit'
-              ? `devices-for-editing-${displayId}.csv`
-              : `device-report-${displayId}.csv`,
-          sizeBytes: 7987,
-          rows: rows.length,
-          columns: purpose === 'edit' ? 10 : 6,
-          expiresAt: expiry(),
-        },
+      : format === 'sheet'
+        ? {
+            // A Sheet carries no byte size and never expires (Drive slice design section 1).
+            name: `devices-for-editing-${displayId}`,
+            format: 'sheet' as const,
+            sizeBytes: null,
+            rows: rows.length,
+            columns: purpose === 'edit' ? 10 : 6,
+            expiresAt: null,
+            sheetUrl:
+              'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit',
+          }
+        : {
+            name:
+              purpose === 'edit'
+                ? `devices-for-editing-${displayId}.csv`
+                : `device-report-${displayId}.csv`,
+            format: 'csv' as const,
+            sizeBytes: 7987,
+            rows: rows.length,
+            columns: purpose === 'edit' ? 10 : 6,
+            expiresAt: expiry(),
+            sheetUrl: null,
+          },
   importSummary: null,
   cancelRequest: null,
   failure: null,
@@ -190,6 +213,8 @@ interface MockOptions {
   selectedCount?: number;
   /** The job state that a read of EXP-001 answers. */
   state?: 'running' | 'completed';
+  /** The Sheet export access that GET /api/google/drive answers (Drive slice states 01 and 04). */
+  sheet?: 'available' | 'delegation' | 'account';
   /** The theme of the stored preferences (state 13 of the dark theme). */
   theme?: 'light' | 'dark';
   /** The import that `/devices?job=IMP-001` opens: its plan state (states 13, 16, 17, and 17b). */
@@ -877,6 +902,7 @@ async function signIn(page: Page, options: MockOptions = {}) {
   const selectedCount = options.selectedCount ?? rows.length;
   const state = {
     job: options.state ?? ('running' as 'running' | 'completed'),
+    format: 'csv' as 'csv' | 'sheet',
   };
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
@@ -967,11 +993,28 @@ async function signIn(page: Page, options: MockOptions = {}) {
           checkedAt: observedAt,
         },
       });
+    if (path === '/api/google/drive') {
+      // The access read of the Drive slice (section 1). It calls no Google API.
+      const access = options.sheet ?? 'available';
+      return route.fulfill({
+        json: {
+          sheetExport:
+            access === 'available'
+              ? { available: true }
+              : { available: false, cause: access },
+          driveImport: { available: true },
+        },
+      });
+    }
     if (
       path === '/api/devices/exports' &&
       route.request().method() === 'POST'
     ) {
-      const body = route.request().postDataJSON() as { purpose: string };
+      const body = route.request().postDataJSON() as {
+        purpose: string;
+        format?: 'csv' | 'sheet';
+      };
+      state.format = body.format ?? 'csv';
       const displayId = body.purpose === 'report' ? 'EXP-002' : 'EXP-001';
       return route.fulfill({
         status: 202,
@@ -984,7 +1027,9 @@ async function signIn(page: Page, options: MockOptions = {}) {
       });
     }
     if (path === '/api/jobs/EXP-001')
-      return route.fulfill({ json: exportJob('EXP-001', 'edit', state.job) });
+      return route.fulfill({
+        json: exportJob('EXP-001', 'edit', state.job, state.format),
+      });
     if (path === '/api/jobs/EXP-002')
       return route.fulfill({
         json: exportJob('EXP-002', 'report', 'completed'),
@@ -1132,9 +1177,12 @@ test.describe('Export, Reports, and Import', () => {
       '6 selected devices · Not submitted',
     );
     await expect(dialog(page)).toContainText('CSV file');
-    await expect(dialog(page)).toContainText(
-      'Google Drive is not available for your account.',
-    );
+    // The Sheet card follows CSV and names where the Sheet saves (Drive slice state 01).
+    await expect(dialog(page)).toContainText('Google Sheet');
+    await expect(dialog(page)).toContainText('Saved in your Google Drive');
+    await expect(
+      dialog(page).locator('mat-radio-button.option-card'),
+    ).toHaveCount(2);
     await expect(
       dialog(page).getByRole('button', { name: 'Export 6 devices' }),
     ).toBeEnabled();
@@ -1158,6 +1206,105 @@ test.describe('Export, Reports, and Import', () => {
       dialog(page).getByRole('button', { name: 'Export 62,480 devices' }),
     ).toBeDisabled();
     await shot(page, '03-export-over-limit');
+  });
+
+  test('drive state 01: the Format group offers the Sheet export', async ({
+    page,
+  }) => {
+    await openDevices(page);
+    await openEntry(page, 'Export');
+    const cards = dialog(page).locator('mat-radio-button.option-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toContainText('CSV file');
+    await expect(cards.nth(1)).toContainText('Google Sheet');
+    await expect(cards.nth(1)).toContainText('Saved in your Google Drive');
+    await expect(cards.nth(1).locator('input')).toBeEnabled();
+    await cards.nth(1).click();
+    // The chosen card carries the approved accent border (Drive slice state 01).
+    await expect(cards.nth(1)).toHaveCSS('border-color', 'rgb(26, 115, 232)');
+    await shot(page, 'drive-01-sheet-export-dialog');
+  });
+
+  test('drive state 02: a Sheet export names Create Google Sheet', async ({
+    page,
+  }) => {
+    await openDevices(page);
+    await openEntry(page, 'Export');
+    await dialog(page).locator('mat-radio-button.option-card').nth(1).click();
+    const posted = page.waitForRequest(
+      (request) =>
+        request.url().endsWith('/api/devices/exports') &&
+        request.method() === 'POST',
+    );
+    await dialog(page)
+      .getByRole('button', { name: 'Export 6 devices' })
+      .click();
+    expect((await posted).postDataJSON()).toMatchObject({ format: 'sheet' });
+    await expect(dialog(page)).toContainText('Job EXP-001 · Running');
+    await expect(dialog(page)).toContainText('Write rows');
+    // The rows are written, and the last phase creates the Sheet (Drive slice state 02).
+    await expect(dialog(page).locator('.phase').first()).toHaveClass(/is-done/);
+    await expect(dialog(page).locator('.phase').first()).toContainText(
+      '6 of 6',
+    );
+    await expect(dialog(page)).toContainText('Create Google Sheet');
+    await expect(dialog(page).locator('.phase').nth(1)).toHaveClass(
+      /is-current/,
+    );
+    await expect(dialog(page)).not.toContainText('Prepare download');
+    await shot(page, 'drive-02-sheet-export-running');
+  });
+
+  test('drive state 03: a ready Sheet opens in Google Sheets', async ({
+    page,
+  }) => {
+    const state = await openDevices(page);
+    await openEntry(page, 'Export');
+    await dialog(page).locator('mat-radio-button.option-card').nth(1).click();
+    await dialog(page)
+      .getByRole('button', { name: 'Export 6 devices' })
+      .click();
+    await expect(dialog(page)).toContainText('Job EXP-001 · Running');
+    state.job = 'completed';
+    await dialog(page)
+      .locator('.export-actions')
+      .getByRole('button', { name: 'Close' })
+      .click();
+    await expect(dialog(page)).toBeHidden();
+    await openEntry(page, 'Export');
+    const url = 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit';
+    await expect(dialog(page)).toContainText('devices-for-editing-EXP-001');
+    await expect(dialog(page)).toContainText('Saved in your Google Drive');
+    await expect(dialog(page)).not.toContainText('Download CSV');
+    // The Sheet name and the primary action open the Sheet in a new tab (state 03).
+    const open = dialog(page).getByRole('link', {
+      name: 'Open in Google Sheets',
+    });
+    await expect(open).toHaveAttribute('href', url);
+    await expect(open).toHaveAttribute('target', '_blank');
+    await expect(open).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(
+      dialog(page).getByRole('link', { name: 'devices-for-editing-EXP-001' }),
+    ).toHaveAttribute('href', url);
+    await shot(page, 'drive-03-sheet-export-ready');
+  });
+
+  test('drive state 04: a refused delegation keeps CSV available', async ({
+    page,
+  }) => {
+    await openDevices(page, { sheet: 'delegation' });
+    await openEntry(page, 'Export');
+    const cards = dialog(page).locator('mat-radio-button.option-card');
+    await expect(cards.nth(1).locator('input')).toBeDisabled();
+    await expect(cards.nth(1)).toContainText('Google denied Drive access.');
+    await expect(cards.nth(1)).toContainText(
+      'to the delegation client in the Google Admin Console.',
+    );
+    await expect(cards.nth(0).locator('input')).toBeEnabled();
+    await expect(
+      dialog(page).getByRole('button', { name: 'Export 6 devices' }),
+    ).toBeEnabled();
+    await shot(page, 'drive-04-sheet-export-unavailable');
   });
 
   test('state 04 and 05: running and ready', async ({ page }) => {
