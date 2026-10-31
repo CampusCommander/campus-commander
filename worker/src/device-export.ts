@@ -1,7 +1,9 @@
 import * as z from 'zod';
+import { GOOGLE_SHEET_TAB_TITLE } from '@campus/google-connection';
 import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
   DEVICE_REPORT_FIELD_LABELS,
+  createCsvReader,
   createCsvWriter,
   deviceEditEscapeCell,
   deviceEditRowChecksum,
@@ -23,8 +25,8 @@ import {
   type SyncTimers,
 } from './device-sync';
 import type {
+  DeviceArtifactStore,
   DeviceExportDescriptor,
-  DeviceExportStore,
 } from './device-export-store';
 
 /**
@@ -61,8 +63,9 @@ export const deviceExportRequestSchema = z.strictObject({
 });
 export type DeviceExportRequest = z.infer<typeof deviceExportRequestSchema>;
 
-/** The published file facts, as the export finish records them. */
-export interface DeviceExportFile {
+/** The facts of a published CSV file, as the export finish records them. */
+export interface DeviceExportCsvFile {
+  format: 'csv';
   artifactId: string;
   name: string;
   sizeBytes: number;
@@ -70,6 +73,19 @@ export interface DeviceExportFile {
   columns: number;
   expiresAt: string;
 }
+
+/** The facts of a Sheet export (design section 6, step 7). A Sheet never expires. */
+export interface DeviceExportSheetFile {
+  format: 'sheet';
+  /** The name of the spreadsheet, without the `.csv` suffix of the CSV file. */
+  name: string;
+  rows: number;
+  columns: number;
+  /** The stored spreadsheet ID, which the API turns into the link. */
+  spreadsheetId: string;
+}
+
+export type DeviceExportFile = DeviceExportCsvFile | DeviceExportSheetFile;
 
 export type DeviceExportAnswer =
   | { outcome: 'completed'; displayId: string; file: DeviceExportFile }
@@ -87,16 +103,78 @@ export type DeviceExportAnswer =
   /** The worker is stopping. The lease lapses, and the recovery fails the job (section 5). */
   | { outcome: 'stopped' };
 
+/**
+ * The Sheets calls of one Sheet export (design section 6, steps 4 to 6). `GoogleDriveClient`
+ * satisfies it, and a test passes the real client over the fake transport.
+ */
+export interface DeviceExportSheetClient {
+  createSheet(
+    title: string,
+  ): Promise<{ spreadsheetId: string; sheetId: number }>;
+  setTextFormat(
+    spreadsheetId: string,
+    sheetId: number,
+    columns: number,
+  ): Promise<void>;
+  writeRows(
+    spreadsheetId: string,
+    title: string,
+    columns: number,
+    rows: AsyncIterable<readonly string[]>,
+  ): Promise<number>;
+}
+
+/**
+ * The connection credential of one Sheet export (design section 4). The worker mints the person's
+ * `drive.file` token with it, and the claim carries it for the subject of the job.
+ */
+export interface DeviceExportSheetAccess {
+  customerId: string;
+  subject: string;
+  credentialId: string;
+  generation: number;
+  envelope: unknown;
+}
+
+/** Mint the Drive client of one Sheet export as the person. */
+export type DeviceExportSheetFactory = (
+  access: DeviceExportSheetAccess,
+  signal: AbortSignal,
+) => Promise<DeviceExportSheetClient>;
+
 const claimSchema = z.union([
   z.object({
     outcome: z.literal('claimed'),
     displayId: jobDisplayIdSchema,
     targetCount: z.number().int().min(0).max(50000),
     purpose: jobExportPurposeSchema,
+    /** The file format of the job (design section 1). A built CSV job answers `csv`. */
+    format: z.enum(['csv', 'sheet']).default('csv'),
+    /** The person's Drive subject. A Sheet export carries one, and a CSV export none. */
+    driveSubject: z.string().min(3).max(254).nullable().default(null),
     columns: z.array(deviceReportFieldIdSchema).max(10),
+    /** The connection credential, which a Sheet export mints its token with (design section 4). */
+    generation: z.number().int().min(1).nullable().default(null),
+    credentialId: z.uuid().nullable().default(null),
+    envelope: z.unknown().nullable().default(null),
   }),
   z.object({ outcome: z.literal('done') }),
   z.object({ outcome: z.literal('busy') }),
+]);
+
+/** The answer of the one Sheet-create permission (design section 6, step 3). */
+const sheetStartSchema = z.union([
+  z.object({ outcome: z.literal('started'), startedAt: z.unknown() }),
+  z.object({
+    outcome: z.literal('repeated'),
+    startedAt: z.unknown().optional(),
+  }),
+  z.object({ outcome: z.literal('cancelled') }),
+  z.object({ outcome: z.literal('fenced') }),
+  z.object({
+    outcome: z.literal('finished'),
+    status: z.enum(['completed', 'cancelled', 'failed']),
+  }),
 ]);
 
 const renewalSchema = z.object({
@@ -164,9 +242,9 @@ const TARGET_BATCH_SQL = `SELECT t.ordinal, d.device_id, d.serial_number, d.mode
   ORDER BY t.ordinal
   LIMIT $4`;
 
-/** The phase of the job header and its counts (design section 2). */
+/** The phase of the job header and its counts (design sections 2 and 6). */
 interface PhaseState {
-  phase: 'write-rows' | 'prepare-download';
+  phase: 'write-rows' | 'create-sheet' | 'prepare-download';
   done: number;
   total: number | null;
 }
@@ -269,6 +347,8 @@ export interface DeviceExportOptions {
   /** The cap of the file. Defaults to `DEVICE_EXPORT_MAX_BYTES`. */
   maxBytes?: number;
   timers?: SyncTimers;
+  /** Mint the Drive client of a Sheet export as the person (design section 4). */
+  drive?: DeviceExportSheetFactory;
 }
 
 const realTimers: SyncTimers = {
@@ -325,10 +405,11 @@ function checksumRow(record: ExportDeviceRecord) {
 }
 
 /**
- * The cells of one edit row (design section 5, items 3 and 4): the ten template columns, each
- * escaped, and the row checksum of the unescaped values.
+ * The ten values of one edit row (design section 5, items 3 and 4): the template columns and the
+ * row checksum of the unescaped values. A Sheet writes these values with `RAW`, so it takes them
+ * without the formula tab (design section 6, step 1).
  */
-async function editCells(record: ExportDeviceRecord): Promise<string[]> {
+async function editValues(record: ExportDeviceRecord): Promise<string[]> {
   const checksum = await deviceEditRowChecksum(checksumRow(record));
   return [
     record.deviceId,
@@ -342,7 +423,12 @@ async function editCells(record: ExportDeviceRecord): Promise<string[]> {
     record.notes ?? '',
     record.orgUnitPath,
     checksum,
-  ].map((cell) => deviceEditEscapeCell(cell));
+  ];
+}
+
+/** The cells of one edit row, each escaped for a CSV file. */
+async function editCells(record: ExportDeviceRecord): Promise<string[]> {
+  return (await editValues(record)).map((cell) => deviceEditEscapeCell(cell));
 }
 
 /** The report row of one device: the grid columns of the contract. */
@@ -383,14 +469,15 @@ function reportCells(
 /** Run one export job (design section 5). */
 export class DeviceExportJobs {
   private readonly database: DeviceSyncDatabase;
-  private readonly store: DeviceExportStore;
+  private readonly store: DeviceArtifactStore;
   private readonly batchSize: number;
   private readonly maxBytes: number;
   private readonly timers: SyncTimers;
+  private readonly drive?: DeviceExportSheetFactory;
 
   constructor(
     database: DeviceSyncDatabase,
-    store: DeviceExportStore,
+    store: DeviceArtifactStore,
     options: DeviceExportOptions = {},
   ) {
     this.database = database;
@@ -398,6 +485,7 @@ export class DeviceExportJobs {
     this.batchSize = options.batchSize ?? DEVICE_EXPORT_BATCH_SIZE;
     this.maxBytes = options.maxBytes ?? DEVICE_EXPORT_MAX_BYTES;
     this.timers = options.timers ?? realTimers;
+    this.drive = options.drive;
   }
 
   private call(sql: string, values: unknown[]): Promise<unknown> {
@@ -585,6 +673,7 @@ export class DeviceExportJobs {
   ): Promise<DeviceExportAnswer> {
     const purpose = claim.purpose;
     const maxBytes = this.maxBytes;
+    const sheet = claim.format === 'sheet';
     const columns: readonly DeviceReportFieldId[] =
       purpose === 'report' ? claim.columns : [];
     const headers: readonly string[] =
@@ -603,16 +692,24 @@ export class DeviceExportJobs {
     const cells = (record: ExportDeviceRecord): Promise<string[]> =>
       purpose === 'report'
         ? Promise.resolve(reportCells(columns, record, cutoff))
-        : editCells(record);
-    // The tick and the write loop share one renewal queue. A renewal that read the write-rows
-    // phase lands before the prepare-download phase, so the header keeps the later phase and its
-    // counts (design section 2).
+        : // A Sheet writes RAW values, so its rows skip the formula tab (design section 6,
+          // step 1). The checksum covers the same unescaped values either way.
+          sheet
+          ? editValues(record)
+          : editCells(record);
+    // The tick and the write loop share one renewal queue. A renewal that read an earlier phase
+    // lands before the later phase, so the header keeps the later phase and its counts (design
+    // section 2). The one Sheet-create permission queues here too, so no write-rows renewal can
+    // land after the stamp (design section 6, step 3).
     let renewals: Promise<unknown> = Promise.resolve();
+    const queued = <T>(run: () => Promise<T>): Promise<T> => {
+      const answer = renewals.then(run);
+      renewals = answer.catch(() => undefined);
+      return answer;
+    };
     const writePhase = (phase: PhaseState) => {
       const snapshot = { ...phase };
-      const renewal = renewals.then(() => this.writePhase(lease, snapshot));
-      renewals = renewal.catch(() => undefined);
-      return renewal;
+      return queued(() => this.writePhase(lease, snapshot));
     };
 
     const ticker = new ExportTicker(async () => {
@@ -696,6 +793,21 @@ export class DeviceExportJobs {
         return { outcome: 'fenced' };
       }
 
+      // A Sheet export stages the template rows first, then creates one Sheet as the person
+      // (design section 6, steps 1 to 7). It prepares no download.
+      if (sheet)
+        return await this.writeSheet(
+          input,
+          lease,
+          claim,
+          state,
+          headers.length,
+          descriptor,
+          signal,
+          queued,
+          ticker,
+        );
+
       state.phase = 'prepare-download';
       state.done = 0;
       state.total = null;
@@ -726,6 +838,7 @@ export class DeviceExportJobs {
         lease,
         claim.displayId,
         {
+          format: 'csv',
           artifactId: descriptor.artifactId,
           name: deviceExportFileName(purpose, claim.displayId),
           sizeBytes: descriptor.sizeBytes,
@@ -744,6 +857,172 @@ export class DeviceExportJobs {
       throw error;
     } finally {
       await ticker.close();
+    }
+  }
+
+  /** The one Sheet-create permission of the job (design section 6, step 3). */
+  private async startSheet(
+    lease: readonly [string, string, string],
+  ): Promise<z.infer<typeof sheetStartSchema>> {
+    return sheetStartSchema.parse(
+      await this.call(
+        'SELECT cc.start_device_export_sheet($1,$2,$3) AS result',
+        [...lease],
+      ),
+    );
+  }
+
+  /** Mint the Drive client of the person from the credential of the claim (design section 4). */
+  private async sheetClient(
+    input: DeviceExportRequest,
+    claim: ClaimedExport,
+    signal: AbortSignal,
+  ): Promise<DeviceExportSheetClient> {
+    const { driveSubject: subject, credentialId, generation, envelope } = claim;
+    if (
+      this.drive === undefined ||
+      subject === null ||
+      credentialId === null ||
+      generation === null ||
+      envelope === null ||
+      envelope === undefined
+    )
+      throw new DeviceExportError('drive-unavailable');
+    try {
+      return await this.drive(
+        {
+          customerId: input.customerId,
+          subject,
+          credentialId,
+          generation,
+          envelope,
+        },
+        signal,
+      );
+    } catch {
+      // A refused token fails the job drive-unavailable (design section 6).
+      throw new DeviceExportError('drive-unavailable');
+    }
+  }
+
+  /**
+   * The rows of the staged template file, the header first and in staged order (design section 6,
+   * step 6). The stage is the frozen copy of the export, so an inventory edit or a removed device
+   * after the stage changes no row. A lost lease or a stopping worker stops the read at a batch
+   * boundary.
+   */
+  private async *stagedRows(
+    descriptor: DeviceExportDescriptor,
+    signal: AbortSignal,
+    ticker: ExportTicker,
+  ): AsyncIterable<string[]> {
+    const reader = createCsvReader();
+    const decoder = new TextDecoder();
+    const stopped = (): void => {
+      if (ticker.fenced || signal.aborted)
+        throw new ExportStop({ kind: 'stopped' });
+    };
+    let count = 0;
+    for await (const chunk of await this.store.openRead(
+      descriptor.artifactId,
+    )) {
+      stopped();
+      for (const record of reader.push(
+        decoder.decode(chunk, { stream: true }),
+      )) {
+        yield record.cells;
+        count += 1;
+        if (count % this.batchSize === 0) stopped();
+      }
+    }
+    for (const record of reader.push(decoder.decode())) yield record.cells;
+    for (const record of reader.end()) yield record.cells;
+  }
+
+  /**
+   * Create the one Sheet of a claimed Sheet export and write the staged rows into it (design
+   * section 6, steps 3 to 7). The Sheet is the artifact. The run publishes the stage only to read
+   * it back, and it removes the stage after the finish.
+   */
+  private async writeSheet(
+    input: DeviceExportRequest,
+    lease: readonly [string, string, string],
+    claim: ClaimedExport,
+    state: PhaseState,
+    columns: number,
+    descriptor: DeviceExportDescriptor,
+    signal: AbortSignal,
+    queue: <T>(run: () => Promise<T>) => Promise<T>,
+    ticker: ExportTicker,
+  ): Promise<DeviceExportAnswer> {
+    const displayId = claim.displayId;
+    try {
+      // The stamp phase counts nothing and draws no bar, so a queued write-rows renewal cannot
+      // mislead the header (design section 6).
+      state.phase = 'create-sheet';
+      state.done = 0;
+      state.total = null;
+      const started = await queue(() => this.startSheet(lease));
+      if (started.outcome === 'cancelled')
+        return await this.end(lease, displayId, null, null);
+      if (started.outcome === 'fenced') return { outcome: 'fenced' };
+      // Another run holds the one create permission, or the job already ended. This run creates
+      // no second Sheet (design section 6, step 3).
+      if (started.outcome !== 'started') return { outcome: 'done' };
+
+      const title = deviceExportFileName(claim.purpose, displayId, 'sheet');
+      let sheet: { spreadsheetId: string; sheetId: number };
+      let written: number;
+      try {
+        const client = await this.sheetClient(input, claim, signal);
+        sheet = await client.createSheet(title);
+        await client.setTextFormat(sheet.spreadsheetId, sheet.sheetId, columns);
+        // The store reads a file only after publication, so this run publishes the completed
+        // stage and writes those bytes. The stage stays frozen: a later inventory change alters
+        // no row of the Sheet (design section 6, steps 1 and 6).
+        try {
+          await this.store.publish(descriptor);
+        } catch {
+          throw new DeviceExportError('storage-unavailable');
+        }
+        written = await client.writeRows(
+          sheet.spreadsheetId,
+          GOOGLE_SHEET_TAB_TITLE,
+          columns,
+          this.stagedRows(descriptor, signal, ticker),
+        );
+      } catch (error) {
+        if (error instanceof ExportStop) {
+          if (error.reason.kind === 'stopped') return { outcome: 'stopped' };
+          return await this.end(lease, displayId, null, null);
+        }
+        return await this.end(
+          lease,
+          displayId,
+          null,
+          error instanceof DeviceExportError
+            ? error.code
+            : 'sheet-write-failed',
+        );
+      }
+      // A stopping worker leaves the partial Sheet to the recovery (design section 6).
+      if (signal.aborted) return { outcome: 'stopped' };
+      return await this.end(
+        lease,
+        displayId,
+        {
+          format: 'sheet',
+          name: title,
+          rows: written - 1,
+          columns,
+          spreadsheetId: sheet.spreadsheetId,
+        },
+        null,
+      );
+    } finally {
+      // The worker removes the staged rows after the finish (design section 6, step 7). The Sheet
+      // is the artifact, so the stage never stays.
+      await this.remove(descriptor);
     }
   }
 
