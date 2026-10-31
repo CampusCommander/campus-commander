@@ -688,9 +688,10 @@ test('a retained account refusal refuses the session until a new sign-in', async
   });
   assert.equal(attempts.length, 1);
   assert.equal(statements(db, 'cc.device_write_credential').length, 1);
-  assert.deepEqual([...activeCache.entries.values()], [
-    JSON.stringify({ cause: 'account' }),
-  ]);
+  assert.deepEqual(
+    [...activeCache.entries.values()],
+    [JSON.stringify({ cause: 'account' })],
+  );
 
   const later = await access();
   assert.deepEqual(later.body, {
