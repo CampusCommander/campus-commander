@@ -27,6 +27,11 @@
   min-width: 0;
 }
 
+/* The wide subtitle joins the job status, so the first separator needs the same gap. */
+.job-parts {
+  margin-left: var(--cc-space-xs);
+}
+
 /* The mode is an app label, so it never takes the cut that a Google value may need. */
 .sub-item.mode,
 .sub-sep {
