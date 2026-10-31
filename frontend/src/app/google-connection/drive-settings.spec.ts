@@ -53,9 +53,18 @@ type Result = {
   correlationId: string | null;
 };
 
+type Session = {
+  identity: { id: string; permissionVersion: number };
+  csrfToken: string;
+};
+
 async function mount(
   request: (path: string, body?: unknown) => Promise<Response>,
-  options: { canManage?: boolean; result?: Result } = {},
+  options: {
+    canManage?: boolean;
+    result?: Result;
+    session?: () => Session;
+  } = {},
 ) {
   const results = signal<Record<string, Result>>(
     options.result ? { 'drive-files': options.result } : {},
@@ -69,10 +78,12 @@ async function mount(
         provide: AuthStore,
         useValue: {
           request,
-          session: () => ({
-            identity: { id: 'operator', permissionVersion: 1 },
-            csrfToken: 'session',
-          }),
+          session:
+            options.session ??
+            (() => ({
+              identity: { id: 'operator', permissionVersion: 1 },
+              csrfToken: 'session',
+            })),
           interrupted: () => false,
           can: () => options.canManage ?? true,
         },
@@ -408,6 +419,47 @@ it('keeps the draft through a failed recovery read when earlier settings were st
   expect(formInput(element, 'projectNumber').value).toBe(number);
   expect(element.textContent).not.toContain('Drive settings saved.');
   expect(formButton(element, 'Save Drive settings').disabled).toBe(false);
+  fixture.destroy();
+});
+
+it('fills the form from the settings of a new session after a lost answer', async () => {
+  const storedKey = 'previous-picker-api-key-000000000000000';
+  const storedNumber = '987654321098';
+  const token = signal('session');
+  const request = vi.fn(async (path: string, body?: unknown) => {
+    if (body !== undefined) throw new TypeError('Failed to fetch');
+    return Response.json({
+      drive:
+        token() === 'session'
+          ? null
+          : { pickerApiKey: storedKey, projectNumber: storedNumber },
+    });
+  });
+  const session = () => ({
+    identity: { id: 'operator', permissionVersion: 1 },
+    csrfToken: token(),
+  });
+  const { fixture, component, element } = await mount(request, { session });
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  fixture.detectChanges();
+  type(element, 'pickerApiKey', key);
+  type(element, 'projectNumber', number);
+  fixture.detectChanges();
+  element
+    .querySelector('form')!
+    .dispatchEvent(new Event('submit', { cancelable: true }));
+  await vi.waitFor(() => expect(component.uncertain()).toBe(true));
+  fixture.detectChanges();
+  // A new session owns its own read, so the old draft does not survive it.
+  token.set('renewed');
+  fixture.detectChanges();
+  await vi.waitFor(() =>
+    expect(formInput(element, 'pickerApiKey').value).toBe(storedKey),
+  );
+  fixture.detectChanges();
+  expect(formInput(element, 'projectNumber').value).toBe(storedNumber);
+  expect(component.uncertain()).toBe(false);
+  expect(formButton(element, 'Save Drive settings').disabled).toBe(true);
   fixture.destroy();
 });
 
