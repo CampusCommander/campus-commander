@@ -78,6 +78,19 @@ export interface ExportsOrchestration {
   }): Promise<string>;
 }
 
+/** The Drive exchange of one Sheet export (design section 6). */
+export interface ExportsDrive {
+  /**
+   * Run the exchange of section 4 and answer the subject that the job stores. The route keeps no
+   * token. A refusal answers 409 `drive-unavailable` with its cause.
+   */
+  sheetExportSubject(
+    session: SessionResponse,
+    cookie: string | undefined,
+    current: DeviceSyncState,
+  ): Promise<string>;
+}
+
 /** The published file of one export, ready to stream. */
 export interface DeviceExportFile {
   /** The download name of the file. */
@@ -133,6 +146,7 @@ export class DeviceExports {
   private readonly cache: ExportsCache;
   private readonly storage: ExportsStorage;
   private readonly orchestration: ExportsOrchestration;
+  private readonly drive: ExportsDrive;
   private readonly clock: () => number;
 
   constructor(
@@ -140,12 +154,14 @@ export class DeviceExports {
     cache: ExportsCache,
     storage: ExportsStorage,
     orchestration: ExportsOrchestration,
+    drive: ExportsDrive,
     clock: () => number = () => Date.now(),
   ) {
     this.database = database;
     this.cache = cache;
     this.storage = storage;
     this.orchestration = orchestration;
+    this.drive = drive;
     this.clock = clock;
   }
 
@@ -165,6 +181,7 @@ export class DeviceExports {
     current: DeviceSyncState,
     input: DeviceExportRequest,
     correlationId: string,
+    cookie?: string,
   ): Promise<DeviceExportReceipt> {
     const { state, expiredAt } = await this.selection(session, {
       gridId: input.gridId,
@@ -174,6 +191,12 @@ export class DeviceExports {
       throw new ConflictException({ reason: 'selection-expired', expiredAt });
     if (!hasSelection(state))
       throw new UnprocessableEntityException({ reason: 'nothing-selected' });
+    // A Sheet export runs the exchange of section 4 before it writes. The job stores the subject,
+    // and the route keeps no token (design section 6).
+    const driveSubject =
+      input.format === 'sheet'
+        ? await this.drive.sheetExportSubject(session, cookie, current)
+        : null;
     // One query asks for one row above the limit, so a scope above it is refused without a count.
     const sql = selectionOrderedIdsSql(
       current.customerId,
@@ -191,7 +214,7 @@ export class DeviceExports {
     const result = (
       await this.database.connection.query(
         `SELECT cc.create_device_export_job($1::uuid,$2::integer,$3::text,$4::text,$5::text,
-          $6::text,$7::text,$8::text[],$9::jsonb,$10::uuid) AS result`,
+          $6::text,$7::text,$8::text[],$9::jsonb,$10::uuid,$11::text) AS result`,
         [
           session.identity.id,
           session.identity.permissionVersion,
@@ -203,6 +226,7 @@ export class DeviceExports {
           input.columns,
           JSON.stringify(devices),
           correlationId,
+          driveSubject,
         ],
       )
     ).rows[0]?.['result'] as Record<string, unknown> | undefined;

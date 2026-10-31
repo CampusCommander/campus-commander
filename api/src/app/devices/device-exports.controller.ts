@@ -73,6 +73,7 @@ export class DeviceExportsController {
       current,
       input,
       request.correlationId,
+      request.headers.cookie,
     );
   }
 

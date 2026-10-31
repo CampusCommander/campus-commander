@@ -19,12 +19,14 @@ import {
   deviceImportExecuteRequestSchema,
   deviceImportPlanCancelRequestSchema,
   deviceImportReportQuerySchema,
+  googleDriveImportRequestSchema,
   type Action,
   type DeviceImportExecuteAnswer,
   type DeviceImportPlanCancelAnswer,
   type DeviceImportReceipt,
   type DeviceImportReport,
   type DeviceSyncState,
+  type GoogleDriveImportReceipt,
 } from '@campus/application-contracts';
 import {
   AcceptBody,
@@ -97,6 +99,28 @@ export class DeviceImportsController {
       current,
       input,
       request,
+      request.correlationId,
+    );
+  }
+
+  /**
+   * Create a validation job from a Drive file (design section 7). The route checks the import
+   * permissions as the upload route does, then reads the file metadata as the person. A file that
+   * Google refuses answers 404, a refused token answers 409 with its cause, and a file of another
+   * type answers 422.
+   */
+  @Post('drive')
+  async drive(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ): Promise<GoogleDriveImportReceipt> {
+    const input = googleDriveImportRequestSchema.parse(body);
+    const current = await this.current(request, DEVICE_IMPORT_ACTIONS);
+    return this.imports.driveImport(
+      request.session,
+      current,
+      input,
+      request.headers.cookie,
       request.correlationId,
     );
   }

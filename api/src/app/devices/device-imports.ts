@@ -26,9 +26,11 @@ import {
   deviceImportReceiptSchema,
   deviceImportReportLineSchema,
   deviceImportReportSchema,
+  googleDriveImportReceiptSchema,
   isAuthorized,
   jobImportPlanSchema,
   type Action,
+  type DeviceDriveSourceType,
   type DeviceImportChange,
   type DeviceImportChangeSummary,
   type DeviceImportCounts,
@@ -42,6 +44,8 @@ import {
   type DeviceStatusAction,
   type DeviceSyncState,
   type DeviceUpdateField,
+  type GoogleDriveImportReceipt,
+  type GoogleDriveImportRequest,
   type JobImportPlan,
   type JobOutcome,
   type JobPerson,
@@ -116,6 +120,29 @@ export interface ImportsStorage {
     attemptId: string;
   }): Promise<unknown>;
 }
+
+/** The facts of one Drive import source, as the route stores them (design section 7). */
+export interface DeviceImportDriveSource {
+  /** The verified sign-in subject that the worker mints its token for. */
+  subject: string;
+  sourceType: DeviceDriveSourceType;
+  /** The file name that Drive answered, never a browser value. */
+  name: string;
+  /** The byte size that Drive answered. A Google Sheet answers no size, so the job stores zero. */
+  sizeBytes: number;
+  /** The current title of the chosen tab. A CSV file carries none. */
+  tabTitle: string | null;
+}
+
+/** The Drive read of one import route (design section 7). */
+export interface ImportsDrive {
+  importSource(
+    session: SessionResponse,
+    cookie: string | undefined,
+    current: DeviceSyncState,
+    request: GoogleDriveImportRequest,
+  ): Promise<DeviceImportDriveSource>;
+}
 export interface ImportsOrchestration {
   startDeviceImport(input: {
     customerId: string;
@@ -150,9 +177,10 @@ const jobSql = `SELECT j.job_id,j.display_id,j.status,i.mode,i.source_name,i.sou
 const sourceArtifactSql = `SELECT a.id,a.size_bytes,a.retention_until FROM cc.artifacts a
   WHERE a.job_id=$1::text AND a.publication_state='ready' ORDER BY a.created_at DESC LIMIT 1`;
 
-/** One job and the uploaded file that the same transaction links to it (design section 6). */
+/** One job and the uploaded file that the same transaction links to it (design section 6). A Drive
+ * source names its file, its tab, and its subject instead of an artifact. */
 const createImportSql =
-  'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result';
+  'SELECT cc.create_device_import_job($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) AS result';
 
 const cancelPlanSql =
   'SELECT cc.cancel_device_import_plan($1,$2,$3,$4,$5,$6) AS result';
@@ -371,17 +399,20 @@ export class DeviceImports {
   private readonly database: ImportsDatabase;
   private readonly storage: ImportsStorage;
   private readonly orchestration: ImportsOrchestration;
+  private readonly drive: ImportsDrive;
   private readonly clock: () => number;
 
   constructor(
     database: ImportsDatabase,
     storage: ImportsStorage,
     orchestration: ImportsOrchestration,
+    drive: ImportsDrive,
     clock: () => number = () => Date.now(),
   ) {
     this.database = database;
     this.storage = storage;
     this.orchestration = orchestration;
+    this.drive = drive;
     this.clock = clock;
   }
 
@@ -506,6 +537,55 @@ export class DeviceImports {
     );
   }
 
+  /**
+   * Create one validation job from a Drive source (design section 7). The route has already checked
+   * the import permissions and read the source facts. The job takes the file name and the size from
+   * Drive, and it links no artifact.
+   */
+  async driveImport(
+    session: SessionResponse,
+    current: DeviceSyncState,
+    input: GoogleDriveImportRequest,
+    cookie: string | undefined,
+    correlationId: string,
+  ): Promise<GoogleDriveImportReceipt> {
+    const source = await this.drive.importSource(
+      session,
+      cookie,
+      current,
+      input,
+    );
+    const receipt = await this.createJob(
+      current.customerId,
+      [
+        session.identity.id,
+        session.identity.permissionVersion,
+        current.customerId,
+        input.mode,
+        source.sourceType,
+        source.name,
+        source.sizeBytes,
+        this.statusPermissions(session, current),
+        correlationId,
+        null,
+        input.fileId,
+        input.tabId,
+        source.tabTitle,
+        source.subject,
+      ],
+      correlationId,
+    );
+    return googleDriveImportReceiptSchema.parse({
+      jobId: receipt['jobId'],
+      displayId: receipt['displayId'],
+      status: receipt['status'],
+      mode: receipt['mode'],
+      name: receipt['name'],
+      sourceType: source.sourceType,
+      tabTitle: source.tabTitle,
+    });
+  }
+
   /** Create one job from one stored file and start its flow. */
   private async createImport(
     session: SessionResponse,
@@ -519,39 +599,61 @@ export class DeviceImports {
     correlationId: string,
     discard?: StagedUpload,
   ): Promise<DeviceImportReceipt> {
-    const result = (
-      await this.database.connection.query(createImportSql, [
-        session.identity.id,
-        session.identity.permissionVersion,
+    return deviceImportReceiptSchema.parse(
+      await this.createJob(
         current.customerId,
-        source.mode,
-        'csv',
-        source.name,
-        source.sizeBytes,
-        this.statusPermissions(session, current),
+        [
+          session.identity.id,
+          session.identity.permissionVersion,
+          current.customerId,
+          source.mode,
+          'csv',
+          source.name,
+          source.sizeBytes,
+          this.statusPermissions(session, current),
+          correlationId,
+          source.artifactId,
+          null,
+          null,
+          null,
+          null,
+        ],
         correlationId,
-        source.artifactId,
-      ])
-    ).rows[0]?.['result'] as Record<string, unknown> | undefined;
+        discard,
+      ),
+    );
+  }
+
+  /**
+   * Run the create function, map a refusal, and start the flow of the created job. A known refusal
+   * creates no job, so a staged upload goes with it. An outcome that the route cannot read may hide
+   * a committed job, and that file stays for the purge.
+   */
+  private async createJob(
+    customerId: string,
+    values: unknown[],
+    correlationId: string,
+    discard?: StagedUpload,
+  ): Promise<Record<string, unknown>> {
+    const result = (await this.database.connection.query(createImportSql, values))
+      .rows[0]?.['result'] as Record<string, unknown> | undefined;
     // A lost or unrecognized answer is not a refusal: the create transaction may have committed,
     // and the job then owns the file. The link sets no reference count, so the purge removes a file
     // that no job linked (design section 4).
     if (!result)
       throw new Error('The device import function returned no result.');
     if (result['outcome'] !== 'created') {
-      // A known refusal creates no job, so the staged upload goes with it. An outcome that the
-      // route cannot read may hide a committed job, and that file stays for the purge.
       if (CREATE_REFUSALS.includes(String(result['outcome'])))
         await this.discard(discard);
       deviceImportFunctionError(result);
     }
-    const receipt = deviceImportReceiptSchema.parse(result['receipt']);
+    const receipt = result['receipt'] as Record<string, unknown>;
     // A lost start is a lost run, which `cc.recover_device_file_jobs` fails with `interrupted`
     // (design section 5). The job stands either way, so the person still reaches its page.
     await this.orchestration
       .startDeviceImport({
-        customerId: current.customerId,
-        jobId: receipt.jobId,
+        customerId,
+        jobId: String(receipt['jobId']),
         leaseId: randomUUID(),
         correlationId,
       })
