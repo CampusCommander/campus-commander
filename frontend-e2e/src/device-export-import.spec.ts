@@ -221,6 +221,22 @@ interface MockOptions {
   importRun?: ImportRun;
   /** Holds the next IMP-001 detail read, so a test can hold the detail it starts (R4). */
   holdDetail?: DetailHold;
+  /** Holds the next export POST answer, so a test can leave Export before it arrives (B1). */
+  holdExport?: ExportHold;
+}
+
+/** A held export POST answer, and the release that lets the dialog see it (B1). */
+interface ExportHold {
+  status: number;
+  json: unknown;
+  wait: Promise<void>;
+  release: () => void;
+}
+
+function exportHold(status: number, json: unknown): ExportHold {
+  let release: () => void = () => undefined;
+  const wait = new Promise<void>((resolve) => (release = resolve));
+  return { status, json, wait, release: () => release() };
 }
 
 /** A hold on one IMP-001 detail read, and the results reads that the page requests (R4). */
@@ -1016,6 +1032,12 @@ async function signIn(page: Page, options: MockOptions = {}) {
       };
       state.format = body.format ?? 'csv';
       const displayId = body.purpose === 'report' ? 'EXP-002' : 'EXP-001';
+      // A held answer lets the person leave Export before the dialog sees the refusal (B1).
+      const hold = options.holdExport;
+      if (hold) {
+        await hold.wait;
+        return route.fulfill({ status: hold.status, json: hold.json });
+      }
       return route.fulfill({
         status: 202,
         json: {
@@ -1305,6 +1327,66 @@ test.describe('Export, Reports, and Import', () => {
       dialog(page).getByRole('button', { name: 'Export 6 devices' }),
     ).toBeEnabled();
     await shot(page, 'drive-04-sheet-export-unavailable');
+  });
+
+  test('drive state 04: a delayed account refusal leaves Reports on CSV', async ({
+    page,
+  }) => {
+    const hold = exportHold(409, {
+      reason: 'drive-unavailable',
+      cause: 'account',
+    });
+    await openDevices(page, { holdExport: hold });
+    await openEntry(page, 'Export');
+    await dialog(page).locator('mat-radio-button.option-card').nth(1).click();
+    await dialog(page)
+      .getByRole('button', { name: 'Export 6 devices' })
+      .click();
+    // The Sheet answer is held; the person leaves Export before it arrives (B1).
+    await dialog(page)
+      .locator('.export-actions')
+      .getByRole('button', { name: 'Cancel' })
+      .click();
+    await expect(dialog(page)).toBeHidden();
+    await openEntry(page, 'Reports');
+    hold.release();
+    // The answer settles before the check: Reports releases the export request's hold.
+    await expect(
+      dialog(page).getByRole('button', { name: 'Create report' }),
+    ).toBeEnabled();
+    // Reports keeps its CSV-only composition and shows no Drive alert (ruling 1).
+    await expect(dialog(page)).toContainText('CSV file');
+    await expect(dialog(page)).not.toContainText('Google Sheet');
+    await expect(dialog(page)).not.toContainText('Google refused Drive access');
+    await shot(page, 'drive-04-delayed-account-reports');
+  });
+
+  test('drive state 04: a delayed unreachable Drive leaves Reports on CSV', async ({
+    page,
+  }) => {
+    const hold = exportHold(503, { reason: 'google-unavailable' });
+    await openDevices(page, { holdExport: hold });
+    await openEntry(page, 'Export');
+    await dialog(page).locator('mat-radio-button.option-card').nth(1).click();
+    await dialog(page)
+      .getByRole('button', { name: 'Export 6 devices' })
+      .click();
+    await dialog(page)
+      .locator('.export-actions')
+      .getByRole('button', { name: 'Cancel' })
+      .click();
+    await expect(dialog(page)).toBeHidden();
+    await openEntry(page, 'Reports');
+    hold.release();
+    await expect(
+      dialog(page).getByRole('button', { name: 'Create report' }),
+    ).toBeEnabled();
+    await expect(dialog(page)).toContainText('CSV file');
+    await expect(dialog(page)).not.toContainText('Google Sheet');
+    await expect(dialog(page)).not.toContainText(
+      'Google Drive is not reachable',
+    );
+    await shot(page, 'drive-04-delayed-unreachable-reports');
   });
 
   test('drive state 01 in the dark theme keeps the Sheet card whole', async ({
