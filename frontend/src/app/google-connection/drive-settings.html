@@ -73,7 +73,7 @@
         (ngModelChange)="pickerApiKey.set($event)"
         #keyField="ngModel"
         required
-        pattern="[A-Za-z0-9_-]{39}"
+        pattern="[A-Za-z0-9_\-]{39}"
         maxlength="39"
         autocomplete="off"
         spellcheck="false"

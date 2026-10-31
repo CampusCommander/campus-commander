@@ -229,6 +229,31 @@ it('refuses a short key and a project number that is not digits', async () => {
   fixture.destroy();
 });
 
+it('accepts a 39-character key with a hyphen and an underscore (state 14)', async () => {
+  const request = vi.fn(async () => Response.json({ drive: null }));
+  const { fixture, component, element } = await mount(request);
+  await vi.waitFor(() => expect(component.loaded()).toBe(true));
+  fixture.detectChanges();
+  const field = formInput(element, 'pickerApiKey');
+  const pattern = field.getAttribute('pattern') ?? '';
+  // HTML compiles `pattern` with the `v` flag, so the class must be valid in that mode.
+  expect(() => new RegExp(`^(?:${pattern})$`, 'v')).not.toThrow();
+  const keyWithBoth = `Ab1-_${'a'.repeat(34)}`;
+  expect(keyWithBoth).toHaveLength(39);
+  const expression = new RegExp(`^(?:${pattern})$`, 'v');
+  expect(expression.test(keyWithBoth)).toBe(true);
+  expect(expression.test(keyWithBoth.slice(0, 38))).toBe(false);
+  // The rendered field accepts the key and refuses the short one.
+  type(element, 'pickerApiKey', keyWithBoth);
+  fixture.detectChanges();
+  expect(element.textContent).not.toContain('Enter the 39-character API key.');
+  type(element, 'pickerApiKey', keyWithBoth.slice(0, 38));
+  field.dispatchEvent(new Event('blur'));
+  fixture.detectChanges();
+  expect(element.textContent).toContain('Enter the 39-character API key.');
+  fixture.destroy();
+});
+
 it('reports a refused save and offers the save again with the values in place', async () => {
   let mode: 'empty' | 'refuse' | 'saved' = 'empty';
   const request = vi.fn(async (path: string, body?: unknown) => {

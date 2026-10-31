@@ -2221,9 +2221,10 @@ test('a Sheet source reads its tab by ID and gives the report of its CSV twin', 
   ]);
   assert.deepEqual(
     harnessed.database.calls.renew
-      .slice(0, 2)
+      .slice(0, 3)
       .map((call) => [call.phase, call.done]),
     [
+      ['drive-read', 0],
       ['drive-read', 3],
       ['header-check', 0],
     ],
@@ -2285,8 +2286,8 @@ test('a Drive CSV file streams its bytes and gives the uploaded file report', as
   assert.deepEqual(harnessed.store.staged('stage-1'), bytes);
   assert.deepEqual(harnessed.store.published, ['stage-1']);
   assert.deepEqual(
-    harnessed.database.calls.renew.slice(0, 2).map((call) => call.phase),
-    ['drive-read', 'header-check'],
+    harnessed.database.calls.renew.slice(0, 3).map((call) => call.phase),
+    ['drive-read', 'drive-read', 'header-check'],
   );
 
   // Acceptance: the uploaded copy of the same bytes gives the same report.
@@ -2321,16 +2322,16 @@ test('the drive-read phase counts the data rows of the source', async () => {
 
   assert.equal(answer.outcome, 'completed');
   // Step 6: the phase counts one thousand rows at a time, and the close of the read counts the
-  // rows that the last call left. The header row counts none.
+  // rows that the last call left. The header row counts none. The first write opens the phase.
   assert.deepEqual(
     harnessed.database.calls.renew
       .filter((call) => call.phase === 'drive-read')
       .map((call) => call.done),
-    [2, 3],
+    [0, 2, 3],
   );
   assert.deepEqual(
-    harnessed.database.calls.renew.slice(0, 3).map((call) => call.phase),
-    ['drive-read', 'drive-read', 'header-check'],
+    harnessed.database.calls.renew.slice(0, 4).map((call) => call.phase),
+    ['drive-read', 'drive-read', 'drive-read', 'header-check'],
   );
 });
 
@@ -2537,6 +2538,13 @@ test('a missing file, a missing tab, and a refused token name the file', async (
     assert.deepEqual(harnessed.store.published, [], entry.label);
     assert.equal(harnessed.database.calls.source.length, 0, entry.label);
     assert.equal(harnessed.database.calls.lines.length, 0, entry.label);
+    // The run writes the Drive read phase before it touches Drive, so the stored job row names
+    // the phase that failed (design section 2).
+    assert.deepEqual(
+      harnessed.database.calls.renew.map((call) => call.phase),
+      ['drive-read'],
+      entry.label,
+    );
   }
 });
 

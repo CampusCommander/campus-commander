@@ -1307,6 +1307,9 @@ export class DeviceImportJobs {
     progress: ImportProgress,
     run: RunControl,
   ): Promise<string> {
+    // The read is the phase from its first moment, so a failure before the first batch names
+    // the Drive read in the stored job row (design section 2).
+    await progress.step({ phase: 'drive-read', done: 0, total: null });
     const fileId = claim.sourceFileId;
     const tabId = claim.sourceTabId;
     const subject = claim.driveSubject;
