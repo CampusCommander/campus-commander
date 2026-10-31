@@ -10,7 +10,7 @@ import { AuthStore } from '../auth.store';
 import { LiveFeeds, type LiveFeedHandlers } from '../jobs/live-feeds';
 import { DeviceExportImportDialog } from './device-export-import-dialog';
 import { DeviceExportImportStore } from './device-export-import.store';
-import { importFailureText } from './device-import-messages';
+import { importFailureText, importPhases } from './device-import-messages';
 
 /**
  * The unit-test DOM has no `Blob.arrayBuffer`, and every browser that runs the app has one. The
@@ -109,6 +109,15 @@ const importDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   },
   ...overrides,
 });
+
+/** The state class of each validation phase dot, in list order (design section 2). */
+function phaseStates(panel: () => HTMLElement | null): string[][] {
+  return [...(panel()?.querySelectorAll('.phase') ?? [])].map((phase) =>
+    ['is-done', 'is-current', 'is-failed', 'is-stopped'].filter((name) =>
+      phase.classList.contains(name),
+    ),
+  );
+}
 
 const counts = {
   rows: 48,
@@ -1575,6 +1584,106 @@ describe('the approved Import composition', () => {
     expect(text()).toContain('Import the file again.');
     expect(text()).toContain('Validation stopped after it read 3,000 rows.');
     expect(text()).not.toContain('before any row check');
+  });
+
+  it('marks the Drive read Failed when a failed Drive job stores no phase (state 13)', async () => {
+    const { render, store, panel, text } = setup({
+      detail: importDetail({
+        status: 'failed',
+        failure: 'invalid-response',
+        phase: null,
+        importSummary: {
+          mode: 'sync-changes',
+          planState: null,
+          proposed: 0,
+          rejected: 0,
+          refusal: 'drive-source-unavailable',
+        },
+        importSource: {
+          name: 'devices-for-editing-EXP-001.csv',
+          sourceType: 'drive-csv',
+          sizeBytes: 7_936,
+          rowsRead: 0,
+          candidateRows: 0,
+          tabTitle: null,
+          refusalText: null,
+        },
+      }),
+    });
+    store.openJob('IMP-001');
+    await render();
+    expect(phaseStates(panel)).toEqual([['is-failed'], [], [], [], []]);
+    const phases = [...panel()!.querySelectorAll('.phase')];
+    expect(phases[0].textContent).toContain('Read from Google Drive');
+    expect(phases[0].textContent).toContain('Failed');
+    expect(phases[1].textContent).not.toContain('Failed');
+    expect(text()).toContain(
+      'Campus Commander cannot read devices-for-editing-EXP-001.csv from Google Drive.',
+    );
+  });
+
+  it('keeps Header check Failed for an uploaded file that stores no phase (state 23)', async () => {
+    const { render, store, panel, text } = setup({
+      detail: importDetail({
+        status: 'failed',
+        failure: 'invalid-response',
+        phase: null,
+        importSummary: {
+          mode: 'sync-changes',
+          planState: null,
+          proposed: 0,
+          rejected: 0,
+          refusal: 'header-refused',
+        },
+        importSource: {
+          name: 'devices.csv',
+          sourceType: 'csv',
+          sizeBytes: 7_936,
+          rowsRead: 0,
+          candidateRows: 0,
+          tabTitle: null,
+          refusalText: 'The Checksum column is missing.',
+        },
+      }),
+    });
+    store.openJob('IMP-001');
+    await render();
+    expect(phaseStates(panel)).toEqual([
+      ['is-done'],
+      ['is-failed'],
+      [],
+      [],
+      [],
+    ]);
+    const phases = [...panel()!.querySelectorAll('.phase')];
+    expect(phases[0].textContent).toContain('Upload');
+    expect(phases[1].textContent).toContain('Header check');
+    expect(text()).toContain('The Checksum column is missing.');
+  });
+
+  it('names the Drive read for an unknown phase name of a Drive job', () => {
+    const phases = importPhases(
+      importDetail({
+        status: 'failed',
+        phase: { name: 'unmapped-phase' as never, done: 0, total: null },
+        importSource: {
+          name: 'devices-for-editing-EXP-001.csv',
+          sourceType: 'drive-csv',
+          sizeBytes: 7_936,
+          rowsRead: 0,
+          candidateRows: 0,
+          tabTitle: null,
+          refusalText: null,
+        },
+      }),
+    );
+    expect(phases.map((phase) => phase.state)).toEqual([
+      'failed',
+      'later',
+      'later',
+      'later',
+      'later',
+    ]);
   });
 
   it('states the Sync all rows no-change line (R10)', async () => {

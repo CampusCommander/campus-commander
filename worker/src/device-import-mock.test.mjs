@@ -844,8 +844,8 @@ test('the same data set gives one report from a Sheet and from a Drive CSV', asy
   assert.deepEqual(sheet.store.staged('stage-1'), Buffer.from(`\uFEFF${text}`));
   assert.deepEqual(csv.store.staged('stage-1'), Buffer.from(text));
   assert.deepEqual(
-    sheet.database.calls.renew.slice(0, 2).map((call) => call.phase),
-    ['drive-read', 'header-check'],
+    sheet.database.calls.renew.slice(0, 3).map((call) => call.phase),
+    ['drive-read', 'drive-read', 'header-check'],
   );
   // The report of the edited row through the Sheet holds the one change. The two untouched rows
   // keep the checksum of the export, so each counts unchanged and reads no device.

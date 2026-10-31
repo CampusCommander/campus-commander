@@ -317,7 +317,10 @@ export function importPhases(
   return IMPORT_PHASES.map((name, index) => {
     let state: ImportPhaseView['state'];
     if (failed || cancelled) {
-      const stopping = reached >= 0 ? reached : 1;
+      // A job that stores no phase falls to the first phase of its source. An upload ends before
+      // the job exists, so its first stored phase is the header check (state 23). A Drive job
+      // reads Drive first (state 13).
+      const stopping = reached >= 0 ? reached : drive ? 0 : 1;
       state =
         index < stopping
           ? 'done'
