@@ -192,11 +192,15 @@ function fakeStore(text, options = {}) {
       const parts = [];
       try {
         for await (const chunk of source) parts.push(Buffer.from(chunk));
+        if (options.stageFailure) throw new Error('The stage failed.');
       } catch (error) {
         options.events?.push('stage-failed');
-        throw error;
+        // `createArtifactStore` replaces every stage fault with one error
+        // (`deployment/storage/index.mjs`), so a test can serve that boundary.
+        throw options.sanitizeStage === true
+          ? new Error('Artifact stageStream failed.')
+          : error;
       }
-      if (options.stageFailure) throw new Error('The stage failed.');
       sequence += 1;
       const artifactId = options.stageId ?? `stage-${sequence}`;
       const data = Buffer.concat(parts);
@@ -2533,6 +2537,194 @@ test('a missing file, a missing tab, and a refused token name the file', async (
     assert.deepEqual(harnessed.store.published, [], entry.label);
     assert.equal(harnessed.database.calls.source.length, 0, entry.label);
     assert.equal(harnessed.database.calls.lines.length, 0, entry.label);
+  }
+});
+
+test('the production stage boundary keeps the source refusal and failure', async () => {
+  // `createArtifactStore` answers one error for every stage fault, so the source outcome must
+  // survive inside the iterator (review R1). Each case runs through that boundary.
+  const name = 'devices.csv';
+  const header = [...DEVICE_EDIT_TEMPLATE_HEADERS];
+  const store = { sanitizeStage: true };
+  const cases = [
+    {
+      label: 'a Sheet metadata 404',
+      failure: 'invalid-response',
+      refusal: 'drive-source-unavailable',
+      text: driveSourceText(name),
+      build: () => {
+        const sheet = sheetDrive([header], {
+          fault: (call) =>
+            call.path === `/v4/spreadsheets/${SHEET_FILE_ID}`
+              ? googleError(404, 'notFound')
+              : undefined,
+        });
+        return driveHarness({ client: sheet.client, sourceName: name, store });
+      },
+    },
+    {
+      label: 'a Sheet value right of the header',
+      failure: 'invalid-response',
+      refusal: 'ragged-record',
+      text: deviceImportRefusalText('ragged-record'),
+      build: () => {
+        const sheet = sheetDrive([
+          header,
+          [...cellsOf({ deviceId: 'dev-a' }), 'extra'],
+        ]);
+        return driveHarness({ client: sheet.client, sourceName: name, store });
+      },
+    },
+    {
+      label: 'an exhausted Sheet window',
+      failure: 'provider-unavailable',
+      refusal: null,
+      text: null,
+      build: () => {
+        const sheet = sheetDrive([header], {
+          fault: (call) =>
+            call.path.includes('/values/')
+              ? googleError(503, 'backendError')
+              : undefined,
+        });
+        return driveHarness({ client: sheet.client, sourceName: name, store });
+      },
+    },
+    {
+      label: 'a Sheet window above its byte cap',
+      failure: 'invalid-response',
+      refusal: 'rows-too-large',
+      text: deviceImportRefusalText('rows-too-large'),
+      build: () =>
+        driveHarness({
+          sourceName: name,
+          store,
+          drive: async () => ({
+            async readTab() {
+              throw new GoogleDriveError('rows-too-large');
+            },
+            async *stream() {},
+          }),
+        }),
+    },
+    {
+      label: 'a Drive CSV media 403',
+      failure: 'invalid-response',
+      refusal: 'drive-source-unavailable',
+      text: driveSourceText(name),
+      build: () => {
+        const csv = csvDrive([], {
+          fault: () => googleError(403, 'forbidden'),
+        });
+        return driveHarness({
+          client: csv.client,
+          sourceType: 'drive-csv',
+          sourceFileId: CSV_FILE_ID,
+          sourceTabId: null,
+          sourceName: name,
+          store,
+        });
+      },
+    },
+    {
+      label: 'a Drive CSV file that is not UTF-8',
+      failure: 'invalid-response',
+      refusal: 'unreadable-file',
+      text: deviceImportRefusalText('unreadable-file'),
+      build: () => {
+        const csv = csvDrive([
+          Buffer.from('Device ID\r\ndev-a', 'utf8'),
+          Buffer.from([0xe2, 0x82]),
+        ]);
+        return driveHarness({
+          client: csv.client,
+          sourceType: 'drive-csv',
+          sourceFileId: CSV_FILE_ID,
+          sourceTabId: null,
+          sourceName: name,
+          store,
+        });
+      },
+    },
+  ];
+  for (const entry of cases) {
+    const harnessed = entry.build();
+    const answer = await harnessed.run();
+    assert.equal(answer.outcome, 'failed', entry.label);
+    assert.equal(answer.failure, entry.failure, entry.label);
+    assert.equal(answer.refusal, entry.refusal, entry.label);
+    assert.equal(
+      harnessed.database.calls.finish[0].failure,
+      entry.failure,
+      entry.label,
+    );
+    assert.equal(
+      harnessed.database.calls.finish[0].refusalText,
+      entry.text,
+      entry.label,
+    );
+    assert.deepEqual(harnessed.store.published, [], entry.label);
+    assert.equal(harnessed.database.calls.source.length, 0, entry.label);
+  }
+});
+
+test('a stage fault with no source fault stays storage-unavailable', async () => {
+  // The control of the source capture: a store that fails after it read the source is a storage
+  // fault, not a source outcome (review R1).
+  const sheet = sheetDrive([[...DEVICE_EDIT_TEMPLATE_HEADERS]]);
+  const harnessed = driveHarness({
+    client: sheet.client,
+    store: { sanitizeStage: true, stageFailure: true },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'failed');
+  assert.equal(answer.failure, 'storage-unavailable');
+  assert.equal(answer.refusal, null);
+  assert.equal(
+    harnessed.database.calls.finish[0].failure,
+    'storage-unavailable',
+  );
+  assert.equal(harnessed.database.calls.finish[0].refusalText, null);
+  assert.deepEqual(harnessed.store.published, []);
+  assert.equal(harnessed.database.calls.source.length, 0);
+});
+
+test('a CSV body reset after a delivered prefix fails as network-failure', async () => {
+  const prefix = 'Device ID\r\ndev-a';
+  const reset = async function* () {
+    yield Buffer.from(prefix, 'utf8');
+    throw Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+  };
+  for (const sanitizeStage of [false, true]) {
+    const csv = csvDrive(reset());
+    const harnessed = driveHarness({
+      client: csv.client,
+      sourceType: 'drive-csv',
+      sourceFileId: CSV_FILE_ID,
+      sourceTabId: null,
+      sourceName: 'devices.csv',
+      store: { sanitizeStage },
+    });
+
+    const answer = await harnessed.run();
+
+    const at = sanitizeStage
+      ? 'behind the production stage boundary'
+      : 'behind the transparent stage';
+    assert.equal(answer.outcome, 'failed', at);
+    assert.equal(answer.failure, 'network-failure', at);
+    assert.equal(answer.refusal, null, at);
+    assert.equal(
+      harnessed.database.calls.finish[0].failure,
+      'network-failure',
+      at,
+    );
+    assert.equal(harnessed.database.calls.finish[0].refusalText, null, at);
+    assert.deepEqual(harnessed.store.published, [], at);
+    assert.equal(harnessed.database.calls.source.length, 0, at);
+    assert.equal(csv.calls.length, 1, at);
   }
 });
 
