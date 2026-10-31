@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
+  MOCK_GOOGLE_HOSTS,
   mockReviewSettings,
   startAdminSdkMock,
 } from './admin-sdk-mock-fixture.mjs';
@@ -151,6 +152,38 @@ test('the mock seeds the Easton Consulting district', async (t) => {
       primaryDomain: 'easton-consulting.com',
     });
     assert.match(mock.adminEmail, /@easton-consulting\.com$/);
+  } finally {
+    mock.watch.stop();
+  }
+});
+
+test('the mock network serves the Sheets host beside the other Google hosts', async (t) => {
+  const start = await mockProbe(t);
+  const mock = await start();
+  try {
+    // The container carries every host of the fixture as a network alias.
+    const networks = JSON.parse(
+      docker('inspect', '-f', '{{json .NetworkSettings.Networks}}', mock.name),
+    );
+    const aliases = Object.values(networks).flatMap(
+      (network) => network.Aliases ?? [],
+    );
+    for (const host of MOCK_GOOGLE_HOSTS)
+      assert.ok(aliases.includes(host), `${host} is not a network alias.`);
+    assert.ok(
+      MOCK_GOOGLE_HOSTS.includes('sheets.googleapis.com'),
+      'The fixture routes the Sheets host.',
+    );
+    // The alias answers a Sheets client inside the network.
+    const address = docker(
+      'exec',
+      mock.name,
+      'node',
+      '-e',
+      "require('node:dns').lookup(process.argv[1], (error, address) => console.log(error ? error.code : address))",
+      'sheets.googleapis.com',
+    );
+    assert.match(address, /^\d+\.\d+\.\d+\.\d+$/);
   } finally {
     mock.watch.stop();
   }
