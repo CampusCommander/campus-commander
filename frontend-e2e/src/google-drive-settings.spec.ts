@@ -105,6 +105,7 @@ interface State {
   health: GoogleHealth;
   theme: 'light' | 'dark';
   saveStatus: number;
+  saveLost: boolean;
 }
 
 /** Answers every read of the shell, the connection page, and Diagnostics. */
@@ -114,6 +115,7 @@ async function fixture(page: Page, overrides: Partial<State> = {}) {
     health: health('delegation-not-authorized'),
     theme: 'light',
     saveStatus: 201,
+    saveLost: false,
     ...overrides,
   };
   const preferences = () => ({
@@ -207,6 +209,7 @@ async function fixture(page: Page, overrides: Partial<State> = {}) {
   );
   await page.route('**/api/google-connection/drive', async (route) => {
     if (route.request().method() === 'POST') {
+      if (state.saveLost) return route.abort('failed');
       if (state.saveStatus >= 400)
         return route.fulfill({
           status: state.saveStatus,
@@ -387,23 +390,66 @@ test('a save fills the card and shows the ready line of state 15', async ({
   });
 });
 
-test('a refused save reports the drafted failure and keeps the values', async ({
+test('a refused save reports the drafted failure and offers the save again', async ({
   page,
-}) => {
-  await fixture(page, { saveStatus: 503 });
+}, testInfo) => {
+  const state = await fixture(page, { saveStatus: 503 });
   await page.goto('/google-connection');
   const card = page.locator('app-drive-settings');
   await card.getByLabel('Picker API key').fill(pickerKey);
   await card.getByLabel('Project number').fill(projectNumber);
-  await card.getByRole('button', { name: 'Save Drive settings' }).click();
+  const save = card.getByRole('button', { name: 'Save Drive settings' });
+  await save.click();
   await expect(card.locator('[role=status]').first()).toContainText(
     'Campus Commander did not save the Drive settings. Try again.',
   );
   await expect(card.getByLabel('Picker API key')).toHaveValue(pickerKey);
   await expect(card.getByLabel('Project number')).toHaveValue(projectNumber);
+  // The refused save wrote nothing, so the same control offers the retry (UI-05, UI-08).
   await expect(
-    card.getByRole('button', { name: 'Save Drive settings' }),
-  ).toBeDisabled();
+    card.getByRole('button', { name: 'Refresh Drive settings' }),
+  ).toHaveCount(0);
+  await expect(save).toBeEnabled();
+  await capture(page, testInfo, 'refused-save-light', {
+    selector: 'app-drive-settings',
+    offset: 20,
+  });
+  state.saveStatus = 201;
+  await save.click();
+  await expect(card).toContainText(
+    'Google Drive is ready for Google Sheet export and Google Drive import.',
+  );
+});
+
+test('a lost save answer offers a refresh that reads the saved settings', async ({
+  page,
+}, testInfo) => {
+  const state = await fixture(page, { saveLost: true });
+  await page.goto('/google-connection');
+  const card = page.locator('app-drive-settings');
+  await card.getByLabel('Picker API key').fill(pickerKey);
+  await card.getByLabel('Project number').fill(projectNumber);
+  // The save reaches the mock, and its answer is lost on the way back.
+  state.drive = { pickerApiKey: pickerKey, projectNumber };
+  const save = card.getByRole('button', { name: 'Save Drive settings' });
+  await save.click();
+  await expect(card.locator('[role=status]').first()).toContainText(
+    'The Drive settings save result is unknown. Refresh Drive settings to read the saved settings.',
+  );
+  await expect(save).toBeDisabled();
+  await expect(card.getByLabel('Picker API key')).toHaveValue(pickerKey);
+  const refresh = card.getByRole('button', { name: 'Refresh Drive settings' });
+  await expect(refresh).toBeVisible();
+  await capture(page, testInfo, 'lost-save-light', {
+    selector: 'app-drive-settings',
+    offset: 20,
+  });
+  state.saveLost = false;
+  await refresh.click();
+  await expect(refresh).toHaveCount(0);
+  await expect(card).toContainText('Drive settings saved.');
+  await expect(card.getByLabel('Picker API key')).toHaveValue(pickerKey);
+  await expect(save).toBeDisabled();
 });
 
 test('the fields refuse a short key and a project number that is not digits', async ({
