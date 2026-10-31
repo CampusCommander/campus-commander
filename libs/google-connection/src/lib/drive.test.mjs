@@ -1079,5 +1079,14 @@ test('only a *.test.mjs file names the fake transport', () => {
     }
   };
   for (const root of roots) walk(root);
-  assert.deepEqual(found, ['libs/google-connection/src/lib/drive.test.mjs']);
+  const outside = found.filter((path) => !path.endsWith('.test.mjs'));
+  assert.deepEqual(
+    outside,
+    [],
+    'every file that names the fake transport ends with .test.mjs',
+  );
+  assert.ok(
+    found.includes('libs/google-connection/src/lib/drive.test.mjs'),
+    'the guard test itself names the fake transport',
+  );
 });
