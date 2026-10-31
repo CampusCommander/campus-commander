@@ -26,7 +26,7 @@ The **Development review** notice identifies the simulated Google environment on
 The `client-review-mock` target runs the same review environment against the Admin SDK mock.
 The harness runs the mock as a container on the review network, so every Google call goes to it.
 The review environment does not reach Google and does not use the in-process simulator.
-The environment runs the pinned tarball `campuscommander-admin-sdk-mock-0.2.0.tgz`.
+The environment runs the pinned tarball `campuscommander-admin-sdk-mock-0.3.0.tgz`.
 The [Admin SDK mock runbook](admin-sdk-mock.md) describes the package, the settings, and the scale record.
 
 ```sh
@@ -48,7 +48,7 @@ The `admin-sdk-mock-fixture-test` probes seed `small` directly.
 A shell `CC_MOCK_TIER` overrides every default.
 Set `CC_MOCK_DELAYS=off` to remove the modeled latency. The default is `on`.
 The seed is fixed at `campus-commander-review`, so the customer ID and the district are stable.
-Every mock district is `Easton Consulting` on `easton-consulting.com` from admin-sdk-mock 0.2.0.
+Every mock district is `Easton Consulting` on the administrator domain below, with admin-sdk-mock 0.3.0.
 The review seed yields the customer ID `C0mw85f16` and the administrator `admin@easton-consulting.com`.
 
 The harness starts the mock container before the app and watches it during the run.
@@ -78,6 +78,7 @@ The normal Chromium suite skips these checks. Set `CC_U6_REVIEW=1` and `BASE_URL
 ### Recorded medium review run
 
 The environment reached its ready banner 27 seconds after the command started on 2026-10-16.
+That run used the 0.2.0 pin.
 The shared Nx cache held the four build outputs, so the number measures the harness start.
 The banner reported `admin-sdk-mock 0.2.0, tier medium, 7000 devices`.
 
