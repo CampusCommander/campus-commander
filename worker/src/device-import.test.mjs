@@ -2171,7 +2171,10 @@ function driveDevices() {
 test('a Sheet source reads its tab by ID and gives the report of its CSV twin', async () => {
   const rows = await driveRows();
   const sheet = sheetDrive(rows);
-  const harnessed = driveHarness({ client: sheet.client, devices: driveDevices() });
+  const harnessed = driveHarness({
+    client: sheet.client,
+    devices: driveDevices(),
+  });
 
   const answer = await harnessed.run();
 
@@ -2213,7 +2216,9 @@ test('a Sheet source reads its tab by ID and gives the report of its CSV twin', 
     },
   ]);
   assert.deepEqual(
-    harnessed.database.calls.renew.slice(0, 2).map((call) => [call.phase, call.done]),
+    harnessed.database.calls.renew
+      .slice(0, 2)
+      .map((call) => [call.phase, call.done]),
     [
       ['drive-read', 3],
       ['header-check', 0],
