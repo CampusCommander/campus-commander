@@ -42,11 +42,28 @@ import {
   GoogleConnectionProvider,
   GoogleStoreError,
   validateServiceAccount,
+  type DelegatedCredential,
 } from '@campus/google-connection';
 import { ConfigurationService } from '../configuration/configuration.service';
 import { DatabaseService } from '../database/database.service';
 
 const DRIVE_SETTINGS_FIELDS = ['pickerApiKey', 'projectNumber'] as const;
+
+/** The Drive access facts that `cc.read_google_drive_access` returns (design section 1). */
+const driveAccessFactsSchema = z
+  .strictObject({
+    customerId: z.string().min(1),
+    generation: z.number().int().positive(),
+    settings: googleDriveSettingsSchema.nullable(),
+    driveFiles: z
+      .strictObject({
+        failure: googleFailureSchema.nullable(),
+        checkedAt: z.iso.datetime({ offset: true }).nullable(),
+      })
+      .nullable(),
+  })
+  .nullable();
+export type GoogleDriveAccessFacts = z.infer<typeof driveAccessFactsSchema>;
 
 /**
  * Parse a Drive settings save. A refused field answers 422 with its own name, because the generic
@@ -243,6 +260,58 @@ export class GoogleConnectionService
         ],
       ),
     );
+  }
+
+  /**
+   * The Drive access facts of the devices dialog (design section 1). A device reader reads the
+   * Picker settings and the last `drive-files` result. The SQL function checks `devices:read` and
+   * calls no Google API.
+   */
+  async driveAccess(session: SessionResponse): Promise<GoogleDriveAccessFacts> {
+    return driveAccessFactsSchema.parse(
+      await this.query(
+        'SELECT cc.read_google_drive_access($1,$2) AS result',
+        this.actor(session),
+      ),
+    );
+  }
+
+  /**
+   * Open the active Google credential for a person who holds `devices:write` (design section 4).
+   * `cc.device_write_credential` checks the action and the connection generation. The token route
+   * keeps no copy of the credential or of the token that it mints.
+   */
+  async driveCredential(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+  ): Promise<DelegatedCredential> {
+    const claim = z
+      .strictObject({
+        customerId: z.string().min(1),
+        generation: z.number().int().positive(),
+        credentialId: z.uuid(),
+        envelope: z.unknown(),
+      })
+      .parse(
+        await this.query(
+          'SELECT cc.device_write_credential($1,$2,$3,$4) AS result',
+          [...this.actor(session), customerId, generation],
+        ),
+      );
+    try {
+      return this.cipher().open(claim.envelope, {
+        recordId: claim.credentialId,
+        customerId: claim.customerId,
+        generation: claim.generation,
+      });
+    } catch (error) {
+      if (error instanceof CredentialError)
+        throw new ServiceUnavailableException({
+          reason: 'connection-key-unavailable',
+        });
+      throw error;
+    }
   }
 
   async schoolReferences(session: SessionResponse) {
