@@ -227,7 +227,8 @@ it('reports a refused save and offers the save again with the values in place', 
   expect(component.uncertain()).toBe(false);
   expect(component.saved()).toBeNull();
   expect(
-    element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!.value,
+    element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!
+      .value,
   ).toBe(key);
   expect(
     element.querySelector<HTMLInputElement>('input[name="projectNumber"]')!
@@ -261,9 +262,7 @@ it('settles a lost save answer through the rendered refresh control', async () =
   const request = vi.fn(async (path: string, body?: unknown) => {
     if (body !== undefined) throw new TypeError('Failed to fetch');
     return Response.json({
-      drive: stored
-        ? { pickerApiKey: key, projectNumber: number }
-        : null,
+      drive: stored ? { pickerApiKey: key, projectNumber: number } : null,
     });
   });
   const { fixture, component, element } = await mount(request);
@@ -292,7 +291,8 @@ it('settles a lost save answer through the rendered refresh control', async () =
   // The save did not land: the draft stays and Save offers the retry.
   expect(component.saved()).toBeNull();
   expect(
-    element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!.value,
+    element.querySelector<HTMLInputElement>('input[name="pickerApiKey"]')!
+      .value,
   ).toBe(key);
   expect(
     [...element.querySelectorAll('button')].some(

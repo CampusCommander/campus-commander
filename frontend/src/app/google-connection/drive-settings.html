@@ -44,8 +44,7 @@
       Refresh Drive settings
     </button>
   </div>
-  }
-  @if (loading() && !loaded()) {
+  } @if (loading() && !loaded()) {
   <p>Loading Drive settings.</p>
   <div class="skeleton" aria-hidden="true"></div>
   } @else if (!loaded()) {
