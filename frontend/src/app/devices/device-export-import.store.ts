@@ -958,10 +958,15 @@ export class DeviceExportImportStore {
 
   /** Import again starts a new import and releases the finished one (states 19 to 24). */
   importAgain(): void {
+    // Import again keeps the Source card of the failed run, with no file chosen (state 13).
+    const source = this.importSource();
     this.activeImport.set(null);
     this.reader.stop();
     this.stopFeed();
     this.resetImport();
+    this.importSource.set(
+      source === 'drive' && this.driveImportAvailable() ? 'drive' : 'upload',
+    );
     this.displayId.set(null);
     this.job.set(null);
     this.loading.set(false);

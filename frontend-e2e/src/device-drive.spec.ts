@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
   devicePageSchema,
@@ -260,10 +260,18 @@ const importJob = (job: JobCase) =>
       };
 
 /** The Picker double, served at the real script URL. */
-const pickerDouble = readFileSync(
-  join(process.cwd(), 'frontend-e2e/src/google-picker-double.js'),
-  'utf8',
-);
+const pickerDouble = (() => {
+  let directory = process.cwd();
+  for (let step = 0; step < 5; step++) {
+    const candidate = join(
+      directory,
+      'frontend-e2e/src/google-picker-double.js',
+    );
+    if (existsSync(candidate)) return readFileSync(candidate, 'utf8');
+    directory = dirname(directory);
+  }
+  throw new Error('picker-double-missing');
+})();
 
 /** The Google reads of the header check, and the token that each one sends. */
 interface GoogleReads {
@@ -637,8 +645,10 @@ test.describe('Drive import', () => {
     await pickFile(page, /devices-for-editing-EXP-003/);
     const item = dialog(page).locator('.file-item');
     await expect(item).toContainText('devices-for-editing-EXP-003');
-    await expect(item).toContainText(
-      'Google Sheet · 2 tabs · Edited Oct 30, 11:02 AM',
+    await expect(item.locator('.meta-items')).toContainText('Google Sheet');
+    await expect(item.locator('.meta-items')).toContainText('2 tabs');
+    await expect(item.locator('.meta-items')).toContainText(
+      /Edited Oct 30, 11:02 AM/,
     );
     await expect(item).toContainText('Devices');
     await expect(item).toContainText('Header check passed.');
@@ -655,8 +665,9 @@ test.describe('Drive import', () => {
     await signIn(page, { theme: 'dark' });
     await openImport(page);
     await pickFile(page, /devices-for-editing-EXP-003/);
+    await expect(dialog(page).locator('.file-item')).toContainText('2 tabs');
     await expect(dialog(page).locator('.file-item')).toContainText(
-      'Google Sheet · 2 tabs · Edited Oct 30, 11:02 AM',
+      /Edited Oct 30, 11:02 AM/,
     );
     await shot(page, '07-drive-sheet-chosen-dark');
   });
@@ -669,8 +680,10 @@ test.describe('Drive import', () => {
     await pickFile(page, /devices-for-editing-EXP-001\.csv/);
     const item = dialog(page).locator('.file-item');
     await expect(item).toContainText('devices-for-editing-EXP-001.csv');
-    await expect(item).toContainText(
-      '7.8 KB · 10 columns · Edited Oct 29, 4:12 PM',
+    await expect(item.locator('.meta-items')).toContainText('7.8 KB');
+    await expect(item.locator('.meta-items')).toContainText('10 columns');
+    await expect(item.locator('.meta-items')).toContainText(
+      /Edited Oct 29, 4:12 PM/,
     );
     await expect(item).toContainText('Header check passed.');
     await expect(item.getByRole('combobox')).toHaveCount(0);
@@ -692,7 +705,7 @@ test.describe('Drive import', () => {
       .click();
     const help = dialog(page).locator('app-device-export-help');
     await expect(help).toBeVisible();
-    await help.getByRole('button', { name: 'Google Drive' }).click();
+    await help.getByRole('radio', { name: 'Google Drive' }).click();
     for (const text of [
       'Google Sheet export and Google Drive import use your own Google Drive.',
       'A Google Sheet export creates a Sheet in your Google Drive. You own the Sheet.',
@@ -795,7 +808,10 @@ test.describe('Drive import', () => {
     await expect(first).toContainText('Failed');
     await expect(first).toHaveClass(/is-failed/);
     await expect(dialog(page)).toContainText(
-      'Campus Commander cannot read devices-for-editing-EXP-001.csv from Google Drive. Choose the file again in Google Drive, then import again.',
+      'Campus Commander cannot read devices-for-editing-EXP-001.csv from Google Drive.',
+    );
+    await expect(dialog(page)).toContainText(
+      'Choose the file again in Google Drive, then import again.',
     );
     await expect(dialog(page)).toContainText(
       'Validation stopped before any row check. No report and no plan exist. Nothing reached Google.',

@@ -286,7 +286,11 @@
                   }
                 </ul>
                 @if (chosen.kind === 'sheet' && chosen.tabs.length) {
-                <mat-form-field class="tab-field" subscriptSizing="dynamic">
+                <mat-form-field
+                  class="tab-field"
+                  appearance="outline"
+                  subscriptSizing="dynamic"
+                >
                   <mat-label>{{ DRIVE_TAB_LABEL }}</mat-label>
                   <mat-select
                     [value]="chosen.tabId"

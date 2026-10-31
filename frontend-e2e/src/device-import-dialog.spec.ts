@@ -701,7 +701,8 @@ test.describe('Import', () => {
       'Sync changes',
       'Sync all rows',
       'Upload a CSV file',
-      'Google Drive is not available for your account.',
+      'Google Drive',
+      'Google denied Drive access. Add https://www.googleapis.com/auth/drive.file to the delegation client in the Google Admin Console.',
       'Drop a CSV file here',
       'Choose CSV file',
     ])

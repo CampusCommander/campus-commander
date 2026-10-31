@@ -10,6 +10,7 @@ import { DeviceExportImportDialog } from './device-export-import-dialog';
 import { DeviceExportImportStore } from './device-export-import.store';
 import { GoogleDrivePicker } from './google-drive-picker';
 import { GoogleDriveRead } from './google-drive-read';
+import { importDriveFailureText } from './device-import-messages';
 
 /**
  * The Drive source of the import (design states 05 to 13, behaviors 2 to 8). The Picker and the
@@ -458,6 +459,39 @@ describe('Drive import', () => {
     expect(panel()?.textContent).toContain(
       'Choose a Google Sheet or a CSV file.',
     );
+  });
+
+  it('names each submitted refusal (C1)', () => {
+    expect(importDriveFailureText(422, 'wrong-file-type', 'file')).toBe(
+      'Choose a Google Sheet or a CSV file.',
+    );
+    expect(importDriveFailureText(422, 'source-too-large', 'file')).toBe(
+      'The file holds more than 1 GiB of data. Remove rows or columns, then import again.',
+    );
+    expect(importDriveFailureText(422, 'rows-too-large', 'file')).toBe(
+      '1,000 rows of this tab hold more than 64 MiB of data. Shorten the long cells, then import again.',
+    );
+    expect(
+      importDriveFailureText(404, 'drive-file-unavailable', 'devices.csv'),
+    ).toBe(
+      'Campus Commander cannot read devices.csv from Google Drive. Choose the file again in Google Drive, then import again.',
+    );
+  });
+
+  it('Import again keeps the Drive source and clears the file (state 13)', async () => {
+    const { store, render } = setup({
+      picker: async () => sheetDocument,
+    });
+    store.openImport();
+    await render();
+    store.setImportSource('drive');
+    await store.openDrivePicker();
+    expect(store.driveFile()?.check).toBe('passed');
+    store.importAgain();
+    await render();
+    expect(store.importSource()).toBe('drive');
+    expect(store.driveFile()).toBeNull();
+    expect(store.importReady()).toBe(false);
   });
 
   it('switches to Upload when the account refuses the session (state 12)', async () => {
