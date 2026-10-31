@@ -282,6 +282,31 @@ describe('DeviceExportImportDialog', () => {
     expect(store.step()).toBe('configure');
   });
 
+  it('keeps the delegation note after Google refused the Sheet format', async () => {
+    const request = async (path: string) =>
+      path === '/api/devices/exports'
+        ? response({ reason: 'drive-unavailable', cause: 'delegation' }, 409)
+        : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    // Only a refused account shows the export alert. A delegation names its note on the card.
+    expect(text()).toContain('Google denied Drive access.');
+    expect(text()).not.toContain(
+      'Google refused Drive access for your account.',
+    );
+    expect(store.format()).toBe('csv');
+    expect(store.step()).toBe('configure');
+  });
+
   it('names the reachability alert when the access read fails', async () => {
     const request = async (path: string) =>
       path === '/api/google/drive' ? response({}, 503) : response({});
