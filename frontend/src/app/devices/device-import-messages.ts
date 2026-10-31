@@ -413,12 +413,33 @@ export function importCounterRows(
   ];
 }
 
-/** The refusal box of state 23: the module sentence and its Sync all rows note, one per line. */
-export function importRefusalParagraphs(text: string): readonly string[] {
-  return text
-    .split(/(?<=\.)\s+(?=[A-Z])/)
-    .map((part) => part.trim())
-    .filter((part) => part !== '');
+/**
+ * The refusal box of state 23: the module sentence and its Sync all rows note, one per line. A
+ * Drive file name can hold a full stop and a following capital letter. The split skips the span of
+ * that name, so one paragraph carries the whole name (choice 12, B5).
+ */
+export function importRefusalParagraphs(
+  text: string,
+  name = '',
+): readonly string[] {
+  const at = name === '' ? -1 : text.indexOf(name);
+  const span = at < 0 ? null : { start: at, end: at + name.length };
+  const parts: string[] = [];
+  const boundary = /(?<=\.)\s+(?=[A-Z])/g;
+  let start = 0;
+  for (
+    let match = boundary.exec(text);
+    match !== null;
+    match = boundary.exec(text)
+  ) {
+    const end = match.index;
+    // A boundary inside the file name is punctuation of the name, not the end of a sentence.
+    if (span && end >= span.start && end < span.end) continue;
+    parts.push(text.slice(start, end).trim());
+    start = end + match[0].length;
+  }
+  parts.push(text.slice(start).trim());
+  return parts.filter((part) => part !== '');
 }
 
 const DEVICE_IMPORT_REFUSALS_BY_CODE: Readonly<
@@ -895,7 +916,11 @@ export function importFailureView(job: JobDetail | null): ImportFailureView {
     ? job.importSource.refusalText
     : importFailureText(job);
   return {
-    paragraphs: importRefusalParagraphs(reason),
+    // The file name stays whole through the sentence split (B5).
+    paragraphs: importRefusalParagraphs(
+      reason,
+      job?.importSource?.name ?? '',
+    ),
     note:
       rows === 0
         ? VALIDATION_FAILED_LINE

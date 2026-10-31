@@ -887,6 +887,31 @@ test.describe('Drive import', () => {
     await shot(page, '13-drive-source-lost-long-name');
   });
 
+  test('state 13: a lost-file name with a sentence stop stays one token (B5)', async ({
+    page,
+  }) => {
+    const name =
+      'devices-for-editing-EXP-001. Quarterly inventory review for School A.csv';
+    await signIn(page, { job: 'lost', jobName: name });
+    await openImport(page);
+    await pickFile(page, /devices-for-editing-EXP-001\.csv/);
+    await dialog(page)
+      .getByRole('button', { name: 'Start validation' })
+      .click();
+    await expect(dialog(page)).toContainText('Job IMP-009 · Failed');
+    const alert = dialog(page).locator('.action-note.error');
+    // The full stop inside the file name does not start a new paragraph.
+    await expect(alert.locator('p')).toHaveCount(2);
+    const token = alert.locator('.value-token');
+    await expect(token).toHaveCount(1);
+    await expect(token).toHaveText(name);
+    expect(await token.evaluate((el) => el.getClientRects().length)).toBe(1);
+    await token.hover();
+    await expect(page.locator('mat-tooltip-component')).toContainText(name);
+    await page.mouse.move(4, 4);
+    await shot(page, '13-drive-source-lost-punctuated-name');
+  });
+
   test('state 11: a missing setup disables Google Drive and keeps Upload', async ({
     page,
   }) => {

@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
+import { MatTooltip } from '@angular/material/tooltip';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import {
   DEVICE_EDIT_TEMPLATE_HEADERS,
@@ -14,6 +16,7 @@ import { GoogleDriveRead } from './google-drive-read';
 import {
   importDriveFailureText,
   driveNamedSentence,
+  importRefusalParagraphs,
 } from './device-import-messages';
 
 /**
@@ -122,7 +125,10 @@ const runningImport = (): JobDetail => ({
   },
 });
 
-const lostImport = (): JobDetail => {
+const lostImport = (
+  name = csvDocument.name,
+  sourceType: 'drive-csv' | 'drive-sheet' = 'drive-csv',
+): JobDetail => {
   const base = runningImport();
   const summary = base.importSummary;
   const source = base.importSource;
@@ -136,10 +142,10 @@ const lostImport = (): JobDetail => {
     importSource: source
       ? {
           ...source,
-          name: csvDocument.name,
-          sourceType: 'drive-csv',
-          tabTitle: null,
-          refusalText: `Campus Commander cannot read ${csvDocument.name} from Google Drive. Choose the file again in Google Drive, then import again.`,
+          name,
+          sourceType,
+          tabTitle: sourceType === 'drive-sheet' ? 'Devices' : null,
+          refusalText: `Campus Commander cannot read ${name} from Google Drive. Choose the file again in Google Drive, then import again.`,
         }
       : null,
   };
@@ -552,6 +558,75 @@ describe('Drive import', () => {
     expect(driveNamedSentence('Read devices.csv now.', '')).toBeNull();
     expect(driveNamedSentence('Read devices.csv now.', 'other.csv')).toBeNull();
   });
+
+  it('splits a refusal around a name that holds a sentence stop (B5)', () => {
+    const name =
+      'devices-for-editing-EXP-001. Quarterly inventory review for School A.csv';
+    const text = `Campus Commander cannot read ${name} from Google Drive. Choose the file again in Google Drive, then import again.`;
+    expect(importRefusalParagraphs(text, name)).toEqual([
+      `Campus Commander cannot read ${name} from Google Drive.`,
+      'Choose the file again in Google Drive, then import again.',
+    ]);
+    expect(
+      importRefusalParagraphs(
+        'Read Report. Draft. Final.csv now. Next line.',
+        'Report. Draft. Final.csv',
+      ),
+    ).toEqual(['Read Report. Draft. Final.csv now.', 'Next line.']);
+    // An ordinary refusal still splits, with or without a name that it does not carry.
+    expect(
+      importRefusalParagraphs(
+        'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.',
+      ),
+    ).toHaveLength(2);
+    expect(
+      importRefusalParagraphs(
+        'The file is not UTF-8 text. Save it as UTF-8 CSV and import it again.',
+        'devices.csv',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it.each([
+    {
+      sourceType: 'drive-csv' as const,
+      name: 'devices-for-editing-EXP-001. Quarterly inventory review for School A.csv',
+      document: csvDocument,
+    },
+    {
+      sourceType: 'drive-sheet' as const,
+      name: 'devices-for-editing-EXP-003. Quarterly inventory review for School A',
+      document: sheetDocument,
+    },
+  ])(
+    'keeps a punctuated $sourceType file name whole before it splits sentences (B5)',
+    async ({ name, sourceType, document }) => {
+      const { fixture, store, render, panel } = setup({
+        picker: async () => document,
+        job: lostImport(name, sourceType),
+      });
+      store.openImport();
+      await render();
+      store.setImportSource('drive');
+      await store.openDrivePicker();
+      await store.startValidation();
+      await render();
+      await render();
+      const alert = panel()?.querySelector('.action-note.error');
+      const paragraphs = alert?.querySelectorAll('p') ?? [];
+      expect(paragraphs).toHaveLength(2);
+      expect(paragraphs[0]?.textContent?.replace(/\s+/g, ' ')).toContain(
+        `Campus Commander cannot read ${name} from Google Drive.`,
+      );
+      const tokens = alert?.querySelectorAll('.value-token') ?? [];
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]?.textContent?.trim()).toBe(name);
+      const token = fixture.debugElement.query(
+        By.css('.action-note.error .value-token'),
+      );
+      expect(token.injector.get(MatTooltip).message).toBe(name);
+    },
+  );
 
   it('Import again keeps the Drive source and clears the file (state 13)', async () => {
     const { store, render } = setup({
