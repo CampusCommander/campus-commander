@@ -393,6 +393,30 @@ export async function qualifyDeviceExportImport({
     );
 
     await check(
+      'the Sheet export credential read needs the three export actions',
+      async () => {
+        const claim = await result(
+          'SELECT cc.device_export_credential($1,$2,$3,$4) AS result',
+          [exporter, 1, customer, generation],
+        );
+        assert.equal(claim.customerId, customer);
+        assert.equal(claim.generation, generation);
+        assert.equal(typeof claim.credentialId, 'string');
+        assert.equal(typeof claim.envelope, 'object');
+        // A person without the three export actions is refused.
+        await rejects(
+          statement('SELECT cc.device_export_credential($1,$2,$3,$4) AS result', [
+            outsider,
+            1,
+            customer,
+            generation,
+          ]),
+          '42501',
+        );
+      },
+    );
+
+    await check(
       'the kind, phase, and target checks refuse another value',
       async () => {
         const header = (overrides) => {
