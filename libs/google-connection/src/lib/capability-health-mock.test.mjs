@@ -1,8 +1,8 @@
 /**
  * Runs the capability health check against the Admin SDK mock.
- * The mock answers the OAuth exchange, the Directory API, and the Chrome Management API
- * with real HTTP, so each capability proves its own delegated scope. No live Google call.
- * Run the file inside `nx run google-connection:test`.
+ * The mock answers the OAuth exchange, the Directory API, the Chrome Management API, and the
+ * Drive API with real HTTP, so each capability proves its own delegated scope. No live Google
+ * call. Run the file inside `nx run google-connection:test`.
  */
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -12,13 +12,8 @@ import { GoogleCustomerVerifier } from './provider.ts';
 import { validateServiceAccount } from './credential.ts';
 
 const timeout = 60_000;
-/**
- * The capability ids that admin-sdk-mock 0.2.0 serves. The mock has no Drive
- * method, so this test leaves `drive-files` out until DM2 pins 0.3.0.
- */
-const capabilities = GOOGLE_CAPABILITIES.map(
-  (capability) => capability.id,
-).filter((capability) => capability !== 'drive-files');
+/** The capability ids that admin-sdk-mock 0.3.0 serves, in capability order. */
+const capabilities = GOOGLE_CAPABILITIES.map((capability) => capability.id);
 const scopeOf = (id) =>
   GOOGLE_CAPABILITIES.find((capability) => capability.id === id).scope;
 const without = (id) => capabilities.filter((capability) => capability !== id);
@@ -58,11 +53,11 @@ function check(credential, requested = capabilities) {
   );
 }
 
-test('a client with the six scopes of admin-sdk-mock 0.2.0 passes every capability check', async () => {
+test('a client with the seven scopes of admin-sdk-mock 0.3.0 passes every capability check', async () => {
   assert.equal(
     capabilities.length,
-    6,
-    'admin-sdk-mock 0.2.0 serves six scopes',
+    7,
+    'admin-sdk-mock 0.3.0 serves seven scopes',
   );
   const result = await check(credentialFor(capabilities));
   assert.deepEqual(
@@ -74,6 +69,17 @@ test('a client with the six scopes of admin-sdk-mock 0.2.0 passes every capabili
     })),
   );
   assert.equal(result.observation?.customerId, domain.customerId);
+});
+
+test('a client without the Drive scope fails only drive-files', async () => {
+  const result = await check(credentialFor(without('drive-files')));
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'drive-files' ? 'delegation-not-authorized' : null,
+    ]),
+  );
 });
 
 test('a client without the device write scope fails only device-changes', async () => {
