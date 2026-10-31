@@ -20,6 +20,10 @@ import {
   type JobPhase,
 } from '@campus/application-contracts';
 import { formatTimestamp, IMPORT_PHASE_LABELS } from '../jobs/job-fields';
+import {
+  SHEET_DELEGATION_NOTE,
+  SHEET_FORMAT_NOTE,
+} from './device-export-messages';
 
 /**
  * The copy of the Import, validation, and report steps
@@ -64,10 +68,8 @@ export const IMPORT_DRIVE_TAB_LABEL = 'Tab';
 /** The note under a disabled Drive card, by cause (states 11 and 12). */
 export const IMPORT_DRIVE_SETUP_NOTE =
   'Google Drive needs the Picker API key and the project number. Add them on the Google connection page.';
-export const IMPORT_DRIVE_ACCOUNT_NOTE =
-  'Google Drive is not available for your account.';
-export const IMPORT_DRIVE_DELEGATION_NOTE =
-  'Google denied Drive access. Add https://www.googleapis.com/auth/drive.file to the delegation client in the Google Admin Console.';
+export const IMPORT_DRIVE_ACCOUNT_NOTE = SHEET_FORMAT_NOTE;
+export const IMPORT_DRIVE_DELEGATION_NOTE = SHEET_DELEGATION_NOTE;
 /** The alert of a refused Drive session (state 12). Upload takes over. */
 export const IMPORT_DRIVE_ACCOUNT_ALERT =
   'Google refused Drive access for your account. Upload a CSV file instead.';

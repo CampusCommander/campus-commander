@@ -343,6 +343,14 @@ export function importRefusalLabel(summary: JobImportSummary | null): string {
       return 'Too many rows';
     case 'header-refused':
       return 'Header check failed';
+    // A Drive source that Google refused, or that is over a limit (Drive slice design section 1).
+    case 'drive-file-unavailable':
+    case 'drive-source-unavailable':
+      return 'Drive file unavailable';
+    case 'source-too-large':
+      return 'File too large';
+    case 'rows-too-large':
+      return 'Rows too large';
     default:
       // The summary may carry the short reason of the stored refusal instead of a code.
       return summary?.refusal ?? 'Validation failed';
