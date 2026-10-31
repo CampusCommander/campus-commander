@@ -20,6 +20,8 @@ import { AuthStore } from '../auth.store';
 import { expiryClock } from '../expiry-clock';
 import { devicesReadable } from '../devices/devices.store';
 import {
+  SHEET_OPEN_LABEL,
+  SHEET_SAVED_LINE,
   exportExpiredText,
   exportFileFactList,
   exportFileHref,
@@ -202,6 +204,8 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     () => this.store.job()?.action === 'validate-device-import',
   );
   /** The file card of a finished export. Notes answer 24 keeps it on the job page. */
+  protected readonly SHEET_SAVED_LINE = SHEET_SAVED_LINE;
+  protected readonly SHEET_OPEN_LABEL = SHEET_OPEN_LABEL;
   protected readonly exportFile = computed(() => {
     const job = this.store.job();
     if (!job) return null;
@@ -212,11 +216,15 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     const expired = expiresAt !== null && Date.parse(expiresAt) <= this.now();
     return {
       name: file.name,
+      sheet: file.format === 'sheet',
+      sheetUrl: file.sheetUrl,
       facts: exportFileFactList(file).join(' · '),
       expired,
       line:
         expiresAt === null
-          ? ''
+          ? file.format === 'sheet'
+            ? SHEET_SAVED_LINE
+            : ''
           : expired
             ? exportExpiredText(expiresAt)
             : `Available until ${formatTimestamp(expiresAt)}`,

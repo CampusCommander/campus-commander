@@ -4,6 +4,7 @@ import {
   JOB_ACTIONS,
   actionLabel,
   durationLine,
+  exportFailureLabel,
   formatDuration,
   jobFilterLabel,
   jobFilterQuery,
@@ -127,6 +128,49 @@ describe('progressLines', () => {
         }),
       ),
     ).toEqual(['48 rows written', 'Report ready']);
+  });
+
+  it('names the Sheet phase and its ready line of the Drive slice', () => {
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-003',
+          status: 'running',
+          progress: progress({ total: 48, succeeded: 0, pending: 0 }),
+          phase: { name: 'create-sheet', done: 0, total: null },
+          exportSummary: { purpose: 'edit' },
+        }),
+      ),
+    ).toEqual(['48 of 48 rows written', 'Creating Google Sheet']);
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-003',
+          status: 'completed',
+          progress: progress({ succeeded: 48, pending: 0 }),
+          phase: { name: 'create-sheet', done: 0, total: null },
+          exportSummary: { purpose: 'edit' },
+        }),
+      ),
+    ).toEqual(['48 rows written', 'Google Sheet ready']);
+  });
+
+  it('names the Drive failures of a Sheet export', () => {
+    expect(
+      progressLines(
+        summary({
+          action: 'export-devices',
+          displayId: 'EXP-003',
+          status: 'failed',
+          progress: progress({ succeeded: 0, pending: 0 }),
+          phase: { name: 'write-rows', done: 0, total: 48 },
+          failure: 'drive-unavailable',
+        }),
+      ),
+    ).toEqual(['0 rows written', 'Drive unavailable']);
+    expect(exportFailureLabel('sheet-write-failed')).toBe('Sheet write failed');
   });
 
   it('drafts the failed and cancelled export rows', () => {

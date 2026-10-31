@@ -93,23 +93,33 @@ function phaseStates(panel: () => HTMLElement | null): string[][] {
   );
 }
 
+/** The default access answer: the Sheet export is available (state 01). */
+const sheetAccessAvailable = {
+  sheetExport: { available: true },
+  driveImport: { available: true },
+};
+
 function setup(
   detail: JobDetail = exportDetail(),
   requestOverride?: (path: string, body?: unknown) => Promise<Response>,
   session: () => { identity: { id: string } } | null = () => null,
+  access: unknown = sheetAccessAvailable,
 ) {
-  const request = vi.fn(
-    requestOverride ??
-      (async (path: string) =>
-        path.startsWith('/api/jobs/')
-          ? response(detail)
-          : response({
-              jobId,
-              displayId: 'EXP-001',
-              status: 'accepted',
-              rows: 48,
-            })),
-  );
+  const request = vi.fn(async (path: string, body?: unknown) => {
+    // The configure step reads the Sheet access before it offers the format (states 01 and 04).
+    // A null answer sends the read through the case's own request stub.
+    if (path === '/api/google/drive' && access !== null)
+      return response(access);
+    if (requestOverride) return requestOverride(path, body);
+    return path.startsWith('/api/jobs/')
+      ? response(detail)
+      : response({
+          jobId,
+          displayId: 'EXP-001',
+          status: 'accepted',
+          rows: 48,
+        });
+  });
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
@@ -171,7 +181,7 @@ beforeEach(() => {
 });
 
 describe('DeviceExportImportDialog', () => {
-  it('shows the configure step with the count and the disabled Sheet card', async () => {
+  it('shows the configure step with the count and the available Sheet card', async () => {
     const { store, render, panel, text } = setup();
     store.openExport(48);
     await render();
@@ -179,12 +189,330 @@ describe('DeviceExportImportDialog', () => {
       'Export devices',
     );
     expect(text()).toContain('48 selected devices · Not submitted');
-    expect(text()).toContain('Google Drive is not available for your account.');
+    // The access read makes the Sheet card available and names where it saves (state 01).
+    expect(text()).toContain('Saved in your Google Drive');
     const primary = panel()?.querySelector<HTMLButtonElement>(
       '.export-actions button[mat-flat-button]',
     );
     expect(primary?.textContent?.trim()).toBe('Export 48 devices');
     expect(primary?.disabled).toBe(false);
+  });
+
+  it('submits the Sheet format that the person chooses', async () => {
+    const { store, render, panel, request } = setup();
+    store.openExport(48);
+    await render();
+    const radios = [
+      ...(panel()?.querySelectorAll<HTMLInputElement>(
+        'mat-radio-button.option-card input',
+      ) ?? []),
+    ];
+    // CSV is the first card, and the available Sheet card follows it (state 01).
+    radios[1]?.click();
+    await render();
+    expect(store.format()).toBe('sheet');
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    const submit = request.mock.calls.find(
+      ([path]) => path === '/api/devices/exports',
+    );
+    expect(submit?.[1]).toMatchObject({ purpose: 'edit', format: 'sheet' });
+  });
+
+  it('keeps CSV available when the delegation refuses the Sheet format', async () => {
+    const { store, render, panel, text, request } = setup(
+      exportDetail(),
+      undefined,
+      undefined,
+      {
+        sheetExport: { available: false, cause: 'delegation' },
+        driveImport: { available: false, cause: 'delegation' },
+      },
+    );
+    store.openExport(48);
+    await render();
+    expect(text()).toContain('Google denied Drive access. Add');
+    expect(text()).toContain(
+      'https://www.googleapis.com/auth/drive.file to the delegation client in the Google Admin Console.',
+    );
+    const radios = [
+      ...(panel()?.querySelectorAll<HTMLInputElement>(
+        'mat-radio-button.option-card input',
+      ) ?? []),
+    ];
+    expect(radios[1]?.disabled).toBe(true);
+    expect(store.format()).toBe('csv');
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    const submit = request.mock.calls.find(
+      ([path]) => path === '/api/devices/exports',
+    );
+    expect(submit?.[1]).toMatchObject({ purpose: 'edit', format: 'csv' });
+  });
+
+  it('selects CSV and names the refused account after a refused Sheet export', async () => {
+    const request = async (path: string) =>
+      path === '/api/devices/exports'
+        ? response({ reason: 'drive-unavailable', cause: 'account' }, 409)
+        : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    expect(text()).toContain(
+      'Google refused Drive access for your account. Export a CSV file instead.',
+    );
+    expect(text()).toContain('Google Drive is not available for your account.');
+    expect(store.format()).toBe('csv');
+    expect(store.step()).toBe('configure');
+  });
+
+  it('keeps the delegation note after Google refused the Sheet format', async () => {
+    const request = async (path: string) =>
+      path === '/api/devices/exports'
+        ? response({ reason: 'drive-unavailable', cause: 'delegation' }, 409)
+        : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    // Only a refused account shows the export alert. A delegation names its note on the card.
+    expect(text()).toContain('Google denied Drive access.');
+    expect(text()).not.toContain(
+      'Google refused Drive access for your account.',
+    );
+    expect(store.format()).toBe('csv');
+    expect(store.step()).toBe('configure');
+  });
+
+  it('selects CSV and names the unreachable Drive after a refused Sheet export', async () => {
+    const request = async (path: string) =>
+      path === '/api/devices/exports'
+        ? response({ reason: 'google-unavailable' }, 503)
+        : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    // A transient failure selects CSV and leaves the Sheet card for another attempt.
+    expect(text()).toContain(
+      'Google Drive is not reachable. Try again, or export a CSV file.',
+    );
+    expect(text()).toContain('Saved in your Google Drive');
+    expect(store.format()).toBe('csv');
+    expect(store.step()).toBe('configure');
+  });
+
+  it('keeps a delayed account refusal out of Reports', async () => {
+    const answer = deferred<Response>();
+    const request = async (path: string) =>
+      path === '/api/devices/exports' ? answer.promise : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    // The person leaves Export and opens the CSV-only Reports before the answer arrives.
+    store.close();
+    store.openReport(48, ['serialNumber']);
+    await render();
+    answer.resolve(
+      response({ reason: 'drive-unavailable', cause: 'account' }, 409),
+    );
+    await render();
+    // The refusal belongs to the export entry, so the report keeps its own composition.
+    expect(store.purpose()).toBe('report');
+    expect(store.step()).toBe('configure');
+    expect(store.format()).toBe('csv');
+    expect(store.driveAlert()).toBe('');
+    expect(store.driveAccess()).toBeNull();
+    expect(text()).not.toContain('Google refused Drive access');
+    expect(text()).not.toContain('Google Sheet');
+  });
+
+  it('keeps a delayed unreachable Drive out of Reports', async () => {
+    const answer = deferred<Response>();
+    const request = async (path: string) =>
+      path === '/api/devices/exports' ? answer.promise : response({});
+    const { store, render, panel, text } = setup(exportDetail(), request);
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    store.close();
+    store.openReport(48, ['serialNumber']);
+    await render();
+    answer.resolve(response({ reason: 'google-unavailable' }, 503));
+    await render();
+    expect(store.purpose()).toBe('report');
+    expect(store.step()).toBe('configure');
+    expect(store.format()).toBe('csv');
+    expect(store.driveAlert()).toBe('');
+    expect(text()).not.toContain('Google Drive is not reachable');
+    expect(text()).not.toContain('Google Sheet');
+  });
+
+  it('names the reachability alert when the access read fails', async () => {
+    const request = async (path: string) =>
+      path === '/api/google/drive' ? response({}, 503) : response({});
+    const { store, render, text } = setup(
+      exportDetail(),
+      request,
+      undefined,
+      null,
+    );
+    store.openExport(48);
+    await render();
+    expect(text()).toContain(
+      'Google Drive is not reachable. Try again, or export a CSV file.',
+    );
+    expect(store.format()).toBe('csv');
+  });
+
+  it('shows Create Google Sheet as the last phase of a running Sheet export', async () => {
+    const { store, render, panel, text } = setup(
+      exportDetail({ phase: { name: 'create-sheet', done: 0, total: null } }),
+    );
+    store.openExport(48);
+    await render();
+    store.setFormat('sheet');
+    await render();
+    panel()
+      ?.querySelector<HTMLButtonElement>(
+        '.export-actions button[mat-flat-button]',
+      )
+      ?.click();
+    await render();
+    expect(store.step()).toBe('monitor');
+    // This tab sent a Sheet export, and the job keeps that format (section 6).
+    expect(store.activeJobs().edit).toMatchObject({ format: 'sheet' });
+    expect(text()).toContain('Write rows');
+    expect(text()).toContain('48 of 48');
+    expect(text()).toContain('Create Google Sheet');
+    expect(text()).not.toContain('Prepare download');
+    // The Sheet phase counts nothing and draws no bar (composition choice 2, state 02).
+    expect(phaseStates(panel)).toEqual([['is-done'], ['is-current']]);
+    expect(panel()?.querySelector('mat-progress-bar')).toBeNull();
+  });
+
+  it('links a ready Sheet and names where it saves', async () => {
+    const sheetUrl = 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit';
+    const { store, render, panel, text } = setup(
+      exportDetail({
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        phase: { name: 'create-sheet', done: 0, total: null },
+        exportFile: {
+          name: 'devices-for-editing-EXP-003',
+          format: 'sheet',
+          sizeBytes: null,
+          rows: 48,
+          columns: 10,
+          expiresAt: null,
+          sheetUrl,
+        },
+      }),
+    );
+    store.openJob('EXP-003');
+    await render();
+    expect(text()).toContain('Google Sheet');
+    expect(text()).toContain('48 rows');
+    expect(text()).toContain('10 columns');
+    expect(text()).toContain('Saved in your Google Drive');
+    expect(text()).not.toContain('Download CSV');
+    const name = panel()?.querySelector<HTMLAnchorElement>('a.file-name');
+    expect(name?.getAttribute('href')).toBe(sheetUrl);
+    expect(name?.getAttribute('target')).toBe('_blank');
+    expect(name?.getAttribute('rel')).toBe('noopener noreferrer');
+    const open = panel()?.querySelector<HTMLAnchorElement>(
+      '.export-actions a[mat-flat-button]',
+    );
+    expect(open?.getAttribute('href')).toBe(sheetUrl);
+    expect(open?.getAttribute('target')).toBe('_blank');
+    expect(open?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(open?.textContent?.trim()).toBe('Open in Google Sheets');
+  });
+
+  it('repeats the account alert when Google refused the Sheet export', async () => {
+    const { store, render, text } = setup(
+      exportDetail({
+        status: 'failed',
+        failure: 'drive-unavailable',
+        phase: { name: 'write-rows', done: 0, total: 48 },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-003');
+    await render();
+    expect(text()).toContain(
+      'Google refused Drive access for your account. Export a CSV file instead.',
+    );
+  });
+
+  it('names the incomplete Sheet when Google Sheets stopped the export', async () => {
+    const { store, render, text } = setup(
+      exportDetail({
+        status: 'failed',
+        failure: 'sheet-write-failed',
+        phase: { name: 'create-sheet', done: 0, total: null },
+        finishedAt: new Date().toISOString(),
+      }),
+    );
+    store.openJob('EXP-003');
+    await render();
+    expect(text()).toContain(
+      'Google Sheets stopped the export. The Sheet in your Google Drive is incomplete. Export again.',
+    );
+  });
+
+  it('hides the Google Sheet card in Reports', async () => {
+    const { store, render, text } = setup();
+    store.openReport(48, ['serialNumber']);
+    await render();
+    expect(text()).toContain('CSV file');
+    expect(text()).not.toContain('Google Sheet');
+    expect(text()).not.toContain('Saved in your Google Drive');
   });
 
   it('names the limit and disables the primary action over the limit', async () => {
@@ -534,6 +862,7 @@ describe('DeviceExportImportDialog', () => {
     expect(store.activeJobs().edit).toEqual({
       displayId: 'EXP-001',
       purpose: 'edit',
+      format: 'csv',
     });
     store.close();
     await render();
@@ -771,6 +1100,7 @@ describe('DeviceExportImportDialog', () => {
     expect(store.activeJobs().edit).toEqual({
       displayId: 'EXP-001',
       purpose: 'edit',
+      format: 'csv',
     });
   });
 });

@@ -1483,6 +1483,21 @@ it('shows a Sheet export file without a byte size or an expiry line', () => {
   expect(text(element)).toContain('devices-for-editing-EXP-003');
   expect(text(element)).toContain('6 rows');
   expect(text(element)).toContain('10 columns');
+  expect(text(element)).toContain('Saved in your Google Drive');
+  expect(text(element)).not.toContain('Download CSV');
+  // The Sheet name and the primary action open the Sheet in a new tab (choice 3).
+  const sheetUrl = 'https://docs.google.com/spreadsheets/d/1Abc_def-ghi/edit';
+  const links = [...element.querySelectorAll('a')].filter(
+    (candidate) => candidate.getAttribute('href') === sheetUrl,
+  );
+  expect(links.map((link) => link.textContent?.trim())).toEqual([
+    'devices-for-editing-EXP-003',
+    'Open in Google Sheets',
+  ]);
+  for (const link of links) {
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  }
   // A Sheet never expires and holds no byte size (Drive slice design section 1).
   expect(text(element)).not.toContain('Available until');
   expect(text(element)).not.toContain('KB');

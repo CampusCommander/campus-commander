@@ -1,4 +1,8 @@
-import type { JobDisplayId, JobFailure } from '@campus/application-contracts';
+import type {
+  DeviceExportFormat,
+  JobDisplayId,
+  JobFailure,
+} from '@campus/application-contracts';
 import { formatTimestamp } from '../jobs/job-fields';
 import type { UpdateDeviceNote } from './device-update-messages';
 
@@ -40,6 +44,21 @@ export const CSV_FORMAT_LABEL = 'CSV file';
 export const SHEET_FORMAT_LABEL = 'Google Sheet';
 export const SHEET_FORMAT_NOTE =
   'Google Drive is not available for your account.';
+/** The line of an available Sheet card (state 01, `notes:528`). The owner approved it with the
+ * Drive slice mockup of 2026-10-30. */
+export const SHEET_SAVED_LINE = 'Saved in your Google Drive';
+/** The note of a Sheet card that the delegation refuses (state 04, `notes:540`). */
+export const SHEET_DELEGATION_NOTE =
+  'Google denied Drive access. Add https://www.googleapis.com/auth/drive.file to the delegation client in the Google Admin Console.';
+/** The export alert after a refused account (Drive slice card DF1). The failure line of a
+ * `drive-unavailable` job repeats it. */
+export const SHEET_ACCOUNT_ALERT =
+  'Google refused Drive access for your account. Export a CSV file instead.';
+/** The alert of a Sheet export whose Google access cannot be reached (Drive slice card DF1). */
+export const SHEET_UNREACHABLE_ALERT =
+  'Google Drive is not reachable. Try again, or export a CSV file.';
+/** The primary action of a ready Sheet (state 03, `notes:536`). It opens a new tab. */
+export const SHEET_OPEN_LABEL = 'Open in Google Sheets';
 /** The report columns heading of state 07. */
 export const REPORT_COLUMNS_LABEL = 'Visible grid columns';
 
@@ -57,10 +76,12 @@ export const CREATE_REPORT_LABEL = 'Create report';
 export const DOWNLOAD_CSV_LABEL = 'Download CSV';
 export const START_VALIDATION_LABEL = 'Start validation';
 
-/** The two phases of an export (design section 2, state 04). */
+/** The phases of an export (design section 2, state 04). A Sheet export writes its Sheet last,
+ * after the rows are staged (Drive slice design section 6). */
 export const EXPORT_PHASE_LABELS: Readonly<Record<string, string>> =
   Object.freeze({
     'write-rows': 'Write rows',
+    'create-sheet': 'Create Google Sheet',
     'prepare-download': 'Prepare download',
   });
 
@@ -94,6 +115,11 @@ export function exportFailureText(failure: JobFailure | null): string {
       return 'Your permissions changed while the export ran. Reload the page, then export again.';
     case 'connection-changed':
       return 'The Google connection changed while the export ran. Export again.';
+    // A Sheet export that Google refused or that Sheets stopped (Drive slice design section 6).
+    case 'drive-unavailable':
+      return SHEET_ACCOUNT_ALERT;
+    case 'sheet-write-failed':
+      return 'Google Sheets stopped the export. The Sheet in your Google Drive is incomplete. Export again.';
     default:
       return 'The export failed before it wrote a file. Export again.';
   }
@@ -102,12 +128,13 @@ export function exportFailureText(failure: JobFailure | null): string {
 /** The facts of a ready export file. A Sheet holds no byte size, so it names none (Drive slice
  * design section 1). */
 export function exportFileFactList(file: {
+  format: DeviceExportFormat;
   sizeBytes: number | null;
   rows: number;
   columns: number;
 }): readonly string[] {
   return [
-    'CSV file',
+    file.format === 'sheet' ? SHEET_FORMAT_LABEL : CSV_FORMAT_LABEL,
     ...(file.sizeBytes === null ? [] : [fileSizeText(file.sizeBytes)]),
     `${file.rows.toLocaleString('en-US')} ${file.rows === 1 ? 'row' : 'rows'}`,
     `${file.columns.toLocaleString('en-US')} ${
@@ -117,6 +144,7 @@ export function exportFileFactList(file: {
 }
 
 export function exportFileFacts(file: {
+  format: DeviceExportFormat;
   sizeBytes: number | null;
   rows: number;
   columns: number;

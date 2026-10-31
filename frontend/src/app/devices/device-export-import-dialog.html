@@ -75,22 +75,33 @@
             <mat-radio-group
               class="option-cards"
               aria-labelledby="format-label"
-              value="csv"
+              [value]="format()"
+              (change)="chooseFormat($event.value)"
             >
               <mat-radio-button class="option-card" value="csv">
                 <span class="option-label">{{ CSV_FORMAT_LABEL }}</span>
               </mat-radio-button>
+              @if (showSheetFormat()) {
               <mat-radio-button
                 class="option-card"
                 value="sheet"
-                [disabled]="true"
+                [disabled]="!sheetAvailable()"
               >
                 <span class="option-label">{{ SHEET_FORMAT_LABEL }}</span>
-                <span class="option-line why">{{ SHEET_FORMAT_NOTE }}</span>
+                @if (sheetNote(); as note) {
+                <span class="option-line why">{{ note }}</span>
+                } @else if (sheetAvailable()) {
+                <span class="option-line">{{ SHEET_SAVED_LINE }}</span>
+                }
               </mat-radio-button>
+              }
             </mat-radio-group>
           </section>
-          @if (store.purpose() === 'report') {
+          @if (driveAlert(); as alert) {
+          <div class="action-note error" role="alert">
+            <p>{{ alert }}</p>
+          </div>
+          } @if (store.purpose() === 'report') {
           <section class="group" aria-labelledby="columns-label">
             <p id="columns-label" class="list-label">
               {{ REPORT_COLUMNS_LABEL }}
@@ -148,11 +159,23 @@
         <div class="step">
           <div class="file-card">
             <span class="file-glyph" aria-hidden="true">
-              <span class="material-symbols-outlined">csv</span>
+              <span class="material-symbols-outlined"
+                >{{ exportFile.sheet ? 'table_chart' : 'csv' }}</span
+              >
             </span>
             <div class="file-main">
               <div class="file-head">
+                @if (exportFile.sheet && exportFile.sheetUrl) {
+                <a
+                  class="file-name"
+                  [href]="exportFile.sheetUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >{{ exportFile.name }}</a
+                >
+                } @else {
                 <p class="file-name">{{ exportFile.name }}</p>
+                }
                 <span
                   class="status-chip small"
                   [class.tone-success]="!exportFile.expired"
@@ -167,12 +190,21 @@
                 <li>{{ fact }}</li>
                 }
               </ul>
+              @if (exportFile.sheet) {
+              <p class="until">
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >folder</span
+                >
+                {{ SHEET_SAVED_LINE }}
+              </p>
+              } @else {
               <p class="until">
                 <span class="material-symbols-outlined" aria-hidden="true"
                   >schedule</span
                 >
                 {{ exportFile.until }}
               </p>
+              }
             </div>
           </div>
         </div>
@@ -1063,7 +1095,16 @@
       } } @case ('file') {
       <span class="export-state"></span>
       <button mat-button type="button" (click)="done()">Done</button>
-      @if (file(); as exportFile) { @if (exportFile.expired) {
+      @if (file(); as exportFile) { @if (exportFile.sheet) { @if
+      (exportFile.sheetUrl) {
+      <a
+        mat-flat-button
+        [href]="exportFile.sheetUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        >{{ SHEET_OPEN_LABEL }}</a
+      >
+      } } @else if (exportFile.expired) {
       <button mat-flat-button type="button" disabled>
         {{ DOWNLOAD_CSV_LABEL }}
       </button>
