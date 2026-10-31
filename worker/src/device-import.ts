@@ -1322,8 +1322,10 @@ export class DeviceImportJobs {
     };
 
     const source = async function* (): AsyncIterable<Buffer> {
-      yield Buffer.from(writer.start(), 'utf8');
       if (sheet) {
+        // The stage of a Sheet is a generated CSV file, so it carries the byte order mark of an
+        // export. A Drive CSV file streams its own bytes, which keep their own mark (step 5).
+        yield Buffer.from(writer.start(), 'utf8');
         const tab = await client.readTab(fileId, tabId as number);
         for await (const row of tab.rows()) {
           const stop = run.reason();
