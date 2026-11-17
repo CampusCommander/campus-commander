@@ -3010,6 +3010,146 @@ export async function qualifyDeviceWriteJobs({
       },
     );
 
+    await check(
+      'an older read-back 404 cannot remove a newer presence',
+      async () => {
+        await upsert([device('old404')], new Date(Date.now() - 60 * 60 * 1000));
+        const job = await makeJob({ devices: ['old404'] });
+        const admitted = await admit(false);
+        assert.equal(
+          admitted.jobId,
+          job.jobId,
+          'The admission picks this job.',
+        );
+        const attempt = randomUUID();
+        await claim(job.jobId, admitted.dispatchToken, 0, attempt);
+        await stop(job.jobId, admitted.dispatchToken, 0, attempt);
+        await prepareFinish(job.jobId, admitted.dispatchToken);
+        const readBack = randomUUID();
+        await claimVerification(job.jobId, null, readBack);
+        // The read-back answer was observed before this presence answer landed.
+        const observedAt = new Date(Date.now() - 30 * 60 * 1000);
+        await upsert(
+          [device('old404')],
+          new Date(Date.now() - 15 * 60 * 1000),
+          'read',
+        );
+        const settled = await settle(
+          job.jobId,
+          null,
+          readBack,
+          'read-back',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 404,
+              googleReason: 'notFound',
+              verifiedBy: 'read-back',
+              outcomeReason: 'not-found',
+            },
+          ],
+          observedAt,
+        );
+        assert.equal(settled.settled.length, 1, 'The evidence stays.');
+        assert.deepEqual(settled.removed, []);
+        assert.deepEqual(settled.publication.removedIds, []);
+        assert.equal((await deviceRow('old404')).removed_at, null);
+        assert.equal(await overlay('old404'), undefined);
+        assert.equal((await operations(job.jobId))[0].status, 'failed');
+        await endJob(job.jobId);
+      },
+    );
+
+    await check(
+      'a repeated read-back absence advances the fence against a held presence',
+      async () => {
+        await upsert(
+          [device('repeat404')],
+          new Date(Date.now() - 4 * 60 * 60 * 1000),
+        );
+        const first = await makeJob({ devices: ['repeat404'] });
+        const firstAdmit = await admit(false);
+        assert.equal(firstAdmit.jobId, first.jobId);
+        const firstAttempt = randomUUID();
+        await claim(first.jobId, firstAdmit.dispatchToken, 0, firstAttempt);
+        await stop(first.jobId, firstAdmit.dispatchToken, 0, firstAttempt);
+        await prepareFinish(first.jobId, firstAdmit.dispatchToken);
+        const firstReadBack = randomUUID();
+        await claimVerification(first.jobId, null, firstReadBack);
+        const firstAt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+        const firstAnswer = await settle(
+          first.jobId,
+          null,
+          firstReadBack,
+          'read-back',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 404,
+              googleReason: 'notFound',
+              verifiedBy: 'read-back',
+              outcomeReason: 'not-found',
+            },
+          ],
+          firstAt,
+        );
+        assert.deepEqual(firstAnswer.removed, ['repeat404']);
+        assert.equal(
+          (await deviceRow('repeat404')).removed_at?.toISOString() ?? null,
+          firstAt.toISOString(),
+        );
+        await endJob(first.jobId);
+
+        // A held presence answer sits between the two absences. The later absence moves the
+        // tombstone beyond it, so the held answer cannot restore the row when it lands.
+        const heldAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const second = await makeJob({ devices: ['repeat404'] });
+        const secondAdmit = await admit(false);
+        assert.equal(secondAdmit.jobId, second.jobId);
+        const secondAttempt = randomUUID();
+        await claim(second.jobId, secondAdmit.dispatchToken, 0, secondAttempt);
+        await stop(second.jobId, secondAdmit.dispatchToken, 0, secondAttempt);
+        await prepareFinish(second.jobId, secondAdmit.dispatchToken);
+        const secondReadBack = randomUUID();
+        await claimVerification(second.jobId, null, secondReadBack);
+        const secondAt = new Date(Date.now() - 60 * 60 * 1000);
+        const secondAnswer = await settle(
+          second.jobId,
+          null,
+          secondReadBack,
+          'read-back',
+          [
+            {
+              operationNumber: 1,
+              outcome: 'failed',
+              googleStatus: 404,
+              googleReason: 'notFound',
+              verifiedBy: 'read-back',
+              outcomeReason: 'not-found',
+            },
+          ],
+          secondAt,
+        );
+        assert.deepEqual(secondAnswer.removed, ['repeat404']);
+        const repeated = (await deviceRow('repeat404')).removed_at;
+        assert.equal(repeated?.toISOString() ?? null, secondAt.toISOString());
+        await endJob(second.jobId);
+
+        await upsert([device('repeat404')], heldAt, 'read');
+        assert.equal(
+          (await deviceRow('repeat404')).removed_at?.toISOString() ?? null,
+          secondAt.toISOString(),
+          'The held presence cannot undo the newer repeated absence.',
+        );
+
+        // A presence observation after the newest absence restores the row.
+        await upsert([device('repeat404')], new Date(), 'read');
+        assert.equal((await deviceRow('repeat404')).removed_at, null);
+      },
+    );
+
     // Section 5.8: a lock-contended observation waits for the settlement and then sees its overlay.
     await check(
       'a list blocked behind a settlement keeps the accepted value and its overlay',
