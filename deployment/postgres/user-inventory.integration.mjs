@@ -119,15 +119,15 @@ export async function qualifyUserInventory({
     ]);
 
     await check(
-      'a fresh database runs every migration through 020',
+      'a fresh database runs every migration through 021',
       async () => {
         const ids = (
           await migrator.query(
             'SELECT id FROM cc.schema_migrations ORDER BY id',
           )
         ).rows.map((row) => row.id);
-        assert.equal(ids.at(-1), '020-user-sync');
-        assert.equal(ids.length, 20);
+        assert.equal(ids.at(-1), '021-user-refresh-targets');
+        assert.equal(ids.length, 21);
       },
     );
 
@@ -359,6 +359,105 @@ export async function qualifyUserInventory({
           'SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result',
           [devicesOnly, customer, created.jobId],
         );
+      },
+    );
+
+    await check(
+      'a refresh records target paths from the inventory of its entity type',
+      async () => {
+        const userId = `k7-user-${randomUUID().slice(0, 8)}`;
+        const deviceId = `k7-device-${randomUUID().slice(0, 8)}`;
+        const missingId = `k7-missing-${randomUUID().slice(0, 8)}`;
+        const userPath = '/Students/Grade 7';
+        const devicePath = '/Schools/North';
+        const syncedAt = new Date().toISOString();
+        assert.equal(
+          await result('SELECT cc.upsert_users($1,$2,$3) AS result', [
+            customer,
+            JSON.stringify([
+              {
+                userId,
+                primaryEmail: `${userId}@example.org`,
+                orgUnitPath: userPath,
+                suspended: false,
+                archived: false,
+                twoStepEnrolled: true,
+              },
+            ]),
+            syncedAt,
+          ]),
+          1,
+          'The fixture user is stored.',
+        );
+        assert.equal(
+          await result('SELECT cc.upsert_devices($1,$2,$3) AS result', [
+            customer,
+            JSON.stringify([
+              {
+                deviceId,
+                serialNumber: `SN-${deviceId}`,
+                model: 'Lenovo 100e Gen 4',
+                assetTag: `HS-${deviceId}`,
+                orgUnitPath: devicePath,
+                lastContact: '2026-10-05T12:00:00.000Z',
+                annotatedLocation: null,
+                notes: null,
+                status: 'ACTIVE',
+              },
+            ]),
+            syncedAt,
+          ]),
+          1,
+          'The fixture device is stored.',
+        );
+        const target = (jobId, id) =>
+          adminRow(
+            'SELECT device_id,org_unit_path FROM cc.job_targets WHERE job_id=$1 AND device_id=$2',
+            [jobId, id],
+          );
+        const targetPaths = (jobId) =>
+          adminRow(
+            'SELECT target_org_unit_paths FROM cc.jobs WHERE job_id=$1',
+            [jobId],
+          ).then((row) => row.target_org_unit_paths);
+        try {
+          const userJob = await createJob(usersOnly, 'user', [userId]);
+          assert.deepEqual(await target(userJob.jobId, userId), {
+            device_id: userId,
+            org_unit_path: userPath,
+          });
+          assert.deepEqual(await targetPaths(userJob.jobId), [userPath]);
+          const deviceJob = await createJob(devicesOnly, 'device', [deviceId]);
+          assert.deepEqual(await target(deviceJob.jobId, deviceId), {
+            device_id: deviceId,
+            org_unit_path: devicePath,
+          });
+          assert.deepEqual(await targetPaths(deviceJob.jobId), [devicePath]);
+          // A user refresh reads cc.users only. A device ID never borrows a device path.
+          const crossJob = await createJob(usersOnly, 'user', [deviceId]);
+          assert.deepEqual(await target(crossJob.jobId, deviceId), {
+            device_id: deviceId,
+            org_unit_path: null,
+          });
+          assert.deepEqual(await targetPaths(crossJob.jobId), []);
+          // A missing target keeps its row with a null path and an empty header list.
+          const missingJob = await createJob(usersOnly, 'user', [missingId]);
+          assert.deepEqual(await target(missingJob.jobId, missingId), {
+            device_id: missingId,
+            org_unit_path: null,
+          });
+          assert.deepEqual(await targetPaths(missingJob.jobId), []);
+        } finally {
+          // The later full-sync and device checks read the whole inventory.
+          await migrator.query(
+            'DELETE FROM cc.users WHERE customer_id=$1 AND user_id=$2',
+            [customer, userId],
+          );
+          await migrator.query(
+            'DELETE FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+            [customer, deviceId],
+          );
+        }
       },
     );
 
