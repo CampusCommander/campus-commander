@@ -201,17 +201,17 @@ Every workflow uses dialogs, ends where it starts, and keeps progress and result
 
 ### 6.3 Effect on stored values
 
-| Event                                                          | Google behavior                                                                                                                                                | Status                                                |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| A value PATCH names an attribute with `null`, or leaves it out | The Guide states that `null` deletes the value and that a left-out attribute stays. In check L3, a `null` single value and a `null` list stayed for 8 seconds. | Guide, check L3. E16 applies (design C9).             |
-| A value PATCH names a category with `null`                     | Deletes every value of that category on that user                                                                                                              | Guide. This design never sends it (E15).              |
-| `schemas.update` leaves out a field                            | Removes the field from the schema                                                                                                                              | Guide example                                         |
-| Values of a removed field                                      | No value of the field reads right after the update                                                                                                             | Check L3, one user                                    |
-| A new field with the name of a removed field                   | Starts empty, with a new `fieldId`                                                                                                                             | Check L3, reads at once and 1 second later            |
-| `schemas.delete` while users hold values                       | Accepted with 204. A user read that names the deleted category answers 400 `invalid`, so no read shows the values.                                             | Check L3. The deletion of the values is not verified. |
-| A new category with the name of a deleted category             | Accepted at once                                                                                                                                               | Check L2                                              |
-| One value to multiple values                                   | The value reads as a list of one entry                                                                                                                         | Check L3                                              |
-| Delete of an attribute that a SAML app maps                    | The Admin console refuses it. No source gives the API answer.                                                                                                  | Not verified. No live check without a mapped app.     |
+| Event                                                          | Google behavior                                                                                                                                                                                                                                            | Status                                                |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| A value PATCH names an attribute with `null`, or leaves it out | The Guide states that `null` deletes the value and that a left-out attribute stays. In check L3, a `null` single value and a `null` list stayed for 8 seconds. Check L4 sent `null` through `users.update`, and Google cleared both values in 1.4 seconds. | Guide, check L3. E16 applies (design C9).             |
+| A value PATCH names a category with `null`                     | Deletes every value of that category on that user                                                                                                                                                                                                          | Guide. This design never sends it (E15).              |
+| `schemas.update` leaves out a field                            | Removes the field from the schema                                                                                                                                                                                                                          | Guide example                                         |
+| Values of a removed field                                      | No value of the field reads right after the update                                                                                                                                                                                                         | Check L3, one user                                    |
+| A new field with the name of a removed field                   | Starts empty, with a new `fieldId`                                                                                                                                                                                                                         | Check L3, reads at once and 1 second later            |
+| `schemas.delete` while users hold values                       | Accepted with 204. A user read that names the deleted category answers 400 `invalid`, so no read shows the values.                                                                                                                                         | Check L3. The deletion of the values is not verified. |
+| A new category with the name of a deleted category             | Accepted at once                                                                                                                                                                                                                                           | Check L2                                              |
+| One value to multiple values                                   | The value reads as a list of one entry                                                                                                                                                                                                                     | Check L3                                              |
+| Delete of an attribute that a SAML app maps                    | The Admin console refuses it. No source gives the API answer.                                                                                                                                                                                              | Not verified. No live check without a mapped app.     |
 
 ## 7. Jobs
 
@@ -291,7 +291,7 @@ Each body is `{ "customSchemas": { ... } }` with only the changed attributes. `n
 
 - One change set holds one or more attributes, each once, with one mode each (`docs/superpowers/specs/2026-10-21-update-device-fields-design.md:22`). A user whose final value equals the current value is Unchanged and gets no operation.
 - Discovery states that `users.patch` cannot clear repeated objects such as addresses. In check L3, a `users.patch` with `null` kept a single value and a list for 8 seconds.
-- E16 applies, so the job sends each body that holds a `null` with `users.update` (design C9). Discovery states that `users.update` clears `null` fields. Check L4 tests that clear before the build (design K30).
+- E16 applies, so the job sends each body that holds a `null` with `users.update` (design C9). Discovery states that `users.update` clears `null` fields. Check L4 confirmed that clear: a `users.update` body that named a single value and a list with `null` cleared both in 1.4 seconds (design K30).
 
 ### 8.4 Final values and conflicts
 
@@ -383,7 +383,7 @@ The release needs the owner's yes, as 0.3.0 did (baseline section 4). It adds:
   - `If-Match` gives 412 on a delete. Check L2 showed that an update ignores `If-Match`.
   - A delete removes the values of the category. Check L3 showed that a removed attribute reads no value.
   - An unknown attribute answers 400.
-  - `users.update` deletes a `null` value.
+  - `users.update` deletes a `null` value. Check L4 confirmed the clear.
 
 Tests follow the failing-first rule (`docs/superpowers/specs/2026-10-16-device-write-jobs-design.md:1402`):
 
@@ -394,11 +394,12 @@ Tests follow the failing-first rule (`docs/superpowers/specs/2026-10-16-device-w
 
 The part allowlist adds the `schemas` and `users` paths (`libs/google-connection/src/lib/provider.ts:278-293`). New capabilities add the scopes, as `device-changes` does (`libs/application-contracts/src/lib/google-capabilities.ts:70-75`). The owner adds each scope in his Google Admin console. Nobody asks for a key or secret in chat.
 
-| Check | Authorization                                                                                | Steps                                                                                                                                                                                          | Settles                                                               |
-| ----- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| L1    | Standing read-only authorization, after the owner adds `admin.directory.userschema.readonly` | `schemas.list`, then `schemas.get` inside the batch endpoint. With the read scope of document A, `users.get` with `projection=full` for one holder of each info type.                          | Batch support for `schemas`. The JSON forms of INT64, BOOL, and DATE. |
-| L2    | The owner's explicit yes                                                                     | On a category `CcLiveCheck`: insert, insert again, update with a stale `If-Match`, a 200-character name, delete, and insert with the same name.                                                | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
-| L3    | The owner's explicit yes, with one test user that he names                                   | Set each info type. Clear a single and a multi-value attribute. Change one value to multiple values. Remove an attribute, add it again, then delete the category. `users.get` after each step. | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
+| Check | Authorization                                                                                | Steps                                                                                                                                                                                             | Settles                                                               |
+| ----- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| L1    | Standing read-only authorization, after the owner adds `admin.directory.userschema.readonly` | `schemas.list`, then `schemas.get` inside the batch endpoint. With the read scope of document A, `users.get` with `projection=full` for one holder of each info type.                             | Batch support for `schemas`. The JSON forms of INT64, BOOL, and DATE. |
+| L2    | The owner's explicit yes                                                                     | On a category `CcLiveCheck`: insert, insert again, update with a stale `If-Match`, a 200-character name, delete, and insert with the same name.                                                   | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
+| L3    | The owner's explicit yes, with one test user that he names                                   | Set each info type. Clear a single and a multi-value attribute. Change one value to multiple values. Remove an attribute, add it again, then delete the category. `users.get` after each step.    | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
+| L4    | The owner's explicit yes                                                                     | On `CcLiveClear`: set three single values and a list, then send one `users.update` body that clears a single value and the list with `null` and leaves the third out. `users.get` after the step. | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
 
 Each check stores sanitized evidence with `example.org` and `C0123456`. No live category or value write runs without the owner's yes.
 
@@ -440,23 +441,23 @@ Departures from the baseline, each open until the owner approves the screens:
 
 The owner can change each default.
 
-| ID       | Topic            | Default                                                                                                                          |
-| -------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| E1       | Name derivation  | Split at characters outside letters and digits, upper-case each first letter, and join. Editable until the first save.           |
-| E2       | Name comparison  | Without letter case. The Google case rule is not verified, and the stricter rule fits both answers.                              |
-| E3       | Typed phrases    | The attribute name for a removal and the category display name for a delete, trimmed, compared exactly                           |
-| E4, E5   | Edit call        | `schemas.update` with the complete schema, never `schemas.patch`. Every call names the category by `schemaId`.                   |
-| E6       | Transport        | Every Google call inside the Directory batch endpoint. The category job sends one part.                                          |
-| E7       | Concurrency      | A fresh `schemas.get` and an `etag` compare before the write, then `If-Match`, which an update ignores (check L2)                |
-| E8       | Write slot       | Category and value jobs share the one write slot of device write jobs                                                            |
-| E10      | Value limits     | 500 code points for each text entry. Whole numbers within the JSON safe range. Email by `z.email()`.                             |
-| E11      | Range            | The value checks refuse a value outside the range of the attribute                                                               |
-| E12, E13 | Columns          | A multi-value cell lists its values in order with commas. Column ID `attr:<schemaName>.<fieldName>`.                             |
-| E14      | Actions          | `users:schema-manage`, `users:write`, and `users:bulk-actions`, with scope kinds `platform` and `district`                       |
-| E15      | Category `null`  | No body sets a whole category to `null`                                                                                          |
-| E16      | Fallback call    | `users.update` with the same body if check L3 shows that `users.patch` cannot clear a list. L3 showed it (design C9).            |
-| E9, E17  | Expiry and sizes | Plans and previews expire after 15 minutes. Edit lists: 2,500 edits on 500 users. Selections: 100,000 users. Batches: 250 parts. |
-| E18      | Last attribute   | Remove is disabled. The person deletes the category.                                                                             |
+| ID       | Topic            | Default                                                                                                                                             |
+| -------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1       | Name derivation  | Split at characters outside letters and digits, upper-case each first letter, and join. Editable until the first save.                              |
+| E2       | Name comparison  | Without letter case. The Google case rule is not verified, and the stricter rule fits both answers.                                                 |
+| E3       | Typed phrases    | The attribute name for a removal and the category display name for a delete, trimmed, compared exactly                                              |
+| E4, E5   | Edit call        | `schemas.update` with the complete schema, never `schemas.patch`. Every call names the category by `schemaId`.                                      |
+| E6       | Transport        | Every Google call inside the Directory batch endpoint. The category job sends one part.                                                             |
+| E7       | Concurrency      | A fresh `schemas.get` and an `etag` compare before the write, then `If-Match`, which an update ignores (check L2)                                   |
+| E8       | Write slot       | Category and value jobs share the one write slot of device write jobs                                                                               |
+| E10      | Value limits     | 500 code points for each text entry. Whole numbers within the JSON safe range. Email by `z.email()`.                                                |
+| E11      | Range            | The value checks refuse a value outside the range of the attribute                                                                                  |
+| E12, E13 | Columns          | A multi-value cell lists its values in order with commas. Column ID `attr:<schemaName>.<fieldName>`.                                                |
+| E14      | Actions          | `users:schema-manage`, `users:write`, and `users:bulk-actions`, with scope kinds `platform` and `district`                                          |
+| E15      | Category `null`  | No body sets a whole category to `null`                                                                                                             |
+| E16      | Fallback call    | `users.update` with the same body if check L3 shows that `users.patch` cannot clear a list. L3 showed it (design C9). Check L4 confirmed the clear. |
+| E9, E17  | Expiry and sizes | Plans and previews expire after 15 minutes. Edit lists: 2,500 edits on 500 users. Selections: 100,000 users. Batches: 250 parts.                    |
+| E18      | Last attribute   | Remove is disabled. The person deletes the category.                                                                                                |
 
 ## 16. Delivery plan
 
