@@ -9,6 +9,7 @@ import {
   userAttributeFieldSchema,
   userAttributeKey,
   userAttributeKeySchema,
+  userAttributeOperatorSchema,
   userByIdsSchema,
   userDetailSchema,
   userDomainRefreshSchema,
@@ -22,6 +23,7 @@ import {
   userSelectionChangeSchema,
   userSelectionKeySchema,
   userSelectionRefreshSchema,
+  userSelectionResolveSchema,
   userSelectionSpecSchema,
   userSyncStateSchema,
 } from './users.ts';
@@ -284,6 +286,24 @@ test('an attribute predicate names the category, the attribute, and its info typ
     );
 });
 
+test('each attribute operator names one info type and refuses another', () => {
+  const operators = ['contains', 'numberRange', 'dateRange', 'is', 'hasValue'];
+  assert.deepEqual(userAttributeOperatorSchema.options, operators);
+  for (const operator of operators)
+    assert.equal(
+      userAttributeOperatorSchema.parse(operator),
+      operator,
+      operator,
+    );
+  for (const operator of ['startsWith', 'equals', 'isEmpty', ''])
+    assert.equal(
+      userAttributeOperatorSchema.safeParse(operator).success,
+      false,
+      operator,
+    );
+  assert.equal(userAttributeOperatorSchema.safeParse(null).success, false);
+});
+
 test('a user page carries the rows, the counts, and the refresh it started', () => {
   const page = {
     rows: [{ ...record, stale: false, recordVersion: 1 }],
@@ -401,6 +421,58 @@ test('the selection keeps the device form under the users grid', () => {
       selected: 4,
     },
   );
+});
+
+test('a selection resolve names the Users grid, defaults its predicates, and bounds its row IDs', () => {
+  const tabId = '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b';
+  const request = {
+    gridId: 'users',
+    tabId,
+    rowIds: ['107000000000000000001', '107000000000000000002'],
+  };
+  assert.deepEqual(userSelectionResolveSchema.parse(request), {
+    ...request,
+    predicates: [],
+  });
+  const filtered = {
+    ...request,
+    predicates: [{ field: 'status', operator: 'is', values: ['active'] }],
+  };
+  assert.deepEqual(userSelectionResolveSchema.parse(filtered), filtered);
+  // A Select All answers at most 2,000 row IDs in one resolve.
+  assert.equal(
+    userSelectionResolveSchema.safeParse({
+      ...request,
+      rowIds: Array.from({ length: 2000 }, (_, index) => `id-${index}`),
+    }).success,
+    true,
+  );
+  for (const invalid of [
+    { ...request, gridId: 'devices' },
+    { ...request, tabId: 'not-a-uuid' },
+    { ...request, rowIds: undefined },
+    {
+      ...request,
+      rowIds: Array.from({ length: 2001 }, () => '107000000000000000001'),
+    },
+    {
+      ...request,
+      predicates: Array.from({ length: 21 }, () => ({
+        field: 'fullName',
+        operator: 'equals',
+        value: 'x',
+      })),
+    },
+    {
+      ...request,
+      predicates: [{ field: 'password', operator: 'equals', value: 'x' }],
+    },
+  ])
+    assert.equal(
+      userSelectionResolveSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid),
+    );
 });
 
 test('Refresh Domain answers its sync and its domain read apart', () => {
