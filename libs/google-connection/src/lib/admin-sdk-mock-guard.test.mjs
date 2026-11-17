@@ -10,6 +10,19 @@ import test from 'node:test';
 
 /** The package specifier of the mock. A production import would name it. */
 const MOCK_PACKAGE = '@campuscommander/admin-sdk-mock';
+/** The double of the batch transport. A production import would name it. */
+const BATCH_FAKE = 'batch-fake.mjs';
+/** The names that only a test file, or the double itself, may hold. */
+const DOUBLES = [MOCK_PACKAGE, BATCH_FAKE];
+
+/** True when a file may name a double: a test file, or the double itself. */
+const mayNameDouble = (name) =>
+  name.endsWith('.test.mjs') || name === BATCH_FAKE;
+
+/** The doubles that the text names. */
+function doublesNamed(text) {
+  return DOUBLES.filter((name) => text.includes(name));
+}
 
 /** The production source roots, and the source root of every library. */
 const roots = [
@@ -31,11 +44,29 @@ test('no production source imports the Admin SDK mock', () => {
         continue;
       }
       if (!/\.(?:ts|mjs|cjs|js)$/.test(name)) continue;
-      // A test file may import the mock, because the mock serves tests only.
-      if (name.endsWith('.test.mjs')) continue;
-      if (readFileSync(path, 'utf8').includes(MOCK_PACKAGE)) found.push(path);
+      // A test file may import a double, because the doubles serve tests only.
+      // The transport double itself matches the name it is known by.
+      if (mayNameDouble(name)) continue;
+      if (doublesNamed(readFileSync(path, 'utf8')).length) found.push(path);
     }
   };
   for (const root of roots) walk(root);
   assert.deepEqual(found, []);
+});
+
+test('the guard detects the mock and the batch fake in a production source', () => {
+  assert.deepEqual(
+    doublesNamed(
+      "import { startMock } from '@campuscommander/admin-sdk-mock';",
+    ),
+    [MOCK_PACKAGE],
+  );
+  assert.deepEqual(
+    doublesNamed("import { fakeGoogle } from './batch-fake.mjs';"),
+    [BATCH_FAKE],
+  );
+  assert.deepEqual(
+    doublesNamed("import { GoogleDirectory } from './devices.ts';"),
+    [],
+  );
 });

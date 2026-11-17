@@ -8,7 +8,10 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   MOCK_GOOGLE_HOSTS,
+  MOCK_SCHEMA_READ_SCOPE,
+  mockGoogle,
   mockReviewSettings,
+  mockToken,
   startAdminSdkMock,
 } from './admin-sdk-mock-fixture.mjs';
 
@@ -150,8 +153,36 @@ test('the mock seeds the Easton Consulting district', async (t) => {
       seed: 'campus-commander-review',
       name: 'Easton Consulting',
       primaryDomain: 'easton-consulting.com',
+      customSchemas: true,
     });
     assert.match(mock.adminEmail, /@easton-consulting\.com$/);
+  } finally {
+    mock.watch.stop();
+  }
+});
+
+test('the harness domain answers schemas.list with three categories', async (t) => {
+  const start = await mockProbe(t);
+  const mock = await start();
+  try {
+    // The seed field writes the three categories of the custom attribute
+    // scenario. The read scope proves the grant that the harness service
+    // account carries for the schema routes.
+    const response = await mockGoogle({
+      mock,
+      host: 'admin.googleapis.com',
+      path: `/admin/directory/v1/customer/${mock.customerId}/schemas`,
+      token: await mockToken(mock, MOCK_SCHEMA_READ_SCOPE),
+    });
+    assert.equal(
+      response.status,
+      200,
+      `The mock schemas list answered ${response.status}: ${response.text}`,
+    );
+    const names = (JSON.parse(response.text).schemas ?? [])
+      .map((schema) => schema.schemaName)
+      .sort();
+    assert.deepEqual(names, ['DeviceProgram', 'StaffInfo', 'StudentInfo']);
   } finally {
     mock.watch.stop();
   }
