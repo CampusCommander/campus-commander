@@ -64,12 +64,31 @@ function createDirectory(options = {}) {
     loseInsertAnswer: options.loseInsertAnswer === true,
     interruptAfterInsert: options.interruptAfterInsert === true,
     interruptNextUserRead: false,
+    interruptSchemaReadAt: options.interruptSchemaReadAt ?? null,
+    schemaReads: 0,
     stale: null,
     staleReads: 0,
   };
   const lagReads = options.lagReads ?? 0;
   const clone = (value) =>
     value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  /**
+   * An exception whose `response` getter throws. It escapes the request guard, which
+   * reads `error.response`, so it models an interrupted request that the guard cannot
+   * classify into an HTTP answer.
+   */
+  const interrupt = () => {
+    const interrupted = new Error('request interrupted');
+    interrupted.code = 'ECONNRESET';
+    Object.defineProperty(interrupted, 'response', {
+      get() {
+        const reset = new Error('request interrupted');
+        reset.code = 'ECONNRESET';
+        throw reset;
+      },
+    });
+    return interrupted;
+  };
   const nextField = (spec) => {
     state.fieldSequence += 1;
     return {
@@ -227,17 +246,7 @@ function createDirectory(options = {}) {
         // follows the insert, before runCheck records the category as created.
         if (state.interruptNextUserRead) {
           state.interruptNextUserRead = false;
-          const interrupted = new Error('observation interrupted');
-          interrupted.code = 'ECONNRESET';
-          Object.defineProperty(interrupted, 'response', {
-            get() {
-              // The exception escapes the request guard's own handler.
-              const reset = new Error('observation interrupted');
-              reset.code = 'ECONNRESET';
-              throw reset;
-            },
-          });
-          throw interrupted;
+          throw interrupt();
         }
         if (state.staleReads > 0) {
           state.staleReads -= 1;
@@ -276,6 +285,10 @@ function createDirectory(options = {}) {
     if (url.pathname.startsWith(`${collection}/`)) {
       if (scope !== SCHEMA_SCOPE) throw new FakeAnswer(403, 'forbidden');
       if (method === 'GET') {
+        state.schemaReads += 1;
+        // The cleanup probe is the second schema read of a failing run.
+        if (state.schemaReads === state.interruptSchemaReadAt)
+          throw interrupt();
         if (state.schema === null) throw new FakeAnswer(404, 'notFound');
         return { status: 200, data: clone(state.schema) };
       }
@@ -548,6 +561,68 @@ test('an interrupted post-insert observation still runs cleanup and verifies abs
   );
   assert.equal(evidence.verification.category.httpStatus, 404);
   assert.equal(evidence.verification.skipped, undefined);
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+});
+
+test('a cleanup probe exception still deletes the category after a lost insert answer', async (t) => {
+  const { evidence, written, directory } = await runFlow(t, {
+    loseInsertAnswer: true,
+    interruptSchemaReadAt: 2,
+  });
+
+  // The cleanup probe threw, so its answer is unknown. The delete must still run.
+  assert.equal(evidence.outcome, 'insert-failed');
+  assert.equal(evidence.cleanupFailure, undefined);
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) =>
+        entry.action === 'schemas.get' && entry.failed === 'ECONNRESET',
+    ),
+    'the cleanup records the interrupted probe',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'schemas.delete' && entry.httpStatus === 204,
+    ),
+    'the cleanup deletes the category that the lost POST created',
+  );
+  assert.equal(evidence.verification.category.httpStatus, 404);
+  assert.equal(evidence.verification.category.present, false);
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+  assert.equal(
+    written.cleanup.filter((entry) => entry.action === 'schemas.delete').length,
+    1,
+  );
+});
+
+test('a cleanup probe exception still clears the value and deletes the category after a refused delete', async (t) => {
+  const { evidence, directory } = await runFlow(t, {
+    deletesToRefuse: 1,
+    interruptSchemaReadAt: 2,
+  });
+
+  // Step 8 was refused and the cleanup probe threw. The written value must not remain.
+  assert.equal(evidence.cleanupFailure, undefined);
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) =>
+        entry.action === 'schemas.get' && entry.failed === 'ECONNRESET',
+    ),
+    'the cleanup records the interrupted probe',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'users.patch' && entry.httpStatus === 200,
+    ),
+    'the cleanup clears the value that the user read observed',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'schemas.delete' && entry.httpStatus === 204,
+    ),
+    'the cleanup deletes the category after the refused step 8 delete',
+  );
+  assert.equal(evidence.verification.category.httpStatus, 404);
   assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
 });
 
