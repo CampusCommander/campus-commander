@@ -161,6 +161,20 @@ const session = (actions) => ({
   csrfToken: 'a'.repeat(64),
 });
 
+/** PostgreSQL raises 42501 from cc.read_user_sync for a caller without users:read. */
+const userDenied = () => {
+  throw Object.assign(new Error('User read authority is required.'), {
+    code: '42501',
+  });
+};
+
+/** PostgreSQL raises 42501 from cc.read_device_sync for a caller without devices:read. */
+const deviceDenied = () => {
+  throw Object.assign(new Error('Device read authority is required.'), {
+    code: '42501',
+  });
+};
+
 /**
  * The one subscriber connection of the API instance. It answers the channel of each listener, as
  * `EventFanout.listen` does, and parses one published message with that channel's schema.
@@ -209,6 +223,7 @@ before(async () => {
     guardModule,
     jobsServiceModule,
     devicesServiceModule,
+    usersServiceModule,
     authModule,
     authzModule,
     eventsModule,
@@ -218,6 +233,7 @@ before(async () => {
     import('../auth/auth.guard.ts'),
     import('../jobs/jobs.service.ts'),
     import('../devices/devices.service.ts'),
+    import('../users/users.service.ts'),
     import('../auth/auth.service.ts'),
     import('../auth/authorize-action.ts'),
     import('../devices/device-events.service.ts'),
@@ -227,6 +243,7 @@ before(async () => {
   const { AuthGuard } = guardModule;
   const { JobsService } = jobsServiceModule;
   const { DevicesService } = devicesServiceModule;
+  const { UsersService } = usersServiceModule;
   const { AuthService } = authModule;
   const { authorizeAction } = authzModule;
   const { DeviceEventsService } = eventsModule;
@@ -242,6 +259,7 @@ before(async () => {
     [
       JobsService,
       DevicesService,
+      UsersService,
       AuthService,
       DeviceEventsService,
       TestConfiguration,
@@ -257,6 +275,7 @@ before(async () => {
   // The production services decide. Each test names the rows that PostgreSQL answers.
   const jobs = new JobsService(store);
   const devices = new DevicesService(store, {}, {});
+  const users = new UsersService(store, {}, {}, {}, {});
 
   class EventRoutesModule {}
   Module({
@@ -264,6 +283,7 @@ before(async () => {
     providers: [
       { provide: JobsService, useValue: jobs },
       { provide: DevicesService, useValue: devices },
+      { provide: UsersService, useValue: users },
       {
         // The session and the audit store are test doubles. The permission decision,
         // `authorizeAction`, is the real rule.
@@ -405,6 +425,7 @@ test('one stream carries the job feed and the device feed of a caller with devic
     ['cc.job_reader', [{ customer_id: CUSTOMER }]],
     ['cc.read_device_sync', [{ result: syncState() }]],
     ['cc.job_visible', [{ visible: true }]],
+    ['cc.read_user_sync', userDenied],
   ]);
   arrange(db, ['jobs:read', 'devices:read']);
 
@@ -489,6 +510,7 @@ test('a caller without devices:read receives the job feed alone when the sync re
         });
       },
     ],
+    ['cc.read_user_sync', userDenied],
   ]);
   arrange(db, ['jobs:read']);
 
@@ -532,6 +554,7 @@ test('a jobs:manage-only caller receives the job feed alone', async () => {
         });
       },
     ],
+    ['cc.read_user_sync', userDenied],
   ]);
   arrange(db, ['jobs:manage']);
 
@@ -558,6 +581,7 @@ test('a customer without a sync receives the job feed alone', async () => {
   const db = database([
     ['cc.job_reader', [{ customer_id: CUSTOMER }]],
     ['cc.read_device_sync', [{ result: null }]],
+    ['cc.read_user_sync', userDenied],
   ]);
   arrange(db, ['jobs:read', 'devices:read']);
 
@@ -585,6 +609,7 @@ test('a sync of another customer leaves the device feed out', async () => {
   const db = database([
     ['cc.job_reader', [{ customer_id: CUSTOMER }]],
     ['cc.read_device_sync', [{ result: syncState(OTHER) }]],
+    ['cc.read_user_sync', userDenied],
   ]);
   arrange(db, ['jobs:read', 'devices:read']);
 
@@ -639,6 +664,7 @@ test('a failed job read ends the stream', async () => {
         throw new Error('store down');
       },
     ],
+    ['cc.read_user_sync', userDenied],
   ]);
   // The caller has no jobs:read, so the job feed decides each event with one read.
   arrange(db, ['devices:read']);
@@ -667,6 +693,7 @@ test('a failed device read sends its final event and ends the stream', async () 
         throw new Error('store down');
       },
     ],
+    ['cc.read_user_sync', userDenied],
   ]);
   // The caller reads devices and no jobs, so the failure of a finished job needs a read.
   arrange(db, ['devices:read']);
@@ -682,4 +709,237 @@ test('a failed device read sends its final event and ends the stream', async () 
   });
   assert.equal(await stream.end(), true, 'The failed read ends the stream.');
   assert.deepEqual(fanout.feeds, [], 'Both feeds leave the stream.');
+});
+
+test('a caller without users:read receives no user event', async () => {
+  // The device feed subscribes the entity channel. The users feed is left out before authorize.
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', [{ result: syncState() }]],
+    ['cc.read_user_sync', userDenied],
+  ]);
+  arrange(db, ['jobs:read', 'devices:read']);
+
+  const stream = await open('/api/events');
+
+  assert.equal(stream.status, 200);
+  assert.deepEqual(
+    fanout.feeds.map((feed) => feed.channel),
+    [jobEventsChannel(CUSTOMER), entityEventsChannel(CUSTOMER)],
+  );
+  assert.deepEqual(authorizeCalls, [
+    ['devices:read', { kind: 'district', customerId: CUSTOMER }],
+  ]);
+
+  // A user batch, a user job, and a user sync reach no frame of this stream.
+  fanout.publish(entityEventsChannel(CUSTOMER), userBatch);
+  fanout.publish(entityEventsChannel(CUSTOMER), userFinishedJob);
+  fanout.publish(entityEventsChannel(CUSTOMER), {
+    type: 'user-full-sync',
+    sync: userSyncState,
+  });
+  // The device event after them still arrives.
+  fanout.publish(entityEventsChannel(CUSTOMER), entityBatch);
+  assert.deepEqual(
+    await stream.next(),
+    {
+      type: 'entity-batch',
+      data: {
+        type: 'entity-batch',
+        entityType: 'device',
+        deviceIds: ['device-1'],
+        removedIds: [],
+      },
+    },
+    'The next device event arrives after the user events.',
+  );
+  assert.equal(stream.ended, false, 'The device feed stays open.');
+});
+
+test('a caller with users:read receives the users feed and no device event', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', deviceDenied],
+    ['cc.read_user_sync', [{ result: userSyncState }]],
+    ['FROM cc.jobs j WHERE j.customer_id', [{ failure: 'quota' }]],
+  ]);
+  // The caller reads users and no devices, so no job visibility hides the failure.
+  arrange(db, ['users:read']);
+
+  const stream = await open('/api/events');
+
+  assert.equal(stream.status, 200);
+  assert.deepEqual(
+    fanout.feeds.map((feed) => feed.channel),
+    [jobEventsChannel(CUSTOMER), entityEventsChannel(CUSTOMER)],
+  );
+  // The device feed is left out before authorize. The users feed opens under users:read.
+  assert.deepEqual(authorizeCalls, [
+    ['users:read', { kind: 'district', customerId: CUSTOMER }],
+  ]);
+
+  fanout.publish(entityEventsChannel(CUSTOMER), userBatch);
+  assert.deepEqual(
+    await stream.next(),
+    {
+      type: 'entity-batch',
+      data: {
+        type: 'entity-batch',
+        entityType: 'user',
+        userIds: ['user-1'],
+        removedIds: [],
+      },
+    },
+    'Every users feed event names the user entity type.',
+  );
+
+  fanout.publish(entityEventsChannel(CUSTOMER), userFinishedJob);
+  assert.deepEqual(await stream.next(), {
+    type: 'job-finished',
+    data: { type: 'job-finished', entityType: 'user', failure: 'quota' },
+  });
+
+  fanout.publish(entityEventsChannel(CUSTOMER), {
+    type: 'user-full-sync',
+    sync: userSyncState,
+  });
+  assert.deepEqual(await stream.next(), {
+    type: 'user-full-sync',
+    data: {
+      type: 'user-full-sync',
+      entityType: 'user',
+      sync: userSyncState,
+    },
+  });
+
+  // A device event stays off the users feed, and the next user event still arrives.
+  fanout.publish(entityEventsChannel(CUSTOMER), entityBatch);
+  fanout.publish(entityEventsChannel(CUSTOMER), userBatch);
+  assert.deepEqual(await stream.next(), {
+    type: 'entity-batch',
+    data: {
+      type: 'entity-batch',
+      entityType: 'user',
+      userIds: ['user-1'],
+      removedIds: [],
+    },
+  });
+  assert.equal(stream.ended, false, 'The users feed stays open.');
+});
+
+test('one stream carries both feeds and each forwards its own entity type', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', [{ result: syncState() }]],
+    ['cc.read_user_sync', [{ result: userSyncState }]],
+  ]);
+  arrange(db, ['jobs:read', 'devices:read', 'users:read']);
+
+  const stream = await open('/api/events');
+
+  assert.equal(stream.status, 200);
+  // Both feeds subscribe the one entity channel.
+  assert.deepEqual(
+    fanout.feeds.map((feed) => feed.channel),
+    [
+      jobEventsChannel(CUSTOMER),
+      entityEventsChannel(CUSTOMER),
+      entityEventsChannel(CUSTOMER),
+    ],
+  );
+  assert.deepEqual(authorizeCalls, [
+    ['devices:read', { kind: 'district', customerId: CUSTOMER }],
+    ['users:read', { kind: 'district', customerId: CUSTOMER }],
+  ]);
+
+  // A device batch reaches the device feed alone, and a user batch the users feed alone.
+  fanout.publish(entityEventsChannel(CUSTOMER), userBatch);
+  fanout.publish(entityEventsChannel(CUSTOMER), entityBatch);
+  assert.deepEqual(await stream.next(), {
+    type: 'entity-batch',
+    data: {
+      type: 'entity-batch',
+      entityType: 'user',
+      userIds: ['user-1'],
+      removedIds: [],
+    },
+  });
+  assert.deepEqual(await stream.next(), {
+    type: 'entity-batch',
+    data: {
+      type: 'entity-batch',
+      entityType: 'device',
+      deviceIds: ['device-1'],
+      removedIds: [],
+    },
+  });
+  assert.equal(stream.ended, false, 'Both feeds stay open.');
+});
+
+test('a failed user read refuses the stream', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', deviceDenied],
+    [
+      'cc.read_user_sync',
+      () => {
+        throw Object.assign(new Error('store down'), { code: '08006' });
+      },
+    ],
+  ]);
+  arrange(db, ['jobs:read', 'users:read']);
+
+  const refused = await answer('/api/events');
+
+  assert.equal(refused.status, 503);
+  assert.deepEqual(refused.body, { reason: 'user-store-unavailable' });
+  assert.deepEqual(fanout.feeds, [], 'A refused stream subscribes nothing.');
+});
+
+test('a user sync of another customer leaves the users feed out', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', deviceDenied],
+    [
+      'cc.read_user_sync',
+      [{ result: { ...userSyncState, customerId: OTHER } }],
+    ],
+  ]);
+  arrange(db, ['users:read']);
+
+  const stream = await open('/api/events');
+
+  assert.equal(stream.status, 200);
+  // The stream never reads the entity channel of another customer.
+  assert.deepEqual(
+    fanout.feeds.map((feed) => feed.channel),
+    [jobEventsChannel(CUSTOMER)],
+  );
+  assert.deepEqual(authorizeCalls, []);
+});
+
+test('a customer without a user sync receives no user event', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    ['cc.read_device_sync', deviceDenied],
+    ['cc.read_user_sync', [{ result: null }]],
+  ]);
+  arrange(db, ['jobs:read', 'users:read']);
+
+  const stream = await open('/api/events');
+
+  assert.equal(stream.status, 200);
+  assert.deepEqual(
+    fanout.feeds.map((feed) => feed.channel),
+    [jobEventsChannel(CUSTOMER)],
+  );
+  assert.deepEqual(authorizeCalls, []);
+
+  fanout.publish(entityEventsChannel(CUSTOMER), userBatch);
+  fanout.publish(jobEventsChannel(CUSTOMER), jobChanged);
+  assert.deepEqual(await stream.next(), {
+    type: 'job-changed',
+    data: jobChanged,
+  });
+  assert.equal(stream.ended, false, 'The job-only stream stays open.');
 });
