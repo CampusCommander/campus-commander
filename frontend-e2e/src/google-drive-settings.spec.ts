@@ -385,7 +385,7 @@ test('a save fills the card and shows the ready line of state 15', async ({
   await expect(card).toContainText('Last check passed');
   await expect(save).toBeDisabled();
   await expect(card.locator('details')).not.toHaveAttribute('open', '');
-  await expect(page.locator('footer')).toContainText('7 last checks passed');
+  await expect(page.locator('footer')).toContainText('9 last checks passed');
   await capture(page, testInfo, 'state-15-light', {
     selector: 'app-drive-settings',
     offset: 20,
