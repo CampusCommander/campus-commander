@@ -56,6 +56,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE pending cc.user_sync_state; header record; now_at timestamptz;
 BEGIN
   PERFORM cc.user_reader(p_actor,p_version);
+  -- S1: the gate reads before the locks. The abandon repeats it after the waits below, so a
+  -- revocation that lands during a wait refuses the write (review round 1, R3).
   IF p_failure IS DISTINCT FROM 'orchestration-unavailable' THEN
     RAISE EXCEPTION 'Only an undispatched sync can be abandoned.' USING ERRCODE='22023';
   END IF;
@@ -78,6 +80,9 @@ BEGIN
   PERFORM 1 FROM cc.application_principals p WHERE p.id=pending.sync_actor FOR KEY SHARE;
   PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   now_at:=clock_timestamp();
+  -- S1: the gates read again after every wait and before the writes. A revocation that committed
+  -- during a wait refuses this call with 42501 (R3).
+  PERFORM cc.user_reader(p_actor,p_version);
   UPDATE cc.user_sync_state SET failure=p_failure,failure_requested_by=sync_actor,checked_at=now_at,
     sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,sync_expires_at=NULL
   WHERE customer_id=p_customer;
@@ -97,12 +102,33 @@ LANGUAGE sql IMMUTABLE SET search_path=pg_catalog,cc AS $$
 $$;
 
 -- The numeric values of one attribute value. A JSON number and a numeric string both count
--- (B section 8.1). Every other text is left out, so no cast fails.
+-- (B section 8.1). Every other text is left out, and a legal text value that numeric cannot
+-- represent is left out too, so no stored value aborts the query (R5).
 CREATE FUNCTION cc.user_attribute_numbers(p_value jsonb) RETURNS numeric[]
-LANGUAGE sql IMMUTABLE SET search_path=pg_catalog,cc AS $$
-  SELECT COALESCE(array_agg(t::numeric),'{}'::numeric[])
-  FROM unnest(cc.user_attribute_values(p_value)) t
-  WHERE t ~ '^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$'
+LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog,cc AS $$
+DECLARE numbers numeric[]:='{}'::numeric[]; item text;
+BEGIN
+  FOREACH item IN ARRAY cc.user_attribute_values(p_value) LOOP
+    IF item ~ '^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$' THEN
+      BEGIN
+        numbers:=numbers||item::numeric;
+      EXCEPTION WHEN numeric_value_out_of_range THEN NULL;
+      END;
+    END IF;
+  END LOOP;
+  RETURN numbers;
+END;
+$$;
+
+-- One numeric range bound. A bound that numeric cannot represent is null, so its range matches
+-- nothing instead of failing the query (R5). A JavaScript number serializes as text here.
+CREATE FUNCTION cc.user_attribute_number(p_text text) RETURNS numeric
+LANGUAGE plpgsql IMMUTABLE SET search_path=pg_catalog,cc AS $$
+BEGIN
+  RETURN p_text::numeric;
+EXCEPTION WHEN numeric_value_out_of_range OR invalid_text_representation THEN
+  RETURN NULL;
+END;
 $$;
 
 -- Whether one attribute value holds a value. A No answer is a value. An empty list is none
@@ -112,6 +138,14 @@ LANGUAGE sql IMMUTABLE SET search_path=pg_catalog,cc AS $$
   SELECT p_value IS NOT NULL AND jsonb_typeof(p_value)<>'null' AND
     (CASE WHEN jsonb_typeof(p_value)='array' THEN jsonb_array_length(p_value)>0 ELSE true END)
 $$;
+
+-- The observation time of the cached category set. It survives an empty snapshot, so a successful
+-- read of zero categories stays current for its 24 hours (document B section 9, R2).
+CREATE TABLE cc.user_attribute_category_state (
+  customer_id text PRIMARY KEY REFERENCES cc.google_connection(customer_id),
+  read_at timestamptz NOT NULL
+);
+REVOKE ALL ON cc.user_attribute_category_state FROM PUBLIC;
 
 -- The category read of B section 10 row 1: the cached categories with their holder counts, the
 -- account limits, and the cache time. A holder is a cached user with a value (B section 3).
@@ -138,7 +172,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
       'categoryLimit',100,
       'attributes',COALESCE((SELECT sum(jsonb_array_length(x.fields)) FROM category x),0),
       'attributeLimit',100),
-    'observedAt',(SELECT max(x.read_at) FROM category x));
+    'observedAt',COALESCE((SELECT s.read_at FROM cc.user_attribute_category_state s
+      WHERE s.customer_id=p_customer),(SELECT max(x.read_at) FROM category x)));
 $$;
 
 -- The category read, gated by users:read. A customer without a connection reads null.
@@ -154,7 +189,8 @@ $$;
 
 -- One schemas.list read replaces the whole cached set (B section 9). A category that Google no
 -- longer lists leaves the cache. The read time comes from the caller, so the cache rule of B
--- section 9 measures the Google read, not the store.
+-- section 9 measures the Google read, not the store. One customer-level advisory lock serializes
+-- the replacement, so concurrent snapshots never merge (R4). The gate reads again after the wait.
 CREATE FUNCTION cc.replace_user_attribute_categories(p_actor uuid,p_version integer,p_customer text,
   p_categories jsonb,p_read_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -164,6 +200,8 @@ BEGIN
   IF connection.customer_id IS DISTINCT FROM p_customer THEN
     RAISE EXCEPTION 'The Google connection changed.' USING DETAIL='connection-changed';
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('cc:user_attribute_categories'),hashtext(p_customer));
+  PERFORM cc.user_reader(p_actor,p_version);
   IF p_read_at IS NULL OR jsonb_typeof(p_categories) IS DISTINCT FROM 'array' OR
     jsonb_array_length(p_categories)>100 THEN
     RAISE EXCEPTION 'The category set is invalid.' USING ERRCODE='22023';
@@ -179,6 +217,8 @@ BEGIN
       RAISE EXCEPTION 'The category set is invalid.' USING ERRCODE='22023';
     END IF;
   END LOOP;
+  INSERT INTO cc.user_attribute_category_state(customer_id,read_at) VALUES(p_customer,p_read_at)
+  ON CONFLICT(customer_id) DO UPDATE SET read_at=EXCLUDED.read_at;
   DELETE FROM cc.user_attribute_categories WHERE customer_id=p_customer;
   INSERT INTO cc.user_attribute_categories(customer_id,schema_id,schema_name,display_name,etag,fields,read_at)
   SELECT p_customer,e.value->>'schemaId',e.value->>'schemaName',e.value->>'displayName',

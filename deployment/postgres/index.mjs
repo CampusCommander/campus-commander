@@ -374,6 +374,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.user_read_credential(uuid,integer,text,integer),
         cc.user_attribute_values(jsonb),
         cc.user_attribute_numbers(jsonb),
+        cc.user_attribute_number(text),
         cc.user_attribute_has_value(jsonb) TO ${role}`);
     }
   } finally {

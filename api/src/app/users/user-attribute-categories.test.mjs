@@ -128,6 +128,27 @@ test('a cache younger than a day answers alone', async () => {
   assert.equal(port.calls.connection, 0);
 });
 
+test('an empty set younger than a day answers alone', async () => {
+  // The SQL writer keeps the observation time of an empty snapshot, so the class reads it as
+  // current and never calls Google (R2).
+  const port = fakePort({
+    cached: cached({
+      categories: [],
+      limits: {
+        categories: 0,
+        categoryLimit: 100,
+        attributes: 0,
+        attributeLimit: 100,
+      },
+      observedAt: hoursAgo(1),
+    }),
+  });
+  const read = await route(port).read(session);
+  assert.deepEqual(read.categories, []);
+  assert.equal(port.calls.read, 0);
+  assert.equal(port.calls.connection, 0);
+});
+
 test('a cache at the day boundary reads Google again', async () => {
   const port = fakePort({
     cached: cached({
