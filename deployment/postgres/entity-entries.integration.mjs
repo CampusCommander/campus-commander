@@ -379,9 +379,10 @@ export async function qualifyEntityEntries({ runtime, migrator, issuer }) {
           paged.version,
           (await versionOf(id)) + (await telemetryVersion()),
         );
-        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+        await result('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
           customer,
           JSON.stringify([id]),
+          new Date().toISOString(),
         ]);
         assert.equal(
           await versionOf(id),

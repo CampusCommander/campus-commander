@@ -5045,9 +5045,10 @@ export async function qualifyDeviceWriteJobs({
       async () => {
         await upsert([device('sd-a')], new Date(Date.now() - 60 * 60 * 1000));
         await upsert([device('sd-b')], new Date(Date.now() - 60 * 60 * 1000));
-        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+        await result('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
           customer,
           JSON.stringify(['sd-a']),
+          new Date().toISOString(),
         ]);
         const holder = await connect('cc-migrator', 'cc-app');
         const deleter = await connect('cc-migrator', 'cc-app');
@@ -5066,8 +5067,12 @@ export async function qualifyDeviceWriteJobs({
             [customer, 'sd-b'],
           );
           deletion = deleter.query(
-            'SELECT cc.soft_delete_devices($1,$2) AS result',
-            [customer, JSON.stringify(['sd-a', 'sd-b'])],
+            'SELECT cc.soft_delete_devices($1,$2,$3) AS result',
+            [
+              customer,
+              JSON.stringify(['sd-a', 'sd-b']),
+              new Date().toISOString(),
+            ],
           );
           deletion.catch(() => undefined);
           assert.equal(
