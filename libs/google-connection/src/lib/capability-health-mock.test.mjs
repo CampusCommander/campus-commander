@@ -5,8 +5,8 @@
  * call. Run the file inside `nx run google-connection:test`.
  *
  * The credentials use the review harness grant. `GOOGLE_HARNESS_SCOPES` is the scope list that
- * `api-e2e/admin-sdk-mock-fixture.mjs` writes into the harness service account. A scope that
- * leaves that list stops the token exchange here, so these tests fail with the harness.
+ * the harness fixture writes into the service account. A scope that leaves that list stops the
+ * token exchange here, so these tests fail with the harness.
  */
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -78,7 +78,7 @@ test('the harness service-account grant passes every capability check', async ()
     'admin-sdk-mock 0.4.0 serves nine scopes',
   );
   // The harness grant names both new read scopes. A later edit that drops one
-  // from api-e2e/admin-sdk-mock-fixture.mjs fails the token exchange below.
+  // from the shared grant fails the token exchange below.
   for (const capability of ['user-inventory', 'user-schemas'])
     assert.ok(
       GOOGLE_HARNESS_SCOPES.includes(scopeOf(capability)),
