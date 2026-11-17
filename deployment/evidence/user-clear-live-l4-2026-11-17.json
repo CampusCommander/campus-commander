@@ -1,0 +1,706 @@
+{
+  "schemaVersion": 1,
+  "check": "L4",
+  "status": "passed",
+  "outcome": "completed",
+  "recordedAt": "2026-11-17T05:32:21.691Z",
+  "sourceRevision": "490abf8d204d031fe342e69f3fd956941b0cfce8",
+  "nodeVersion": "v24.19.0",
+  "customerId": "C0123456",
+  "subject": "admin@example.org",
+  "testUser": "test-user@example.org",
+  "clientId": "123456789012345678901",
+  "category": "CcLiveClear",
+  "scopes": [
+    "https://www.googleapis.com/auth/admin.directory.userschema",
+    "https://www.googleapis.com/auth/admin.directory.user"
+  ],
+  "command": "node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/user-clear-live.mjs <key-file> <subject> <client-id> <test-user>",
+  "steps": [
+    {
+      "step": 1,
+      "action": "schemas.get",
+      "method": "GET",
+      "httpStatus": 404,
+      "errorReason": "notFound"
+    },
+    {
+      "step": 2,
+      "action": "users.get",
+      "method": "GET",
+      "httpStatus": 200,
+      "projection": "basic",
+      "answered": {
+        "httpStatus": 200,
+        "present": true,
+        "fields": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isEnforcedIn2Sv",
+          "isEnrolledIn2Sv",
+          "isGuestUser",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "suspended"
+        ]
+      },
+      "accountFieldCount": 23
+    },
+    {
+      "step": 3,
+      "action": "schemas.insert",
+      "method": "POST",
+      "httpStatus": 200,
+      "requestedFields": [
+        {
+          "fieldName": "One",
+          "fieldType": "STRING",
+          "displayName": "CC one",
+          "multiValued": false
+        },
+        {
+          "fieldName": "Two",
+          "fieldType": "STRING",
+          "displayName": "CC two",
+          "multiValued": false
+        },
+        {
+          "fieldName": "Three",
+          "fieldType": "STRING",
+          "displayName": "CC three",
+          "multiValued": false
+        },
+        {
+          "fieldName": "List",
+          "fieldType": "STRING",
+          "displayName": "CC list",
+          "multiValued": true
+        }
+      ],
+      "answered": {
+        "schemaName": "CcLiveClear",
+        "displayName": "CC live clear",
+        "fields": [
+          {
+            "fieldName": "One",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldName": "Two",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldName": "Three",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldName": "List",
+            "fieldType": "STRING",
+            "multiValued": true
+          }
+        ]
+      },
+      "settledAfterMs": 0,
+      "read": {
+        "httpStatus": 200,
+        "present": true
+      }
+    },
+    {
+      "step": 4,
+      "action": "users.patch",
+      "method": "PATCH",
+      "httpStatus": 200,
+      "requested": {
+        "One": {
+          "jsonType": "string",
+          "value": "L4 one"
+        },
+        "Two": {
+          "jsonType": "string",
+          "value": "L4 two"
+        },
+        "Three": {
+          "jsonType": "string",
+          "value": "L4 three"
+        },
+        "List": {
+          "jsonType": "array",
+          "entries": [
+            {
+              "keys": ["value"],
+              "value": "L4 alpha"
+            },
+            {
+              "keys": ["value"],
+              "value": "L4 beta"
+            }
+          ]
+        }
+      },
+      "answer": {
+        "present": true,
+        "keys": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customSchemas",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isGuestUser",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "recoveryEmail",
+          "suspended",
+          "thumbnailPhotoEtag",
+          "thumbnailPhotoUrl"
+        ]
+      },
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": false,
+        "attributes": {}
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "One": {
+            "jsonType": "string",
+            "value": "L4 one"
+          },
+          "Two": {
+            "jsonType": "string",
+            "value": "L4 two"
+          },
+          "Three": {
+            "jsonType": "string",
+            "value": "L4 three"
+          },
+          "List": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "L4 alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "L4 beta"
+              }
+            ]
+          }
+        }
+      },
+      "settledAfterMs": 1000,
+      "settled": true
+    },
+    {
+      "step": 5,
+      "action": "users.update",
+      "method": "PUT",
+      "httpStatus": 200,
+      "requested": {
+        "One": {
+          "jsonType": "string",
+          "value": "L4 one changed"
+        },
+        "Two": {
+          "jsonType": "null"
+        },
+        "List": {
+          "jsonType": "null"
+        }
+      },
+      "omitted": ["Three"],
+      "answer": {
+        "present": true,
+        "keys": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customSchemas",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "recoveryEmail",
+          "suspended",
+          "thumbnailPhotoEtag",
+          "thumbnailPhotoUrl"
+        ]
+      }
+    },
+    {
+      "step": 6,
+      "action": "users.get",
+      "method": "GET",
+      "httpStatus": 200,
+      "projection": "custom",
+      "customFieldMask": "CcLiveClear",
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "One": {
+            "jsonType": "string",
+            "value": "L4 one"
+          },
+          "Two": {
+            "jsonType": "string",
+            "value": "L4 two"
+          },
+          "Three": {
+            "jsonType": "string",
+            "value": "L4 three"
+          },
+          "List": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "L4 alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "L4 beta"
+              }
+            ]
+          }
+        }
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "Three": {
+            "jsonType": "string",
+            "value": "L4 three"
+          },
+          "One": {
+            "jsonType": "string",
+            "value": "L4 one changed"
+          }
+        }
+      },
+      "waitedAfterMs": 1000,
+      "settledAfterMs": 1446,
+      "settled": true,
+      "observed": {
+        "One": {
+          "holdsValue": true,
+          "stored": {
+            "jsonType": "string",
+            "value": "L4 one changed"
+          },
+          "changedAfterMs": 1446,
+          "changedAfterSeconds": 1.4
+        },
+        "Two": {
+          "holdsValue": false,
+          "stored": null,
+          "changedAfterMs": 1446,
+          "changedAfterSeconds": 1.4
+        },
+        "Three": {
+          "holdsValue": true,
+          "stored": {
+            "jsonType": "string",
+            "value": "L4 three"
+          },
+          "changedAfterMs": null,
+          "changedAfterSeconds": null
+        },
+        "List": {
+          "holdsValue": false,
+          "stored": null,
+          "changedAfterMs": 1446,
+          "changedAfterSeconds": 1.4
+        }
+      },
+      "account": {
+        "httpStatus": 200,
+        "present": true,
+        "fields": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isEnforcedIn2Sv",
+          "isEnrolledIn2Sv",
+          "isGuestUser",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "suspended"
+        ]
+      }
+    },
+    {
+      "step": 7,
+      "action": "schemas.delete",
+      "method": "DELETE",
+      "httpStatus": 204,
+      "heldBeforeDelete": {
+        "One": true,
+        "Three": true
+      },
+      "settledAfterMs": 0,
+      "read": {
+        "httpStatus": 404,
+        "errorReason": "notFound",
+        "present": false
+      }
+    },
+    {
+      "step": 8,
+      "action": "schemas.insert",
+      "method": "POST",
+      "httpStatus": 200,
+      "requestedFields": [
+        {
+          "fieldName": "One",
+          "fieldType": "STRING",
+          "displayName": "CC one",
+          "multiValued": false
+        },
+        {
+          "fieldName": "Two",
+          "fieldType": "STRING",
+          "displayName": "CC two",
+          "multiValued": false
+        },
+        {
+          "fieldName": "Three",
+          "fieldType": "STRING",
+          "displayName": "CC three",
+          "multiValued": false
+        },
+        {
+          "fieldName": "List",
+          "fieldType": "STRING",
+          "displayName": "CC list",
+          "multiValued": true
+        }
+      ],
+      "heldBeforeDelete": {
+        "One": true,
+        "Three": true
+      },
+      "answered": {
+        "schemaName": "CcLiveClear",
+        "displayName": "CC live clear",
+        "fields": [
+          {
+            "fieldName": "One",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldName": "Two",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldName": "Three",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldName": "List",
+            "fieldType": "STRING",
+            "multiValued": true
+          }
+        ]
+      },
+      "settledAfterMs": 0,
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": false,
+        "attributes": {}
+      }
+    }
+  ],
+  "accountComparison": {
+    "agreedToTerms": "yes",
+    "archived": "yes",
+    "changePasswordAtNextLogin": "yes",
+    "creationTime": "yes",
+    "customerId": "yes",
+    "emails": "yes",
+    "etag": "yes",
+    "id": "yes",
+    "includeInGlobalAddressList": "yes",
+    "ipWhitelisted": "yes",
+    "isAdmin": "yes",
+    "isDelegatedAdmin": "yes",
+    "isEnforcedIn2Sv": "yes",
+    "isEnrolledIn2Sv": "yes",
+    "isGuestUser": "yes",
+    "isMailboxSetup": "yes",
+    "kind": "yes",
+    "languages": "yes",
+    "lastLoginTime": "yes",
+    "name": "yes",
+    "orgUnitPath": "yes",
+    "primaryEmail": "yes",
+    "suspended": "yes"
+  },
+  "accountFieldsChanged": [],
+  "findings": {
+    "updateAnswerShape": {
+      "question": "The users.update answer body shape",
+      "answer": {
+        "present": true,
+        "keys": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customSchemas",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "recoveryEmail",
+          "suspended",
+          "thumbnailPhotoEtag",
+          "thumbnailPhotoUrl"
+        ]
+      }
+    },
+    "setValue": {
+      "question": "The value that the users.update body set on One",
+      "answer": "set",
+      "stored": {
+        "jsonType": "string",
+        "value": "L4 one changed"
+      },
+      "changedAfterMs": 1446,
+      "changedAfterSeconds": 1.4
+    },
+    "nullSingleValue": {
+      "question": "A users.update body names the single-value attribute Two with null",
+      "answer": "cleared",
+      "holdsValue": false,
+      "changedAfterMs": 1446,
+      "changedAfterSeconds": 1.4
+    },
+    "nullList": {
+      "question": "A users.update body names the multi-value attribute List with null",
+      "answer": "cleared",
+      "holdsValue": false,
+      "changedAfterMs": 1446,
+      "changedAfterSeconds": 1.4
+    },
+    "omittedAttribute": {
+      "question": "A users.update body leaves the single-value attribute Three out",
+      "answer": "kept",
+      "holdsValue": true,
+      "stored": {
+        "jsonType": "string",
+        "value": "L4 three"
+      },
+      "changedAfterMs": null
+    },
+    "accountFields": {
+      "question": "Each account field of the projection=basic read after users.update",
+      "answer": "all-equal",
+      "changed": []
+    },
+    "deleteWithValues": {
+      "question": "schemas.delete while the test user holds values",
+      "answer": "accepted-category-gone",
+      "heldBeforeDelete": {
+        "One": true,
+        "Three": true
+      }
+    },
+    "recreatedCategory": {
+      "question": "A new category with the name of a deleted category",
+      "answer": "starts-empty",
+      "perAttribute": {
+        "One": "absent",
+        "Two": "absent",
+        "Three": "absent",
+        "List": "absent"
+      }
+    },
+    "unknown": []
+  },
+  "cleanup": [
+    {
+      "action": "schemas.get",
+      "method": "GET",
+      "httpStatus": 200
+    },
+    {
+      "action": "users.get",
+      "method": "GET",
+      "httpStatus": 200,
+      "categoryPresent": false,
+      "attributes": {}
+    },
+    {
+      "action": "schemas.delete",
+      "method": "DELETE",
+      "httpStatus": 204
+    },
+    {
+      "clearedValueBeforeDelete": false,
+      "categoryPresentBeforeCleanup": true
+    }
+  ],
+  "verification": {
+    "category": {
+      "httpStatus": 404,
+      "errorReason": "notFound",
+      "present": false
+    },
+    "settledAfterMs": 0,
+    "note": "A customFieldMask that names an absent category answers 400 invalid, so the final read cannot show a value of the deleted category."
+  },
+  "limitations": [
+    "The check touches only the category CcLiveClear and only the test user of its argument.",
+    "Each users.get uses projection=custom and customFieldMask=CcLiveClear, except the two projection=basic reads of step 2 and step 6. The basic reads record no value.",
+    "The answer settles one test user of one domain. It settles no other domain and no other user.",
+    "The check records only values that it writes to CcLiveClear. It reads no value of another category.",
+    "The evidence holds each account field name and a yes or no, never a field value.",
+    "A customFieldMask that names no category answers 400 invalid, so the final read cannot show the values of the deleted category.",
+    "The step 5 users.update body names only customSchemas.CcLiveClear. The check never writes an account field.",
+    "Each run needs the owner yes named in the card, because the standing authorization permits no Google data mutation."
+  ],
+  "durationMs": 9939,
+  "storedValues": {
+    "One": {
+      "jsonType": "string",
+      "value": "L4 one"
+    },
+    "Two": {
+      "jsonType": "string",
+      "value": "L4 two"
+    },
+    "Three": {
+      "jsonType": "string",
+      "value": "L4 three"
+    },
+    "List": {
+      "jsonType": "array",
+      "entries": [
+        {
+          "keys": ["value"],
+          "value": "L4 alpha"
+        },
+        {
+          "keys": ["value"],
+          "value": "L4 beta"
+        }
+      ]
+    }
+  },
+  "recreate": {
+    "method": "POST",
+    "httpStatus": 200,
+    "answered": {
+      "schemaName": "CcLiveClear",
+      "displayName": "CC live clear",
+      "fields": [
+        {
+          "fieldName": "One",
+          "fieldType": "STRING",
+          "multiValued": false
+        },
+        {
+          "fieldName": "Two",
+          "fieldType": "STRING",
+          "multiValued": false
+        },
+        {
+          "fieldName": "Three",
+          "fieldType": "STRING",
+          "multiValued": false
+        },
+        {
+          "fieldName": "List",
+          "fieldType": "STRING",
+          "multiValued": true
+        }
+      ]
+    },
+    "observedAfterMs": 0,
+    "categoryPresent": false,
+    "attributes": {},
+    "oldValuesReturned": "no",
+    "perAttribute": {
+      "One": "absent",
+      "Two": "absent",
+      "Three": "absent",
+      "List": "absent"
+    }
+  }
+}
