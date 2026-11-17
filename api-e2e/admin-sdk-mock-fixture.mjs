@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import https from 'node:https';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GOOGLE_CAPABILITIES } from '../libs/application-contracts/src/lib/google-capabilities.ts';
@@ -22,10 +23,27 @@ export const MOCK_GOOGLE_HOSTS = [
   'chromemanagement.googleapis.com',
   'sheets.googleapis.com',
 ];
-/** The scopes Campus Commander requests. The mock grants exactly this list. */
-export const MOCK_SCOPES = GOOGLE_CAPABILITIES.map(
-  (capability) => capability.scope,
-);
+/** The read and write user schema scope. The schema routes accept it. */
+export const MOCK_SCHEMA_WRITE_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.userschema';
+/** The read-only user schema scope. The schema routes accept it. */
+export const MOCK_SCHEMA_READ_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
+/** The scopes the schema routes accept. The harness grants them beside the capability scopes. */
+export const MOCK_SCHEMA_SCOPES = [
+  MOCK_SCHEMA_WRITE_SCOPE,
+  MOCK_SCHEMA_READ_SCOPE,
+];
+/**
+ * The scopes the harness grants: the capability scopes and the schema scopes.
+ * A mock credential reaches only the routes that these scopes cover.
+ */
+export const MOCK_SCOPES = [
+  ...new Set([
+    ...GOOGLE_CAPABILITIES.map((capability) => capability.scope),
+    ...MOCK_SCHEMA_SCOPES,
+  ]),
+];
 /** The mock package path inside the repository and inside the mock container. */
 const packagePath = 'node_modules/@campuscommander/admin-sdk-mock';
 const cliPath = `${packagePath}/dist/bin/admin-sdk-mock.js`;
@@ -36,6 +54,71 @@ export async function installedMockVersion() {
     await readFile(join(process.cwd(), packagePath, 'package.json'), 'utf8'),
   );
   return manifest.version;
+}
+
+/** Mint an access token for the mock's administrator through the control API. */
+export async function mockToken(mock, scope) {
+  const response = await fetch(
+    `${mock.controlUrl}/domains/${mock.customerId}/tokens`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ subject: mock.adminEmail, scopes: [scope] }),
+    },
+  );
+  assert.equal(
+    response.status,
+    200,
+    `The mock token request answered ${response.status}.`,
+  );
+  return (await response.json()).access_token;
+}
+
+/**
+ * Call one Google hostname through the mock's published Google port.
+ *
+ * The container network aliases carry the names inside the harness network. From
+ * the harness, the request dials loopback and keeps the hostname for TLS and routing.
+ */
+export function mockGoogle({ mock, host, path, token, method = 'GET', body }) {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        host,
+        port: mock.googlePort,
+        path,
+        method,
+        ca: mock.ca,
+        servername: host,
+        lookup: (_name, _options, done) =>
+          done(null, [{ address: '127.0.0.1', family: 4 }]),
+        headers: {
+          host,
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(payload === undefined
+            ? {}
+            : {
+                'content-type': 'application/json',
+                'content-length': Buffer.byteLength(payload),
+              }),
+        },
+        timeout: 20000,
+      },
+      (response) => {
+        let text = '';
+        response.on('data', (chunk) => (text += chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode, text }),
+        );
+      },
+    );
+    request.on('error', reject);
+    request.on('timeout', () =>
+      request.destroy(new Error('The mock Google request timed out.')),
+    );
+    request.end(payload);
+  });
 }
 
 /**
@@ -250,6 +333,7 @@ export async function startAdminSdkMock({
               seed: MOCK_SEED,
               name: MOCK_DISTRICT_NAME,
               primaryDomain: MOCK_PRIMARY_DOMAIN,
+              customSchemas: true,
             },
             serviceAccounts: [{ out: keyFile, scopes: MOCK_SCOPES }],
           },
