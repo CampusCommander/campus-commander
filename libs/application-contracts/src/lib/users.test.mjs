@@ -7,8 +7,8 @@ import {
   userAttributeCategoriesSchema,
   userAttributeCategorySchema,
   userAttributeFieldSchema,
+  userAttributeKey,
   userAttributeKeySchema,
-  userAttributeKeys,
   userByIdsSchema,
   userDetailSchema,
   userDomainRefreshSchema,
@@ -59,14 +59,10 @@ const record = {
 };
 
 test('the C1 builder gives the column ID, the filter key, and the draft key', () => {
-  const keys = userAttributeKeys('StudentInfo', 'Homeroom');
-  assert.deepEqual(keys, {
-    columnId: 'attr:StudentInfo.Homeroom',
-    filterKey: 'attr:StudentInfo.Homeroom',
-    draftKey: 'attr:StudentInfo.Homeroom',
-  });
-  assert.ok(userAttributeKeySchema.safeParse(keys.columnId).success);
-  assert.ok(userAttributeKeySchema.safeParse(keys.draftKey).success);
+  const id = userAttributeKey('StudentInfo', 'Homeroom');
+  // One ID serves the grid column, the filter chip and predicate, and the draft key.
+  assert.equal(id, 'attr:StudentInfo.Homeroom');
+  assert.ok(userAttributeKeySchema.safeParse(id).success);
   // The design supersedes the `attribute:` field ID of document A section 9 (C1).
   assert.equal(
     userAttributeKeySchema.safeParse('attribute:StudentInfo.Homeroom').success,
@@ -79,7 +75,7 @@ test('the C1 builder gives the column ID, the filter key, and the draft key', ()
     ['', 'Homeroom'],
     ['StudentInfo', ''],
   ])
-    assert.throws(() => userAttributeKeys(schemaName, fieldName));
+    assert.throws(() => userAttributeKey(schemaName, fieldName));
 });
 
 test('a user record carries the raw custom schemas and the last Google read', () => {

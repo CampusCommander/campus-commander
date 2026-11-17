@@ -20,14 +20,13 @@ const recordVersion = z.number().int().min(1);
  * of its chip and predicate, and the draft store as the key of its draft (design section 1).
  * The form is `attr:<schemaName>.<fieldName>`, after the Google query form (B section 12, E13).
  */
-export function userAttributeKeys(
+export function userAttributeKey(
   schemaName: string,
   fieldName: string,
-): Readonly<{ columnId: string; filterKey: string; draftKey: string }> {
+): string {
   if (!attributeName.test(schemaName) || !attributeName.test(fieldName))
     throw new Error('An attribute name holds letters, digits, _ and - only.');
-  const id = `attr:${schemaName}.${fieldName}`;
-  return Object.freeze({ columnId: id, filterKey: id, draftKey: id });
+  return `attr:${schemaName}.${fieldName}`;
 }
 
 /** The C1 ID of one attribute, as the client and the API read it. */
