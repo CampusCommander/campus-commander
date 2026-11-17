@@ -494,6 +494,8 @@ test('an older 404 read that a newer presence read precedes reports no removal a
 });
 
 test('a repeated 404 advances the removal fence, so a held presence read cannot resurrect the user', async () => {
+  // Seed the inventory, so the test does not depend on the tests before it.
+  assert.equal((await fullSync()).failure, null);
   const { rows } = await runtime.query(
     `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
      ORDER BY user_id LIMIT 1`,
@@ -563,6 +565,8 @@ test('a repeated 404 advances the removal fence, so a held presence read cannot 
 });
 
 test('a newer full-sync absence advances the fence, so a held presence read cannot resurrect the user', async () => {
+  // Seed the inventory, so the test does not depend on the tests before it.
+  assert.equal((await fullSync()).failure, null);
   const { rows } = await runtime.query(
     `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
      ORDER BY user_id LIMIT 1`,
@@ -619,6 +623,69 @@ test('a newer full-sync absence advances the fence, so a held presence read cann
   );
 
   // The mock still holds every user, so a fresh full sync restores the inventory for later tests.
+  const restored = await fullSync();
+  assert.equal(restored.failure, null);
+  assert.equal((await stored(userId)).removed_at, null);
+});
+
+test('a repeated full-sync absence advances the fence, so a held presence read cannot resurrect the user', async () => {
+  // Seed the inventory, so the test does not depend on the tests before it.
+  assert.equal((await fullSync()).failure, null);
+  const { rows } = await runtime.query(
+    `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
+     ORDER BY user_id LIMIT 1`,
+    [domain.customerId],
+  );
+  const userId = rows[0].user_id;
+  // The first empty full sync removes every user that the domain does not return.
+  const first = await fullSync(randomUUID(), {
+    async *userPages() {
+      yield* [];
+    },
+  });
+  assert.equal(first.failure, null);
+  const firstRemoval = (await stored(userId)).removed_at;
+  assert.notEqual(firstRemoval, null, 'the full sync removes the user');
+
+  // A later successful refresh reads the user and holds its answer.
+  const entered = deferred();
+  const release = deferred();
+  const held = refresh([userId], {
+    deviceBatch: async () => [],
+    batteryBatch: async () => new Map(),
+    userBatch: async () => {
+      entered.resolve();
+      await release.promise;
+      return { users: [user(userId, `k7-${userId}@example.org`)], missing: [] };
+    },
+  });
+  await entered.promise;
+  // A second empty full sync observes the absence again, after the held read.
+  const second = await fullSync(randomUUID(), {
+    async *userPages() {
+      yield* [];
+    },
+  });
+  assert.equal(second.failure, null);
+  const advanced = (await stored(userId)).removed_at;
+  assert.ok(
+    advanced > firstRemoval,
+    'the repeated absence moves the tombstone forward',
+  );
+  release.resolve();
+  const olderRead = await held;
+  assert.equal(olderRead.failure, null);
+  assert.deepEqual(
+    olderRead.updated,
+    [],
+    'the older presence read stores no user',
+  );
+  assert.equal(
+    (await stored(userId)).removed_at.toISOString(),
+    advanced.toISOString(),
+    'the repeated full-sync removal stays',
+  );
+
   const restored = await fullSync();
   assert.equal(restored.failure, null);
   assert.equal((await stored(userId)).removed_at, null);
