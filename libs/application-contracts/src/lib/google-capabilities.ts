@@ -44,7 +44,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/orgunits/list',
     evidence:
-      'CC-52 production provider live read, exact OU scope, and packaged reference API qualification.',
+      'CC-52 production provider live read, exact OU scope, and packaged reference API qualification',
   },
   {
     id: 'device-inventory',
@@ -58,7 +58,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/list',
     evidence:
-      'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection.',
+      'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection',
   },
   {
     id: 'device-telemetry',
@@ -72,7 +72,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     source:
       'https://developers.google.com/chrome/management/reference/rest/v1/customers.telemetry.devices/list',
     evidence:
-      'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection.',
+      'Live read-only check 2026-10-16 (deployment/evidence/device-browsing-live-2026-10-16.json): HTTP 200, empty collection',
   },
   {
     id: 'device-changes',
@@ -85,7 +85,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch',
     evidence:
-      'admin-sdk-mock v0.2.0 only. Methods: chromeosdevices.patch, customer.devices.chromeos.issueCommand, customer.devices.chromeos.commands.get, customer.devices.chromeos.batchChangeStatus.',
+      'admin-sdk-mock v0.2.0 only. Methods: chromeosdevices.patch, customer.devices.chromeos.issueCommand, customer.devices.chromeos.commands.get, customer.devices.chromeos.batchChangeStatus',
   },
   {
     id: 'drive-files',
@@ -98,7 +98,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     source:
       'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list',
     evidence:
-      'Not verified on a live domain. The Drive slice demonstration verifies it.',
+      'Not verified on a live domain. The Drive slice demonstration verifies it',
   },
   {
     id: 'user-inventory',

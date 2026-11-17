@@ -61,7 +61,7 @@ test('the write capability names its label, scope, method, flags, and evidence',
       source:
         'https://developers.google.com/workspace/admin/directory/reference/rest/v1/chromeosdevices/patch',
       evidence:
-        'admin-sdk-mock v0.2.0 only. Methods: chromeosdevices.patch, customer.devices.chromeos.issueCommand, customer.devices.chromeos.commands.get, customer.devices.chromeos.batchChangeStatus.',
+        'admin-sdk-mock v0.2.0 only. Methods: chromeosdevices.patch, customer.devices.chromeos.issueCommand, customer.devices.chromeos.commands.get, customer.devices.chromeos.batchChangeStatus',
     },
   );
 });
@@ -94,7 +94,7 @@ test('the drive-files capability names its label, scope, method, flags, and evid
       source:
         'https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list',
       evidence:
-        'Not verified on a live domain. The Drive slice demonstration verifies it.',
+        'Not verified on a live domain. The Drive slice demonstration verifies it',
     },
   );
   assert.ok(GOOGLE_SETUP_SCOPES.includes(DRIVE));
@@ -137,4 +137,14 @@ test('the user-schemas capability names its label, scope, method, flags, and evi
     },
   );
   assert.equal(GOOGLE_SETUP_SCOPES.at(-1), SCHEMA);
+});
+
+test('no capability evidence ends with a period', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.filter((capability) =>
+      capability.evidence.endsWith('.'),
+    ).map((capability) => capability.id),
+    [],
+    'the diagnostics page appends its own period',
+  );
 });
