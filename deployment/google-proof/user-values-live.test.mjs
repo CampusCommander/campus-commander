@@ -60,6 +60,10 @@ function createDirectory(options = {}) {
     fieldSequence: 0,
     etagSequence: 0,
     deletesToRefuse: options.deletesToRefuse ?? 0,
+    refuseInsert: options.refuseInsert ?? null,
+    loseInsertAnswer: options.loseInsertAnswer === true,
+    interruptAfterInsert: options.interruptAfterInsert === true,
+    interruptNextUserRead: false,
     stale: null,
     staleReads: 0,
   };
@@ -219,6 +223,22 @@ function createDirectory(options = {}) {
     if (url.pathname.startsWith('/admin/directory/v1/users/')) {
       if (scope !== USER_SCOPE) throw new FakeAnswer(403, 'forbidden');
       if (method === 'GET') {
+        // An exception that escapes the request guard during the observation that
+        // follows the insert, before runCheck records the category as created.
+        if (state.interruptNextUserRead) {
+          state.interruptNextUserRead = false;
+          const interrupted = new Error('observation interrupted');
+          interrupted.code = 'ECONNRESET';
+          Object.defineProperty(interrupted, 'response', {
+            get() {
+              // The exception escapes the request guard's own handler.
+              const reset = new Error('observation interrupted');
+              reset.code = 'ECONNRESET';
+              throw reset;
+            },
+          });
+          throw interrupted;
+        }
         if (state.staleReads > 0) {
           state.staleReads -= 1;
           return staleAnswer();
@@ -238,7 +258,19 @@ function createDirectory(options = {}) {
     if (url.pathname === collection) {
       if (scope !== SCHEMA_SCOPE) throw new FakeAnswer(403, 'forbidden');
       if (method !== 'POST') throw new FakeAnswer(405, 'methodNotAllowed');
+      if (state.refuseInsert !== null)
+        throw new FakeAnswer(
+          state.refuseInsert.status,
+          state.refuseInsert.reason,
+        );
       insert(options_.data);
+      if (state.interruptAfterInsert) state.interruptNextUserRead = true;
+      if (state.loseInsertAnswer) {
+        // The service applies the insert, then the answer is lost on the wire.
+        const lost = new Error('socket hang up');
+        lost.code = 'ECONNRESET';
+        throw lost;
+      }
       return { status: 200, data: clone(state.schema) };
     }
     if (url.pathname.startsWith(`${collection}/`)) {
@@ -465,6 +497,72 @@ test('a refused delete leaves the cleanup to clear the value and delete the cate
     evidence.cleanup.some(
       (entry) => entry.action === 'schemas.delete' && entry.httpStatus === 204,
     ),
+  );
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+});
+
+test('a lost insert answer still runs cleanup and verifies absence', async (t) => {
+  const { evidence, written, directory } = await runFlow(t, {
+    loseInsertAnswer: true,
+  });
+
+  // The POST landed, but its answer never arrived. The run failed; the category is gone.
+  assert.equal(evidence.outcome, 'insert-failed');
+  assert.equal(evidence.status, 'failed');
+  assert.equal(evidence.steps[1].httpStatus, null);
+  assert.equal(evidence.steps[1].errorReason, 'ECONNRESET');
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'schemas.delete' && entry.httpStatus === 204,
+    ),
+    'the cleanup deletes the category that the lost POST created',
+  );
+  assert.equal(evidence.verification.category.httpStatus, 404);
+  assert.equal(evidence.verification.category.present, false);
+  assert.equal(evidence.verification.skipped, undefined);
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+  assert.equal(
+    written.cleanup.filter((entry) => entry.action === 'schemas.delete').length,
+    1,
+  );
+  assert.ok(!JSON.stringify(written).includes('wrote nothing'));
+});
+
+test('an interrupted post-insert observation still runs cleanup and verifies absence', async (t) => {
+  const { evidence, directory } = await runFlow(t, {
+    interruptAfterInsert: true,
+  });
+
+  // The insert answered; the observation that follows it threw before the created flag.
+  assert.equal(evidence.failure, 'ECONNRESET');
+  assert.equal(evidence.status, 'failed');
+  assert.ok(
+    evidence.steps.every((entry) => entry.step === 1),
+    'the run stops inside step 2 before its record is written',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'schemas.delete' && entry.httpStatus === 204,
+    ),
+    'the cleanup deletes the category that the interrupted insert created',
+  );
+  assert.equal(evidence.verification.category.httpStatus, 404);
+  assert.equal(evidence.verification.skipped, undefined);
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+});
+
+test('a definitive insert refusal writes nothing and verifies nothing', async (t) => {
+  const { evidence, directory } = await runFlow(t, {
+    refuseInsert: { status: 409, reason: 'duplicate' },
+  });
+
+  assert.equal(evidence.outcome, 'insert-failed');
+  assert.equal(evidence.status, 'failed');
+  assert.deepEqual(evidence.cleanup, []);
+  assert.equal(typeof evidence.verification.skipped, 'string');
+  assert.equal(
+    directory.calls.filter((call) => call.method === 'DELETE').length,
+    0,
   );
   assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
 });
