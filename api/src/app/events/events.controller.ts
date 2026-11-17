@@ -85,8 +85,16 @@ export class EventsController {
       feeds.push({
         listener: entityListener,
         // Section 3.1: no job ID, no job record, no requester, and no failure that the caller cannot see.
+        // A user refresh shares the channel, and the Devices feed forwards device events alone (A section 8).
         forward: (event, failed) => {
           if (event.type === 'job-changed') return null;
+          if (event.type === 'entity-batch' && event.entityType !== 'device')
+            return null;
+          if (
+            event.type === 'job-finished' &&
+            event.job.entityType !== 'device'
+          )
+            return null;
           return forwardDevice(event, failed);
         },
       });

@@ -11,18 +11,21 @@ import {
   loadCredentialCipher,
   GoogleConnectionProvider,
   GoogleDeviceReader,
+  GoogleUserReader,
   personDriveClient,
   type GoogleReadRequest,
 } from '@campus/google-connection';
 import type { EntitySyncBatchRequest } from '@campus/application-contracts';
 import { DeviceSync, type DeviceSyncRequest } from './device-sync';
+import { UserSync, type UserSyncRequest } from './user-sync';
+import { createEntityReader } from './entity-reader';
 import {
   WorkerRedis,
   deferredEntityCache,
   noEntityCache,
   type EntityCache,
 } from './entity-cache';
-import { EntitySyncBatch } from './entity-sync';
+import { EntitySyncBatch, type EntityReader } from './entity-sync';
 import {
   DeviceUpdateJobs,
   resolveDeviceUpdateBatchSize,
@@ -187,13 +190,36 @@ export class GoogleWorker {
     );
   }
 
+  /** Postgres publishes a full user sync. A missing cache only skips the Redis fill (K7). */
+  async syncUsers(input: UserSyncRequest, signal: AbortSignal) {
+    const { pool, cipher } = this.resources();
+    let cache: EntityCache;
+    try {
+      cache = this.cache();
+    } catch {
+      cache = noEntityCache;
+    }
+    return new UserSync(pool, cipher, new GoogleUserReader(), cache).run(
+      input,
+      signal,
+    );
+  }
+
+  /**
+   * One refresh batch. The job row names its entity type, so the runner reads devices or users
+   * through the reader of that type (document A section 5).
+   */
+  private entityReader(): EntityReader {
+    return createEntityReader();
+  }
+
   /** An entity batch requires Redis. A missing cache answers 503 so Kestra retries the batch. */
   async syncEntityBatch(input: EntitySyncBatchRequest, signal: AbortSignal) {
     const { pool, cipher } = this.resources();
     return new EntitySyncBatch(
       pool,
       cipher,
-      new GoogleDeviceReader(),
+      this.entityReader(),
       this.cache(),
     ).run(input, signal);
   }

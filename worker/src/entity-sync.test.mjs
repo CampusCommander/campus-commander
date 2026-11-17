@@ -53,8 +53,42 @@ const record = (deviceId) => ({
   },
 });
 
+const user = (userId) => ({
+  userId,
+  primaryEmail: `${userId}@example.org`,
+  orgUnitPath: '/Students',
+  givenName: 'Robin',
+  familyName: 'Avery',
+  fullName: 'Robin Avery',
+  suspended: false,
+  suspensionReason: null,
+  archived: false,
+  lastLoginTime: null,
+  creationTime: null,
+  twoStepEnrolled: true,
+  department: null,
+  title: null,
+  aliases: [],
+  customSchemas: { StudentInfo: { GradeLevel: 7 } },
+});
+const userRecord = (userId) => ({
+  version: 1,
+  record: {
+    ...user(userId),
+    // One hour old, so Redis keeps the record for the 23 hours it stays fresh.
+    lastEntitySync: new Date(Date.now() - 3_600_000).toISOString(),
+  },
+});
+
 const clock = new Date('2026-10-06T11:59:59.123Z');
-function database({ fail = {}, finish = job(), cancels = [] } = {}) {
+function database({
+  fail = {},
+  finish = job(),
+  cancels = [],
+  entityType = 'device',
+  ids = ['d1', 'd2', 'd3'],
+  acceptedRemovals,
+} = {}) {
   const calls = [];
   return {
     calls,
@@ -85,15 +119,22 @@ function database({ fail = {}, finish = job(), cancels = [] } = {}) {
                 credentialId: randomUUID(),
                 envelope: { sealed: true },
                 batchCount: 2,
-                ids: ['d1', 'd2', 'd3'],
+                entityType,
+                ids,
               },
             },
           ],
         };
       if (name === 'read_device_records')
         return { rows: [{ result: JSON.parse(values[1]).map(record) }] };
+      if (name === 'read_user_records')
+        return { rows: [{ result: JSON.parse(values[1]).map(userRecord) }] };
+      if (name === 'soft_delete_users')
+        return {
+          rows: [{ result: acceptedRemovals ?? JSON.parse(values[1]) }],
+        };
       if (name === 'finish_entity_sync_batch')
-        return { rows: [{ result: finish }] };
+        return { rows: [{ result: { ...finish, entityType } }] };
       return { rows: [{ result: 1 }] };
     },
   };
@@ -118,7 +159,7 @@ function cache() {
 const cipher = {
   open: () => ({ subject: 'fixture@example.invalid', serviceAccount: {} }),
 };
-function reader({ devices = [], batteries = [], rounds = 0 } = {}) {
+function reader({ devices = [], batteries = [], users = [], rounds = 0 } = {}) {
   const calls = [];
   return {
     calls,
@@ -134,6 +175,12 @@ function reader({ devices = [], batteries = [], rounds = 0 } = {}) {
       const next = batteries.shift();
       if (next instanceof Error) throw next;
       return next ?? [];
+    },
+    async userBatch(_credential, _customer, ids, _signal, onRound) {
+      calls.push({ name: 'userBatch', ids });
+      const next = users.shift();
+      if (next instanceof Error) throw next;
+      return next ?? { users: ids.map(user), missing: [] };
     },
   };
 }
@@ -809,4 +856,139 @@ test('a failed cancel read fails the batch without a store', async () => {
   assert.equal(names(db.calls).includes('upsert_devices'), false);
   assert.equal(names(db.calls).includes('finish_entity_sync_batch'), false);
   assert.deepEqual(redis.calls, []);
+});
+
+test('a user batch upserts users, caches them, removes the missing ones, and publishes a user event', async () => {
+  const db = database({ entityType: 'user', ids: ['u1', 'u2', 'u3'] });
+  const redis = cache();
+  const result = await new EntitySyncBatch(
+    db,
+    cipher,
+    reader({
+      users: [{ users: [user('u1'), user('u3')], missing: ['u2'] }],
+    }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.deepEqual(names(db.calls), [
+    'read_entity_sync_batch',
+    'clock_timestamp',
+    'job_cancel_requested',
+    'upsert_users',
+    'soft_delete_users',
+    'read_user_records',
+    'finish_entity_sync_batch',
+  ]);
+  assert.deepEqual(
+    JSON.parse(db.calls[3].values[1]).map((entry) => entry.userId),
+    ['u1', 'u3'],
+  );
+  assert.deepEqual(
+    JSON.parse(db.calls[3].values[1])[0].customSchemas,
+    { StudentInfo: { GradeLevel: 7 } },
+    'The raw customSchemas answer is stored unchanged.',
+  );
+  assert.deepEqual(db.calls[4].values, [
+    customerId,
+    JSON.stringify(['u2']),
+    '2026-10-06T11:59:59.123Z',
+  ]);
+  assert.deepEqual(
+    redis.calls[0].args[0].map((entry) => entry.key),
+    ['cc:entity:user:C0123456:u1', 'cc:entity:user:C0123456:u3'],
+  );
+  assert.deepEqual(redis.calls[1].args[0], ['cc:entity:user:C0123456:u2']);
+  const event = entityEventSchema.parse(JSON.parse(redis.calls.at(-1).args[1]));
+  assert.deepEqual(event, {
+    type: 'entity-batch',
+    jobId,
+    entityType: 'user',
+    batch: 0,
+    batchCount: 2,
+    deviceIds: ['u1', 'u3'],
+    removedIds: ['u2'],
+  });
+  assert.deepEqual(result.updated, ['u1', 'u3']);
+  assert.deepEqual(result.removed, ['u2']);
+  assert.equal(
+    names(db.calls).includes('upsert_device_batteries'),
+    false,
+    'A user batch reads no telemetry.',
+  );
+});
+
+test('a user batch reports and caches only the removals the store accepted', async () => {
+  const db = database({
+    entityType: 'user',
+    ids: ['u1', 'u2'],
+    acceptedRemovals: [],
+  });
+  const redis = cache();
+  const result = await new EntitySyncBatch(
+    db,
+    cipher,
+    reader({ users: [{ users: [user('u1')], missing: ['u2'] }] }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(result.failure, null);
+  assert.deepEqual(result.updated, ['u1']);
+  assert.deepEqual(
+    result.removed,
+    [],
+    'A 404 that the store refuses is not a removal.',
+  );
+  assert.deepEqual(
+    names(redis.calls),
+    ['setRecords', 'removeMembers', 'publish'],
+    'A refused removal evicts no cache key.',
+  );
+  const event = entityEventSchema.parse(JSON.parse(redis.calls.at(-1).args[1]));
+  assert.deepEqual(event, {
+    type: 'entity-batch',
+    jobId,
+    entityType: 'user',
+    batch: 0,
+    batchCount: 2,
+    deviceIds: ['u1'],
+    removedIds: [],
+  });
+});
+
+test('a user batch that Google refuses records the failure and publishes no event', async () => {
+  const db = database({ entityType: 'user', ids: ['u1', 'u2'] });
+  const redis = cache();
+  await new EntitySyncBatch(
+    db,
+    cipher,
+    reader({ users: [new GoogleConnectionError('quota')] }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  const finish = db.calls.find(
+    (call) => call.name === 'finish_entity_sync_batch',
+  );
+  assert.deepEqual(finish.values.slice(3), ['quota']);
+  assert.deepEqual(names(redis.calls), ['removeMembers']);
+  assert.deepEqual(redis.calls[0].args, [
+    'cc:entity-inflight:user:C0123456',
+    ['u1', 'u2'],
+  ]);
+});
+
+test('a user batch with a lost lease stops before any user write', async () => {
+  const db = database({
+    entityType: 'user',
+    ids: ['u1', 'u2'],
+    fail: { upsert_users: 'entity-sync-changed' },
+  });
+  await assert.rejects(
+    new EntitySyncBatch(db, cipher, reader(), cache(), noSleep).run(
+      request,
+      AbortSignal.timeout(5000),
+    ),
+    (error) =>
+      error instanceof DeviceSyncError && error.code === 'entity-sync-changed',
+  );
+  assert.equal(names(db.calls).includes('finish_entity_sync_batch'), false);
 });

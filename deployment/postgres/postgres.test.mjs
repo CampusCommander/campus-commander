@@ -116,6 +116,7 @@ test('the release identifies its SQL migration by content checksum', async () =>
       '017-jobs',
       '018-device-write-access',
       '019-user-inventory',
+      '020-user-sync',
     ],
   );
   for (const migration of migrations)

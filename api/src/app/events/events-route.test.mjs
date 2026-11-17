@@ -98,6 +98,32 @@ const finishedJob = {
   },
 };
 
+/** A user refresh shares the entity channel. The Devices feed forwards device events alone. */
+const userBatch = {
+  type: 'entity-batch',
+  jobId: JOB_ID,
+  entityType: 'user',
+  batch: 0,
+  batchCount: 1,
+  deviceIds: ['user-1'],
+  removedIds: [],
+};
+const userFinishedJob = {
+  type: 'job-finished',
+  job: { ...finishedJob.job, entityType: 'user' },
+};
+const userSyncState = {
+  customerId: CUSTOMER,
+  generation: 1,
+  status: 'ready',
+  observedAt: new Date(Date.now() - 60_000).toISOString(),
+  userCount: 5,
+  failure: null,
+  startedAt: new Date(Date.now() - 120_000).toISOString(),
+  checkedAt: new Date(Date.now() - 60_000).toISOString(),
+  stale: false,
+};
+
 /** A database whose answers match a needle of the statement text. Every call is recorded. */
 function database(routes) {
   const calls = [];
@@ -426,6 +452,28 @@ test('one stream carries the job feed and the device feed of a caller with devic
     type: 'full-sync',
     data: { type: 'full-sync', sync },
   });
+
+  // A user refresh shares the channel, and the Devices feed drops its events.
+  fanout.publish(entityEventsChannel(CUSTOMER), userBatch);
+  fanout.publish(entityEventsChannel(CUSTOMER), userFinishedJob);
+  fanout.publish(entityEventsChannel(CUSTOMER), {
+    type: 'user-full-sync',
+    sync: userSyncState,
+  });
+  fanout.publish(entityEventsChannel(CUSTOMER), entityBatch);
+  assert.deepEqual(
+    await stream.next(),
+    {
+      type: 'entity-batch',
+      data: {
+        type: 'entity-batch',
+        entityType: 'device',
+        deviceIds: ['device-1'],
+        removedIds: [],
+      },
+    },
+    'The next device event arrives after the user events.',
+  );
 });
 
 test('a caller without devices:read receives the job feed alone when the sync read denies it', async () => {

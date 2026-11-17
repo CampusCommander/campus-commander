@@ -9,6 +9,7 @@ import {
   handleSyntheticDispatch,
   handleGoogleDispatch,
   handleDeviceSyncDispatch,
+  handleUserSyncDispatch,
   handleEntitySyncDispatch,
   handleDeviceUpdateBatchDispatch,
   handleDeviceUpdateFinishDispatch,
@@ -76,6 +77,15 @@ const handleRequest: RequestListener = async (request, response) => {
     return;
   if (
     await handleDeviceSyncDispatch(
+      request,
+      response,
+      { secret: dispatchSecret, signal: stopping.signal },
+      google,
+    )
+  )
+    return;
+  if (
+    await handleUserSyncDispatch(
       request,
       response,
       { secret: dispatchSecret, signal: stopping.signal },

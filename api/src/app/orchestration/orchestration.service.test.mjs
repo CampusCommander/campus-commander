@@ -200,8 +200,57 @@ test('the API image copies every flow that the service deploys', async () => {
       flows.includes('device-update-reconcile.yaml'),
     `The flow reader found both call shapes: ${flows.join(', ')}`,
   );
+  assert.ok(
+    flows.includes('user-sync.yaml'),
+    'The user sync flow is deployed.',
+  );
   const layout = await packagedLayout();
   for (const flow of flows) await packaged(layout, `deployment/kestra/${flow}`);
+});
+
+test('startUserSync deploys and starts the packaged user_sync flow', async () => {
+  const layout = await packagedLayout();
+  const stub = await kestraStub();
+  try {
+    const orchestration = await starter(stub);
+    process.chdir(layout);
+    let executionId;
+    try {
+      executionId = await orchestration.startUserSync({
+        customerId: identity.customerId,
+        syncId: identity.jobId,
+        correlationId: identity.correlationId,
+      });
+    } catch (error) {
+      assert.fail(`startUserSync failed: ${error.message}`);
+    }
+    const flow = stub.requests.find(
+      (request) =>
+        request.method === 'POST' && request.url === '/api/v1/main/flows',
+    );
+    assert.ok(flow, 'The starter deployed the flow.');
+    assert.match(flow.body, /^id: user_sync$/m);
+    const [execution] = executionRequests(stub.requests);
+    assert.ok(execution, 'The starter started an execution.');
+    assert.equal(
+      execution.url,
+      '/api/v1/main/executions/campus.application/user_sync',
+    );
+    assert.equal(
+      execution.contentType?.startsWith('multipart/form-data'),
+      true,
+    );
+    assert.equal(field(execution.body, 'customerId'), identity.customerId);
+    assert.equal(field(execution.body, 'syncId'), identity.jobId);
+    assert.equal(
+      field(execution.body, 'correlationId'),
+      identity.correlationId,
+    );
+    assert.equal(executionId, execution.executionId);
+  } finally {
+    process.chdir(repo);
+    await stub.close();
+  }
 });
 
 test('startDeviceUpdate deploys and starts the packaged device_update flow', async () => {

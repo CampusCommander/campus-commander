@@ -54,8 +54,12 @@ const claimSchema = z.strictObject({
 const leaseErrors = [
   'device-sync-changed',
   'device-sync-claimed',
+  'user-sync-changed',
+  'user-sync-claimed',
+  'user-sync-running',
   'entity-sync-changed',
   'credential-changed',
+  'connection-changed',
   'connection-disconnected',
   'restore-revalidation-required',
 ];
