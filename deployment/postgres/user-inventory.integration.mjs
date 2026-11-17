@@ -5,7 +5,14 @@ import { randomUUID } from 'node:crypto';
  * K5: the user inventory tables, the schema cache, and the typed read gate of the refresh path.
  * A device refresh needs devices:read and a user refresh needs users:read (document A section 8).
  */
-export async function qualifyUserInventory({ runtime, migrator, issuer }) {
+export async function qualifyUserInventory({
+  runtime,
+  migrator,
+  issuer,
+  connect,
+  close,
+  password,
+}) {
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
   ).rows[0];
@@ -424,6 +431,63 @@ export async function qualifyUserInventory({ runtime, migrator, issuer }) {
           '42501',
         );
         await rejects(runtime.query('SELECT cc.bump_user_record_version()'));
+      },
+    );
+
+    await check(
+      'the typed gate keeps PUBLIC out and refuses an untrusted role',
+      async () => {
+        const acl = await adminRow(
+          `SELECT p.proacl IS NOT NULL AS acl_set,
+            NOT EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0) AS no_public_grant
+           FROM pg_proc p
+           WHERE p.oid=to_regprocedure('cc.entity_job_reader(uuid,integer,text)')`,
+        );
+        assert.equal(acl.acl_set, true, 'The gate records an explicit ACL.');
+        assert.equal(
+          acl.no_public_grant,
+          true,
+          'The gate grants PUBLIC no EXECUTE.',
+        );
+        // A role with schema USAGE and no function grant is refused by the database.
+        const name = `cc-k5-outsider-${randomUUID().slice(0, 8)}`;
+        const adminSession = await connect('postgres', 'cc-app');
+        let outsider;
+        try {
+          await adminSession.query(
+            `CREATE ROLE "${name}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '${password}'`,
+          );
+          await adminSession.query(
+            `GRANT CONNECT ON DATABASE "cc-app" TO "${name}"`,
+          );
+          await adminSession.query(`GRANT USAGE ON SCHEMA cc TO "${name}"`);
+          outsider = await connect(name, 'cc-app');
+          const granted = await outsider.query(
+            `SELECT has_function_privilege(current_user,'cc.entity_job_reader(uuid,integer,text)','EXECUTE') AS granted`,
+          );
+          assert.equal(
+            granted.rows[0].granted,
+            false,
+            'The gate grants an outsider no EXECUTE.',
+          );
+          const denied = await rejects(
+            outsider.query('SELECT cc.entity_job_reader($1,1,$2) AS result', [
+              usersOnly,
+              'user',
+            ]),
+            '42501',
+          );
+          assert.match(
+            denied.message,
+            /permission denied for function entity_job_reader/,
+          );
+        } finally {
+          if (outsider !== undefined) await close(outsider);
+          await adminSession
+            .query(`DROP ROLE IF EXISTS "${name}"`)
+            .catch(() => undefined);
+          await close(adminSession);
+        }
       },
     );
   } finally {

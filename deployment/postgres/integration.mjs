@@ -589,6 +589,9 @@ try {
       runtime,
       migrator: migrators[0],
       issuer,
+      connect,
+      close,
+      password,
     })),
   );
   results.push(
