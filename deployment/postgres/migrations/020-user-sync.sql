@@ -223,7 +223,9 @@ BEGIN
   PERFORM 1 FROM cc.users u WHERE u.customer_id=p_customer AND
       u.user_id IN (SELECT jsonb_array_elements_text(p_ids))
     ORDER BY u.user_id FOR UPDATE;
-  UPDATE cc.users SET removed_at=clock_timestamp()
+  -- The removal carries the observation time, not the call time, so a read that started after this
+  -- observation clears it and a read that started before it does not (R3).
+  UPDATE cc.users SET removed_at=p_observed_at
   WHERE customer_id=p_customer AND removed_at IS NULL AND last_entity_sync<=p_observed_at
     AND user_id IN (SELECT jsonb_array_elements_text(p_ids));
   GET DIAGNOSTICS removed=ROW_COUNT;
@@ -347,6 +349,8 @@ BEGIN
     RAISE EXCEPTION 'The user sync expired or changed.' USING DETAIL='user-sync-changed';
   END IF;
   IF p_failure IS NULL THEN
+    -- The removal shares the finish clock with the state's checked_at, so the Redis cleanup page
+    -- finds exactly the users of this sync (device model, 016).
     UPDATE cc.users SET removed_at=now_at
     WHERE customer_id=p_customer AND removed_at IS NULL AND last_entity_sync<pending.sync_started_at;
     UPDATE cc.user_sync_state SET generation=pending.sync_generation,observed_at=now_at,

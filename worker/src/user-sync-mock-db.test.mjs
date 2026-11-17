@@ -403,6 +403,53 @@ test('a refresh marks a deleted user removed, and a later presence read restores
   );
 });
 
+test('an older 404 read cannot remove a user that a newer presence read returned', async () => {
+  const { rows } = await runtime.query(
+    `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
+     ORDER BY user_id LIMIT 1`,
+    [domain.customerId],
+  );
+  const userId = rows[0].user_id;
+  const missingEntered = deferred();
+  const missingRelease = deferred();
+  const presentEntered = deferred();
+  const presentRelease = deferred();
+  const missing = refresh([userId], {
+    deviceBatch: async () => [],
+    batteryBatch: async () => new Map(),
+    userBatch: async () => {
+      missingEntered.resolve();
+      await missingRelease.promise;
+      return { users: [], missing: [userId] };
+    },
+  });
+  await missingEntered.promise;
+  const present = refresh([userId], {
+    deviceBatch: async () => [],
+    batteryBatch: async () => new Map(),
+    userBatch: async () => {
+      presentEntered.resolve();
+      await presentRelease.promise;
+      return { users: [user(userId, `k7-${userId}@example.org`)], missing: [] };
+    },
+  });
+  await presentEntered.promise;
+  // The 404 reads first but writes second, after the newer presence read has its stamp.
+  missingRelease.resolve();
+  const older = await missing;
+  assert.equal(older.failure, null);
+  assert.deepEqual(older.removed, [userId]);
+  presentRelease.resolve();
+  const newer = await present;
+  assert.equal(newer.failure, null);
+  assert.deepEqual(
+    newer.updated,
+    [userId],
+    'the newer presence read wins over the older 404 read',
+  );
+  assert.equal((await stored(userId)).removed_at, null);
+});
+
 test('an older refresh read cannot clear a removal that a newer full sync made', async () => {
   const { rows } = await runtime.query(
     `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
