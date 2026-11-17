@@ -440,6 +440,15 @@ export async function qualifyUserInventory({
             org_unit_path: null,
           });
           assert.deepEqual(await targetPaths(crossJob.jobId), []);
+          // A device refresh reads cc.devices only. A user ID never borrows a user path.
+          const crossDeviceJob = await createJob(devicesOnly, 'device', [
+            userId,
+          ]);
+          assert.deepEqual(await target(crossDeviceJob.jobId, userId), {
+            device_id: userId,
+            org_unit_path: null,
+          });
+          assert.deepEqual(await targetPaths(crossDeviceJob.jobId), []);
           // A missing target keeps its row with a null path and an empty header list.
           const missingJob = await createJob(usersOnly, 'user', [missingId]);
           assert.deepEqual(await target(missingJob.jobId, missingId), {
