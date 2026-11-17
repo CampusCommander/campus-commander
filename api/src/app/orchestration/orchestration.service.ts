@@ -113,6 +113,23 @@ export class OrchestrationService {
     return this.execute('device_sync', values);
   }
 
+  /** Start one full user sync (design card K7). Card K8 builds the route that calls it. */
+  async startUserSync(input: {
+    customerId: string;
+    syncId: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        syncId: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('user-sync.yaml', 'user_sync');
+    return this.execute('user_sync', values);
+  }
+
   async startEntitySync(input: {
     customerId: string;
     jobId: string;
