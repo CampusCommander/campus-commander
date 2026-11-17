@@ -39,6 +39,13 @@ export type {
   DeviceWriteFields,
   IssuedDeviceCommand,
 } from './lib/devices';
+export {
+  GoogleUserReader,
+  categoryObservation,
+  lastLoginTime,
+  userObservation,
+} from './lib/users';
+export type { GoogleUserReaderOptions } from './lib/users';
 export type {
   GoogleConnectionDatabase,
   GoogleReadRequest,

@@ -20,6 +20,59 @@ const healthFor = (capacity) =>
 let quotaCalls = 0;
 /** The synthetic token name for the Drive health scope. */
 const driveToken = 'synthetic-drive-token';
+/** The synthetic token name for the read-only user scope. */
+const userToken = 'synthetic-user-token';
+/** The synthetic token name for the read-only user schema scope. */
+const schemaToken = 'synthetic-user-schema-token';
+/** The two synthetic users that the health check reads. */
+const users = [
+  {
+    id: 'synthetic-user-1',
+    primaryEmail: 'member-1@example.org',
+    orgUnitPath: '/Students',
+    name: { givenName: 'Member', familyName: 'One', fullName: 'Member One' },
+    suspended: false,
+    archived: false,
+    lastLoginTime: '2026-10-05T16:00:00.000Z',
+    creationTime: '2025-08-20T09:00:00.000Z',
+    isEnrolledIn2Sv: true,
+    aliases: ['member.one@example.org'],
+  },
+  {
+    id: 'synthetic-user-2',
+    primaryEmail: 'member-2@example.org',
+    orgUnitPath: '/Staff',
+    name: { givenName: 'Member', familyName: 'Two', fullName: 'Member Two' },
+    suspended: false,
+    archived: false,
+    // Google reports a user that never signed in at the Unix epoch.
+    lastLoginTime: '1970-01-01T00:00:00.000Z',
+    creationTime: '2025-08-21T09:00:00.000Z',
+    isEnrolledIn2Sv: false,
+  },
+];
+/** The one synthetic category that the health check reads. */
+const schemas = [
+  {
+    kind: 'admin#directory#schema',
+    etag: '"synthetic-schema-1"',
+    schemaId: 'syntheticSchemaId==',
+    schemaName: 'SyntheticInfo',
+    displayName: 'Synthetic information',
+    fields: [
+      {
+        kind: 'admin#directory#schema#fieldspec',
+        fieldId: 'syntheticFieldId',
+        fieldName: 'SyntheticField',
+        displayName: 'Synthetic field',
+        fieldType: 'STRING',
+        multiValued: false,
+        indexed: true,
+        readAccessType: 'ALL_DOMAIN_USERS',
+      },
+    ],
+  },
+];
 const fleet = Array.from({ length: 450 }, (_, index) => ({
   deviceId: `synthetic-device-${index}`,
   serialNumber: `C0A1-${index.toString(16).toUpperCase().padStart(4, '0')}`,
@@ -132,7 +185,11 @@ prototype.request = async function (options) {
                   ? 'synthetic-telemetry-token'
                   : scope.endsWith('drive.file')
                     ? driveToken
-                    : 'synthetic-domain-token',
+                    : scope.endsWith('userschema.readonly')
+                      ? schemaToken
+                      : scope.endsWith('user.readonly')
+                        ? userToken
+                        : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -155,7 +212,11 @@ prototype.request = async function (options) {
                     ? 'https://www.googleapis.com/auth/chrome.management.telemetry.readonly'
                     : authorization === `Bearer ${driveToken}`
                       ? 'https://www.googleapis.com/auth/drive.file'
-                      : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+                      : authorization === `Bearer ${userToken}`
+                        ? 'https://www.googleapis.com/auth/admin.directory.user.readonly'
+                        : authorization === `Bearer ${schemaToken}`
+                          ? 'https://www.googleapis.com/auth/admin.directory.userschema.readonly'
+                          : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))
@@ -254,6 +315,12 @@ prototype.request = async function (options) {
         },
       ],
     };
+  } else if (url.pathname === '/admin/directory/v1/users') {
+    // The health check reads one user; a user sync reads the page it asks for.
+    const limit = Number(options.params?.maxResults ?? 100);
+    data = { users: users.slice(0, limit) };
+  } else if (url.pathname === '/admin/directory/v1/customer/C0123456/schemas') {
+    data = { schemas };
   } else if (
     url.pathname === '/admin/directory/v1/customer/C0123456/devices/chromeos'
   ) {
