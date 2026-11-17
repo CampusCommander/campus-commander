@@ -284,13 +284,9 @@ async function perform(client, request) {
  * The script builds each request itself, so the application allowlist of provider.ts does not apply.
  */
 async function singleScopeClient(credential, scope) {
-  const issuer = new JWT({
-    email: credential.serviceAccount.client_email,
-    key: credential.serviceAccount.private_key,
-    keyId: credential.serviceAccount.private_key_id,
-    subject: credential.subject,
-    scopes: [scope],
-  });
+  const issuer = new JWT({ subject: credential.subject, scopes: [scope] });
+  // The validated account carries the email, the key, and the key ID of the service account.
+  issuer.fromJSON(credential.serviceAccount);
   const { token } = await issuer.getAccessToken();
   if (!token) throw new Error('credential-rejected');
   const info = await issuer.getTokenInfo(token);

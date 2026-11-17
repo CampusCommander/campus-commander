@@ -33,11 +33,10 @@ const REAL_CLIENT_ID = '987654321098765432109';
 const OTHER_VALUE = 'other-category-value';
 const credential = {
   subject: REAL_SUBJECT,
+  // The fake client answers every request, so the fixture needs no key material.
   serviceAccount: {
     client_id: REAL_CLIENT_ID,
     client_email: 'fixture@project.iam.gserviceaccount.com',
-    private_key: 'synthetic',
-    private_key_id: 'fixture',
   },
 };
 
