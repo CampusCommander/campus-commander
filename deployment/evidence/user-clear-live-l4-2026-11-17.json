@@ -146,15 +146,11 @@
           "jsonType": "array",
           "entries": [
             {
-              "keys": [
-                "value"
-              ],
+              "keys": ["value"],
               "value": "L4 alpha"
             },
             {
-              "keys": [
-                "value"
-              ],
+              "keys": ["value"],
               "value": "L4 beta"
             }
           ]
@@ -215,15 +211,11 @@
             "jsonType": "array",
             "entries": [
               {
-                "keys": [
-                  "value"
-                ],
+                "keys": ["value"],
                 "value": "L4 alpha"
               },
               {
-                "keys": [
-                  "value"
-                ],
+                "keys": ["value"],
                 "value": "L4 beta"
               }
             ]
@@ -250,9 +242,7 @@
           "jsonType": "null"
         }
       },
-      "omitted": [
-        "Three"
-      ],
+      "omitted": ["Three"],
       "answer": {
         "present": true,
         "keys": [
@@ -310,15 +300,11 @@
             "jsonType": "array",
             "entries": [
               {
-                "keys": [
-                  "value"
-                ],
+                "keys": ["value"],
                 "value": "L4 alpha"
               },
               {
-                "keys": [
-                  "value"
-                ],
+                "keys": ["value"],
                 "value": "L4 beta"
               }
             ]
@@ -667,15 +653,11 @@
       "jsonType": "array",
       "entries": [
         {
-          "keys": [
-            "value"
-          ],
+          "keys": ["value"],
           "value": "L4 alpha"
         },
         {
-          "keys": [
-            "value"
-          ],
+          "keys": ["value"],
           "value": "L4 beta"
         }
       ]

@@ -921,8 +921,7 @@ export function findingsOf(evidence) {
   const observed = step(6)?.observed ?? null;
   const row = (name) => observed?.[name] ?? null;
   const read = step(6)?.read?.httpStatus;
-  const readable =
-    Number.isInteger(read) && read >= 200 && read < 300;
+  const readable = Number.isInteger(read) && read >= 200 && read < 300;
 
   let nullTwo = 'unknown';
   let nullList = 'unknown';
