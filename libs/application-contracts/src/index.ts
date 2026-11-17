@@ -30,3 +30,4 @@ export * from './lib/csv';
 export * from './lib/device-export';
 export * from './lib/device-import';
 export * from './lib/google-drive';
+export * from './lib/users';
