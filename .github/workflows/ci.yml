@@ -78,7 +78,7 @@ jobs:
 
   main:
     if: inputs.phase3Only != true && inputs.phase3Release == ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -111,7 +111,7 @@ jobs:
 
   foundation-integration:
     if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -160,7 +160,7 @@ jobs:
 
   browser:
     if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
@@ -175,7 +175,7 @@ jobs:
 
   application-integration:
     if: inputs.phase3Release == '' && inputs.phase3Only != true && (github.event_name == 'push' || inputs.full == true)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
@@ -233,7 +233,7 @@ jobs:
 
   phase3-authorization:
     if: inputs.phase3Release == '' && inputs.phase3Only == true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1
