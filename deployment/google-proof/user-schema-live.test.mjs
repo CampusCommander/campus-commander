@@ -2,7 +2,8 @@
  * Coverage for the L2 live check without a network call.
  * The tests drive the production sequence with a simulated Directory `schemas` service.
  * They cover the name guard, the evidence sanitizer, the recorded answers, the stop before
- * a write, and the cleanup of a category that this run created.
+ * a write, and the cleanup of a category that this run created, including cleanup after a lost
+ * insert answer, a refused delete, an expired operation signal, and an unknown final list.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -52,15 +53,21 @@ function google({
   fieldNameLimit = 60,
   faults = [],
   rotateEtag = true,
+  schemaId = (name, serial) => `${name}-${serial}`,
 } = {}) {
   let serial = 0;
   let etagSerial = 0;
   const schemas = categories.map((item) => structuredClone(item));
   const requests = [];
-  const pending = [...faults];
+  const pending = faults.map((item) => ({
+    ...item,
+    seen: 0,
+    fired: 0,
+    times: item.times ?? 1,
+  }));
   const nextId = (name) => {
     serial += 1;
-    return `${name}-${serial}`;
+    return schemaId(name, serial);
   };
   const nextEtag = () => {
     etagSerial += 1;
@@ -84,19 +91,7 @@ function google({
       readAccessType: field.readAccessType ?? 'ALL_DOMAIN_USERS',
     }));
 
-  const send = async (token, request) => {
-    requests.push({
-      token,
-      method: request.method,
-      path: request.path,
-      headers: request.headers ?? {},
-      body: request.body ?? null,
-    });
-    const fault = pending.findIndex((item) => item.method === request.method);
-    if (fault >= 0) {
-      const [item] = pending.splice(fault, 1);
-      return fail(item.status, item.reason);
-    }
+  const handle = (request) => {
     if (!request.path.startsWith(prefix)) return fail(404, 'notFound');
     const key =
       request.path === prefix ? '' : request.path.slice(prefix.length + 1);
@@ -149,6 +144,46 @@ function google({
       return { status: 200, data: null };
     }
     return fail(405, 'methodNotAllowed');
+  };
+
+  /** One fault that matches this request, or null. `skip` lets the first calls pass. */
+  const takeFault = (request) => {
+    for (const item of pending) {
+      if (item.method !== request.method) continue;
+      if (item.path !== undefined && item.path !== request.path) continue;
+      item.seen += 1;
+      if (item.skip !== undefined && item.seen <= item.skip) continue;
+      if (item.fired >= item.times) continue;
+      item.fired += 1;
+      return item;
+    }
+    return null;
+  };
+
+  const send = async (token, request, signal) => {
+    // `fetch` rejects an aborted request before it leaves the process.
+    if (signal?.aborted) {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    }
+    requests.push({
+      token,
+      method: request.method,
+      path: request.path,
+      headers: request.headers ?? {},
+      body: request.body ?? null,
+    });
+    const fault = takeFault(request);
+    if (fault) {
+      // `apply` performs the write before the answer is lost, as a reset connection can.
+      const applied = fault.apply ? handle(request) : null;
+      if (fault.abort) fault.abort();
+      if (fault.transport)
+        throw Object.assign(new Error(fault.transport), {
+          name: fault.transport,
+        });
+      return applied ?? fail(fault.status, fault.reason);
+    }
+    return handle(request);
   };
 
   return { send, schemas, requests };
@@ -353,6 +388,144 @@ test('the cleanup removes the category after a refused delete', async (t) => {
     ccLiveCheckAfter: false,
   });
   assert.equal(evidence.status, 'passed');
+  assert.deepEqual(fake.schemas, [ownerCategory]);
+});
+
+test('an insert that applies before its answer fails does not strand the category', async (t) => {
+  // The POST applies, then the connection drops, so the run never receives the new schema.
+  const fake = google({
+    categories: [ownerCategory],
+    faults: [{ method: 'POST', apply: true, transport: 'ECONNRESET' }],
+  });
+  const { evidence } = await run(t, { send: fake.send });
+
+  assert.equal(evidence.status, 'failed');
+  assert.equal(evidence.failure, 'insert-ECONNRESET');
+  assert.equal(stepOf(evidence, '2-insert').httpStatus, null);
+  assert.equal(stepOf(evidence, '2-insert').failure, 'ECONNRESET');
+  // The cleanup names the permitted category, so it needs no received schema answer.
+  const cleanup = stepOf(evidence, '7-cleanup-delete');
+  assert.equal(cleanup.httpStatus, 200);
+  assert.equal(cleanup.path.endsWith(`/${CATEGORY_NAME}`), true);
+  assert.deepEqual(cleanup.wrote, { schemaKey: 'name' });
+  assert.deepEqual(evidence.counts, {
+    categoriesBefore: 1,
+    categoriesAfter: 1,
+    ccLiveCheckAfter: false,
+  });
+  assert.deepEqual(fake.schemas, [ownerCategory]);
+});
+
+test('a lost recreation answer with an ID outside the name guard still cleans up', async (t) => {
+  // The issued ID carries characters outside the name guard, and the recreation answer is lost.
+  const fake = google({
+    categories: [ownerCategory],
+    schemaId: (name) => (name === 'schema' ? 'schema:1/odd' : `${name}-id`),
+    faults: [{ method: 'POST', skip: 2, apply: true, transport: 'ECONNRESET' }],
+  });
+  const { evidence } = await run(t, { send: fake.send });
+
+  assert.equal(stepOf(evidence, '2-insert').answered.schemaIdPathSafe, false);
+  assert.equal(
+    stepOf(evidence, '2-insert').answered.schemaIdLength,
+    'schema:1/odd'.length,
+  );
+  assert.equal(stepOf(evidence, '6-insert-reused-name').failure, 'ECONNRESET');
+  assert.equal(evidence.answers.nameReuseAfterDelete, null);
+  const cleanup = stepOf(evidence, '7-cleanup-delete');
+  assert.equal(cleanup.httpStatus, 200);
+  assert.equal(cleanup.path.endsWith(`/${CATEGORY_NAME}`), true);
+  assert.deepEqual(evidence.counts, {
+    categoriesBefore: 1,
+    categoriesAfter: 1,
+    ccLiveCheckAfter: false,
+  });
+  assert.deepEqual(fake.schemas, [ownerCategory]);
+});
+
+test('a refused cleanup delete is reconciled by the permitted name', async (t) => {
+  // The first cleanup delete answers 503, so the category survives the first pass.
+  const fake = google({
+    categories: [ownerCategory],
+    faults: [
+      { method: 'DELETE', skip: 1, status: 503, reason: 'backendError' },
+    ],
+  });
+  const { evidence } = await run(t, { send: fake.send });
+
+  assert.equal(stepOf(evidence, '7-cleanup-delete').httpStatus, 503);
+  assert.equal(stepOf(evidence, '7-cleanup-delete').reason, 'backendError');
+  const repeated = stepOf(evidence, '7-cleanup-delete-repeated');
+  assert.equal(repeated.httpStatus, 200);
+  assert.equal(repeated.path.endsWith(`/${CATEGORY_NAME}`), true);
+  assert.deepEqual(evidence.counts, {
+    categoriesBefore: 1,
+    categoriesAfter: 1,
+    ccLiveCheckAfter: false,
+  });
+  assert.equal(evidence.status, 'passed');
+  assert.deepEqual(fake.schemas, [ownerCategory]);
+});
+
+test('an aborted operation signal does not disable the cleanup', async (t) => {
+  // The operation deadline fires after the insert applies. Cleanup must use its own signal.
+  const operation = new AbortController();
+  const fake = google({
+    categories: [ownerCategory],
+    faults: [
+      {
+        method: 'POST',
+        apply: true,
+        transport: 'ECONNRESET',
+        abort: () => operation.abort(),
+      },
+    ],
+  });
+  const { evidence } = await run(t, {
+    send: fake.send,
+    signal: operation.signal,
+  });
+
+  assert.equal(operation.signal.aborted, true);
+  assert.equal(evidence.status, 'failed');
+  assert.equal(stepOf(evidence, '2-insert').failure, 'ECONNRESET');
+  // The fake refuses any request that carries an aborted signal, as `fetch` does.
+  const cleanup = stepOf(evidence, '7-cleanup-delete');
+  assert.equal(cleanup.httpStatus, 200);
+  assert.equal(stepOf(evidence, '7-list').httpStatus, 200);
+  assert.deepEqual(evidence.counts, {
+    categoriesBefore: 1,
+    categoriesAfter: 1,
+    ccLiveCheckAfter: false,
+  });
+  assert.deepEqual(fake.schemas, [ownerCategory]);
+});
+
+test('a failed final list reports the absence as unknown, not clean', async (t) => {
+  // Both cleanup lists fail after the delete. A failed read never proves absence.
+  const fake = google({
+    categories: [ownerCategory],
+    faults: [
+      {
+        method: 'GET',
+        path: prefix,
+        skip: 1,
+        times: 2,
+        status: 503,
+        reason: 'backendError',
+      },
+    ],
+  });
+  const { evidence } = await run(t, { send: fake.send });
+
+  assert.equal(stepOf(evidence, '7-list').httpStatus, 503);
+  assert.equal(stepOf(evidence, '7-list-final').httpStatus, 503);
+  assert.equal(evidence.counts.categoriesBefore, 1);
+  assert.equal(evidence.counts.categoriesAfter, null);
+  assert.equal(evidence.counts.ccLiveCheckAfter, null);
+  assert.equal(evidence.status, 'failed');
+  // The delete itself succeeded, and the domain is clean even though the proof is incomplete.
+  assert.equal(stepOf(evidence, '7-cleanup-delete').httpStatus, 200);
   assert.deepEqual(fake.schemas, [ownerCategory]);
 });
 

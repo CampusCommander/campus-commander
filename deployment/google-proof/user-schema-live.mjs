@@ -23,6 +23,9 @@ export const SUBJECT_PLACEHOLDER = 'admin@example.org';
 export const usage =
   'Usage: node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/user-schema-live.mjs <key-file> <subject> <client-id>';
 
+/** The cleanup budget. Cleanup sends its own calls after the operation deadline may have expired. */
+export const CLEANUP_TIMEOUT_MS = 60_000;
+
 const origin = 'https://admin.googleapis.com';
 const directoryPath = '/admin/directory/v1';
 const insertDisplayName = 'Cc live check';
@@ -273,10 +276,16 @@ export async function runCheck(config, options = {}) {
   let stopped = null;
   /** The last `CcLiveCheck` schema this run received. */
   let schema = null;
-  /** True while the category exists and this run created it. */
-  let owned = false;
-  /** True once this run inserted the category. Cleanup deletes only such a category. */
-  let everOwned = false;
+  /**
+   * True when step 1 proved that the category was absent before any write.
+   * Cleanup removes the category only after this proof.
+   */
+  let absenceProven = false;
+  /**
+   * True from the moment this run sends an insert. An insert can apply before its answer fails,
+   * so cleanup must not wait for a received answer to remove the category.
+   */
+  let creationAttempted = false;
   /** The schema IDs that Google issued to this run. A call may name one of these or the category name. */
   const issued = new Set();
   const started = Date.now();
@@ -337,6 +346,7 @@ export async function runCheck(config, options = {}) {
       call.failure = 'no-token';
       return { call, status: null, data: null, failure: call.failure };
     }
+    const requestSignal = extra.signal ?? signal;
     try {
       const answer = await send(
         token,
@@ -346,7 +356,7 @@ export async function runCheck(config, options = {}) {
           ...(extra.body === undefined ? {} : { body: extra.body }),
           ...(extra.headers === undefined ? {} : { headers: extra.headers }),
         },
-        signal,
+        requestSignal,
       );
       call.httpStatus = answer.status;
       call.reason = reasonOf(answer.data);
@@ -361,14 +371,16 @@ export async function runCheck(config, options = {}) {
   const accepted = (status) => status !== null && status >= 200 && status < 300;
 
   /** The category list. It records the count and the presence of the test category, never a name. */
-  async function listCategories(step) {
+  async function listCategories(step, requestSignal) {
     const answer = await attempt(
       step,
       'schemas.list',
       'GET',
       `${base}/schemas`,
+      requestSignal === undefined ? {} : { signal: requestSignal },
     );
-    if (answer.status !== 200) return { count: null, held: null };
+    // A failed list leaves the category state unknown. A failed read never proves absence.
+    if (answer.status !== 200) return { count: null, held: null, known: false };
     const schemas = Array.isArray(answer.data?.schemas)
       ? answer.data.schemas
       : [];
@@ -378,11 +390,13 @@ export async function runCheck(config, options = {}) {
       categoryCount: schemas.length,
       ccLiveCheckListed: held !== null,
     };
-    return { count: schemas.length, held };
+    return { count: schemas.length, held, known: true };
   }
 
   async function insert(step) {
     const body = insertBody();
+    // The attempt precedes the answer. An insert can apply before its answer fails.
+    creationAttempted = true;
     const answer = await attempt(
       step,
       'schemas.insert',
@@ -396,8 +410,6 @@ export async function runCheck(config, options = {}) {
     if (created(answer.status) && answer.data) {
       answer.call.answered = answered(answer.data);
       remember(answer.data);
-      owned = true;
-      everOwned = true;
     }
     return answer;
   }
@@ -426,9 +438,38 @@ export async function runCheck(config, options = {}) {
     return answer;
   }
 
+  /** The final category list. A failed call leaves the absence unknown, never absent. */
+  async function recordFinalList(step, cleanupSignal) {
+    const listed = await listCategories(step, cleanupSignal);
+    evidence.counts.categoriesAfter = listed.count;
+    evidence.counts.ccLiveCheckAfter = listed.known
+      ? listed.held !== null
+      : null;
+    return listed;
+  }
+
+  /**
+   * Remove the test category by its permitted name. A Google ID may fail the name guard,
+   * and a lost insert answer leaves this run without an ID. The permitted name needs neither.
+   */
+  async function deleteTestCategory(step, cleanupSignal) {
+    const removed = await attempt(
+      step,
+      'schemas.delete',
+      'DELETE',
+      schemaPath(CATEGORY_NAME),
+      { wrote: { schemaKey: 'name' }, signal: cleanupSignal },
+    );
+    if (accepted(removed.status)) schema = null;
+    return removed;
+  }
+
   async function cleanup() {
-    // A category that step 1 found belongs to nobody in this run. Step 1 stops before any write,
-    // so the cleanup leaves it in place and reports it.
+    // Cleanup gets its own bounded signal. The operation deadline may already have expired,
+    // and a cleanup that a dead deadline blocks leaves the test category in the domain.
+    const cleanupSignal =
+      options.cleanupSignal ??
+      AbortSignal.timeout(options.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS);
     if (token === null) {
       steps.push({
         step: '7-cleanup',
@@ -441,60 +482,35 @@ export async function runCheck(config, options = {}) {
       });
       return;
     }
-    if (owned) {
-      const key = keyOf();
-      const removed = await attempt(
-        '7-cleanup-delete',
-        'schemas.delete',
-        'DELETE',
-        schemaPath(key),
-        { wrote: { schemaKey: key === CATEGORY_NAME ? 'name' : 'id' } },
-      );
-      if (accepted(removed.status)) {
-        owned = false;
-        schema = null;
-      }
-    } else {
+    // Only a run that proved the category absent and then attempted an insert may remove it.
+    // A category that step 1 found belongs to nobody in this run, and step 1 stops before any write.
+    const mayOwn = absenceProven && creationAttempted;
+    if (!mayOwn) {
       steps.push({
         step: '7-cleanup-delete',
         googleMethod: null,
         httpMethod: null,
         path: null,
-        note: 'skipped: this run created no category',
+        note: absenceProven
+          ? 'skipped: this run attempted no insert'
+          : 'skipped: the category existed before any write',
         httpStatus: null,
         reason: null,
       });
+      await recordFinalList('7-list', cleanupSignal);
+      return;
     }
 
-    let listed = await listCategories('7-list');
-    evidence.counts.categoriesAfter = listed.count;
-    evidence.counts.ccLiveCheckAfter = listed.held !== null;
-    // A category that this run never created stays in place.
-    if (listed.held === null || !everOwned) return;
+    await deleteTestCategory('7-cleanup-delete', cleanupSignal);
+    const listed = await recordFinalList('7-list', cleanupSignal);
+    // A known absence ends the cleanup. An unknown list, a refused delete, or a lost insert
+    // answer reaches the reconciliation pass.
+    if (listed.known && listed.held === null) return;
 
-    // A second pass removes a category that the first delete left behind.
-    const held = listed.held;
-    if (
-      typeof held.schemaId === 'string' &&
-      schemaIdShape.test(held.schemaId)
-    ) {
-      issued.add(held.schemaId);
-      schema = held;
-      const repeated = await attempt(
-        '7-cleanup-delete-repeated',
-        'schemas.delete',
-        'DELETE',
-        schemaPath(held.schemaId),
-        { wrote: { schemaKey: 'id' } },
-      );
-      if (accepted(repeated.status)) {
-        owned = false;
-        schema = null;
-      }
-      listed = await listCategories('7-list-final');
-      evidence.counts.categoriesAfter = listed.count;
-      evidence.counts.ccLiveCheckAfter = listed.held !== null;
-    }
+    // The reconciliation names the permitted category, so a Google ID outside the name guard
+    // cannot strand the category that this run may have created.
+    await deleteTestCategory('7-cleanup-delete-repeated', cleanupSignal);
+    await recordFinalList('7-list-final', cleanupSignal);
   }
 
   const statusOf = (step) =>
@@ -524,6 +540,9 @@ export async function runCheck(config, options = {}) {
       throw Object.assign(new Error('guard-refused'), {
         code: guard.failure ?? `unexpected-status-${guard.status}`,
       });
+    } else {
+      // The 404 is the proof that no category existed before this run's first write.
+      absenceProven = true;
     }
 
     if (stopped === null) {
@@ -592,7 +611,6 @@ export async function runCheck(config, options = {}) {
         { wrote: { schemaKey: key === CATEGORY_NAME ? 'name' : 'id' } },
       );
       if (accepted(removed.status)) {
-        owned = false;
         schema = null;
       }
       await insert('6-insert-reused-name');
@@ -625,6 +643,7 @@ export async function runCheck(config, options = {}) {
     'The check proves one category lifecycle and nothing about a user value or a user route.',
     'Step 1 stops the run when the category already exists. That run writes nothing and keeps the category.',
     'The cleanup delete sends no If-Match, so a stale etag cannot block the cleanup.',
+    'Cleanup names the permitted category, so a lost insert answer or an ID outside the name guard cannot strand it.',
     'The evidence holds the count of the categories of this customer and no name of another category.',
     'The production request allowlist admits no schemas path. This proof sends its own calls until that card lands.',
   ];
