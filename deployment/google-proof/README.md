@@ -116,6 +116,27 @@ The run of 2026-11-17 wrote `deployment/evidence/user-values-live-l3-2026-11-17.
 The [design addendum](../../docs/superpowers/specs/2026-11-16-user-management-design.md), section 6, records its answers.
 The key file stays outside the repository.
 
+## Value clear check L4
+
+```bash
+node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/user-clear-live.mjs <key-file> <subject> <client-id> <test-user>
+```
+
+The check writes to the owner's domain. Each run needs the owner's explicit yes, because the standing authorization permits no Google data mutation.
+The script touches only the category `CcLiveClear` and only the test user of its argument. It refuses every other schema name.
+It sends schema calls with one token that carries only `admin.directory.userschema`.
+It sends user calls with one token that carries only `admin.directory.user`.
+
+It sets three single values and a list with `users.patch`. It then sends one `users.update` body. That body sets one value, clears a single value and the list with `null`, and leaves the third value out.
+It reads the test user with `projection=custom` and `customFieldMask=CcLiveClear`, except for two `projection=basic` reads that record no value.
+When `CcLiveClear` exists before the run, the script stops before any write.
+Its cleanup reads the category and the user, clears any remaining value, deletes the `CcLiveClear` that the run created, and reads the category again.
+
+It writes sanitized evidence to `deployment/evidence/user-clear-live-l4-<date>.json`.
+The run of 2026-11-17 wrote `deployment/evidence/user-clear-live-l4-2026-11-17.json`.
+The [design addendum](../../docs/superpowers/specs/2026-11-16-user-management-design.md), section 6, records its answers.
+The key file stays outside the repository.
+
 ## Repeatable checks
 
 ```bash
