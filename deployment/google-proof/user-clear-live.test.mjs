@@ -28,6 +28,7 @@ const {
   runCheck,
   sanitizeEvidence,
   valuesBody,
+  verdict,
 } = await import('./user-clear-live.mjs');
 
 const BASE_URL = 'https://directory.fixture.invalid/admin/directory/v1';
@@ -71,7 +72,6 @@ function createDirectory(options = {}) {
     staleReads: 0,
     deletesToRefuse: options.deletesToRefuse ?? 0,
     refuseInsert: options.refuseInsert ?? null,
-    loseInsertAnswer: options.loseInsertAnswer === true,
     interruptSchemaReadAt: options.interruptSchemaReadAt ?? null,
     failUpdateOnce: options.failUpdateOnce ?? null,
     changeAccountOnUpdate: options.changeAccountOnUpdate === true,
@@ -87,6 +87,13 @@ function createDirectory(options = {}) {
     },
   };
   const lagReads = options.lagReads ?? 0;
+  const loseInsertAnswerAt =
+    options.loseInsertAnswerAt ??
+    (options.loseInsertAnswer === true ? 1 : null);
+  const failCustomReadsAfterUpdate = options.failCustomReadsAfterUpdate ?? 0;
+  state.insertCount = 0;
+  state.updateApplied = false;
+  state.customReadFailuresLeft = failCustomReadsAfterUpdate;
   const clone = (value) =>
     value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   /**
@@ -210,6 +217,7 @@ function createDirectory(options = {}) {
         ...state.account,
         name: { ...state.account.name, givenName: 'Changed' },
       };
+    state.updateApplied = true;
   };
 
   const insert = (body) => {
@@ -260,6 +268,14 @@ function createDirectory(options = {}) {
           requestOptions.params?.customFieldMask !== CATEGORY
         )
           throw new FakeAnswer(400, 'invalid');
+        // A custom read can fail after the update. The first step-6 read is one of these.
+        if (state.updateApplied && state.customReadFailuresLeft > 0) {
+          state.customReadFailuresLeft -= 1;
+          throw new FakeAnswer(
+            options.failCustomReadStatus ?? 500,
+            options.failCustomReadReason ?? 'backendError',
+          );
+        }
         if (state.staleReads > 0) {
           state.staleReads -= 1;
           return staleCustomAnswer();
@@ -294,8 +310,12 @@ function createDirectory(options = {}) {
           state.refuseInsert.status,
           state.refuseInsert.reason,
         );
+      state.insertCount += 1;
       insert(requestOptions.data);
-      if (state.loseInsertAnswer) {
+      if (
+        loseInsertAnswerAt !== null &&
+        state.insertCount === loseInsertAnswerAt
+      ) {
         // The service applies the insert, then the answer is lost on the wire.
         const lost = new Error('socket hang up');
         lost.code = 'ECONNRESET';
@@ -607,6 +627,221 @@ test('a lost insert answer still runs cleanup and verifies absence', async (t) =
   assert.equal(evidence.verification.category.httpStatus, 404);
   assert.equal(evidence.verification.skipped, undefined);
   assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+});
+
+test('a lost first insert answer with a lagged schema read still removes the category', async (t) => {
+  // The insert is applied, its answer is lost, and the first cleanup read is stale. A
+  // stale 404 must not skip the DELETE or certify absence. Lag 2 covers the skipped
+  // delete; lag 3 also makes the final verification's first read stale.
+  for (const lagReads of [2, 3]) {
+    const { evidence, directory } = await runFlow(t, {
+      loseInsertAnswerAt: 1,
+      lagReads,
+    });
+
+    assert.equal(evidence.outcome, 'insert-failed', `lag ${lagReads}`);
+    assert.equal(evidence.status, 'failed', `lag ${lagReads}`);
+    assert.equal(evidence.steps[2].httpStatus, null, `lag ${lagReads}`);
+    assert.equal(
+      evidence.steps[2].errorReason,
+      'ECONNRESET',
+      `lag ${lagReads}`,
+    );
+    assert.ok(
+      evidence.cleanup.some(
+        (entry) => entry.action === 'schemas.get' && entry.httpStatus === 404,
+      ),
+      `lag ${lagReads}: the cleanup probe served the stale 404`,
+    );
+    assert.ok(
+      evidence.cleanup.some(
+        (entry) =>
+          entry.action === 'schemas.delete' && entry.httpStatus === 204,
+      ),
+      `lag ${lagReads}: the cleanup deletes despite the stale 404`,
+    );
+    assert.equal(
+      evidence.verification.category.httpStatus,
+      404,
+      `lag ${lagReads}`,
+    );
+    assert.equal(
+      evidence.verification.category.present,
+      false,
+      `lag ${lagReads}`,
+    );
+    assert.equal(
+      evidence.verification.category.confirmedByDelete,
+      true,
+      `lag ${lagReads}`,
+    );
+    assert.deepEqual(
+      directory.snapshot(),
+      { schemaPresent: false, values: {} },
+      `lag ${lagReads}: the fixture holds no category`,
+    );
+  }
+});
+
+test('a lost second insert answer with a lagged schema read still removes the category', async (t) => {
+  // The same stale 404 after the second creation site must not leave the category behind.
+  for (const lagReads of [2, 3]) {
+    const { evidence, directory } = await runFlow(t, {
+      loseInsertAnswerAt: 2,
+      lagReads,
+    });
+
+    assert.equal(evidence.outcome, 'second-insert-failed', `lag ${lagReads}`);
+    assert.equal(evidence.status, 'failed', `lag ${lagReads}`);
+    assert.equal(evidence.steps[7].httpStatus, null, `lag ${lagReads}`);
+    assert.equal(
+      evidence.steps[7].errorReason,
+      'ECONNRESET',
+      `lag ${lagReads}`,
+    );
+    assert.ok(
+      evidence.cleanup.some(
+        (entry) => entry.action === 'schemas.get' && entry.httpStatus === 404,
+      ),
+      `lag ${lagReads}: the cleanup probe served the stale 404`,
+    );
+    assert.ok(
+      evidence.cleanup.some(
+        (entry) =>
+          entry.action === 'schemas.delete' && entry.httpStatus === 204,
+      ),
+      `lag ${lagReads}: the cleanup deletes despite the stale 404`,
+    );
+    assert.equal(
+      evidence.verification.category.httpStatus,
+      404,
+      `lag ${lagReads}`,
+    );
+    assert.equal(
+      evidence.verification.category.present,
+      false,
+      `lag ${lagReads}`,
+    );
+    assert.equal(
+      evidence.verification.category.confirmedByDelete,
+      true,
+      `lag ${lagReads}`,
+    );
+    assert.deepEqual(
+      directory.snapshot(),
+      { schemaPresent: false, values: {} },
+      `lag ${lagReads}: the fixture holds no category`,
+    );
+  }
+});
+
+test('a transient step-6 read failure continues the poll and still settles', async (t) => {
+  const { evidence, directory } = await runFlow(t, {
+    failCustomReadsAfterUpdate: 1,
+  });
+
+  assert.equal(evidence.outcome, 'completed');
+  assert.equal(evidence.status, 'passed');
+  const step6 = evidence.steps.find((entry) => entry.step === 6);
+  assert.equal(step6.immediate.httpStatus, 500);
+  assert.equal(step6.immediate.errorReason, 'backendError');
+  assert.equal(step6.read.httpStatus, 200);
+  assert.equal(step6.readableReads > 0, true);
+  assert.equal(step6.unreadableReads, 1);
+  assert.equal(step6.settled, true);
+  assert.equal(evidence.findings.nullSingleValue.answer, 'cleared');
+  assert.equal(evidence.findings.nullList.answer, 'cleared');
+  assert.equal(evidence.findings.omittedAttribute.answer, 'kept');
+  assert.equal(evidence.findings.omittedAttribute.changedAfterMs, null);
+  const updateIndex = directory.calls.findIndex(
+    (call) =>
+      call.method === 'PUT' && call.data.customSchemas[CATEGORY] !== null,
+  );
+  const deleteIndex = directory.calls.findIndex(
+    (call) => call.method === 'DELETE',
+  );
+  const step6Reads = directory.calls
+    .slice(updateIndex + 1, deleteIndex)
+    .filter(
+      (call) => call.method === 'GET' && call.params.projection === 'custom',
+    );
+  assert.equal(
+    step6Reads.length,
+    2,
+    'the failed read is retried before step 7',
+  );
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+});
+
+test('a persistent step-6 read failure fails the run and still cleans up', async (t) => {
+  const { evidence, directory } = await runFlow(t, {
+    failCustomReadsAfterUpdate: 999,
+  });
+
+  // No successful read observed the clear. The run must fail, not fabricate absence.
+  assert.equal(evidence.outcome, 'clear-unavailable');
+  assert.equal(evidence.status, 'failed');
+  const step6 = evidence.steps.find((entry) => entry.step === 6);
+  assert.equal(step6.httpStatus, 500);
+  assert.equal(step6.read.errorReason, 'backendError');
+  assert.equal(step6.settled, false);
+  assert.equal(step6.readableReads, 0);
+  assert.equal(step6.unreadableReads, 6);
+  for (const name of ATTRIBUTES) {
+    assert.equal(
+      step6.observed[name].holdsValue,
+      null,
+      `${name} holds no value answer without a successful read`,
+    );
+    assert.equal(
+      step6.observed[name].changedAfterMs,
+      null,
+      `${name} acquires no false change time`,
+    );
+  }
+  assert.match(evidence.findings.nullSingleValue.answer, /^unreadable:/);
+  assert.match(evidence.findings.nullList.answer, /^unreadable:/);
+  assert.match(evidence.findings.omittedAttribute.answer, /^unreadable:/);
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'users.update' && entry.httpStatus === 200,
+    ),
+    'the cleanup clears the value',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'schemas.delete' && entry.httpStatus === 204,
+    ),
+    'the cleanup deletes the category',
+  );
+  assert.equal(evidence.verification.category.present, false);
+  assert.deepEqual(directory.snapshot(), { schemaPresent: false, values: {} });
+});
+
+test('an unconfirmed 404 read does not certify absence', () => {
+  const steps = Array.from({ length: 8 }, (_, index) => ({
+    step: index + 1,
+    httpStatus: 200,
+  }));
+  const evidence = {
+    outcome: 'completed',
+    findings: { unknown: [] },
+    verification: {
+      category: { httpStatus: 404, present: null, confirmedByDelete: false },
+    },
+    accountComparison: { primaryEmail: 'yes' },
+    steps,
+  };
+  assert.equal(verdict(evidence), 'failed');
+  assert.equal(
+    verdict({
+      ...evidence,
+      verification: {
+        category: { httpStatus: 404, present: false, confirmedByDelete: true },
+      },
+    }),
+    'passed',
+  );
 });
 
 test('an interrupted insert observation still runs cleanup and verifies absence', async (t) => {

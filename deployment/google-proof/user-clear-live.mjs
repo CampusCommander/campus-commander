@@ -365,6 +365,8 @@ export async function runCheck(credential, options = {}) {
     accountBefore: null,
     step4Attributes: null,
     updateAnsweredAt: null,
+    // True when a DELETE proved the category absent at the time it was handled.
+    removalConfirmed: false,
   };
   const startedAt = Date.now();
   const schemaClient = await clientFor(SCHEMA_SCOPE);
@@ -549,24 +551,31 @@ export async function runCheck(credential, options = {}) {
     }
 
     // Step 6. Read at once, then once a second for up to 60 seconds, until Two and List
-    // are absent. Record for each attribute whether it holds a value and the change time.
+    // are absent. Only a successful read establishes absence or a change time. A failed
+    // read continues the poll, and a poll with no successful read fails with cleanup.
     const baseline = state.step4Attributes;
     const changedAfterMs = Object.fromEntries(
       ATTRIBUTES.map((name) => [name, null]),
     );
-    const markChanges = (observation) => {
+    const readable = (candidate) => isOk(candidate);
+    const markChanges = (candidate) => {
+      if (!readable(candidate)) return;
       const at = Date.now() - state.updateAnsweredAt;
       for (const name of ATTRIBUTES) {
         if (changedAfterMs[name] !== null) continue;
-        if (!isDeepStrictEqual(baseline[name], observation.attributes?.[name]))
+        if (!isDeepStrictEqual(baseline[name], candidate.attributes?.[name]))
           changedAfterMs[name] = at;
       }
     };
-    const cleared = (observation) =>
-      observation.attributes?.Two === undefined &&
-      observation.attributes?.List === undefined;
+    const cleared = (candidate) =>
+      readable(candidate) &&
+      candidate.attributes?.Two === undefined &&
+      candidate.attributes?.List === undefined;
     let observation = await observeCustomNow();
     const immediate = observation;
+    let lastReadable = readable(observation) ? observation : null;
+    let readableReads = lastReadable === null ? 0 : 1;
+    let unreadableReads = lastReadable === null ? 1 : 0;
     markChanges(observation);
     let waitedMs = 0;
     for (
@@ -577,14 +586,22 @@ export async function runCheck(credential, options = {}) {
       await sleep(pollDelayMs);
       waitedMs += pollDelayMs;
       observation = await observeCustomNow();
-      markChanges(observation);
+      if (readable(observation)) {
+        lastReadable = observation;
+        readableReads += 1;
+        markChanges(observation);
+      } else {
+        unreadableReads += 1;
+      }
     }
-    const attributes = observation.attributes ?? {};
+    const settled = cleared(observation);
+    // No successful read answers no question. The rows then hold null, never false.
+    const attributes = lastReadable?.attributes ?? null;
     const row = (name) => {
       const changed = changedAfterMs[name];
       return {
-        holdsValue: attributes[name] !== undefined,
-        stored: attributes[name] ?? null,
+        holdsValue: attributes === null ? null : attributes[name] !== undefined,
+        stored: attributes === null ? null : (attributes[name] ?? null),
         changedAfterMs: changed,
         changedAfterSeconds: seconds(changed),
       };
@@ -594,9 +611,11 @@ export async function runCheck(credential, options = {}) {
       customFieldMask: CATEGORY,
       immediate,
       read: observation,
+      readableReads,
+      unreadableReads,
       waitedAfterMs: waitedMs,
       settledAfterMs: Date.now() - state.updateAnsweredAt,
-      settled: cleared(observation),
+      settled,
       observed: Object.fromEntries(ATTRIBUTES.map((name) => [name, row(name)])),
     });
 
@@ -615,6 +634,14 @@ export async function runCheck(credential, options = {}) {
       .filter(([, answer]) => answer === 'no')
       .map(([name]) => name);
 
+    // A clear that no successful read observed is not a settled flow. The run fails and
+    // the cleanup block clears and removes the category.
+    if (!settled) {
+      evidence.outcome =
+        readableReads === 0 ? 'clear-unavailable' : 'clear-not-settled';
+      return;
+    }
+
     // Step 7. Delete the category while One and Three still hold values.
     const heldBeforeDelete = {
       One: attributes.One !== undefined,
@@ -631,6 +658,7 @@ export async function runCheck(credential, options = {}) {
       evidence.outcome = 'delete-failed';
       return;
     }
+    state.removalConfirmed = true;
     const gone = await poll(
       () => readSchema(),
       (result) => result.httpStatus === 404,
@@ -812,32 +840,36 @@ export async function runCheck(credential, options = {}) {
         });
       }
     }
-    // A 404 proves absence. Delete when the probe answered, and also when it did not
-    // answer, so an ambiguous probe does not leave this run's category behind.
-    if (current === null || current.httpStatus !== 404) {
-      try {
-        const removal = await call(
-          schemaClient,
-          { method: 'DELETE', url: schemaUrl(baseUrl, CATEGORY) },
-          cleanupTimeoutMs,
-        );
-        evidence.cleanup.push({
-          action: 'schemas.delete',
-          method: 'DELETE',
-          httpStatus: removal.httpStatus,
-          ...(removal.errorReason ? { errorReason: removal.errorReason } : {}),
-        });
-      } catch (error) {
-        evidence.cleanup.push({
-          action: 'schemas.delete',
-          method: 'DELETE',
-          failed: failureCode(error),
-        });
-      }
+    // A create was attempted, so a schema 404 may be a stale read: the insert can be
+    // applied before its answer is lost. Delete regardless of the probe answer. A DELETE
+    // answers 204 when the category is present and 404 when it is absent, and either
+    // answer proves the state that the service handled. A stale probe never skips this.
+    let removalConfirmed = false;
+    try {
+      const removal = await call(
+        schemaClient,
+        { method: 'DELETE', url: schemaUrl(baseUrl, CATEGORY) },
+        cleanupTimeoutMs,
+      );
+      removalConfirmed = isOk(removal) || removal.httpStatus === 404;
+      evidence.cleanup.push({
+        action: 'schemas.delete',
+        method: 'DELETE',
+        httpStatus: removal.httpStatus,
+        ...(removal.errorReason ? { errorReason: removal.errorReason } : {}),
+      });
+    } catch (error) {
+      evidence.cleanup.push({
+        action: 'schemas.delete',
+        method: 'DELETE',
+        failed: failureCode(error),
+      });
     }
+    state.removalConfirmed = state.removalConfirmed || removalConfirmed;
     evidence.cleanup.push({
       clearedValueBeforeDelete: cleared,
       categoryPresentBeforeCleanup: current !== null && isOk(current),
+      removalConfirmed,
     });
   };
 
@@ -851,6 +883,9 @@ export async function runCheck(credential, options = {}) {
       return;
     }
     // The final read is the proof. Poll it, because a Directory read can lag the delete.
+    // A schema 404 read cannot prove absence on its own: after an ambiguous create the
+    // read can serve the state before the insert. It proves absence only with a DELETE
+    // that the service answered (204 removed, 404 absent at that time).
     const gone = await poll(
       () =>
         call(
@@ -860,13 +895,16 @@ export async function runCheck(credential, options = {}) {
         ),
       (result) => result.httpStatus === 404,
     );
+    const answeredPresent = isOk(gone.observation);
+    const absent = gone.settled && state.removalConfirmed;
     evidence.verification = {
       category: {
         httpStatus: gone.observation.httpStatus,
         ...(gone.observation.errorReason
           ? { errorReason: gone.observation.errorReason }
           : {}),
-        present: isOk(gone.observation),
+        present: answeredPresent ? true : absent ? false : null,
+        confirmedByDelete: state.removalConfirmed,
       },
       settledAfterMs: gone.waitedMs,
       note: 'A customFieldMask that names an absent category answers 400 invalid, so the final read cannot show a value of the deleted category.',
@@ -1053,7 +1091,7 @@ export function verdict(evidence) {
   if (evidence.outcome === 'already-exists') return 'stopped';
   if (evidence.outcome !== 'completed') return 'failed';
   if ((evidence.findings?.unknown ?? []).length > 0) return 'failed';
-  const categoryGone = evidence.verification?.category?.httpStatus === 404;
+  const categoryGone = evidence.verification?.category?.present === false;
   const accountRecorded =
     evidence.accountComparison !== null &&
     Object.keys(evidence.accountComparison).length > 0;
