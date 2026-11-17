@@ -204,6 +204,21 @@ The Directory devices call returned HTTP 200 with five devices.
 `spreadsheets.create` on `sheets.googleapis.com` returned HTTP 200 with a spreadsheet ID.
 The stop closed every listener. Ports 8443, 18080, and 3128 were free after the stop.
 
+## Verified on 2026-11-16
+
+`npm ci` installed the 0.4.0 pin on Node 24.19.0 and npm 11.19.1.
+The lockfile entry holds the tarball URL, the version `0.4.0`, and the integrity hash above.
+`npm exec -- admin-sdk-mock config validate admin-sdk-mock.json` printed `admin-sdk-mock.json is valid.`
+
+The review harness started the pinned package in a container.
+Its ready event reported version `0.4.0`.
+`npm exec -- nx run google-connection:test` passed 274 tests.
+`npm exec -- nx run api-e2e:admin-sdk-mock-integration` passed every check with the customer `C0mw85f16` and 600 devices.
+`npm exec -- nx run api-e2e:admin-sdk-mock-fixture-test` passed six checks.
+The `schemas.list` answer held the three categories `DeviceProgram`, `StaffInfo`, and `StudentInfo`.
+`npm exec -- nx run api-e2e:client-review-mock` reached its ready banner with `admin-sdk-mock 0.4.0, tier medium, 7000 devices`.
+A `SIGINT` then removed every review container.
+
 ## Scale observation
 
 The `large` tier serves 60,000 devices. The integration flow ran against it on 2026-10-15 on Node 24.19.0 with modeled latency on.
