@@ -443,7 +443,7 @@ test('a paging request reads only the named slice of the cached list', async () 
       };
     if (text.includes('requested')) {
       requestedIds = values[1];
-      return { rows: [row('u2')] };
+      return { rows: [{ ...row('u2'), entry_version: 1 }] };
     }
     return { rows: [] };
   };
@@ -455,6 +455,22 @@ test('a paging request reads only the named slice of the cached list', async () 
     ['u2'],
   );
   assert.equal(answer.body.page.refreshJobId, null);
+});
+
+test('by-ids answers the current row when the cache holds no entry', async () => {
+  allowed = new Set(['users:read']);
+  selectionValue = null;
+  routeRespond = async (text) => {
+    if (text.includes('cc.read_user_sync'))
+      return { rows: [{ result: state }] };
+    if (text.includes('requested'))
+      return { rows: [{ ...row('u1'), entry_version: 1 }] };
+    return { rows: [] };
+  };
+  const answer = await post('/api/users/by-ids', { userIds: ['u1'] });
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.equal(answer.body.rows[0].userId, 'u1');
+  assert.equal(answer.body.rows[0].recordVersion, 1);
 });
 
 test('the category tab reads the cached set, not the user route', async () => {

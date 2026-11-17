@@ -93,13 +93,31 @@ function fakeRows(users, options = {}) {
       return (options.staleIds ?? []).map((user_id) => ({ user_id }));
     if (statement.text.includes('requested')) {
       const ids = statement.values[1];
-      return ids
-        .filter((id) => users.some((row) => row.user_id === id))
-        .map((id) => ({
-          ...users.find((row) => row.user_id === id),
-          requested: true,
-          entry_version: options.versions?.[id] ?? null,
-        }));
+      const requested = statement.values[2];
+      return ids.flatMap((id, index) => {
+        const found = users.find((row) => row.user_id === id);
+        if (!found) return [];
+        // The statement selects the record columns only when the entry version is absent or
+        // outdated, and always selects the current version (R1).
+        const entryVersion = options.versions?.[id] ?? found.record_version;
+        const requestedVersion = requested[index];
+        const changed =
+          requestedVersion === null ||
+          String(requestedVersion) !== String(entryVersion);
+        return [
+          changed
+            ? {
+                ...found,
+                entry_version: entryVersion,
+                record_version: entryVersion,
+              }
+            : {
+                user_id: id,
+                entry_version: entryVersion,
+                record_version: entryVersion,
+              },
+        ];
+      });
     }
     if (
       statement.text.includes('ORDER BY u.full_name') &&
@@ -249,6 +267,50 @@ test('a current entry serves its record and a stale version does not', async () 
     [
       ['u1', 'Cached Name', 4],
       ['u2', 'User u2', 5],
+    ],
+  );
+  assert.deepEqual(read.missing, []);
+});
+
+test('a missing or outdated entry hydrates the current row', async () => {
+  const users = [
+    user('u1', { record_version: 3, full_name: 'Fresh u1' }),
+    user('u2', { record_version: 7, full_name: 'Fresh u2' }),
+  ];
+  const record = {
+    userId: 'u2',
+    primaryEmail: 'u2@example.org',
+    orgUnitPath: '/Students',
+    givenName: 'Robin',
+    familyName: 'Avery',
+    fullName: 'Old u2',
+    suspended: false,
+    suspensionReason: null,
+    archived: false,
+    lastLoginTime: null,
+    creationTime: '2026-11-01T00:00:00.000Z',
+    twoStepEnrolled: true,
+    department: null,
+    title: null,
+    aliases: [],
+    customSchemas: {},
+    lastEntitySync: '2026-11-16T00:00:00.000Z',
+  };
+  const cache = fakeCache({
+    [entityKey('user', customer, 'u2')]: entry(record, 2),
+  });
+  const { rows } = fakeRows(users, { versions: { u1: 3, u2: 7 } });
+  const read = await new UserPager(cache).hydrate(
+    customer,
+    ['u1', 'u2'],
+    rows,
+    now,
+  );
+  assert.deepEqual(
+    read.rows.map((row) => [row.userId, row.fullName, row.recordVersion]),
+    [
+      ['u1', 'Fresh u1', 3],
+      ['u2', 'Fresh u2', 7],
     ],
   );
   assert.deepEqual(read.missing, []);

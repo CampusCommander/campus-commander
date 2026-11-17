@@ -80,7 +80,7 @@ function attributeClause(
   if (predicate.operator === 'contains')
     return `EXISTS(SELECT 1 FROM unnest(cc.user_attribute_values(${value})) v WHERE v ILIKE ${add(`%${escapeLike(predicate.value)}%`)})`;
   if (predicate.operator === 'numberRange')
-    return `EXISTS(SELECT 1 FROM unnest(cc.user_attribute_numbers(${value})) n WHERE n BETWEEN ${add(predicate.from)} AND ${add(predicate.to)})`;
+    return `EXISTS(SELECT 1 FROM unnest(cc.user_attribute_numbers(${value})) n WHERE n BETWEEN cc.user_attribute_number(${add(String(predicate.from))}) AND cc.user_attribute_number(${add(String(predicate.to))}))`;
   if (predicate.operator === 'dateRange')
     return `EXISTS(SELECT 1 FROM unnest(cc.user_attribute_values(${value})) v WHERE v ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND v BETWEEN ${add(predicate.from)} AND ${add(predicate.to)})`;
   if (predicate.operator === 'is')
@@ -267,7 +267,7 @@ export function userRowsByIdSql(
     .map(([expression, alias]) => conditional(expression, alias))
     .join(',');
   return {
-    text: `SELECT u.user_id AS user_id,u.record_version AS entry_version,${list} ${from} JOIN unnest($2::text[],$3::bigint[]) AS requested(user_id,version) ON requested.user_id=u.user_id WHERE s.customer_id=$1`,
+    text: `SELECT u.user_id AS user_id,u.record_version AS entry_version,u.record_version AS record_version,${list} ${from} JOIN unnest($2::text[],$3::bigint[]) AS requested(user_id,version) ON requested.user_id=u.user_id WHERE s.customer_id=$1`,
     values: [
       customerId,
       entries.map((entry) => entry.userId),

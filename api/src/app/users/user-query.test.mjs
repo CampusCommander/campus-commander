@@ -202,10 +202,10 @@ test('an attribute number range matches a JSON number and a numeric string', () 
   });
   assert.match(
     rows.text,
-    /EXISTS\(SELECT 1 FROM unnest\(cc\.user_attribute_numbers\(u\.custom_schemas #> \$2::text\[\]\)\) n WHERE n BETWEEN \$3 AND \$4\)/,
+    /EXISTS\(SELECT 1 FROM unnest\(cc\.user_attribute_numbers\(u\.custom_schemas #> \$2::text\[\]\)\) n WHERE n BETWEEN cc\.user_attribute_number\(\$3\) AND cc\.user_attribute_number\(\$4\)\)/,
   );
-  assert.equal(rows.values[2], 6);
-  assert.equal(rows.values[3], 8);
+  assert.equal(rows.values[2], '6');
+  assert.equal(rows.values[3], '8');
 });
 
 test('an attribute date range compares calendar dates only', () => {
@@ -369,6 +369,11 @@ test('by-ids serves a record only when its entry version is current', () => {
     /CASE WHEN requested\.version IS NULL OR requested\.version IS DISTINCT FROM u\.record_version THEN u\.primary_email END AS primary_email/,
   );
   assert.deepEqual(statement.values, [customer, ['u1', 'u2'], [3, null]]);
+  // The fallback maps the current version, so a missing or outdated entry never becomes NaN (R1).
+  assert.match(
+    statement.text,
+    /u\.record_version AS entry_version,u\.record_version AS record_version/,
+  );
 });
 
 test('one row maps the stored user and its staleness', () => {
