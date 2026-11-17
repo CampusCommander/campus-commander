@@ -647,6 +647,13 @@ async function runAdminSdkMockIntegration({
 
   const usersTabId = randomUUID();
   const selectedIds = gradePage.rows.slice(0, 3).map((row) => row.userId);
+  const before = {};
+  for (const id of selectedIds) {
+    const detail = JSON.parse(
+      (await call(`/api/users/${encodeURIComponent(id)}`)).text,
+    ).user;
+    before[id] = detail.lastEntitySync;
+  }
   const selected = await call('/api/users/selection/ops', {
     method: 'POST',
     headers: headers(),
@@ -663,12 +670,48 @@ async function runAdminSdkMockIntegration({
     headers: headers(),
     body: { gridId: 'users', tabId: usersTabId },
   });
-  assert.ok(
-    [200, 201].includes(selectionRefresh.status),
-    selectionRefresh.text,
-  );
+  assert.equal(selectionRefresh.status, 201, selectionRefresh.text);
   const refreshed = JSON.parse(selectionRefresh.text).refresh;
   assert.equal(refreshed.selected, selectedIds.length);
+  assert.match(
+    refreshed.jobId,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    'Refresh Selected starts one job.',
+  );
+  // Every selected user is claimed now, so the second request starts no job and answers 200.
+  const claimed = await call('/api/users/selection/refresh', {
+    method: 'POST',
+    headers: headers(),
+    body: { gridId: 'users', tabId: usersTabId },
+  });
+  assert.equal(claimed.status, 200, claimed.text);
+  assert.equal(JSON.parse(claimed.text).refresh.jobId, null);
+  // The worker re-reads the claimed users. The job settles and every observation time advances.
+  const refreshDeadline = Date.now() + 60_000;
+  let refreshJob;
+  for (;;) {
+    const listed = await call('/api/jobs?action=refresh-inventory&limit=100');
+    assert.equal(listed.status, 200, listed.text);
+    refreshJob = JSON.parse(listed.text).jobs.find(
+      (entry) => entry.jobId === refreshed.jobId,
+    );
+    if (refreshJob?.status === 'completed') break;
+    assert.ok(
+      Date.now() < refreshDeadline,
+      `The Refresh Selected job did not complete: ${JSON.stringify(refreshJob)}`,
+    );
+    await delay(500);
+  }
+  for (const id of selectedIds) {
+    const detail = JSON.parse(
+      (await call(`/api/users/${encodeURIComponent(id)}`)).text,
+    ).user;
+    assert.equal(detail.userId, id);
+    assert.ok(
+      Date.parse(detail.lastEntitySync) > Date.parse(before[id]),
+      `Refresh Selected did not re-read ${id}: ${before[id]} -> ${detail.lastEntitySync}`,
+    );
+  }
 
   const userDetail = JSON.parse(
     (await call(`/api/users/${encodeURIComponent(selectedIds[0])}`)).text,
@@ -1229,7 +1272,8 @@ async function runAdminSdkMockIntegration({
     `the published count equals the mock count and a device battery class matches the mock telemetry: pass`,
     `Refresh Users publishes ${usersState.userCount} users: pass`,
     `Grade level filters ${gradePage.matching} users with the C1 attribute ID: pass`,
-    `Refresh Selected starts a job for ${refreshed.selected} users: pass`,
+    `Refresh Selected starts one job, claims every user, and refreshes ${refreshed.selected} users: pass`,
+    'a fully claimed Refresh Selected answers 200 and starts no job: pass',
     'the category read lists StudentInfo with GradeLevel: pass',
     'Refresh all lists a device whose Asset tag holds 1,024 characters: pass',
     'the write scope check lists one device for the mock administrator and sends no write: pass',
