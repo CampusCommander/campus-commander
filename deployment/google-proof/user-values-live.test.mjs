@@ -61,7 +61,10 @@ function createDirectory(options = {}) {
     fieldSequence: 0,
     etagSequence: 0,
     deletesToRefuse: options.deletesToRefuse ?? 0,
+    stale: null,
+    staleReads: 0,
   };
+  const lagReads = options.lagReads ?? 0;
   const clone = (value) =>
     value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   const nextField = (spec) => {
@@ -109,16 +112,38 @@ function createDirectory(options = {}) {
     };
   };
 
+  /** Model the delay of the live service: the next reads serve the state before the write. */
+  const captureStale = () => {
+    if (lagReads === 0) return;
+    state.stale = {
+      schemaPresent: state.schema !== null,
+      values: clone(state.values),
+    };
+    state.staleReads = lagReads;
+  };
+
+  const staleAnswer = () => {
+    if (!state.stale.schemaPresent) throw new FakeAnswer(400, 'invalid');
+    const schemas = { OtherCategory: { secret: OTHER_VALUE } };
+    if (Object.keys(state.stale.values).length > 0)
+      schemas[CATEGORY] = state.stale.values;
+    return {
+      status: 200,
+      data: { primaryEmail: 'fixture@example.test', customSchemas: schemas },
+    };
+  };
+
   const applyPatch = (body) => {
     const names = Object.keys(body?.customSchemas ?? {});
     if (names.length !== 1 || names[0] !== CATEGORY)
       throw new FakeAnswer(400, 'invalid');
     const category = body.customSchemas[CATEGORY];
+    if (state.schema === null) throw new FakeAnswer(404, 'notFound');
+    captureStale();
     if (category === null) {
       state.values = {};
       return;
     }
-    if (state.schema === null) throw new FakeAnswer(404, 'notFound');
     for (const [name, value] of Object.entries(category)) {
       if (!state.schema.fields.some((field) => field.fieldName === name))
         throw new FakeAnswer(400, 'invalid');
@@ -130,6 +155,7 @@ function createDirectory(options = {}) {
   const insert = (body) => {
     if (state.schema !== null) throw new FakeAnswer(409, 'duplicate');
     if (body?.schemaName !== CATEGORY) throw new FakeAnswer(400, 'invalid');
+    captureStale();
     state.schema = {
       schemaId: 'schema-live',
       schemaName: body.schemaName,
@@ -142,6 +168,7 @@ function createDirectory(options = {}) {
 
   const update = (body) => {
     if (state.schema === null) throw new FakeAnswer(404, 'notFound');
+    captureStale();
     const kept = body?.fields ?? [];
     const previous = state.schema.fields;
     const removed = previous.filter(
@@ -175,6 +202,7 @@ function createDirectory(options = {}) {
       state.deletesToRefuse -= 1;
       throw new FakeAnswer(400, 'invalid');
     }
+    captureStale();
     state.schema = null;
     state.values = {};
   };
@@ -191,8 +219,17 @@ function createDirectory(options = {}) {
     });
     if (url.pathname.startsWith('/admin/directory/v1/users/')) {
       if (scope !== USER_SCOPE) throw new FakeAnswer(403, 'forbidden');
-      if (method === 'GET') return { status: 200, data: userAnswer() };
+      if (method === 'GET') {
+        if (state.staleReads > 0) {
+          state.staleReads -= 1;
+          return staleAnswer();
+        }
+        // Google answers 400 invalid to a customFieldMask that names no category.
+        if (state.schema === null) throw new FakeAnswer(400, 'invalid');
+        return { status: 200, data: userAnswer() };
+      }
       if (method === 'PATCH') {
+        if (state.schema === null) throw new FakeAnswer(400, 'invalid');
         applyPatch(options_.data);
         return { status: 200, data: userAnswer() };
       }
@@ -246,6 +283,7 @@ async function runFlow(t, options = {}) {
       request: (request) => directory.request(scope, request),
     }),
     now: () => new Date('2026-11-16T12:00:00.000Z'),
+    sleep: async () => {},
   });
   const written = JSON.parse(await readFile(output, 'utf8'));
   return { evidence, written, directory };
@@ -344,12 +382,13 @@ test('the check records every step and leaves no category and no value', async (
   assert.equal(evidence.findings.readdedField.answer, 'starts-empty');
   assert.equal(
     evidence.findings.deleteWithValues.answer,
-    'deletes-category-and-values',
+    'accepted-values-unreadable',
   );
   assert.equal(evidence.findings.phoneStoredAs.answer, '+1 555 0100');
   assert.deepEqual(evidence.findings.unknown, []);
   assert.equal(evidence.verification.category.httpStatus, 404);
-  assert.equal(evidence.verification.user.categoryPresent, false);
+  assert.equal(evidence.verification.user.httpStatus, 400);
+  assert.equal(typeof evidence.verification.note, 'string');
 
   for (const call of directory.calls)
     assert.equal(
@@ -396,6 +435,21 @@ test('an existing category stops the check before any write', async (t) => {
   });
   assert.equal(typeof evidence.verification.skipped, 'string');
   assert.ok(!JSON.stringify(written).includes('pre-existing-secret'));
+});
+
+test('the check waits for each write to become visible before the next step', async (t) => {
+  const { evidence } = await runFlow(t, { lagReads: 2 });
+
+  assert.equal(evidence.status, 'passed');
+  assert.equal(evidence.findings.nullSingleValue.answer, 'deleted');
+  assert.equal(evidence.findings.nullList.answer, 'deleted');
+  assert.equal(evidence.findings.singleToMultiple.answer, 'list-of-one');
+  assert.equal(evidence.findings.phoneStoredAs.answer, '+1 555 0100');
+  // The write of step 3 is invisible to the read right after it and visible after the wait.
+  assert.deepEqual(evidence.steps[2].immediate.attributeNames, []);
+  assert.equal(evidence.steps[2].read.categoryPresent, true);
+  assert.ok(evidence.steps[2].settledAfterMs > 0);
+  assert.ok(evidence.steps[3].settledAfterMs > 0);
 });
 
 test('a refused delete leaves the cleanup to clear the value and delete the category', async (t) => {

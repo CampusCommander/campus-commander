@@ -165,6 +165,23 @@ export function updateBody(schema, options = {}) {
   };
 }
 
+/** A short record of one observation, for the answer right after a write. */
+export function summarizeRead(observation) {
+  return {
+    httpStatus: observation.httpStatus,
+    ...(observation.errorReason
+      ? { errorReason: observation.errorReason }
+      : {}),
+    categoryPresent: observation.categoryPresent ?? null,
+    attributeNames: Object.keys(observation.attributes ?? {}).sort(),
+  };
+}
+
+/** Two observations agree when their answer and their values agree. */
+export function sameRead(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /**
  * Replace every tenant value of the run with an example value.
  * The test user is replaced in plain and URL-encoded form.
@@ -336,6 +353,12 @@ export async function runCheck(credential, options = {}) {
     options.output ?? `deployment/evidence/user-values-live-l3-${runDate}.json`;
   const clientFor =
     options.clientFor ?? ((scope) => singleScopeClient(credential, scope));
+  const pollAttempts = options.pollAttempts ?? 8;
+  const pollDelayMs = options.pollDelayMs ?? 1000;
+  const sleep =
+    options.sleep ??
+    ((milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const evidence = {
     schemaVersion: 1,
     check: 'L3',
@@ -372,7 +395,14 @@ export async function runCheck(credential, options = {}) {
       params: { projection: 'custom', customFieldMask: CATEGORY },
     });
 
-  const step = async (number, action, method, request, extra = {}) => {
+  const step = async (
+    number,
+    action,
+    method,
+    request,
+    extra = {},
+    settles = null,
+  ) => {
     const result = await perform(request.client, {
       method,
       url: request.url,
@@ -386,7 +416,21 @@ export async function runCheck(credential, options = {}) {
       ...(result.errorReason ? { errorReason: result.errorReason } : {}),
       ...extra,
     };
-    entry.read = observeUser(await readUser(), state.created);
+    let observation = observeUser(await readUser(), state.created);
+    entry.immediate = summarizeRead(observation);
+    let waited = 0;
+    if (settles !== null) {
+      let previous = null;
+      for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
+        if (settles(observation, previous)) break;
+        previous = observation;
+        await sleep(pollDelayMs);
+        waited += pollDelayMs;
+        observation = observeUser(await readUser(), state.created);
+      }
+    }
+    entry.read = observation;
+    entry.settledAfterMs = waited;
     evidence.steps.push(entry);
     return { result, entry };
   };
@@ -448,6 +492,8 @@ export async function runCheck(credential, options = {}) {
           multiValued: field.multiValued === true,
         })),
       },
+      (observation) =>
+        observation.httpStatus === 200 && observation.categoryPresent === false,
     );
     if (!isOk(inserted.result)) {
       evidence.outcome = 'insert-failed';
@@ -479,6 +525,10 @@ export async function runCheck(credential, options = {}) {
         data: valuePatch(CATEGORY, values),
       },
       { requested: describeValues(values) },
+      (observation) =>
+        Object.keys(values).every(
+          (name) => observation.attributes?.[name] !== undefined,
+        ),
     );
     patched.entry.answer = answerShape(patched.result.body);
     if (!isOk(patched.result)) evidence.outcome = 'value-write-failed';
@@ -495,6 +545,9 @@ export async function runCheck(credential, options = {}) {
         data: valuePatch(CATEGORY, cleared),
       },
       { requested: describeValues(cleared) },
+      (observation) =>
+        observation.attributes?.ccWhole === undefined &&
+        observation.attributes?.ccTags === undefined,
     );
     clearedAnswer.entry.answer = answerShape(clearedAnswer.result.body);
 
@@ -512,6 +565,7 @@ export async function runCheck(credential, options = {}) {
         }),
       },
       { change: { fieldName: 'ccExtra', multiValued: true } },
+      (observation) => observation.attributes?.ccExtra?.jsonType === 'array',
     );
     converted.entry.answered = summarizeSchema(converted.result.body);
     await adoptSchema(converted.result);
@@ -527,6 +581,7 @@ export async function runCheck(credential, options = {}) {
         data: updateBody(state.schema, { remove: ['ccText'] }),
       },
       { remove: ['ccText'] },
+      (observation) => observation.attributes?.ccText === undefined,
     );
     removed.entry.answered = summarizeSchema(removed.result.body);
     await adoptSchema(removed.result);
@@ -542,15 +597,27 @@ export async function runCheck(credential, options = {}) {
         data: updateBody(state.schema, { add: [FIELD_SPECS[0]] }),
       },
       { add: [FIELD_SPECS[0]] },
+      (observation, previous) =>
+        previous !== null && sameRead(previous, observation),
     );
     restored.entry.answered = summarizeSchema(restored.result.body);
     await adoptSchema(restored.result);
 
     // Step 8. Delete the category while the test user holds values.
-    const deleted = await step(8, 'schemas.delete', 'DELETE', {
-      client: schemaClient,
-      url: schemaUrl(baseUrl, CATEGORY),
-    });
+    const deleted = await step(
+      8,
+      'schemas.delete',
+      'DELETE',
+      {
+        client: schemaClient,
+        url: schemaUrl(baseUrl, CATEGORY),
+      },
+      {},
+      (observation) =>
+        observation.categoryPresent === false ||
+        (observation.httpStatus === 400 &&
+          observation.errorReason === 'invalid'),
+    );
     deleted.entry.answered = { deleted: isOk(deleted.result) };
     if (evidence.outcome === null) evidence.outcome = 'completed';
   };
@@ -615,13 +682,22 @@ export async function runCheck(credential, options = {}) {
     }
     const category = await getCategory();
     const user = await readUser();
+    const userObservation = observeUser(user, true);
+    const unreadable =
+      userObservation.httpStatus === 400 &&
+      userObservation.errorReason === 'invalid';
     evidence.verification = {
       category: {
         httpStatus: category.httpStatus,
         ...(category.errorReason ? { errorReason: category.errorReason } : {}),
         present: isOk(category),
       },
-      user: observeUser(user, true),
+      user: userObservation,
+      ...(unreadable
+        ? {
+            note: 'Google answers 400 invalid to customFieldMask=CcLiveValues when no such category exists. The category is absent, so the final read cannot show its values.',
+          }
+        : {}),
     };
   };
 
@@ -673,7 +749,6 @@ export function findingsOf(evidence) {
   const afterConvert = attributes(5);
   const afterRemove = attributes(6);
   const afterRestore = attributes(7);
-  const afterDelete = attributes(8);
 
   let nullSingleValue = 'unknown';
   let nullList = 'unknown';
@@ -711,12 +786,14 @@ export function findingsOf(evidence) {
     removedFieldValues = afterRemove.ccText === undefined ? 'unknown' : 'kept';
 
   let deleteWithValues = 'unknown';
+  const deleteRead = step(8)?.read;
   if (!responded(8)) deleteWithValues = 'unknown';
   else if (!accepted(8)) deleteWithValues = refusal(8);
-  else if (afterDelete === null) deleteWithValues = 'user-read-unavailable';
-  else if (Object.keys(afterDelete.attributes ?? {}).length > 0)
-    deleteWithValues = 'deletes-category-keeps-values';
-  else deleteWithValues = 'deletes-category-and-values';
+  else if (deleteRead?.categoryPresent === true)
+    deleteWithValues = 'accepted-values-readable-after-delete';
+  else if (deleteRead?.httpStatus === 400)
+    deleteWithValues = 'accepted-values-unreadable';
+  else deleteWithValues = 'accepted-values-gone';
 
   const findings = {
     nullSingleValue: {
@@ -779,13 +856,17 @@ export function verdict(evidence) {
   const categoryGone = evidence.verification?.category?.httpStatus === 404;
   const user = evidence.verification?.user;
   const userClean = user?.httpStatus === 200 && user?.categoryPresent === false;
+  const userUnreadable =
+    user?.httpStatus === 400 && user?.errorReason === 'invalid';
   const everyStepAnswered =
     evidence.steps.length === 8 &&
     evidence.steps.every(
       (entry, index) =>
         entry.step === index + 1 && Number.isInteger(entry.httpStatus),
     );
-  return categoryGone && userClean && everyStepAnswered ? 'passed' : 'failed';
+  return categoryGone && (userClean || userUnreadable) && everyStepAnswered
+    ? 'passed'
+    : 'failed';
 }
 
 async function main() {
