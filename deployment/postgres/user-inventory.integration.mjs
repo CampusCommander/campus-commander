@@ -301,6 +301,15 @@ export async function qualifyUserInventory({ runtime, migrator, issuer }) {
         assert.equal(created.entityType, 'user');
         assert.equal(created.batchCount, 1);
         assert.equal(await countEntityJobs('user'), userJobsBefore + 1);
+        // The jobs list applies cc.job_visible, so a devices:read-only principal lists no user job.
+        const visible = (actor, requester) =>
+          adminRow('SELECT cc.job_visible($1,1,$2,$3) AS visible', [
+            actor,
+            customer,
+            requester,
+          ]).then((row) => row.visible);
+        assert.equal(await visible(devicesOnly, usersOnly), false);
+        assert.equal(await visible(usersOnly, usersOnly), true);
         // The refusal covers the rest of the refresh path, not the creation alone.
         await rejects(
           result('SELECT cc.abandon_entity_sync_job($1,1,$2,$3) AS result', [
