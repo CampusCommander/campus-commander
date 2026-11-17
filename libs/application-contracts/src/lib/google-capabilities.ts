@@ -92,6 +92,30 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     evidence:
       'Not verified on a live domain. The Drive slice demonstration verifies it.',
   },
+  {
+    id: 'user-inventory',
+    requiredForConnection: false,
+    label: 'User inventory',
+    enabled: true,
+    qualified: false,
+    scope: 'https://www.googleapis.com/auth/admin.directory.user.readonly',
+    method: 'users.list',
+    source:
+      'https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list',
+    evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+  },
+  {
+    id: 'user-schemas',
+    requiredForConnection: false,
+    label: 'User attributes',
+    enabled: true,
+    qualified: false,
+    scope: 'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
+    method: 'schemas.list',
+    source:
+      'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',
+    evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+  },
 ] as const);
 
 /** Capability ids that the Google connection page lists during setup, in page order. */
@@ -103,6 +127,8 @@ const GOOGLE_SETUP_CAPABILITY_IDS = [
   'device-changes',
   'school-ou-references',
   'drive-files',
+  'user-inventory',
+  'user-schemas',
 ] as const;
 
 /**

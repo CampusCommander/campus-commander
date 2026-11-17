@@ -18,6 +18,10 @@ const WRITE = 'https://www.googleapis.com/auth/admin.directory.device.chromeos';
 const SCHOOL_OU =
   'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
 const DRIVE = 'https://www.googleapis.com/auth/drive.file';
+const USER =
+  'https://www.googleapis.com/auth/admin.directory.user.readonly';
+const SCHEMA =
+  'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
 
 test('the setup scope list holds the connection scopes and the device scopes in order', () => {
   assert.deepEqual(GOOGLE_SETUP_SCOPES, [
@@ -28,6 +32,8 @@ test('the setup scope list holds the connection scopes and the device scopes in 
     WRITE,
     SCHOOL_OU,
     DRIVE,
+    USER,
+    SCHEMA,
   ]);
   assert.equal(
     new Set(GOOGLE_SETUP_SCOPES).size,
@@ -92,5 +98,44 @@ test('the drive-files capability names its label, scope, method, flags, and evid
         'Not verified on a live domain. The Drive slice demonstration verifies it.',
     },
   );
-  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), DRIVE);
+  assert.ok(GOOGLE_SETUP_SCOPES.includes(DRIVE));
+});
+
+test('the user-inventory capability names its label, scope, method, flags, and evidence', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.find(
+      (capability) => capability.id === 'user-inventory',
+    ),
+    {
+      id: 'user-inventory',
+      requiredForConnection: false,
+      label: 'User inventory',
+      enabled: true,
+      qualified: false,
+      scope: USER,
+      method: 'users.list',
+      source:
+        'https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list',
+      evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+    },
+  );
+});
+
+test('the user-schemas capability names its label, scope, method, flags, and evidence', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.find((capability) => capability.id === 'user-schemas'),
+    {
+      id: 'user-schemas',
+      requiredForConnection: false,
+      label: 'User attributes',
+      enabled: true,
+      qualified: false,
+      scope: SCHEMA,
+      method: 'schemas.list',
+      source:
+        'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',
+      evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+    },
+  );
+  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), SCHEMA);
 });

@@ -19,6 +19,8 @@ const domains = {
 const orgUnits = { organizationUnits: [{ orgUnitId: 'id-1' }] };
 const devices = { chromeosdevices: [{ deviceId: 'device-1' }] };
 const telemetry = { devices: [{ deviceId: 'device-1' }] };
+const users = { users: [{ id: 'user-1' }] };
+const schemas = { schemas: [{ schemaId: 'schema-1==' }] };
 /** Every capability id and the one scope that its health check requests. */
 const capabilities = GOOGLE_CAPABILITIES.map((capability) => capability.id);
 const scopeOf = (id) =>
@@ -60,6 +62,8 @@ function stub(
     if (options.url.endsWith('/devices/chromeos')) return { data: devices };
     if (options.url.endsWith('/telemetry/devices')) return { data: telemetry };
     if (options.url.endsWith('/files')) return { data: { files: [] } };
+    if (options.url.endsWith('/users')) return { data: users };
+    if (options.url.endsWith('/schemas')) return { data: schemas };
     throw new Error(`The verifier requested an unexpected URL: ${options.url}`);
   });
   return calls;
@@ -215,7 +219,7 @@ test('successful capability checks produce one consistent customer observation w
   assert.equal(JSON.stringify(result).includes('synthetic-private-key'), false);
 });
 
-test('all seven capabilities request one exact scope each and read the smallest page', async (t) => {
+test('all nine capabilities request one exact scope each and read the smallest page', async (t) => {
   const calls = stub(t);
   const result = await check(capabilities);
   assert.deepEqual(
@@ -226,7 +230,7 @@ test('all seven capabilities request one exact scope each and read the smallest 
       failure: null,
     })),
   );
-  assert.equal(capabilities.length, 7);
+  assert.equal(capabilities.length, 9);
   assert.equal(result.observation?.customerId, customer.id);
   const tokens = calls.filter((call) => call.operation === 'token');
   assert.equal(tokens.length, capabilities.length);
@@ -236,7 +240,7 @@ test('all seven capabilities request one exact scope each and read the smallest 
     capabilities.map(scopeOf).sort(),
   );
   const read = reads(calls);
-  assert.equal(read.length, 6, 'the device write capability reads nothing');
+  assert.equal(read.length, 8, 'the device write capability reads nothing');
   assert.ok(read.every((call) => call.method === 'GET'));
   const orgUnitsRead = read.find((call) => call.url.endsWith('/orgunits'));
   assert.deepEqual(orgUnitsRead.params, {
@@ -253,6 +257,15 @@ test('all seven capabilities request one exact scope each and read the smallest 
   assert.equal(telemetryRead.params.pageSize, 1);
   const driveRead = read.find((call) => call.url.endsWith('/drive/v3/files'));
   assert.deepEqual(driveRead.params, { pageSize: 1, fields: 'files(id)' });
+  const usersRead = read.find((call) => call.url.endsWith('/users'));
+  assert.deepEqual(usersRead.params, {
+    customer: customer.id,
+    projection: 'basic',
+    maxResults: 1,
+    fields: 'users(id)',
+  });
+  const schemasRead = read.find((call) => call.url.endsWith('/schemas'));
+  assert.deepEqual(schemasRead.params, { fields: 'schemas(schemaId)' });
 });
 
 test('the drive-files check reads an empty file list with its own exact scope', async (t) => {
@@ -350,6 +363,109 @@ test('a denied org unit scope fails school-ou-references only', async (t) => {
   );
 });
 
+test('the user inventory check reads one user with its own exact scope', async (t) => {
+  const calls = stub(t);
+  const result = await check(['user-inventory']);
+  assert.deepEqual(result.results, [
+    { capability: 'user-inventory', scopeVerified: true, failure: null },
+  ]);
+  assert.equal(result.observation, null);
+  assert.deepEqual(calls[0], {
+    operation: 'token',
+    scopes: [scopeOf('user-inventory')],
+  });
+  assert.equal(calls[1].operation, 'read');
+  assert.equal(
+    calls[1].url,
+    'https://admin.googleapis.com/admin/directory/v1/users',
+  );
+  assert.deepEqual(calls[1].params, {
+    customer: customer.id,
+    projection: 'basic',
+    maxResults: 1,
+    fields: 'users(id)',
+  });
+  assert.equal(calls.length, 2, 'the user inventory check sends no write');
+});
+
+test('the user schemas check reads one schema ID with its own exact scope', async (t) => {
+  const calls = stub(t);
+  const result = await check(['user-schemas']);
+  assert.deepEqual(result.results, [
+    { capability: 'user-schemas', scopeVerified: true, failure: null },
+  ]);
+  assert.equal(result.observation, null);
+  assert.deepEqual(calls[0], {
+    operation: 'token',
+    scopes: [scopeOf('user-schemas')],
+  });
+  assert.equal(calls[1].operation, 'read');
+  assert.equal(
+    calls[1].url,
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+  );
+  assert.deepEqual(calls[1].params, { fields: 'schemas(schemaId)' });
+  assert.equal(calls.length, 2, 'the category check sends no write');
+});
+
+test('an account without a user or a category passes both read checks', async (t) => {
+  t.mock.method(JWT.prototype, 'getAccessToken', async function () {
+    return { token: this.scopes[0] };
+  });
+  t.mock.method(JWT.prototype, 'getTokenInfo', async function () {
+    return { scopes: [...this.scopes], expiry_date: Date.now() + 3_500_000 };
+  });
+  t.mock.method(OAuth2Client.prototype, 'request', async (options) => {
+    // An empty account omits the user list and lists no category.
+    if (options.url.endsWith('/users')) return { data: {} };
+    if (options.url.endsWith('/schemas')) return { data: { schemas: [] } };
+    throw new Error(`The verifier requested an unexpected URL: ${options.url}`);
+  });
+  const result = await check(['user-inventory', 'user-schemas']);
+  assert.deepEqual(result.results, [
+    { capability: 'user-inventory', scopeVerified: true, failure: null },
+    { capability: 'user-schemas', scopeVerified: true, failure: null },
+  ]);
+});
+
+test('a denied user schema scope fails user-schemas only', async (t) => {
+  stub(t, {
+    tokenFailure: (scope) =>
+      scope === scopeOf('user-schemas')
+        ? {
+            response: { status: 401, data: { error: 'unauthorized_client' } },
+          }
+        : undefined,
+  });
+  const result = await check(capabilities);
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'user-schemas' ? 'delegation-not-authorized' : null,
+    ]),
+  );
+});
+
+test('a denied user inventory scope fails user-inventory only', async (t) => {
+  stub(t, {
+    tokenFailure: (scope) =>
+      scope === scopeOf('user-inventory')
+        ? {
+            response: { status: 401, data: { error: 'unauthorized_client' } },
+          }
+        : undefined,
+  });
+  const result = await check(capabilities);
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'user-inventory' ? 'delegation-not-authorized' : null,
+    ]),
+  );
+});
+
 test('an inconsistent customer/domain observation keeps every other capability result', async (t) => {
   stub(t, {
     // The domains read names example.invalid as primary, so the combined
@@ -396,6 +512,16 @@ test('an inconsistent customer/domain observation keeps every other capability r
     },
     {
       capability: 'drive-files',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'user-inventory',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'user-schemas',
       scopeVerified: true,
       failure: null,
     },

@@ -59,17 +59,24 @@ const recordShape = {
   title: z.string().max(4096).nullable(),
   aliases: z.array(z.email().max(254)).max(1000),
   customSchemas: userCustomSchemasSchema,
-  /** When Campus Commander last read this user from Google. */
-  lastEntitySync: timestamp,
 };
 
+/** One user as the Google reader returns it. The cache adds `lastEntitySync`. */
+export const userObservationSchema = z.strictObject(recordShape);
+export type UserObservation = z.infer<typeof userObservationSchema>;
+
 /** One user as Redis stores it. Readers add `stale` at read time. */
-export const userRecordSchema = z.strictObject(recordShape);
+export const userRecordSchema = z.strictObject({
+  ...recordShape,
+  /** When Campus Commander last read this user from Google. */
+  lastEntitySync: timestamp,
+});
 export type UserRecord = z.infer<typeof userRecordSchema>;
 
 /** One grid row: the record, its freshness, and the version that a write reports (A section 8). */
 export const userRowSchema = z.strictObject({
   ...recordShape,
+  lastEntitySync: timestamp,
   stale: z.boolean(),
   recordVersion,
 });
@@ -78,6 +85,7 @@ export type UserRow = z.infer<typeof userRowSchema>;
 /** One user as the details page reads it. A removed user keeps its row and names its removal. */
 export const userDetailSchema = z.strictObject({
   ...recordShape,
+  lastEntitySync: timestamp,
   stale: z.boolean(),
   removedAt: timestamp.nullable(),
   recordVersion,
@@ -405,6 +413,32 @@ export const userAttributeCategorySchema = z.strictObject({
   readAt: timestamp.nullable(),
 });
 export type UserAttributeCategory = z.infer<typeof userAttributeCategorySchema>;
+
+/** One attribute as the Google reader returns it. The cache adds the holder count. */
+export const userAttributeFieldObservationSchema =
+  userAttributeFieldSchema.omit({
+    holders: true,
+  });
+export type UserAttributeFieldObservation = z.infer<
+  typeof userAttributeFieldObservationSchema
+>;
+
+/**
+ * One category as the Google reader returns it. The cache adds the holder counts
+ * and the read time (B section 9). The `schemaId` stays an opaque string (C8).
+ */
+export const userAttributeCategoryObservationSchema =
+  userAttributeCategorySchema
+    .extend({
+      fields: z
+        .array(userAttributeFieldObservationSchema)
+        .min(1)
+        .max(USER_ATTRIBUTE_FIELD_LIMIT),
+    })
+    .omit({ holders: true, readAt: true });
+export type UserAttributeCategoryObservation = z.infer<
+  typeof userAttributeCategoryObservationSchema
+>;
 
 /** The two limit counts of the account, with the maximum of each (B section 5). */
 export const userAttributeLimitsSchema = z.strictObject({

@@ -12,7 +12,7 @@ import { GoogleCustomerVerifier } from './provider.ts';
 import { validateServiceAccount } from './credential.ts';
 
 const timeout = 60_000;
-/** The capability ids that admin-sdk-mock 0.3.0 serves, in capability order. */
+/** The capability ids that admin-sdk-mock 0.4.0 serves, in capability order. */
 const capabilities = GOOGLE_CAPABILITIES.map((capability) => capability.id);
 const scopeOf = (id) =>
   GOOGLE_CAPABILITIES.find((capability) => capability.id === id).scope;
@@ -53,11 +53,11 @@ function check(credential, requested = capabilities) {
   );
 }
 
-test('a client with the seven scopes of admin-sdk-mock 0.3.0 passes every capability check', async () => {
+test('a client with the nine scopes of admin-sdk-mock 0.4.0 passes every capability check', async () => {
   assert.equal(
     capabilities.length,
-    7,
-    'admin-sdk-mock 0.3.0 serves seven scopes',
+    9,
+    'admin-sdk-mock 0.4.0 serves nine scopes',
   );
   const result = await check(credentialFor(capabilities));
   assert.deepEqual(
@@ -102,6 +102,33 @@ test('a client without the org unit scope fails only school-ou-references', asyn
       capability === 'school-ou-references'
         ? 'delegation-not-authorized'
         : null,
+    ]),
+  );
+});
+
+/**
+ * The service-account grant holds the schema read scope alone. The mock refuses the
+ * token exchange for user-schemas, and no other capability loses its result.
+ */
+test('a client without the user schema read scope fails only user-schemas', async () => {
+  const result = await check(credentialFor(without('user-schemas')));
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'user-schemas' ? 'delegation-not-authorized' : null,
+    ]),
+  );
+});
+
+/** The same grant check for the user read scope. */
+test('a client without the user read scope fails only user-inventory', async () => {
+  const result = await check(credentialFor(without('user-inventory')));
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'user-inventory' ? 'delegation-not-authorized' : null,
     ]),
   );
 });

@@ -16,6 +16,8 @@ const allowed = [
   'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/domains',
   'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/orgunits',
   'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos',
+  'https://admin.googleapis.com/admin/directory/v1/users',
+  'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
   'https://www.googleapis.com/batch/admin/directory_v1',
   'https://www.googleapis.com/drive/v3/files',
   'https://www.googleapis.com/drive/v3/files/abc-123_DEF',
@@ -51,6 +53,13 @@ const rejected = [
   'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/',
   `https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices/${'a'.repeat(129)}`,
   'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos/abc',
+  'https://admin.googleapis.com/admin/directory/v1/users/u1',
+  'http://admin.googleapis.com/admin/directory/v1/users',
+  'https://evil.example/admin/directory/v1/users',
+  'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas/s1',
+  'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas/a/b',
+  'https://admin.googleapis.com/admin/directory/v1/customer/C01/schemas',
+  'http://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
 ];
 
 /** The batch part shapes the repository builds, with the three command and status shapes. */
@@ -69,6 +78,13 @@ const allowedParts = [
   [
     'POST',
     '/admin/directory/v1/customer/C0123456/devices/chromeos:batchChangeStatus',
+  ],
+  ['GET', '/admin/directory/v1/users/u1'],
+  ['GET', '/admin/directory/v1/users/u%2F1'],
+  ['GET', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  [
+    'GET',
+    '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D',
   ],
 ];
 const rejectedParts = [
@@ -94,6 +110,17 @@ const rejectedParts = [
     '/admin/directory/v1/customer/C0123456/devices/chromeos/d1/commands/4100000001',
   ],
   ['GET', '/admin/directory/v1/users'],
+  ['GET', '/admin/directory/v1/users/u1/aliases'],
+  ['PATCH', '/admin/directory/v1/users/u1'],
+  ['PUT', '/admin/directory/v1/users/u1'],
+  ['DELETE', '/admin/directory/v1/users/u1'],
+  ['GET', '/admin/directory/v1/customer/C0123456/schemas'],
+  ['GET', '/admin/directory/v1/customer/C0123456/schemas/'],
+  ['GET', '/admin/directory/v1/customer/C0123456/schemas/a/b'],
+  ['POST', '/admin/directory/v1/customer/C0123456/schemas'],
+  ['PUT', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['PATCH', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
   ['GET', '/admin/directory/v1/customer/C01/devices/chromeos/d1'],
   ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d1/'],
 ];
@@ -130,6 +157,18 @@ test('validateRequests refuses a part outside the allowlist', () => {
     () =>
       validateRequests([
         { id: 'user', method: 'GET', path: '/admin/directory/v1/users' },
+      ]),
+    { name: 'BatchServiceError', code: 'invalid-request' },
+  );
+  // Every write method stays outside the part allowlist (design section 4).
+  assert.throws(
+    () =>
+      validateRequests([
+        {
+          id: 'schema',
+          method: 'DELETE',
+          path: '/admin/directory/v1/customer/C0123456/schemas/SchemaName',
+        },
       ]),
     { name: 'BatchServiceError', code: 'invalid-request' },
   );
@@ -179,6 +218,15 @@ test('a scoped client reaches the transport for batch and per-device URLs only',
     async () =>
       client.request({
         url: 'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos/abc',
+      }),
+    { code: 'request-failed' },
+  );
+  assert.equal(urls.length, 2);
+  // A user detail is a batch part only, so a direct read never leaves the process.
+  await assert.rejects(
+    async () =>
+      client.request({
+        url: 'https://admin.googleapis.com/admin/directory/v1/users/u1',
       }),
     { code: 'request-failed' },
   );
