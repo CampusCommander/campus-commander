@@ -126,6 +126,8 @@ export async function qualifyGoogleHealth({
     'domain-observations',
     'drive-files',
     'school-ou-references',
+    'user-inventory',
+    'user-schemas',
   ]);
   assert.equal(JSON.stringify(initial).includes('envelope'), false);
   // Only the two connection capabilities inherit the setup observation. An
@@ -191,6 +193,8 @@ export async function qualifyGoogleHealth({
     'device-telemetry',
     'device-changes',
     'drive-files',
+    'user-inventory',
+    'user-schemas',
   ];
   const allLease = await claim(all);
   const allHealth = await finish(
@@ -202,7 +206,7 @@ export async function qualifyGoogleHealth({
     })),
     connection.observation,
   );
-  assert.equal(allHealth.capabilities.length, 7);
+  assert.equal(allHealth.capabilities.length, 9);
   assert.ok(
     allHealth.capabilities.every(
       (item) => item.failure === null && item.scopeVerified,

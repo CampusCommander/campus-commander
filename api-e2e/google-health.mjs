@@ -45,7 +45,7 @@ export async function qualifyGoogleHealth({
   };
   const initial = await read();
   assert.equal(initial.customerId, input.customerId);
-  assert.equal(initial.capabilities.length, 7);
+  assert.equal(initial.capabilities.length, 9);
   assert.equal(JSON.stringify(initial).includes('envelope'), false);
   const capabilityResult = (health, capability) => {
     const result = health.capabilities.find(
@@ -97,10 +97,10 @@ export async function qualifyGoogleHealth({
     });
     await expect(customerPanel).toContainText('Last check passed');
     await expect(domainPanel).toContainText('Delegation not authorized');
-    // The health answer holds seven results. Setup grants all seven scopes,
-    // so the footer counts the seven setup capabilities.
+    // The health answer holds nine results. Setup grants all nine scopes,
+    // so the footer counts the nine setup capabilities.
     await expect(page.locator('footer')).toContainText(
-      '1 of 7 capabilities need attention',
+      '1 of 9 capabilities need attention',
     );
     await ready();
     await fault('domain-privilege-denied');
@@ -196,10 +196,10 @@ export async function qualifyGoogleHealth({
     await fault('');
     await page.getByRole('button', { name: 'Refresh Google status' }).click();
     await page.getByRole('button', { name: 'Check Google access' }).click();
-    // Check Google access checks all seven capabilities. Every result is
-    // current, and the footer counts the seven setup capabilities.
+    // Check Google access checks all nine capabilities. Every result is
+    // current, and the footer counts the nine setup capabilities.
     await expect(page.locator('footer')).toContainText(
-      'Google: 7 last checks passed',
+      'Google: 9 last checks passed',
     );
     const recovered = await read();
     for (const capability of [
@@ -210,6 +210,8 @@ export async function qualifyGoogleHealth({
       'device-telemetry',
       'device-changes',
       'drive-files',
+      'user-inventory',
+      'user-schemas',
     ]) {
       const item = capabilityResult(recovered, capability);
       assert.equal(item.failure, null, capability);

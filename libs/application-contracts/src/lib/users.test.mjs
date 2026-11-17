@@ -20,6 +20,7 @@ import {
   userQuerySchema,
   userRecordSchema,
   userRowSchema,
+  userCustomSchemasSchema,
   userSelectionChangeSchema,
   userSelectionKeySchema,
   userSelectionRefreshSchema,
@@ -111,6 +112,27 @@ test('a user record carries the raw custom schemas and the last Google read', ()
   assert.deepEqual(
     userRecordSchema.parse({ ...record, customSchemas: raw }).customSchemas,
     raw,
+  );
+});
+
+test('the raw custom schemas keep a legal own __proto__ category and field', () => {
+  const raw = JSON.parse(
+    '{"__proto__":{"__proto__":"alpha","Grade":7},"StudentInfo":{"Grade":8}}',
+  );
+  const parsed = userCustomSchemasSchema.parse(raw);
+  assert.deepEqual(parsed, raw);
+  assert.deepEqual(Object.keys(parsed).sort(), ['StudentInfo', '__proto__']);
+  const reserved = parsed['__proto__'];
+  assert.deepEqual(Object.keys(reserved).sort(), ['Grade', '__proto__']);
+  assert.equal(reserved['__proto__'], 'alpha');
+  // The reserved key stays an own property and no prototype changes.
+  assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
+  assert.equal(Object.getPrototypeOf(reserved), Object.prototype);
+  assert.equal(Object.getPrototypeOf(raw), Object.prototype);
+  assert.equal(
+    userCustomSchemasSchema.safeParse({ StudentInfo: { Grade: undefined } })
+      .success,
+    false,
   );
 });
 

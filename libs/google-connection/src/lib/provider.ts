@@ -205,6 +205,20 @@ const driveHealthPage = z.object({
     .max(1)
     .optional(),
 });
+/** A user health read asks for one user ID. An empty domain omits the list. */
+const userHealthPage = z.object({
+  users: z
+    .array(z.object({ id: z.string().min(1).max(128) }))
+    .max(1)
+    .optional(),
+});
+/** A category health read asks for one schema ID. An empty account lists no category. */
+const schemaHealthPage = z.object({
+  schemas: z
+    .array(z.object({ schemaId: z.string().min(1).max(200) }))
+    .max(100)
+    .optional(),
+});
 
 function domainObservation(
   customerId: string,
@@ -234,34 +248,50 @@ function domainObservation(
   });
 }
 
-/** The only Google URLs the application may call. Token exchange, customer reads, device reads,
- * the Drive health read, and the Drive and Sheets calls of the Drive slice. */
-export function googleRequestAllowed(url: URL): boolean {
+/**
+ * The only Google URLs the application may call, with the methods each shape admits.
+ * Token exchange, customer reads, user and category reads, device reads, the Drive health
+ * read, and the Drive and Sheets calls of the Drive slice. The user and category collection
+ * shapes admit GET only, so a direct insert never leaves the process.
+ * A caller that names no method gets the URL shape check alone.
+ */
+export function googleRequestAllowed(url: URL, method?: string): boolean {
+  const verb = method?.toUpperCase();
+  const allows = (...methods: readonly string[]) =>
+    verb === undefined || methods.includes(verb);
   return (
     (url.origin === 'https://oauth2.googleapis.com' &&
-      ['/token', '/tokeninfo'].includes(url.pathname)) ||
+      (url.pathname === '/token' || url.pathname === '/tokeninfo') &&
+      allows('POST')) ||
     (url.origin === 'https://admin.googleapis.com' &&
+      allows('GET') &&
       (url.pathname === '/admin/directory/v1/customers/my_customer' ||
-        /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits|devices\/chromeos)$/.test(
+        url.pathname === '/admin/directory/v1/users' ||
+        /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits|devices\/chromeos|schemas)$/.test(
           url.pathname,
         ))) ||
     (url.origin === 'https://www.googleapis.com' &&
-      (['/batch/admin/directory_v1', '/drive/v3/files'].includes(
-        url.pathname,
-      ) ||
-        /^\/drive\/v3\/files\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname))) ||
+      ((url.pathname === '/batch/admin/directory_v1' && allows('POST')) ||
+        (url.pathname === '/drive/v3/files' && allows('GET')) ||
+        (/^\/drive\/v3\/files\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname) &&
+          allows('GET')))) ||
     (url.origin === 'https://chromemanagement.googleapis.com' &&
+      allows('GET') &&
       /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices(?:\/[A-Za-z0-9_-]{1,128})?$/.test(
         url.pathname,
       )) ||
     (url.origin === 'https://sheets.googleapis.com' &&
-      (url.pathname === '/v4/spreadsheets' ||
-        /^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}(?::batchUpdate)?$/.test(
+      ((url.pathname === '/v4/spreadsheets' && allows('POST')) ||
+        (/^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname) &&
+          allows('GET')) ||
+        (/^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}:batchUpdate$/.test(
           url.pathname,
-        ) ||
-        /^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}\/values\/(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-Fa-f]{2}){1,2048}$/.test(
+        ) &&
+          allows('POST')) ||
+        (/^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}\/values\/(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-Fa-f]{2}){1,2048}$/.test(
           url.pathname,
-        )))
+        ) &&
+          allows('GET', 'PUT'))))
   );
 }
 
@@ -270,6 +300,10 @@ const partSegment = '[^/?#:]+';
 /** The customer pattern of `googleRequestAllowed`. */
 const partCustomer = 'C[A-Za-z0-9]{4,31}';
 const partDevice = `/admin/directory/v1/customer/${partCustomer}/devices/chromeos/${partSegment}`;
+/** One user read. The user key stays one encoded segment, as a batch part carries it. */
+const partUser = `/admin/directory/v1/users/${partSegment}`;
+/** One category read. The opaque schema ID stays one percent-encoded segment (C8). */
+const partSchema = `/admin/directory/v1/customer/${partCustomer}/schemas/${partSegment}`;
 
 /**
  * The part shapes a batch may carry. Each shape is one call the repository builds.
@@ -282,6 +316,8 @@ const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
     ),
     new RegExp(`^${partDevice}$`),
     new RegExp(`^${partDevice}/commands/[0-9]{1,20}$`),
+    new RegExp(`^${partUser}$`),
+    new RegExp(`^${partSchema}$`),
   ],
   PATCH: [new RegExp(`^${partDevice}$`)],
   POST: [
@@ -311,7 +347,8 @@ function boundClient(
   const request = client.transporter.request.bind(client.transporter);
   client.transporter.request = (options) => {
     const url = new URL(options?.url ?? '');
-    const allowed = googleRequestAllowed(url);
+    const method = typeof options?.method === 'string' ? options.method : 'GET';
+    const allowed = googleRequestAllowed(url, method);
     if (!allowed) throw new GoogleConnectionError('request-failed');
     return request({
       ...options,
@@ -528,6 +565,35 @@ export class GoogleCustomerVerifier {
                     url: `${drive}/files`,
                     method: 'GET',
                     params: { pageSize: 1, fields: 'files(id)' },
+                  })
+                ).data,
+              );
+              break;
+            // user-inventory reads one user ID with the read-only user scope.
+            case 'user-inventory':
+              userHealthPage.parse(
+                (
+                  await client.request({
+                    url: `${directory}/users`,
+                    method: 'GET',
+                    params: {
+                      customer: expectedCustomer,
+                      projection: 'basic',
+                      maxResults: 1,
+                      fields: 'users(id)',
+                    },
+                  })
+                ).data,
+              );
+              break;
+            // user-schemas reads one schema ID with the read-only schema scope.
+            case 'user-schemas':
+              schemaHealthPage.parse(
+                (
+                  await client.request({
+                    url: `${directory}/customer/${expectedCustomer}/schemas`,
+                    method: 'GET',
+                    params: { fields: 'schemas(schemaId)' },
                   })
                 ).data,
               );
