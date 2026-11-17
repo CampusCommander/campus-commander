@@ -26,6 +26,7 @@ import {
   userSelectionRefreshSchema,
   userSelectionResolveSchema,
   userSelectionSpecSchema,
+  userStreamEventSchema,
   userSyncStateSchema,
 } from './users.ts';
 
@@ -394,6 +395,83 @@ test('the user sync state carries the count, the failure, and no telemetry', () 
   );
   assert.equal(
     userSyncStateSchema.safeParse({ ...sync, telemetryFailure: null }).success,
+    false,
+  );
+});
+
+test('every users feed event names the user entity type', () => {
+  const sync = {
+    customerId,
+    generation: 2,
+    status: 'ready',
+    observedAt: at,
+    userCount: 4,
+    failure: 'quota',
+    startedAt: at,
+    checkedAt: at,
+    stale: false,
+  };
+  assert.deepEqual(
+    userStreamEventSchema.parse({
+      type: 'entity-batch',
+      entityType: 'user',
+      userIds: ['107000000000000000001'],
+      removedIds: [],
+    }),
+    {
+      type: 'entity-batch',
+      entityType: 'user',
+      userIds: ['107000000000000000001'],
+      removedIds: [],
+    },
+  );
+  assert.deepEqual(
+    userStreamEventSchema.parse({
+      type: 'job-finished',
+      entityType: 'user',
+      failure: 'quota',
+    }),
+    { type: 'job-finished', entityType: 'user', failure: 'quota' },
+  );
+  assert.deepEqual(
+    userStreamEventSchema.parse({
+      type: 'user-full-sync',
+      entityType: 'user',
+      sync,
+    }),
+    { type: 'user-full-sync', entityType: 'user', sync },
+  );
+  // A device event and an event without the entity type are refused.
+  assert.equal(
+    userStreamEventSchema.safeParse({
+      type: 'entity-batch',
+      entityType: 'device',
+      userIds: [],
+      removedIds: [],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userStreamEventSchema.safeParse({ type: 'job-finished', failure: null })
+      .success,
+    false,
+  );
+  assert.equal(
+    userStreamEventSchema.safeParse({
+      type: 'full-sync',
+      sync,
+    }).success,
+    false,
+  );
+  // The feed drops a job ID and the batch counters.
+  assert.equal(
+    userStreamEventSchema.safeParse({
+      type: 'entity-batch',
+      entityType: 'user',
+      jobId: '33333333-3333-4333-8333-333333333333',
+      userIds: [],
+      removedIds: [],
+    }).success,
     false,
   );
 });

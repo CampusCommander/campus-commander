@@ -362,6 +362,31 @@ export const userSyncStateSchema = z.strictObject({
 });
 export type UserSyncState = z.infer<typeof userSyncStateSchema>;
 
+/**
+ * The users feed events of document A section 8. The feed drops the job ID, the batch counters,
+ * the job record, the requester, and every failure that the caller cannot see, as the device feed
+ * does. Every event names the entity type `user` (A section 15.4).
+ */
+export const userStreamEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('entity-batch'),
+    entityType: z.literal('user'),
+    userIds: z.array(userId).max(1000),
+    removedIds: z.array(userId).max(1000),
+  }),
+  z.strictObject({
+    type: z.literal('job-finished'),
+    entityType: z.literal('user'),
+    failure: deviceSyncFailureSchema.nullable(),
+  }),
+  z.strictObject({
+    type: z.literal('user-full-sync'),
+    entityType: z.literal('user'),
+    sync: userSyncStateSchema,
+  }),
+]);
+export type UserStreamEvent = z.infer<typeof userStreamEventSchema>;
+
 /** The answer of Refresh Domain. The sync and the domain read report separately. */
 const userDomainRefreshShape = z.strictObject({
   sync: userSyncStateSchema,
