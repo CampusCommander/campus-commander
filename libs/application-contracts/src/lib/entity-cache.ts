@@ -10,16 +10,18 @@ const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
 const count = z.number().int().min(0);
 
-export const entityTypeSchema = z.enum(['device']);
+export const entityTypeSchema = z.enum(['device', 'user']);
 export type EntityType = z.infer<typeof entityTypeSchema>;
 
 /** Hours after the last Google read when an entity counts as stale. Evaluated at read time. */
 export const ENTITY_FRESHNESS_HOURS: Readonly<Record<EntityType, number>> = {
   device: 24,
+  user: 24,
 };
 /** Redis keeps a record as long as it stays fresh. */
 export const ENTITY_CACHE_SECONDS: Readonly<Record<EntityType, number>> = {
   device: ENTITY_FRESHNESS_HOURS.device * 3600,
+  user: ENTITY_FRESHNESS_HOURS.user * 3600,
 };
 /** Devices per Kestra batch. The Directory batch endpoint allows 1,000. */
 export const ENTITY_SYNC_BATCH_SIZE = 100;

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { sessionResponseSchema } from './application-contracts.ts';
 import {
   actionSchema,
+  actionScopeKinds,
   grantsForPreset,
   grantSchema,
   isAuthorized,
@@ -259,4 +260,50 @@ test('viewers have only explicit read grants and presets reject broader scopes',
   assert.throws(() => grantsForPreset('district-administrator', platform));
   assert.throws(() => grantsForPreset('platform-administrator', district));
   assert.throws(() => grantsForPreset('school-administrator', district));
+});
+
+test('users:read takes platform and district scopes, and the platform administrator holds it', () => {
+  assert.ok(
+    actionSchema.options.includes('users:read'),
+    'users:read is a declared action',
+  );
+  assert.deepEqual(actionScopeKinds['users:read'], ['platform', 'district']);
+  for (const scope of [platform, district])
+    assert.equal(
+      grantSchema.safeParse({ action: 'users:read', scope }).success,
+      true,
+    );
+  assert.equal(
+    grantSchema.safeParse({ action: 'users:read', scope: school }).success,
+    false,
+  );
+  assert.equal(
+    isAuthorized(
+      grantsForPreset('platform-administrator', platform),
+      'users:read',
+      district,
+    ),
+    true,
+    'The platform administrator preset holds User Read.',
+  );
+  assert.equal(
+    isAuthorized(
+      grantsForPreset('district-administrator', district),
+      'users:read',
+      district,
+    ),
+    false,
+    'The district preset holds no users:read.',
+  );
+  // User Read opens no device route, and Device Read opens no user route.
+  const userReader = [{ action: 'users:read', scope: district }];
+  assert.equal(isAuthorized(userReader, 'devices:read', district), false);
+  assert.equal(
+    isAuthorized(
+      [{ action: 'devices:read', scope: district }],
+      'users:read',
+      district,
+    ),
+    false,
+  );
 });

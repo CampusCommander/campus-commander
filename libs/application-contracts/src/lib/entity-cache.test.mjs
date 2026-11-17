@@ -175,6 +175,62 @@ test('query cache names carry the query generation and expire after five minutes
   );
 });
 
+test('users are stale 24 hours after their last Google read', async () => {
+  const { ENTITY_CACHE_SECONDS, entityTypeSchema } = await import(
+    './entity-cache.ts'
+  );
+  assert.equal(ENTITY_FRESHNESS_HOURS.user, 24);
+  assert.equal(ENTITY_CACHE_SECONDS.user, ENTITY_FRESHNESS_HOURS.user * 3600);
+  assert.equal(isStale('user', '2026-10-05T12:00:00.000Z', now), false);
+  assert.equal(isStale('user', '2026-10-05T11:59:59.999Z', now), true);
+  assert.equal(
+    entityKey('user', 'C0123456', '107000000000000000001'),
+    'cc:entity:user:C0123456:107000000000000000001',
+  );
+  assert.equal(
+    queryGenerationKey('user', 'C0123456'),
+    'cc:query-gen:user:C0123456',
+  );
+  assert.equal(
+    inflightKey('user', 'C0123456'),
+    'cc:entity-inflight:user:C0123456',
+  );
+  assert.equal(
+    queryCacheKey('user', 'C0123456', '7', 'abc'),
+    'cc:query:user:C0123456:7:abc',
+  );
+  assert.deepEqual(entityTypeSchema.options, ['device', 'user']);
+});
+
+test('a user refresh job carries the entity type user', async () => {
+  const { entityTypeSchema } = await import('./entity-cache.ts');
+  assert.deepEqual(entityTypeSchema.parse('user'), 'user');
+  const job = {
+    jobId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b',
+    customerId: 'C0123456',
+    entityType: 'user',
+    batchCount: 1,
+    completedBatches: 0,
+    failedBatches: 0,
+    failure: null,
+    createdAt: '2026-11-16T12:00:00.000Z',
+    finishedAt: null,
+  };
+  assert.deepEqual(entitySyncJobSchema.parse(job), job);
+  assert.equal(
+    entityEventSchema.parse({
+      type: 'entity-batch',
+      jobId: job.jobId,
+      entityType: 'user',
+      batch: 0,
+      batchCount: 1,
+      deviceIds: [],
+      removedIds: [],
+    }).entityType,
+    'user',
+  );
+});
+
 test('the Devices stream schema drops job IDs, batch counters, and the job record', async () => {
   const { deviceStreamEventSchema } = await import('./entity-cache.ts');
   const batch = {
