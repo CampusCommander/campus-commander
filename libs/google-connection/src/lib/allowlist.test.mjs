@@ -122,6 +122,103 @@ const rejectedParts = [
   ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d1/'],
 ];
 
+/** Each URL shape with a method it admits. Token exchange answers POST only. */
+const allowedMethods = [
+  ['https://oauth2.googleapis.com/token', 'POST'],
+  ['https://oauth2.googleapis.com/tokeninfo', 'POST'],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customers/my_customer',
+    'GET',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/domains',
+    'GET',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/orgunits',
+    'GET',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos',
+    'GET',
+  ],
+  ['https://admin.googleapis.com/admin/directory/v1/users', 'GET'],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+    'GET',
+  ],
+  ['https://www.googleapis.com/batch/admin/directory_v1', 'POST'],
+  ['https://www.googleapis.com/drive/v3/files', 'GET'],
+  ['https://www.googleapis.com/drive/v3/files/abc-123_DEF', 'GET'],
+  ['https://sheets.googleapis.com/v4/spreadsheets', 'POST'],
+  ['https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet', 'GET'],
+  [
+    'https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet:batchUpdate',
+    'POST',
+  ],
+  [
+    "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/values/'Devices'!A1%3AJ1000",
+    'GET',
+  ],
+  [
+    "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/values/'Devices'!A1%3AJ1000",
+    'PUT',
+  ],
+  [
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices',
+    'GET',
+  ],
+];
+/** A method each shape refuses. The two new collection shapes admit GET only. */
+const refusedMethods = [
+  ['https://oauth2.googleapis.com/token', 'GET'],
+  ['https://oauth2.googleapis.com/tokeninfo', 'GET'],
+  ['https://admin.googleapis.com/admin/directory/v1/users', 'POST'],
+  ['https://admin.googleapis.com/admin/directory/v1/users', 'PUT'],
+  ['https://admin.googleapis.com/admin/directory/v1/users', 'PATCH'],
+  ['https://admin.googleapis.com/admin/directory/v1/users', 'DELETE'],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+    'POST',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+    'PUT',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+    'PATCH',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+    'DELETE',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customers/my_customer',
+    'POST',
+  ],
+  [
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/devices/chromeos',
+    'POST',
+  ],
+  ['https://www.googleapis.com/batch/admin/directory_v1', 'GET'],
+  ['https://www.googleapis.com/drive/v3/files', 'POST'],
+  ['https://www.googleapis.com/drive/v3/files/abc-123_DEF', 'DELETE'],
+  ['https://sheets.googleapis.com/v4/spreadsheets', 'GET'],
+  [
+    'https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet:batchUpdate',
+    'GET',
+  ],
+  [
+    "https://sheets.googleapis.com/v4/spreadsheets/fixture-spreadsheet/values/'Devices'!A1%3AJ1000",
+    'POST',
+  ],
+  [
+    'https://chromemanagement.googleapis.com/v1/customers/C0123456/telemetry/devices',
+    'POST',
+  ],
+];
+
 for (const url of allowed)
   test(`allows ${url}`, () => {
     assert.equal(googleRequestAllowed(new URL(url)), true);
@@ -130,6 +227,21 @@ for (const url of allowed)
 for (const url of rejected)
   test(`rejects ${url.slice(0, 120)}`, () => {
     assert.equal(googleRequestAllowed(new URL(url)), false);
+  });
+
+for (const [url, method] of allowedMethods)
+  test(`allows ${method} ${url}`, () => {
+    assert.equal(googleRequestAllowed(new URL(url), method), true);
+    // The method matches in either case.
+    assert.equal(
+      googleRequestAllowed(new URL(url), method.toLowerCase()),
+      true,
+    );
+  });
+
+for (const [url, method] of refusedMethods)
+  test(`refuses ${method} ${url}`, () => {
+    assert.equal(googleRequestAllowed(new URL(url), method), false);
   });
 
 for (const [method, path] of allowedParts)
@@ -228,4 +340,18 @@ test('a scoped client reaches the transport for batch and per-device URLs only',
     { code: 'request-failed' },
   );
   assert.equal(urls.length, 2);
+  // The two new collection reads reach the transport with GET.
+  const collections = [
+    'https://admin.googleapis.com/admin/directory/v1/users',
+    'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
+  ];
+  for (const url of collections) await client.request({ url, method: 'GET' });
+  assert.equal(urls.length, 4);
+  // Every write method fails before the transport for both collection shapes.
+  for (const url of collections)
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
+      await assert.rejects(async () => client.request({ url, method }), {
+        code: 'request-failed',
+      });
+  assert.equal(urls.length, 4);
 });

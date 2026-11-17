@@ -248,36 +248,50 @@ function domainObservation(
   });
 }
 
-/** The only Google URLs the application may call. Token exchange, customer reads, user and
- * category reads, device reads, the Drive health read, and the Drive and Sheets calls of the
- * Drive slice. */
-export function googleRequestAllowed(url: URL): boolean {
+/**
+ * The only Google URLs the application may call, with the methods each shape admits.
+ * Token exchange, customer reads, user and category reads, device reads, the Drive health
+ * read, and the Drive and Sheets calls of the Drive slice. The user and category collection
+ * shapes admit GET only, so a direct insert never leaves the process.
+ * A caller that names no method gets the URL shape check alone.
+ */
+export function googleRequestAllowed(url: URL, method?: string): boolean {
+  const verb = method?.toUpperCase();
+  const allows = (...methods: readonly string[]) =>
+    verb === undefined || methods.includes(verb);
   return (
     (url.origin === 'https://oauth2.googleapis.com' &&
-      ['/token', '/tokeninfo'].includes(url.pathname)) ||
+      (url.pathname === '/token' || url.pathname === '/tokeninfo') &&
+      allows('POST')) ||
     (url.origin === 'https://admin.googleapis.com' &&
+      allows('GET') &&
       (url.pathname === '/admin/directory/v1/customers/my_customer' ||
         url.pathname === '/admin/directory/v1/users' ||
         /^\/admin\/directory\/v1\/customer\/C[A-Za-z0-9]{4,31}\/(?:domains|orgunits|devices\/chromeos|schemas)$/.test(
           url.pathname,
         ))) ||
     (url.origin === 'https://www.googleapis.com' &&
-      (['/batch/admin/directory_v1', '/drive/v3/files'].includes(
-        url.pathname,
-      ) ||
-        /^\/drive\/v3\/files\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname))) ||
+      ((url.pathname === '/batch/admin/directory_v1' && allows('POST')) ||
+        (url.pathname === '/drive/v3/files' && allows('GET')) ||
+        (/^\/drive\/v3\/files\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname) &&
+          allows('GET')))) ||
     (url.origin === 'https://chromemanagement.googleapis.com' &&
+      allows('GET') &&
       /^\/v1\/customers\/C[A-Za-z0-9]{4,31}\/telemetry\/devices(?:\/[A-Za-z0-9_-]{1,128})?$/.test(
         url.pathname,
       )) ||
     (url.origin === 'https://sheets.googleapis.com' &&
-      (url.pathname === '/v4/spreadsheets' ||
-        /^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}(?::batchUpdate)?$/.test(
+      ((url.pathname === '/v4/spreadsheets' && allows('POST')) ||
+        (/^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname) &&
+          allows('GET')) ||
+        (/^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}:batchUpdate$/.test(
           url.pathname,
-        ) ||
-        /^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}\/values\/(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-Fa-f]{2}){1,2048}$/.test(
+        ) &&
+          allows('POST')) ||
+        (/^\/v4\/spreadsheets\/[A-Za-z0-9_-]{1,128}\/values\/(?:[A-Za-z0-9_.!~*'()-]|%[0-9A-Fa-f]{2}){1,2048}$/.test(
           url.pathname,
-        )))
+        ) &&
+          allows('GET', 'PUT'))))
   );
 }
 
@@ -333,7 +347,8 @@ function boundClient(
   const request = client.transporter.request.bind(client.transporter);
   client.transporter.request = (options) => {
     const url = new URL(options?.url ?? '');
-    const allowed = googleRequestAllowed(url);
+    const method = typeof options?.method === 'string' ? options.method : 'GET';
+    const allowed = googleRequestAllowed(url, method);
     if (!allowed) throw new GoogleConnectionError('request-failed');
     return request({
       ...options,
