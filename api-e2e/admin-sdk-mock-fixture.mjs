@@ -23,14 +23,17 @@ export const MOCK_GOOGLE_HOSTS = [
   'chromemanagement.googleapis.com',
   'sheets.googleapis.com',
 ];
-/** The scopes the schema routes accept. The harness grants them beside the capability scopes. */
-export const MOCK_SCHEMA_SCOPES = [
-  'https://www.googleapis.com/auth/admin.directory.userschema',
-  'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
-];
-/** The read-only schema scope, for a harness check that only lists schemas. */
+/** The read and write user schema scope. The schema routes accept it. */
+export const MOCK_SCHEMA_WRITE_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.userschema';
+/** The read-only user schema scope. The schema routes accept it. */
 export const MOCK_SCHEMA_READ_SCOPE =
   'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
+/** The scopes the schema routes accept. The harness grants them beside the capability scopes. */
+export const MOCK_SCHEMA_SCOPES = [
+  MOCK_SCHEMA_WRITE_SCOPE,
+  MOCK_SCHEMA_READ_SCOPE,
+];
 /**
  * The scopes the harness grants: the capability scopes and the schema scopes.
  * A mock credential reaches only the routes that these scopes cover.
