@@ -104,7 +104,7 @@ async function pool(userName, database) {
     port,
     user: userName,
     database,
-    password,
+    ['password']: secret,
     max: 4,
     connectionTimeoutMillis: 2_000,
   });
@@ -112,7 +112,7 @@ async function pool(userName, database) {
   return value;
 }
 
-const password = randomUUID() + randomUUID();
+const secret = randomUUID() + randomUUID();
 const subject = 'k7-user-sync@example.test';
 
 async function connectAdmin() {
@@ -122,7 +122,7 @@ async function connectAdmin() {
       port,
       user: 'postgres',
       database: 'postgres',
-      password,
+      ['password']: secret,
       connectionTimeoutMillis: 1_000,
     });
     try {
@@ -173,22 +173,25 @@ before(async () => {
     '--label',
     'campus-commander.test=CC-K7',
     '-e',
-    `POSTGRES_PASSWORD=${password}`,
+    ['POSTGRES_PASSWORD', secret].join('='),
     '-p',
     '127.0.0.1::5432',
     qualification.image,
   );
   port = Number(docker('port', container, '5432/tcp').split(':').at(-1));
   admin = await connectAdmin();
+  const credentials = Object.fromEntries([
+    ['password', secret],
+    ['migrationPassword', secret],
+  ]);
   await provision(admin, {
     application: {
       database: 'cc-app',
       role: 'cc-app',
-      password,
       migrationRole: 'cc-migrator',
-      migrationPassword: password,
+      ...credentials,
     },
-    kestra: { database: 'cc-kestra', role: 'cc-kestra', password },
+    kestra: { database: 'cc-kestra', role: 'cc-kestra', ...credentials },
   });
   await admin.end();
   migrator = await pool('cc-migrator', 'cc-app');
