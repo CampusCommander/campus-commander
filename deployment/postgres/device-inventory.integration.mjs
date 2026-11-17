@@ -963,8 +963,8 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       },
     );
 
-    // The removal fence of 020-device-removal-fence.sql. Presence and absence observations order by
-    // their observation time, for all three writers of cc.devices.removed_at.
+    // The removal fence of 021-device-removal-fence.sql. Presence and absence observations order by
+    // their observation time, for all four writers of cc.devices.removed_at.
     const removalOf = async (deviceId) =>
       (
         await migrator.query(
