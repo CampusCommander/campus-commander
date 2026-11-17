@@ -329,7 +329,7 @@ const limitations = [
   'The check touches only the category CcLiveValues and only the test user of its argument.',
   'Each users.get uses projection=custom and customFieldMask=CcLiveValues, so no other category is read.',
   'The answer settles one sandbox user of one domain. It settles no other domain and no other user.',
-  'The row of an attribute that a SAML app maps stays unverified. No SAML app maps an attribute here.',
+  'The row of an attribute that a SAML app maps stays unverified: the check reads no SAML application.',
   'Each value PATCH names one or more attributes, never the category alone.',
   'A customFieldMask that names no category answers 400 invalid, so the final read cannot show the values of the deleted category.',
 ];
