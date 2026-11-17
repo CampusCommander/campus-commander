@@ -51,6 +51,7 @@ function google({
   displayNameLimit = 60,
   fieldNameLimit = 60,
   faults = [],
+  rotateEtag = true,
 } = {}) {
   let serial = 0;
   let etagSerial = 0;
@@ -140,7 +141,7 @@ function google({
         return fail(400, 'invalid');
       found.displayName = request.body.displayName;
       found.fields = withDefaults(request.body.fields);
-      found.etag = nextEtag();
+      if (rotateEtag) found.etag = nextEtag();
       return { status: 200, data: structuredClone(found) };
     }
     if (request.method === 'DELETE') {
@@ -226,7 +227,35 @@ test('the check records the four answers of steps 3, 4, 5, and 6', async (t) => 
     stepOf(evidence, '4-update-fresh-etag').ifMatch,
     stepOf(evidence, '4-update-stale-if-match').ifMatch,
   );
+  assert.equal(
+    stepOf(evidence, '4-update-stale-if-match').ifMatch,
+    stepOf(evidence, '2-insert').answered.etag,
+  );
+  // The first update changes the etag, so the second header is recorded as stale.
+  assert.notEqual(
+    stepOf(evidence, '4-update-fresh-etag').answered.etag,
+    stepOf(evidence, '2-insert').answered.etag,
+  );
+  assert.equal(stepOf(evidence, '4-update-stale-if-match').ifMatchStale, true);
   assert.equal(stepOf(evidence, '2-insert').httpStatus, 200);
+});
+
+test('the check reports an unchanged etag as current, not stale', async (t) => {
+  // A service that keeps its etag after a write cannot make the second header stale.
+  const fake = google({ categories: [ownerCategory], rotateEtag: false });
+  const { evidence } = await run(t, { send: fake.send });
+
+  assert.equal(evidence.answers.staleIfMatch, 200);
+  assert.equal(stepOf(evidence, '4-update-stale-if-match').ifMatchStale, false);
+  assert.equal(
+    stepOf(evidence, '4-update-stale-if-match').ifMatch,
+    stepOf(evidence, '4-update-fresh-etag').answered.etag,
+  );
+  assert.deepEqual(evidence.counts, {
+    categoriesBefore: 1,
+    categoriesAfter: 1,
+    ccLiveCheckAfter: false,
+  });
 });
 
 test('the check leaves the other category of the domain untouched', async (t) => {

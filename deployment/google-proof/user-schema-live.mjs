@@ -217,7 +217,13 @@ function answered(schema) {
   const fields = Array.isArray(schema.fields) ? schema.fields : [];
   return {
     schemaIdPresent: typeof schema.schemaId === 'string',
+    schemaIdLength:
+      typeof schema.schemaId === 'string' ? schema.schemaId.length : null,
+    schemaIdPathSafe:
+      typeof schema.schemaId === 'string' &&
+      schemaIdShape.test(schema.schemaId),
     etagPresent: typeof schema.etag === 'string',
+    etag: schema.etag ?? null,
     schemaName: schema.schemaName ?? null,
     displayName: schema.displayName ?? null,
     fieldCount: fields.length,
@@ -319,6 +325,9 @@ export async function runCheck(config, options = {}) {
       ...(extra.headers?.['If-Match'] === undefined
         ? {}
         : { ifMatch: extra.headers['If-Match'] }),
+      ...(extra.ifMatchStale === undefined
+        ? {}
+        : { ifMatchStale: extra.ifMatchStale }),
       ...(extra.note === undefined ? {} : { note: extra.note }),
       httpStatus: null,
       reason: null,
@@ -393,7 +402,7 @@ export async function runCheck(config, options = {}) {
     return answer;
   }
 
-  async function update(step, body, ifMatch) {
+  async function update(step, body, options = {}) {
     const answer = await attempt(
       step,
       'schemas.update',
@@ -402,7 +411,12 @@ export async function runCheck(config, options = {}) {
       {
         body,
         wrote: written(body),
-        ...(ifMatch === undefined ? {} : { headers: { 'If-Match': ifMatch } }),
+        ...(options.ifMatch === undefined
+          ? {}
+          : { headers: { 'If-Match': options.ifMatch } }),
+        ...(options.ifMatchStale === undefined
+          ? {}
+          : { ifMatchStale: options.ifMatchStale }),
       },
     );
     if (accepted(answer.status) && answer.data) {
@@ -530,12 +544,20 @@ export async function runCheck(config, options = {}) {
       await update(
         '4-update-fresh-etag',
         updateBody(schema, { displayName: renamedDisplayName }),
-        etag,
+        { ifMatch: etag },
       );
+      // Record whether the header of the next call still names the current etag.
+      const etagStillCurrent =
+        typeof etag === 'string' && schema?.etag === etag;
       await update(
         '4-update-stale-if-match',
         updateBody(schema, { displayName: staleDisplayName }),
-        etag,
+        {
+          ifMatch: etag,
+          ...(typeof etag === 'string'
+            ? { ifMatchStale: !etagStillCurrent }
+            : {}),
+        },
       );
       evidence.answers.staleIfMatch = statusOf('4-update-stale-if-match');
 
