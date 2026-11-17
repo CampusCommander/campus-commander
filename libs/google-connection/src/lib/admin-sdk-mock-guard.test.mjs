@@ -56,7 +56,9 @@ test('no production source imports the Admin SDK mock', () => {
 
 test('the guard detects the mock and the batch fake in a production source', () => {
   assert.deepEqual(
-    doublesNamed("import { startMock } from '@campuscommander/admin-sdk-mock';"),
+    doublesNamed(
+      "import { startMock } from '@campuscommander/admin-sdk-mock';",
+    ),
     [MOCK_PACKAGE],
   );
   assert.deepEqual(
