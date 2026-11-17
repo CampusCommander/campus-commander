@@ -167,12 +167,17 @@ export class DeviceFreshRead {
           start < read.missing.length;
           start += DEVICE_STORE_BATCH_SIZE
         )
-          await client.query('SELECT cc.soft_delete_devices($1,$2) AS result', [
-            customerId,
-            JSON.stringify(
-              read.missing.slice(start, start + DEVICE_STORE_BATCH_SIZE),
-            ),
-          ]);
+          await client.query(
+            'SELECT cc.soft_delete_devices($1,$2,$3) AS result',
+            [
+              customerId,
+              JSON.stringify(
+                read.missing.slice(start, start + DEVICE_STORE_BATCH_SIZE),
+              ),
+              // The 404 carries the read's stamp, so a newer presence observation refuses it.
+              syncedAt,
+            ],
+          );
       });
     } catch {
       throw storeFailure();

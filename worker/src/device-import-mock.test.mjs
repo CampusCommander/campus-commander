@@ -290,7 +290,7 @@ function fakeDatabase(stored, events, options = {}) {
           const row = stored.get(deviceId);
           if (row !== undefined) row.removed_at = new Date(stamp);
         }
-        return { rows: [{ result: 0 }] };
+        return { rows: [{ result: JSON.parse(values[1]) }] };
       }
       if (sql.includes('asset_tag=ANY')) return { rows: [] };
       if (sql.includes('annotated_location'))

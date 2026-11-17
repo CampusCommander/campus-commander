@@ -117,6 +117,7 @@ export async function loadMigrations() {
       '018-device-write-access',
       '019-user-inventory',
       '020-user-sync',
+      '021-device-removal-fence',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -262,7 +263,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.device_record(cc.devices,text),
         cc.upsert_devices(text,jsonb,timestamptz,text),
         cc.upsert_device_batteries(text,jsonb),
-        cc.soft_delete_devices(text,jsonb),
+        cc.soft_delete_devices(${migrations.some(({ id }) => id === '021-device-removal-fence') ? 'text,jsonb,timestamptz' : 'text,jsonb'}),
         cc.read_device_records(text,jsonb),
         cc.page_device_records(text,text,integer),
         cc.page_last_removed_device_ids(text,text,integer),
