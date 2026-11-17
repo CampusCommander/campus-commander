@@ -13,16 +13,22 @@ The [client review runbook](client-review.md#review-against-admin-sdk-mock) desc
 The root `package.json` pins the release tarball in `devDependencies`:
 
 ```text
-https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.3.0/campuscommander-admin-sdk-mock-0.3.0.tgz
+https://github.com/CampusCommander/admin-sdk-mock/releases/download/v0.4.0/campuscommander-admin-sdk-mock-0.4.0.tgz
 ```
 
-The `package-lock.json` records that URL, the version `0.3.0`, and this sha512 integrity hash:
+The `package-lock.json` records that URL, the version `0.4.0`, and this sha512 integrity hash:
 
 ```text
-sha512-V0Z15zyB5OFmemFZ82Ss77J/2z6iS7eqxdsi7okHHV6upqLYCoMW+CtI4eNz/Ovh878UUzSRgEpGWA2EW9j12Q==
+sha512-HELCAD2VEW1rl+pGvAipUPftf+5xLZoiy5Uvf3evX2x7vyhnchFl1s02O9+7WrRQNtLawKjA6W3yEnsAbqDBCA==
 ```
 
 The package needs Node 24.11 or later. CI pins Node 24.19.0.
+
+Version 0.4.0 adds the five Directory schema routes and the two userschema scopes.
+It serves `schemas.list`, `schemas.get`, `schemas.insert`, `schemas.update`, and `schemas.delete`.
+It adds custom schema values on a user and the opt-in seed field `customSchemas`.
+That field writes the three categories and ten attributes of the user slice.
+A specification without `customSchemas` keeps the 0.3.0 seed data byte for byte.
 
 Version 0.3.0 adds Google Drive v3 and Google Sheets v4.
 The mock serves `files.list`, the metadata read of `files.get`, the media read of `files.get`, and the five Sheets calls on `www.googleapis.com` and `sheets.googleapis.com`.
