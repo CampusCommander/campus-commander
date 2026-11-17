@@ -110,7 +110,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     method: 'users.list',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list',
-    evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+    evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet',
   },
   {
     id: 'user-schemas',
@@ -122,7 +122,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     method: 'schemas.list',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',
-    evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+    evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet',
   },
 ] as const);
 

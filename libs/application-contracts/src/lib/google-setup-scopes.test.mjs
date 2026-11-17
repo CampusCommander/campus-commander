@@ -115,7 +115,7 @@ test('the user-inventory capability names its label, scope, method, flags, and e
       method: 'users.list',
       source:
         'https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/list',
-      evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+      evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet',
     },
   );
 });
@@ -133,7 +133,7 @@ test('the user-schemas capability names its label, scope, method, flags, and evi
       method: 'schemas.list',
       source:
         'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',
-      evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet.',
+      evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet',
     },
   );
   assert.equal(GOOGLE_SETUP_SCOPES.at(-1), SCHEMA);
