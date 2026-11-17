@@ -1,0 +1,1030 @@
+{
+  "schemaVersion": 1,
+  "check": "L3",
+  "status": "passed",
+  "outcome": "completed",
+  "recordedAt": "2026-11-17T01:36:05.894Z",
+  "sourceRevision": "81f95a7895dcf6d2069053a6849d1e0733d8ea99",
+  "nodeVersion": "v24.19.0",
+  "customerId": "C0123456",
+  "subject": "admin@example.org",
+  "testUser": "test-user@example.org",
+  "clientId": "123456789012345678901",
+  "category": "CcLiveValues",
+  "scopes": [
+    "https://www.googleapis.com/auth/admin.directory.userschema",
+    "https://www.googleapis.com/auth/admin.directory.user"
+  ],
+  "command": "node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/user-values-live.mjs <key-file> <subject> <client-id> <test-user>",
+  "steps": [
+    {
+      "step": 1,
+      "action": "schemas.get",
+      "method": "GET",
+      "httpStatus": 404,
+      "errorReason": "notFound",
+      "immediate": {
+        "httpStatus": 400,
+        "errorReason": "invalid",
+        "categoryPresent": null,
+        "attributeNames": []
+      },
+      "read": {
+        "httpStatus": 400,
+        "errorReason": "invalid"
+      },
+      "settledAfterMs": 0
+    },
+    {
+      "step": 2,
+      "action": "schemas.insert",
+      "method": "POST",
+      "httpStatus": 200,
+      "requestedFields": [
+        {
+          "fieldName": "ccText",
+          "fieldType": "STRING",
+          "displayName": "CC text",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccWhole",
+          "fieldType": "INT64",
+          "displayName": "CC whole number",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccYesNo",
+          "fieldType": "BOOL",
+          "displayName": "CC yes or no",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccDecimal",
+          "fieldType": "DOUBLE",
+          "displayName": "CC decimal number",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccEmail",
+          "fieldType": "EMAIL",
+          "displayName": "CC email",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccPhone",
+          "fieldType": "PHONE",
+          "displayName": "CC phone",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccDate",
+          "fieldType": "DATE",
+          "displayName": "CC date",
+          "multiValued": false
+        },
+        {
+          "fieldName": "ccTags",
+          "fieldType": "STRING",
+          "displayName": "CC tags",
+          "multiValued": true
+        },
+        {
+          "fieldName": "ccExtra",
+          "fieldType": "STRING",
+          "displayName": "CC extra string",
+          "multiValued": false
+        }
+      ],
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": false,
+        "attributeNames": []
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": false,
+        "attributes": {}
+      },
+      "settledAfterMs": 0,
+      "answered": {
+        "schemaId": "5jvnRrwIQ7SxuwKSRI1FSQ==",
+        "schemaName": "CcLiveValues",
+        "displayName": "CC live values",
+        "etag": "\"LTWbibkwy245Ce1mdY1xrmthBKUXpH8jutR8Xd3IWiQ/jzW8hsKUNvuBCEEW9SVx-j7XUGQ\"",
+        "fields": [
+          {
+            "fieldId": "p6j_mH6FShaENYwcn5Bd3w==",
+            "fieldName": "ccText",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldId": "e4_JTZW_SfqQBRHEjzBeNg==",
+            "fieldName": "ccWhole",
+            "fieldType": "INT64",
+            "multiValued": false
+          },
+          {
+            "fieldId": "UD8V1ndVTMydC2kF5XtR8A==",
+            "fieldName": "ccYesNo",
+            "fieldType": "BOOL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "MQit47F0QhKspNc3vwBVKw==",
+            "fieldName": "ccDecimal",
+            "fieldType": "DOUBLE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "QjqlN6msTOKaS0ub6AbCOg==",
+            "fieldName": "ccEmail",
+            "fieldType": "EMAIL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "47PaEFNSTkaNo53w_N6aJg==",
+            "fieldName": "ccPhone",
+            "fieldType": "PHONE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "IzFVRSHLTba3PzJcT5g96Q==",
+            "fieldName": "ccDate",
+            "fieldType": "DATE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "jZ3wMW9qS6Oy-wmKrZlS5w==",
+            "fieldName": "ccTags",
+            "fieldType": "STRING",
+            "multiValued": true
+          },
+          {
+            "fieldId": "vyk7h9i9SWSgSpBfBLqlCA==",
+            "fieldName": "ccExtra",
+            "fieldType": "STRING",
+            "multiValued": false
+          }
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "action": "users.patch",
+      "method": "PATCH",
+      "httpStatus": 200,
+      "requested": {
+        "ccText": {
+          "jsonType": "string",
+          "value": "K4 text"
+        },
+        "ccWhole": {
+          "jsonType": "number",
+          "value": 7
+        },
+        "ccYesNo": {
+          "jsonType": "boolean",
+          "value": true
+        },
+        "ccDecimal": {
+          "jsonType": "number",
+          "value": 1.5
+        },
+        "ccEmail": {
+          "jsonType": "string",
+          "value": "value@example.org"
+        },
+        "ccPhone": {
+          "jsonType": "string",
+          "value": "+1 555 0100"
+        },
+        "ccDate": {
+          "jsonType": "string",
+          "value": "2026-11-17"
+        },
+        "ccTags": {
+          "jsonType": "array",
+          "entries": [
+            {
+              "keys": ["value"],
+              "value": "alpha"
+            },
+            {
+              "keys": ["value"],
+              "value": "beta"
+            }
+          ]
+        },
+        "ccExtra": {
+          "jsonType": "string",
+          "value": "K4 extra"
+        }
+      },
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": false,
+        "attributeNames": []
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "ccText": {
+            "jsonType": "string",
+            "value": "K4 text"
+          },
+          "ccWhole": {
+            "jsonType": "number",
+            "value": 7
+          },
+          "ccYesNo": {
+            "jsonType": "boolean",
+            "value": true
+          },
+          "ccDecimal": {
+            "jsonType": "number",
+            "value": 1.5
+          },
+          "ccEmail": {
+            "jsonType": "string",
+            "value": "value@example.org"
+          },
+          "ccPhone": {
+            "jsonType": "string",
+            "value": "+1 555 0100"
+          },
+          "ccDate": {
+            "jsonType": "string",
+            "value": "2026-11-17"
+          },
+          "ccTags": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "beta"
+              }
+            ]
+          },
+          "ccExtra": {
+            "jsonType": "string",
+            "value": "K4 extra"
+          }
+        }
+      },
+      "settledAfterMs": 1000,
+      "answer": {
+        "present": true,
+        "keys": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customSchemas",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isGuestUser",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "recoveryEmail",
+          "suspended",
+          "thumbnailPhotoEtag",
+          "thumbnailPhotoUrl"
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "action": "users.patch",
+      "method": "PATCH",
+      "httpStatus": 200,
+      "requested": {
+        "ccWhole": {
+          "jsonType": "null"
+        },
+        "ccTags": {
+          "jsonType": "null"
+        }
+      },
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributeNames": [
+          "ccDate",
+          "ccDecimal",
+          "ccEmail",
+          "ccExtra",
+          "ccPhone",
+          "ccTags",
+          "ccText",
+          "ccWhole",
+          "ccYesNo"
+        ]
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "ccWhole": {
+            "jsonType": "number",
+            "value": 7
+          },
+          "ccTags": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "beta"
+              }
+            ]
+          },
+          "ccText": {
+            "jsonType": "string",
+            "value": "K4 text"
+          },
+          "ccYesNo": {
+            "jsonType": "boolean",
+            "value": true
+          },
+          "ccDecimal": {
+            "jsonType": "number",
+            "value": 1.5
+          },
+          "ccEmail": {
+            "jsonType": "string",
+            "value": "value@example.org"
+          },
+          "ccPhone": {
+            "jsonType": "string",
+            "value": "+1 555 0100"
+          },
+          "ccDate": {
+            "jsonType": "string",
+            "value": "2026-11-17"
+          },
+          "ccExtra": {
+            "jsonType": "string",
+            "value": "K4 extra"
+          }
+        }
+      },
+      "settledAfterMs": 8000,
+      "answer": {
+        "present": true,
+        "keys": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customSchemas",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isGuestUser",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "recoveryEmail",
+          "suspended",
+          "thumbnailPhotoEtag",
+          "thumbnailPhotoUrl"
+        ]
+      }
+    },
+    {
+      "step": 5,
+      "action": "schemas.update",
+      "method": "PUT",
+      "httpStatus": 200,
+      "change": {
+        "fieldName": "ccExtra",
+        "multiValued": true
+      },
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributeNames": [
+          "ccDate",
+          "ccDecimal",
+          "ccEmail",
+          "ccExtra",
+          "ccPhone",
+          "ccTags",
+          "ccText",
+          "ccWhole",
+          "ccYesNo"
+        ]
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "ccWhole": {
+            "jsonType": "number",
+            "value": 7
+          },
+          "ccTags": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "beta"
+              }
+            ]
+          },
+          "ccText": {
+            "jsonType": "string",
+            "value": "K4 text"
+          },
+          "ccYesNo": {
+            "jsonType": "boolean",
+            "value": true
+          },
+          "ccDecimal": {
+            "jsonType": "number",
+            "value": 1.5
+          },
+          "ccEmail": {
+            "jsonType": "string",
+            "value": "value@example.org"
+          },
+          "ccPhone": {
+            "jsonType": "string",
+            "value": "+1 555 0100"
+          },
+          "ccDate": {
+            "jsonType": "string",
+            "value": "2026-11-17"
+          },
+          "ccExtra": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "K4 extra"
+              }
+            ]
+          }
+        }
+      },
+      "settledAfterMs": 0,
+      "answered": {
+        "schemaId": "5jvnRrwIQ7SxuwKSRI1FSQ==",
+        "schemaName": "CcLiveValues",
+        "displayName": "CC live values",
+        "etag": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/xRWZIEUlJ9_XInQH9WK03dacTk8\"",
+        "fields": [
+          {
+            "fieldId": "47PaEFNSTkaNo53w_N6aJg==",
+            "fieldName": "ccPhone",
+            "fieldType": "PHONE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "IzFVRSHLTba3PzJcT5g96Q==",
+            "fieldName": "ccDate",
+            "fieldType": "DATE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "MQit47F0QhKspNc3vwBVKw==",
+            "fieldName": "ccDecimal",
+            "fieldType": "DOUBLE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "QjqlN6msTOKaS0ub6AbCOg==",
+            "fieldName": "ccEmail",
+            "fieldType": "EMAIL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "UD8V1ndVTMydC2kF5XtR8A==",
+            "fieldName": "ccYesNo",
+            "fieldType": "BOOL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "e4_JTZW_SfqQBRHEjzBeNg==",
+            "fieldName": "ccWhole",
+            "fieldType": "INT64",
+            "multiValued": false
+          },
+          {
+            "fieldId": "jZ3wMW9qS6Oy-wmKrZlS5w==",
+            "fieldName": "ccTags",
+            "fieldType": "STRING",
+            "multiValued": true
+          },
+          {
+            "fieldId": "p6j_mH6FShaENYwcn5Bd3w==",
+            "fieldName": "ccText",
+            "fieldType": "STRING",
+            "multiValued": false
+          },
+          {
+            "fieldId": "vyk7h9i9SWSgSpBfBLqlCA==",
+            "fieldName": "ccExtra",
+            "fieldType": "STRING",
+            "multiValued": true
+          }
+        ]
+      }
+    },
+    {
+      "step": 6,
+      "action": "schemas.update",
+      "method": "PUT",
+      "httpStatus": 200,
+      "remove": ["ccText"],
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributeNames": [
+          "ccDate",
+          "ccDecimal",
+          "ccEmail",
+          "ccExtra",
+          "ccPhone",
+          "ccTags",
+          "ccWhole",
+          "ccYesNo"
+        ]
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "ccWhole": {
+            "jsonType": "number",
+            "value": 7
+          },
+          "ccTags": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "beta"
+              }
+            ]
+          },
+          "ccYesNo": {
+            "jsonType": "boolean",
+            "value": true
+          },
+          "ccDecimal": {
+            "jsonType": "number",
+            "value": 1.5
+          },
+          "ccEmail": {
+            "jsonType": "string",
+            "value": "value@example.org"
+          },
+          "ccPhone": {
+            "jsonType": "string",
+            "value": "+1 555 0100"
+          },
+          "ccDate": {
+            "jsonType": "string",
+            "value": "2026-11-17"
+          },
+          "ccExtra": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "K4 extra"
+              }
+            ]
+          }
+        }
+      },
+      "settledAfterMs": 0,
+      "answered": {
+        "schemaId": "5jvnRrwIQ7SxuwKSRI1FSQ==",
+        "schemaName": "CcLiveValues",
+        "displayName": "CC live values",
+        "etag": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/dXExqaS1bENrgOn4O6MImuiyEpU\"",
+        "fields": [
+          {
+            "fieldId": "47PaEFNSTkaNo53w_N6aJg==",
+            "fieldName": "ccPhone",
+            "fieldType": "PHONE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "IzFVRSHLTba3PzJcT5g96Q==",
+            "fieldName": "ccDate",
+            "fieldType": "DATE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "MQit47F0QhKspNc3vwBVKw==",
+            "fieldName": "ccDecimal",
+            "fieldType": "DOUBLE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "QjqlN6msTOKaS0ub6AbCOg==",
+            "fieldName": "ccEmail",
+            "fieldType": "EMAIL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "UD8V1ndVTMydC2kF5XtR8A==",
+            "fieldName": "ccYesNo",
+            "fieldType": "BOOL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "e4_JTZW_SfqQBRHEjzBeNg==",
+            "fieldName": "ccWhole",
+            "fieldType": "INT64",
+            "multiValued": false
+          },
+          {
+            "fieldId": "jZ3wMW9qS6Oy-wmKrZlS5w==",
+            "fieldName": "ccTags",
+            "fieldType": "STRING",
+            "multiValued": true
+          },
+          {
+            "fieldId": "vyk7h9i9SWSgSpBfBLqlCA==",
+            "fieldName": "ccExtra",
+            "fieldType": "STRING",
+            "multiValued": true
+          }
+        ]
+      }
+    },
+    {
+      "step": 7,
+      "action": "schemas.update",
+      "method": "PUT",
+      "httpStatus": 200,
+      "add": [
+        {
+          "fieldName": "ccText",
+          "fieldType": "STRING",
+          "displayName": "CC text"
+        }
+      ],
+      "immediate": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributeNames": [
+          "ccDate",
+          "ccDecimal",
+          "ccEmail",
+          "ccExtra",
+          "ccPhone",
+          "ccTags",
+          "ccWhole",
+          "ccYesNo"
+        ]
+      },
+      "read": {
+        "httpStatus": 200,
+        "categoryPresent": true,
+        "attributes": {
+          "ccWhole": {
+            "jsonType": "number",
+            "value": 7
+          },
+          "ccTags": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "alpha"
+              },
+              {
+                "keys": ["value"],
+                "value": "beta"
+              }
+            ]
+          },
+          "ccYesNo": {
+            "jsonType": "boolean",
+            "value": true
+          },
+          "ccDecimal": {
+            "jsonType": "number",
+            "value": 1.5
+          },
+          "ccEmail": {
+            "jsonType": "string",
+            "value": "value@example.org"
+          },
+          "ccPhone": {
+            "jsonType": "string",
+            "value": "+1 555 0100"
+          },
+          "ccDate": {
+            "jsonType": "string",
+            "value": "2026-11-17"
+          },
+          "ccExtra": {
+            "jsonType": "array",
+            "entries": [
+              {
+                "keys": ["value"],
+                "value": "K4 extra"
+              }
+            ]
+          }
+        }
+      },
+      "settledAfterMs": 1000,
+      "answered": {
+        "schemaId": "5jvnRrwIQ7SxuwKSRI1FSQ==",
+        "schemaName": "CcLiveValues",
+        "displayName": "CC live values",
+        "etag": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/6ao0KX_2kOierEJqA5gYoiREDgc\"",
+        "fields": [
+          {
+            "fieldId": "47PaEFNSTkaNo53w_N6aJg==",
+            "fieldName": "ccPhone",
+            "fieldType": "PHONE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "IzFVRSHLTba3PzJcT5g96Q==",
+            "fieldName": "ccDate",
+            "fieldType": "DATE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "MQit47F0QhKspNc3vwBVKw==",
+            "fieldName": "ccDecimal",
+            "fieldType": "DOUBLE",
+            "multiValued": false
+          },
+          {
+            "fieldId": "QjqlN6msTOKaS0ub6AbCOg==",
+            "fieldName": "ccEmail",
+            "fieldType": "EMAIL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "UD8V1ndVTMydC2kF5XtR8A==",
+            "fieldName": "ccYesNo",
+            "fieldType": "BOOL",
+            "multiValued": false
+          },
+          {
+            "fieldId": "e4_JTZW_SfqQBRHEjzBeNg==",
+            "fieldName": "ccWhole",
+            "fieldType": "INT64",
+            "multiValued": false
+          },
+          {
+            "fieldId": "jZ3wMW9qS6Oy-wmKrZlS5w==",
+            "fieldName": "ccTags",
+            "fieldType": "STRING",
+            "multiValued": true
+          },
+          {
+            "fieldId": "vyk7h9i9SWSgSpBfBLqlCA==",
+            "fieldName": "ccExtra",
+            "fieldType": "STRING",
+            "multiValued": true
+          },
+          {
+            "fieldId": "5gZ6fusjSVWhjTmUAgqbUQ==",
+            "fieldName": "ccText",
+            "fieldType": "STRING",
+            "multiValued": false
+          }
+        ]
+      }
+    },
+    {
+      "step": 8,
+      "action": "schemas.delete",
+      "method": "DELETE",
+      "httpStatus": 204,
+      "immediate": {
+        "httpStatus": 400,
+        "errorReason": "invalid",
+        "categoryPresent": null,
+        "attributeNames": []
+      },
+      "read": {
+        "httpStatus": 400,
+        "errorReason": "invalid"
+      },
+      "settledAfterMs": 0,
+      "answered": {
+        "deleted": true
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "action": "schemas.get",
+      "method": "GET",
+      "httpStatus": 404,
+      "errorReason": "notFound"
+    },
+    {
+      "action": "users.get",
+      "method": "GET",
+      "httpStatus": 400,
+      "errorReason": "invalid"
+    },
+    {
+      "clearedValueBeforeDelete": false,
+      "categoryPresentBeforeCleanup": false
+    }
+  ],
+  "findings": {
+    "nullSingleValue": {
+      "question": "A value PATCH names a single-value attribute with null",
+      "answer": "kept"
+    },
+    "nullList": {
+      "question": "A value PATCH names a multi-value attribute with null",
+      "answer": "kept"
+    },
+    "singleToMultiple": {
+      "question": "One value to multiple values",
+      "answer": "list-of-one",
+      "storedForm": {
+        "jsonType": "array",
+        "entries": [
+          {
+            "keys": ["value"],
+            "value": "K4 extra"
+          }
+        ]
+      }
+    },
+    "removedFieldValues": {
+      "question": "Values of a removed field",
+      "answer": "deleted",
+      "storedForm": null
+    },
+    "readdedField": {
+      "question": "A new field with the name of a removed field",
+      "answer": "starts-empty",
+      "storedForm": null
+    },
+    "deleteWithValues": {
+      "question": "schemas.delete while users hold values",
+      "answer": "accepted-values-unreadable"
+    },
+    "patchAnswer": {
+      "question": "The PATCH answer body shape",
+      "answer": {
+        "present": true,
+        "keys": [
+          "agreedToTerms",
+          "archived",
+          "changePasswordAtNextLogin",
+          "creationTime",
+          "customSchemas",
+          "customerId",
+          "emails",
+          "etag",
+          "id",
+          "includeInGlobalAddressList",
+          "ipWhitelisted",
+          "isAdmin",
+          "isDelegatedAdmin",
+          "isGuestUser",
+          "isMailboxSetup",
+          "kind",
+          "languages",
+          "lastLoginTime",
+          "name",
+          "orgUnitPath",
+          "primaryEmail",
+          "recoveryEmail",
+          "suspended",
+          "thumbnailPhotoEtag",
+          "thumbnailPhotoUrl"
+        ]
+      }
+    },
+    "phoneStoredAs": {
+      "question": "The stored form of the phone value +1 555 0100",
+      "answer": "+1 555 0100",
+      "jsonType": "string"
+    },
+    "dateStoredAs": {
+      "question": "The stored form of the DATE value",
+      "answer": "2026-11-17",
+      "jsonType": "string"
+    },
+    "storedValues": {
+      "question": "The stored form of each written value",
+      "answer": {
+        "ccText": {
+          "jsonType": "string",
+          "value": "K4 text"
+        },
+        "ccWhole": {
+          "jsonType": "number",
+          "value": 7
+        },
+        "ccYesNo": {
+          "jsonType": "boolean",
+          "value": true
+        },
+        "ccDecimal": {
+          "jsonType": "number",
+          "value": 1.5
+        },
+        "ccEmail": {
+          "jsonType": "string",
+          "value": "value@example.org"
+        },
+        "ccPhone": {
+          "jsonType": "string",
+          "value": "+1 555 0100"
+        },
+        "ccDate": {
+          "jsonType": "string",
+          "value": "2026-11-17"
+        },
+        "ccTags": {
+          "jsonType": "array",
+          "entries": [
+            {
+              "keys": ["value"],
+              "value": "alpha"
+            },
+            {
+              "keys": ["value"],
+              "value": "beta"
+            }
+          ]
+        },
+        "ccExtra": {
+          "jsonType": "string",
+          "value": "K4 extra"
+        }
+      }
+    },
+    "unknown": []
+  },
+  "verification": {
+    "category": {
+      "httpStatus": 404,
+      "errorReason": "notFound",
+      "present": false
+    },
+    "user": {
+      "httpStatus": 400,
+      "errorReason": "invalid"
+    },
+    "note": "Google answers 400 invalid to customFieldMask=CcLiveValues when no such category exists. The category is absent, so the final read cannot show its values."
+  },
+  "limitations": [
+    "The check touches only the category CcLiveValues and only the test user of its argument.",
+    "Each users.get uses projection=custom and customFieldMask=CcLiveValues, so no other category is read.",
+    "The answer settles one sandbox user of one domain. It settles no other domain and no other user.",
+    "The row of an attribute that a SAML app maps stays unverified. No SAML app maps an attribute here.",
+    "A value PATCH deletes the named attribute on that user. The check never names the category alone."
+  ],
+  "durationMs": 22129
+}
