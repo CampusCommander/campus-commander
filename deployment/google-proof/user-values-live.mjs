@@ -666,9 +666,12 @@ export async function runCheck(credential, options = {}) {
       observed?.categoryPresent === true &&
       Object.keys(observed.attributes ?? {}).length > 0;
     // When the category exists but the user read could not answer, a null PATCH is the
-    // only safe way to make sure no value remains. It names only this category.
+    // only safe way to make sure no value remains. It names only this category. A
+    // cleanup probe that threw leaves `current` null; the delete below still runs.
     const readUncertain =
-      isOk(current) && (observed === null || observed.httpStatus === null);
+      current !== null &&
+      isOk(current) &&
+      (observed === null || observed.httpStatus === null);
     let cleared = false;
     if (holdsValue || readUncertain) {
       try {
