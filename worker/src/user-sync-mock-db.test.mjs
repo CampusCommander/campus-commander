@@ -1,7 +1,9 @@
 /**
  * Runs the K7 user sync against a synthetic PostgreSQL and the admin SDK mock.
  * It stores every mock user with its raw customSchemas answer, marks a 404 removed, and proves that an
- * older refresh read cannot clear a removal that a newer full sync made.
+ * older refresh read cannot clear a removal that a newer absence made. A repeated 404 and a newer
+ * empty full sync each move the removal fence forward. A 404 that a newer presence read predates
+ * reports no removal and evicts no cache key.
  * Docker and the qualified image in deployment/postgres/qualification.json are required.
  * Run the file inside `nx run worker:test`.
  */
@@ -81,6 +83,26 @@ const cache = () => ({
   increment: async () => undefined,
   publish: async () => undefined,
 });
+
+/** A cache that records each call, so a test can assert the effects of one batch. */
+const recordingCache = () => {
+  const calls = { remove: [], setRecords: [], publish: [] };
+  return {
+    calls,
+    extendMembers: async () => undefined,
+    removeMembers: async () => undefined,
+    remove: async (keys) => {
+      calls.remove.push(keys);
+    },
+    setRecords: async (entries) => {
+      calls.setRecords.push(entries.map((entry) => entry.key));
+    },
+    increment: async () => undefined,
+    publish: async (_channel, message) => {
+      calls.publish.push(JSON.parse(message));
+    },
+  };
+};
 
 const cipher = { open: () => credential };
 
@@ -307,7 +329,7 @@ async function fullSync(
   return state;
 }
 
-async function refresh(ids, reader) {
+async function refresh(ids, reader, cacheImpl = cache()) {
   const actor = await principal();
   const jobId = randomUUID();
   await runtime.query(
@@ -323,7 +345,7 @@ async function refresh(ids, reader) {
       randomUUID(),
     ],
   );
-  const result = await new EntitySyncBatch(runtime, cipher, reader, cache(), {
+  const result = await new EntitySyncBatch(runtime, cipher, reader, cacheImpl, {
     sleep: async () => undefined,
     backoff: () => 0,
   }).run(
@@ -403,50 +425,202 @@ test('a refresh marks a deleted user removed, and a later presence read restores
   );
 });
 
-test('an older 404 read cannot remove a user that a newer presence read returned', async () => {
+test('an older 404 read that a newer presence read precedes reports no removal and evicts no cache key', async () => {
   const { rows } = await runtime.query(
     `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
      ORDER BY user_id LIMIT 1`,
     [domain.customerId],
   );
   const userId = rows[0].user_id;
+  const email = `k7-newer-${userId}@example.org`;
   const missingEntered = deferred();
   const missingRelease = deferred();
-  const presentEntered = deferred();
-  const presentRelease = deferred();
-  const missing = refresh([userId], {
-    deviceBatch: async () => [],
-    batteryBatch: async () => new Map(),
-    userBatch: async () => {
-      missingEntered.resolve();
-      await missingRelease.promise;
-      return { users: [], missing: [userId] };
+  const olderCache = recordingCache();
+  const older = refresh(
+    [userId],
+    {
+      deviceBatch: async () => [],
+      batteryBatch: async () => new Map(),
+      userBatch: async () => {
+        missingEntered.resolve();
+        await missingRelease.promise;
+        return { users: [], missing: [userId] };
+      },
     },
-  });
+    olderCache,
+  );
   await missingEntered.promise;
-  const present = refresh([userId], {
+  // The newer presence read starts later, commits first, and stamps the row.
+  const newerCache = recordingCache();
+  const newer = await refresh(
+    [userId],
+    answerReader({ users: [user(userId, email)], missing: [] }),
+    newerCache,
+  );
+  assert.equal(newer.failure, null);
+  assert.deepEqual(newer.updated, [userId]);
+  // The 404 now writes with its older observation. The store refuses it, and the batch reports
+  // nothing: no removal result, no cache eviction, and no removal in its event.
+  missingRelease.resolve();
+  const refused = await older;
+  assert.equal(refused.failure, null);
+  assert.deepEqual(refused.updated, []);
+  assert.deepEqual(refused.removed, [], 'the store refused the older removal');
+  const storedRow = await runtime.query(
+    'SELECT removed_at,primary_email FROM cc.users WHERE customer_id=$1 AND user_id=$2',
+    [domain.customerId, userId],
+  );
+  assert.equal(
+    storedRow.rows[0].removed_at,
+    null,
+    'the newer presence read keeps the user',
+  );
+  assert.equal(storedRow.rows[0].primary_email, email);
+  assert.deepEqual(
+    olderCache.calls.remove,
+    [],
+    'a refused removal evicts no cache key',
+  );
+  const olderEvent = olderCache.calls.publish.find(
+    (event) => event.type === 'entity-batch',
+  );
+  assert.deepEqual(olderEvent.removedIds, []);
+  assert.deepEqual(olderEvent.deviceIds, []);
+  const newerEvent = newerCache.calls.publish.find(
+    (event) => event.type === 'entity-batch',
+  );
+  assert.deepEqual(newerEvent.deviceIds, [userId]);
+  assert.deepEqual(newerEvent.removedIds, []);
+});
+
+test('a repeated 404 advances the removal fence, so a held presence read cannot resurrect the user', async () => {
+  const { rows } = await runtime.query(
+    `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
+     ORDER BY user_id LIMIT 1`,
+    [domain.customerId],
+  );
+  const userId = rows[0].user_id;
+  const first = await refresh(
+    [userId],
+    answerReader({ users: [], missing: [userId] }),
+  );
+  assert.equal(first.failure, null);
+  assert.deepEqual(first.removed, [userId]);
+  const firstRemoval = (await stored(userId)).removed_at;
+  assert.notEqual(firstRemoval, null, 'the first 404 removes the user');
+
+  // A later successful refresh reads the user and holds its answer.
+  const entered = deferred();
+  const release = deferred();
+  const held = refresh([userId], {
     deviceBatch: async () => [],
     batteryBatch: async () => new Map(),
     userBatch: async () => {
-      presentEntered.resolve();
-      await presentRelease.promise;
+      entered.resolve();
+      await release.promise;
       return { users: [user(userId, `k7-${userId}@example.org`)], missing: [] };
     },
   });
-  await presentEntered.promise;
-  // The 404 reads first but writes second, after the newer presence read has its stamp.
-  missingRelease.resolve();
-  const older = await missing;
-  assert.equal(older.failure, null);
-  assert.deepEqual(older.removed, [userId]);
-  presentRelease.resolve();
-  const newer = await present;
-  assert.equal(newer.failure, null);
-  assert.deepEqual(
-    newer.updated,
+  await entered.promise;
+  // A newer 404 completes while the presence read is held.
+  const newer = await refresh(
     [userId],
-    'the newer presence read wins over the older 404 read',
+    answerReader({ users: [], missing: [userId] }),
   );
+  assert.equal(newer.failure, null);
+  assert.deepEqual(newer.removed, [userId]);
+  const advanced = (await stored(userId)).removed_at;
+  assert.ok(
+    advanced > firstRemoval,
+    'the newer absence moves the tombstone forward',
+  );
+  // The held presence read is older than the newer absence, so it cannot restore the user.
+  release.resolve();
+  const olderRead = await held;
+  assert.equal(olderRead.failure, null);
+  assert.deepEqual(
+    olderRead.updated,
+    [],
+    'the older presence read stores no user',
+  );
+  assert.equal(
+    (await stored(userId)).removed_at.toISOString(),
+    advanced.toISOString(),
+    'the newest removal stays',
+  );
+
+  // A presence read newer than the newest absence still restores the user.
+  const restored = await refresh(
+    [userId],
+    answerReader({
+      users: [user(userId, `k7-${userId}@example.org`)],
+      missing: [],
+    }),
+  );
+  assert.equal(restored.failure, null);
+  assert.deepEqual(restored.updated, [userId]);
+  assert.equal((await stored(userId)).removed_at, null);
+});
+
+test('a newer full-sync absence advances the fence, so a held presence read cannot resurrect the user', async () => {
+  const { rows } = await runtime.query(
+    `SELECT user_id FROM cc.users WHERE customer_id=$1 AND removed_at IS NULL
+     ORDER BY user_id LIMIT 1`,
+    [domain.customerId],
+  );
+  const userId = rows[0].user_id;
+  const first = await refresh(
+    [userId],
+    answerReader({ users: [], missing: [userId] }),
+  );
+  assert.equal(first.failure, null);
+  assert.deepEqual(first.removed, [userId]);
+  const firstRemoval = (await stored(userId)).removed_at;
+  assert.notEqual(firstRemoval, null, 'the 404 removes the user');
+
+  // A later successful refresh reads the user and holds its answer.
+  const entered = deferred();
+  const release = deferred();
+  const held = refresh([userId], {
+    deviceBatch: async () => [],
+    batteryBatch: async () => new Map(),
+    userBatch: async () => {
+      entered.resolve();
+      await release.promise;
+      return { users: [user(userId, `k7-${userId}@example.org`)], missing: [] };
+    },
+  });
+  await entered.promise;
+  // A newer full sync observes every user and returns none, so the absence is newer than the hold.
+  const state = await fullSync(randomUUID(), {
+    async *userPages() {
+      yield* [];
+    },
+  });
+  assert.equal(state.failure, null);
+  assert.equal(state.userCount, 0);
+  const advanced = (await stored(userId)).removed_at;
+  assert.ok(
+    advanced > firstRemoval,
+    'the full-sync absence moves the tombstone forward',
+  );
+  release.resolve();
+  const olderRead = await held;
+  assert.equal(olderRead.failure, null);
+  assert.deepEqual(
+    olderRead.updated,
+    [],
+    'the older presence read stores no user',
+  );
+  assert.equal(
+    (await stored(userId)).removed_at.toISOString(),
+    advanced.toISOString(),
+    'the newer full-sync removal stays',
+  );
+
+  // The mock still holds every user, so a fresh full sync restores the inventory for later tests.
+  const restored = await fullSync();
+  assert.equal(restored.failure, null);
   assert.equal((await stored(userId)).removed_at, null);
 });
 

@@ -87,6 +87,7 @@ function database({
   cancels = [],
   entityType = 'device',
   ids = ['d1', 'd2', 'd3'],
+  acceptedRemovals,
 } = {}) {
   const calls = [];
   return {
@@ -128,6 +129,10 @@ function database({
         return { rows: [{ result: JSON.parse(values[1]).map(record) }] };
       if (name === 'read_user_records')
         return { rows: [{ result: JSON.parse(values[1]).map(userRecord) }] };
+      if (name === 'soft_delete_users')
+        return {
+          rows: [{ result: acceptedRemovals ?? JSON.parse(values[1]) }],
+        };
       if (name === 'finish_entity_sync_batch')
         return { rows: [{ result: { ...finish, entityType } }] };
       return { rows: [{ result: 1 }] };
@@ -910,6 +915,44 @@ test('a user batch upserts users, caches them, removes the missing ones, and pub
     false,
     'A user batch reads no telemetry.',
   );
+});
+
+test('a user batch reports and caches only the removals the store accepted', async () => {
+  const db = database({
+    entityType: 'user',
+    ids: ['u1', 'u2'],
+    acceptedRemovals: [],
+  });
+  const redis = cache();
+  const result = await new EntitySyncBatch(
+    db,
+    cipher,
+    reader({ users: [{ users: [user('u1')], missing: ['u2'] }] }),
+    redis,
+    noSleep,
+  ).run(request, AbortSignal.timeout(5000));
+  assert.equal(result.failure, null);
+  assert.deepEqual(result.updated, ['u1']);
+  assert.deepEqual(
+    result.removed,
+    [],
+    'A 404 that the store refuses is not a removal.',
+  );
+  assert.deepEqual(
+    names(redis.calls),
+    ['setRecords', 'removeMembers', 'publish'],
+    'A refused removal evicts no cache key.',
+  );
+  const event = entityEventSchema.parse(JSON.parse(redis.calls.at(-1).args[1]));
+  assert.deepEqual(event, {
+    type: 'entity-batch',
+    jobId,
+    entityType: 'user',
+    batch: 0,
+    batchCount: 2,
+    deviceIds: ['u1'],
+    removedIds: [],
+  });
 });
 
 test('a user batch that Google refuses records the failure and publishes no event', async () => {

@@ -113,6 +113,10 @@ function database() {
             },
           ],
         };
+      if (name === 'soft_delete_users')
+        return {
+          rows: [{ result: JSON.parse(values[1]) }],
+        };
       if (name === 'finish_entity_sync_batch')
         return {
           rows: [

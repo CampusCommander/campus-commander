@@ -267,7 +267,9 @@ export class EntitySyncBatch {
 
   /**
    * One user batch (document A section 6). A 404 part names a removed user, whose row stays and
-   * whose cache entry leaves. The user reader retries a quota answer on its own part.
+   * whose cache entry leaves. The store decides the removal, and the batch reports only what it
+   * accepted, so an older 404 never reports or evicts a user that a newer read returned (R3b).
+   * The user reader retries a quota answer on its own part.
    */
   private async userBatch(
     customerId: string,
@@ -294,11 +296,19 @@ export class EntitySyncBatch {
       JSON.stringify(read.users),
       syncedAt,
     ]);
-    await this.call('SELECT cc.soft_delete_users($1,$2,$3) AS result', [
-      customerId,
-      JSON.stringify(read.missing),
-      syncedAt,
-    ]);
+    // The store answers with the users it holds removed after this observation. A 404 that a newer
+    // presence read predates changes no row, so it leaves the result, the cache eviction, and the
+    // published event alone (R3b).
+    const removed = z
+      .array(z.string().min(1).max(128))
+      .max(1000)
+      .parse(
+        await this.call('SELECT cc.soft_delete_users($1,$2,$3) AS result', [
+          customerId,
+          JSON.stringify(read.missing),
+          syncedAt,
+        ]),
+      );
     const records = userRecordsSchema.parse(
       await this.call('SELECT cc.read_user_records($1,$2) AS result', [
         customerId,
@@ -312,12 +322,13 @@ export class EntitySyncBatch {
         seconds: recordSeconds(entry.record.lastEntitySync),
       })),
     );
-    await this.cache.remove(
-      read.missing.map((id) => entityKey('user', customerId, id)),
-    );
+    if (removed.length > 0)
+      await this.cache.remove(
+        removed.map((id) => entityKey('user', customerId, id)),
+      );
     return {
       updated: records.map((entry) => entry.record.userId),
-      removed: read.missing,
+      removed,
     };
   }
 
