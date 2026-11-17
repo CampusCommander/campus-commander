@@ -9,10 +9,11 @@ const userId = z.string().min(1).max(128);
 const orgUnitPath = z.string().min(1).max(4096).startsWith('/');
 const filterText = z.string().trim().min(1).max(256);
 /** A Google schema name or field name: letters, digits, `_`, and `-` (B section 5). */
-const attributeName = z.string().regex(/^[A-Za-z0-9_-]{1,200}$/);
+const attributeNameSource = '[A-Za-z0-9_-]{1,200}';
+const attributeName = new RegExp(`^${attributeNameSource}$`);
+const attributeText = z.string().regex(attributeName);
 const displayName = z.string().min(1).max(200);
 const recordVersion = z.number().int().min(1);
-const attributeKeys = /^[A-Za-z0-9_-]{1,200}$/;
 
 /**
  * C1: the one ID of one attribute. The grid uses it as its column ID, the filter panel as the key
@@ -23,7 +24,7 @@ export function userAttributeKeys(
   schemaName: string,
   fieldName: string,
 ): Readonly<{ columnId: string; filterKey: string; draftKey: string }> {
-  if (!attributeKeys.test(schemaName) || !attributeKeys.test(fieldName))
+  if (!attributeName.test(schemaName) || !attributeName.test(fieldName))
     throw new Error('An attribute name holds letters, digits, _ and - only.');
   const id = `attr:${schemaName}.${fieldName}`;
   return Object.freeze({ columnId: id, filterKey: id, draftKey: id });
@@ -32,7 +33,7 @@ export function userAttributeKeys(
 /** The C1 ID of one attribute, as the client and the API read it. */
 export const userAttributeKeySchema = z
   .string()
-  .regex(/^attr:[A-Za-z0-9_-]{1,200}\.[A-Za-z0-9_-]{1,200}$/);
+  .regex(new RegExp(`^attr:${attributeNameSource}\\.${attributeNameSource}$`));
 export type UserAttributeKey = z.infer<typeof userAttributeKeySchema>;
 
 /** The raw `customSchemas` object of one user, stored and served unchanged (A section 5.1). */
@@ -113,8 +114,8 @@ export type UserAttributeOperator = z.infer<typeof userAttributeOperatorSchema>;
 
 const attributeShape = {
   field: z.literal('attribute'),
-  schemaName: attributeName,
-  fieldName: attributeName,
+  schemaName: attributeText,
+  fieldName: attributeText,
 };
 
 /** One attribute predicate. It names the category, the attribute, and its value (A section 8). */
@@ -379,7 +380,7 @@ export type UserAttributeRange = z.infer<typeof userAttributeRangeSchema>;
 /** One attribute of the cache: the Google metadata and the users that hold a value (B section 5). */
 export const userAttributeFieldSchema = z.strictObject({
   fieldId: z.string().min(1).max(200),
-  fieldName: attributeName,
+  fieldName: attributeText,
   displayName,
   fieldType: userAttributeFieldTypeSchema,
   multiValued: z.boolean(),
@@ -393,7 +394,7 @@ export type UserAttributeField = z.infer<typeof userAttributeFieldSchema>;
 /** One category of the cache: its Google metadata, its attributes, and its holders (B section 9). */
 export const userAttributeCategorySchema = z.strictObject({
   schemaId: z.string().min(1).max(200),
-  schemaName: attributeName,
+  schemaName: attributeText,
   displayName,
   etag: z.string().min(1).max(200),
   fields: z
