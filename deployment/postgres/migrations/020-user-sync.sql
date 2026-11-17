@@ -211,9 +211,12 @@ $$;
 
 -- Google answered 404 for these users at p_observed_at. The rows stay. A presence observation newer
 -- than the 404 keeps its row, because the older 404 cannot remove a user that a later read returned.
-CREATE FUNCTION cc.soft_delete_users(p_customer text,p_ids jsonb,p_observed_at timestamptz) RETURNS integer
+-- A repeated absence moves an older tombstone to the newer observation, so a presence read that both
+-- absences predate cannot resurrect the user (R3a). The result names the users that this observation
+-- holds removed, in user_id order. The worker evicts and publishes only those (R3b).
+CREATE FUNCTION cc.soft_delete_users(p_customer text,p_ids jsonb,p_observed_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE removed integer;
+DECLARE removed jsonb;
 BEGIN
   IF jsonb_typeof(p_ids) IS DISTINCT FROM 'array' OR jsonb_array_length(p_ids)>1000 OR
     p_observed_at IS NULL THEN
@@ -224,11 +227,16 @@ BEGIN
       u.user_id IN (SELECT jsonb_array_elements_text(p_ids))
     ORDER BY u.user_id FOR UPDATE;
   -- The removal carries the observation time, not the call time, so a read that started after this
-  -- observation clears it and a read that started before it does not (R3).
-  UPDATE cc.users SET removed_at=p_observed_at
-  WHERE customer_id=p_customer AND removed_at IS NULL AND last_entity_sync<=p_observed_at
-    AND user_id IN (SELECT jsonb_array_elements_text(p_ids));
-  GET DIAGNOSTICS removed=ROW_COUNT;
+  -- observation clears it and a read that started before it does not (R3). A newer absence advances
+  -- an older tombstone, so the fence always holds the newest absence.
+  WITH observed AS (
+    UPDATE cc.users SET removed_at=p_observed_at
+    WHERE customer_id=p_customer AND (removed_at IS NULL OR removed_at<p_observed_at)
+      AND last_entity_sync<=p_observed_at
+      AND user_id IN (SELECT jsonb_array_elements_text(p_ids))
+    RETURNING user_id
+  )
+  SELECT COALESCE(jsonb_agg(user_id ORDER BY user_id),'[]'::jsonb) INTO removed FROM observed;
   RETURN removed;
 END;
 $$;
@@ -350,9 +358,11 @@ BEGIN
   END IF;
   IF p_failure IS NULL THEN
     -- The removal shares the finish clock with the state's checked_at, so the Redis cleanup page
-    -- finds exactly the users of this sync (device model, 016).
+    -- finds exactly the users of this sync (device model, 016). A user that an earlier absence
+    -- already removed moves to this observation, so the fence holds the newest absence (R3a).
     UPDATE cc.users SET removed_at=now_at
-    WHERE customer_id=p_customer AND removed_at IS NULL AND last_entity_sync<pending.sync_started_at;
+    WHERE customer_id=p_customer AND last_entity_sync<pending.sync_started_at
+      AND (removed_at IS NULL OR removed_at<now_at);
     UPDATE cc.user_sync_state SET generation=pending.sync_generation,observed_at=now_at,
       user_count=(SELECT count(*) FROM cc.users WHERE customer_id=p_customer AND removed_at IS NULL),
       failure=NULL,failure_requested_by=NULL
