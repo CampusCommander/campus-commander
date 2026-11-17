@@ -231,6 +231,54 @@ test('a user refresh job carries the entity type user', async () => {
   );
 });
 
+test('the user Redis entry keeps the raw customSchemas and the sync event carries the state', async () => {
+  const { userEntrySchema } = await import('./entity-cache.ts');
+  const record = {
+    userId: '107000000000000000001',
+    primaryEmail: 'robin.avery@example.org',
+    orgUnitPath: '/School A',
+    givenName: 'Robin',
+    familyName: 'Avery',
+    fullName: 'Robin Avery',
+    suspended: false,
+    suspensionReason: null,
+    archived: false,
+    lastLoginTime: null,
+    creationTime: '2026-08-01T12:00:00.000Z',
+    twoStepEnrolled: true,
+    department: null,
+    title: null,
+    aliases: [],
+    customSchemas: { StudentInfo: { GradeLevel: 7 } },
+    lastEntitySync: '2026-10-06T12:00:00.000Z',
+  };
+  const entry = { version: 1, record };
+  assert.deepEqual(userEntrySchema.parse(entry), entry);
+  assert.equal(
+    userEntrySchema.safeParse({ version: 0, record }).success,
+    false,
+  );
+  assert.equal(
+    userEntrySchema.safeParse({ ...entry, removedAt: null }).success,
+    false,
+  );
+  const sync = {
+    customerId: 'C0123456',
+    generation: 1,
+    status: 'ready',
+    observedAt: '2026-10-06T12:00:00.000Z',
+    userCount: 1,
+    failure: null,
+    startedAt: '2026-10-06T11:59:00.000Z',
+    checkedAt: '2026-10-06T12:00:00.000Z',
+    stale: false,
+  };
+  assert.deepEqual(entityEventSchema.parse({ type: 'user-full-sync', sync }), {
+    type: 'user-full-sync',
+    sync,
+  });
+});
+
 test('the Devices stream schema drops job IDs, batch counters, and the job record', async () => {
   const { deviceStreamEventSchema } = await import('./entity-cache.ts');
   const batch = {

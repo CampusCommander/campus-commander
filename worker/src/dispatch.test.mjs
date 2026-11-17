@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   handleDeviceSyncDispatch,
   handleEntitySyncDispatch,
+  handleUserSyncDispatch,
 } from './dispatch.ts';
 import { DeviceSyncError } from './device-sync.ts';
 
@@ -72,6 +73,12 @@ test('both refresh dispatches answer 409 when the cancel stopped the run', async
       'device-sync-changed',
     ],
     [
+      handleUserSyncDispatch,
+      '/dispatch/user-sync',
+      syncRequest,
+      'user-sync-changed',
+    ],
+    [
       handleEntitySyncDispatch,
       '/dispatch/entity-sync-batch',
       entityRequest,
@@ -89,6 +96,9 @@ test('both refresh dispatches answer 409 when the cancel stopped the run', async
       syncDevices: async () => {
         throw new DeviceSyncError(code);
       },
+      syncUsers: async () => {
+        throw new DeviceSyncError(code);
+      },
       syncEntityBatch: async () => {
         throw new DeviceSyncError(code);
       },
@@ -97,4 +107,43 @@ test('both refresh dispatches answer 409 when the cancel stopped the run', async
     assert.equal(answer.status, 409);
     assert.deepEqual(JSON.parse(answer.body), { error: code });
   }
+});
+
+test('the user sync dispatch answers the finished state with its execution id', async () => {
+  const answer = response();
+  const state = {
+    customerId,
+    generation: 2,
+    status: 'ready',
+    observedAt: '2026-10-06T12:00:00.000Z',
+    userCount: 2,
+    failure: null,
+    startedAt: '2026-10-06T11:59:00.000Z',
+    checkedAt: '2026-10-06T12:00:00.000Z',
+    stale: false,
+  };
+  const input = syncRequest();
+  const handled = await handleUserSyncDispatch(
+    request('/dispatch/user-sync', input),
+    answer,
+    { secret, signal: AbortSignal.timeout(5000) },
+    {
+      syncUsers: async (received) => {
+        assert.deepEqual(received, {
+          customerId,
+          syncId: input.syncId,
+          correlationId: input.correlationId,
+        });
+        return state;
+      },
+    },
+  );
+  assert.equal(handled, true);
+  assert.equal(answer.status, 200);
+  assert.deepEqual(JSON.parse(answer.body), {
+    executionId: 'execution-1',
+    correlationId: input.correlationId,
+    status: 'completed',
+    sync: state,
+  });
 });

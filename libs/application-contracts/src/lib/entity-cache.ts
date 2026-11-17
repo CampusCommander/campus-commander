@@ -5,6 +5,7 @@ import {
   deviceSyncFailureSchema,
   deviceSyncStateSchema,
 } from './devices';
+import { userRecordSchema, userSyncStateSchema } from './users';
 
 const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
@@ -72,6 +73,13 @@ export const entityEntrySchema = z.strictObject({
 });
 export type EntityEntry = z.infer<typeof entityEntrySchema>;
 
+/** One Redis user value: the entry version and the user record it serves (document A section 7). */
+export const userEntrySchema = z.strictObject({
+  version: z.number().int().min(1),
+  record: userRecordSchema,
+});
+export type UserEntry = z.infer<typeof userEntrySchema>;
+
 export const entitySyncJobSchema = z.strictObject({
   jobId: z.uuid(),
   customerId: googleCustomerIdSchema,
@@ -103,11 +111,18 @@ export const entityEventSchema = z.discriminatedUnion('type', [
     entityType: entityTypeSchema,
     batch: count,
     batchCount: z.number().int().min(1),
+    // The IDs of the batch. A user refresh names its user IDs here, because the shape is shared
+    // (document A section 8).
     deviceIds: z.array(deviceId).max(1000),
     removedIds: z.array(deviceId).max(1000),
   }),
   z.strictObject({ type: z.literal('job-finished'), job: entitySyncJobSchema }),
   z.strictObject({ type: z.literal('full-sync'), sync: deviceSyncStateSchema }),
+  // The user sync state carries no telemetry, so it has its own event (document A section 8).
+  z.strictObject({
+    type: z.literal('user-full-sync'),
+    sync: userSyncStateSchema,
+  }),
 ]);
 export type EntityEvent = z.infer<typeof entityEventSchema>;
 
