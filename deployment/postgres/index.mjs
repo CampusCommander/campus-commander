@@ -355,7 +355,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.user_sync_lease(text,uuid,uuid),
         cc.user_record(cc.users),
         cc.upsert_users(text,jsonb,timestamptz),
-        cc.soft_delete_users(text,jsonb),
+        cc.soft_delete_users(text,jsonb,timestamptz),
         cc.read_user_records(text,jsonb),
         cc.page_user_records(text,text,integer),
         cc.page_last_removed_user_ids(text,text,integer),

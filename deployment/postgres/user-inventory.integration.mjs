@@ -616,6 +616,212 @@ export async function qualifyUserInventory({
     );
 
     await check(
+      'a user cancel and a purge touch only the user state, and retention keeps a named header',
+      async () => {
+        const userRequester = await createPrincipal('k7-user-requester', [
+          district('users:read'),
+          district('jobs:read'),
+        ]);
+        const deviceRequester = await createPrincipal('k7-device-requester', [
+          district('devices:read'),
+          district('jobs:read'),
+        ]);
+        const deviceSync = randomUUID();
+        await result(
+          'SELECT cc.request_device_sync($1,1,$2,$3,$4,$5) AS result',
+          [deviceRequester, customer, generation, deviceSync, randomUUID()],
+        );
+        jobs.push(deviceSync);
+        const deviceDisplay = (
+          await adminRow('SELECT display_id FROM cc.jobs WHERE job_id=$1', [
+            deviceSync,
+          ])
+        ).display_id;
+        const userSync = randomUUID();
+        await result(
+          'SELECT cc.request_user_sync($1,1,$2,$3,$4,$5) AS result',
+          [userRequester, customer, generation, userSync, randomUUID()],
+        );
+        jobs.push(userSync);
+        const userDisplay = (
+          await adminRow('SELECT display_id FROM cc.jobs WHERE job_id=$1', [
+            userSync,
+          ])
+        ).display_id;
+        const deviceBefore = await adminRow(
+          'SELECT sync_id,sync_actor,sync_expires_at FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        );
+        assert.equal(deviceBefore.sync_id, deviceSync);
+        // A user-only requester of another job cannot cancel the device job.
+        const denied = await rejects(
+          result('SELECT cc.request_job_cancel($1,1,$2,$3,$4) AS result', [
+            userRequester,
+            customer,
+            deviceDisplay,
+            randomUUID(),
+          ]),
+          'P0001',
+        );
+        assert.equal(denied.detail, 'cancel-not-permitted');
+        // The user requester cancels its own user job, and the device lease stays.
+        const cancelled = await result(
+          'SELECT cc.request_job_cancel($1,1,$2,$3,$4) AS result',
+          [userRequester, customer, userDisplay, randomUUID()],
+        );
+        assert.equal(cancelled.outcome, 'requested');
+        const deviceAfter = await adminRow(
+          'SELECT sync_id,sync_actor,sync_expires_at FROM cc.device_sync_state WHERE customer_id=$1',
+          [customer],
+        );
+        assert.deepEqual(deviceAfter, deviceBefore);
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT sync_id FROM cc.user_sync_state WHERE customer_id=$1',
+              [customer],
+            )
+          ).sync_id,
+          null,
+        );
+        // The reverse cancel clears the device lease and leaves the user state alone.
+        await result('SELECT cc.request_job_cancel($1,1,$2,$3,$4) AS result', [
+          deviceRequester,
+          customer,
+          deviceDisplay,
+          randomUUID(),
+        ]);
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT sync_id FROM cc.device_sync_state WHERE customer_id=$1',
+              [customer],
+            )
+          ).sync_id,
+          null,
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT sync_id FROM cc.user_sync_state WHERE customer_id=$1',
+              [customer],
+            )
+          ).sync_id,
+          null,
+        );
+        // A live user lease survives a purge, with its header.
+        const liveSync = randomUUID();
+        await result(
+          'SELECT cc.request_user_sync($1,1,$2,$3,$4,$5) AS result',
+          [userRequester, customer, generation, liveSync, randomUUID()],
+        );
+        jobs.push(liveSync);
+        const liveAttempt = randomUUID();
+        await result('SELECT cc.claim_user_sync($1,$2,$3) AS result', [
+          customer,
+          liveSync,
+          liveAttempt,
+        ]);
+        await result('SELECT cc.stage_users($1,$2,$3,$4) AS result', [
+          customer,
+          liveSync,
+          liveAttempt,
+          JSON.stringify([
+            {
+              userId: '107000000000000000001',
+              primaryEmail: 'robin.avery@example.org',
+              orgUnitPath: '/Students/Grade 7',
+              givenName: 'Robin',
+              familyName: 'Avery',
+              fullName: 'Robin Avery',
+              suspended: false,
+              suspensionReason: null,
+              archived: false,
+              lastLoginTime: null,
+              creationTime: null,
+              twoStepEnrolled: true,
+              department: null,
+              title: null,
+              aliases: [],
+              customSchemas: {},
+            },
+          ]),
+        ]);
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 1000]);
+        assert.equal(
+          (
+            await adminRow('SELECT status FROM cc.jobs WHERE job_id=$1', [
+              liveSync,
+            ])
+          ).status,
+          'running',
+          'A live user sync keeps its header.',
+        );
+        assert.equal(
+          (
+            await adminRow(
+              'SELECT sync_id FROM cc.user_sync_state WHERE customer_id=$1',
+              [customer],
+            )
+          ).sync_id,
+          liveSync,
+          'A live user lease keeps its state.',
+        );
+        // A lapsed user lease ends as interrupted.
+        await migrator.query(
+          "UPDATE cc.user_sync_state SET sync_expires_at=clock_timestamp()-interval '1 second' WHERE customer_id=$1",
+          [customer],
+        );
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 1000]);
+        const lapsed = await adminRow(
+          'SELECT status,failure FROM cc.jobs WHERE job_id=$1',
+          [liveSync],
+        );
+        assert.equal(lapsed.status, 'failed');
+        assert.equal(lapsed.failure, 'interrupted');
+        // Retention keeps a header that the user state still names.
+        const named = randomUUID();
+        await adminRow(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,entity_type,status,requested_by,
+             generation,correlation_id,created_at,finished_at,failure)
+           VALUES($1,cc.job_display_id('REF',nextval('cc.job_number_ref')),$2,'inventory-refresh',
+             'all-devices','user','failed',$3,$4,$5,clock_timestamp()-interval '8 days',
+             clock_timestamp()-interval '8 days','interrupted')`,
+          [named, customer, userRequester, generation, randomUUID()],
+        );
+        await migrator.query(
+          `UPDATE cc.user_sync_state SET sync_id=$1,sync_actor=$2,sync_generation=$3,
+             sync_expires_at=clock_timestamp()+interval '1 minute' WHERE customer_id=$4`,
+          [named, userRequester, generation, customer],
+        );
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 1000]);
+        assert.equal(
+          (
+            await adminRow('SELECT job_id FROM cc.jobs WHERE job_id=$1', [
+              named,
+            ])
+          )?.job_id,
+          named,
+          'Retention keeps the header that the user state names.',
+        );
+        await migrator.query(
+          'UPDATE cc.user_sync_state SET sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_expires_at=NULL WHERE customer_id=$1',
+          [customer],
+        );
+        await result('SELECT cc.purge_jobs($1,$2) AS result', [customer, 1000]);
+        const goneNamed = await adminRow(
+          'SELECT job_id FROM cc.jobs WHERE job_id=$1',
+          [named],
+        );
+        assert.equal(
+          goneNamed,
+          undefined,
+          'An unnamed header older than seven days leaves.',
+        );
+      },
+    );
+
+    await check(
       '020 grants EXECUTE to the runtime and keeps PUBLIC and an outsider out',
       async () => {
         for (const signature of [
@@ -624,7 +830,7 @@ export async function qualifyUserInventory({
           'cc.stage_users(text,uuid,uuid,jsonb)',
           'cc.finish_user_sync(text,uuid,uuid,text)',
           'cc.upsert_users(text,jsonb,timestamp with time zone)',
-          'cc.soft_delete_users(text,jsonb)',
+          'cc.soft_delete_users(text,jsonb,timestamp with time zone)',
           'cc.page_user_records(text,text,integer)',
           'cc.page_last_removed_user_ids(text,text,integer)',
           'cc.user_record(cc.users)',
@@ -686,6 +892,10 @@ export async function qualifyUserInventory({
       await migrator.query('DELETE FROM cc.jobs WHERE job_id=ANY($1::uuid[])', [
         jobs,
       ]);
+      await migrator.query(
+        'DELETE FROM cc.security_events WHERE actor_id=ANY($1::uuid[])',
+        [principals],
+      );
       await migrator.query(
         'DELETE FROM cc.application_grants WHERE principal_id=ANY($1::uuid[])',
         [principals],
