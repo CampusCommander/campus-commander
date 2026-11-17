@@ -165,9 +165,11 @@ test('the harness domain answers schemas.list with three categories', async (t) 
   const start = await mockProbe(t);
   const mock = await start();
   try {
-    // The token comes from the mock control API, so this test proves the route
-    // and the seed only. It does not prove the harness service-account grant.
-    // The capability health test proves that grant for both schema scopes.
+    // The token comes from the mock control API, so this test proves the schema
+    // route and the review seed only. It does not prove the harness
+    // service-account grant. The capability health test proves that grant: it
+    // mints its tokens from GOOGLE_HARNESS_SCOPES, the same list that this
+    // fixture writes into the harness key, for both new read scopes.
     const response = await mockGoogle({
       mock,
       host: 'admin.googleapis.com',

@@ -1,4 +1,12 @@
 /** Phase 3 capabilities and their verified authorization boundaries. */
+
+/** The read-only scope of the custom schema resource (B section 3). */
+export const GOOGLE_SCHEMA_READ_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
+/** The write scope of the custom schema resource (B section 6.1). A writer card uses it. */
+export const GOOGLE_SCHEMA_WRITE_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.userschema';
+
 export const GOOGLE_CAPABILITIES = Object.freeze([
   {
     id: 'customer-identity',
@@ -110,8 +118,7 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     label: 'User attributes',
     enabled: true,
     qualified: false,
-    scope:
-      'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
+    scope: GOOGLE_SCHEMA_READ_SCOPE,
     method: 'schemas.list',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',
@@ -155,4 +162,18 @@ export const GOOGLE_CUSTOMER_SCOPES = Object.freeze([
         capability.qualified,
     ).map((capability) => capability.scope),
   ),
+]);
+
+/**
+ * The scopes the Admin SDK mock harness grants to its service account: every
+ * capability scope and both schema scopes.
+ * `api-e2e/admin-sdk-mock-fixture.mjs` writes this exact list into the harness
+ * key, and the capability health test mints its tokens from it.
+ */
+export const GOOGLE_HARNESS_SCOPES = Object.freeze([
+  ...new Set([
+    ...GOOGLE_CAPABILITIES.map((capability) => capability.scope),
+    GOOGLE_SCHEMA_READ_SCOPE,
+    GOOGLE_SCHEMA_WRITE_SCOPE,
+  ]),
 ]);

@@ -3,11 +3,18 @@
  * The mock answers the OAuth exchange, the Directory API, the Chrome Management API, and the
  * Drive API with real HTTP, so each capability proves its own delegated scope. No live Google
  * call. Run the file inside `nx run google-connection:test`.
+ *
+ * The credentials use the review harness grant. `GOOGLE_HARNESS_SCOPES` is the scope list that
+ * `api-e2e/admin-sdk-mock-fixture.mjs` writes into the harness service account. A scope that
+ * leaves that list stops the token exchange here, so these tests fail with the harness.
  */
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startMock } from '@campuscommander/admin-sdk-mock';
-import { GOOGLE_CAPABILITIES } from '@campus/application-contracts';
+import {
+  GOOGLE_CAPABILITIES,
+  GOOGLE_HARNESS_SCOPES,
+} from '@campus/application-contracts';
 import { GoogleCustomerVerifier } from './provider.ts';
 import { validateServiceAccount } from './credential.ts';
 
@@ -35,13 +42,24 @@ after(async () => {
   await mock?.close();
 });
 
-/** A delegated credential whose client is granted exactly these capability scopes. */
-function credentialFor(ids) {
-  const key = mock.credential(domain.customerId, ids.map(scopeOf));
+/** A delegated credential whose service account is granted exactly these scopes. */
+function credentialForScopes(scopes) {
+  const key = mock.credential(domain.customerId, scopes);
   return {
     serviceAccount: validateServiceAccount(key, key.client_id),
     subject: domain.adminEmail,
   };
+}
+
+/**
+ * A delegated credential over the harness grant, limited to these capabilities.
+ * A scope that the harness grant leaves out stays out of the credential.
+ */
+function credentialFor(ids) {
+  const wanted = new Set(ids.map(scopeOf));
+  return credentialForScopes(
+    GOOGLE_HARNESS_SCOPES.filter((scope) => wanted.has(scope)),
+  );
 }
 
 function check(credential, requested = capabilities) {
@@ -53,13 +71,20 @@ function check(credential, requested = capabilities) {
   );
 }
 
-test('a client with the nine scopes of admin-sdk-mock 0.4.0 passes every capability check', async () => {
+test('the harness service-account grant passes every capability check', async () => {
   assert.equal(
     capabilities.length,
     9,
     'admin-sdk-mock 0.4.0 serves nine scopes',
   );
-  const result = await check(credentialFor(capabilities));
+  // The harness grant names both new read scopes. A later edit that drops one
+  // from api-e2e/admin-sdk-mock-fixture.mjs fails the token exchange below.
+  for (const capability of ['user-inventory', 'user-schemas'])
+    assert.ok(
+      GOOGLE_HARNESS_SCOPES.includes(scopeOf(capability)),
+      `The harness grant names the ${capability} scope.`,
+    );
+  const result = await check(credentialForScopes(GOOGLE_HARNESS_SCOPES));
   assert.deepEqual(
     result.results,
     capabilities.map((capability) => ({
@@ -107,10 +132,11 @@ test('a client without the org unit scope fails only school-ou-references', asyn
 });
 
 /**
- * The service-account grant holds the schema read scope alone. The mock refuses the
- * token exchange for user-schemas, and no other capability loses its result.
+ * The harness grant without the schema read scope. The mock refuses that token
+ * exchange, and no other capability loses its result.
  */
-test('a client without the user schema read scope fails only user-schemas', async () => {
+test('the harness grant without the user schema read scope fails only user-schemas', async () => {
+  assert.ok(GOOGLE_HARNESS_SCOPES.includes(scopeOf('user-schemas')));
   const result = await check(credentialFor(without('user-schemas')));
   assert.deepEqual(
     result.results.map((entry) => [entry.capability, entry.failure]),
@@ -122,7 +148,8 @@ test('a client without the user schema read scope fails only user-schemas', asyn
 });
 
 /** The same grant check for the user read scope. */
-test('a client without the user read scope fails only user-inventory', async () => {
+test('the harness grant without the user read scope fails only user-inventory', async () => {
+  assert.ok(GOOGLE_HARNESS_SCOPES.includes(scopeOf('user-inventory')));
   const result = await check(credentialFor(without('user-inventory')));
   assert.deepEqual(
     result.results.map((entry) => [entry.capability, entry.failure]),

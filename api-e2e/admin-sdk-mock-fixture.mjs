@@ -5,7 +5,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { GOOGLE_CAPABILITIES } from '../libs/application-contracts/src/lib/google-capabilities.ts';
+import {
+  GOOGLE_HARNESS_SCOPES,
+  GOOGLE_SCHEMA_READ_SCOPE,
+  GOOGLE_SCHEMA_WRITE_SCOPE,
+} from '../libs/application-contracts/src/lib/google-capabilities.ts';
 
 /** The fixed review seed. A seed always yields the same customer ID and district. */
 export const MOCK_SEED = 'campus-commander-review';
@@ -24,11 +28,9 @@ export const MOCK_GOOGLE_HOSTS = [
   'sheets.googleapis.com',
 ];
 /** The read and write user schema scope. The schema routes accept it. */
-export const MOCK_SCHEMA_WRITE_SCOPE =
-  'https://www.googleapis.com/auth/admin.directory.userschema';
+export const MOCK_SCHEMA_WRITE_SCOPE = GOOGLE_SCHEMA_WRITE_SCOPE;
 /** The read-only user schema scope. The schema routes accept it. */
-export const MOCK_SCHEMA_READ_SCOPE =
-  'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
+export const MOCK_SCHEMA_READ_SCOPE = GOOGLE_SCHEMA_READ_SCOPE;
 /** The scopes the schema routes accept. The harness grants them beside the capability scopes. */
 export const MOCK_SCHEMA_SCOPES = [
   MOCK_SCHEMA_WRITE_SCOPE,
@@ -37,13 +39,10 @@ export const MOCK_SCHEMA_SCOPES = [
 /**
  * The scopes the harness grants: the capability scopes and the schema scopes.
  * A mock credential reaches only the routes that these scopes cover.
+ * The shared contract constant is the one list that the harness key and the
+ * capability health test both use.
  */
-export const MOCK_SCOPES = [
-  ...new Set([
-    ...GOOGLE_CAPABILITIES.map((capability) => capability.scope),
-    ...MOCK_SCHEMA_SCOPES,
-  ]),
-];
+export const MOCK_SCOPES = GOOGLE_HARNESS_SCOPES;
 /** The mock package path inside the repository and inside the mock container. */
 const packagePath = 'node_modules/@campuscommander/admin-sdk-mock';
 const cliPath = `${packagePath}/dist/bin/admin-sdk-mock.js`;
