@@ -1,6 +1,8 @@
 import { qualifySchoolReferences } from './school-references.integration.mjs';
 import { qualifyDeviceInventory } from './device-inventory.integration.mjs';
 import { qualifyUserInventory } from './user-inventory.integration.mjs';
+import { qualifyUserApi } from './user-api.integration.mjs';
+import { qualifyUserApiHttp } from './user-api-http.integration.mjs';
 import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
@@ -592,6 +594,25 @@ try {
       connect,
       close,
       password,
+    })),
+  );
+  results.push(
+    ...(await qualifyUserApi({
+      runtime,
+      migrator: migrators[0],
+      issuer,
+      connect,
+      close,
+      password,
+    })),
+  );
+  results.push(
+    ...(await qualifyUserApiHttp({
+      runtime,
+      migrator: migrators[0],
+      issuer,
+      connect,
+      close,
     })),
   );
   results.push(

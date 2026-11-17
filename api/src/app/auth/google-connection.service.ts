@@ -312,9 +312,30 @@ export class GoogleConnectionService
     );
   }
 
+  /**
+   * Open the active Google credential for a person who holds `users:read` (design card K8).
+   * `cc.user_read_credential` checks the action and the connection generation, as the device
+   * write check does. The category read keeps no copy of the credential or of its token.
+   */
+  async userReadCredential(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+  ): Promise<DelegatedCredential> {
+    return this.driveEnvelope(
+      'cc.user_read_credential',
+      session,
+      customerId,
+      generation,
+    );
+  }
+
   /** Open one sealed credential that a credential read answered. */
   private async driveEnvelope(
-    read: 'cc.device_write_credential' | 'cc.device_export_credential',
+    read:
+      | 'cc.device_write_credential'
+      | 'cc.device_export_credential'
+      | 'cc.user_read_credential',
     session: SessionResponse,
     customerId: string,
     generation: number,

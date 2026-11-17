@@ -73,6 +73,12 @@ const schoolWrite = new RegExp(
   `^/api/schools/reviews(?:/${schoolIdPath}/confirm)?$`,
 );
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
+// The users read of design card K8: the sync state, the organization unit list, the attribute
+// category cache, and one user.
+const userRead =
+  /^\/api\/users\/(?:sync|org-units|attribute-categories|[A-Za-z0-9_-]{1,128})$/;
+const userWrite =
+  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh)$/;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
   /^\/api\/devices\/(?:sync|query|groups|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh)$/;
@@ -213,6 +219,7 @@ export async function proxyApplication(
         pathname === '/api/schools/references' ||
         eventStreams.has(pathname) ||
         deviceRead.test(pathname) ||
+        userRead.test(pathname) ||
         schoolRead.test(pathname) ||
         jobRead.test(pathname) ||
         deviceUpdateRead.test(pathname) ||
@@ -231,6 +238,7 @@ export async function proxyApplication(
         pathname === '/api/customer/settings' ||
         pathname === '/api/schools/references/refresh' ||
         deviceWrite.test(pathname) ||
+        userWrite.test(pathname) ||
         schoolWrite.test(pathname) ||
         jobWrite.test(pathname) ||
         deviceUpdateWrite.test(pathname) ||

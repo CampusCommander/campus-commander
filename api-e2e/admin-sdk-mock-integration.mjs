@@ -571,6 +571,167 @@ async function runAdminSdkMockIntegration({
   }
   assert.ok(compared, 'No synced device matched the mock battery telemetry.');
 
+  // K8: the Users API. Refresh Users syncs the directory, Grade level filters the
+  // grid with the C1 attribute ID, Refresh Selected starts one job, and one user
+  // reads by ID.
+  const usersStarted = await call('/api/users/sync', {
+    method: 'POST',
+    headers: headers(),
+    body: {},
+  });
+  assert.ok([200, 201].includes(usersStarted.status), usersStarted.text);
+  const usersDeadline = Date.now() + syncTimeoutMs();
+  let usersState;
+  for (;;) {
+    const response = await call('/api/users/sync');
+    if (response.status === 401) {
+      cookie = await reviewSignIn({ request, ca, publicOrigin });
+      active = await session();
+      continue;
+    }
+    assert.equal(response.status, 200, response.text);
+    usersState = JSON.parse(response.text).sync;
+    if (usersState.status !== 'running') break;
+    assert.ok(
+      Date.now() < usersDeadline,
+      `The user sync did not settle within ${syncTimeoutMs() / 1000} seconds.`,
+    );
+    await delay(2000);
+  }
+  assert.equal(usersState.status, 'ready', JSON.stringify(usersState));
+  assert.equal(usersState.failure, null);
+  const userCounts = await mock.counts();
+  assert.equal(usersState.userCount, userCounts.users);
+
+  const gradePage = JSON.parse(
+    (
+      await call('/api/users/query', {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          predicates: [
+            {
+              field: 'attribute',
+              schemaName: 'StudentInfo',
+              fieldName: 'GradeLevel',
+              operator: 'numberRange',
+              from: 6,
+              to: 8,
+            },
+          ],
+          limit: 1000,
+        },
+      })
+    ).text,
+  ).page;
+  const expectedGrades = (
+    await migrator.query(
+      `SELECT count(*)::integer AS n FROM cc.users u
+       WHERE u.customer_id=$1 AND u.removed_at IS NULL AND EXISTS(
+         SELECT 1 FROM unnest(cc.user_attribute_numbers(u.custom_schemas #> '{StudentInfo,GradeLevel}'::text[])) n
+         WHERE n BETWEEN 6 AND 8)`,
+      [mock.customerId],
+    )
+  ).rows[0].n;
+  assert.ok(expectedGrades > 0, 'The mock seeds a student in grades 6 to 8.');
+  assert.equal(gradePage.total, userCounts.users);
+  assert.equal(gradePage.matching, expectedGrades);
+  assert.equal(gradePage.rows.length > 0, true);
+  for (const row of gradePage.rows) {
+    const grade = row.customSchemas?.StudentInfo?.GradeLevel;
+    assert.ok(
+      Number(grade) >= 6 && Number(grade) <= 8,
+      `The page holds a user outside the grade range: ${row.userId} ${grade}.`,
+    );
+  }
+
+  const usersTabId = randomUUID();
+  const selectedIds = gradePage.rows.slice(0, 3).map((row) => row.userId);
+  const before = {};
+  for (const id of selectedIds) {
+    const detail = JSON.parse(
+      (await call(`/api/users/${encodeURIComponent(id)}`)).text,
+    ).user;
+    before[id] = detail.lastEntitySync;
+  }
+  const selected = await call('/api/users/selection/ops', {
+    method: 'POST',
+    headers: headers(),
+    body: {
+      gridId: 'users',
+      tabId: usersTabId,
+      ops: [{ op: 'select', ids: selectedIds }],
+    },
+  });
+  assert.equal(selected.status, 200, selected.text);
+  assert.equal(JSON.parse(selected.text).selection.added, selectedIds.length);
+  const selectionRefresh = await call('/api/users/selection/refresh', {
+    method: 'POST',
+    headers: headers(),
+    body: { gridId: 'users', tabId: usersTabId },
+  });
+  assert.equal(selectionRefresh.status, 201, selectionRefresh.text);
+  const refreshed = JSON.parse(selectionRefresh.text).refresh;
+  assert.equal(refreshed.selected, selectedIds.length);
+  assert.match(
+    refreshed.jobId,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    'Refresh Selected starts one job.',
+  );
+  // Every selected user is claimed now, so the second request starts no job and answers 200.
+  const claimed = await call('/api/users/selection/refresh', {
+    method: 'POST',
+    headers: headers(),
+    body: { gridId: 'users', tabId: usersTabId },
+  });
+  assert.equal(claimed.status, 200, claimed.text);
+  assert.equal(JSON.parse(claimed.text).refresh.jobId, null);
+  // The worker re-reads the claimed users. The job settles and every observation time advances.
+  const refreshDeadline = Date.now() + 60_000;
+  let refreshJob;
+  for (;;) {
+    const listed = await call('/api/jobs?action=refresh-inventory&limit=100');
+    assert.equal(listed.status, 200, listed.text);
+    refreshJob = JSON.parse(listed.text).jobs.find(
+      (entry) => entry.jobId === refreshed.jobId,
+    );
+    if (refreshJob?.status === 'completed') break;
+    assert.ok(
+      Date.now() < refreshDeadline,
+      `The Refresh Selected job did not complete: ${JSON.stringify(refreshJob)}`,
+    );
+    await delay(500);
+  }
+  for (const id of selectedIds) {
+    const detail = JSON.parse(
+      (await call(`/api/users/${encodeURIComponent(id)}`)).text,
+    ).user;
+    assert.equal(detail.userId, id);
+    assert.ok(
+      Date.parse(detail.lastEntitySync) > Date.parse(before[id]),
+      `Refresh Selected did not re-read ${id}: ${before[id]} -> ${detail.lastEntitySync}`,
+    );
+  }
+
+  const userDetail = JSON.parse(
+    (await call(`/api/users/${encodeURIComponent(selectedIds[0])}`)).text,
+  ).user;
+  assert.equal(userDetail.userId, selectedIds[0]);
+  assert.equal(userDetail.stale, false);
+  assert.equal(typeof userDetail.customSchemas, 'object');
+
+  const categories = JSON.parse(
+    (await call('/api/users/attribute-categories')).text,
+  );
+  const studentInfo = categories.categories.find(
+    (category) => category.schemaName === 'StudentInfo',
+  );
+  assert.ok(studentInfo, 'The category read lists StudentInfo.');
+  assert.ok(
+    studentInfo.fields.some((field) => field.fieldName === 'GradeLevel'),
+    'The category read lists GradeLevel.',
+  );
+
   // B6: the write scope, its check, and the write-access projection.
   // Every Google call in this block goes to the mock. The scope removal, the
   // delegation grant, and the list fault use the mock control API.
@@ -1109,6 +1270,11 @@ async function runAdminSdkMockIntegration({
     `the mock credential connects with the mock administrator and customer ${mock.customerId}: pass`,
     `Refresh all publishes ${state.deviceCount} devices in ${syncSeconds.toFixed(1)} seconds: pass`,
     `the published count equals the mock count and a device battery class matches the mock telemetry: pass`,
+    `Refresh Users publishes ${usersState.userCount} users: pass`,
+    `Grade level filters ${gradePage.matching} users with the C1 attribute ID: pass`,
+    `Refresh Selected starts one job, claims every user, and refreshes ${refreshed.selected} users: pass`,
+    'a fully claimed Refresh Selected answers 200 and starts no job: pass',
+    'the category read lists StudentInfo with GradeLevel: pass',
     'Refresh all lists a device whose Asset tag holds 1,024 characters: pass',
     'the write scope check lists one device for the mock administrator and sends no write: pass',
     'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',

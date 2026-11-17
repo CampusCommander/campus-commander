@@ -17,6 +17,7 @@ import { DevicesModule } from './devices/devices.module';
 import { DriveModule } from './drive/drive.module';
 import { EventsModule } from './events/events.module';
 import { JobsModule } from './jobs/jobs.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { JobsModule } from './jobs/jobs.module';
     DriveModule,
     EventsModule,
     JobsModule,
+    UsersModule,
   ],
   controllers: [AppController, BootstrapController, HealthController],
 })

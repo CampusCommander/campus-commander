@@ -14,6 +14,11 @@ export default [
         'error',
         {
           enforceBuildableLibDependency: true,
+          // The PostgreSQL integration harness imports the real API module to
+          // exercise the users routes over HTTP against a disposable database.
+          // The api project already imports the deployment configuration
+          // parser, so the test-only harness imports close a project cycle.
+          ignoredCircularDependencies: [['api', 'deployment']],
           allow: ['^.*/eslint(\\.base)?\\.config\\.[cm]?[jt]s$'],
           depConstraints: [
             {
