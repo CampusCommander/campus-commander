@@ -116,6 +116,7 @@ export async function loadMigrations() {
       '017-jobs',
       '018-device-write-access',
       '019-user-inventory',
+      '020-user-sync',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -345,6 +346,21 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
     if (migrations.some(({ id }) => id === '019-user-inventory')) {
       await client.query(`GRANT SELECT ON cc.users, cc.user_sync_state, cc.user_attribute_categories TO ${role};
         GRANT EXECUTE ON FUNCTION cc.entity_job_reader(uuid,integer,text) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '020-user-sync')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.user_sync_projection(text),
+        cc.request_user_sync(uuid,integer,text,integer,uuid,uuid),
+        cc.claim_user_sync(text,uuid,uuid),
+        cc.user_sync_lease(text,uuid,uuid),
+        cc.user_record(cc.users),
+        cc.upsert_users(text,jsonb,timestamptz),
+        cc.soft_delete_users(text,jsonb),
+        cc.read_user_records(text,jsonb),
+        cc.page_user_records(text,text,integer),
+        cc.page_last_removed_user_ids(text,text,integer),
+        cc.stage_users(text,uuid,uuid,jsonb),
+        cc.finish_user_sync(text,uuid,uuid,text) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
