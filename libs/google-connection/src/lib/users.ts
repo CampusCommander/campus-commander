@@ -8,6 +8,7 @@ import {
   userAttributeCategoryObservationSchema,
   userAttributeFieldTypeSchema,
   userAttributeVisibilitySchema,
+  userCustomSchemasSchema,
   userObservationSchema,
   type UserAttributeCategoryObservation,
   type UserObservation,
@@ -31,6 +32,8 @@ const userPageLimit = 4 * 1024 * 1024;
 const batchResponseLimit = 4 * 1024 * 1024;
 const maximumPages = 10_000;
 const batchLimit = 1000;
+/** A section 6 reads 100 users per refresh batch. */
+const userReadBatchSize = 100;
 const tokenRenewalMilliseconds = 45 * 60_000;
 /** The category read deadline of B section 9. */
 const categoryDeadlineMilliseconds = 25_000;
@@ -73,9 +76,7 @@ const userResource = z.object({
     )
     .max(1000)
     .optional(),
-  customSchemas: z
-    .record(z.string(), z.record(z.string(), z.json()))
-    .optional(),
+  customSchemas: userCustomSchemasSchema.optional(),
 });
 type DirectoryUser = z.infer<typeof userResource>;
 
@@ -361,6 +362,7 @@ export class GoogleUserReader {
           query: { projection: 'full', fields: userFields },
         })),
         parse: (body) => userObservation(userResource.parse(body)),
+        options: { batchSize: userReadBatchSize },
         getClient: async (runSignal) => {
           try {
             return await scopedClient(

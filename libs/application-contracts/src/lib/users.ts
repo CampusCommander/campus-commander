@@ -35,10 +35,48 @@ export const userAttributeKeySchema = z
   .regex(new RegExp(`^attr:${attributeNameSource}\\.${attributeNameSource}$`));
 export type UserAttributeKey = z.infer<typeof userAttributeKeySchema>;
 
+/**
+ * A JSON dictionary that keeps every own key, including `__proto__`.
+ * Zod's record drops an own `__proto__` key, so this schema validates each value
+ * and rebuilds the object with own data properties. The object prototype stays
+ * unchanged.
+ */
+export function jsonDictionarySchema<V extends z.ZodType>(
+  valueSchema: V,
+): z.ZodType<Record<string, z.output<V>>, unknown> {
+  return z.unknown().transform((input, ctx) => {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      ctx.addIssue({ code: 'custom', message: 'Expected a JSON object.' });
+      return z.NEVER;
+    }
+    const output: Record<string, z.output<V>> = {};
+    for (const key of Object.keys(input)) {
+      const parsed = valueSchema.safeParse(
+        (input as Record<string, unknown>)[key],
+      );
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues)
+          ctx.addIssue({
+            code: 'custom',
+            message: issue.message,
+            path: [key, ...issue.path],
+          });
+        continue;
+      }
+      Object.defineProperty(output, key, {
+        value: parsed.data,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return output;
+  });
+}
+
 /** The raw `customSchemas` object of one user, stored and served unchanged (A section 5.1). */
-export const userCustomSchemasSchema = z.record(
-  z.string(),
-  z.record(z.string(), z.json()),
+export const userCustomSchemasSchema = jsonDictionarySchema(
+  jsonDictionarySchema(z.json()),
 );
 export type UserCustomSchemas = z.infer<typeof userCustomSchemasSchema>;
 

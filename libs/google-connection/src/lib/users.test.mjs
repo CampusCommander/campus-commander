@@ -189,6 +189,31 @@ test('user pages follow page tokens and map each Google field', async (t) => {
   assert.equal(calls[1].params.pageToken, 'page-2');
 });
 
+test('user pages keep legal own __proto__ category and field keys', async (t) => {
+  const raw = JSON.parse(
+    '{"__proto__":{"__proto__":"alpha","Grade":7},"StudentInfo":{"__proto__":"beta","Grade":8}}',
+  );
+  stub(t, [{ users: [resource('u1', { customSchemas: raw })] }]);
+  const pages = await collect(
+    new GoogleUserReader().userPages(credential, 'C0123456', signal()),
+  );
+  const user = pages[0][0];
+  // The raw object, its reserved category, and its reserved field stay own keys.
+  assert.deepEqual(user.customSchemas, raw);
+  assert.deepEqual(Object.keys(user.customSchemas).sort(), [
+    'StudentInfo',
+    '__proto__',
+  ]);
+  const reserved = user.customSchemas['__proto__'];
+  assert.deepEqual(Object.keys(reserved).sort(), ['Grade', '__proto__']);
+  assert.equal(reserved['__proto__'], 'alpha');
+  // Neither parse changes an object prototype.
+  assert.equal(Object.getPrototypeOf(user.customSchemas), Object.prototype);
+  assert.equal(Object.getPrototypeOf(reserved), Object.prototype);
+  assert.equal(Object.getPrototypeOf(raw), Object.prototype);
+  assert.equal(Object.getPrototypeOf(raw['__proto__']), Object.prototype);
+});
+
 test('user pages fail a resource without a user ID or org unit path', async (t) => {
   for (const broken of [
     { ...resource('u1'), id: undefined },
@@ -245,6 +270,46 @@ test('users reads each requested user once and reports a missing user', async (t
     ['u1'],
   );
   assert.deepEqual(result.missing, ['u/missing']);
+});
+
+test('a batched user read keeps legal own __proto__ category and field keys', async (t) => {
+  const raw = JSON.parse(
+    '{"__proto__":{"__proto__":"alpha","Grade":7},"StudentInfo":{"__proto__":"beta","Grade":8}}',
+  );
+  stubBatch(t, () => ({
+    status: 200,
+    body: resource('u1', { customSchemas: raw }),
+  }));
+  const result = await new GoogleUserReader({
+    batch: fastBatch(),
+  }).users(credential, 'C0123456', ['u1'], signal());
+  const user = result.users[0];
+  assert.deepEqual(user.customSchemas, raw);
+  const reserved = user.customSchemas['__proto__'];
+  assert.equal(Object.keys(reserved).length, 2);
+  assert.equal(reserved['__proto__'], 'alpha');
+  assert.equal(Object.getPrototypeOf(user.customSchemas), Object.prototype);
+  assert.equal(Object.getPrototypeOf(reserved), Object.prototype);
+  assert.equal(Object.getPrototypeOf(raw), Object.prototype);
+});
+
+test('users reads at most 100 users in one batch envelope', async (t) => {
+  const { google } = stubBatch(t, (part) => ({
+    status: 200,
+    body: resource(part.key),
+  }));
+  const ids = Array.from({ length: 101 }, (_, index) => `u${index + 1}`);
+  const result = await new GoogleUserReader({
+    batch: fastBatch(),
+  }).users(credential, 'C0123456', ids, signal());
+  assert.deepEqual(
+    google.sent.map((envelope) => envelope.length),
+    [100, 1],
+  );
+  assert.deepEqual(
+    result.users.map((user) => user.userId),
+    ids,
+  );
 });
 
 test('users retries a quota answer on its own part', async (t) => {
