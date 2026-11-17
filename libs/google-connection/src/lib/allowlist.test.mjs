@@ -82,10 +82,7 @@ const allowedParts = [
   ['GET', '/admin/directory/v1/users/u1'],
   ['GET', '/admin/directory/v1/users/u%2F1'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
-  [
-    'GET',
-    '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D',
-  ],
+  ['GET', '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
 ];
 const rejectedParts = [
   ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos'],

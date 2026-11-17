@@ -110,7 +110,8 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     label: 'User attributes',
     enabled: true,
     qualified: false,
-    scope: 'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
+    scope:
+      'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
     method: 'schemas.list',
     source:
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',

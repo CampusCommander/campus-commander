@@ -18,8 +18,7 @@ const WRITE = 'https://www.googleapis.com/auth/admin.directory.device.chromeos';
 const SCHOOL_OU =
   'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
 const DRIVE = 'https://www.googleapis.com/auth/drive.file';
-const USER =
-  'https://www.googleapis.com/auth/admin.directory.user.readonly';
+const USER = 'https://www.googleapis.com/auth/admin.directory.user.readonly';
 const SCHEMA =
   'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
 

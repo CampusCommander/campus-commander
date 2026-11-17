@@ -315,15 +315,11 @@ prototype.request = async function (options) {
         },
       ],
     };
-  } else if (
-    url.pathname === '/admin/directory/v1/users'
-  ) {
+  } else if (url.pathname === '/admin/directory/v1/users') {
     // The health check reads one user; a user sync reads the page it asks for.
     const limit = Number(options.params?.maxResults ?? 100);
     data = { users: users.slice(0, limit) };
-  } else if (
-    url.pathname === '/admin/directory/v1/customer/C0123456/schemas'
-  ) {
+  } else if (url.pathname === '/admin/directory/v1/customer/C0123456/schemas') {
     data = { schemas };
   } else if (
     url.pathname === '/admin/directory/v1/customer/C0123456/devices/chromeos'
