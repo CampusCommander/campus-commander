@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "check": "L2",
+  "status": "passed",
+  "observedAt": "2026-11-17T01:26:42.349Z",
+  "sourceRevision": "f77873cda7c2ab5d8f15eb140f22998e458b13b6",
+  "worktree": "clean",
+  "nodeVersion": "v24.19.0",
+  "customer": "C0123456",
+  "subject": "admin@example.org",
+  "scope": "https://www.googleapis.com/auth/admin.directory.userschema",
+  "category": "CcLiveCheck",
+  "scopeCheck": {
+    "scope": "https://www.googleapis.com/auth/admin.directory.userschema",
+    "checkedBy": "scopedClient",
+    "result": "passed"
+  },
+  "steps": [
+    {
+      "step": "1-list-before",
+      "googleMethod": "schemas.list",
+      "httpMethod": "GET",
+      "path": "/admin/directory/v1/customer/C0123456/schemas",
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "categoryCount": 1,
+        "ccLiveCheckListed": false
+      }
+    },
+    {
+      "step": "1-get-guard",
+      "googleMethod": "schemas.get",
+      "httpMethod": "GET",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "httpStatus": 404,
+      "reason": "notFound"
+    },
+    {
+      "step": "2-insert",
+      "googleMethod": "schemas.insert",
+      "httpMethod": "POST",
+      "path": "/admin/directory/v1/customer/C0123456/schemas",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check",
+        "displayNameLength": 13,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "schemaIdPresent": true,
+        "schemaIdLength": 24,
+        "schemaIdPathSafe": false,
+        "etagPresent": true,
+        "etag": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/yMm4yIGCJMMR0HBwpEha2uzH3e8\"",
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check",
+        "fieldCount": 1,
+        "fieldNames": ["Note"]
+      }
+    },
+    {
+      "step": "3-insert-reused-name",
+      "googleMethod": "schemas.insert",
+      "httpMethod": "POST",
+      "path": "/admin/directory/v1/customer/C0123456/schemas",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check",
+        "displayNameLength": 13,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "httpStatus": 412,
+      "reason": "conditionNotMet"
+    },
+    {
+      "step": "4-update-fresh-etag",
+      "googleMethod": "schemas.update",
+      "httpMethod": "PUT",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check renamed",
+        "displayNameLength": 21,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "ifMatch": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/yMm4yIGCJMMR0HBwpEha2uzH3e8\"",
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "schemaIdPresent": true,
+        "schemaIdLength": 24,
+        "schemaIdPathSafe": false,
+        "etagPresent": true,
+        "etag": "\"LTWbibkwy245Ce1mdY1xrmthBKUXpH8jutR8Xd3IWiQ/J2J97qN0a-qEXV-9qiyV_VZtC7c\"",
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check renamed",
+        "fieldCount": 1,
+        "fieldNames": ["Note"]
+      }
+    },
+    {
+      "step": "4-update-stale-if-match",
+      "googleMethod": "schemas.update",
+      "httpMethod": "PUT",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check stale",
+        "displayNameLength": 19,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "ifMatch": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/yMm4yIGCJMMR0HBwpEha2uzH3e8\"",
+      "ifMatchStale": true,
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "schemaIdPresent": true,
+        "schemaIdLength": 24,
+        "schemaIdPathSafe": false,
+        "etagPresent": true,
+        "etag": "\"LTWbibkwy245Ce1mdY1xrmthBKUXpH8jutR8Xd3IWiQ/R3b7y_M62ZPFB8m0ju4QRt9FGzU\"",
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check stale",
+        "fieldCount": 1,
+        "fieldNames": ["Note"]
+      }
+    },
+    {
+      "step": "5-update-long-display-name",
+      "googleMethod": "schemas.update",
+      "httpMethod": "PUT",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+        "displayNameLength": 200,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "httpStatus": 400,
+      "reason": "invalid"
+    },
+    {
+      "step": "5-update-long-attribute-name",
+      "googleMethod": "schemas.update",
+      "httpMethod": "PUT",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check stale",
+        "displayNameLength": 19,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          },
+          {
+            "fieldName": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+            "fieldNameLength": 200,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "schemaIdPresent": true,
+        "schemaIdLength": 24,
+        "schemaIdPathSafe": false,
+        "etagPresent": true,
+        "etag": "\"LTWbibkwy245Ce1mdY1xrmthBKUXpH8jutR8Xd3IWiQ/1ZKu9m1HsuvE_Ubg4Lo_6SidlqE\"",
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check stale",
+        "fieldCount": 2,
+        "fieldNames": [
+          "Note",
+          "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN"
+        ]
+      }
+    },
+    {
+      "step": "6-delete",
+      "googleMethod": "schemas.delete",
+      "httpMethod": "DELETE",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "wrote": {
+        "schemaKey": "name"
+      },
+      "httpStatus": 204,
+      "reason": null
+    },
+    {
+      "step": "6-insert-reused-name",
+      "googleMethod": "schemas.insert",
+      "httpMethod": "POST",
+      "path": "/admin/directory/v1/customer/C0123456/schemas",
+      "wrote": {
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check",
+        "displayNameLength": 13,
+        "fields": [
+          {
+            "fieldName": "Note",
+            "fieldNameLength": 4,
+            "fieldType": "STRING"
+          }
+        ]
+      },
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "schemaIdPresent": true,
+        "schemaIdLength": 24,
+        "schemaIdPathSafe": false,
+        "etagPresent": true,
+        "etag": "\"TXMn0ixHRKCrO3knSaQDyD24f1DThI_2G8o1IQPKQH0/7y4fjjp86OD_24vn8iDSFVS3g4g\"",
+        "schemaName": "CcLiveCheck",
+        "displayName": "Cc live check",
+        "fieldCount": 1,
+        "fieldNames": ["Note"]
+      }
+    },
+    {
+      "step": "7-cleanup-delete",
+      "googleMethod": "schemas.delete",
+      "httpMethod": "DELETE",
+      "path": "/admin/directory/v1/customer/C0123456/schemas/CcLiveCheck",
+      "wrote": {
+        "schemaKey": "name"
+      },
+      "httpStatus": 204,
+      "reason": null
+    },
+    {
+      "step": "7-list",
+      "googleMethod": "schemas.list",
+      "httpMethod": "GET",
+      "path": "/admin/directory/v1/customer/C0123456/schemas",
+      "httpStatus": 200,
+      "reason": null,
+      "answered": {
+        "categoryCount": 1,
+        "ccLiveCheckListed": false
+      }
+    }
+  ],
+  "answers": {
+    "reusedName": 412,
+    "staleIfMatch": 200,
+    "longDisplayName": 400,
+    "longAttributeName": 200,
+    "nameReuseAfterDelete": 200
+  },
+  "counts": {
+    "categoriesBefore": 1,
+    "categoriesAfter": 1,
+    "ccLiveCheckAfter": false
+  },
+  "durationMs": 6748,
+  "limitations": [
+    "The check proves one category lifecycle and nothing about a user value or a user route.",
+    "Step 1 stops the run when the category already exists. That run writes nothing and keeps the category.",
+    "The cleanup delete sends no If-Match, so a stale etag cannot block the cleanup.",
+    "The evidence holds the count of the categories of this customer and no name of another category.",
+    "The production request allowlist admits no schemas path. This proof sends its own calls until that card lands."
+  ]
+}
