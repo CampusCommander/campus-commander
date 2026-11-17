@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-10-30.
+Updated: 2026-11-16.
 
 ## Authorized now
 
@@ -55,6 +55,14 @@ The approved mockup is [2026-10-30-device-drive-slice.html](ui/designs/2026-10-3
 Its six answers sit in the record under "2026-10-30, main chat: the Google Drive slice mockup".
 
 On 2026-10-30 the owner signed off the CSV slice. The sign-off package README asked: "Reply `sign off` to accept the CSV slice as built." Owner, in the main chat: "sign off".
+
+On 2026-11-01 the owner started development order step 6 with Google users and their custom attributes (gap G19). Owner, in the main chat: "I want you to start the plan to add user entity managment to the app. This should have the look and feel of the device managment to keep a consistant UI/UX. One big diffrence is that users have custom schema. We will need a unique UI/UX to manage this, both in creating the schema and assigning it. Create both Technical Design Docs as Views in Figma."
+
+On 2026-11-16 the owner answered questions U1 to U7 of the [Google users and custom attributes record](workflows/user-management.md). Owner: "All recommended".
+Later that day he approved the screens of both Figma pages. Owner: "1) Approved". He also answered: "2) Scopes Added" and "3) Yes to 0.4.0".
+
+The approved mockups are [2026-11-16-user-management.html](ui/designs/2026-11-16-user-management.html) and [2026-11-16-custom-attributes.html](ui/designs/2026-11-16-custom-attributes.html).
+The record stays proposed. Its design addendum comes before the build.
 
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
