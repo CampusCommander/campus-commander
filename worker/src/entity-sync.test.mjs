@@ -171,7 +171,7 @@ function reader({ devices = [], batteries = [], users = [], rounds = 0 } = {}) {
       if (next instanceof Error) throw next;
       return next ?? [];
     },
-    async userBatch(_credential, _customer, ids) {
+    async userBatch(_credential, _customer, ids, _signal, onRound) {
       calls.push({ name: 'userBatch', ids });
       const next = users.shift();
       if (next instanceof Error) throw next;
@@ -883,7 +883,11 @@ test('a user batch upserts users, caches them, removes the missing ones, and pub
     { StudentInfo: { GradeLevel: 7 } },
     'The raw customSchemas answer is stored unchanged.',
   );
-  assert.deepEqual(db.calls[4].values, [customerId, JSON.stringify(['u2'])]);
+  assert.deepEqual(db.calls[4].values, [
+    customerId,
+    JSON.stringify(['u2']),
+    '2026-10-06T11:59:59.123Z',
+  ]);
   assert.deepEqual(
     redis.calls[0].args[0].map((entry) => entry.key),
     ['cc:entity:user:C0123456:u1', 'cc:entity:user:C0123456:u3'],

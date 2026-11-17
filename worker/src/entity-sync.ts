@@ -56,6 +56,7 @@ export interface EntityReader {
     customerId: string,
     ids: readonly string[],
     signal: AbortSignal,
+    onRound?: () => Promise<void>,
   ): Promise<{ users: UserObservation[]; missing: string[] }>;
 }
 
@@ -275,12 +276,15 @@ export class EntitySyncBatch {
     credential: DelegatedCredential,
     signal: AbortSignal,
     syncedAt: string,
+    extendClaim: () => Promise<void>,
   ): Promise<BatchRead> {
+    // Each batch service round extends the claim, so a long quota wave keeps the user batch IDs.
     const read = await this.reader.userBatch(
       credential,
       customerId,
       batch.ids,
       signal,
+      extendClaim,
     );
     const present = read.users.map((user) => user.userId);
     if (await readCancelRequested(this.database, customerId, jobId))
@@ -290,9 +294,10 @@ export class EntitySyncBatch {
       JSON.stringify(read.users),
       syncedAt,
     ]);
-    await this.call('SELECT cc.soft_delete_users($1,$2) AS result', [
+    await this.call('SELECT cc.soft_delete_users($1,$2,$3) AS result', [
       customerId,
       JSON.stringify(read.missing),
+      syncedAt,
     ]);
     const records = userRecordsSchema.parse(
       await this.call('SELECT cc.read_user_records($1,$2) AS result', [
@@ -379,6 +384,7 @@ export class EntitySyncBatch {
               credential,
               watch.signal,
               syncedAt,
+              extendClaim,
             );
       updated = read.updated;
       removed = read.removed;

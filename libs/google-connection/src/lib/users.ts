@@ -338,12 +338,14 @@ export class GoogleUserReader {
   /**
    * One `users.get` part per user through the batch service, with `projection=full`
    * (A section 6). A 404 names a removed user. Quota and server errors retry per part.
+   * `onRound` runs after each multipart round, so the caller can extend its claim.
    */
   async users(
     credential: DelegatedCredential,
     customerId: string,
     userIds: readonly string[],
     signal: AbortSignal,
+    onRound?: () => Promise<void>,
   ): Promise<{ users: UserObservation[]; missing: string[] }> {
     googleCustomerIdSchema.parse(customerId);
     const ids = [...new Set(userIds)];
@@ -377,6 +379,7 @@ export class GoogleUserReader {
           }
         },
         signal,
+        ...(onRound ? { onBatch: onRound } : {}),
       });
     } catch (error) {
       if (error instanceof BatchServiceError)

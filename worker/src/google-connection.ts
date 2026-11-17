@@ -18,6 +18,7 @@ import {
 import type { EntitySyncBatchRequest } from '@campus/application-contracts';
 import { DeviceSync, type DeviceSyncRequest } from './device-sync';
 import { UserSync, type UserSyncRequest } from './user-sync';
+import { createEntityReader } from './entity-reader';
 import {
   WorkerRedis,
   deferredEntityCache,
@@ -209,16 +210,7 @@ export class GoogleWorker {
    * through the reader of that type (document A section 5).
    */
   private entityReader(): EntityReader {
-    const devices = new GoogleDeviceReader();
-    const users = new GoogleUserReader();
-    return {
-      deviceBatch: (credential, customerId, ids, signal, onRound) =>
-        devices.deviceBatch(credential, customerId, ids, signal, onRound),
-      batteryBatch: (credential, customerId, ids, signal) =>
-        devices.batteryBatch(credential, customerId, ids, signal),
-      userBatch: (credential, customerId, ids, signal) =>
-        users.users(credential, customerId, ids, signal),
-    };
+    return createEntityReader();
   }
 
   /** An entity batch requires Redis. A missing cache answers 503 so Kestra retries the batch. */
