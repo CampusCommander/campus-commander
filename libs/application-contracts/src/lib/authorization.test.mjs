@@ -299,7 +299,11 @@ test('users:read takes platform and district scopes, and the platform administra
   const userReader = [{ action: 'users:read', scope: district }];
   assert.equal(isAuthorized(userReader, 'devices:read', district), false);
   assert.equal(
-    isAuthorized([{ action: 'devices:read', scope: district }], 'users:read', district),
+    isAuthorized(
+      [{ action: 'devices:read', scope: district }],
+      'users:read',
+      district,
+    ),
     false,
   );
 });

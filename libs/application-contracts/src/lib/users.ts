@@ -24,9 +24,7 @@ export function userAttributeKeys(
   fieldName: string,
 ): Readonly<{ columnId: string; filterKey: string; draftKey: string }> {
   if (!attributeKeys.test(schemaName) || !attributeKeys.test(fieldName))
-    throw new Error(
-      'An attribute name holds letters, digits, _ and - only.',
-    );
+    throw new Error('An attribute name holds letters, digits, _ and - only.');
   const id = `attr:${schemaName}.${fieldName}`;
   return Object.freeze({ columnId: id, filterKey: id, draftKey: id });
 }
@@ -111,9 +109,7 @@ export const userAttributeOperatorSchema = z.enum([
   'is',
   'hasValue',
 ]);
-export type UserAttributeOperator = z.infer<
-  typeof userAttributeOperatorSchema
->;
+export type UserAttributeOperator = z.infer<typeof userAttributeOperatorSchema>;
 
 const attributeShape = {
   field: z.literal('attribute'),
@@ -159,24 +155,26 @@ export type UserAttributePredicate = z.infer<
   typeof userAttributePredicateSchema
 >;
 
-const textField = z.enum([
-  'fullName',
-  'primaryEmail',
-  'department',
-  'title',
-]);
+const textField = z.enum(['fullName', 'primaryEmail', 'department', 'title']);
 const textOperator = z.enum(['contains', 'startsWith', 'equals']);
 
 /** Each field type offers only its own operators, and chips combine with AND (A section 8). */
 export const userPredicateSchema = z.union([
-  z.strictObject({ field: textField, operator: textOperator, value: filterText }),
+  z.strictObject({
+    field: textField,
+    operator: textOperator,
+    value: filterText,
+  }),
   z.strictObject({ field: textField, operator: z.literal('isEmpty') }),
   z.strictObject({
     field: z.literal('aliases'),
     operator: z.enum(['contains', 'equals']),
     value: filterText,
   }),
-  z.strictObject({ field: z.literal('aliases'), operator: z.literal('isEmpty') }),
+  z.strictObject({
+    field: z.literal('aliases'),
+    operator: z.literal('isEmpty'),
+  }),
   z.strictObject({
     field: z.literal('orgUnitPath'),
     operator: z.literal('in'),
@@ -266,9 +264,7 @@ export const userSelectionRefreshSchema = z.strictObject({
   jobId: z.uuid().nullable(),
   selected: z.number().int().min(1).max(100_000),
 });
-export type UserSelectionRefresh = z.infer<
-  typeof userSelectionRefreshSchema
->;
+export type UserSelectionRefresh = z.infer<typeof userSelectionRefreshSchema>;
 
 export const userQuerySchema = z.strictObject({
   predicates: z.array(userPredicateSchema).max(20).default([]),
@@ -400,14 +396,15 @@ export const userAttributeCategorySchema = z.strictObject({
   schemaName: attributeName,
   displayName,
   etag: z.string().min(1).max(200),
-  fields: z.array(userAttributeFieldSchema).min(1).max(USER_ATTRIBUTE_FIELD_LIMIT),
+  fields: z
+    .array(userAttributeFieldSchema)
+    .min(1)
+    .max(USER_ATTRIBUTE_FIELD_LIMIT),
   holders: count,
   /** When Campus Commander last read the categories from Google. */
   readAt: timestamp.nullable(),
 });
-export type UserAttributeCategory = z.infer<
-  typeof userAttributeCategorySchema
->;
+export type UserAttributeCategory = z.infer<typeof userAttributeCategorySchema>;
 
 /** The two limit counts of the account, with the maximum of each (B section 5). */
 export const userAttributeLimitsSchema = z.strictObject({

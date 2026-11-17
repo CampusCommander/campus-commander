@@ -68,7 +68,10 @@ test('the C1 builder gives the column ID, the filter key, and the draft key', ()
   assert.ok(userAttributeKeySchema.safeParse(keys.columnId).success);
   assert.ok(userAttributeKeySchema.safeParse(keys.draftKey).success);
   // The design supersedes the `attribute:` field ID of document A section 9 (C1).
-  assert.equal(userAttributeKeySchema.safeParse('attribute:StudentInfo.Homeroom').success, false);
+  assert.equal(
+    userAttributeKeySchema.safeParse('attribute:StudentInfo.Homeroom').success,
+    false,
+  );
   // A name with a dot would make the ID ambiguous, and Google allows letters, digits, _ and - only.
   for (const [schemaName, fieldName] of [
     ['Student.Info', 'Homeroom'],
@@ -81,11 +84,27 @@ test('the C1 builder gives the column ID, the filter key, and the draft key', ()
 
 test('a user record carries the raw custom schemas and the last Google read', () => {
   assert.deepEqual(userRecordSchema.parse(record), record);
-  assert.equal(userRecordSchema.safeParse({ ...record, stale: false }).success, false);
-  assert.equal(userRecordSchema.safeParse({ ...record, removedAt: null }).success, false);
-  assert.equal(userRecordSchema.safeParse({ ...record, customSchemas: [] }).success, false);
-  assert.equal(userRecordSchema.safeParse({ ...record, primaryEmail: 'not-an-email' }).success, false);
-  assert.equal(userRecordSchema.safeParse({ ...record, orgUnitPath: 'Students' }).success, false);
+  assert.equal(
+    userRecordSchema.safeParse({ ...record, stale: false }).success,
+    false,
+  );
+  assert.equal(
+    userRecordSchema.safeParse({ ...record, removedAt: null }).success,
+    false,
+  );
+  assert.equal(
+    userRecordSchema.safeParse({ ...record, customSchemas: [] }).success,
+    false,
+  );
+  assert.equal(
+    userRecordSchema.safeParse({ ...record, primaryEmail: 'not-an-email' })
+      .success,
+    false,
+  );
+  assert.equal(
+    userRecordSchema.safeParse({ ...record, orgUnitPath: 'Students' }).success,
+    false,
+  );
   // A raw value stays exactly as Google answered it.
   const raw = {
     ...customSchemas,
@@ -100,15 +119,20 @@ test('a user record carries the raw custom schemas and the last Google read', ()
 test('a user row and the user details add stale, the removal time, and the record version', () => {
   const row = { ...record, stale: true, recordVersion: 4 };
   assert.deepEqual(userRowSchema.parse(row), row);
-  assert.equal(userRowSchema.safeParse({ ...record, stale: true }).success, false);
   assert.equal(
-    userRowSchema.safeParse({ ...record, stale: true, recordVersion: 0 }).success,
+    userRowSchema.safeParse({ ...record, stale: true }).success,
+    false,
+  );
+  assert.equal(
+    userRowSchema.safeParse({ ...record, stale: true, recordVersion: 0 })
+      .success,
     false,
   );
   const detail = { ...record, stale: false, removedAt: at, recordVersion: 7 };
   assert.deepEqual(userDetailSchema.parse(detail), detail);
   assert.equal(
-    userDetailSchema.safeParse({ ...record, stale: false, recordVersion: 7 }).success,
+    userDetailSchema.safeParse({ ...record, stale: false, recordVersion: 7 })
+      .success,
     false,
   );
 });
@@ -123,15 +147,27 @@ test('a query holds at most 20 predicates, 1,000 rows, and the Name sort by defa
   assert.equal(userQuerySchema.safeParse({ limit: 1001 }).success, false);
   assert.equal(userQuerySchema.safeParse({ limit: 0 }).success, false);
   assert.equal(
-    userQuerySchema.safeParse({ predicates: Array.from({ length: 21 }, () => ({ field: 'fullName', operator: 'equals', value: 'x' })) })
+    userQuerySchema.safeParse({
+      predicates: Array.from({ length: 21 }, () => ({
+        field: 'fullName',
+        operator: 'equals',
+        value: 'x',
+      })),
+    }).success,
+    false,
+  );
+  assert.equal(
+    userQuerySchema.safeParse({ sort: { field: 'password', direction: 'asc' } })
       .success,
     false,
   );
-  assert.equal(userQuerySchema.safeParse({ sort: { field: 'password', direction: 'asc' } }).success, false);
   assert.deepEqual(
     userQuerySchema.parse({
       sort: { field: 'lastLoginTime', direction: 'desc' },
-      selection: { gridId: 'users', tabId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b' },
+      selection: {
+        gridId: 'users',
+        tabId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b',
+      },
     }).selection.gridId,
     'users',
   );
@@ -152,7 +188,10 @@ test('each filter field offers its own operators', () => {
     { field: 'lastLoginTime', operator: 'before', value: at },
     { field: 'creationTime', operator: 'after', value: at },
   ])
-    assert.ok(userPredicateSchema.safeParse(predicate).success, JSON.stringify(predicate));
+    assert.ok(
+      userPredicateSchema.safeParse(predicate).success,
+      JSON.stringify(predicate),
+    );
   for (const predicate of [
     { field: 'aliases', operator: 'startsWith', value: 'x' },
     { field: 'status', operator: 'is', values: ['disabled'] },
@@ -161,25 +200,92 @@ test('each filter field offers its own operators', () => {
     { field: 'orgUnitPath', operator: 'in', values: ['Students'] },
     { field: 'fullName', operator: 'contains', value: '' },
   ])
-    assert.equal(userPredicateSchema.safeParse(predicate).success, false, JSON.stringify(predicate));
+    assert.equal(
+      userPredicateSchema.safeParse(predicate).success,
+      false,
+      JSON.stringify(predicate),
+    );
 });
 
 test('an attribute predicate names the category, the attribute, and its info type operator', () => {
   for (const predicate of [
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'Homeroom', operator: 'contains', value: 'B12' },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'GradeLevel', operator: 'numberRange', from: 0, to: 12 },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'Enrolled', operator: 'dateRange', from: '2026-01-01', to: '2026-06-30' },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'Graduating', operator: 'is', value: false },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'Programs', operator: 'hasValue' },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      operator: 'contains',
+      value: 'B12',
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'GradeLevel',
+      operator: 'numberRange',
+      from: 0,
+      to: 12,
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'Enrolled',
+      operator: 'dateRange',
+      from: '2026-01-01',
+      to: '2026-06-30',
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'Graduating',
+      operator: 'is',
+      value: false,
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'Programs',
+      operator: 'hasValue',
+    },
   ])
-    assert.ok(userPredicateSchema.safeParse(predicate).success, JSON.stringify(predicate));
+    assert.ok(
+      userPredicateSchema.safeParse(predicate).success,
+      JSON.stringify(predicate),
+    );
   for (const predicate of [
-    { field: 'attribute', fieldName: 'Homeroom', operator: 'contains', value: 'B12' },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'Homeroom', operator: 'hasValue', value: 'B12' },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'GradeLevel', operator: 'numberRange', from: 12, to: 0 },
-    { field: 'attribute', schemaName: 'StudentInfo', fieldName: 'Enrolled', operator: 'dateRange', from: '2026-06-30', to: '2026-01-01' },
+    {
+      field: 'attribute',
+      fieldName: 'Homeroom',
+      operator: 'contains',
+      value: 'B12',
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      operator: 'hasValue',
+      value: 'B12',
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'GradeLevel',
+      operator: 'numberRange',
+      from: 12,
+      to: 0,
+    },
+    {
+      field: 'attribute',
+      schemaName: 'StudentInfo',
+      fieldName: 'Enrolled',
+      operator: 'dateRange',
+      from: '2026-06-30',
+      to: '2026-01-01',
+    },
   ])
-    assert.equal(userPredicateSchema.safeParse(predicate).success, false, JSON.stringify(predicate));
+    assert.equal(
+      userPredicateSchema.safeParse(predicate).success,
+      false,
+      JSON.stringify(predicate),
+    );
 });
 
 test('a user page carries the rows, the counts, and the refresh it started', () => {
@@ -191,18 +297,34 @@ test('a user page carries the rows, the counts, and the refresh it started', () 
     refreshJobId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b',
   };
   assert.deepEqual(userPageSchema.parse(page), page);
-  assert.equal(userPageSchema.safeParse({ ...page, refreshJobId: null }).success, true);
-  assert.equal(userPageSchema.safeParse({ ...page, rows: [{ ...record }] }).success, false);
+  assert.equal(
+    userPageSchema.safeParse({ ...page, refreshJobId: null }).success,
+    true,
+  );
+  assert.equal(
+    userPageSchema.safeParse({ ...page, rows: [{ ...record }] }).success,
+    false,
+  );
 });
 
 test('the by-ids and freshness reads copy the device limits', () => {
   assert.equal(USER_BY_IDS_LIMIT, 500);
   assert.equal(
-    userByIdsSchema.safeParse({ userIds: Array.from({ length: USER_BY_IDS_LIMIT }, (_, index) => `id-${index}`) }).success,
+    userByIdsSchema.safeParse({
+      userIds: Array.from(
+        { length: USER_BY_IDS_LIMIT },
+        (_, index) => `id-${index}`,
+      ),
+    }).success,
     true,
   );
   assert.equal(
-    userByIdsSchema.safeParse({ userIds: Array.from({ length: USER_BY_IDS_LIMIT + 1 }, (_, index) => `id-${index}`) }).success,
+    userByIdsSchema.safeParse({
+      userIds: Array.from(
+        { length: USER_BY_IDS_LIMIT + 1 },
+        (_, index) => `id-${index}`,
+      ),
+    }).success,
     false,
   );
   assert.deepEqual(userFreshnessSchema.parse({ stale: 3, refreshing: true }), {
@@ -224,24 +346,48 @@ test('the user sync state carries the count, the failure, and no telemetry', () 
     stale: false,
   };
   assert.deepEqual(userSyncStateSchema.parse(sync), sync);
-  assert.equal(userSyncStateSchema.safeParse({ ...sync, failure: 'quota' }).success, true);
-  assert.equal(userSyncStateSchema.safeParse({ ...sync, status: 'done' }).success, false);
-  assert.equal(userSyncStateSchema.safeParse({ ...sync, telemetryFailure: null }).success, false);
+  assert.equal(
+    userSyncStateSchema.safeParse({ ...sync, failure: 'quota' }).success,
+    true,
+  );
+  assert.equal(
+    userSyncStateSchema.safeParse({ ...sync, status: 'done' }).success,
+    false,
+  );
+  assert.equal(
+    userSyncStateSchema.safeParse({ ...sync, telemetryFailure: null }).success,
+    false,
+  );
 });
 
 test('the selection keeps the device form under the users grid', () => {
-  const key = { gridId: 'users', tabId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b' };
+  const key = {
+    gridId: 'users',
+    tabId: '7f5f3b2e-2d4e-4f7a-9b1a-1c2d3e4f5a6b',
+  };
   assert.deepEqual(userSelectionKeySchema.parse(key), key);
-  assert.equal(userSelectionKeySchema.safeParse({ ...key, gridId: 'devices' }).success, false);
+  assert.equal(
+    userSelectionKeySchema.safeParse({ ...key, gridId: 'devices' }).success,
+    false,
+  );
   for (const op of [
-    { op: 'selectAll', predicates: [{ field: 'status', operator: 'is', values: ['active'] }] },
+    {
+      op: 'selectAll',
+      predicates: [{ field: 'status', operator: 'is', values: ['active'] }],
+    },
     { op: 'deselectAll' },
     { op: 'select', ids: ['107000000000000000001'] },
     { op: 'deselect', ids: ['107000000000000000001'] },
   ])
-    assert.ok(userSelectionChangeSchema.safeParse({ ...key, ops: [op] }).success, JSON.stringify(op));
+    assert.ok(
+      userSelectionChangeSchema.safeParse({ ...key, ops: [op] }).success,
+      JSON.stringify(op),
+    );
   assert.equal(
-    userSelectionChangeSchema.safeParse({ ...key, ops: [{ op: 'select', ids: [] }] }).success,
+    userSelectionChangeSchema.safeParse({
+      ...key,
+      ops: [{ op: 'select', ids: [] }],
+    }).success,
     false,
   );
   const spec = {
@@ -252,10 +398,13 @@ test('the selection keeps the device form under the users grid', () => {
     expiredAt: null,
   };
   assert.deepEqual(userSelectionSpecSchema.parse(spec), spec);
-  assert.deepEqual(userSelectionRefreshSchema.parse({ jobId: null, selected: 4 }), {
-    jobId: null,
-    selected: 4,
-  });
+  assert.deepEqual(
+    userSelectionRefreshSchema.parse({ jobId: null, selected: 4 }),
+    {
+      jobId: null,
+      selected: 4,
+    },
+  );
 });
 
 test('Refresh Domain answers its sync and its domain read apart', () => {
@@ -273,16 +422,25 @@ test('Refresh Domain answers its sync and its domain read apart', () => {
   const refreshed = { sync, domain: { status: 'refreshed', reason: null } };
   assert.deepEqual(userDomainRefreshSchema.parse(refreshed), refreshed);
   assert.equal(
-    userDomainRefreshSchema.safeParse({ sync, domain: { status: 'failed', reason: 'quota' } }).success,
+    userDomainRefreshSchema.safeParse({
+      sync,
+      domain: { status: 'failed', reason: 'quota' },
+    }).success,
     true,
   );
   // A refreshed check carries no reason, and a failed check names one.
   assert.equal(
-    userDomainRefreshSchema.safeParse({ sync, domain: { status: 'refreshed', reason: 'quota' } }).success,
+    userDomainRefreshSchema.safeParse({
+      sync,
+      domain: { status: 'refreshed', reason: 'quota' },
+    }).success,
     false,
   );
   assert.equal(
-    userDomainRefreshSchema.safeParse({ sync, domain: { status: 'failed', reason: null } }).success,
+    userDomainRefreshSchema.safeParse({
+      sync,
+      domain: { status: 'failed', reason: null },
+    }).success,
     false,
   );
 });
@@ -293,7 +451,10 @@ test('the OrgUnit read lists the path and the user count', () => {
     { path: '/Staff', users: 3 },
   ];
   assert.deepEqual(userOrgUnitsSchema.parse(units), units);
-  assert.equal(userOrgUnitsSchema.safeParse([{ path: 'Students', users: 12 }]).success, false);
+  assert.equal(
+    userOrgUnitsSchema.safeParse([{ path: 'Students', users: 12 }]).success,
+    false,
+  );
 });
 
 test('an attribute field carries the Google schema metadata and its holder count', () => {
@@ -310,15 +471,26 @@ test('an attribute field carries the Google schema metadata and its holder count
   };
   assert.deepEqual(userAttributeFieldSchema.parse(field), field);
   assert.equal(
-    userAttributeFieldSchema.safeParse({ ...field, numericIndexingSpec: null }).success,
+    userAttributeFieldSchema.safeParse({ ...field, numericIndexingSpec: null })
+      .success,
     true,
   );
   assert.equal(
-    userAttributeFieldSchema.safeParse({ ...field, numericIndexingSpec: { minValue: 0, maxValue: null } }).success,
+    userAttributeFieldSchema.safeParse({
+      ...field,
+      numericIndexingSpec: { minValue: 0, maxValue: null },
+    }).success,
     true,
   );
-  assert.equal(userAttributeFieldSchema.safeParse({ ...field, fieldType: 'NUMBER' }).success, false);
-  assert.equal(userAttributeFieldSchema.safeParse({ ...field, holders: -1 }).success, false);
+  assert.equal(
+    userAttributeFieldSchema.safeParse({ ...field, fieldType: 'NUMBER' })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeFieldSchema.safeParse({ ...field, holders: -1 }).success,
+    false,
+  );
   assert.equal(
     userAttributeFieldSchema.safeParse({ ...field, multiValued: 'no' }).success,
     false,
@@ -348,8 +520,15 @@ test('a category carries its fields, its holder count, and the read time', () =>
     readAt: at,
   };
   assert.deepEqual(userAttributeCategorySchema.parse(category), category);
-  assert.equal(userAttributeCategorySchema.safeParse({ ...category, fields: [] }).success, false);
-  assert.equal(userAttributeCategorySchema.safeParse({ ...category, readAt: null }).success, true);
+  assert.equal(
+    userAttributeCategorySchema.safeParse({ ...category, fields: [] }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategorySchema.safeParse({ ...category, readAt: null })
+      .success,
+    true,
+  );
 });
 
 test('the category read carries the limit counts of the Google account', () => {
@@ -389,13 +568,23 @@ test('the category read carries the limit counts of the Google account', () => {
   assert.equal(
     userAttributeCategoriesSchema.safeParse({
       ...answer,
-      categories: Array.from({ length: USER_ATTRIBUTE_CATEGORY_LIMIT + 1 }, () => category),
+      categories: Array.from(
+        { length: USER_ATTRIBUTE_CATEGORY_LIMIT + 1 },
+        () => category,
+      ),
     }).success,
     false,
   );
-  assert.equal(userAttributeCategoriesSchema.safeParse({ ...answer, observedAt: null }).success, true);
   assert.equal(
-    userAttributeCategoriesSchema.safeParse({ ...answer, limits: { categories: 1 } }).success,
+    userAttributeCategoriesSchema.safeParse({ ...answer, observedAt: null })
+      .success,
+    true,
+  );
+  assert.equal(
+    userAttributeCategoriesSchema.safeParse({
+      ...answer,
+      limits: { categories: 1 },
+    }).success,
     false,
   );
 });
