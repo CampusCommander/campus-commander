@@ -80,6 +80,42 @@ It calls each batch method once with one missing device ID.
 It writes sanitized evidence to `deployment/evidence/device-browsing-live-2026-10-16.json`.
 The key file stays outside the repository.
 
+## Category write check L2
+
+```bash
+node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/user-schema-live.mjs <key-file> <subject> <client-id>
+```
+
+The check writes to the owner's domain. Each run needs his explicit yes, because the standing authorization permits no Google data mutation.
+The script touches only the category `CcLiveCheck` and refuses every other schema name.
+It sends its calls with one token that carries only `admin.directory.userschema`.
+When `CcLiveCheck` exists before the run, the script stops before any write.
+Its cleanup deletes the `CcLiveCheck` that the run created and lists the categories again.
+It writes sanitized evidence to `deployment/evidence/user-schema-live-l2-<date>.json`.
+The run of 2026-11-17 wrote `deployment/evidence/user-schema-live-l2-2026-11-17.json`.
+The [design addendum](../../docs/superpowers/specs/2026-11-16-user-management-design.md), section 6, records its answers.
+The key file stays outside the repository.
+
+## Value write check L3
+
+```bash
+node --import ./libs/application-contracts/test-register.mjs deployment/google-proof/user-values-live.mjs <key-file> <subject> <client-id> <test-user>
+```
+
+The check writes to the owner's domain. Each run needs the owner's explicit yes, because the standing authorization permits no Google data mutation.
+The script touches only the category `CcLiveValues` and only the test user of its argument. It refuses every other schema name.
+It sends schema calls with one token that carries only `admin.directory.userschema`.
+It sends user calls with one token that carries only `admin.directory.user`.
+
+It reads the test user only with `projection=custom` and `customFieldMask=CcLiveValues`, so it reads no other category.
+When `CcLiveValues` exists before the run, the script stops before any write.
+Its cleanup deletes the `CcLiveValues` that the run created, then reads the category and the user again.
+
+It writes sanitized evidence to `deployment/evidence/user-values-live-l3-<date>.json`.
+The run of 2026-11-17 wrote `deployment/evidence/user-values-live-l3-2026-11-17.json`.
+The [design addendum](../../docs/superpowers/specs/2026-11-16-user-management-design.md), section 6, records its answers.
+The key file stays outside the repository.
+
 ## Repeatable checks
 
 ```bash

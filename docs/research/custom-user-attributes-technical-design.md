@@ -96,23 +96,23 @@ A person with User Write sets attribute values on one user, in the users grid, o
 
 "Guide" is [Manage Custom User Fields](https://developers.google.com/workspace/admin/directory/v1/guides/manage-schemas). "Discovery" is the Directory API discovery document. "Admin help" is in Appendix A.
 
-| Rule                | Google value                                                                                                                 | Source                                     |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Account limits      | 100 categories. 100 attributes over all categories.                                                                          | Guide, Admin help (errors page)            |
-| Text size           | 500 characters for a single value. A list depends on its total: 150 values of 100 characters, or 50 of 500.                  | Guide                                      |
-| Name characters     | Letters, digits, `_`, and `-`                                                                                                | Guide                                      |
-| Category name       | Unique in the customer. Reuse answers `409: Entity already exists`.                                                          | Guide, Discovery `Schema.schemaName`       |
-| Locks               | No rename. No change of info type. One value can become multiple values. The reverse is refused.                             | Guide, Admin help                          |
-| Visibility change   | Takes up to 24 hours                                                                                                         | Discovery `SchemaFieldSpec.readAccessType` |
-| Required keys       | Insert: `schemaName`, `displayName`, `fields[]`. Insert and update: each field with `fieldName`, `fieldType`, `displayName`. | Discovery annotations                      |
-| Field defaults      | `multiValued` false, `indexed` true, `readAccessType` ALL_DOMAIN_USERS                                                       | Discovery `SchemaFieldSpec`                |
-| Numeric range       | `numericIndexingSpec` `minValue` and `maxValue`. Indicative, not enforced. Enables range queries.                            | Discovery `SchemaFieldSpec`                |
-| Admin console rules | The last attribute goes only with its category. A SAML-mapped attribute cannot be deleted.                                   | Admin help (custom attributes page)        |
-| Value write         | An unnamed attribute stays unchanged. `null` deletes an attribute or a category on that user.                                | Guide                                      |
-| Multi-value entry   | `{ value, type?, customType? }`, with `type` one of work, home, other, custom                                                | Guide                                      |
-| Value read          | `projection=full`, or `projection=custom` with `customFieldMask`                                                             | Discovery `users.get`, `users.list`        |
-| Scopes              | Read: `admin.directory.userschema.readonly`. Write: `admin.directory.userschema`. Values: `admin.directory.user`.            | Discovery `schemas`, `users.patch`         |
-| Sensitive data      | Google warns against government ID numbers, financial data, and health data                                                  | Guide, Admin help                          |
+| Rule                | Google value                                                                                                                                                                           | Source                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Account limits      | 100 categories. 100 attributes over all categories.                                                                                                                                    | Guide, Admin help (errors page)            |
+| Text size           | 500 characters for a single value. A list depends on its total: 150 values of 100 characters, or 50 of 500.                                                                            | Guide                                      |
+| Name characters     | Letters, digits, `_`, and `-`                                                                                                                                                          | Guide                                      |
+| Category name       | Unique in the customer. Reuse answers 412 `conditionNotMet` (check L2). The Guide states `409: Entity already exists`.                                                                 | L2, Guide, Discovery `Schema.schemaName`   |
+| Locks               | No rename. No change of info type. One value can become multiple values. The reverse is refused.                                                                                       | Guide, Admin help                          |
+| Visibility change   | Takes up to 24 hours                                                                                                                                                                   | Discovery `SchemaFieldSpec.readAccessType` |
+| Required keys       | Insert: `schemaName`, `displayName`, `fields[]`. Insert and update: each field with `fieldName`, `fieldType`, `displayName`.                                                           | Discovery annotations                      |
+| Field defaults      | `multiValued` false, `indexed` true, `readAccessType` ALL_DOMAIN_USERS                                                                                                                 | Discovery `SchemaFieldSpec`                |
+| Numeric range       | `numericIndexingSpec` `minValue` and `maxValue`. Indicative, not enforced. Enables range queries.                                                                                      | Discovery `SchemaFieldSpec`                |
+| Admin console rules | The last attribute goes only with its category. A SAML-mapped attribute cannot be deleted.                                                                                             | Admin help (custom attributes page)        |
+| Value write         | An unnamed attribute stays unchanged. The Guide states that `null` deletes an attribute or a category on that user. A `users.patch` with a `null` attribute kept its value (check L3). | Guide, check L3                            |
+| Multi-value entry   | `{ value, type?, customType? }`, with `type` one of work, home, other, custom                                                                                                          | Guide                                      |
+| Value read          | `projection=full`, or `projection=custom` with `customFieldMask`                                                                                                                       | Discovery `users.get`, `users.list`        |
+| Scopes              | Read: `admin.directory.userschema.readonly`. Write: `admin.directory.userschema`. Values: `admin.directory.user`.                                                                      | Discovery `schemas`, `users.patch`         |
+| Sensitive data      | Google warns against government ID numbers, financial data, and health data                                                                                                            | Guide, Admin help                          |
 
 ## 4. User workflows
 
@@ -144,9 +144,9 @@ Every workflow uses dialogs, ends where it starts, and keeps progress and result
 | Rule                   | Behavior                                                                                                                                                                                                                                                                     | Source                                                                         |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Name derivation        | Split the display name at each character outside `A-Z`, `a-z`, and `0-9`. Upper-case the first letter of each part, and join. "Take-home approved" gives `TakeHomeApproved`. No letter or digit: the person types a name. The person can edit the name until the first save. | E1. Baseline default 13 names use this form (`StudentInfo`). Guide: no rename. |
-| Characters and length  | `A-Z`, `a-z`, `0-9`, `_`, and `-`. Other characters show "Use letters, digits, \_ and - only." No length limit of its own, because Google documents none.                                                                                                                    | Guide. Length not verified, check L2.                                          |
-| Uniqueness             | A category name differs from every cached category name. An attribute name differs from the others in its category. Both compare without letter case.                                                                                                                        | Guide (409), E2                                                                |
-| Display names          | Required for the category and each attribute, with a visible character                                                                                                                                                                                                       | Discovery annotations                                                          |
+| Characters and length  | `A-Z`, `a-z`, `0-9`, `_`, and `-`. Other characters show "Use letters, digits, \_ and - only." No length limit of its own, because Google documents none.                                                                                                                    | Guide. Check L2 accepted a 200-character attribute name.                       |
+| Uniqueness             | A category name differs from every cached category name. An attribute name differs from the others in its category. Both compare without letter case.                                                                                                                        | Guide, check L2 (412), E2                                                      |
+| Display names          | Required for the category and each attribute, with a visible character. Google refused a category display name of 200 characters (check L2). The editor sets no limit, because the limit is not known.                                                                       | Discovery annotations, check L2                                                |
 | Visibility, searchable | A new attribute starts with "Admins and the user" and Searchable on. A visibility change shows "Google applies a visibility change within 24 hours."                                                                                                                         | Baseline default 7, Discovery `readAccessType`                                 |
 | Range                  | Optional minimum and maximum for Whole number and Decimal number, sent as `numericIndexingSpec`. The value checks refuse a value outside it.                                                                                                                                 | E11, `docs/ui/entity-grid-fields.json:76`                                      |
 | Account limits         | "3 of 100 categories used" and "10 of 100 attributes used", with unsaved attributes counted. At 100, Create category or Add attribute is disabled with "The account holds 100 categories, the Google maximum."                                                               | Baseline default 10, Guide                                                     |
@@ -185,7 +185,7 @@ Every workflow uses dialogs, ends where it starts, and keeps progress and result
 
 - One save gives one plan and one Google call. A delete never shares a plan with other changes. Every edit uses `schemas.update`, as the guide example does. That example removes a field by leaving it out of the list.
 - The design never calls `schemas.patch`, because the merge rule of its `fields` array is not verified (E4).
-- Calls name the category by its immutable `schemaId` (Discovery `schemaKey`), so a recreated name never matches an old plan (E5).
+- Calls name the category by its immutable `schemaId` (Discovery `schemaKey`), so a recreated name never matches an old plan (E5). Each call percent-encodes the `schemaId` as one path segment, because an ID holds characters outside `[A-Za-z0-9_-]` (check L2). Check L2 did not show whether a recreated category gets a new `schemaId`. Its new `etag` fails the compare of section 6.2 step 3.
 
 ### 6.2 Order of operations and the etag
 
@@ -196,22 +196,22 @@ Every workflow uses dialogs, ends where it starts, and keeps progress and result
 5. On a 2xx answer, one transaction writes the schema cache and purges removed values (section 9). The worker then publishes the change.
 
 - A plan stores the cached `etag`. A `baseEtag` that differs from the cache answers 412 `category-changed`, at the plan and again at confirm.
-- Google support for `If-Match` with 412 on schemas is not verified (check L2). Step 3 narrows the race without it.
+- Check L2 showed that Google applies `schemas.update` with a stale `If-Match`. Step 3 narrows the race, and the last write wins inside it. `If-Match` on `schemas.delete` stays unverified.
 - A value preview stores the `etag` of each category that it writes. Its confirm answers 409 `category-changed` after a change.
 
 ### 6.3 Effect on stored values
 
-| Event                                                          | Google behavior                                               | Status                                            |
-| -------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------- |
-| A value PATCH names an attribute with `null`, or leaves it out | Deletes that value on that user, or keeps it                  | Guide                                             |
-| A value PATCH names a category with `null`                     | Deletes every value of that category on that user             | Guide. This design never sends it (E15).          |
-| `schemas.update` leaves out a field                            | Removes the field from the schema                             | Guide example                                     |
-| Values of a removed field                                      | Deleted on every user, or kept and hidden                     | Not verified, check L3                            |
-| A new field with the name of a removed field                   | Starts empty, or shows the old values again                   | Not verified, check L3                            |
-| `schemas.delete` while users hold values                       | Deletes the values, or refuses the delete                     | Not verified, check L3                            |
-| A new category with the name of a deleted category             | Accepted at once, or refused for a time                       | Not verified, check L2                            |
-| One value to multiple values                                   | The stored value becomes a list of one entry                  | Not verified, check L3                            |
-| Delete of an attribute that a SAML app maps                    | The Admin console refuses it. No source gives the API answer. | Not verified. No live check without a mapped app. |
+| Event                                                          | Google behavior                                                                                                                                                | Status                                                |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| A value PATCH names an attribute with `null`, or leaves it out | The Guide states that `null` deletes the value and that a left-out attribute stays. In check L3, a `null` single value and a `null` list stayed for 8 seconds. | Guide, check L3. E16 applies (design C9).             |
+| A value PATCH names a category with `null`                     | Deletes every value of that category on that user                                                                                                              | Guide. This design never sends it (E15).              |
+| `schemas.update` leaves out a field                            | Removes the field from the schema                                                                                                                              | Guide example                                         |
+| Values of a removed field                                      | No value of the field reads right after the update                                                                                                             | Check L3, one user                                    |
+| A new field with the name of a removed field                   | Starts empty, with a new `fieldId`                                                                                                                             | Check L3, reads at once and 1 second later            |
+| `schemas.delete` while users hold values                       | Accepted with 204. A user read that names the deleted category answers 400 `invalid`, so no read shows the values.                                             | Check L3. The deletion of the values is not verified. |
+| A new category with the name of a deleted category             | Accepted at once                                                                                                                                               | Check L2                                              |
+| One value to multiple values                                   | The value reads as a list of one entry                                                                                                                         | Check L3                                              |
+| Delete of an attribute that a SAML app maps                    | The Admin console refuses it. No source gives the API answer.                                                                                                  | Not verified. No live check without a mapped app.     |
 
 ## 7. Jobs
 
@@ -227,9 +227,9 @@ Both kinds share the one write slot of device jobs (`docs/superpowers/specs/2026
 ### 7.2 Value job
 
 - Kind `user-attribute-update`, action `set-attributes`. One operation for each user, as one PATCH for each device (`docs/superpowers/specs/2026-10-21-update-device-fields-design.md:23`).
-- Each part is `PATCH /admin/directory/v1/users/{userId}` with the immutable Google user ID (Discovery `userKey`). A batch holds 250 parts (`libs/google-connection/src/lib/batch.ts:87`).
-- The write token carries `admin.directory.user`. A 2xx answer settles Succeeded when its `customSchemas` hold the requested values (not verified, check L3).
-- Otherwise a read-back settles it: `users.get` with `projection=custom`, `customFieldMask`, and the read scope of document A.
+- Each part is `PATCH /admin/directory/v1/users/{userId}` with the immutable Google user ID (Discovery `userKey`). A body that holds a `null` goes as `PUT` on the same path, the `users.update` call (E16, design C9). A batch holds 250 parts (`libs/google-connection/src/lib/batch.ts:87`).
+- The write token carries `admin.directory.user`. A 2xx answer settles Succeeded when its `customSchemas` hold the requested values. Check L3 found `customSchemas` in the answer and recorded none of its values.
+- Otherwise a read-back settles it: `users.get` with `projection=custom`, `customFieldMask`, and the read scope of document A. The read-back starts 30 seconds after the answer or later (design C11). In check L3, a read right after a write showed none of its values.
 
 ### 7.3 Outcomes and Unknown
 
@@ -261,13 +261,13 @@ Both kinds share the one write slot of device jobs (`docs/superpowers/specs/2026
 | Text (STRING)           | Text box. No trim.          | The string                            | 1 to 500 code points and a visible character (Guide, `libs/application-contracts/src/lib/device-updates.ts:26-37`) |
 | Whole number (INT64)    | Digits, an optional `-`     | JSON number, no leading zeros         | ±9,007,199,254,740,991, the JSON safe range (E10), and the range of the attribute                                  |
 | Decimal number (DOUBLE) | Digits with an optional `.` | JSON number, shortest round-trip form | Finite, and the range of the attribute                                                                             |
-| Yes or no (BOOL)        | Dropdown: Yes, No           | JSON `true` or `false`                | JSON form not verified, check L1                                                                                   |
-| Date (DATE)             | Date picker                 | JSON string `YYYY-MM-DD`              | A calendar date. Format not verified, check L1.                                                                    |
+| Yes or no (BOOL)        | Dropdown: Yes, No           | JSON `true` or `false`                | Check L3 read `true` as a JSON boolean.                                                                            |
+| Date (DATE)             | Date picker                 | JSON string `YYYY-MM-DD`              | A calendar date. Check L3 read `2026-11-17` as a JSON string.                                                      |
 | Email (EMAIL)           | Text box                    | The string                            | The `z.email()` rule with 254 characters (`libs/application-contracts/src/lib/google-connection.ts:75`)            |
-| Phone (PHONE)           | Text box                    | The string                            | 1 to 500 code points. The Google format rule is not verified, check L3.                                            |
+| Phone (PHONE)           | Text box                    | The string                            | 1 to 500 code points. Check L3 stored `+1 555 0100` unchanged and tested no other format.                          |
 
 - Every limit counts code points, as device writes do (`docs/superpowers/specs/2026-10-21-update-device-fields-design.md:29`).
-- The reader accepts a JSON number or a numeric string for INT64 and DOUBLE. Check L1 records the form that Google answers.
+- The reader accepts a JSON number or a numeric string for INT64 and DOUBLE. Check L3 read `7` and `1.5` as JSON numbers through `projection=custom`. Check L1 records the form of `projection=full`.
 - The reader accepts `true`, `false`, and their strings for BOOL. Values compare by canonical form.
 
 ### 8.2 Multi-value entries
@@ -278,7 +278,7 @@ Both kinds share the one write slot of device jobs (`docs/superpowers/specs/2026
 ### 8.3 Modes and payloads
 
 Examples use `StudentInfo.Homeroom` (single value) and `StudentInfo.Programs` (multi-value) from baseline default 13.
-Each body is `{ "customSchemas": { ... } }` with only the changed attributes. `null` removes a value (Guide).
+Each body is `{ "customSchemas": { ... } }` with only the changed attributes. `null` marks a value to remove (Guide). A body with a `null` goes through `users.update` (E16).
 
 | Mode               | For          | Person enters      | Final value for each user                                             | `customSchemas` body                                                           |
 | ------------------ | ------------ | ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -290,8 +290,8 @@ Each body is `{ "customSchemas": { ... } }` with only the changed attributes. `n
 | Clear values       | Multi-value  | Nothing            | No value                                                              | `{ "StudentInfo": { "Programs": null } }`                                      |
 
 - One change set holds one or more attributes, each once, with one mode each (`docs/superpowers/specs/2026-10-21-update-device-fields-design.md:22`). A user whose final value equals the current value is Unchanged and gets no operation.
-- Discovery states that `users.patch` cannot clear repeated objects such as addresses. Its effect on a list is not verified (check L3).
-- If L3 shows that `null` fails through `users.patch`, the job sends the body with `users.update`, which clears `null` fields (E16).
+- Discovery states that `users.patch` cannot clear repeated objects such as addresses. In check L3, a `users.patch` with `null` kept a single value and a list for 8 seconds.
+- E16 applies, so the job sends each body that holds a `null` with `users.update` (design C9). Discovery states that `users.update` clears `null` fields. Check L4 tests that clear before the build (design K30).
 
 ### 8.4 Final values and conflicts
 
@@ -360,7 +360,7 @@ Each body is `{ "customSchemas": { ... } }` with only the changed attributes. `n
 
 | Failure                     | Where              | Behavior                                                                                                                                                                                    |
 | --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Name used                   | Plan, category job | Plan: 422 `name-in-use`. Google 409: Failed `name-in-use`, the schema cache refreshes, and the dialog offers Edit again.                                                                    |
+| Name used                   | Plan, category job | Plan: 422 `name-in-use`. Google 409 or 412 `conditionNotMet` on an insert (check L2): Failed `name-in-use`, the schema cache refreshes, and the dialog offers Edit again.                   |
 | Stale `etag`                | Plan, confirm, job | 412 `category-changed`, or Failed `category-changed` in the worker. "Another change reached this category. Open it again." A changed category after a value preview answers 409 at confirm. |
 | Category or attribute limit | Plan, category job | Plan: 422 `category-limit` or `attribute-limit`. A Google refusal: Failed with its reason, and the cache refreshes.                                                                         |
 | Refused value               | Preview, value job | Preview: 422 with the label and rule, for example "Homeroom holds 1 to 500 characters." Google: Failed with its reason.                                                                     |
@@ -377,9 +377,13 @@ A refusal fails only its own part. Other users continue (`docs/superpowers/specs
 The release needs the owner's yes, as 0.3.0 did (baseline section 4). It adds:
 
 - The `schemas` resource: list, get, insert, update, patch, and delete, by name or by ID, also as batch parts.
-- Schema rules: 409, both limits, name characters, required keys, the three locks, and a new `etag` on each write.
-- Custom values on users with `projection=custom` and `customFieldMask`, and with `projection=full`. PATCH merges by category and attribute. `null` deletes. Values follow their info type and the 500 limit.
-- Marked hypotheses until checks L2 and L3: `If-Match` gives 412, removal deletes values, and an unknown attribute answers 400.
+- Schema rules: 412 `conditionNotMet` on a reused name (check L2), both limits, name characters, required keys, the three locks, and a new `etag` on each write.
+- Custom values on users with `projection=custom` and `customFieldMask`, and with `projection=full`. PATCH and update merge by category and attribute. `users.patch` keeps a `null` value, as in check L3, and `users.update` deletes it. Values follow their info type and the 500 limit.
+- Marked hypotheses:
+  - `If-Match` gives 412 on a delete. Check L2 showed that an update ignores `If-Match`.
+  - A delete removes the values of the category. Check L3 showed that a removed attribute reads no value.
+  - An unknown attribute answers 400.
+  - `users.update` deletes a `null` value.
 
 Tests follow the failing-first rule (`docs/superpowers/specs/2026-10-16-device-write-jobs-design.md:1402`):
 
@@ -393,8 +397,8 @@ The part allowlist adds the `schemas` and `users` paths (`libs/google-connection
 | Check | Authorization                                                                                | Steps                                                                                                                                                                                          | Settles                                                               |
 | ----- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | L1    | Standing read-only authorization, after the owner adds `admin.directory.userschema.readonly` | `schemas.list`, then `schemas.get` inside the batch endpoint. With the read scope of document A, `users.get` with `projection=full` for one holder of each info type.                          | Batch support for `schemas`. The JSON forms of INT64, BOOL, and DATE. |
-| L2    | The owner's explicit yes                                                                     | On a category `CcLiveCheck`: insert, insert again, update with a stale `If-Match`, a 200-character name, delete, and insert with the same name.                                                | 409, 412, name length, name reuse                                     |
-| L3    | The owner's explicit yes, with one test user that he names                                   | Set each info type. Clear a single and a multi-value attribute. Change one value to multiple values. Remove an attribute, add it again, then delete the category. `users.get` after each step. | Section 6.3, `null` on a list, the PATCH answer, the phone format     |
+| L2    | The owner's explicit yes                                                                     | On a category `CcLiveCheck`: insert, insert again, update with a stale `If-Match`, a 200-character name, delete, and insert with the same name.                                                | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
+| L3    | The owner's explicit yes, with one test user that he names                                   | Set each info type. Clear a single and a multi-value attribute. Change one value to multiple values. Remove an attribute, add it again, then delete the category. `users.get` after each step. | Ran 2026-11-17. The design addendum, section 6, records the answers.  |
 
 Each check stores sanitized evidence with `example.org` and `C0123456`. No live category or value write runs without the owner's yes.
 
@@ -428,7 +432,7 @@ Added by this design. Document A adds U6 (User Read at district scope).
 
 Departures from the baseline, each open until the owner approves the screens:
 
-1. Baseline default 9 states that a removal deletes the values. No Google source confirms it. The design holds that text until check L3 (U7).
+1. Baseline default 9 states that a removal deletes the values. No Google source confirms it. The design holds that text until check L3 (U7). Check L3 read no value of a removed attribute, also after the attribute returned. No L3 read showed the values of a deleted category (design OQ3).
 2. The editor refuses removal of the last attribute of a category. The Admin help states this rule. Baseline default 8 does not list it.
 3. The editor adds an optional range for numeric attributes. Baseline default 13 names "Grade level whole number 0 to 12".
 
@@ -443,14 +447,14 @@ The owner can change each default.
 | E3       | Typed phrases    | The attribute name for a removal and the category display name for a delete, trimmed, compared exactly                           |
 | E4, E5   | Edit call        | `schemas.update` with the complete schema, never `schemas.patch`. Every call names the category by `schemaId`.                   |
 | E6       | Transport        | Every Google call inside the Directory batch endpoint. The category job sends one part.                                          |
-| E7       | Concurrency      | A fresh `schemas.get` and an `etag` compare before the write, then `If-Match` on the write                                       |
+| E7       | Concurrency      | A fresh `schemas.get` and an `etag` compare before the write, then `If-Match`, which an update ignores (check L2)                |
 | E8       | Write slot       | Category and value jobs share the one write slot of device write jobs                                                            |
 | E10      | Value limits     | 500 code points for each text entry. Whole numbers within the JSON safe range. Email by `z.email()`.                             |
 | E11      | Range            | The value checks refuse a value outside the range of the attribute                                                               |
 | E12, E13 | Columns          | A multi-value cell lists its values in order with commas. Column ID `attr:<schemaName>.<fieldName>`.                             |
 | E14      | Actions          | `users:schema-manage`, `users:write`, and `users:bulk-actions`, with scope kinds `platform` and `district`                       |
 | E15      | Category `null`  | No body sets a whole category to `null`                                                                                          |
-| E16      | Fallback call    | `users.update` with the same body if check L3 shows that `users.patch` cannot clear a list                                       |
+| E16      | Fallback call    | `users.update` with the same body if check L3 shows that `users.patch` cannot clear a list. L3 showed it (design C9).            |
 | E9, E17  | Expiry and sizes | Plans and previews expire after 15 minutes. Edit lists: 2,500 edits on 500 users. Selections: 100,000 users. Batches: 250 parts. |
 | E18      | Last attribute   | Remove is disabled. The person deletes the category.                                                                             |
 
