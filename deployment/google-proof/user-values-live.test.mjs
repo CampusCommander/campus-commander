@@ -283,7 +283,7 @@ async function runFlow(t, options = {}) {
       request: (request) => directory.request(scope, request),
     }),
     now: () => new Date('2026-11-16T12:00:00.000Z'),
-    sleep: async () => {},
+    sleep: () => Promise.resolve(),
   });
   const written = JSON.parse(await readFile(output, 'utf8'));
   return { evidence, written, directory };
