@@ -423,6 +423,17 @@ export async function runCheck(credential, options = {}) {
     return entry;
   };
 
+  /**
+   * Start a create attempt. A new insert can create a second instance of the category, so a
+   * DELETE that proved an earlier instance absent cannot certify the absence of this one.
+   * The proof is dropped before the request leaves, because the insert can apply and its
+   * answer can still be lost.
+   */
+  const startCreateAttempt = () => {
+    state.removalConfirmed = false;
+    state.createAttempted = true;
+  };
+
   const runSteps = async () => {
     // Step 1. A category that already exists stops the check before any write.
     const first = await readSchema();
@@ -457,7 +468,7 @@ export async function runCheck(credential, options = {}) {
 
     // Step 3. Insert the category. Track the attempt before the request leaves, because a
     // lost answer or a failed observation may still have created it.
-    state.createAttempted = true;
+    startCreateAttempt();
     const inserted = await call(schemaClient, {
       method: 'POST',
       url: schemasUrl(baseUrl),
@@ -680,7 +691,7 @@ export async function runCheck(credential, options = {}) {
 
     // Step 8. Insert the same name and the same four attributes again. Read the user with
     // the mask and record whether any old value came back.
-    state.createAttempted = true;
+    startCreateAttempt();
     const reinserted = await call(schemaClient, {
       method: 'POST',
       url: schemasUrl(baseUrl),
@@ -865,7 +876,9 @@ export async function runCheck(credential, options = {}) {
         failed: failureCode(error),
       });
     }
-    state.removalConfirmed = state.removalConfirmed || removalConfirmed;
+    // The DELETE above is the only proof of removal for the current instance. Proof about
+    // an earlier instance was dropped when the next create attempt started.
+    state.removalConfirmed = removalConfirmed;
     evidence.cleanup.push({
       clearedValueBeforeDelete: cleared,
       categoryPresentBeforeCleanup: current !== null && isOk(current),

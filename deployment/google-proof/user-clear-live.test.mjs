@@ -73,6 +73,7 @@ function createDirectory(options = {}) {
     deletesToRefuse: options.deletesToRefuse ?? 0,
     refuseInsert: options.refuseInsert ?? null,
     interruptSchemaReadAt: options.interruptSchemaReadAt ?? null,
+    failDeleteAt: options.failDeleteAt ?? null,
     failUpdateOnce: options.failUpdateOnce ?? null,
     changeAccountOnUpdate: options.changeAccountOnUpdate === true,
     account: {
@@ -92,6 +93,7 @@ function createDirectory(options = {}) {
     (options.loseInsertAnswer === true ? 1 : null);
   const failCustomReadsAfterUpdate = options.failCustomReadsAfterUpdate ?? 0;
   state.insertCount = 0;
+  state.deleteCalls = 0;
   state.updateApplied = false;
   state.customReadFailuresLeft = failCustomReadsAfterUpdate;
   const clone = (value) =>
@@ -340,6 +342,14 @@ function createDirectory(options = {}) {
         return { status: 200, data: clone(state.schema) };
       }
       if (method === 'DELETE') {
+        state.deleteCalls += 1;
+        // Model a DELETE that the service refuses at a chosen call. Call 1 is the step 7
+        // delete of the first instance; call 2 is the cleanup delete of the second.
+        if (state.deleteCalls === state.failDeleteAt)
+          throw new FakeAnswer(
+            options.failDeleteStatus ?? 500,
+            options.failDeleteReason ?? 'backendError',
+          );
         removeCategory();
         return { status: 204, data: undefined };
       }
@@ -733,6 +743,58 @@ test('a lost second insert answer with a lagged schema read still removes the ca
       `lag ${lagReads}: the fixture holds no category`,
     );
   }
+});
+
+test('a refused cleanup delete cannot inherit the first instance deletion proof', async (t) => {
+  // Step 7 deleted the first instance with 204. The second insert applied and lost its
+  // answer. The cleanup schema probe served a stale 404, the cleanup DELETE was refused,
+  // and the final read served a stale 404. The category is still present, so the check
+  // must not report it absent, and the first deletion must not certify the second instance.
+  const { evidence, directory } = await runFlow(t, {
+    loseInsertAnswerAt: 2,
+    lagReads: 3,
+    failDeleteAt: 2,
+  });
+
+  assert.equal(evidence.outcome, 'second-insert-failed');
+  assert.equal(evidence.status, 'failed');
+  assert.equal(evidence.steps[2].httpStatus, 200, 'the first insert answered');
+  assert.equal(
+    evidence.steps[6].httpStatus,
+    204,
+    'step 7 deleted the first instance',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) => entry.action === 'schemas.get' && entry.httpStatus === 404,
+    ),
+    'the cleanup probe served a stale 404',
+  );
+  assert.ok(
+    evidence.cleanup.some(
+      (entry) =>
+        entry.action === 'schemas.delete' &&
+        entry.httpStatus === 500 &&
+        entry.errorReason === 'backendError',
+    ),
+    'the cleanup delete is refused',
+  );
+  assert.deepEqual(
+    directory.snapshot(),
+    { schemaPresent: true, values: {} },
+    'the refused cleanup delete leaves the recreated category in place',
+  );
+  assert.equal(evidence.verification.category.httpStatus, 404);
+  assert.equal(
+    evidence.verification.category.confirmedByDelete,
+    false,
+    'the deletion of the first instance does not certify the recreated one',
+  );
+  assert.equal(
+    evidence.verification.category.present,
+    null,
+    'a stale 404 and a refused delete do not prove absence',
+  );
 });
 
 test('a transient step-6 read failure continues the poll and still settles', async (t) => {
