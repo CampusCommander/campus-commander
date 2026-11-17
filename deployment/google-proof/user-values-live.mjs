@@ -378,7 +378,7 @@ export async function runCheck(credential, options = {}) {
     limitations,
     durationMs: 0,
   };
-  const state = { created: false, schema: null };
+  const state = { attempted: false, created: false, schema: null };
   const startedAt = Date.now();
   const schemaClient = await clientFor(SCHEMA_SCOPE);
   const userClient = await clientFor(USER_SCOPE);
@@ -463,6 +463,9 @@ export async function runCheck(credential, options = {}) {
     }
 
     // Step 2. Insert the category with one attribute of each info type.
+    // The POST may create the category even when its answer is lost or the observation
+    // that follows it fails. Track that possibility before the request leaves.
+    state.attempted = true;
     const inserted = await step(
       2,
       'schemas.insert',
@@ -493,6 +496,11 @@ export async function runCheck(credential, options = {}) {
         observation.httpStatus === 200 && observation.categoryPresent === false,
     );
     if (!isOk(inserted.result)) {
+      // A 4xx refusal proves that this run created nothing. A 5xx answer or a lost
+      // answer does not, so cleanup still probes and removes the category.
+      const status = inserted.result.httpStatus;
+      if (Number.isInteger(status) && status >= 400 && status < 500)
+        state.attempted = false;
       evidence.outcome = 'insert-failed';
       return;
     }
@@ -620,58 +628,105 @@ export async function runCheck(credential, options = {}) {
   };
 
   const cleanup = async () => {
-    if (!state.created) return;
-    const current = await getCategory();
-    evidence.cleanup.push({
-      action: 'schemas.get',
-      method: 'GET',
-      httpStatus: current.httpStatus,
-      ...(current.errorReason ? { errorReason: current.errorReason } : {}),
-    });
-    const before = await readUser();
-    const observed = observeUser(before, true);
-    evidence.cleanup.push({ action: 'users.get', method: 'GET', ...observed });
-    const holdsValue =
-      observed.categoryPresent === true &&
-      Object.keys(observed.attributes ?? {}).length > 0;
-    let cleared = false;
-    if (holdsValue) {
-      const clear = await perform(userClient, {
-        method: 'PATCH',
-        url: userUrl,
-        data: valuePatch(CATEGORY, null),
-      });
-      cleared = isOk(clear);
+    // Run after every attempt that could have created the category, not only after an
+    // acknowledged insert. A lost answer or a failed observation leaves the flag set.
+    if (!state.attempted) return;
+    let current = null;
+    try {
+      current = await getCategory();
       evidence.cleanup.push({
-        action: 'users.patch',
-        method: 'PATCH',
-        httpStatus: clear.httpStatus,
-        ...(clear.errorReason ? { errorReason: clear.errorReason } : {}),
-        requested: 'customSchemas.CcLiveValues=null',
+        action: 'schemas.get',
+        method: 'GET',
+        httpStatus: current.httpStatus,
+        ...(current.errorReason ? { errorReason: current.errorReason } : {}),
       });
-      const after = observeUser(await readUser(), true);
-      evidence.cleanup.push({ action: 'users.get', method: 'GET', ...after });
+    } catch (error) {
+      evidence.cleanup.push({
+        action: 'schemas.get',
+        method: 'GET',
+        failed: failureCode(error),
+      });
     }
-    if (isOk(current)) {
-      const removal = await perform(schemaClient, {
-        method: 'DELETE',
-        url: schemaUrl(baseUrl, CATEGORY),
-      });
+    let observed = null;
+    try {
+      observed = observeUser(await readUser(), true);
       evidence.cleanup.push({
-        action: 'schemas.delete',
-        method: 'DELETE',
-        httpStatus: removal.httpStatus,
-        ...(removal.errorReason ? { errorReason: removal.errorReason } : {}),
+        action: 'users.get',
+        method: 'GET',
+        ...observed,
       });
+    } catch (error) {
+      evidence.cleanup.push({
+        action: 'users.get',
+        method: 'GET',
+        failed: failureCode(error),
+      });
+    }
+    const holdsValue =
+      observed?.categoryPresent === true &&
+      Object.keys(observed.attributes ?? {}).length > 0;
+    // When the category exists but the user read could not answer, a null PATCH is the
+    // only safe way to make sure no value remains. It names only this category.
+    const readUncertain =
+      isOk(current) && (observed === null || observed.httpStatus === null);
+    let cleared = false;
+    if (holdsValue || readUncertain) {
+      try {
+        const clear = await perform(userClient, {
+          method: 'PATCH',
+          url: userUrl,
+          data: valuePatch(CATEGORY, null),
+        });
+        cleared = isOk(clear);
+        evidence.cleanup.push({
+          action: 'users.patch',
+          method: 'PATCH',
+          httpStatus: clear.httpStatus,
+          ...(clear.errorReason ? { errorReason: clear.errorReason } : {}),
+          requested: 'customSchemas.CcLiveValues=null',
+        });
+        const after = observeUser(await readUser(), true);
+        evidence.cleanup.push({ action: 'users.get', method: 'GET', ...after });
+      } catch (error) {
+        evidence.cleanup.push({
+          action: 'users.patch',
+          method: 'PATCH',
+          failed: failureCode(error),
+        });
+      }
+    }
+    // A 404 proves absence. Delete when the probe answered, and also when it did not
+    // answer, so an ambiguous probe does not leave this run's category behind.
+    if (current === null || current.httpStatus !== 404) {
+      try {
+        const removal = await perform(schemaClient, {
+          method: 'DELETE',
+          url: schemaUrl(baseUrl, CATEGORY),
+        });
+        evidence.cleanup.push({
+          action: 'schemas.delete',
+          method: 'DELETE',
+          httpStatus: removal.httpStatus,
+          ...(removal.errorReason ? { errorReason: removal.errorReason } : {}),
+        });
+      } catch (error) {
+        evidence.cleanup.push({
+          action: 'schemas.delete',
+          method: 'DELETE',
+          failed: failureCode(error),
+        });
+      }
     }
     evidence.cleanup.push({
       clearedValueBeforeDelete: cleared,
-      categoryPresentBeforeCleanup: isOk(current),
+      categoryPresentBeforeCleanup: current !== null && isOk(current),
     });
   };
 
   const verify = async () => {
-    if (!state.created) {
+    // After an ambiguous write the check still verifies absence. Only a run that sent
+    // no write at all, or one that a 4xx refused outright, verifies nothing.
+    if (!state.attempted) {
       evidence.verification = {
         skipped: 'The check wrote nothing, so it verified nothing.',
       };
