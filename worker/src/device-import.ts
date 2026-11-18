@@ -1708,11 +1708,17 @@ export class DeviceImportJobs {
         const failed = states.flatMap((state) =>
           state.status === 'failed' ? [state.deviceId] : [],
         );
-        await this.storeRefresh(input.customerId, syncedAt, found, missing);
+        const removed = await this.storeRefresh(
+          input.customerId,
+          syncedAt,
+          found,
+          missing,
+        );
         // A failed device rejects only its own rows, and its stored values stay
-        // (design section 6, step 11).
+        // (design section 6, step 11). A 404 that a newer presence observation predates stores no
+        // removal, so its rows are not rejected as removed.
         this.rejectDevices(inspection, failed, 'current-values-unavailable');
-        this.rejectDevices(inspection, missing, 'device-removed');
+        this.rejectDevices(inspection, removed, 'device-removed');
       }
       inspection.staleDevicesRead += batch.length;
       await progress.step({
@@ -2187,15 +2193,18 @@ export class DeviceImportJobs {
 
   /**
    * Store one refresh read: each found device as a read, and each missing device soft-deleted, in
-   * one transaction (design section 6, step 10).
+   * one transaction (design section 6, step 10). The answer names the devices this observation holds
+   * removed. A 404 older than a newer presence returns no ID, so the caller rejects only the rows
+   * that the store accepted.
    */
   private async storeRefresh(
     customerId: string,
     syncedAt: string,
     found: readonly { deviceId: string }[],
     missing: readonly string[],
-  ): Promise<void> {
+  ): Promise<string[]> {
     try {
+      const removed: string[] = [];
       await this.database.transaction(async (query) => {
         for (const batch of chunks(found, this.batchSize))
           await query.query('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
@@ -2204,12 +2213,17 @@ export class DeviceImportJobs {
             syncedAt,
             'read',
           ]);
-        for (const batch of chunks(missing, this.batchSize))
-          await query.query('SELECT cc.soft_delete_devices($1,$2) AS result', [
-            customerId,
-            JSON.stringify(batch),
-          ]);
+        for (const batch of chunks(missing, this.batchSize)) {
+          const answer = await query.query(
+            'SELECT cc.soft_delete_devices($1,$2,$3) AS result',
+            [customerId, JSON.stringify(batch), syncedAt],
+          );
+          removed.push(
+            ...z.array(z.string()).parse(answer.rows[0]?.['result']),
+          );
+        }
       });
+      return removed;
     } catch (error) {
       if (error instanceof DeviceSyncError) throw error;
       throw new DeviceImportError('store-unavailable');

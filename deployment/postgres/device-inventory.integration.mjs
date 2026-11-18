@@ -232,8 +232,8 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
     await fullSync([device('d1'), device('d3')]);
     assert.deepEqual(
       await lastRemoved(),
-      [],
-      'A sync that removes nothing names no devices.',
+      ['d2'],
+      'A repeated full sync names the absence it confirms again and moves the tombstone.',
     );
 
     // A failed full sync removes nothing and keeps the publication.
@@ -317,12 +317,14 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
       (await rows()).find((row) => row.device_id === 'd2').model,
       'Acer',
     );
-    assert.equal(
-      await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+    assert.deepEqual(
+      await result('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
         customer,
         JSON.stringify(['d3', 'missing']),
+        new Date().toISOString(),
       ]),
-      1,
+      ['d3'],
+      'The answer names the devices this observation holds removed.',
     );
     const elementRecord = (element) =>
       element && typeof element === 'object' && 'record' in element
@@ -607,9 +609,10 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           '2026-10-01T11:00:00.000Z',
         );
         assert.equal((await versions(id)).record, first + 1);
-        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+        await result('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
           customer,
           JSON.stringify([id]),
+          '2026-10-01T12:00:00.000Z',
         ]);
         assert.equal((await versions(id)).record, first + 2);
         const removed = await result(
@@ -631,9 +634,10 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
           '2026-10-02T10:00:00.000Z',
           'list',
         ]);
-        await result('SELECT cc.soft_delete_devices($1,$2) AS result', [
+        await result('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
           customer,
           JSON.stringify([removed]),
+          '2026-10-02T11:00:00.000Z',
         ]);
         const records = await result(
           'SELECT cc.read_device_records($1,$2) AS result',
@@ -957,6 +961,239 @@ export async function qualifyDeviceInventory({ runtime, migrator, issuer }) {
         assert.equal(unchanged.status, 'cancelled');
         assert.equal(unchanged.cancelled, 2);
       },
+    );
+
+    // The removal fence of 021-device-removal-fence.sql. Presence and absence observations order by
+    // their observation time, for all four writers of cc.devices.removed_at.
+    const removalOf = async (deviceId) =>
+      (
+        await migrator.query(
+          'SELECT removed_at FROM cc.devices WHERE customer_id=$1 AND device_id=$2',
+          [customer, deviceId],
+        )
+      ).rows[0]?.removed_at ?? null;
+    const stampOf = (value) => value?.toISOString() ?? null;
+    const upsertAt = (devices, at, kind = 'read') =>
+      result('SELECT cc.upsert_devices($1,$2,$3,$4) AS result', [
+        customer,
+        JSON.stringify(devices),
+        at,
+        kind,
+      ]);
+    const removeAt = (ids, at) =>
+      result('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
+        customer,
+        JSON.stringify(ids),
+        at,
+      ]);
+
+    await check(
+      'a held older refresh read cannot clear a removal that a newer full sync made',
+      async () => {
+        const id = 'dfence-held';
+        const heldAt = '2026-10-03T10:00:00.000Z';
+        assert.equal(await upsertAt([device(id)], heldAt), 1);
+        assert.equal(await removalOf(id), null);
+        // The full sync enumerates no device, so its absence is later than the held read.
+        await fullSync([]);
+        const removed = await removalOf(id);
+        assert.ok(
+          removed instanceof Date,
+          'The newer full sync marks the device removed.',
+        );
+        // The held answer lands with its older stamp.
+        assert.equal(
+          await upsertAt(
+            [device(id, { annotatedLocation: 'Library' })],
+            heldAt,
+          ),
+          1,
+          'The older read still stores its field observation.',
+        );
+        assert.equal(
+          stampOf(await removalOf(id)),
+          removed.toISOString(),
+          'The older read cannot clear the newer removal.',
+        );
+        assert.deepEqual(
+          await result('SELECT cc.read_device_records($1,$2) AS result', [
+            customer,
+            JSON.stringify([id]),
+          ]),
+          [],
+          'The removed device stays out of the records.',
+        );
+        assert.equal(
+          await upsertAt(
+            [device(id)],
+            new Date(Date.now() + 1_000).toISOString(),
+          ),
+          1,
+          'A later presence observation restores the device.',
+        );
+        assert.equal(await removalOf(id), null);
+      },
+    );
+
+    await check(
+      'a 404 refuses an observation older than the newest presence, and a repeated 404 moves the tombstone',
+      async () => {
+        const id = 'dfence-absent';
+        const presentAt = new Date(Date.now() + 2_000).toISOString();
+        assert.equal(await upsertAt([device(id)], presentAt), 1);
+        assert.deepEqual(
+          await removeAt([id], '2026-10-04T10:00:00.000Z'),
+          [],
+          'An older 404 removes nothing.',
+        );
+        assert.equal(await removalOf(id), null);
+        const newerAt = new Date(Date.now() + 3_000).toISOString();
+        assert.deepEqual(
+          await removeAt([id], newerAt),
+          [id],
+          'A 404 newer than the presence observation removes the device.',
+        );
+        assert.equal(stampOf(await removalOf(id)), newerAt);
+        const repeatedAt = new Date(Date.now() + 4_000).toISOString();
+        assert.deepEqual(
+          await removeAt([id], repeatedAt),
+          [id],
+          'A repeated 404 names the device again.',
+        );
+        assert.equal(
+          stampOf(await removalOf(id)),
+          repeatedAt,
+          'A repeated absence moves the tombstone forward.',
+        );
+        // A presence observation that both absences predate cannot restore the row.
+        assert.equal(
+          await upsertAt(
+            [device(id)],
+            new Date(Date.now() + 3_500).toISOString(),
+          ),
+          1,
+        );
+        assert.equal(
+          stampOf(await removalOf(id)),
+          repeatedAt,
+          'The newest absence stays.',
+        );
+      },
+    );
+
+    await check(
+      'a repeated full-sync absence moves the tombstone, so a presence observation between the two absences cannot restore the device',
+      async () => {
+        const id = 'dfence-repeat';
+        await fullSync([device(id)]);
+        assert.equal(await removalOf(id), null);
+        await fullSync([]);
+        const first = await removalOf(id);
+        assert.ok(
+          first instanceof Date,
+          'The first full sync removes the device.',
+        );
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        await fullSync([]);
+        const second = await removalOf(id);
+        assert.ok(
+          second > first,
+          'The repeated full-sync absence moves the tombstone forward.',
+        );
+        const between = new Date(
+          (first.getTime() + second.getTime()) / 2,
+        ).toISOString();
+        assert.equal(await upsertAt([device(id)], between), 1);
+        assert.equal(
+          stampOf(await removalOf(id)),
+          second.toISOString(),
+          'The presence observation between the two absences cannot restore the row.',
+        );
+        assert.equal(
+          await upsertAt(
+            [device(id)],
+            new Date(Date.now() + 5_000).toISOString(),
+          ),
+          1,
+          'A presence observation newer than both absences restores the row.',
+        );
+        assert.equal(await removalOf(id), null);
+      },
+    );
+
+    await check(
+      'a removal keeps a live overlay, and the list controls still move and converge it',
+      async () => {
+        const id = 'dfence-overlay';
+        await fullSync([device(id, { annotatedLocation: 'Library' })]);
+        const { rows: headers } = await migrator.query(
+          'SELECT job_id FROM cc.jobs WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 1',
+          [customer],
+        );
+        await migrator.query(
+          `INSERT INTO cc.device_write_overlays(customer_id,device_id,field,value,observed_at,source,
+             job_id,expires_at)
+           VALUES($1,$2,'annotatedLocation','Library',clock_timestamp(),'write-response',$3,
+             clock_timestamp()+interval '36 hours')`,
+          [customer, id, headers[0].job_id],
+        );
+        const overlay = async () =>
+          (
+            await migrator.query(
+              `SELECT value,source,job_id FROM cc.device_write_overlays
+               WHERE customer_id=$1 AND device_id=$2 AND field='annotatedLocation'`,
+              [customer, id],
+            )
+          ).rows[0];
+        await fullSync([]);
+        assert.ok(
+          (await removalOf(id)) instanceof Date,
+          'The newer full sync removes the device.',
+        );
+        assert.equal(
+          (await overlay())?.value,
+          'Library',
+          'The removal keeps the accepted write.',
+        );
+        // A read of the removed device carries an older stamp and still cannot restore the row.
+        // The stamp is an hour old, so the moved overlay stays live for the list below.
+        assert.equal(
+          await upsertAt(
+            [device(id, { annotatedLocation: 'Library' })],
+            new Date(Date.now() - 3_600_000).toISOString(),
+          ),
+          1,
+        );
+        assert.ok(
+          (await removalOf(id)) instanceof Date,
+          'The stale read keeps the removal.',
+        );
+        assert.ok(await overlay(), 'The stale read keeps the accepted write.');
+        // A list observation that answers the overlay value converges it and restores the device.
+        await fullSync([device(id, { annotatedLocation: 'Library' })]);
+        assert.equal(await removalOf(id), null);
+        assert.equal(
+          await overlay(),
+          undefined,
+          'The list converges the accepted write.',
+        );
+      },
+    );
+
+    // The fence checks leave no device behind, so a later module reads its own inventory only.
+    const fenceIds = [
+      'dfence-held',
+      'dfence-absent',
+      'dfence-repeat',
+      'dfence-overlay',
+    ];
+    await migrator.query(
+      'DELETE FROM cc.device_write_overlays WHERE customer_id=$1 AND device_id=ANY($2::text[])',
+      [customer, fenceIds],
+    );
+    await migrator.query(
+      'DELETE FROM cc.devices WHERE customer_id=$1 AND device_id=ANY($2::text[])',
+      [customer, fenceIds],
     );
 
     await migrator.query(

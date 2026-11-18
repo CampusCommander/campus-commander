@@ -126,10 +126,11 @@ export async function qualifyUserInventory({
             'SELECT id FROM cc.schema_migrations ORDER BY id',
           )
         ).rows.map((row) => row.id);
-        assert.equal(ids.at(-3), '020-user-sync');
-        assert.equal(ids.at(-2), '021-user-api');
-        assert.equal(ids.at(-1), '022-user-refresh-targets');
-        assert.equal(ids.length, 22);
+        assert.equal(ids.at(-4), '020-user-sync');
+        assert.equal(ids.at(-3), '021-user-api');
+        assert.equal(ids.at(-2), '022-user-refresh-targets');
+        assert.equal(ids.at(-1), '021-device-removal-fence');
+        assert.equal(ids.length, 23);
       },
     );
 

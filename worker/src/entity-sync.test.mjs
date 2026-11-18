@@ -133,6 +133,8 @@ function database({
         return {
           rows: [{ result: acceptedRemovals ?? JSON.parse(values[1]) }],
         };
+      if (name === 'soft_delete_devices')
+        return { rows: [{ result: JSON.parse(values[1]) }] };
       if (name === 'finish_entity_sync_batch')
         return { rows: [{ result: { ...finish, entityType } }] };
       return { rows: [{ result: 1 }] };
@@ -245,6 +247,11 @@ test('a batch upserts, caches, removes in-flight IDs, and publishes one event', 
   );
   assert.equal(db.calls[3].values[2], clock.toISOString());
   assert.deepEqual(JSON.parse(db.calls[5].values[1]), ['d2']);
+  assert.equal(
+    db.calls[5].values[2],
+    clock.toISOString(),
+    'The removal carries the read stamp.',
+  );
   assert.deepEqual(db.calls[7].values, [customerId, jobId, 0, null]);
   assert.deepEqual(names(redis.calls), [
     'setRecords',
