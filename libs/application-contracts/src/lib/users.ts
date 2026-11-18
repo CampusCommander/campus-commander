@@ -753,6 +753,7 @@ export const userAttributeCategoryPlanSchema = z
       plan.changes.every((change) => change.change === 'removed'),
     { message: 'A delete plan removes attributes.' },
   )
+  // An edit can change only the category label, so its change list stays empty (B section 6.1).
   .refine(
     (plan) => plan.kind !== 'create-category' || plan.changes.length > 0,
     {
