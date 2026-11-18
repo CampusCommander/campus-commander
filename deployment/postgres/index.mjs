@@ -120,6 +120,7 @@ export async function loadMigrations() {
       '021-user-api',
       '022-user-refresh-targets',
       '023-device-removal-fence',
+      '024-user-attribute-categories',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -378,6 +379,11 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.user_attribute_numbers(jsonb),
         cc.user_attribute_number(text),
         cc.user_attribute_has_value(jsonb) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '024-user-attribute-categories')) {
+      await client.query(
+        `GRANT SELECT ON cc.user_category_plans, cc.user_schema_change_jobs TO ${role}`,
+      );
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

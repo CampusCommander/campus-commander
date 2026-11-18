@@ -3,6 +3,7 @@ import { qualifyDeviceInventory } from './device-inventory.integration.mjs';
 import { qualifyUserInventory } from './user-inventory.integration.mjs';
 import { qualifyUserApi } from './user-api.integration.mjs';
 import { qualifyUserApiHttp } from './user-api-http.integration.mjs';
+import { qualifyUserAttributeCategories } from './user-attribute-categories.integration.mjs';
 import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
@@ -613,6 +614,13 @@ try {
       issuer,
       connect,
       close,
+    })),
+  );
+  results.push(
+    ...(await qualifyUserAttributeCategories({
+      runtime,
+      migrator: migrators[0],
+      issuer,
     })),
   );
   results.push(

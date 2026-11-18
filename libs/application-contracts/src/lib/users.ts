@@ -2,6 +2,7 @@ import * as z from 'zod';
 import { googleCustomerIdSchema } from './google-connection';
 import { deviceSyncFailureSchema } from './devices';
 import { googleHealthFailureSchema } from './google-health';
+import { jobDisplayIdSchema } from './jobs';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -14,6 +15,11 @@ const attributeName = new RegExp(`^${attributeNameSource}$`);
 const attributeText = z.string().regex(attributeName);
 const displayName = z.string().min(1).max(200);
 const recordVersion = z.number().int().min(1);
+/** A Google `schemaId` or `fieldId`. It stays an opaque string, whatever characters it holds (C8). */
+const googleSchemaId = z.string().min(1).max(200);
+const etag = z.string().min(1).max(200);
+/** The digest form of the device previews. A category plan freezes the same way (B section 6). */
+const manifestDigest = z.string().regex(/^[a-f0-9]{64}$/);
 
 /**
  * C1: the one ID of one attribute. The grid uses it as its column ID, the filter panel as the key
@@ -449,7 +455,7 @@ export type UserAttributeRange = z.infer<typeof userAttributeRangeSchema>;
 
 /** One attribute of the cache: the Google metadata and the users that hold a value (B section 5). */
 export const userAttributeFieldSchema = z.strictObject({
-  fieldId: z.string().min(1).max(200),
+  fieldId: googleSchemaId,
   fieldName: attributeText,
   displayName,
   fieldType: userAttributeFieldTypeSchema,
@@ -463,10 +469,10 @@ export type UserAttributeField = z.infer<typeof userAttributeFieldSchema>;
 
 /** One category of the cache: its Google metadata, its attributes, and its holders (B section 9). */
 export const userAttributeCategorySchema = z.strictObject({
-  schemaId: z.string().min(1).max(200),
+  schemaId: googleSchemaId,
   schemaName: attributeText,
   displayName,
-  etag: z.string().min(1).max(200),
+  etag,
   fields: z
     .array(userAttributeFieldSchema)
     .min(1)
@@ -522,4 +528,272 @@ export const userAttributeCategoriesSchema = z.strictObject({
 });
 export type UserAttributeCategories = z.infer<
   typeof userAttributeCategoriesSchema
+>;
+
+/** The three category changes of the editor (B section 6.1). A plan kind is also its job action. */
+export const userAttributeCategoryPlanKindSchema = z.enum([
+  'create-category',
+  'edit-category',
+  'delete-category',
+]);
+export type UserAttributeCategoryPlanKind = z.infer<
+  typeof userAttributeCategoryPlanKindSchema
+>;
+
+/** The one Google call of each plan kind. One save gives one plan and one call (B section 6.1). */
+export const USER_ATTRIBUTE_CATEGORY_PLAN_METHODS: Readonly<
+  Record<UserAttributeCategoryPlanKind, 'insert' | 'update' | 'delete'>
+> = {
+  'create-category': 'insert',
+  'edit-category': 'update',
+  'delete-category': 'delete',
+};
+
+/** The properties that an edit changes on a kept attribute (B section 5). A name and an info type
+ * are locked, so they never appear here. */
+export const userAttributeCategoryPlanPropertySchema = z.enum([
+  'displayName',
+  'multiValued',
+  'indexed',
+  'readAccessType',
+  'numericIndexingSpec',
+]);
+export type UserAttributeCategoryPlanProperty = z.infer<
+  typeof userAttributeCategoryPlanPropertySchema
+>;
+
+/**
+ * One attribute of a category draft (B sections 5 and 6.1). A kept attribute carries its cached
+ * field ID, and a new attribute carries null. An edit copies every property of a kept field from
+ * the schema cache, the number range included (C3).
+ */
+export const userAttributeCategoryDraftFieldSchema = z
+  .strictObject({
+    fieldId: googleSchemaId.nullable(),
+    fieldName: attributeText,
+    displayName,
+    fieldType: userAttributeFieldTypeSchema,
+    multiValued: z.boolean(),
+    indexed: z.boolean(),
+    readAccessType: userAttributeVisibilitySchema,
+    /** The optional range of a whole-number or a decimal attribute (K19, B section 5). */
+    numericIndexingSpec: userAttributeRangeSchema.nullable(),
+  })
+  .refine(
+    (field) =>
+      field.numericIndexingSpec === null ||
+      field.fieldType === 'INT64' ||
+      field.fieldType === 'DOUBLE',
+    { message: 'A number range belongs to a number attribute.' },
+  );
+export type UserAttributeCategoryDraftField = z.infer<
+  typeof userAttributeCategoryDraftFieldSchema
+>;
+
+/** A create draft: the new category name and its attributes. Google assigns every field ID. */
+export const userAttributeCategoryCreateDraftSchema = z
+  .strictObject({
+    schemaName: attributeText,
+    displayName,
+    fields: z
+      .array(userAttributeCategoryDraftFieldSchema)
+      .min(1)
+      .max(USER_ATTRIBUTE_FIELD_LIMIT),
+  })
+  .refine((draft) => draft.fields.every((field) => field.fieldId === null), {
+    message: 'A new attribute carries no field ID.',
+  });
+export type UserAttributeCategoryCreateDraft = z.infer<
+  typeof userAttributeCategoryCreateDraftSchema
+>;
+
+/** An edit draft: the category label and every attribute that the save keeps or adds. A cached
+ * schema name never changes (B section 5). */
+export const userAttributeCategoryEditDraftSchema = z.strictObject({
+  displayName,
+  fields: z
+    .array(userAttributeCategoryDraftFieldSchema)
+    .min(1)
+    .max(USER_ATTRIBUTE_FIELD_LIMIT),
+});
+export type UserAttributeCategoryEditDraft = z.infer<
+  typeof userAttributeCategoryEditDraftSchema
+>;
+
+/**
+ * The plan request of B section 10: `{ kind, schemaId?, baseEtag?, draft }`. A create names a new
+ * category. An edit and a delete name the cached category and the `etag` that the plan compares.
+ * The `schemaId` stays an opaque string (C8).
+ */
+export const userAttributeCategoryPlanRequestSchema = z.discriminatedUnion(
+  'kind',
+  [
+    z.strictObject({
+      kind: z.literal('create-category'),
+      draft: userAttributeCategoryCreateDraftSchema,
+    }),
+    z.strictObject({
+      kind: z.literal('edit-category'),
+      schemaId: googleSchemaId,
+      baseEtag: etag,
+      draft: userAttributeCategoryEditDraftSchema,
+    }),
+    z.strictObject({
+      kind: z.literal('delete-category'),
+      schemaId: googleSchemaId,
+      baseEtag: etag,
+    }),
+  ],
+);
+export type UserAttributeCategoryPlanRequest = z.infer<
+  typeof userAttributeCategoryPlanRequestSchema
+>;
+
+/** One attribute change of a plan (B section 6.1). A removed attribute carries its holder count,
+ * and a changed one names the properties that move. */
+export const userAttributeCategoryPlanChangeSchema = z
+  .strictObject({
+    change: z.enum(['added', 'changed', 'removed']),
+    fieldId: googleSchemaId.nullable(),
+    fieldName: attributeText,
+    displayName,
+    properties: z.array(userAttributeCategoryPlanPropertySchema).max(5),
+    holders: count.nullable(),
+  })
+  .refine(
+    (change) => (change.fieldId === null) === (change.change === 'added'),
+    {
+      message: 'An added attribute has no ID, and another change names one.',
+    },
+  )
+  .refine(
+    (change) => change.change === 'changed' || change.properties.length === 0,
+    {
+      message: 'Only a changed attribute names a property.',
+    },
+  )
+  .refine(
+    (change) => change.change !== 'changed' || change.properties.length > 0,
+    {
+      message: 'A changed attribute names at least one property.',
+    },
+  )
+  .refine(
+    (change) => change.change !== 'removed' || change.properties.length === 0,
+    {
+      message: 'A removed attribute names no property.',
+    },
+  )
+  .refine(
+    (change) => (change.holders !== null) === (change.change === 'removed'),
+    { message: 'A removed attribute carries its holder count.' },
+  )
+  .refine(
+    (change) => new Set(change.properties).size === change.properties.length,
+    { message: 'A property occurs once.' },
+  );
+export type UserAttributeCategoryPlanChange = z.infer<
+  typeof userAttributeCategoryPlanChangeSchema
+>;
+
+/**
+ * The plan answer of B section 10: the Google method, each change, the phrase to type, the two
+ * limit counts after the save, the expiry, and the digest.
+ */
+export const userAttributeCategoryPlanSchema = z
+  .strictObject({
+    planId: z.uuid(),
+    kind: userAttributeCategoryPlanKindSchema,
+    method: z.enum(['insert', 'update', 'delete']),
+    /** The cached category. A create carries null, because Google assigns the ID. */
+    schemaId: googleSchemaId.nullable(),
+    schemaName: attributeText,
+    /** The category label that the plan writes, or the cached label on a delete. */
+    displayName,
+    /** The cached `etag` that the plan compares before it writes. A create carries none. */
+    baseEtag: etag.nullable(),
+    /** A save removes and adds attributes, so a plan holds up to twice the field limit. */
+    changes: z
+      .array(userAttributeCategoryPlanChangeSchema)
+      .max(USER_ATTRIBUTE_FIELD_LIMIT * 2),
+    /** The phrase that the person types: an attribute name or the category display name. */
+    phrase: z.string().min(1).max(200).nullable(),
+    /** The two limit counts after the save (B section 5). */
+    limits: userAttributeLimitsSchema,
+    preparedAt: timestamp,
+    expiresAt: timestamp,
+    digest: manifestDigest,
+  })
+  .refine(
+    (plan) => plan.method === USER_ATTRIBUTE_CATEGORY_PLAN_METHODS[plan.kind],
+    {
+      message: 'The Google method follows the plan kind.',
+    },
+  )
+  .refine((plan) => Date.parse(plan.expiresAt) > Date.parse(plan.preparedAt), {
+    message: 'A plan expires after it was prepared.',
+  })
+  .refine(
+    (plan) => (plan.schemaId === null) === (plan.kind === 'create-category'),
+    { message: 'A create plan names no cached category.' },
+  )
+  .refine(
+    (plan) => (plan.baseEtag === null) === (plan.kind === 'create-category'),
+    { message: 'A create plan carries no cached etag.' },
+  )
+  .refine(
+    (plan) =>
+      plan.kind !== 'create-category' ||
+      plan.changes.every((change) => change.change === 'added'),
+    { message: 'A create plan adds attributes.' },
+  )
+  .refine(
+    (plan) =>
+      plan.kind !== 'delete-category' ||
+      plan.changes.every((change) => change.change === 'removed'),
+    { message: 'A delete plan removes attributes.' },
+  )
+  // An edit can change only the category label, so its change list stays empty (B section 6.1).
+  .refine(
+    (plan) => plan.kind !== 'create-category' || plan.changes.length > 0,
+    {
+      message: 'A create plan adds one attribute.',
+    },
+  )
+  .refine(
+    (plan) =>
+      (plan.phrase !== null) ===
+      (plan.kind === 'delete-category' ||
+        plan.changes.some((change) => change.change === 'removed')),
+    { message: 'A removal and a delete require the typed phrase.' },
+  );
+export type UserAttributeCategoryPlan = z.infer<
+  typeof userAttributeCategoryPlanSchema
+>;
+
+/** The confirm body of B section 10: `{ digest, acknowledged, typedPhrase? }`. The caller trims
+ * the phrase. */
+export const userAttributeCategoryPlanConfirmRequestSchema = z.strictObject({
+  digest: manifestDigest,
+  acknowledged: z.literal(true),
+  typedPhrase: z.string().min(1).max(200).optional(),
+});
+export type UserAttributeCategoryPlanConfirmRequest = z.infer<
+  typeof userAttributeCategoryPlanConfirmRequestSchema
+>;
+
+/** The receipt of a category plan confirm. It names the `CAT-` job and its change count. */
+export const userAttributeCategoryJobReceiptSchema = z
+  .strictObject({
+    jobId: z.uuid(),
+    displayId: jobDisplayIdSchema,
+    status: z.literal('accepted'),
+    action: userAttributeCategoryPlanKindSchema,
+    changeCount: count,
+  })
+  .refine((receipt) => receipt.displayId.startsWith('CAT-'), {
+    message: 'A category job carries a CAT display ID.',
+  });
+export type UserAttributeCategoryJobReceipt = z.infer<
+  typeof userAttributeCategoryJobReceiptSchema
 >;

@@ -141,6 +141,56 @@ test('jobs:manage takes the scopes of jobs:read', () => {
   );
 });
 
+test('users:schema-manage takes platform and district scopes, and the platform administrator holds it', () => {
+  assert.ok(
+    actionSchema.options.includes('users:schema-manage'),
+    'users:schema-manage is a declared action',
+  );
+  assert.deepEqual(actionScopeKinds['users:schema-manage'], [
+    'platform',
+    'district',
+  ]);
+  for (const scope of [platform, district])
+    assert.equal(
+      grantSchema.safeParse({ action: 'users:schema-manage', scope }).success,
+      true,
+    );
+  assert.equal(
+    grantSchema.safeParse({ action: 'users:schema-manage', scope: school })
+      .success,
+    false,
+  );
+  assert.equal(
+    isAuthorized(
+      grantsForPreset('platform-administrator', platform),
+      'users:schema-manage',
+      district,
+    ),
+    true,
+    'The platform administrator preset holds User Schema Manage.',
+  );
+  assert.equal(
+    isAuthorized(
+      grantsForPreset('district-administrator', district),
+      'users:schema-manage',
+      district,
+    ),
+    false,
+    'The district preset holds no users:schema-manage.',
+  );
+  // User Schema Manage opens no user read, and User Read opens no category write.
+  const schemaManager = [{ action: 'users:schema-manage', scope: district }];
+  assert.equal(isAuthorized(schemaManager, 'users:read', district), false);
+  assert.equal(
+    isAuthorized(
+      [{ action: 'users:read', scope: district }],
+      'users:schema-manage',
+      district,
+    ),
+    false,
+  );
+});
+
 test('a session with a jobs:manage grant parses', () => {
   const session = sessionResponseSchema.parse({
     identity: {
