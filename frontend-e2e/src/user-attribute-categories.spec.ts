@@ -145,6 +145,18 @@ const refreshed = {
   observedAt: at(0),
 };
 
+/** The empty domain of CA state 11. */
+const emptyCategories = {
+  categories: [],
+  limits: {
+    categories: 0,
+    categoryLimit: 100,
+    attributes: 0,
+    attributeLimit: 100,
+  },
+  observedAt: null,
+};
+
 const rows = [
   {
     userId: '110000000000000000001',
@@ -188,10 +200,18 @@ interface MockOptions {
   emptyCategories?: boolean;
   /** The stored theme preference. */
   theme?: 'system' | 'light' | 'dark';
+  /** The user directory status. An absent observation keeps the directory unpublished (R1). */
+  syncStatus?: 'never' | 'running' | 'failed';
+  /**
+   * One answer for each category GET, in order (R2). The last answer repeats.
+   * `fail` answers the missing-scope failure.
+   */
+  categoryReads?: ReadonlyArray<'fail' | typeof categories | typeof refreshed>;
 }
 
 async function signIn(page: Page, options: MockOptions = {}) {
   await installLiveStreams(page);
+  let categoryReads = 0;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -222,9 +242,29 @@ async function signIn(page: Page, options: MockOptions = {}) {
           expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
         },
       });
-    if (path === '/api/users/sync') return route.fulfill({ json: { sync } });
+    if (path === '/api/users/sync') {
+      if (!options.syncStatus) return route.fulfill({ json: { sync } });
+      return route.fulfill({
+        json: {
+          sync: {
+            ...sync,
+            status: options.syncStatus,
+            observedAt: null,
+            userCount: 0,
+            failure:
+              options.syncStatus === 'failed' ? 'request-failed' : null,
+            startedAt:
+              options.syncStatus === 'running' ? at(0) : null,
+          },
+        },
+      });
+    }
     if (path === '/api/users/attribute-categories') {
-      if (options.categoriesFail)
+      const answer = options.categoryReads?.[
+        Math.min(categoryReads, options.categoryReads.length - 1)
+      ];
+      categoryReads++;
+      if (options.categoriesFail || answer === 'fail')
         return route.fulfill({
           status: 503,
           json: {
@@ -233,18 +273,8 @@ async function signIn(page: Page, options: MockOptions = {}) {
           },
         });
       return route.fulfill({
-        json: options.emptyCategories
-          ? {
-              categories: [],
-              limits: {
-                categories: 0,
-                categoryLimit: 100,
-                attributes: 0,
-                attributeLimit: 100,
-              },
-              observedAt: null,
-            }
-          : categories,
+        json:
+          answer ?? (options.emptyCategories ? emptyCategories : categories),
       });
     }
     if (path === '/api/users/attribute-categories/refresh') {
@@ -391,6 +421,107 @@ test('CA state 01 in the dark theme keeps the same surfaces (UI-10)', async ({
   });
 });
 
+for (const status of ['never', 'running', 'failed'] as const) {
+  test(`the tabs stay available while the directory is unpublished (${status}, R1)`, async ({
+    page,
+  }) => {
+    await openAttributes(page, { syncStatus: status });
+    await expect(
+      page.getByRole('tab', { name: 'Custom attributes', exact: true }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      page.getByText('3 of 100 categories used · 4 of 100 attributes used'),
+    ).toBeVisible();
+    await expect(
+      table(page).getByRole('row', { name: /Student information/ }),
+    ).toBeVisible();
+  });
+}
+
+test('reopening the tab reads Google again and takes the newer set (R2)', async ({
+  page,
+}) => {
+  await openAttributes(page, {
+    categoryReads: [categories, categories, refreshed],
+  });
+  await expect(
+    table(page).getByRole('row', { name: /Device program/ }),
+  ).toBeVisible();
+  await page.getByRole('tab', { name: 'Users', exact: true }).click();
+  await page
+    .getByRole('tab', { name: 'Custom attributes', exact: true })
+    .click();
+  await expect(
+    page.getByText('4 of 100 categories used · 5 of 100 attributes used'),
+  ).toBeVisible();
+  await expect(
+    table(page).getByRole('row', { name: /Transportation/ }),
+  ).toBeVisible();
+});
+
+test('reopening the tab recovers from an earlier read failure (R2)', async ({
+  page,
+}) => {
+  await openAttributes(page, {
+    categoryReads: ['fail', 'fail', categories],
+  });
+  await expect(
+    page.getByRole('heading', {
+      name: 'Custom attribute categories are unavailable',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole('tab', { name: 'Users', exact: true }).click();
+  await page
+    .getByRole('tab', { name: 'Custom attributes', exact: true })
+    .click();
+  await expect(
+    table(page).getByRole('row', { name: /Device program/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('the approved help controls open the sourced help (composition choice 15)', async ({
+  page,
+}) => {
+  await openAttributes(page);
+  const toolbarHelp = page.getByRole('button', {
+    name: 'Custom attributes help',
+  });
+  await expect(toolbarHelp).toHaveAttribute('aria-expanded', 'false');
+  await toolbarHelp.click();
+  await expect(toolbarHelp).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#attribute-help-page')).toContainText(
+    'Google Workspace allows 100 categories and 100 attributes over all categories.',
+  );
+  await settle(page);
+  await page.screenshot({
+    path: `${scratch}/k17-help-page.png`,
+    fullPage: false,
+  });
+  await toolbarHelp.click();
+  await expect(page.locator('#attribute-help-page')).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Open category Student information' })
+    .click();
+  const dialog = page.getByRole('dialog');
+  const dialogHelp = dialog.getByRole('button', {
+    name: 'Custom attributes help',
+  });
+  await dialogHelp.click();
+  await expect(dialog.locator('#attribute-help-dialog')).toContainText(
+    '100 categories and 100 attributes',
+  );
+  await page.mouse.move(8, 892);
+  await page.waitForTimeout(400);
+  await page.screenshot({
+    path: `${scratch}/k17-help-dialog.png`,
+    fullPage: false,
+  });
+  await dialogHelp.click();
+  await expect(dialog.locator('#attribute-help-dialog')).toHaveCount(0);
+});
+
 test('CA state 09: the read-only category dialog', async ({ page }) => {
   await openAttributes(page);
   const link = page.getByRole('button', {
@@ -430,6 +561,38 @@ test('CA state 09: the read-only category dialog', async ({ page }) => {
   await expect(dialog).toContainText(
     'Requires the User Schema Manage permission.',
   );
+  // R5: the approved column geometry and its 50 px trailing gutter. The read-only
+  // state draws no removal action in the gutter.
+  const geometry = await dialog
+    .locator('.attribute-table')
+    .evaluate((table: HTMLTableElement) => {
+      const box = table.getBoundingClientRect();
+      return {
+        width: box.width,
+        columns: [...table.querySelectorAll('thead th')].map((cell) => {
+          const rect = cell.getBoundingClientRect();
+          return {
+            text: (cell.textContent ?? '').trim(),
+            x: rect.x - box.x,
+            width: rect.width,
+          };
+        }),
+      };
+    });
+  expect(Math.round(geometry.width)).toBe(1070);
+  expect(geometry.columns.map((column) => column.text)).toEqual([
+    'Display name',
+    'Attribute name',
+    'Info type',
+    'Multiple values',
+    'Visibility',
+    'Searchable',
+    '',
+  ]);
+  expect(geometry.columns.map((column) => Math.round(column.width))).toEqual([
+    196, 224, 168, 104, 240, 88, 50,
+  ]);
+  expect(Math.round(geometry.columns[5].x)).toBe(932);
   // The dialog takes the focus, so a screen reader starts at its title.
   await expect(
     dialog.getByRole('heading', { name: 'Student information', exact: true }),
