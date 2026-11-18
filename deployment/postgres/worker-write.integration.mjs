@@ -489,52 +489,110 @@ export async function qualifyWorkerWrites({ runtime, migrator, issuer }) {
       },
     );
 
-    await check(
-      'a fatal batch error keeps a 2xx and leaves the sent operation unknown',
-      async () => {
-        const { jobId } = await makeJob({ devices: ['d-kept', 'd-sent'] });
-        const token = await tokenOf(jobId);
-        const reader = readerOf({
-          rounds: [
+    /**
+     * The claim answer in the other order. `cc.claim_device_update_batch` builds its
+     * operations with `jsonb_agg` and no `ORDER BY`, so a sequential scan lists them in
+     * heap order and the activity index lists them by `updated_at DESC`. Reverse the
+     * answer to run a check with the index-scan order.
+     */
+    const reversedClaim = {
+      async query(text, values = []) {
+        const answer = await pool.query(text, values);
+        const result = answer.rows[0]?.result;
+        if (
+          !text.includes('cc.claim_device_update_batch') ||
+          !Array.isArray(result?.operations)
+        )
+          return answer;
+        return {
+          ...answer,
+          rows: [
             {
-              ids: ['d-kept'],
-              parts: { 'd-kept': { kind: 'success' } },
+              ...answer.rows[0],
+              result: {
+                ...result,
+                operations: [...result.operations].reverse(),
+              },
             },
           ],
-          state: () => 'Room 12',
-        });
-        const patch = reader.patchDevices;
-        let sent = 0;
-        reader.patchDevices = async (
-          credential,
-          customerId,
-          writes,
-          signal,
-          options,
-        ) => {
-          await patch(credential, customerId, [writes[0]], signal, options);
-          sent += 1;
-          await options.onSend?.(['d-sent']);
-          throw new BatchServiceError(
-            'malformed-response',
-            'malformed multipart',
-          );
         };
-        const response = await run(jobId, 0, { reader, token, batchSize: 1 });
-        assert.equal(sent, 1);
-        assert.equal(response.outcome, 'stopped');
-        assert.equal(response.failure, 'invalid-response');
-        assert.equal((await operation(jobId, 1)).status, 'succeeded');
-        const second = await operation(jobId, 2);
-        assert.equal(
-          second.status,
-          'succeeded',
-          'The read-back of place 4 settles the sent operation.',
-        );
-        assert.equal(second.verified_by, 'read-back');
-        assert.equal((await header(jobId)).failure, 'invalid-response');
-        await releaseAll();
       },
+    };
+
+    /**
+     * The check of a fatal batch error, for one claim order. The fake answer pairs with the
+     * device of the write that the fake sends, whichever device the claim lists first.
+     */
+    const fatalBatchError = async (claimPool) => {
+      const { jobId } = await makeJob({ devices: ['d-kept', 'd-sent'] });
+      const token = await tokenOf(jobId);
+      const script = { rounds: [], state: () => 'Room 12' };
+      const reader = readerOf(script);
+      const patch = reader.patchDevices;
+      let sent = 0;
+      let answered = null;
+      let unanswered = null;
+      reader.patchDevices = async (
+        credential,
+        customerId,
+        writes,
+        signal,
+        options,
+      ) => {
+        // One write is sent and answered. The other write is sent without an answer.
+        answered = writes[0].deviceId;
+        unanswered = writes.find(
+          (write) => write.deviceId !== answered,
+        ).deviceId;
+        script.rounds = [
+          { ids: [answered], parts: { [answered]: { kind: 'success' } } },
+        ];
+        await patch(credential, customerId, [writes[0]], signal, options);
+        sent += 1;
+        await options.onSend?.([unanswered]);
+        throw new BatchServiceError(
+          'malformed-response',
+          'malformed multipart',
+        );
+      };
+      const response = await run(jobId, 0, {
+        reader,
+        token,
+        batchSize: 1,
+        pool: claimPool,
+      });
+      assert.equal(sent, 1);
+      assert.equal(response.outcome, 'stopped');
+      assert.equal(response.failure, 'invalid-response');
+      /** The operation number of a device of this job. */
+      const numberOf = async (deviceId) =>
+        (
+          await adminRow(
+            'SELECT operation_number FROM cc.device_update_operations WHERE job_id=$1 AND device_id=$2',
+            [jobId, deviceId],
+          )
+        ).operation_number;
+      assert.equal(
+        (await operation(jobId, await numberOf(answered))).status,
+        'succeeded',
+      );
+      const second = await operation(jobId, await numberOf(unanswered));
+      assert.equal(
+        second.status,
+        'succeeded',
+        'The read-back of place 4 settles the sent operation.',
+      );
+      assert.equal(second.verified_by, 'read-back');
+      assert.equal((await header(jobId)).failure, 'invalid-response');
+      await releaseAll();
+    };
+    await check(
+      'a fatal batch error keeps a 2xx and leaves the sent operation unknown',
+      () => fatalBatchError(pool),
+    );
+    await check(
+      'a fatal batch error with the reversed claim order keeps a 2xx and leaves the sent operation unknown',
+      () => fatalBatchError(reversedClaim),
     );
 
     await check(
