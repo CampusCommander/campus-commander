@@ -373,6 +373,22 @@ describe('the users store', () => {
     store.leave();
   });
 
+  it('reloads the held rows when a category job publishes a schema change (R6)', async () => {
+    answers['/api/users/query'] = { page: page() };
+    const store = setup(answer());
+    const opened = streams(store);
+    await store.init();
+    const revision = store.revision();
+    const stream = opened[0];
+    stream.open();
+    stream.send('schema-change', {
+      type: 'schema-change',
+      entityType: 'user',
+    });
+    expect(store.revision()).toBeGreaterThan(revision);
+    store.leave();
+  });
+
   it('keeps a selection tab per browser tab', () => {
     const store = setup(answer());
     expect(store.selectionTab).toBe(userSelectionTab());
