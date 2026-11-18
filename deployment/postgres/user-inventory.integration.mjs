@@ -119,7 +119,7 @@ export async function qualifyUserInventory({
     ]);
 
     await check(
-      'a fresh database runs every migration through 021',
+      'a fresh database runs every migration through 022',
       async () => {
         const ids = (
           await migrator.query(
@@ -128,7 +128,7 @@ export async function qualifyUserInventory({
         ).rows.map((row) => row.id);
         assert.equal(ids.at(-3), '020-user-sync');
         assert.equal(ids.at(-2), '021-user-api');
-        assert.equal(ids.at(-1), '021-user-refresh-targets');
+        assert.equal(ids.at(-1), '022-user-refresh-targets');
         assert.equal(ids.length, 22);
       },
     );
