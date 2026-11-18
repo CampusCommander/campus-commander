@@ -186,6 +186,8 @@ interface MockOptions {
   categoriesFail?: boolean;
   /** The category read answers no category (CA state 11). */
   emptyCategories?: boolean;
+  /** The stored theme preference. */
+  theme?: 'system' | 'light' | 'dark';
 }
 
 async function signIn(page: Page, options: MockOptions = {}) {
@@ -211,7 +213,10 @@ async function signIn(page: Page, options: MockOptions = {}) {
             permissionVersion: 1,
             permissions: [],
             grants,
-            preferences: { theme: 'light', navigationCollapsed: false },
+            preferences: {
+              theme: options.theme ?? 'light',
+              navigationCollapsed: false,
+            },
           },
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
@@ -365,6 +370,23 @@ test('CA state 01: the category list without the Last changed column', async ({
   await settle(page);
   await page.screenshot({
     path: `${scratch}/k17-01-categories-list.png`,
+    fullPage: false,
+  });
+});
+
+test('CA state 01 in the dark theme keeps the same surfaces (UI-10)', async ({
+  page,
+}) => {
+  await openAttributes(page, { theme: 'dark' });
+  await expect(
+    page.getByText('3 of 100 categories used · 4 of 100 attributes used'),
+  ).toBeVisible();
+  await expect(
+    table(page).getByRole('button', { name: 'Open category Device program' }),
+  ).toBeVisible();
+  await settle(page);
+  await page.screenshot({
+    path: `${scratch}/k17-01-categories-list-dark.png`,
     fullPage: false,
   });
 });
