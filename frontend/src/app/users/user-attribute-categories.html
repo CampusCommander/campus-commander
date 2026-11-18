@@ -29,9 +29,7 @@
 
   @if (helpOpen()) {
   <app-user-attribute-help id="attribute-help-page" />
-  }
-
-  @if (loading()) {
+  } @if (loading()) {
   <p class="loading" role="status">{{ CATEGORIES_LOADING_TEXT }}</p>
   } @else if (failed()) {
   <section class="card error-card" aria-labelledby="categories-error-title">

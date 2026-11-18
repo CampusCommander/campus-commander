@@ -873,7 +873,11 @@ export class UsersStore {
    */
   async refreshCategories(): Promise<void> {
     if (this.categoriesRefreshing()) return;
-    await this.readCategories('/api/users/attribute-categories/refresh', {}, true);
+    await this.readCategories(
+      '/api/users/attribute-categories/refresh',
+      {},
+      true,
+    );
   }
 
   /**
@@ -938,7 +942,8 @@ export class UsersStore {
     failure: string | undefined,
     refresh: boolean,
   ): void {
-    if (!refresh) this.categoriesError.set(categoryFailureText(status, failure));
+    if (!refresh)
+      this.categoriesError.set(categoryFailureText(status, failure));
     this.categoriesRecovery.set(categoryNeedsConnection(status, failure));
     this.categoriesFailure.set({ status, failure });
   }

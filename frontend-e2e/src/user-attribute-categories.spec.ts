@@ -251,18 +251,17 @@ async function signIn(page: Page, options: MockOptions = {}) {
             status: options.syncStatus,
             observedAt: null,
             userCount: 0,
-            failure:
-              options.syncStatus === 'failed' ? 'request-failed' : null,
-            startedAt:
-              options.syncStatus === 'running' ? at(0) : null,
+            failure: options.syncStatus === 'failed' ? 'request-failed' : null,
+            startedAt: options.syncStatus === 'running' ? at(0) : null,
           },
         },
       });
     }
     if (path === '/api/users/attribute-categories') {
-      const answer = options.categoryReads?.[
-        Math.min(categoryReads, options.categoryReads.length - 1)
-      ];
+      const answer =
+        options.categoryReads?.[
+          Math.min(categoryReads, options.categoryReads.length - 1)
+        ];
       categoryReads++;
       if (options.categoriesFail || answer === 'fail')
         return route.fulfill({

@@ -88,7 +88,11 @@
       >
     </section>
     } @else if (!published() && !store.statusError()) {
-    <section class="card" aria-labelledby="users-first-title" aria-live="polite">
+    <section
+      class="card"
+      aria-labelledby="users-first-title"
+      aria-live="polite"
+    >
       @if (store.refreshing()) {
       <h2 id="users-first-title">Reading users from Google Workspace</h2>
       <p>The directory appears here when the refresh finishes.</p>
