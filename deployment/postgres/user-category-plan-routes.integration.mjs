@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import {
+  userAttributeCategoryJobReceiptSchema,
+  userAttributeCategoryPlanSchema,
+} from '../../libs/application-contracts/src/lib/users.ts';
 
 /**
  * K15: the category plan and confirm routes of document B section 10. The store re-reads the
@@ -368,6 +372,11 @@ export async function qualifyUserCategoryPlans({
       });
       assert.match(plan.digest, /^[a-f0-9]{64}$/);
       assert.ok(Date.parse(plan.expiresAt) > Date.parse(plan.preparedAt));
+      // The stored answer parses as the contract that the route answers.
+      assert.equal(
+        userAttributeCategoryPlanSchema.parse(plan).planId,
+        plan.planId,
+      );
     });
 
     await check('K15 a plan reads for its creator only', async () => {
@@ -700,6 +709,10 @@ export async function qualifyUserCategoryPlans({
         assert.equal(receipt.status, 'accepted');
         assert.equal(receipt.action, 'delete-category');
         assert.equal(receipt.changeCount, 2);
+        assert.equal(
+          userAttributeCategoryJobReceiptSchema.parse(receipt).jobId,
+          receipt.jobId,
+        );
         const job = await one(
           'SELECT kind,entity_type,status,display_id FROM cc.jobs WHERE job_id=$1',
           [receipt.jobId],
