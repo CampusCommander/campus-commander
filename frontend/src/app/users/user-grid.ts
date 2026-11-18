@@ -154,6 +154,19 @@ ModuleRegistry.registerModules([
       opacity: 1;
       pointer-events: auto;
     }
+    /* UI-09: the revealed controls sit at the row's trailing edge. An active
+       row reserves their footprint so the label ends with an ellipsis before
+       them instead of running beneath them. The footprint is the two 24 px
+       controls and their 2 px gap, plus the 5 px focus ring and a 5 px gap.
+       Only a movable row pays it, and only while focused or under the
+       pointer, so a row at rest keeps the approved label width. */
+    :host ::ng-deep .lgr-columns-row[data-column-movable='true']:hover > label,
+    :host
+      ::ng-deep
+      .lgr-columns-row[data-column-movable='true']:focus-within
+      > label {
+      padding-right: calc(var(--ag-grid-size, 8px) * 6.25 + 10px);
+    }
   `,
 })
 export class UserGrid implements OnInit {
