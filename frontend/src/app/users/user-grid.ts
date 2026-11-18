@@ -18,6 +18,7 @@ import {
   AllCommunityModule,
   ModuleRegistry,
   themeQuartz,
+  type ColumnMovedEvent,
   type FilterModel,
   type GridApi,
   type GridOptions,
@@ -126,10 +127,32 @@ ModuleRegistry.registerModules([
       white-space: nowrap;
     }
     /* The approved Columns panel lists the checkbox, the label, and the drag grip
-       (state 02, R13). The pin and move controls are not in that composition, and
-       they truncate the labels at the approved 258 px width. */
-    :host ::ng-deep .lgr-columns-row-actions {
+       (state 02, R13). Pin controls are not in that composition, so they stay
+       hidden and out of the tab order. */
+    :host ::ng-deep .lgr-columns-row-actions button[aria-label^='Pin '],
+    :host ::ng-deep .lgr-columns-row-actions button[aria-label^='Unpin '] {
       display: none;
+    }
+    /* UI-09: the move controls stay in the tab order. A row reveals them on
+       keyboard focus or the pointer. They sit out of flow, so the approved
+       258 px row keeps its label width and its rest look. */
+    :host ::ng-deep .lgr-columns-row {
+      position: relative;
+    }
+    :host ::ng-deep .lgr-columns-row-actions {
+      position: absolute;
+      top: 50%;
+      right: calc(var(--ag-grid-size, 8px) * 4.25);
+      display: flex;
+      margin-left: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    :host ::ng-deep .lgr-columns-row:hover .lgr-columns-row-actions,
+    :host ::ng-deep .lgr-columns-row:focus-within .lgr-columns-row-actions {
+      opacity: 1;
+      pointer-events: auto;
     }
   `,
 })
@@ -206,6 +229,13 @@ export class UserGrid implements OnInit {
   private focusing = false;
   /** The grid ended. A pending frame or block answer must not touch focus (R4). */
   private destroyed = false;
+  /** The move control that a key activated. Its row takes focus back after the panel re-renders. */
+  private keyboardMove: {
+    columnId: string;
+    direction: 'up' | 'down';
+  } | null = null;
+  private readonly moveKeydown = (event: KeyboardEvent) =>
+    this.trackMoveKey(event);
   protected options!: GridOptions<UserRow>;
 
   constructor() {
@@ -252,6 +282,16 @@ export class UserGrid implements OnInit {
     });
     this.application.attachView(panel.hostView);
     this.destroyRef.onDestroy(() => panel.destroy());
+    // UI-09: the panel rebuilds its rows after a move. Record the keyboard move
+    // before the click handler runs, so focus can return to the moved row.
+    this.host.nativeElement.addEventListener('keydown', this.moveKeydown, true);
+    this.destroyRef.onDestroy(() =>
+      this.host.nativeElement.removeEventListener(
+        'keydown',
+        this.moveKeydown,
+        true,
+      ),
+    );
     this.options = {
       theme: themeQuartz.withParams({
         accentColor: 'var(--cc-accent)',
@@ -265,6 +305,7 @@ export class UserGrid implements OnInit {
       groupHeaderHeight: 0,
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
+      onColumnMoved: (event) => this.columnMoved(event),
       onToolPanelVisibleChanged: (event) => this.panelToggled(event),
       onCellKeyDown: (event) =>
         detailsKeyHandler((row, node) => this.open(row, node))(event),
@@ -513,6 +554,80 @@ export class UserGrid implements OnInit {
         .querySelector<HTMLElement>(`#lgr-side-bar-${event.key}-button`)
         ?.focus();
     });
+  }
+
+  /**
+   * UI-09: record a keyboard move of a Columns panel row. The panel replaces its
+   * rows when the column moves, so the row that held focus must take it back.
+   * A pointer move records nothing, and keeps its current focus.
+   */
+  private trackMoveKey(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!target.closest('.lgr-columns-tool-panel')) return;
+    const match = /^Move (.+) (up|down)$/.exec(
+      target.getAttribute('aria-label') ?? '',
+    );
+    const row = target.closest<HTMLElement>('.lgr-columns-row');
+    const columnId = row?.dataset['columnId'];
+    if (!match || !columnId) return;
+    this.keyboardMove = {
+      columnId,
+      direction: match[2] as 'up' | 'down',
+    };
+  }
+
+  /** The panel rebuilt its rows after a move. Return focus to the moved row (UI-09). */
+  private columnMoved(event: ColumnMovedEvent<UserRow>): void {
+    const pending = this.keyboardMove;
+    this.keyboardMove = null;
+    if (!pending) return;
+    const columnId = event.column?.getColId() ?? pending.columnId;
+    if (columnId !== pending.columnId) return;
+    requestAnimationFrame(() =>
+      this.restoreMoveFocus(columnId, pending.direction),
+    );
+  }
+
+  /**
+   * Focus the same move control of the moved row, or the other move control when
+   * the move disabled it, or the row's checkbox when both are disabled.
+   */
+  private restoreMoveFocus(
+    columnId: string,
+    direction: 'up' | 'down',
+    attempt = 0,
+  ): void {
+    if (this.destroyed) return;
+    const row = this.host.nativeElement.querySelector<HTMLElement>(
+      `.lgr-columns-tool-panel .lgr-columns-row[data-column-id="${columnId}"]`,
+    );
+    if (!row) {
+      if (attempt < 30)
+        requestAnimationFrame(() =>
+          this.restoreMoveFocus(columnId, direction, attempt + 1),
+        );
+      return;
+    }
+    const name = row.dataset['columnName'] ?? '';
+    const moves = [
+      ...row.querySelectorAll<HTMLButtonElement>(
+        '.lgr-columns-row-actions button',
+      ),
+    ].filter(
+      (button) =>
+        !button.disabled &&
+        (button.getAttribute('aria-label') ?? '').startsWith('Move '),
+    );
+    const target =
+      moves.find(
+        (button) =>
+          button.getAttribute('aria-label') === `Move ${name} ${direction}`,
+      ) ??
+      moves[0] ??
+      row.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    target?.focus();
   }
 
   /** The selection footer makes the status bar taller. Follow a later Show All Selected. */
