@@ -216,6 +216,115 @@
       ]
     }
   ],
+  "userColumns": [
+    {
+      "fieldId": "fullName",
+      "label": "Name",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true,
+      "pinned": "left"
+    },
+    {
+      "fieldId": "primaryEmail",
+      "label": "Primary email",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true
+    },
+    {
+      "fieldId": "orgUnitPath",
+      "label": "Organization unit",
+      "dataType": "orgUnit",
+      "inGridEditor": null,
+      "filterable": true,
+      "filterControl": "tree-picker-with-descendants"
+    },
+    {
+      "fieldId": "status",
+      "label": "Status",
+      "dataType": "enum",
+      "inGridEditor": null,
+      "filterable": true,
+      "values": [
+        { "value": "active", "label": "Active" },
+        { "value": "suspended", "label": "Suspended" },
+        { "value": "archived", "label": "Archived" }
+      ]
+    },
+    {
+      "fieldId": "lastLoginTime",
+      "label": "Last sign-in",
+      "dataType": "dateTime",
+      "inGridEditor": null,
+      "filterable": true,
+      "operators": ["before", "after"],
+      "emptyLabel": "Never"
+    },
+    {
+      "fieldId": "twoStep",
+      "label": "2-step verification",
+      "dataType": "boolean",
+      "inGridEditor": null,
+      "filterable": true,
+      "sortable": false,
+      "values": [
+        { "value": "enrolled", "label": "Enrolled" },
+        { "value": "not-enrolled", "label": "Not enrolled" }
+      ]
+    },
+    {
+      "fieldId": "creationTime",
+      "label": "Created",
+      "dataType": "dateTime",
+      "inGridEditor": null,
+      "filterable": true,
+      "defaultVisible": false
+    },
+    {
+      "fieldId": "department",
+      "label": "Department",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true,
+      "defaultVisible": false
+    },
+    {
+      "fieldId": "title",
+      "label": "Title",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true,
+      "defaultVisible": false
+    }
+  ],
+  "userFilterOnlyFields": [
+    {
+      "fieldId": "aliases",
+      "label": "Alias",
+      "dataType": "text",
+      "inGridEditor": null,
+      "filterable": true,
+      "column": false
+    }
+  ],
+  "userAttributeColumns": {
+    "source": "user-schemas-categories",
+    "columnId": "attr:{schemaName}.{fieldName}",
+    "groupBy": "category",
+    "defaultVisible": false,
+    "sortable": false,
+    "labelRule": "attribute-name; add the category after a middle dot when two categories hold the same name",
+    "filters": {
+      "STRING": "contains",
+      "EMAIL": "contains",
+      "PHONE": "contains",
+      "INT64": "number-range",
+      "DOUBLE": "number-range",
+      "DATE": "date-range",
+      "BOOL": "yes-or-no"
+    }
+  },
   "additionalFilterExamples": [
     {
       "fieldId": "batteryHealth",

@@ -1,0 +1,239 @@
+<div class="users">
+  <header class="page-header">
+    <h1>Users</h1>
+    <p class="subtitle">Google Workspace accounts</p>
+  </header>
+
+  @if (store.offline()) {
+  <section class="banner" aria-labelledby="users-offline-title">
+    <h2 id="users-offline-title">Cannot reach Campus Commander</h2>
+    <p>Cached directory remains visible.</p>
+    <button mat-stroked-button type="button" (click)="reconnect()">
+      Reconnect
+    </button>
+  </section>
+  } @else if (published() && banner()) {
+  <section
+    class="banner"
+    aria-labelledby="users-stale-title"
+    [attr.aria-live]="banner()!.refreshing ? 'polite' : null"
+  >
+    <h2 id="users-stale-title">{{ banner()!.title }}</h2>
+    <p>{{ banner()!.body }}</p>
+    @if (!banner()!.refreshing) {
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="store.refreshing()"
+      (click)="refresh()"
+    >
+      Refresh users
+    </button>
+    } @if (connectionNeeded()) {
+    <a mat-stroked-button routerLink="/google-connection"
+      >Open Google connection</a
+    >
+    }
+  </section>
+  } @if (store.statusError()) {
+  <section class="banner" aria-labelledby="users-status-title">
+    <h2 id="users-status-title">User directory status</h2>
+    <p role="alert">{{ store.statusError() }}</p>
+    @if (store.statusRetryable()) {
+    <button mat-stroked-button type="button" (click)="retry()">Retry</button>
+    }
+  </section>
+  } @if (store.error() && !store.statusError()) {
+  <p class="error" role="alert">{{ store.error() }}</p>
+  } @if (!store.syncLoaded() && !store.statusError()) { @if (!store.offline()) {
+  <p role="status">Loading users…</p>
+  } } @else if (!sync() && !store.statusError()) {
+  <section class="card" aria-labelledby="users-connect-title">
+    <h2 id="users-connect-title">Connect Google Workspace</h2>
+    <p>Users come from the connected Google Workspace customer.</p>
+    <a mat-flat-button routerLink="/google-connection"
+      >Open Google connection</a
+    >
+  </section>
+  } @else if (!published() && !store.statusError()) {
+  <section class="card" aria-labelledby="users-first-title" aria-live="polite">
+    @if (store.refreshing()) {
+    <h2 id="users-first-title">Reading users from Google Workspace</h2>
+    <p>The directory appears here when the refresh finishes.</p>
+    } @else {
+    <h2 id="users-first-title">No user directory yet</h2>
+    <p>
+      {{ sync()?.status === 'failed' ? failureText() : 'Refresh users to read
+      the directory from Google Workspace.' }}
+    </p>
+    @if (connectionNeeded()) {
+    <a mat-stroked-button routerLink="/google-connection"
+      >Open Google connection</a
+    >
+    }
+    <button mat-flat-button type="button" (click)="refresh()">
+      Refresh users
+    </button>
+    }
+  </section>
+  } @else if (published()) {
+  <nav
+    mat-tab-nav-bar
+    class="tabs"
+    [mat-stretch-tabs]="false"
+    [tabPanel]="usersView"
+    aria-label="Users views"
+  >
+    <a mat-tab-link [active]="true" routerLink="/users">Users</a>
+  </nav>
+
+  <mat-tab-nav-panel #usersView class="view">
+    <div class="filter-row">
+      <div class="filters">
+        @for (predicate of store.predicates(); track $index) {
+        <span class="chip">
+          <button
+            type="button"
+            #chip
+            class="chip-body"
+            (click)="editingIndex.set($index)"
+          >
+            {{ label(predicate) }}
+          </button>
+          <button
+            type="button"
+            class="chip-remove"
+            [attr.aria-label]="'Remove filter ' + label(predicate)"
+            (click)="remove($index)"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >close</span
+            >
+          </button>
+        </span>
+        } @if (store.predicates().length < 20 || editing()) {
+        <app-user-filter
+          [attributes]="store.attributes()"
+          [orgUnits]="store.orgUnits()"
+          [editing]="editing()"
+          (applied)="apply($event)"
+          (closed)="editorClosed()"
+        />
+        }
+        <button
+          mat-button
+          type="button"
+          [disabled]="!hasFilters()"
+          (click)="clear()"
+        >
+          Clear filters
+        </button>
+      </div>
+      <div class="actions">
+        <button
+          mat-stroked-button
+          type="button"
+          [matMenuTriggerFor]="refreshMenu"
+          [disabled]="store.refreshing() || store.refreshPending()"
+          (menuOpened)="refreshMenuOpen.set(true)"
+          (menuClosed)="refreshMenuOpen.set(false)"
+        >
+          {{ store.refreshing() ? 'Refreshing…' : 'Refresh' }}
+          <span
+            class="material-symbols-outlined dropdown-icon"
+            iconPositionEnd
+            aria-hidden="true"
+            [class.dropdown-icon-open]="refreshMenuOpen()"
+            >arrow_drop_down</span
+          >
+        </button>
+        <mat-menu
+          #refreshMenu="matMenu"
+          xPosition="before"
+          class="users-toolbar-menu"
+        >
+          <button
+            mat-menu-item
+            type="button"
+            [disabled]="
+              store.refreshing() ||
+              store.refreshPending() ||
+              store.selectedCount() === 0
+            "
+            (click)="refreshSelection()"
+          >
+            <span class="refresh-menu-label">Refresh Selected</span>
+            @if (store.selectedCount() === 0) {
+            <span class="refresh-menu-support"
+              >{{ refreshSelectedSupport }}</span
+            >
+            }
+          </button>
+          <button
+            mat-menu-item
+            type="button"
+            [disabled]="store.refreshing() || store.refreshPending()"
+            (click)="refresh()"
+          >
+            <span class="refresh-menu-label">Refresh Users</span>
+          </button>
+          <button
+            mat-menu-item
+            type="button"
+            [disabled]="
+              store.refreshing() || store.refreshPending() || !canDiagnose()
+            "
+            (click)="refreshDomain()"
+          >
+            <span class="refresh-menu-label">Refresh Domain</span>
+            @if (!canDiagnose()) {
+            <span class="refresh-menu-support">{{ refreshDomainSupport }}</span>
+            }
+          </button>
+        </mat-menu>
+      </div>
+    </div>
+    @if (store.refreshing()) {
+    <p class="visually-hidden" role="status">Refreshing user directory.</p>
+    }
+
+    <div class="grid-region">
+      @if (noMatches()) {
+      <div class="grid-message" role="status">
+        <h2>No users match these filters</h2>
+        <p>Check the name or email, or clear the current filters.</p>
+        <button mat-flat-button type="button" (click)="clear()">
+          Clear filters
+        </button>
+      </div>
+      } @else if (emptyDirectory()) {
+      <div class="grid-message" role="status">
+        <h2>No users in this directory</h2>
+        <p>Google Workspace returned no users for this customer.</p>
+      </div>
+      }
+      <app-user-grid
+        [class.hidden]="noMatches() || emptyDirectory()"
+        [load]="load"
+        [revision]="store.revision()"
+        [selectionRevision]="store.selectionRevision()"
+        [state]="store.gridState()"
+        [saveState]="saveState"
+        [selectedView]="store.selectedView()"
+        [predicates]="store.predicates()"
+        [attributes]="store.attributes()"
+        [orgUnits]="store.orgUnits()"
+        (filtersChange)="store.setPredicates($event)"
+        (emptyFilter)="store.setEmptyFilter($event)"
+        (selectedViewChange)="store.selectedView.set($event)"
+        [selection]="selection"
+        [rowRefresh]="store.rowRefresh"
+        [focusIndex]="store.position()?.index ?? null"
+        [focusScroll]="store.position()?.scrollTop ?? null"
+        (details)="openDetails($event)"
+        (opened)="recordRow($event)"
+      />
+    </div>
+  </mat-tab-nav-panel>
+  }
+</div>

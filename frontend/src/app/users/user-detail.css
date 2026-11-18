@@ -1,0 +1,151 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+.page-header h1 {
+  margin-block-end: 0;
+}
+.subtitle,
+.secondary {
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+}
+.read-age {
+  margin-block: var(--cc-space-md) 0;
+}
+/* A removed user keeps its record and names the moment that Google stopped returning it (A section 11). */
+.removed {
+  margin-block: var(--cc-space-md) 0;
+  padding: var(--cc-space-sm) var(--cc-space-md);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-space-sm);
+  margin-block: var(--cc-space-lg);
+}
+/* The approved details layout: Account and Organization on the left, the attributes on the right. */
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    'account attrs'
+    'org attrs'
+    'rest attrs';
+  grid-template-rows: auto auto 1fr;
+  gap: var(--cc-space-lg);
+  align-items: start;
+}
+.detail-layout .account {
+  grid-area: account;
+}
+.detail-layout .org {
+  grid-area: org;
+}
+.detail-layout .attrs {
+  grid-area: attrs;
+}
+@media (max-width: 900px) {
+  .detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'account' 'org' 'attrs';
+    grid-template-rows: auto;
+  }
+}
+.card h2 {
+  margin-block-start: 0;
+}
+/* Read-only facts of the Account and Organization cards: a label over a value, no outline. */
+.facts-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cc-space-md);
+  margin: 0;
+}
+.facts-list dt {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--cc-text-secondary);
+}
+.facts-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* The custom attribute values keep the outlined boxes of the device annotations. */
+.annotations {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cc-space-md);
+  margin: 0;
+}
+.annotation {
+  min-width: 0;
+  padding: var(--cc-space-sm) var(--cc-space-md);
+  border: 1px solid var(--cc-border-control);
+  border-radius: var(--cc-radius-control);
+}
+.annotation dt {
+  font-size: 12px;
+  color: var(--cc-text-secondary);
+}
+.annotation dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  margin-block-end: var(--cc-space-sm);
+}
+.card-head h2 {
+  margin: 0;
+}
+.attr-section + .attr-section {
+  margin-block-start: var(--cc-space-lg);
+  padding-block-start: var(--cc-space-lg);
+  border-block-start: 1px solid var(--cc-border);
+}
+.attr-section h3 {
+  margin: 0 0 var(--cc-space-sm);
+}
+.attr-section .empty {
+  margin: 0;
+  color: var(--cc-text-secondary);
+}
+/* Static value chips: no border and no state layer, the hover surface as fill. */
+.value-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-space-xs);
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.value-chips li {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0 var(--cc-space-md);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-hover);
+  font-size: 12px;
+  line-height: 16px;
+  /* A long attribute value wraps inside its chip instead of leaving the card. */
+  overflow-wrap: anywhere;
+}
+/* Without the category read the page shows the raw keys beside the scope message (A section 11). */
+.scope-note {
+  margin-block: 0 var(--cc-space-md);
+  color: var(--cc-text-secondary);
+}
+.skeleton {
+  height: var(--cc-space-xl);
+  margin-block: var(--cc-space-md);
+  background: var(--cc-surface-hover);
+  border-radius: var(--cc-radius-control);
+}

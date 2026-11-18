@@ -27,6 +27,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     { JobsController },
     { JobsService },
     { DevicesService },
+    { UsersService },
     { EventsController },
     { AuthGuard },
     { AuthService },
@@ -37,6 +38,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     load('api/src/app/jobs/jobs.controller.ts'),
     load('api/src/app/jobs/jobs.service.ts'),
     load('api/src/app/devices/devices.service.ts'),
+    load('api/src/app/users/users.service.ts'),
     load('api/src/app/events/events.controller.ts'),
     load('api/src/app/auth/auth.guard.ts'),
     load('api/src/app/auth/auth.service.ts'),
@@ -366,6 +368,14 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     {},
     {},
   );
+  // The users feed reads its sync state through the users service (design card K9).
+  const usersService = new UsersService(
+    { connection: { query: (text, values) => runtime.query(text, values) } },
+    {},
+    {},
+    streamAuth,
+    {},
+  );
   /** One SSE response stand-in. The production controller writes its frames here. */
   const sseSink = () => {
     const emitter = new EventEmitter();
@@ -418,6 +428,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     const controller = new EventsController(
       jobsService,
       devicesService,
+      usersService,
       streamAuth,
       { fanout },
       streamConfiguration,
@@ -1969,6 +1980,7 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         const controller = new EventsController(
           jobsService,
           devicesService,
+          usersService,
           streamAuth,
           { fanout: unavailable },
           streamConfiguration,

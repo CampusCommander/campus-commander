@@ -20,6 +20,7 @@ import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { DevicesStore } from '../devices/devices.store';
+import { UsersStore } from '../users/users.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 import { schoolsReadable } from '../schools/schools.store';
@@ -47,6 +48,7 @@ export class Shell implements OnInit, OnDestroy {
   protected readonly customer = inject(CustomerStore);
   protected readonly connection = inject(ConnectionStore);
   protected readonly devices = inject(DevicesStore);
+  protected readonly users = inject(UsersStore);
   protected readonly router = inject(Router);
   protected readonly diagnostics = inject(DiagnosticsStore);
   protected readonly googleHealth = inject(GoogleHealthStore);

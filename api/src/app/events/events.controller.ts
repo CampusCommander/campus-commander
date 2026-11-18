@@ -13,6 +13,7 @@ import type {
   EntityEvent,
   JobEvent,
   SessionResponse,
+  UserSyncState,
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
@@ -25,7 +26,13 @@ import { DevicesService } from '../devices/devices.service';
 import { seesEveryJob } from '../jobs/jobs';
 import { jobListener } from '../jobs/jobs.controller';
 import { JobsService } from '../jobs/jobs.service';
-import { deviceReadable, recheckEventStream } from './events-stream';
+import { userForward } from '../users/user-stream';
+import { UsersService } from '../users/users.service';
+import {
+  deviceReadable,
+  recheckEventStream,
+  userReadable,
+} from './events-stream';
 
 /** One event of the one stream. The two feeds read disjoint channel schemas. */
 type StreamEvent = JobEvent | EntityEvent;
@@ -36,12 +43,13 @@ export class EventsController {
   constructor(
     private readonly jobs: JobsService,
     private readonly devices: DevicesService,
+    private readonly users: UsersService,
     private readonly auth: AuthService,
     private readonly deviceEvents: DeviceEventsService,
     private readonly configuration: ConfigurationService,
   ) {}
 
-  /** Server-Sent Events for the job feed and the device feed of this caller. */
+  /** Server-Sent Events for the job feed and the device and users feeds of this caller. */
   @Get()
   async events(
     @Req() request: AuthenticatedRequest,
@@ -59,10 +67,23 @@ export class EventsController {
     const deviceEveryJob = device
       ? this.devices.jobVisibility(request.session, customerId)
       : false;
+    const user = await this.userFeed(
+      request.session,
+      customerId,
+      request.correlationId,
+    );
+    const userEveryJob = user
+      ? seesEveryJob(request.session, customerId)
+      : false;
     const forwardDevice = deviceForward(deviceEveryJob, {
       jobFailure: (jobId) =>
         this.devices.jobFailure(request.session, customerId, jobId),
       sync: () => this.devices.sync(request.session),
+    });
+    const forwardUser = userForward(userEveryJob, {
+      jobFailure: (jobId) =>
+        this.devices.jobFailure(request.session, customerId, jobId),
+      sync: () => this.users.sync(request.session),
     });
     const feeds: StreamFeed<StreamEvent>[] = [
       {
@@ -98,6 +119,21 @@ export class EventsController {
           return forwardDevice(event, failed);
         },
       });
+    // A caller without users:read, or a customer without a user sync, receives no user event.
+    if (user)
+      feeds.push({
+        listener: entityListener,
+        // A device refresh shares the channel, and the users feed forwards user events alone
+        // (A section 8). Every event names its entity type `user` (A section 15.4).
+        forward: (event, failed) => {
+          if (event.type === 'job-changed') return null;
+          if (event.type === 'entity-batch' && event.entityType !== 'user')
+            return null;
+          if (event.type === 'job-finished' && event.job.entityType !== 'user')
+            return null;
+          return forwardUser(event, failed);
+        },
+      });
     const started = await streamEvents<StreamEvent>(response, {
       customerId,
       fanout: this.deviceEvents.fanout,
@@ -128,7 +164,16 @@ export class EventsController {
                   this.devices.jobVisibility(session, id),
               }
             : null,
+          users: user
+            ? {
+                seesEveryJob: userEveryJob,
+                current: (session) =>
+                  this.userFeed(session, customerId, request.correlationId),
+                jobVisibility: (session, id) => seesEveryJob(session, id),
+              }
+            : null,
           canOpenDevice: (session) => this.canOpenDevice(session, customerId),
+          canOpenUsers: (session) => this.canOpenUsers(session, customerId),
         });
         if (checked.session) request.session = checked.session;
         return checked.allowed;
@@ -181,6 +226,52 @@ export class EventsController {
     )
       return false;
     const sync = await this.devices.sync(session);
+    return sync?.customerId === customerId;
+  }
+
+  /**
+   * The open rule of the users feed for this caller: the customer has a user sync, and the caller
+   * holds users:read for it. It reads null when the caller cannot open the users feed, and the
+   * stream carries no user event. A sync read that fails refuses the stream. The ping of an open
+   * users feed asks the same rule again (document A section 8).
+   *
+   * The protected sync read denies a caller without users:read with SQLSTATE 42501, which
+   * `UsersService` raises as ForbiddenException before `authorize` runs. That denial leaves the
+   * feed out, like a refusal of `authorize`. Every other store failure refuses the stream.
+   */
+  private async userFeed(
+    session: SessionResponse,
+    customerId: string,
+    correlationId: string,
+  ): Promise<UserSyncState | null> {
+    try {
+      const sync = await this.users.sync(session);
+      if (sync?.customerId !== customerId) return null;
+      await this.auth.authorize(
+        session,
+        'users:read',
+        { kind: 'district', customerId },
+        correlationId,
+      );
+      return sync;
+    } catch (error) {
+      // A caller without users:read is left out of the users feed. Every other failure refuses.
+      // The sync read denies that caller in the database, so both the read and the rule raise here.
+      if (error instanceof ForbiddenException) return null;
+      throw error;
+    }
+  }
+
+  /** True when the caller can now open the users feed that this stream leaves out. */
+  private async canOpenUsers(
+    session: SessionResponse,
+    customerId: string,
+  ): Promise<boolean> {
+    if (
+      !userReadable(this.configuration.deployment?.phase, session, customerId)
+    )
+      return false;
+    const sync = await this.users.sync(session);
     return sync?.customerId === customerId;
   }
 }
