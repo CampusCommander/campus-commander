@@ -682,6 +682,18 @@ export async function qualifyUserCategoryPlans({
         deletePlanId = created.result.plan.planId;
         assert.equal(created.result.plan.phrase, 'Student info');
         assert.equal(created.result.plan.displayName, 'Student info');
+        // A delete removes the category and its two attributes. The plan answer carries the
+        // after-save counts as numbers, and it parses as the contract that the route answers.
+        assert.deepEqual(created.result.plan.limits, {
+          categories: 1,
+          categoryLimit: 100,
+          attributes: 1,
+          attributeLimit: 100,
+        });
+        assert.equal(
+          userAttributeCategoryPlanSchema.parse(created.result.plan).planId,
+          deletePlanId,
+        );
         // The digest and the typed phrase guard the confirm.
         const wrongDigest = await confirmPlan(
           manager,
@@ -745,10 +757,20 @@ export async function qualifyUserCategoryPlans({
           [deletePlanId],
         );
         assert.equal(jobs.jobs, 1);
-        // The plan keeps its answer after the confirm.
+        // The plan keeps its answer after the confirm, and the read answers the same valid plan.
         const read = await readPlan(manager, deletePlanId);
         assert.equal(read.result.outcome, 'plan');
         assert.equal(read.result.plan.planId, deletePlanId);
+        assert.deepEqual(read.result.plan.limits, {
+          categories: 1,
+          categoryLimit: 100,
+          attributes: 1,
+          attributeLimit: 100,
+        });
+        assert.equal(
+          userAttributeCategoryPlanSchema.parse(read.result.plan).planId,
+          deletePlanId,
+        );
       },
     );
 
@@ -892,6 +914,323 @@ export async function qualifyUserCategoryPlans({
           ],
         );
         assert.equal(answer.result.outcome, 'connection-changed');
+      },
+    );
+
+    await check(
+      'K15 a first confirmation refuses an edit or delete whose cached etag moved',
+      async () => {
+        const edit = await createPlan(manager, {
+          kind: 'edit-category',
+          schemaId: 'schem=StudentInfo',
+          baseEtag: '"etag-1"',
+          schemaName: 'StudentInfo',
+          displayName: 'Student details',
+          body: {
+            schemaName: 'StudentInfo',
+            displayName: 'Student details',
+            fields: [
+              {
+                fieldId: 'fld-homeroom',
+                fieldName: 'Homeroom',
+                displayName: 'Homeroom',
+                fieldType: 'STRING',
+                multiValued: false,
+                indexed: true,
+                readAccessType: 'ADMINS_AND_SELF',
+              },
+              {
+                fieldId: 'fld-grade',
+                fieldName: 'GradeLevel',
+                displayName: 'Grade level',
+                fieldType: 'INT64',
+                multiValued: false,
+                indexed: true,
+                readAccessType: 'ALL_DOMAIN_USERS',
+                numericIndexingSpec: { minValue: 0, maxValue: 12 },
+              },
+            ],
+          },
+          changes: [],
+        });
+        assert.equal(
+          edit.result.outcome,
+          'created',
+          JSON.stringify(edit.result),
+        );
+        const deletion = await createPlan(manager, {
+          kind: 'delete-category',
+          schemaId: 'schem=StudentInfo',
+          baseEtag: '"etag-1"',
+          schemaName: 'StudentInfo',
+          displayName: 'Student info',
+          phrase: 'Student info',
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-homeroom',
+              fieldName: 'Homeroom',
+              displayName: 'Homeroom',
+              properties: [],
+              holders: 12,
+            },
+            {
+              change: 'removed',
+              fieldId: 'fld-grade',
+              fieldName: 'GradeLevel',
+              displayName: 'Grade level',
+              properties: [],
+              holders: 0,
+            },
+          ],
+        });
+        assert.equal(
+          deletion.result.outcome,
+          'created',
+          JSON.stringify(deletion.result),
+        );
+        // Another change reaches the category after both plans were prepared (B section 6.2).
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag='"etag-2"'
+           WHERE schema_id='schem=StudentInfo'`,
+        );
+        for (const plan of [edit.result.plan, deletion.result.plan]) {
+          const answer = await confirmPlan(
+            manager,
+            plan.planId,
+            plan.digest,
+            plan.phrase,
+          );
+          assert.equal(
+            answer.result.outcome,
+            'category-changed',
+            JSON.stringify(answer.result),
+          );
+          const jobs = await one(
+            'SELECT count(*)::integer AS jobs FROM cc.user_schema_change_jobs WHERE plan_id=$1',
+            [plan.planId],
+          );
+          assert.equal(jobs.jobs, 0);
+        }
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag='"etag-1"'
+           WHERE schema_id='schem=StudentInfo'`,
+        );
+      },
+    );
+
+    await check(
+      'K15 a first confirmation refuses a vanished category',
+      async () => {
+        const deletion = await createPlan(manager, {
+          kind: 'delete-category',
+          schemaId: 'schem=StaffInfo',
+          baseEtag: '"etag-2"',
+          schemaName: 'StaffInfo',
+          displayName: 'Staff info',
+          phrase: 'Staff info',
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-department',
+              fieldName: 'Department',
+              displayName: 'Department',
+              properties: [],
+              holders: 0,
+            },
+          ],
+        });
+        assert.equal(
+          deletion.result.outcome,
+          'created',
+          JSON.stringify(deletion.result),
+        );
+        await migrator.query(
+          `DELETE FROM cc.user_attribute_categories WHERE schema_id='schem=StaffInfo'`,
+        );
+        const answer = await confirmPlan(
+          manager,
+          deletion.result.plan.planId,
+          deletion.result.plan.digest,
+          'Staff info',
+        );
+        assert.equal(answer.result.outcome, 'category-changed');
+        const jobs = await one(
+          'SELECT count(*)::integer AS jobs FROM cc.user_schema_change_jobs WHERE plan_id=$1',
+          [deletion.result.plan.planId],
+        );
+        assert.equal(jobs.jobs, 0);
+        await storeCategory(
+          'schem=StaffInfo',
+          'StaffInfo',
+          'Staff info',
+          '"etag-2"',
+          [
+            {
+              fieldId: 'fld-department',
+              fieldName: 'Department',
+              displayName: 'Department',
+              fieldType: 'STRING',
+              multiValued: false,
+              indexed: true,
+              readAccessType: 'ADMINS_AND_SELF',
+              numericIndexingSpec: null,
+              holders: 0,
+            },
+          ],
+        );
+      },
+    );
+
+    await check(
+      'K15 a confirmed plan answers its receipt after the cached etag moved',
+      async () => {
+        const deletion = await createPlan(manager, {
+          kind: 'delete-category',
+          schemaId: 'schem=StaffInfo',
+          baseEtag: '"etag-2"',
+          schemaName: 'StaffInfo',
+          displayName: 'Staff info',
+          phrase: 'Staff info',
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-department',
+              fieldName: 'Department',
+              displayName: 'Department',
+              properties: [],
+              holders: 0,
+            },
+          ],
+        });
+        assert.equal(
+          deletion.result.outcome,
+          'created',
+          JSON.stringify(deletion.result),
+        );
+        const first = await confirmPlan(
+          manager,
+          deletion.result.plan.planId,
+          deletion.result.plan.digest,
+          'Staff info',
+        );
+        assert.equal(first.result.outcome, 'created');
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag='"etag-3"'
+           WHERE schema_id='schem=StaffInfo'`,
+        );
+        const replay = await confirmPlan(
+          manager,
+          deletion.result.plan.planId,
+          deletion.result.plan.digest,
+          'Staff info',
+        );
+        assert.equal(replay.result.outcome, 'existing');
+        assert.equal(replay.result.receipt.jobId, first.result.receipt.jobId);
+        assert.equal(
+          replay.result.receipt.displayId,
+          first.result.receipt.displayId,
+        );
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag='"etag-2"'
+           WHERE schema_id='schem=StaffInfo'`,
+        );
+      },
+    );
+
+    await check(
+      'K15 a padded category label passes the trimmed confirmation and refuses a wrong case',
+      async () => {
+        await storeCategory(
+          'schem=PaddedInfo',
+          'PaddedInfo',
+          '  Padded info  ',
+          '"etag-padded"',
+          [
+            {
+              fieldId: 'fld-padded-note',
+              fieldName: 'Note',
+              displayName: 'Note',
+              fieldType: 'STRING',
+              multiValued: false,
+              indexed: true,
+              readAccessType: 'ADMINS_AND_SELF',
+              numericIndexingSpec: null,
+              holders: 0,
+            },
+          ],
+        );
+        const stored = await createPlan(manager, {
+          kind: 'delete-category',
+          schemaId: 'schem=PaddedInfo',
+          baseEtag: '"etag-padded"',
+          schemaName: 'PaddedInfo',
+          displayName: '  Padded info  ',
+          phrase: '  Padded info  ',
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-padded-note',
+              fieldName: 'Note',
+              displayName: 'Note',
+              properties: [],
+              holders: 0,
+            },
+          ],
+        });
+        assert.equal(
+          stored.result.outcome,
+          'created',
+          JSON.stringify(stored.result),
+        );
+        // The plan answer keeps the cached label with its surrounding whitespace.
+        assert.equal(stored.result.plan.phrase, '  Padded info  ');
+        assert.equal(stored.result.plan.displayName, '  Padded info  ');
+        // The route trims the typed phrase, and the function trims the frozen phrase the same way.
+        const confirmed = await confirmPlan(
+          manager,
+          stored.result.plan.planId,
+          stored.result.plan.digest,
+          'Padded info',
+        );
+        assert.equal(
+          confirmed.result.outcome,
+          'created',
+          JSON.stringify(confirmed.result),
+        );
+        const second = await createPlan(manager, {
+          kind: 'delete-category',
+          schemaId: 'schem=PaddedInfo',
+          baseEtag: '"etag-padded"',
+          schemaName: 'PaddedInfo',
+          displayName: '  Padded info  ',
+          phrase: '  Padded info  ',
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-padded-note',
+              fieldName: 'Note',
+              displayName: 'Note',
+              properties: [],
+              holders: 0,
+            },
+          ],
+        });
+        assert.equal(
+          second.result.outcome,
+          'created',
+          JSON.stringify(second.result),
+        );
+        const refused = await confirmPlan(
+          manager,
+          second.result.plan.planId,
+          second.result.plan.digest,
+          'padded info',
+        );
+        assert.equal(refused.result.outcome, 'phrase-mismatch');
+        await migrator.query(
+          `DELETE FROM cc.user_attribute_categories WHERE schema_id='schem=PaddedInfo'`,
+        );
       },
     );
   } finally {
