@@ -229,13 +229,13 @@ export class UserGrid implements OnInit {
   private focusing = false;
   /** The grid ended. A pending frame or block answer must not touch focus (R4). */
   private destroyed = false;
-  /** The move control that a key activated. Its row takes focus back after the panel re-renders. */
-  private keyboardMove: {
+  /** The move control that an activation used. Its row takes focus back after the panel re-renders. */
+  private panelMove: {
     columnId: string;
     direction: 'up' | 'down';
   } | null = null;
-  private readonly moveKeydown = (event: KeyboardEvent) =>
-    this.trackMoveKey(event);
+  private readonly moveClick = (event: MouseEvent) =>
+    this.trackMoveClick(event);
   protected options!: GridOptions<UserRow>;
 
   constructor() {
@@ -282,13 +282,14 @@ export class UserGrid implements OnInit {
     });
     this.application.attachView(panel.hostView);
     this.destroyRef.onDestroy(() => panel.destroy());
-    // UI-09: the panel rebuilds its rows after a move. Record the keyboard move
-    // before the click handler runs, so focus can return to the moved row.
-    this.host.nativeElement.addEventListener('keydown', this.moveKeydown, true);
+    // UI-09: the panel rebuilds its rows after a move. Record the activation
+    // before the control's own click handler runs, so focus can return to the
+    // moved row. Enter and Space raise the same click event as the pointer.
+    this.host.nativeElement.addEventListener('click', this.moveClick, true);
     this.destroyRef.onDestroy(() =>
       this.host.nativeElement.removeEventListener(
-        'keydown',
-        this.moveKeydown,
+        'click',
+        this.moveClick,
         true,
       ),
     );
@@ -557,22 +558,22 @@ export class UserGrid implements OnInit {
   }
 
   /**
-   * UI-09: record a keyboard move of a Columns panel row. The panel replaces its
-   * rows when the column moves, so the row that held focus must take it back.
-   * A pointer move records nothing, and keeps its current focus.
+   * UI-09: record a move of a Columns panel row. The panel replaces its rows
+   * when the column moves, so the row that held focus must take it back.
    */
-  private trackMoveKey(event: KeyboardEvent): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
+  private trackMoveClick(event: MouseEvent): void {
     const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    if (!target.closest('.lgr-columns-tool-panel')) return;
+    if (!(target instanceof Element)) return;
+    // A click on the icon resolves to the button that holds the move label.
+    const control = target.closest<HTMLElement>('button[aria-label]');
+    if (!control || !control.closest('.lgr-columns-tool-panel')) return;
     const match = /^Move (.+) (up|down)$/.exec(
-      target.getAttribute('aria-label') ?? '',
+      control.getAttribute('aria-label') ?? '',
     );
-    const row = target.closest<HTMLElement>('.lgr-columns-row');
+    const row = control.closest<HTMLElement>('.lgr-columns-row');
     const columnId = row?.dataset['columnId'];
     if (!match || !columnId) return;
-    this.keyboardMove = {
+    this.panelMove = {
       columnId,
       direction: match[2] as 'up' | 'down',
     };
@@ -580,8 +581,8 @@ export class UserGrid implements OnInit {
 
   /** The panel rebuilt its rows after a move. Return focus to the moved row (UI-09). */
   private columnMoved(event: ColumnMovedEvent<UserRow>): void {
-    const pending = this.keyboardMove;
-    this.keyboardMove = null;
+    const pending = this.panelMove;
+    this.panelMove = null;
     if (!pending) return;
     const columnId = event.column?.getColId() ?? pending.columnId;
     if (columnId !== pending.columnId) return;
