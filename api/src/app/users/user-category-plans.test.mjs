@@ -829,6 +829,24 @@ test('a confirm answers 422 phrase-mismatch', async () => {
   );
 });
 
+test('a confirm answers 412 category-changed after the category moved', async () => {
+  const route = new UserCategoryPlans(
+    port({ confirm: { outcome: 'category-changed' } }),
+  );
+  await assert.rejects(
+    route.confirm(
+      session,
+      '0e1f1a4e-6a0d-4f38-9f4c-2d2b5a3c1b7e',
+      { digest: 'a'.repeat(64), acknowledged: true },
+      'c-1',
+    ),
+    (error) =>
+      error instanceof HttpException &&
+      error.getStatus() === 412 &&
+      error.getResponse().reason === 'category-changed',
+  );
+});
+
 test('a confirm answers 409 plan-changed after a different plan', async () => {
   const route = new UserCategoryPlans(
     port({ confirm: { outcome: 'plan-changed' } }),
