@@ -767,7 +767,7 @@ async function runAdminSdkMockIntegration({
       },
     );
     assert.equal(answer.status, 201, answer.text);
-    const { receipt } = JSON.parse(answer.text);
+    const receipt = JSON.parse(answer.text);
     assert.match(receipt.displayId, /^CAT-\d+$/);
     return receipt;
   };
