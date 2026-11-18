@@ -11,6 +11,7 @@ import type {
 import { AuthStore } from '../auth.store';
 import { UserDetailPage, readAge } from './user-detail';
 import { UsersStore } from './users.store';
+import type { UserRead } from './users.store';
 
 const user = (extra: Partial<UserDetail> = {}): UserDetail => ({
   userId: '110000000000000000001',
@@ -151,9 +152,21 @@ const nextRow: UserRow = {
   stale: false,
 };
 
+/** A promise that the test releases. */
+function held<T>() {
+  let release: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
 async function setup(options: {
   detail?: UserDetail | null;
-  position?: { index: number; userId: string } | null;
+  /** The answer of the read, when the test needs a failure or a stale answer. */
+  read?: UserRead;
+  position?: { index: number; userId: string; scrollTop: number | null } | null;
+  cursor?: { index: number; userId: string } | null;
   matching?: number;
   offline?: boolean;
   sync?: UserSyncState | null;
@@ -164,18 +177,38 @@ async function setup(options: {
   categoriesError?: string;
   categoriesRecovery?: boolean;
   next?: UserRow | null;
+  /** Holds the neighbor answer, so a test can end the page first. */
+  neighbor?: () => Promise<UserRow | null>;
 }) {
   const detail = options.detail === undefined ? user() : options.detail;
+  const position =
+    options.position === undefined
+      ? {
+          index: 0,
+          userId: '110000000000000000001',
+          scrollTop: 0,
+        }
+      : options.position;
+  const cursor =
+    options.cursor === undefined
+      ? position && { index: position.index, userId: position.userId }
+      : options.cursor;
+  const read =
+    options.read ??
+    (detail === null
+      ? { kind: 'missing' as const }
+      : { kind: 'user' as const, user: detail });
   const store = {
     sync: signal(options.sync === undefined ? sync : options.sync),
     syncLoaded: signal(options.syncLoaded ?? true),
     statusError: signal(options.statusError ?? ''),
     statusRetryable: signal(options.statusRetryable ?? true),
-    position: signal<{ index: number; userId: string } | null>(
-      options.position === undefined
-        ? { index: 0, userId: '110000000000000000001' }
-        : options.position,
-    ),
+    position: signal<{
+      index: number;
+      userId: string;
+      scrollTop: number | null;
+    } | null>(position),
+    cursor: signal<{ index: number; userId: string } | null>(cursor),
     page: signal(
       options.matching === undefined
         ? null
@@ -187,8 +220,10 @@ async function setup(options: {
     categoriesError: signal(options.categoriesError ?? ''),
     categoriesRecovery: signal(options.categoriesRecovery ?? false),
     offline: signal(options.offline ?? false),
-    user: vi.fn().mockResolvedValue(detail),
-    neighbor: vi.fn().mockResolvedValue(options.next ?? null),
+    user: vi.fn().mockResolvedValue(read),
+    neighbor: vi.fn(
+      options.neighbor ?? (() => Promise.resolve(options.next ?? null)),
+    ),
     loadSync: vi.fn().mockResolvedValue(true),
     loadCategories: vi.fn().mockResolvedValue(undefined),
   };
@@ -316,23 +351,69 @@ describe('the user details page', () => {
 
   it('reads the next user of the filtered order', async () => {
     const { store, navigate, button } = await setup({
-      position: { index: 0, userId: '110000000000000000001' },
+      position: { index: 0, userId: '110000000000000000001', scrollTop: 0 },
       matching: 3,
       next: nextRow,
     });
     button('Next user')!.click();
     await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(store.neighbor).toHaveBeenCalledWith(1);
-    expect(store.position()).toEqual({
+    // Next user moves the cursor. The return anchor stays on the opening row (R3).
+    expect(store.cursor()).toEqual({
       index: 1,
       userId: '110000000000000000002',
+    });
+    expect(store.position()).toEqual({
+      index: 0,
+      userId: '110000000000000000001',
+      scrollTop: 0,
     });
     expect(navigate).toHaveBeenCalledWith(['/users', '110000000000000000002']);
   });
 
+  it('drops a neighbor answer that lands after the page ended (R2)', async () => {
+    const neighbor = held<UserRow | null>();
+    const { navigate, button, fixture } = await setup({
+      matching: 3,
+      neighbor: () => neighbor.promise,
+    });
+    button('Next user')!.click();
+    // Back to users, browser Back, or a shell link ends the page while the query runs.
+    fixture.destroy();
+    neighbor.release(nextRow);
+    await Promise.resolve();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('drops the answer of an earlier Next user request (R2)', async () => {
+    const first = held<UserRow | null>();
+    const second = held<UserRow | null>();
+    let calls = 0;
+    const { navigate, button } = await setup({
+      matching: 3,
+      neighbor: () => {
+        calls++;
+        return calls === 1 ? first.promise : second.promise;
+      },
+    });
+    button('Next user')!.click();
+    button('Next user')!.click();
+    first.release(nextRow);
+    await Promise.resolve();
+    // The first request belongs to a navigation that a later request replaced.
+    expect(navigate).not.toHaveBeenCalled();
+    second.release({
+      ...nextRow,
+      userId: '110000000000000000003',
+      fullName: 'Ania Reyes',
+    });
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+    expect(navigate).toHaveBeenCalledWith(['/users', '110000000000000000003']);
+  });
+
   it('disables Next user on the last row of the order', async () => {
     const { button } = await setup({
-      position: { index: 2, userId: '110000000000000000001' },
+      position: { index: 2, userId: '110000000000000000001', scrollTop: 0 },
       matching: 3,
     });
     expect(button('Next user')!.disabled).toBe(true);
@@ -358,9 +439,61 @@ describe('the user details page', () => {
   });
 
   it('shows the offline card with the cached record kept out of reach', async () => {
-    const { element } = await setup({ detail: null, offline: true });
+    const { element } = await setup({
+      detail: null,
+      read: { kind: 'offline' },
+    });
     expect(element.querySelector('h1')?.textContent?.trim()).toBe(
       'Cannot reach Campus Commander',
+    );
+  });
+
+  it('names a failed details read with a Retry that reads again (R5)', async () => {
+    const { element, store, fixture } = await setup({
+      detail: null,
+      read: { kind: 'failed' },
+    });
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'User details are unavailable',
+    );
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain(
+      'Campus Commander could not read this user from the directory.',
+    );
+    // The failed read is not shown as a missing user and holds no busy state.
+    expect(element.textContent).not.toContain('User not found');
+    expect(element.querySelector('.detail')?.getAttribute('aria-busy')).toBe(
+      'false',
+    );
+    const retry = [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === 'Retry',
+    );
+    retry?.click();
+    await vi.waitFor(() => expect(store.user).toHaveBeenCalledTimes(2));
+    fixture.detectChanges();
+  });
+
+  it('names denied access without a Retry that cannot help (R5)', async () => {
+    const { element } = await setup({
+      detail: null,
+      read: { kind: 'denied' },
+    });
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'You cannot read this user',
+    );
+    expect(element.textContent).toContain(
+      'You do not have permission to read users for this customer.',
+    );
+    expect(
+      [...element.querySelectorAll('button')].some(
+        (candidate) => candidate.textContent?.trim() === 'Retry',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps a missing user for a missing-record answer alone (R5)', async () => {
+    const { element } = await setup({ read: { kind: 'missing' } });
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'User not found',
     );
   });
 

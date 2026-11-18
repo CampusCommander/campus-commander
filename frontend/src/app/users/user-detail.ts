@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -34,8 +35,19 @@ type DetailView =
   | 'error'
   | 'connection'
   | 'offline'
+  | 'denied'
+  | 'failed'
   | 'missing'
   | 'ready';
+
+/** The record read, from the directory status and the last answer. */
+type DetailStatus =
+  | 'loading'
+  | 'ready'
+  | 'missing'
+  | 'offline'
+  | 'denied'
+  | 'failed';
 
 /** The age of one observation, for the stale and removed states (UI-06). */
 export function readAge(iso: string, now = Date.now()): string {
@@ -65,24 +77,22 @@ export class UserDetailPage {
   private readonly router = inject(Router);
   protected readonly user = signal<UserDetail | null>(null);
   protected readonly busy = signal(false);
-  private readonly status = signal<'loading' | 'ready' | 'missing' | 'offline'>(
-    'loading',
-  );
+  private readonly status = signal<DetailStatus>('loading');
   protected readonly view = computed<DetailView>(() => {
     if (this.store.statusError()) return 'error';
     if (!this.store.syncLoaded()) return 'loading';
     if (!this.store.sync()) return 'connection';
     return this.status();
   });
-  /** Next user needs the row index of the opened user in the counted order (A section 4). */
+  /** Next user walks the cursor of the filtered order, not the return anchor (A section 4). */
   protected readonly hasNext = computed(() => {
-    const position = this.store.position();
+    const cursor = this.store.cursor();
     const matching = this.store.page()?.matching ?? null;
     return (
-      position !== null &&
-      position.userId === this.userId() &&
+      cursor !== null &&
+      cursor.userId === this.userId() &&
       matching !== null &&
-      position.index + 1 < matching
+      cursor.index + 1 < matching
     );
   });
   /**
@@ -100,8 +110,13 @@ export class UserDetailPage {
   protected readonly relative = readAge;
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
   /** The page starts focus at its heading once, when the first state replaces the skeleton. */
   private placed = false;
+  /** Bumps per Next user request, so only the last request may navigate (R2). */
+  private nextSequence = 0;
+  /** The page ended. A read or a neighbor answer that lands later changes nothing. */
+  private leaving = false;
 
   constructor() {
     effect(() => {
@@ -119,6 +134,12 @@ export class UserDetailPage {
         injector: this.injector,
       });
     });
+    // Back to users, browser Back, and shell navigation all end this page. A deferred
+    // Next answer must not navigate after that (R2).
+    this.destroyRef.onDestroy(() => {
+      this.leaving = true;
+      this.nextSequence++;
+    });
   }
 
   private async load(id: string): Promise<void> {
@@ -130,13 +151,18 @@ export class UserDetailPage {
     // Keep the current user visible while the next one loads, so focus stays on Next user.
     if (!this.user()) this.status.set('loading');
     this.busy.set(true);
-    const user = await this.store.user(id);
-    if (this.userId() !== id) return;
+    const read = await this.store.user(id);
+    // A later route owns the page, or the answer belongs to the person who left (R1).
+    if (this.userId() !== id || read.kind === 'stale') return;
     this.busy.set(false);
-    this.user.set(user);
-    this.status.set(
-      user ? 'ready' : this.store.offline() ? 'offline' : 'missing',
-    );
+    if (read.kind === 'user') {
+      this.user.set(read.user);
+      this.status.set('ready');
+      return;
+    }
+    // A failed read is not a missing record. Each answer keeps its own state (R5).
+    this.user.set(null);
+    this.status.set(read.kind);
   }
 
   protected retry(): void {
@@ -148,16 +174,24 @@ export class UserDetailPage {
     void this.store.loadSync().then(() => this.load(this.userId()));
   }
 
-  /** Next user follows the filtered order of the grid that opened this page. */
+  /**
+   * Next user follows the filtered order of the grid that opened this page. The page
+   * moves the cursor and leaves the return anchor in place (A section 4). A neighbor
+   * answer that lands after the page ended, after another navigation, or after a later
+   * Next must not navigate (R2).
+   */
   protected async next(): Promise<void> {
-    const position = this.store.position();
-    if (!position || position.userId !== this.userId()) return;
-    const row = await this.store.neighbor(position.index + 1);
+    const cursor = this.store.cursor();
+    if (!cursor || cursor.userId !== this.userId()) return;
+    const sequence = ++this.nextSequence;
+    const from = cursor.userId;
+    const row = await this.store.neighbor(cursor.index + 1);
+    if (this.leaving || sequence !== this.nextSequence) return;
+    if (this.userId() !== from) return;
+    const current = this.store.cursor();
+    if (!current || current.userId !== from) return;
     if (!row) return;
-    this.store.position.set({
-      index: position.index + 1,
-      userId: row.userId,
-    });
+    this.store.cursor.set({ index: cursor.index + 1, userId: row.userId });
     await this.router.navigate(['/users', row.userId]);
   }
 

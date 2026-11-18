@@ -47,6 +47,29 @@
       <button mat-flat-button type="button" (click)="retry()">Retry</button>
     </div>
   </section>
+  } @case ('denied') {
+  <section class="card" aria-labelledby="user-denied-title">
+    <h1 #heading tabindex="-1" id="user-denied-title">
+      You cannot read this user
+    </h1>
+    <p>You do not have permission to read users for this customer.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+    </div>
+  </section>
+  } @case ('failed') {
+  <section class="card" aria-labelledby="user-failed-title">
+    <h1 #heading tabindex="-1" id="user-failed-title">
+      User details are unavailable
+    </h1>
+    <p role="alert">
+      Campus Commander could not read this user from the directory.
+    </p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+      <button mat-flat-button type="button" (click)="retry()">Retry</button>
+    </div>
+  </section>
   } @case ('missing') {
   <section class="card" aria-labelledby="user-missing-title">
     <h1 #heading tabindex="-1" id="user-missing-title">User not found</h1>
