@@ -49,13 +49,15 @@
   } @case ('entityType') {
   <fieldset>
     <legend>Entity type</legend>
+    @for (entity of entityOptions; track entity) {
     <label class="check"
       ><input
         type="checkbox"
-        [checked]="entities().includes('device')"
-        (change)="toggleEntity($any($event.target).checked)"
-      />Device</label
+        [checked]="entities().includes(entity)"
+        (change)="toggleEntity(entity, $any($event.target).checked)"
+      />{{ entityLabels[entity] }}</label
     >
+    }
   </fieldset>
   } @case ('requestedBy') {
   <label class="field"

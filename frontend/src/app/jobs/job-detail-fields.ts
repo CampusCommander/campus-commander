@@ -12,9 +12,11 @@ import {
 } from '@campus/application-contracts';
 import type { AuthStore } from '../auth.store';
 import { statusText } from '../devices/device-fields';
-import { deviceCountText } from '../devices/device-update-messages';
 import {
   cancelledRefreshAll,
+  entityCountText,
+  entityNoun,
+  entityNouns,
   exportFailureLabel,
   exportRows,
   formatDuration,
@@ -188,7 +190,7 @@ export function scopeHeading(job: JobDetail): string {
   const count = job.scope.deviceCount;
   return count === null
     ? job.displayId
-    : `${job.displayId} · ${deviceCountText(count)}`;
+    : `${job.displayId} · ${entityCountText(job.entityType, count)}`;
 }
 
 /** "Annotated location". The label of each writable field, or a dash without one. */
@@ -473,6 +475,11 @@ export interface CancelQuestion {
 
 const countText = (value: number) => value.toLocaleString('en-US');
 
+/** The first letter in upper case. A sentence of the copy starts with the entity noun. */
+function capitalized(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 /** The confirmed noun of the running question (choice 5). */
 function confirmedNoun(job: JobDetail): { one: string; many: string } {
   if (
@@ -579,15 +586,16 @@ function baseCancelQuestion(job: JobDetail): CancelQuestion {
   }
   if (job.action === 'refresh-inventory') {
     const read = countText(job.progress.succeeded);
+    const nouns = entityNouns(job.entityType);
     if (job.scope.kind === 'devices') {
       const total = job.scope.deviceCount ?? job.progress.total ?? 0;
       return {
         title,
         paragraphs: [
           `${read} of ${countText(total)} ${
-            total === 1 ? 'device is' : 'devices are'
+            total === 1 ? `${nouns.one} is` : `${nouns.many} are`
           } read. The refresh stops at its next batch.`,
-          'Devices already read keep their new data. The other devices keep their earlier data.',
+          `${capitalized(nouns.many)} already read keep their new data. The other ${nouns.many} keep their earlier data.`,
         ],
         dismissLabel: 'Keep job running',
         confirmLabel,
@@ -596,8 +604,8 @@ function baseCancelQuestion(job: JobDetail): CancelQuestion {
     return {
       title,
       paragraphs: [
-        `The refresh has read ${read} ${succeeded === 1 ? 'device' : 'devices'}. It stops at its next page.`,
-        'It saves none of this refresh and marks no device removed. The inventory keeps its earlier data.',
+        `The refresh has read ${read} ${entityNoun(job.entityType, succeeded)}. It stops at its next page.`,
+        `It saves none of this refresh and marks no ${nouns.one} removed. The inventory keeps its earlier data.`,
       ],
       dismissLabel: 'Keep job running',
       confirmLabel,
@@ -647,10 +655,12 @@ function baseCancelQuestion(job: JobDetail): CancelQuestion {
  * A refresh names the inventory; a write job names the operations it stopped.
  */
 export function cancelActivitySentence(job: JobDetail): string {
-  if (job.action === 'refresh-inventory')
+  if (job.action === 'refresh-inventory') {
+    const nouns = entityNouns(job.entityType);
     return job.scope.kind === 'all-devices'
-      ? 'Cancellation ended the refresh. It saved none of the devices that it read, and it marked no device removed.'
-      : 'Cancellation ended the refresh. Devices already read keep their data.';
+      ? `Cancellation ended the refresh. It saved none of the ${nouns.many} that it read, and it marked no ${nouns.one} removed.`
+      : `Cancellation ended the refresh. ${capitalized(nouns.many)} already read keep their data.`;
+  }
   if (!job.startedAt)
     return 'Cancellation ended the job before it started. No request reached Google.';
   const stopped = job.progress.cancelled;
@@ -933,16 +943,12 @@ function commandCounterLine(job: JobDetail): string {
 function refreshParts(job: JobDetail): string[] {
   const { succeeded, failed } = job.progress;
   const parts = [
-    `${succeeded.toLocaleString('en-US')} ${
-      succeeded === 1 ? 'device' : 'devices'
-    } read.`,
+    `${succeeded.toLocaleString('en-US')} ${entityNoun(job.entityType, succeeded)} read.`,
   ];
-  // A refresh reports failed device counts without operation samples (section 2.5).
+  // A refresh reports failed entity counts without operation samples (section 2.5).
   if (failed > 0)
     parts.push(
-      `${failed.toLocaleString('en-US')} ${
-        failed === 1 ? 'device' : 'devices'
-      } could not be read.`,
+      `${failed.toLocaleString('en-US')} ${entityNoun(job.entityType, failed)} could not be read.`,
     );
   return parts;
 }
@@ -967,14 +973,16 @@ function refreshCounterLine(job: JobDetail): string {
     case 'needs-review':
       parts.push('The refresh needs review.');
       break;
-    default:
+    default: {
+      const nouns = entityNouns(job.entityType);
       parts.push(
         pending !== null && pending > 0
           ? `${spellCount(pending)} ${
-              pending === 1 ? 'device remains' : 'devices remain'
+              pending === 1 ? `${nouns.one} remains` : `${nouns.many} remain`
             } to read.`
           : 'The refresh continues.',
       );
+    }
   }
   return `${time} · ${parts.join(' ')}`;
 }
