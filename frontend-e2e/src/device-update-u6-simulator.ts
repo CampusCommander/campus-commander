@@ -244,6 +244,7 @@ export class U6Simulator {
       revision: done ? 2 : 1,
       action: 'update-device-annotations',
       status: this.jobStatus,
+      entityType: 'device',
       scope: { kind: 'devices', deviceCount: total },
       requestedBy: {
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

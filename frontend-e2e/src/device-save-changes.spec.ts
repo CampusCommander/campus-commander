@@ -263,6 +263,7 @@ class SaveChangesSimulator {
         : failed > 0
           ? 'completed-with-errors'
           : 'completed',
+      entityType: 'device',
       scope: { kind: 'devices', deviceCount: total },
       requestedBy: { id: principal, displayName: 'District operator' },
       createdAt: '2026-10-21T18:03:00.000Z',

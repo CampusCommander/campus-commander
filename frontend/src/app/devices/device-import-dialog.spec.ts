@@ -52,6 +52,7 @@ const importDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   revision: 4,
   action: 'validate-device-import',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: person,
   createdAt: new Date(Date.now() - 60_000).toISOString(),

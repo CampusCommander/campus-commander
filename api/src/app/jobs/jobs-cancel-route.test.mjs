@@ -50,6 +50,7 @@ const jobRow = (overrides = {}) => ({
   customer_id: CUSTOMER,
   kind: 'device-update',
   scope_kind: 'devices',
+  entity_type: 'device',
   status: 'running',
   requested_by: REQUESTER,
   requested_by_name: 'Ada Lovelace',

@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-11-16.
+Updated: 2026-11-18.
 
 ## Authorized now
 
@@ -62,7 +62,11 @@ On 2026-11-16 the owner answered questions U1 to U7 of the [Google users and cus
 Later that day he approved the screens of both Figma pages. Owner: "1) Approved". He also answered: "2) Scopes Added" and "3) Yes to 0.4.0".
 
 The approved mockups are [2026-11-16-user-management.html](ui/designs/2026-11-16-user-management.html) and [2026-11-16-custom-attributes.html](ui/designs/2026-11-16-custom-attributes.html).
-The record stays proposed. Its design addendum comes before the build.
+The [design addendum](superpowers/specs/2026-11-16-user-management-design.md) holds the card plan K1 to K30.
+On 2026-11-18 the owner approved the number range states 13 to 15. Owner: "approve". He first answered the two range questions: "R1) No" and "R2) yes".
+The approved mockup is [2026-11-18-custom-attributes-ranges.html](ui/designs/2026-11-18-custom-attributes-ranges.html).
+
+On 2026-11-18 the owner signed off slice S1, Browse users. The sign-off package README asked: "Reply `sign off` to accept slice S1 as built." Owner, in the main chat: "sign off".
 
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
@@ -74,6 +78,56 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Google users slice S1 Browse users (signed off 2026-11-18)
+
+The [record](workflows/user-management.md) and its documents A and B define the workflow. The [design addendum](superpowers/specs/2026-11-16-user-management-design.md) holds the card plan.
+The approved [users mockup](ui/designs/2026-11-16-user-management.html) sets the screens of slice S1.
+
+PRs #210 to #224, #226, #227, and #229 hold the slice S1 build and its records and designs.
+They also hold the live checks L2 to L4 and the pin of admin-sdk-mock 0.4.0.
+PRs #232, #233, #234, and #235 fixed the findings of the rehearsal and the dry run.
+`main` was `55893cc` at the sign-off. PR #235 then released the Jobs page wording that the sign-off approved.
+
+On 2026-11-18 the owner signed off the build. Owner, in the main chat: "sign off".
+He named no change. Each finding stays as the package recommended:
+
+- Finding 1: the Jobs page named a user job as a device job. PRs #234 and #235 fixed it. A user job now reads, for example, "4 users read" and "All users". The Entity type filter offers User.
+- Finding 2: a keyboard user did not reach a move control in the Columns panel. PR #232 fixed it. A row shows its move controls only while it has keyboard focus or the pointer.
+- Finding 3: the categories sort by display name. The approved screens show Student information first. The order stays as built.
+- Finding 4: the Columns panel keeps the approved width of 258 px. It shows no pin or move control at rest.
+- Finding 5: state 01 draws the band "Select one or more users to set attributes." The band stays absent until Bulk Actions exists (card K27).
+- Finding 6: the details page disables Next user on a direct link. It shows a "Read from Google" age line for a stale or a removed user. It shows the raw key of an unknown attribute.
+- Finding 7: a text attribute filters with Contains only, as baseline default 4 states. State 13 draws "Homeroom is: 999", and the build shows "Homeroom contains: 999".
+- Finding 8: not a defect. A column that a second Columns panel session adds before a shown column moves the shown column out of view. Diagnosis `t_33268e7d` proved it.
+- Finding 9: the application edge refused a direct link or a reload of a Users page. PR #233 added the Users pages to the edge.
+
+The sign-off accepts the drafted wording in the package's `owner-review-wording.md` as built: 73 strings and 18 defaults.
+Two examples are "Refresh started for 4 users. Rows update as Google answers." in the status bar and "Google no longer returns this user (since {time})." on the details page.
+
+Four runs support the sign-off:
+
+- Rehearsal K12 (`t_589fc48b`) ran completion step 1 at `8a18abe` on admin-sdk-mock 0.4.0 with 6,703 users.
+- The walkthrough dry run `t_3bb1e49f` passed each step at `8a18abe` after one correction of the mock commands. It also verified a person with View users alone.
+- Diagnosis `t_a3724210` found that a drag moves a column. The keyboard did not reach a move control (finding 2).
+- Diagnosis `t_33268e7d` closed finding 8 and found finding 9.
+
+This is the surface that stays unverified:
+
+- Live Google. Card K29 runs the live read-only check after slice S3.
+- Firefox, WebKit, a screen reader, and browser zoom. The runs used Chromium at 1440 x 900.
+
+Nine follow-ups sit in the `swe` board triage. None blocks slice S1:
+
+- `t_23ef7d0e`: remove the untrusted test role of K5.
+- `t_33fc720d`: inherited abandon races and SQL read grants (from K8).
+- `t_ff0c9e54`: drop the temporary outsider test role (from K8).
+- `t_28aa0be8`: align the users feed fixtures with the deferred Jobs gate (from K9).
+- `t_c8e9410d`: verify the response order of Devices rows and selections (from K10).
+- `t_b8097415`: scope the Refresh locators of the Job detail test during recovery (from K10).
+- `t_50ae5233`: the non-blocking review follow-ups of K11.
+- `t_6a0f45fc`: admin-sdk-mock keeps a restored user out of its user list until an index flush.
+- `t_14e5bb4e`: two users specs write screenshots to a folder that `.gitignore` does not cover.
 
 ### Batch update through export and import (record proposed 2026-10-26)
 

@@ -144,6 +144,12 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         telemetry_failure_requested_by=NULL WHERE customer_id=$1`,
       [customer],
     );
+    // A user lease of an earlier check names a job that this reset removes, so it clears here.
+    await migrator.query(
+      `UPDATE cc.user_sync_state SET sync_id=NULL,sync_actor=NULL,sync_generation=NULL,sync_attempt=NULL,
+        sync_expires_at=NULL,failure=NULL,failure_requested_by=NULL,checked_at=NULL WHERE customer_id=$1`,
+      [customer],
+    );
   };
   /** Insert one header. The display number comes from the 017 sequence. */
   const header = async ({
@@ -723,6 +729,113 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
         assert.deepEqual(detail.latestActivity.failed.operations, []);
         await statement('SELECT cc.abandon_device_sync($1,$2,$3,$4,$5)', [
           owner,
+          1,
+          customer,
+          syncId,
+          'orchestration-unavailable',
+        ]);
+      },
+    );
+
+    // The Jobs grid names the entity type of each job, so a user refresh stops reading as a device
+    // job (document A section 5). The user sync and the user refresh store `user`; a device refresh
+    // keeps `device`. Every read and both filter values run against the stored column.
+    await check(
+      'a user refresh and a full user sync store and answer the user entity type',
+      async () => {
+        await reset();
+        const userReader = await principal(`user-reader-${randomUUID()}`, [
+          ['users:read', district()],
+          ['jobs:read', district()],
+        ]);
+        const refreshId = randomUUID();
+        const refresh = await statement(
+          'SELECT cc.create_entity_sync_job($1,$2,$3,$4,$5,$6,$7,$8) AS result',
+          [
+            userReader,
+            1,
+            customer,
+            'user',
+            JSON.stringify(['user-1', 'user-2', 'user-3', 'user-4']),
+            100,
+            refreshId,
+            randomUUID(),
+          ],
+        );
+        assert.equal(refresh[0].result.entityType, 'user');
+        const syncId = randomUUID();
+        await statement('SELECT cc.request_user_sync($1,$2,$3,$4,$5,$6)', [
+          userReader,
+          1,
+          customer,
+          generation,
+          syncId,
+          randomUUID(),
+        ]);
+        // A device refresh beside the two user jobs keeps the device entity type.
+        const deviceId = randomUUID();
+        await statement(
+          'SELECT cc.create_entity_sync_job($1,$2,$3,$4,$5,$6,$7,$8)',
+          [
+            owner,
+            1,
+            customer,
+            'device',
+            JSON.stringify(['device-1']),
+            100,
+            deviceId,
+            randomUUID(),
+          ],
+        );
+        const stored = await admin(
+          'SELECT job_id,entity_type FROM cc.jobs WHERE job_id=ANY($1::uuid[])',
+          [[refreshId, syncId, deviceId]],
+        );
+        assert.deepEqual(
+          Object.fromEntries(
+            stored.map((row) => [row.job_id, row.entity_type]),
+          ),
+          { [refreshId]: 'user', [syncId]: 'user', [deviceId]: 'device' },
+        );
+        const userSession = session(userReader, [
+          { action: 'users:read', scope: district() },
+          { action: 'jobs:read', scope: district() },
+        ]);
+        const page = await jobs.list(userSession, customer, {}, undefined, 10);
+        const listed = new Map(page.jobs.map((job) => [job.jobId, job]));
+        assert.equal(listed.get(refreshId).entityType, 'user');
+        assert.equal(listed.get(refreshId).action, 'refresh-inventory');
+        assert.equal(listed.get(refreshId).scope.deviceCount, 4);
+        assert.equal(listed.get(syncId).entityType, 'user');
+        assert.equal(listed.get(syncId).scope.kind, 'all-devices');
+        assert.equal(listed.get(deviceId).entityType, 'device');
+        const detail = await jobs.detail(
+          userSession,
+          customer,
+          listed.get(syncId).displayId,
+        );
+        assert.equal(detail.entityType, 'user');
+        assert.equal(detail.action, 'refresh-inventory');
+        const ids = async (entityType) =>
+          (
+            await jobs.list(
+              userSession,
+              customer,
+              { entityType },
+              undefined,
+              100,
+            )
+          ).jobs
+            .map((job) => job.jobId)
+            .sort();
+        assert.deepEqual(await ids(['user']), [refreshId, syncId].sort());
+        assert.deepEqual(await ids(['device']), [deviceId]);
+        assert.deepEqual(
+          await ids(['user', 'device']),
+          [refreshId, syncId, deviceId].sort(),
+        );
+        await statement('SELECT cc.abandon_user_sync($1,$2,$3,$4,$5)', [
+          userReader,
           1,
           customer,
           syncId,

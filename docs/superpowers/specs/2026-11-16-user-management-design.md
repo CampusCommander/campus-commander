@@ -75,7 +75,7 @@ Changes of this design:
 | A §15.3 point 3: Sign out needs `admin.directory.user.security` | S4 contract only (section 8). The S4 addendum adds its capability.                                                                                                                                                                                      | A §12, `AGENTS.md:47`                                                                  |
 | B §15 departure 1: a removal deletes values                     | Campus Commander sends only the category change. Check L3 read no value of a removed attribute (section 6). The removal words stay. The delete words stay (OQ3, "1) Keep"). In check L4, a category created again with the same name held no old value. | Record, Owner decisions, U7. CA notes, Approval and build rulings.                     |
 | B §15 departure 2: no removal of the last attribute             | Accept as E18. Remove stays disabled on the last attribute, with the state message of B §5.                                                                                                                                                             | Admin help (B §3), B §5                                                                |
-| B §15 departure 3: optional number range                        | The owner settled it as record default 3. K14 and K15 accept `numericIndexingSpec`. Only the input card K19 waits for a frame. S3 enforces an existing range (E11).                                                                                     | Record, Defaults and Design. UM notes ruling 5.                                        |
+| B §15 departure 3: optional number range                        | The owner settled it as record default 3. K14 and K15 accept `numericIndexingSpec`. The input card K19 builds from states 13 to 15, approved on 2026-11-18. S3 enforces an existing range (E11).                                                        | Record, Defaults and Design. UM notes ruling 5.                                        |
 
 ## 3. Notes questions 5 and 7
 
@@ -419,9 +419,9 @@ S4 and S5 get no cards. Each gets its own design addendum and screens (record, E
   - Scope: the dialog of CA states 02 to 08, 10, and 12. It holds the editor, errors with C2, locks, and the removal mark. It also holds review with the typed name, saving, the result, the delete question, the limit, and the visibility note. It draws no range input.
   - Acceptance: `frontend-e2e:e2e` reproduces each listed state. A repeated display name shows the C2 error. Each flow ends in its dialog without the job page (baseline §2). Check L3 supports the removal words of CA states 04, 05, and 07, so they stay (section 6). The delete words of CA state 08 follow the owner's answer to OQ3. Changed words wait for the owner (CA notes, Approval and build rulings).
   - Collides: the category dialog files (K19).
-- **K19. Number range inputs** · `frontend` · GATED on a frame that the owner approves · after: K18
+- **K19. Number range inputs** · `frontend` · frames approved 2026-11-18 · after: K18
   - Scope: minimum and maximum inputs for Whole number and Decimal number attributes (record default 3). K14 and K15 already accept the range.
-  - Gate: no frame draws the inputs (record, Design). K19 starts after the owner approves such a frame. No card depends on K19.
+  - Frames: states 13 to 15 of `docs/ui/designs/2026-11-18-custom-attributes-ranges.html`. The owner approved them on 2026-11-18 ("approve"). His answers "R1) No" and "R2) yes" keep the review row `No user values change` and allow one bound. No card depends on K19.
   - Acceptance: `frontend-e2e:e2e` reproduces that frame. A saved range reaches the plan body.
   - Collides: the category dialog files (K18).
 - **K20. Rehearsal S2** · `qa` · after: K13 to K18

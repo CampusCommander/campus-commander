@@ -127,6 +127,7 @@ const powerwashJob = {
   revision: 5,
   action: 'powerwash-devices',
   status: 'awaiting-devices',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 4 },
   requestedBy: person,
   createdAt: '2026-10-22T18:11:00.000Z',
@@ -319,6 +320,7 @@ const deprovisionJob = {
   revision: 4,
   action: 'deprovision-devices',
   status: 'completed-with-errors',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 5 },
   requestedBy: person,
   createdAt: '2026-10-22T18:16:00.000Z',
@@ -382,6 +384,7 @@ const wipeJob = {
   revision: 2,
   action: 'wipe-user-data',
   status: 'completed',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 1 },
   progress: {
     total: 1,
@@ -452,6 +455,7 @@ const summary = (job: {
   revision: 1,
   action: job.action,
   status: job.status,
+  entityType: 'device',
   scope: job.scope,
   requestedBy: person,
   createdAt: job.createdAt,
@@ -639,6 +643,7 @@ test('shows every Powerwash command state, including a cancelled command', async
       json: {
         ...powerwashJob,
         status: 'needs-review',
+        entityType: 'device',
         scope: { kind: 'devices', deviceCount: 7 },
         progress: {
           total: 7,

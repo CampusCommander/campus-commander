@@ -22,6 +22,7 @@ const exportDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   revision: 3,
   action: 'export-devices',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: person,
   createdAt: new Date(Date.now() - 60_000).toISOString(),

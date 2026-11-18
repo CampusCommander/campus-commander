@@ -19,6 +19,7 @@ const running = {
   revision: 3,
   action: 'update-device-annotations',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: maya,
   createdAt: '2026-10-19T12:00:00.000Z',
@@ -47,6 +48,7 @@ const refreshed = {
   revision: 2,
   action: 'refresh-inventory',
   status: 'completed',
+  entityType: 'device',
   scope: { kind: 'all-devices', deviceCount: null },
   requestedBy: alex,
   createdAt: '2026-10-19T11:40:00.000Z',
@@ -75,6 +77,7 @@ const review = {
   revision: 4,
   action: 'update-device-annotations',
   status: 'needs-review',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 6 },
   requestedBy: alex,
   createdAt: '2026-10-19T10:15:00.000Z',
@@ -97,6 +100,82 @@ const review = {
   importSummary: null,
 };
 
+/** The user refresh job of the S1 rehearsal: four users read (document A section 5). */
+const userRefresh = {
+  jobId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  displayId: 'REF-012',
+  revision: 1,
+  action: 'refresh-inventory',
+  status: 'completed',
+  entityType: 'user',
+  scope: { kind: 'devices', deviceCount: 4 },
+  requestedBy: alex,
+  createdAt: '2026-10-19T11:30:00.000Z',
+  startedAt: '2026-10-19T11:31:00.000Z',
+  finishedAt: '2026-10-19T11:31:12.000Z',
+  progress: {
+    total: 4,
+    succeeded: 4,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  cancelRequest: null,
+  failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+};
+
+/** The full user sync of the S1 rehearsal: the scope names every user. */
+const userFullSync = {
+  ...userRefresh,
+  jobId: '7f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+  displayId: 'REF-013',
+  scope: { kind: 'all-devices', deviceCount: null },
+  progress: {
+    total: null,
+    succeeded: 128,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: null,
+  },
+  startedAt: '2026-10-19T11:20:00.000Z',
+  finishedAt: '2026-10-19T11:25:00.000Z',
+};
+
+/** The detail page of the user refresh job. A refresh holds no operations. */
+const userRefreshDetail = {
+  ...userRefresh,
+  confirmedBy: null,
+  previewDisplayId: null,
+  changes: null,
+  commandType: null,
+  statusAction: null,
+  deprovisionReason: null,
+  targetOrgUnitPaths: null,
+  correlationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  latestActivity: {
+    at: '2026-10-19T11:31:12.000Z',
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
+};
+
 const secondPage = {
   ...refreshed,
   jobId: '3f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
@@ -115,6 +194,7 @@ const importCancelled = {
   revision: 5,
   action: 'validate-device-import',
   status: 'completed',
+  entityType: 'device',
   scope: { kind: 'rows', deviceCount: 48 },
   progress: {
     total: 48,
@@ -166,6 +246,7 @@ async function signIn(
     empty?: boolean;
     many?: boolean;
     imports?: boolean;
+    users?: boolean;
     delay?: number;
     grants?: string[];
     fail?: 'none' | 'http' | 'abort';
@@ -214,6 +295,10 @@ async function signIn(
       });
     if (path === '/api/jobs/requesters')
       return route.fulfill({ json: { requesters: [maya, alex] } });
+    if (path === '/api/jobs/REF-012')
+      return route.fulfill({ json: userRefreshDetail });
+    if (path === '/api/jobs/REF-012/operations')
+      return route.fulfill({ json: { operations: [], nextCursor: null } });
     if (path === '/api/jobs') {
       if (options.delay)
         await new Promise((resolve) => setTimeout(resolve, options.delay));
@@ -222,18 +307,21 @@ async function signIn(
       const cursor = url.searchParams.get('cursor');
       const jobId = url.searchParams.get('jobId');
       const status = url.searchParams.get('status');
+      const entityType = url.searchParams.get('entityType');
       if (options.empty)
         return route.fulfill({
           json: { jobs: [], matching: 0, nextCursor: null, observedAt },
         });
+      const userJobs = options.users ? [userRefresh, userFullSync] : [];
       const matching = (
         options.imports
           ? [...allJobs, importCancelled, importNoUpdate]
-          : allJobs
+          : [...allJobs, ...userJobs]
       ).filter(
         (job) =>
           (!jobId || job.displayId === jobId) &&
-          (!status || status.split(',').includes(job.status)),
+          (!status || status.split(',').includes(job.status)) &&
+          (!entityType || entityType.split(',').includes(job.entityType)),
       );
       const rows = cursor ? [secondPage] : options.many ? manyJobs : matching;
       return route.fulfill({
@@ -373,6 +461,76 @@ test('shows the IMP progress lines of state 26 in the Jobs grid', async ({
   await page.screenshot({
     path: 'dist/e2e-evidence/export-import/26-jobs-imp-lines.png',
   });
+});
+
+test('names a user refresh job with user strings and filters by Entity type User', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, { users: true });
+  await page.goto('/jobs');
+  await expect(page.getByRole('cell', { name: /REF-012/ })).toBeVisible();
+
+  // The user refresh job names users in its progress and its scope.
+  const userRow = page.getByRole('row', { name: /REF-012/ });
+  await expect(userRow).toContainText('4 users read');
+  await expect(userRow).toContainText('4 users');
+  await expect(userRow).not.toContainText('devices');
+  // The full user sync names every user.
+  const fullRow = page.getByRole('row', { name: /REF-013/ });
+  await expect(fullRow).toContainText('128 users read');
+  await expect(fullRow).toContainText('All users');
+  // The device job keeps every string.
+  const deviceRow = page.getByRole('row', { name: /REF-004/ });
+  await expect(deviceRow).toContainText('128 devices read');
+  await expect(deviceRow).toContainText('All devices');
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('jobs-entity-types.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  // The Job detail of the user job names users too.
+  await page
+    .getByRole('link', { name: 'Open details for job REF-012' })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'REF-012 · 4 users', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Job REF-012 · Completed')).toBeVisible();
+  await expect(page.locator('.activity p')).toContainText(
+    '4 users read. The refresh completed.',
+  );
+  await expect(page.locator('.activity p')).not.toContainText('devices');
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-detail-user.png'),
+    fullPage: true,
+  });
+
+  // The Entity type filter offers both values and the grid keeps the chosen one.
+  await page.goto('/jobs');
+  await page.getByRole('button', { name: 'Add a filter' }).click();
+  await page.getByRole('option', { name: 'Entity type', exact: true }).click();
+  await expect(
+    page.getByRole('checkbox', { name: 'Device', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('checkbox', { name: 'User', exact: true }).check();
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Entity type: User', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('cell', { name: /REF-012/ })).toBeVisible();
+  await expect(page.getByRole('cell', { name: /REF-004/ })).toHaveCount(0);
+  await expect(page.getByRole('cell', { name: /UPD-014/ })).toHaveCount(0);
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('jobs-entity-type-user.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
 test('filters by status, edits the chip, and clears the filter', async ({
