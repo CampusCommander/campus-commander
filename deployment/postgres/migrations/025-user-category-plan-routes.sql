@@ -186,6 +186,10 @@ BEGIN
       RETURN jsonb_build_object('outcome','category-changed');
     END IF;
     IF p_kind='delete-category' THEN
+      -- A delete removes the category and every attribute in it, and adds nothing. The two limit
+      -- counts that the plan answers must stay numeric.
+      categories:=categories-1;
+      added:=0;
       removed:=jsonb_array_length(category.fields);
       IF jsonb_array_length(p_changes)<>removed OR
         EXISTS(SELECT 1 FROM jsonb_array_elements(p_changes) c WHERE c->>'change'<>'removed' OR
@@ -278,14 +282,15 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 $$;
 
 -- The confirmation of B section 10. It revalidates the person, the grant, the connection
--- generation, the expiry, the digest, and the typed phrase, then creates one `user-schema-change`
--- job. The plan row locks first, so a second confirmation reads the committed job and answers the
--- same receipt. The job keeps the confirmer that the worker revalidates (B section 6.2 step 1).
+-- generation, the expiry, the digest, the typed phrase, and the cached etag of an edit or delete,
+-- then creates one `user-schema-change` job. The plan row locks first, so a second confirmation
+-- reads the committed job and answers the same receipt. The job keeps the confirmer that the
+-- worker revalidates (B section 6.2 step 1).
 CREATE FUNCTION cc.confirm_user_category_plan(p_actor uuid,p_version integer,p_plan_id uuid,
   p_digest text,p_phrase text,p_correlation uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE plan cc.user_category_plans; connection cc.google_connection; job cc.jobs;
-  number bigint; now_at timestamptz;
+  category cc.user_attribute_categories; number bigint; now_at timestamptz;
 BEGIN
   IF p_actor IS NULL OR p_version IS NULL OR p_plan_id IS NULL OR p_digest IS NULL OR
     p_digest !~ '^[a-f0-9]{64}$' OR p_correlation IS NULL OR
@@ -321,10 +326,20 @@ BEGIN
   IF p_digest IS DISTINCT FROM plan.digest THEN
     RETURN jsonb_build_object('outcome','plan-changed');
   END IF;
-  -- The caller trims the typed phrase, so this comparison is exact (B section 5). A plan without a
-  -- removal or a delete expects no phrase.
-  IF p_phrase IS DISTINCT FROM plan.phrase THEN
+  -- B section 5 trims the typed phrase. The caller trims the entered phrase, so the frozen phrase
+  -- trims the same way; a category label keeps its surrounding whitespace in the plan answer. A
+  -- plan without a removal or a delete expects no phrase.
+  IF btrim(p_phrase,E' \t\n\r\f') IS DISTINCT FROM btrim(plan.phrase,E' \t\n\r\f') THEN
     RETURN jsonb_build_object('outcome','phrase-mismatch');
+  END IF;
+  -- B section 6.2: the plan froze a cached etag, and the confirm compares the cache again. A
+  -- category that changed or vanished answers category-changed before any job exists.
+  IF plan.action<>'create-category' THEN
+    SELECT * INTO category FROM cc.user_attribute_categories c
+      WHERE c.customer_id=plan.customer_id AND c.schema_id=plan.schema_id FOR SHARE;
+    IF category.schema_id IS NULL OR category.etag IS DISTINCT FROM plan.base_etag THEN
+      RETURN jsonb_build_object('outcome','category-changed');
+    END IF;
   END IF;
   -- The connection row locks after the plan row and before the job rows. The subject stays inside
   -- the worker's claim, so this function keeps no credential.
