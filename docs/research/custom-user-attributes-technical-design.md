@@ -48,7 +48,7 @@ Owner, main chat, 2026-11-01, as baseline section 1 quotes it.
 
 Earlier decisions that bind this design:
 
-- Development order step 6: "Reuse the working interaction patterns for Google users, OUs, and groups, in that order." (`docs/current-work.md:350`)
+- Development order step 6: "Reuse the working interaction patterns for Google users, OUs, and groups, in that order." (`docs/current-work.md:404`)
 - Gap G19: "These are Google accounts, not platform access." (`docs/workflow-gaps.md:77`)
 - The domain model caches `customSchemas` with each user (`docs/portfolio/02-domain-model.md:74`).
 - UI-07 Safety: freeze exact targets and final values before confirmation (`docs/ui/rules.md:95-100`).
