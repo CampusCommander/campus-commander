@@ -411,7 +411,12 @@ export class UsersStore {
     const owns = () => this.owns(epoch);
     this.feed = this.feeds.subscribe('/api/events', {
       open: () => this.eventSource('/api/events'),
-      events: ['entity-batch', 'job-finished', 'user-full-sync', 'schema-change'],
+      events: [
+        'entity-batch',
+        'job-finished',
+        'user-full-sync',
+        'schema-change',
+      ],
       opened: (replaced) => {
         if (owns()) void this.onStreamOpen(replaced);
       },
