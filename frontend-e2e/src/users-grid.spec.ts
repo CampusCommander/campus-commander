@@ -588,6 +588,9 @@ test('reproduces UM state 02: the Columns panel and focus return (UI-09)', async
   await openUsers(page);
   // The approved state shows Grade level and Programs beside the pinned Name.
   const panel = await showAttributeColumns(page);
+  // The pointer left the panel after the checkbox clicks. The approved capture
+  // holds rows at rest, and a hovered row shows its move controls by design.
+  await page.mouse.move(0, 0);
   // The approved panel is 258 px wide beside the 32 px side bar (R13).
   const panelBox = measured(await panel.boundingBox());
   expect(panelBox.width).toBeGreaterThanOrEqual(250);
