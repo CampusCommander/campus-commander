@@ -706,6 +706,25 @@ test('moves a Users column from the keyboard and keeps the approved rest look (U
   await expect(
     page.getByRole('button', { name: 'Move Status up', exact: true }),
   ).toBeFocused();
+  // Wait for the header animation to settle before the hand-off capture. The
+  // logical order already changed; this keeps two headers from overlapping in
+  // the screenshot.
+  await expect
+    .poll(async () => {
+      const [status, orgUnit] = await Promise.all([
+        page.locator('.ag-header-cell[col-id="status"]').first().boundingBox(),
+        page
+          .locator('.ag-header-cell[col-id="orgUnitPath"]')
+          .first()
+          .boundingBox(),
+      ]);
+      return (
+        status !== null &&
+        orgUnit !== null &&
+        status.x + status.width <= orgUnit.x + 1
+      );
+    })
+    .toBe(true);
   await page.screenshot({
     path: `${scratch}/um-02d-columns-panel-focused.png`,
     fullPage: false,
