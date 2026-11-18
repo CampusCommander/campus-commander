@@ -544,3 +544,308 @@ test('Refresh Selected refuses an empty selection', async () => {
   assert.equal(answer.status, 422, JSON.stringify(answer.body));
   assert.deepEqual(answer.body, { reason: 'nothing-selected' });
 });
+
+/** The plan answer of B section 10, as the SQL function builds it. */
+const planId = '0e1f1a4e-6a0d-4f38-9f4c-2d2b5a3c1b7e';
+const planAt = new Date().toISOString();
+const planAnswer = {
+  planId,
+  kind: 'create-category',
+  method: 'insert',
+  schemaId: null,
+  schemaName: 'StudentInfo',
+  displayName: 'Student info',
+  baseEtag: null,
+  changes: [
+    {
+      change: 'added',
+      fieldId: null,
+      fieldName: 'Homeroom',
+      displayName: 'Homeroom',
+      properties: [],
+      holders: null,
+    },
+  ],
+  phrase: null,
+  limits: {
+    categories: 1,
+    categoryLimit: 100,
+    attributes: 1,
+    attributeLimit: 100,
+  },
+  preparedAt: planAt,
+  expiresAt: new Date(Date.parse(planAt) + 900_000).toISOString(),
+  digest: 'a'.repeat(64),
+};
+const planBase = {
+  categories: [
+    {
+      schemaId: 'schem=StaffInfo',
+      schemaName: 'StaffInfo',
+      displayName: 'Staff info',
+      etag: 'etag-1',
+      fields: [
+        {
+          fieldId: 'fld-department',
+          fieldName: 'Department',
+          displayName: 'Department',
+          fieldType: 'STRING',
+          multiValued: false,
+          indexed: true,
+          readAccessType: 'ADMINS_AND_SELF',
+          numericIndexingSpec: null,
+          holders: 0,
+        },
+      ],
+      holders: 0,
+      readAt: planAt,
+    },
+  ],
+  limits: {
+    categories: 1,
+    categoryLimit: 100,
+    attributes: 1,
+    attributeLimit: 100,
+  },
+  observedAt: planAt,
+  customerId: customer,
+  generation: 1,
+};
+
+test('an absent users:schema-manage answers 403 from each plan route', async () => {
+  for (const [method, path, payload] of [
+    [
+      'POST',
+      '/api/users/attribute-categories/plans',
+      {
+        kind: 'delete-category',
+        schemaId: 'schem=StudentInfo',
+        baseEtag: 'etag-1',
+      },
+    ],
+    ['GET', `/api/users/attribute-categories/plans/${planId}`, undefined],
+    [
+      'POST',
+      `/api/users/attribute-categories/plans/${planId}/confirm`,
+      { digest: 'a'.repeat(64), acknowledged: true },
+    ],
+  ]) {
+    allowed = new Set(['users:read']);
+    checks = [];
+    routeRespond = async (text) => {
+      if (text.includes('cc.read_user_category_plan_base'))
+        return { rows: [{ result: planBase }] };
+      if (text.includes('cc.read_user_category_plan'))
+        return {
+          rows: [
+            {
+              result: {
+                outcome: 'plan',
+                customerId: customer,
+                plan: planAnswer,
+              },
+            },
+          ],
+        };
+      return { rows: [] };
+    };
+    const answer =
+      method === 'GET' ? await get(path) : await post(path, payload ?? {});
+    assert.equal(
+      answer.status,
+      403,
+      `${method} ${path}: ${JSON.stringify(answer.body)}`,
+    );
+    assert.ok(
+      checks.includes('users:schema-manage'),
+      `${method} ${path} checked ${JSON.stringify(checks)}`,
+    );
+  }
+});
+
+test('the plan route stores one plan under the schema-manage gate', async () => {
+  allowed = new Set(['users:schema-manage']);
+  checks = [];
+  let stored;
+  routeRespond = async (text, values) => {
+    if (text.includes('cc.read_user_category_plan_base'))
+      return { rows: [{ result: planBase }] };
+    if (text.includes('cc.create_user_category_plan')) {
+      stored = values;
+      return { rows: [{ result: { outcome: 'created', plan: planAnswer } }] };
+    }
+    return { rows: [] };
+  };
+  const answer = await post('/api/users/attribute-categories/plans', {
+    kind: 'create-category',
+    draft: {
+      schemaName: 'StudentInfo',
+      displayName: 'Student info',
+      fields: [
+        {
+          fieldId: null,
+          fieldName: 'Homeroom',
+          displayName: 'Homeroom',
+          fieldType: 'STRING',
+          multiValued: false,
+          indexed: true,
+          readAccessType: 'ADMINS_AND_SELF',
+          numericIndexingSpec: null,
+        },
+      ],
+    },
+  });
+  assert.equal(answer.status, 201, JSON.stringify(answer.body));
+  assert.equal(answer.body.planId, planId);
+  assert.equal(answer.body.method, 'insert');
+  assert.equal(stored[2], customer);
+  assert.equal(stored[3], 1);
+  assert.equal(stored[4], 'create-category');
+  assert.equal(stored[5], null);
+  assert.equal(stored[6], null);
+  assert.equal(stored[13], 15);
+  assert.deepEqual(checks, ['users:schema-manage']);
+});
+
+test('the plan route answers 412 when the category changed before the store', async () => {
+  allowed = new Set(['users:schema-manage']);
+  routeRespond = async (text) => {
+    if (text.includes('cc.read_user_category_plan_base'))
+      return { rows: [{ result: planBase }] };
+    if (text.includes('cc.create_user_category_plan'))
+      return { rows: [{ result: { outcome: 'category-changed' } }] };
+    return { rows: [] };
+  };
+  const answer = await post('/api/users/attribute-categories/plans', {
+    kind: 'delete-category',
+    schemaId: 'schem=StaffInfo',
+    baseEtag: 'etag-1',
+  });
+  assert.equal(answer.status, 412, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, { reason: 'category-changed' });
+});
+
+test('the plan read answers the stored plan and 410 after expiry', async () => {
+  allowed = new Set(['users:schema-manage']);
+  routeRespond = async (text) => {
+    if (text.includes('cc.read_user_category_plan'))
+      return {
+        rows: [
+          {
+            result: { outcome: 'plan', customerId: customer, plan: planAnswer },
+          },
+        ],
+      };
+    return { rows: [] };
+  };
+  const answer = await get(`/api/users/attribute-categories/plans/${planId}`);
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.equal(answer.body.planId, planId);
+  assert.equal(answer.body.expiresAt, planAnswer.expiresAt);
+  routeRespond = async () => ({
+    rows: [{ result: { outcome: 'plan-expired', expiresAt: planAt } }],
+  });
+  const expired = await get(`/api/users/attribute-categories/plans/${planId}`);
+  assert.equal(expired.status, 410, JSON.stringify(expired.body));
+  assert.deepEqual(expired.body, {
+    reason: 'plan-expired',
+    expiresAt: planAt,
+  });
+});
+
+test('a confirm answers the CAT receipt, and a repeated confirm answers it again', async () => {
+  allowed = new Set(['users:schema-manage']);
+  const receipt = {
+    jobId: '5c6d7e8f-1a2b-4c3d-8e9f-0a1b2c3d4e5f',
+    displayId: 'CAT-100',
+    status: 'accepted',
+    action: 'create-category',
+    changeCount: 1,
+  };
+  let confirmations = 0;
+  routeRespond = async (text, values) => {
+    if (text.includes('cc.read_user_category_plan'))
+      return {
+        rows: [
+          {
+            result: { outcome: 'plan', customerId: customer, plan: planAnswer },
+          },
+        ],
+      };
+    if (text.includes('cc.confirm_user_category_plan')) {
+      confirmations += 1;
+      assert.equal(values[2], planId);
+      assert.equal(values[3], 'a'.repeat(64));
+      assert.equal(values[4], 'Homeroom');
+      return {
+        rows: [
+          {
+            result: {
+              outcome: confirmations === 1 ? 'created' : 'existing',
+              receipt,
+            },
+          },
+        ],
+      };
+    }
+    return { rows: [] };
+  };
+  const first = await post(
+    `/api/users/attribute-categories/plans/${planId}/confirm`,
+    {
+      digest: 'a'.repeat(64),
+      acknowledged: true,
+      typedPhrase: '  Homeroom ',
+    },
+  );
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+  assert.deepEqual(first.body, receipt);
+  const again = await post(
+    `/api/users/attribute-categories/plans/${planId}/confirm`,
+    {
+      digest: 'a'.repeat(64),
+      acknowledged: true,
+      typedPhrase: 'Homeroom',
+    },
+  );
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.deepEqual(again.body, receipt);
+});
+
+test('a confirm answers 422 phrase-mismatch', async () => {
+  allowed = new Set(['users:schema-manage']);
+  routeRespond = async (text) => {
+    if (text.includes('cc.read_user_category_plan'))
+      return {
+        rows: [
+          {
+            result: { outcome: 'plan', customerId: customer, plan: planAnswer },
+          },
+        ],
+      };
+    if (text.includes('cc.confirm_user_category_plan'))
+      return { rows: [{ result: { outcome: 'phrase-mismatch' } }] };
+    return { rows: [] };
+  };
+  const answer = await post(
+    `/api/users/attribute-categories/plans/${planId}/confirm`,
+    {
+      digest: 'a'.repeat(64),
+      acknowledged: true,
+      typedPhrase: 'Wrong',
+    },
+  );
+  assert.equal(answer.status, 422, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, { reason: 'phrase-mismatch' });
+});
+
+test('the plan routes refuse a body outside the contract', async () => {
+  allowed = new Set(['users:schema-manage']);
+  const answer = await post('/api/users/attribute-categories/plans', {
+    kind: 'delete-category',
+    schemaId: 'schem=StudentInfo',
+    baseEtag: 'etag-1',
+    draft: { displayName: 'Student details', fields: [] },
+  });
+  assert.equal(answer.status, 400, JSON.stringify(answer.body));
+});

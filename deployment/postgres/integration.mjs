@@ -4,6 +4,7 @@ import { qualifyUserInventory } from './user-inventory.integration.mjs';
 import { qualifyUserApi } from './user-api.integration.mjs';
 import { qualifyUserApiHttp } from './user-api-http.integration.mjs';
 import { qualifyUserAttributeCategories } from './user-attribute-categories.integration.mjs';
+import { qualifyUserCategoryPlans } from './user-category-plan-routes.integration.mjs';
 import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
@@ -621,6 +622,15 @@ try {
       runtime,
       migrator: migrators[0],
       issuer,
+    })),
+  );
+  results.push(
+    ...(await qualifyUserCategoryPlans({
+      runtime,
+      migrator: migrators[0],
+      issuer,
+      connect,
+      close,
     })),
   );
   results.push(
