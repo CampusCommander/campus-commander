@@ -1,0 +1,9 @@
+<aside class="attribute-help" [attr.aria-labelledby]="titleId">
+  <h3 [id]="titleId">{{ ATTRIBUTE_HELP_TITLE }}</h3>
+  <p>{{ ATTRIBUTE_HELP_INTRO }}</p>
+  <ul>
+    @for (rule of ATTRIBUTE_HELP_RULES; track rule) {
+    <li>{{ rule }}</li>
+    }
+  </ul>
+</aside>

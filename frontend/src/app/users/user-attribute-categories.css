@@ -1,0 +1,191 @@
+/*
+ * The Custom attributes tab (CA states 01 and 11). The table takes the grid look of the
+ * approved screen without filters, column menus, side bar, selection, and paging
+ * (composition choice 6). Every value is a token of `theme/tokens.css`.
+ */
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.attribute-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-md);
+  min-width: 0;
+}
+
+/* The toolbar row: the primary action at the start, the actions at the end. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+}
+
+.toolbar-start,
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-sm);
+}
+
+.toolbar-actions {
+  margin-inline-start: auto;
+}
+
+/* The help control keeps its pressed state while the pane shows (choice 15). */
+.toolbar-actions .help-on {
+  color: var(--cc-text-link);
+  background: var(--cc-surface-selected);
+}
+
+.loading {
+  margin: 0;
+}
+
+/* The limit line sits under the page toolbar (composition choice 8). */
+.limits-line {
+  margin: 0;
+  color: var(--cc-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.refresh-error {
+  margin: 0;
+  color: var(--cc-status-error-text);
+}
+
+.error-card h2,
+.empty-card h2 {
+  margin-block-start: 0;
+}
+
+.error-card p,
+.empty-card p {
+  margin-block: 0;
+}
+
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cc-space-sm);
+  margin-block-start: var(--cc-space-lg);
+}
+
+/* The table sits in the grid look of the built client: one bordered surface. */
+.grid-region {
+  min-width: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  overflow: hidden;
+}
+
+.category-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* The column widths of state 01, without the Last changed column that default 2 drops. */
+.category-table col.c1 {
+  width: 300px;
+}
+
+.category-table col.c2 {
+  width: 260px;
+}
+
+.category-table col.c3 {
+  width: 150px;
+}
+
+.category-table col.c4 {
+  width: 200px;
+}
+
+.category-table th {
+  position: relative;
+  height: 48px;
+  padding: 0 var(--cc-space-lg);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--cc-surface-app);
+  color: var(--cc-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.category-table .th-in {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+}
+
+.category-table .th-in .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.category-table th.num {
+  text-align: end;
+}
+
+/* The column rule of the approved header band. It is decoration, not a control. */
+.category-table .rz {
+  position: absolute;
+  inset-block-start: 15px;
+  inset-inline-end: 0;
+  width: 1px;
+  height: 18px;
+  background: var(--cc-border);
+}
+
+.category-table td {
+  height: 42px;
+  padding: 0 var(--cc-space-lg);
+  border-block-end: 1px solid var(--cc-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.category-table tr:last-child td {
+  border-block-end: 0;
+}
+
+.category-table td.num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The display name opens the category. It reads as the link of the approved screen
+   and behaves as a button: it opens a dialog, not a page. */
+.category-link {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cc-text-link);
+  font: inherit;
+  font-weight: 500;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* The identifier style of the built client: the Google category name. */
+.identifier {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Roboto Mono', monospace;
+}
