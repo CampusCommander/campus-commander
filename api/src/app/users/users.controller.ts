@@ -13,6 +13,8 @@ import {
 import type { Response } from 'express';
 import { z } from 'zod';
 import {
+  userAttributeCategoryPlanConfirmRequestSchema,
+  userAttributeCategoryPlanRequestSchema,
   userByIdsSchema,
   userDomainRefreshSchema,
   userQuerySchema,
@@ -27,6 +29,7 @@ import { userSelectionRefreshStatus } from './user-selection-refresh';
 import { UsersService } from './users.service';
 
 const userIdSchema = z.string().min(1).max(128);
+const planIdSchema = z.uuid();
 
 @Controller('api/users')
 @UseGuards(AuthGuard)
@@ -207,6 +210,60 @@ export class UsersController {
   async refreshAttributeCategories(@Req() request: AuthenticatedRequest) {
     await this.current(request);
     return this.users.refreshAttributeCategories(request.session);
+  }
+
+  /**
+   * B section 10: freeze one editor save. The plan re-reads the category cache before it stores, so
+   * a changed `etag` answers 412 `category-changed`.
+   */
+  @Post('attribute-categories/plans')
+  async createAttributeCategoryPlan(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const input = userAttributeCategoryPlanRequestSchema.parse(body);
+    return this.users.createUserCategoryPlan(
+      request.session,
+      input,
+      request.correlationId,
+    );
+  }
+
+  /** B section 10: the plan, to its creator only. */
+  @Get('attribute-categories/plans/:planId')
+  async attributeCategoryPlan(
+    @Req() request: AuthenticatedRequest,
+    @Param('planId') planId: string,
+  ) {
+    const id = planIdSchema.parse(planId);
+    return this.users.userCategoryPlan(
+      request.session,
+      id,
+      request.correlationId,
+    );
+  }
+
+  /**
+   * B section 10: confirm one plan. A first confirm answers 201 with the `CAT-` receipt, and a
+   * repeated confirm answers the same receipt with 200.
+   */
+  @Post('attribute-categories/plans/:planId/confirm')
+  async confirmAttributeCategoryPlan(
+    @Req() request: AuthenticatedRequest,
+    @Param('planId') planId: string,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const id = planIdSchema.parse(planId);
+    const input = userAttributeCategoryPlanConfirmRequestSchema.parse(body);
+    const result = await this.users.confirmUserCategoryPlan(
+      request.session,
+      id,
+      input,
+      request.correlationId,
+    );
+    if (result.existing) response.status(200);
+    return result.receipt;
   }
 
   @Get(':userId')
