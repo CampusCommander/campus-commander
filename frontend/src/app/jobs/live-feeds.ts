@@ -11,6 +11,7 @@ const STREAM_EVENTS = [
   'entity-batch',
   'job-finished',
   'full-sync',
+  'user-full-sync',
 ] as const;
 
 /** One store that follows a feed. */

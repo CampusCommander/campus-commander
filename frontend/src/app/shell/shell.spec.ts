@@ -6,6 +6,7 @@ import { afterEach, vi } from 'vitest';
 import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { DevicesStore } from '../devices/devices.store';
+import { UsersStore } from '../users/users.store';
 import { DiagnosticsStore } from '../diagnostics/diagnostics.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { GoogleHealthStore } from '../google-connection/health.store';
@@ -19,6 +20,7 @@ function configure(
   options: {
     grants?: { action: string }[];
     devices?: boolean;
+    users?: boolean;
     phase?: number;
   } = {},
 ) {
@@ -69,6 +71,10 @@ function configure(
       {
         provide: DevicesStore,
         useValue: { readable: () => options.devices ?? false },
+      },
+      {
+        provide: UsersStore,
+        useValue: { readable: () => options.users ?? false },
       },
       {
         provide: GoogleHealthStore,
@@ -136,6 +142,10 @@ describe('Shell header title', () => {
 
   it('shows Jobs on the jobs page', async () => {
     expect(headerTitle(await renderAt('/jobs'))).toBe('Jobs');
+  });
+
+  it('shows Users on the users list', async () => {
+    expect(headerTitle(await renderAt('/users'))).toBe('Users');
   });
 
   it('shows Schools on the school list', async () => {
@@ -209,6 +219,29 @@ describe('Shell navigation', () => {
     configure({ grants: [{ action: 'schools:read' }] });
     const fixture = await renderAt('/account');
     expect(nav(fixture, 'Jobs')).toBeNull();
+  });
+
+  it('shows Users and Your account to a users:read holder without devices:read', async () => {
+    configure({ grants: [{ action: 'users:read' }], users: true });
+    const fixture = await renderAt('/account');
+    expect(nav(fixture, 'Users')).not.toBeNull();
+    expect(nav(fixture, 'Your account')).not.toBeNull();
+    expect(nav(fixture, 'Devices')).toBeNull();
+  });
+
+  it('puts Users below Devices', async () => {
+    configure({
+      grants: [{ action: 'devices:read' }, { action: 'users:read' }],
+      devices: true,
+      users: true,
+    });
+    const fixture = await renderAt('/account');
+    const labels = [
+      ...(fixture.nativeElement as HTMLElement).querySelectorAll(
+        'nav a[aria-label]',
+      ),
+    ].map((link) => link.getAttribute('aria-label'));
+    expect(labels.indexOf('Devices')).toBeLessThan(labels.indexOf('Users'));
   });
 });
 
