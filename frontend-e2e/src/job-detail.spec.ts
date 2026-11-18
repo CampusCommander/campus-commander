@@ -150,6 +150,7 @@ const reviewJob = {
   revision: 4,
   action: 'update-device-annotations',
   status: 'needs-review',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 6 },
   requestedBy: person,
   createdAt: '2026-10-19T10:31:00.000Z',
@@ -225,6 +226,7 @@ const runningJob = {
   displayId: 'UPD-014',
   revision: 3,
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   createdAt: '2026-10-19T10:40:00.000Z',
   startedAt: '2026-10-19T10:40:00.000Z',
@@ -265,6 +267,7 @@ const refreshJob = {
   revision: 2,
   action: 'refresh-inventory',
   status: 'completed',
+  entityType: 'device',
   scope: { kind: 'all-devices', deviceCount: null },
   requestedBy: person,
   createdAt: '2026-10-19T10:20:00.000Z',
@@ -373,6 +376,7 @@ const png09Job = {
   revision: 2,
   action: 'update-device-annotations',
   status: 'needs-review',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 5 },
   requestedBy: person,
   createdAt: '2026-10-21T23:03:00.000Z',
@@ -805,6 +809,7 @@ test('records the row range on the last attention page', async ({
     route.fulfill({
       json: {
         ...reviewJob,
+        entityType: 'device',
         scope: { kind: 'devices', deviceCount: 12 },
         progress: {
           total: 12,
@@ -884,6 +889,7 @@ test('shows refresh activity with failed device counts', async ({
       json: {
         ...refreshJob,
         status: 'completed-with-errors',
+        entityType: 'device',
         scope: { kind: 'devices', deviceCount: 12 },
         progress: {
           total: 12,

@@ -6,13 +6,14 @@ import {
   deviceSyncStateSchema,
 } from './devices';
 import { userRecordSchema, userSyncStateSchema } from './users';
+import { entityTypeSchema, type EntityType } from './entity-types';
 
 const timestamp = z.iso.datetime({ offset: true });
 const deviceId = z.string().min(1).max(128);
 const count = z.number().int().min(0);
 
-export const entityTypeSchema = z.enum(['device', 'user']);
-export type EntityType = z.infer<typeof entityTypeSchema>;
+/** The entity types of this module, defined in one leaf module so the job contracts share them. */
+export { entityTypeSchema, type EntityType };
 
 /** Hours after the last Google read when an entity counts as stale. Evaluated at read time. */
 export const ENTITY_FRESHNESS_HOURS: Readonly<Record<EntityType, number>> = {

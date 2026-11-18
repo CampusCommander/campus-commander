@@ -1,13 +1,13 @@
 import {
   JOB_ACTION_LABELS,
   jobDisplayIdSchema,
+  type EntityType,
   type JobAction,
   type JobFailure,
   type JobImportSummary,
   type JobPerson,
   type JobPhase,
   type JobProgress,
-  type JobScope,
   type JobStatus,
   type JobSummary,
 } from '@campus/application-contracts';
@@ -17,7 +17,7 @@ export type JobFilter =
   | { field: 'jobId'; value: string }
   | { field: 'status'; values: JobStatus[] }
   | { field: 'action'; values: JobAction[] }
-  | { field: 'entityType'; values: 'device'[] }
+  | { field: 'entityType'; values: EntityType[] }
   | { field: 'requestedBy'; id: string; displayName: string }
   | {
       field: 'createdAt' | 'finishedAt';
@@ -116,8 +116,11 @@ export function actionLabel(action: JobAction): string {
   return JOB_ACTION_LABELS[action];
 }
 
-/** The scope of a job: a device count, every device, or the rows of an export or an import. */
-export function scopeLabel(scope: JobScope): string {
+/** The scope of a job: an entity count, every entity, or the rows of an export or an import. */
+export function scopeLabel(
+  job: Pick<JobSummary, 'scope' | 'entityType'>,
+): string {
+  const { scope, entityType } = job;
   if (scope.kind === 'rows')
     return scope.deviceCount === null
       ? 'Rows'
@@ -125,12 +128,44 @@ export function scopeLabel(scope: JobScope): string {
           scope.deviceCount === 1 ? 'row' : 'rows'
         }`;
   if (scope.kind === 'all-devices' || scope.deviceCount === null)
-    return 'All devices';
-  const count = scope.deviceCount.toLocaleString('en-US');
-  return `${count} ${scope.deviceCount === 1 ? 'device' : 'devices'}`;
+    return `All ${entityNouns(entityType).many}`;
+  return entityCountText(entityType, scope.deviceCount);
 }
 
 const count = (value: number) => value.toLocaleString('en-US');
+
+/** The two entity types of the Entity type filter (document A section 5). */
+export const JOB_ENTITY_TYPES: readonly EntityType[] = ['device', 'user'];
+
+/** The option label of each entity type. */
+export const ENTITY_TYPE_LABELS: Readonly<Record<EntityType, string>> = {
+  device: 'Device',
+  user: 'User',
+};
+
+/**
+ * The nouns of one job entity type. A user job names users where a device job names devices
+ * (document A section 5).
+ */
+export function entityNouns(entityType: EntityType): {
+  one: string;
+  many: string;
+} {
+  return entityType === 'user'
+    ? { one: 'user', many: 'users' }
+    : { one: 'device', many: 'devices' };
+}
+
+/** The noun that a count selects. */
+export function entityNoun(entityType: EntityType, value: number): string {
+  const nouns = entityNouns(entityType);
+  return value === 1 ? nouns.one : nouns.many;
+}
+
+/** "1 device", "4 devices", "1 user", or "4 users". */
+export function entityCountText(entityType: EntityType, value: number): string {
+  return `${count(value)} ${entityNoun(entityType, value)}`;
+}
 
 /**
  * A cancelled Refresh all saves none of the devices that it read.
@@ -216,7 +251,7 @@ function updateProgress(job: JobSummary): [string, string] {
 /** Refresh jobs hold no operations. Their progress lines follow the frame style. */
 function refreshProgress(job: JobSummary): [string, string] {
   const { status, progress } = job;
-  const read = `${count(progress.succeeded)} ${progress.succeeded === 1 ? 'device' : 'devices'} read`;
+  const read = `${entityCountText(job.entityType, progress.succeeded)} read`;
   switch (status) {
     case 'accepted':
       return ['Not started', 'Accepted'];
@@ -573,7 +608,9 @@ export function jobFilterLabel(filter: JobFilter): string {
     case 'action':
       return `${label}: ${filter.values.map(actionLabel).join(', ')}`;
     case 'entityType':
-      return `${label}: Device`;
+      return `${label}: ${filter.values
+        .map((value) => ENTITY_TYPE_LABELS[value])
+        .join(', ')}`;
     case 'requestedBy':
       return `${label}: ${filter.displayName}`;
     default: {
@@ -611,7 +648,8 @@ export function jobFilterQuery(
         if (filter.values.length) params.set('action', filter.values.join(','));
         break;
       case 'entityType':
-        if (filter.values.length) params.set('entityType', 'device');
+        if (filter.values.length)
+          params.set('entityType', filter.values.join(','));
         break;
       case 'requestedBy':
         params.set('requestedBy', filter.id);

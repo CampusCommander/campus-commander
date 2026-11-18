@@ -25,6 +25,7 @@ const summary = (overrides: Partial<JobSummary> = {}): JobSummary => ({
   revision: 1,
   action: 'update-device-annotations',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: {
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -381,18 +382,153 @@ describe('durationLine', () => {
   });
 });
 
+const deviceScope = (scope: JobSummary['scope']) =>
+  scopeLabel({ scope, entityType: 'device' });
+
 it('labels the scope with a thousands separator', () => {
-  expect(scopeLabel({ kind: 'devices', deviceCount: 128431 })).toBe(
+  expect(deviceScope({ kind: 'devices', deviceCount: 128431 })).toBe(
     '128,431 devices',
   );
-  expect(scopeLabel({ kind: 'devices', deviceCount: 1 })).toBe('1 device');
-  expect(scopeLabel({ kind: 'all-devices', deviceCount: null })).toBe(
+  expect(deviceScope({ kind: 'devices', deviceCount: 1 })).toBe('1 device');
+  expect(deviceScope({ kind: 'all-devices', deviceCount: null })).toBe(
     'All devices',
   );
   // An export or an import counts rows, not devices (state 26).
-  expect(scopeLabel({ kind: 'rows', deviceCount: 30 })).toBe('30 rows');
-  expect(scopeLabel({ kind: 'rows', deviceCount: 1 })).toBe('1 row');
-  expect(scopeLabel({ kind: 'rows', deviceCount: null })).toBe('Rows');
+  expect(deviceScope({ kind: 'rows', deviceCount: 30 })).toBe('30 rows');
+  expect(deviceScope({ kind: 'rows', deviceCount: 1 })).toBe('1 row');
+  expect(deviceScope({ kind: 'rows', deviceCount: null })).toBe('Rows');
+});
+
+it('labels the scope of a user job with users', () => {
+  const userScope = (scope: JobSummary['scope']) =>
+    scopeLabel({ scope, entityType: 'user' });
+  expect(userScope({ kind: 'devices', deviceCount: 4 })).toBe('4 users');
+  expect(userScope({ kind: 'devices', deviceCount: 1 })).toBe('1 user');
+  // The full user sync of the S1 rehearsal.
+  expect(userScope({ kind: 'all-devices', deviceCount: null })).toBe(
+    'All users',
+  );
+});
+
+describe('a user refresh job', () => {
+  const userJob = (overrides: Partial<JobSummary> = {}): JobSummary =>
+    summary({
+      action: 'refresh-inventory',
+      status: 'running',
+      entityType: 'user',
+      scope: { kind: 'devices', deviceCount: 4 },
+      progress: {
+        total: 4,
+        succeeded: 2,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 2,
+      },
+      phase: null,
+      exportSummary: null,
+      importSummary: null,
+      ...overrides,
+    });
+
+  it('counts users read in the progress cell', () => {
+    expect(progressLines(userJob())).toEqual([
+      '2 users read',
+      'Refresh in progress',
+    ]);
+    expect(progressLines(userJob({ status: 'completed' }))).toEqual([
+      '2 users read',
+      'Refresh complete',
+    ]);
+    const cancelled = userJob({
+      status: 'cancelled',
+      progress: {
+        total: 2,
+        succeeded: 2,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 0,
+      },
+    });
+    expect(progressLines(cancelled)).toEqual([
+      '2 users read',
+      'Refresh cancelled',
+    ]);
+  });
+
+  it('counts one user read in the singular', () => {
+    const one = userJob({
+      scope: { kind: 'devices', deviceCount: 1 },
+      progress: {
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 0,
+      },
+    });
+    expect(progressLines({ ...one, status: 'completed' })).toEqual([
+      '1 user read',
+      'Refresh complete',
+    ]);
+  });
+
+  it('counts users read in the running and recent lines', () => {
+    expect(runningLine(userJob())).toBe('2 users read · Maya Chen');
+    const cancelled = userJob({
+      status: 'cancelled',
+      progress: {
+        total: 2,
+        succeeded: 2,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: 0,
+      },
+    });
+    expect(recentLine(cancelled)).toBe(
+      'Cancelled · 2 users read · Refresh cancelled',
+    );
+  });
+
+  it('keeps every device string of a device refresh job', () => {
+    const device = userJob({ entityType: 'device' });
+    expect(progressLines(device)).toEqual([
+      '2 devices read',
+      'Refresh in progress',
+    ]);
+    expect(scopeLabel(device)).toBe('4 devices');
+    expect(runningLine(device)).toBe('2 devices read · Maya Chen');
+  });
+
+  it('names a full user sync All users', () => {
+    const full = userJob({
+      status: 'completed',
+      scope: { kind: 'all-devices', deviceCount: null },
+      progress: {
+        total: null,
+        succeeded: 128,
+        failed: 0,
+        unknown: 0,
+        skipped: 0,
+        expired: 0,
+        cancelled: 0,
+        pending: null,
+      },
+    });
+    expect(scopeLabel(full)).toBe('All users');
+    expect(progressLines(full)).toEqual(['128 users read', 'Refresh complete']);
+  });
 });
 
 it('lists every job action in the Actions filter', () => {
@@ -495,9 +631,34 @@ describe('jobFilterQuery', () => {
   it('opens without a filter', () => {
     expect(jobFilterQuery([], null)).toBe('');
   });
+
+  it('sends each chosen entity type', () => {
+    const both = new URLSearchParams(
+      jobFilterQuery(
+        [{ field: 'entityType', values: ['device', 'user'] }],
+        null,
+      ),
+    );
+    expect(both.get('entityType')).toBe('device,user');
+    const users = new URLSearchParams(
+      jobFilterQuery([{ field: 'entityType', values: ['user'] }], null),
+    );
+    expect(users.get('entityType')).toBe('user');
+  });
 });
 
 describe('jobFilterLabel', () => {
+  it('names the entity type of the chip', () => {
+    expect(jobFilterLabel({ field: 'entityType', values: ['device'] })).toBe(
+      'Entity type: Device',
+    );
+    expect(jobFilterLabel({ field: 'entityType', values: ['user'] })).toBe(
+      'Entity type: User',
+    );
+    expect(
+      jobFilterLabel({ field: 'entityType', values: ['device', 'user'] }),
+    ).toBe('Entity type: Device, User');
+  });
   it('names the status list as the filtered frame does', () => {
     expect(
       jobFilterLabel({

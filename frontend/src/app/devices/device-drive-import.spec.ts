@@ -68,6 +68,7 @@ const runningImport = (): JobDetail => ({
   revision: 4,
   action: 'validate-device-import',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'rows', deviceCount: 48 },
   requestedBy: person,
   createdAt: new Date(Date.now() - 120_000).toISOString(),

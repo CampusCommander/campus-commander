@@ -20,6 +20,7 @@ const job = (overrides: Partial<JobSummary> = {}): JobSummary => ({
   revision: 1,
   action: 'update-device-annotations',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: { id: maya, displayName: 'Maya Chen' },
   createdAt: '2026-10-19T12:00:00.000Z',

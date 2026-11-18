@@ -122,13 +122,59 @@ it('applies an action filter', () => {
   expect(applied).toEqual([{ field: 'action', values: ['refresh-inventory'] }]);
 });
 
-it('applies the entity type of this slice', () => {
+it('offers Device and User in the Entity type filter', () => {
+  const { element, chooseField, start } = setup();
+  start();
+  chooseField('Entity type');
+  expect(
+    [...element.querySelectorAll('fieldset label')].map((label) =>
+      label.textContent?.trim(),
+    ),
+  ).toEqual(['Device', 'User']);
+});
+
+it('applies the entity type that the person chooses', () => {
+  const { applied, button, check, chooseField, start } = setup();
+  start();
+  chooseField('Entity type');
+  expect(button('Apply').disabled).toBe(true);
+  check('User');
+  button('Apply').click();
+  expect(applied).toEqual([{ field: 'entityType', values: ['user'] }]);
+});
+
+it('applies Device and User when both are chosen', () => {
+  const { applied, button, check, chooseField, start } = setup();
+  start();
+  chooseField('Entity type');
+  check('Device');
+  check('User');
+  button('Apply').click();
+  expect(applied).toEqual([
+    { field: 'entityType', values: ['device', 'user'] },
+  ]);
+});
+
+it('applies Device alone as before', () => {
   const { applied, button, check, chooseField, start } = setup();
   start();
   chooseField('Entity type');
   check('Device');
   button('Apply').click();
   expect(applied).toEqual([{ field: 'entityType', values: ['device'] }]);
+});
+
+it('prefills the entity types of an existing chip', () => {
+  const { applied, button, fixture, render } = setup();
+  fixture.componentRef.setInput('editing', {
+    field: 'entityType',
+    values: ['device', 'user'],
+  });
+  render();
+  button('Apply').click();
+  expect(applied).toEqual([
+    { field: 'entityType', values: ['device', 'user'] },
+  ]);
 });
 
 it('applies a job ID and rejects another display ID shape', () => {

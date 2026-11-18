@@ -179,6 +179,8 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/devices/imports', 'api'],
       ['GET', '/devices', 'frontend'],
       ['GET', '/devices/synthetic-device-1', 'frontend'],
+      ['GET', '/users', 'frontend'],
+      ['GET', '/users/synthetic-user-1', 'frontend'],
       ['GET', '/api/jobs', 'api'],
       ['GET', '/api/jobs/UPD-001', 'api'],
       ['GET', '/api/jobs/UPD-001/operations', 'api'],
@@ -257,6 +259,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/devices/update/previews/${id}`, 404],
       ['GET', `/devices/update/previews/${id}/confirm`, 404],
       ['GET', '/devices/a/b', 404],
+      ['GET', `/users/${'x'.repeat(129)}`, 404],
       ['GET', '/api/devices/a/b', 404],
       ['GET', `/api/devices/${'x'.repeat(129)}`, 404],
       ['POST', '/api/devices/synthetic-device-1', 405],
@@ -366,6 +369,12 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         path,
       );
     }
+    // The Users page pattern admits one segment, so a deeper path answers the edge refusal.
+    for (const path of ['/users/a/b', '/users/synthetic-user-1/extra']) {
+      const response = await fetch(`${origin(edge)}${path}`);
+      assert.equal(response.status, 404, path);
+      assert.equal(await response.text(), 'Route unavailable.\n', path);
+    }
     assert.equal(
       (
         await fetch(`${origin(edge)}/api/schools/references/refresh`, {
@@ -466,12 +475,11 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         `imports/drive ${size} bytes`,
       );
     phase = 2;
+    // Every phase 3 route refuses before phase 3, and the edge owns the answer.
     for (const [method, path] of routes) {
-      assert.equal(
-        (await fetch(`${origin(edge)}${path}`, { method })).status,
-        404,
-        path,
-      );
+      const response = await fetch(`${origin(edge)}${path}`, { method });
+      assert.equal(response.status, 404, path);
+      assert.equal(await response.text(), 'Route unavailable.\n', path);
     }
   } finally {
     for (const server of [edge, frontend, api])

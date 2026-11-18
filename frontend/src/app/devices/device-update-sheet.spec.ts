@@ -260,6 +260,7 @@ const job: JobDetail = {
   revision: 1,
   action: 'update-device-annotations',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 6 },
   requestedBy: { id: principal, displayName: 'District operator' },
   createdAt: '2026-10-19T12:00:00.000Z',

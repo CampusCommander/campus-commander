@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  entityTypeSchema,
   jobActionSchema,
   jobDisplayIdSchema,
   jobEventSchema,
@@ -43,7 +44,7 @@ const listQuerySchema = z.strictObject({
   jobId: jobDisplayIdSchema.optional(),
   status: many(jobStatusSchema),
   action: many(jobActionSchema),
-  entityType: many(z.literal('device')),
+  entityType: many(entityTypeSchema),
   requestedBy: many(z.uuid()),
   createdFrom: z.iso.datetime({ offset: true }).optional(),
   createdTo: z.iso.datetime({ offset: true }).optional(),

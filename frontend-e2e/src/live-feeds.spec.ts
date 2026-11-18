@@ -27,6 +27,7 @@ const jobSummary = {
   revision: 3,
   action: 'update-device-annotations',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: person,
   createdAt: startedAt,

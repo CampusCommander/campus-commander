@@ -8,6 +8,7 @@ import {
   DEVICE_EDIT_DUPLICATE_HEADER_REFUSAL_MAX_LENGTH,
   deviceImportModeSchema,
 } from './device-edit-template';
+import { entityTypeSchema } from './entity-types';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -190,7 +191,8 @@ export type JobCancelRequest = z.infer<typeof jobCancelRequestSchema>;
 
 export const jobScopeSchema = z.strictObject({
   kind: z.enum(['devices', 'all-devices', 'rows']),
-  /** The target count. A running full sync holds null. A rows scope holds the row count. */
+  /** The target count of the entity type that the job names. A running full sync holds null. A rows
+   * scope holds the row count. */
   deviceCount: count.nullable(),
 });
 export type JobScope = z.infer<typeof jobScopeSchema>;
@@ -262,6 +264,8 @@ export const jobSummarySchema = z
     revision,
     action: jobActionSchema,
     status: jobStatusSchema,
+    /** The entity type of the job. It names what `scope.deviceCount` counts (document A section 5). */
+    entityType: entityTypeSchema,
     scope: jobScopeSchema,
     requestedBy: jobPersonSchema,
     createdAt: timestamp,

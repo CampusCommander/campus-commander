@@ -18,6 +18,7 @@ import {
   AllCommunityModule,
   ModuleRegistry,
   themeQuartz,
+  type ColumnMovedEvent,
   type FilterModel,
   type GridApi,
   type GridOptions,
@@ -126,10 +127,45 @@ ModuleRegistry.registerModules([
       white-space: nowrap;
     }
     /* The approved Columns panel lists the checkbox, the label, and the drag grip
-       (state 02, R13). The pin and move controls are not in that composition, and
-       they truncate the labels at the approved 258 px width. */
-    :host ::ng-deep .lgr-columns-row-actions {
+       (state 02, R13). Pin controls are not in that composition, so they stay
+       hidden and out of the tab order. */
+    :host ::ng-deep .lgr-columns-row-actions button[aria-label^='Pin '],
+    :host ::ng-deep .lgr-columns-row-actions button[aria-label^='Unpin '] {
       display: none;
+    }
+    /* UI-09: the move controls stay in the tab order. A row reveals them on
+       keyboard focus or the pointer. They sit out of flow, so the approved
+       258 px row keeps its label width and its rest look. */
+    :host ::ng-deep .lgr-columns-row {
+      position: relative;
+    }
+    :host ::ng-deep .lgr-columns-row-actions {
+      position: absolute;
+      top: 50%;
+      right: calc(var(--ag-grid-size, 8px) * 4.25);
+      display: flex;
+      margin-left: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    :host ::ng-deep .lgr-columns-row:hover .lgr-columns-row-actions,
+    :host ::ng-deep .lgr-columns-row:focus-within .lgr-columns-row-actions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    /* UI-09: the revealed controls sit at the row's trailing edge. An active
+       row reserves their footprint so the label ends with an ellipsis before
+       them instead of running beneath them. The footprint is the two 24 px
+       controls and their 2 px gap, plus the 5 px focus ring and a 5 px gap.
+       Only a movable row pays it, and only while focused or under the
+       pointer, so a row at rest keeps the approved label width. */
+    :host ::ng-deep .lgr-columns-row[data-column-movable='true']:hover > label,
+    :host
+      ::ng-deep
+      .lgr-columns-row[data-column-movable='true']:focus-within
+      > label {
+      padding-right: calc(var(--ag-grid-size, 8px) * 6.25 + 10px);
     }
   `,
 })
@@ -206,6 +242,13 @@ export class UserGrid implements OnInit {
   private focusing = false;
   /** The grid ended. A pending frame or block answer must not touch focus (R4). */
   private destroyed = false;
+  /** The move control that an activation used. Its row takes focus back after the panel re-renders. */
+  private panelMove: {
+    columnId: string;
+    direction: 'up' | 'down';
+  } | null = null;
+  private readonly moveClick = (event: MouseEvent) =>
+    this.trackMoveClick(event);
   protected options!: GridOptions<UserRow>;
 
   constructor() {
@@ -252,6 +295,17 @@ export class UserGrid implements OnInit {
     });
     this.application.attachView(panel.hostView);
     this.destroyRef.onDestroy(() => panel.destroy());
+    // UI-09: the panel rebuilds its rows after a move. Record the activation
+    // before the control's own click handler runs, so focus can return to the
+    // moved row. Enter and Space raise the same click event as the pointer.
+    this.host.nativeElement.addEventListener('click', this.moveClick, true);
+    this.destroyRef.onDestroy(() =>
+      this.host.nativeElement.removeEventListener(
+        'click',
+        this.moveClick,
+        true,
+      ),
+    );
     this.options = {
       theme: themeQuartz.withParams({
         accentColor: 'var(--cc-accent)',
@@ -265,6 +319,7 @@ export class UserGrid implements OnInit {
       groupHeaderHeight: 0,
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
+      onColumnMoved: (event) => this.columnMoved(event),
       onToolPanelVisibleChanged: (event) => this.panelToggled(event),
       onCellKeyDown: (event) =>
         detailsKeyHandler((row, node) => this.open(row, node))(event),
@@ -513,6 +568,80 @@ export class UserGrid implements OnInit {
         .querySelector<HTMLElement>(`#lgr-side-bar-${event.key}-button`)
         ?.focus();
     });
+  }
+
+  /**
+   * UI-09: record a move of a Columns panel row. The panel replaces its rows
+   * when the column moves, so the row that held focus must take it back.
+   */
+  private trackMoveClick(event: MouseEvent): void {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    // A click on the icon resolves to the button that holds the move label.
+    const control = target.closest<HTMLElement>('button[aria-label]');
+    if (!control || !control.closest('.lgr-columns-tool-panel')) return;
+    const match = /^Move (.+) (up|down)$/.exec(
+      control.getAttribute('aria-label') ?? '',
+    );
+    const row = control.closest<HTMLElement>('.lgr-columns-row');
+    const columnId = row?.dataset['columnId'];
+    if (!match || !columnId) return;
+    this.panelMove = {
+      columnId,
+      direction: match[2] as 'up' | 'down',
+    };
+  }
+
+  /** The panel rebuilt its rows after a move. Return focus to the moved row (UI-09). */
+  private columnMoved(event: ColumnMovedEvent<UserRow>): void {
+    const pending = this.panelMove;
+    this.panelMove = null;
+    if (!pending) return;
+    const columnId = event.column?.getColId() ?? pending.columnId;
+    if (columnId !== pending.columnId) return;
+    requestAnimationFrame(() =>
+      this.restoreMoveFocus(columnId, pending.direction),
+    );
+  }
+
+  /**
+   * Focus the same move control of the moved row, or the other move control when
+   * the move disabled it, or the row's checkbox when both are disabled.
+   */
+  private restoreMoveFocus(
+    columnId: string,
+    direction: 'up' | 'down',
+    attempt = 0,
+  ): void {
+    if (this.destroyed) return;
+    const row = this.host.nativeElement.querySelector<HTMLElement>(
+      `.lgr-columns-tool-panel .lgr-columns-row[data-column-id="${columnId}"]`,
+    );
+    if (!row) {
+      if (attempt < 30)
+        requestAnimationFrame(() =>
+          this.restoreMoveFocus(columnId, direction, attempt + 1),
+        );
+      return;
+    }
+    const name = row.dataset['columnName'] ?? '';
+    const moves = [
+      ...row.querySelectorAll<HTMLButtonElement>(
+        '.lgr-columns-row-actions button',
+      ),
+    ].filter(
+      (button) =>
+        !button.disabled &&
+        (button.getAttribute('aria-label') ?? '').startsWith('Move '),
+    );
+    const target =
+      moves.find(
+        (button) =>
+          button.getAttribute('aria-label') === `Move ${name} ${direction}`,
+      ) ??
+      moves[0] ??
+      row.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    target?.focus();
   }
 
   /** The selection footer makes the status bar taller. Follow a later Show All Selected. */
