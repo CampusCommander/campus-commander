@@ -708,6 +708,7 @@ export const userAttributeCategoryPlanSchema = z
     /** The cached category. A create carries null, because Google assigns the ID. */
     schemaId: googleSchemaId.nullable(),
     schemaName: attributeText,
+    /** The category label that the plan writes, or the cached label on a delete. */
     displayName,
     /** The cached `etag` that the plan compares before it writes. A create carries none. */
     baseEtag: etag.nullable(),
