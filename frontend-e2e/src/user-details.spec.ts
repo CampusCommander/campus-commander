@@ -23,6 +23,7 @@ let longProgram: string | null = null;
 
 test.afterEach(() => {
   longProgram = null;
+  extraPeople = [];
 });
 
 /** One time as the page renders it, in the zone that the spec pins. */
@@ -114,7 +115,10 @@ const people: FixtureUser[] = [
   },
 ];
 
-const rows = people.map((person) => {
+const rows = people.map(toRow);
+
+/** One directory record of a fixture person. */
+function toRow(person: FixtureUser) {
   const student: Record<string, unknown> = {
     programs: person.programs.map((value) => ({ value })),
   };
@@ -150,11 +154,39 @@ const rows = people.map((person) => {
     stale: false,
     recordVersion: 1,
   };
-});
+}
+
+/**
+ * One test opens a directory larger than one grid page, to check the return to the
+ * page, the scroll offset, and a block that loads after the first block (A section 4).
+ */
+let extraPeople: FixtureUser[] = [];
+const directoryPeople = () => [...people, ...extraPeople];
+const directoryRows = () => [...rows, ...extraPeople.map(toRow)];
+
+/** More users than one grid page holds, named so they sort after the base people. */
+function manyPeople(count: number): FixtureUser[] {
+  return Array.from({ length: count }, (_, at) => {
+    const number = String(at + 1).padStart(4, '0');
+    return {
+      name: `Zed Person ${number}`,
+      local: `zed.person${number}`,
+      userId: `120000000000000000${number}`,
+      orgUnitPath: '/Students/High School',
+      lastLoginHoursAgo: 20,
+      twoStep: true,
+      grade: 9,
+      homeroom: '100',
+      programs: [],
+    };
+  });
+}
 
 /** The details answer of one user, with the record shape of the API. */
 function detailOf(person: FixtureUser) {
-  const row = rows.find((candidate) => candidate.userId === person.userId);
+  const row = directoryRows().find(
+    (candidate) => candidate.userId === person.userId,
+  );
   return {
     user: { ...withLongProgram(row), removedAt: person.removedAt ?? null },
   };
@@ -370,10 +402,11 @@ function answerFor(body: any) {
     (item) => item.field === 'attribute' && item.fieldName === 'grade_level',
   );
   // A removed user stays out of rows and counts (A section 11).
-  let matched = rows
+  let matched = directoryRows()
     .filter(
       (row) =>
-        !people.find((person) => person.userId === row.userId)?.removedAt,
+        !directoryPeople().find((person) => person.userId === row.userId)
+          ?.removedAt,
     )
     .map((row) => withLongProgram(row));
   if (body?.selection)
@@ -402,7 +435,7 @@ function answerFor(body: any) {
     page: userPageSchema.parse({
       rows: matched.slice(offset, offset + limit),
       matching: matched.length,
-      total: rows.length - 1,
+      total: directoryRows().length - 1,
       observedAt,
       refreshJobId: null,
     }),
@@ -473,7 +506,9 @@ async function signIn(page: Page) {
           selectionState.terms = [
             { type: 'all', predicates: op.predicates ?? [] },
           ];
-          selectionState.ids = new Set(rows.map((row) => row.userId));
+          selectionState.ids = new Set(
+            directoryRows().map((row) => row.userId),
+          );
         } else if (op.op === 'select') {
           for (const id of op.ids ?? []) selectionState.ids.add(id);
         } else if (op.op === 'deselect') {
@@ -488,7 +523,7 @@ async function signIn(page: Page) {
     // One user, read by the details page. Any other path stays a 404.
     const single = /^\/api\/users\/([^/]+)$/.exec(path);
     if (single) {
-      const person = people.find(
+      const person = directoryPeople().find(
         (candidate) => candidate.userId === decodeURIComponent(single[1]),
       );
       return person
@@ -527,6 +562,41 @@ async function openUsers(page: Page) {
 /** The details control of one row (GRID-03). */
 function detailsControl(page: Page, name: string): Locator {
   return page.getByRole('button', { name: `Open details for ${name}` });
+}
+
+/** The vertical offset of the grid body, or -1 before the body renders. */
+async function gridScrollTop(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const viewport = document.querySelector<HTMLElement>('.ag-grid-viewport');
+    return Math.round(viewport?.scrollTop ?? -1);
+  });
+}
+
+/** Scroll the grid body to one offset, as a person with a mouse wheel would. */
+async function scrollGrid(page: Page, top: number): Promise<void> {
+  await page.evaluate((value) => {
+    const viewport = document.querySelector<HTMLElement>('.ag-grid-viewport');
+    if (viewport) viewport.scrollTop = value;
+  }, top);
+  await page.waitForTimeout(100);
+}
+
+/** The row that the details page recorded for Back to users and Next user. */
+async function recordedPosition(page: Page): Promise<{
+  index: number;
+  userId: string;
+  scrollTop: number | null;
+} | null> {
+  return page.evaluate(() => {
+    const ng = (
+      window as unknown as {
+        ng?: { getComponent: (element: Element) => any };
+      }
+    ).ng;
+    const detail = document.querySelector('app-user-detail');
+    if (!ng || !detail) return null;
+    return ng.getComponent(detail)['store'].position();
+  });
 }
 
 /** A layout box, or a failure when the element has none. */
@@ -714,12 +784,180 @@ test('returns focus to the opening row and keeps the filter and selection (UI-09
   await expect(
     page.getByRole('gridcell', { name: 'Ania Reyes', exact: true }),
   ).toBeVisible();
-  // Focus returns to the row that opened the page just closed (UI-09).
-  await expect(detailsControl(page, 'Amara Okafor')).toBeFocused();
+  // Focus returns to the row that opened the details page, not the traversed row (UI-09).
+  await expect(detailsControl(page, 'Abdul Karim')).toBeFocused();
   await page.screenshot({
     path: `${scratch}/um-04b-back-to-users.png`,
     fullPage: false,
   });
+});
+
+test('returns to the opening page after Next crosses a page boundary (A section 4, R3)', async ({
+  page,
+}) => {
+  extraPeople = manyPeople(130);
+  // The base people fill the first rows. Row 99 is the last row of grid page one.
+  const anchor = 99;
+  const base = people.filter((person) => !person.removedAt).length;
+  const anchorName = `Zed Person ${String(anchor - base + 1).padStart(4, '0')}`;
+  const nextName = `Zed Person ${String(anchor - base + 2).padStart(4, '0')}`;
+  await openUsers(page);
+  // Scroll to the last row of the first page, then open it.
+  await scrollGrid(page, 100_000);
+  const control = page.locator(`[row-index="${anchor}"] .details-action`);
+  await expect(control).toHaveAccessibleName(`Open details for ${anchorName}`);
+  // A row at the viewport edge moves into full view before the click. That viewed
+  // offset is the one that Back to users must restore.
+  await control.scrollIntoViewIfNeeded();
+  await control.click();
+  await expect(
+    page.getByRole('heading', { name: anchorName, exact: true }),
+  ).toBeVisible();
+  // The page records the row and the offset that the person saw at the click.
+  const anchorPosition = await recordedPosition(page);
+  expect(anchorPosition?.index).toBe(anchor);
+  expect(anchorPosition?.scrollTop ?? 0).toBeGreaterThan(0);
+  // Next user moves past the page boundary of the grid that opened the details.
+  await page.getByRole('button', { name: 'Next user', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: nextName, exact: true }),
+  ).toBeVisible();
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  // Back to users returns to the opening row on its own page, not the traversed row.
+  await expect(
+    page.getByRole('button', { name: `Open details for ${anchorName}` }),
+  ).toBeFocused();
+  expect(
+    Math.abs((await gridScrollTop(page)) - (anchorPosition?.scrollTop ?? -1)),
+  ).toBeLessThanOrEqual(1);
+});
+
+test('returns to the opening scroll position without Next (A section 4, R3)', async ({
+  page,
+}) => {
+  extraPeople = manyPeople(60);
+  await openUsers(page);
+  await scrollGrid(page, 840);
+  // Open a row that the scroll position shows, clear of the page header.
+  const anchor = await page.evaluate(() => {
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>('.ag-row[row-index]'),
+    ];
+    const shown = rows.find((row) => {
+      const box = row.getBoundingClientRect();
+      return box.top >= 150 && box.bottom <= window.innerHeight - 20;
+    });
+    return shown ? Number(shown.getAttribute('row-index')) : null;
+  });
+  expect(anchor).not.toBeNull();
+  const control = page.locator(`[row-index="${anchor}"] .details-action`);
+  const label = (await control.getAttribute('aria-label')) ?? '';
+  // The control scrolls fully into view before the click. That viewed offset is the
+  // one that Back to users must restore instead of centering the row again.
+  await control.scrollIntoViewIfNeeded();
+  await control.click();
+  await expect(
+    page.getByRole('heading', {
+      name: label.replace('Open details for ', ''),
+      exact: true,
+    }),
+  ).toBeVisible();
+  const anchorPosition = await recordedPosition(page);
+  expect(anchorPosition?.scrollTop ?? 0).toBeGreaterThan(0);
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  // The row returns at the offset that held it, and focus goes there (UI-09).
+  await expect(
+    page.locator(`[row-index="${anchor}"] .details-action`),
+  ).toBeFocused();
+  expect(
+    Math.abs((await gridScrollTop(page)) - (anchorPosition?.scrollTop ?? -1)),
+  ).toBeLessThanOrEqual(1);
+});
+
+test('restores focus when the returned block loads after a delay (R4)', async ({
+  page,
+}) => {
+  extraPeople = manyPeople(130);
+  await openUsers(page);
+  await page.getByRole('button', { name: 'Next Page' }).click();
+  const control = page.locator('[row-index="100"] .details-action');
+  const label = (await control.getAttribute('aria-label')) ?? '';
+  const name = label.replace('Open details for ', '');
+  await expect(control).toBeVisible();
+  // The block that holds the row answers 1.5 s after the grid returns.
+  await page.route('**/api/users/query', async (route) => {
+    const body = route.request().postDataJSON();
+    if (Number(body?.offset ?? 0) === 100)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({ json: answerFor(body) });
+  });
+  await control.click();
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  await expect(control).toBeFocused({ timeout: 8000 });
+});
+
+test('stays on the grid when a Next user answer lands after Back to users (R2)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  // The neighbor query answers after the person already returned to the grid.
+  await page.route('**/api/users/query', async (route) => {
+    const body = route.request().postDataJSON();
+    if (Number(body?.limit ?? 0) === 1)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({ json: answerFor(body) });
+  });
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Next user', exact: true }).click();
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  // The held answer must not reopen a details page over the grid.
+  await page.waitForTimeout(2000);
+  await expect(page).toHaveURL(/\/users$/);
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+});
+
+test('shows a failed details read with a Retry, not a missing user (R5)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  let reads = 0;
+  await page.route('**/api/users/110000000000000000001', async (route) => {
+    reads++;
+    if (reads === 1) return route.fulfill({ status: 503, json: {} });
+    return route.fulfill({ json: detailOf(people[0]) });
+  });
+  await page.goto('/users/110000000000000000001');
+  await expect(
+    page.getByRole('heading', {
+      name: 'User details are unavailable',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'User not found', exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
 });
 
 test('opens the details page from the user name', async ({ page }) => {
