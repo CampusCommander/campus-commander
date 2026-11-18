@@ -24,6 +24,8 @@ const driveToken = 'synthetic-drive-token';
 const userToken = 'synthetic-user-token';
 /** The synthetic token name for the read-only user schema scope. */
 const schemaToken = 'synthetic-user-schema-token';
+/** The synthetic token name for the user schema write scope. */
+const schemaWriteToken = 'synthetic-user-schema-write-token';
 /** The two synthetic users that the health check reads. */
 const users = [
   {
@@ -187,9 +189,11 @@ prototype.request = async function (options) {
                     ? driveToken
                     : scope.endsWith('userschema.readonly')
                       ? schemaToken
-                      : scope.endsWith('user.readonly')
-                        ? userToken
-                        : 'synthetic-domain-token',
+                      : scope.endsWith('userschema')
+                        ? schemaWriteToken
+                        : scope.endsWith('user.readonly')
+                          ? userToken
+                          : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -216,7 +220,9 @@ prototype.request = async function (options) {
                         ? 'https://www.googleapis.com/auth/admin.directory.user.readonly'
                         : authorization === `Bearer ${schemaToken}`
                           ? 'https://www.googleapis.com/auth/admin.directory.userschema.readonly'
-                          : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+                          : authorization === `Bearer ${schemaWriteToken}`
+                            ? 'https://www.googleapis.com/auth/admin.directory.userschema'
+                            : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))

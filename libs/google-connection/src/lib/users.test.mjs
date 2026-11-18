@@ -4,7 +4,11 @@ import test from 'node:test';
 import { JWT, OAuth2Client } from 'google-auth-library';
 import { GOOGLE_CAPABILITIES } from '@campus/application-contracts';
 import { GoogleBatchService } from './batch.ts';
-import { GoogleUserReader } from './users.ts';
+import {
+  CATEGORY_PART_ID,
+  GoogleCategoryWriter,
+  GoogleUserReader,
+} from './users.ts';
 import { fakeGoogle } from './batch-fake.mjs';
 
 const { privateKey } = generateKeyPairSync('rsa', {
@@ -25,6 +29,9 @@ const userScope = GOOGLE_CAPABILITIES.find(
 ).scope;
 const schemaScope = GOOGLE_CAPABILITIES.find(
   (capability) => capability.id === 'user-schemas',
+).scope;
+const schemaWriteScope = GOOGLE_CAPABILITIES.find(
+  (capability) => capability.id === 'user-schema-changes',
 ).scope;
 
 /** Record the token and API requests of a direct read. */
@@ -491,4 +498,218 @@ test('a category read retries a quota answer and then answers the category', asy
   }).category(credential, 'C0123456', 'StudentInfoId==', signal());
   assert.deepEqual(google.sent.length, 2);
   assert.equal(entry.schemaName, 'StudentInfo');
+});
+
+/** The complete write body of B section 6.1, as a plan builds it. */
+const writeBody = (extra = {}) => ({
+  schemaName: 'StudentInfo',
+  displayName: 'Student information',
+  fields: [
+    {
+      fieldName: 'GradeLevel',
+      displayName: 'Grade level',
+      fieldType: 'INT64',
+      multiValued: false,
+      indexed: true,
+      readAccessType: 'ALL_DOMAIN_USERS',
+      numericIndexingSpec: { minValue: 0, maxValue: 12 },
+    },
+  ],
+  ...extra,
+});
+
+test('a category insert leaves as one POST part with the write scope and no If-Match', async (t) => {
+  const { google, scopes } = stubBatch(t, () => ({
+    status: 200,
+    body: category('StudentInfo', { schemaId: 'newSchemaId==' }),
+  }));
+  const result = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).insertCategory(credential, 'C0123456', writeBody(), signal());
+  assert.deepEqual(scopes, [schemaWriteScope]);
+  assert.equal(google.sent.length, 1, 'the insert sends one batch');
+  assert.equal(google.sent[0].length, 1, 'one operation is one part');
+  const [part] = google.sent[0];
+  assert.equal(part.method, 'POST');
+  assert.equal(part.path, '/admin/directory/v1/customer/C0123456/schemas');
+  assert.equal(
+    part.headers['if-match'],
+    undefined,
+    'an insert carries no If-Match',
+  );
+  assert.deepEqual(part.body, writeBody());
+  const created = result.succeeded.get(CATEGORY_PART_ID)?.[0];
+  assert.equal(created.schemaId, 'newSchemaId==');
+  assert.equal(created.schemaName, 'StudentInfo');
+  assert.deepEqual([...result.failed.keys()], []);
+});
+
+test('a category update leaves as one PUT part with the plan etag in If-Match', async (t) => {
+  const body = writeBody({
+    displayName: 'Student records',
+    fields: [{ ...writeBody().fields[0], fieldId: 'StudentInfo-field' }],
+  });
+  const { google, scopes } = stubBatch(t, () => ({
+    status: 200,
+    body: category('StudentInfo', {
+      etag: '"StudentInfo-2"',
+      schemaId: 'StudentInfoId==',
+    }),
+  }));
+  const result = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).updateCategory(
+    credential,
+    'C0123456',
+    'StudentInfoId==',
+    '"StudentInfo-1"',
+    body,
+    signal(),
+  );
+  assert.deepEqual(scopes, [schemaWriteScope]);
+  assert.equal(google.sent[0].length, 1);
+  const [part] = google.sent[0];
+  assert.equal(part.method, 'PUT');
+  assert.equal(
+    part.path,
+    '/admin/directory/v1/customer/C0123456/schemas/StudentInfoId%3D%3D',
+  );
+  assert.equal(part.headers['if-match'], '"StudentInfo-1"');
+  assert.deepEqual(part.body, body);
+  const updated = result.succeeded.get(CATEGORY_PART_ID)?.[0];
+  assert.equal(updated.etag, '"StudentInfo-2"');
+});
+
+test('a category delete leaves as one DELETE part with the plan etag in If-Match', async (t) => {
+  const { google, scopes } = stubBatch(t, () => ({ status: 204 }));
+  const result = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).deleteCategory(
+    credential,
+    'C0123456',
+    'StudentInfoId==',
+    '"StudentInfo-1"',
+    signal(),
+  );
+  assert.deepEqual(scopes, [schemaWriteScope]);
+  assert.equal(google.sent[0].length, 1);
+  const [part] = google.sent[0];
+  assert.equal(part.method, 'DELETE');
+  assert.equal(
+    part.path,
+    '/admin/directory/v1/customer/C0123456/schemas/StudentInfoId%3D%3D',
+  );
+  assert.equal(part.headers['if-match'], '"StudentInfo-1"');
+  assert.deepEqual(result.succeeded.get(CATEGORY_PART_ID), [null]);
+});
+
+test('a schema ID with /, +, and = stays one percent-encoded path segment', async (t) => {
+  const { google } = stubBatch(t, (part) =>
+    part.method === 'DELETE'
+      ? { status: 204 }
+      : {
+          status: 200,
+          body: category('StudentInfo', { schemaId: 'ab/c+d==' }),
+        },
+  );
+  const writer = new GoogleCategoryWriter({ batch: fastBatch() });
+  await writer.updateCategory(
+    credential,
+    'C0123456',
+    'ab/c+d==',
+    '"etag"',
+    writeBody(),
+    signal(),
+  );
+  await writer.deleteCategory(
+    credential,
+    'C0123456',
+    'ab/c+d==',
+    '"etag"',
+    signal(),
+  );
+  const paths = google.sent.map((round) => round.map((part) => part.path));
+  assert.deepEqual(paths, [
+    ['/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
+    ['/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
+  ]);
+  assert.ok(
+    paths.flat().every((path) => !path.includes('+') && !path.includes('=')),
+    'no raw delimiter leaves the process',
+  );
+});
+
+test('a transient answer to a category insert ends without a retry', async (t) => {
+  const { google } = stubBatch(t, () => ({ status: 503 }));
+  const result = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).insertCategory(credential, 'C0123456', writeBody(), signal());
+  assert.equal(google.sent.length, 1, 'an unsafe POST never repeats');
+  const failed = result.failed.get(CATEGORY_PART_ID);
+  assert.equal(failed.kind, 'transient');
+  assert.equal(failed.status, 503);
+  assert.equal(failed.attempts.transient, 0);
+});
+
+test('a quota answer to a category insert keeps its retries', async (t) => {
+  let throttled = false;
+  const { google } = stubBatch(t, () => {
+    if (!throttled) {
+      throttled = true;
+      return {
+        status: 403,
+        body: {
+          error: { code: 403, errors: [{ reason: 'userRateLimitExceeded' }] },
+        },
+      };
+    }
+    return { status: 200, body: category('StudentInfo') };
+  });
+  const result = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).insertCategory(credential, 'C0123456', writeBody(), signal());
+  assert.equal(google.sent.length, 2, 'the quota answer retries the part');
+  assert.equal(
+    result.succeeded.get(CATEGORY_PART_ID)?.[0].schemaName,
+    'StudentInfo',
+  );
+});
+
+test('a category read through the writer keeps its read scope and one GET part', async (t) => {
+  const { google, scopes } = stubBatch(t, () => ({
+    status: 200,
+    body: category('StudentInfo', { schemaId: 'ab/c+d==' }),
+  }));
+  const entry = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).category(credential, 'C0123456', 'ab/c+d==', signal());
+  assert.deepEqual(scopes, [schemaScope]);
+  assert.deepEqual(
+    google.sent[0].map((part) => [part.method, part.path]),
+    [['GET', '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D']],
+  );
+  assert.equal(entry.schemaId, 'ab/c+d==');
+});
+
+test('a write body that Google cannot accept never leaves the process', async (t) => {
+  const { google } = stubBatch(t, () => ({
+    status: 200,
+    body: category('StudentInfo'),
+  }));
+  const writer = new GoogleCategoryWriter({ batch: fastBatch() });
+  for (const body of [
+    writeBody({ fields: [] }),
+    writeBody({ schemaName: '' }),
+    writeBody({
+      fields: [{ ...writeBody().fields[0], fieldType: 'TEXT' }],
+    }),
+    writeBody({
+      fields: [{ ...writeBody().fields[0], unknownKey: true }],
+    }),
+  ])
+    await assert.rejects(
+      writer.insertCategory(credential, 'C0123456', body, signal()),
+      { name: 'ZodError' },
+    );
+  assert.equal(google.sent.length, 0, 'a refused body sends no batch');
 });

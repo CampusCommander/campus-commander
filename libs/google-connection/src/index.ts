@@ -40,12 +40,20 @@ export type {
   IssuedDeviceCommand,
 } from './lib/devices';
 export {
+  CATEGORY_PART_ID,
+  GoogleCategoryWriter,
   GoogleUserReader,
   categoryObservation,
+  categoryWriteBodySchema,
   lastLoginTime,
   userObservation,
 } from './lib/users';
-export type { GoogleUserReaderOptions } from './lib/users';
+export type {
+  CategoryWriteBody,
+  CategoryWriteField,
+  GoogleCategoryWriterOptions,
+  GoogleUserReaderOptions,
+} from './lib/users';
 export type {
   GoogleConnectionDatabase,
   GoogleReadRequest,

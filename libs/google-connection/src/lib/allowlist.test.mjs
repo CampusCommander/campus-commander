@@ -83,6 +83,11 @@ const allowedParts = [
   ['GET', '/admin/directory/v1/users/u%2F1'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
+  ['POST', '/admin/directory/v1/customer/C0123456/schemas'],
+  ['PUT', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['PUT', '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
+  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
 ];
 const rejectedParts = [
   ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos'],
@@ -114,10 +119,14 @@ const rejectedParts = [
   ['GET', '/admin/directory/v1/customer/C0123456/schemas'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/a/b'],
-  ['POST', '/admin/directory/v1/customer/C0123456/schemas'],
-  ['PUT', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['POST', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['POST', '/admin/directory/v1/customer/C0123456/schemas/'],
+  ['PUT', '/admin/directory/v1/customer/C0123456/schemas'],
+  ['PUT', '/admin/directory/v1/customer/C0123456/schemas/a/b'],
   ['PATCH', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
-  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas'],
+  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas/'],
+  ['DELETE', '/admin/directory/v1/customer/C0123456/schemas/a/b'],
   ['GET', '/admin/directory/v1/customer/C01/devices/chromeos/d1'],
   ['GET', '/admin/directory/v1/customer/C0123456/devices/chromeos/d1/'],
 ];
@@ -269,18 +278,32 @@ test('validateRequests refuses a part outside the allowlist', () => {
       ]),
     { name: 'BatchServiceError', code: 'invalid-request' },
   );
-  // Every write method stays outside the part allowlist (design section 4).
+  // The schema write shapes admit POST, PUT, and DELETE only on the paths this
+  // repository builds. A PATCH is never sent (design C4), so the allowlist refuses it.
   assert.throws(
     () =>
       validateRequests([
         {
           id: 'schema',
-          method: 'DELETE',
+          method: 'PATCH',
           path: '/admin/directory/v1/customer/C0123456/schemas/SchemaName',
         },
       ]),
     { name: 'BatchServiceError', code: 'invalid-request' },
   );
+  // A write off the collection or the item path never leaves the process.
+  for (const [method, path] of [
+    ['POST', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
+    ['PUT', '/admin/directory/v1/customer/C0123456/schemas'],
+    [
+      'DELETE',
+      '/admin/directory/v1/customer/C0123456/schemas/SchemaName/fields',
+    ],
+  ])
+    assert.throws(() => validateRequests([{ id: 'schema', method, path }]), {
+      name: 'BatchServiceError',
+      code: 'invalid-request',
+    });
 });
 
 test('a scoped client reaches the transport for batch and per-device URLs only', async (t) => {
