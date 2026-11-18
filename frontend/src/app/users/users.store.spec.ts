@@ -926,21 +926,32 @@ describe('the users store', () => {
 
   it('rejects a details body that decodes after the person changed (R1)', async () => {
     const body = held<unknown>();
+    const decoding = held<undefined>();
     const session = signal(sessionFor('actor'));
     const request = vi.fn(() =>
       Promise.resolve({
         ok: true,
         status: 200,
-        json: () => body.promise,
+        json: () => {
+          decoding.release(undefined);
+          return body.promise;
+        },
       } as unknown as Response),
     );
     const store = setup(request, session);
     const read = store.user('110000000000000000001');
-    // The next person signs in while the valid body of the first person is in flight.
+    // The first person's body must decode before the next person signs in. A read that
+    // stopped at the check before decoding never reaches the boundary under test.
+    await decoding.promise;
     session.set(sessionFor('second'));
     TestBed.tick();
+    // The valid body of the first person arrives after the reset of the second person.
     body.release({ user: { ...userRow(), removedAt: null } });
     expect(await read).toEqual({ kind: 'stale' });
+    // The fence rejects only the earlier body: the same read for the second person answers.
+    expect(await store.user('110000000000000000001')).toMatchObject({
+      kind: 'user',
+    });
   });
 
   it('reads the next row of the current order for Next user', async () => {
