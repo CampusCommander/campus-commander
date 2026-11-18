@@ -556,10 +556,13 @@ test('reproduces UM state 01: the users grid', async ({ page }) => {
   expect(box).not.toBeNull();
   const grid = await page.locator('.ag-root-wrapper').boundingBox();
   expect(box!.x - grid!.x).toBeLessThan(300);
-  // The row name is plain text until card K11.
-  await expect(page.getByRole('link', { name: 'Aaliyah Brooks' })).toHaveCount(
-    0,
-  );
+  // Card K11 makes the row name the link to the details page (GRID-03).
+  await expect(
+    page.getByRole('link', { name: 'Aaliyah Brooks', exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole('button', { name: 'Open details for Aaliyah Brooks' }),
+  ).toBeVisible();
   await page.screenshot({
     path: `${scratch}/um-01-users-grid.png`,
     fullPage: false,
