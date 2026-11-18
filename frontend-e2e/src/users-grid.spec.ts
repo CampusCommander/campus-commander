@@ -519,6 +519,35 @@ async function headerIndex(page: Page, colId: string): Promise<number> {
   );
 }
 
+/**
+ * The layout of a Columns panel row: the label content box and the revealed
+ * controls. The label clips its text at the content edge, so the content edge
+ * proves whether the text can run beneath the controls.
+ */
+async function panelRowLayout(row: Locator) {
+  return row.evaluate((element) => {
+    const label = element.querySelector('label') as HTMLElement;
+    const actions = element.querySelector(
+      '.lgr-columns-row-actions',
+    ) as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(label.firstChild as Text);
+    const labelBox = label.getBoundingClientRect();
+    const paddingRight = Number.parseFloat(
+      getComputedStyle(label).paddingRight,
+    );
+    const textBox = range.getBoundingClientRect();
+    return {
+      textLeft: textBox.left,
+      textWidth: textBox.width,
+      labelRight: labelBox.right,
+      paddingRight,
+      contentRight: labelBox.right - paddingRight,
+      actionsLeft: actions.getBoundingClientRect().left,
+    };
+  });
+}
+
 /** Show the demonstrated attribute columns and scroll them beside the pinned Name. */
 async function showAttributeColumns(page: Page) {
   await page.getByRole('tab', { name: 'Columns', exact: true }).click();
@@ -741,6 +770,72 @@ test('moves a Users column from the keyboard and keeps the approved rest look (U
     );
   }
   expect(reached.filter((label) => /^(Pin|Unpin) /.test(label))).toEqual([]);
+});
+
+test('keeps an active Columns row label clear of its move controls (UI-09)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+  const panel = page.locator('.lgr-columns-tool-panel');
+  await expect(panel).toBeVisible();
+  // The Device program group holds the longest leaf label of the fixture.
+  const row = panel.locator(
+    '.lgr-columns-row[data-column-id="attr:Device.take_home"]',
+  );
+  await expect(row).toHaveAttribute('data-column-movable', 'true');
+  await expect(row.locator('label')).toHaveText('Take-home approved');
+  await row.scrollIntoViewIfNeeded();
+
+  // A row at rest keeps the approved label width: no reserved space and the
+  // whole label visible beside the grip.
+  await page.mouse.move(0, 0);
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  const rest = await panelRowLayout(row);
+  expect(rest.paddingRight).toBe(0);
+  expect(rest.textWidth).toBeLessThanOrEqual(
+    rest.labelRight - rest.textLeft + 1,
+  );
+
+  // Tab reaches the move control of the long label, so the revealed controls
+  // must clear the text and the 5 px focus ring around them.
+  await panel.getByRole('searchbox', { name: 'Search columns' }).focus();
+  const moveUp = page.getByRole('button', {
+    name: 'Move Take-home approved up',
+    exact: true,
+  });
+  for (let press = 0; press < 120; press += 1) {
+    if (await moveUp.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(moveUp).toBeFocused();
+  const focused = await panelRowLayout(row);
+  expect(focused.actionsLeft - focused.contentRight).toBeGreaterThanOrEqual(5);
+  // The reserved space makes the label truncate with an ellipsis instead of
+  // running beneath the controls.
+  expect(focused.textWidth).toBeGreaterThan(
+    focused.contentRight - focused.textLeft,
+  );
+  await page.screenshot({
+    path: `${scratch}/um-02e-columns-panel-long-label.png`,
+    fullPage: false,
+  });
+
+  // The pointer reveals the same separation, and both states give the space
+  // back when the row goes idle.
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  await row.locator('label').hover();
+  const hovered = await panelRowLayout(row);
+  expect(hovered.actionsLeft - hovered.contentRight).toBeGreaterThanOrEqual(5);
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(async () => (await panelRowLayout(row)).paddingRight)
+    .toBe(0);
 });
 
 test('reproduces UM state 03: the attribute filter editor', async ({
