@@ -44,6 +44,7 @@ let mock;
 let domain;
 let credential;
 let container;
+let fixtureVolumes = [];
 let port;
 let admin;
 let migrator;
@@ -119,6 +120,29 @@ const docker = (...args) =>
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+
+/** True when the named container or volume exists. */
+const dockerHas = (object, name) => {
+  try {
+    return docker(object, 'inspect', name) !== '';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The anonymous volume names the named container mounts.
+ * A removal of the container alone keeps them, so teardown removes them by name.
+ */
+const mountedVolumes = (name) =>
+  docker(
+    'inspect',
+    '--format',
+    '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}',
+    name,
+  )
+    .split('\n')
+    .filter(Boolean);
 
 async function pool(userName, database) {
   const value = new pg.Pool({
@@ -200,6 +224,7 @@ before(async () => {
     '127.0.0.1::5432',
     qualification.image,
   );
+  fixtureVolumes = mountedVolumes(container);
   port = Number(docker('port', container, '5432/tcp').split(':').at(-1));
   admin = await connectAdmin();
   const credentials = Object.fromEntries([
@@ -291,8 +316,30 @@ after(async () => {
   await runtime?.end().catch(() => undefined);
   await migrator?.end().catch(() => undefined);
   await mock?.close().catch(() => undefined);
-  if (container) docker('rm', '-f', container);
+  removeFixture();
 });
+
+/**
+ * Remove the fixture container and the anonymous volumes the image gave it.
+ * The assertions fail this file when a teardown leaves either one behind.
+ */
+function removeFixture() {
+  if (!container) return;
+  if (dockerHas('container', container)) docker('rm', '--force', container);
+  for (const volume of fixtureVolumes) {
+    if (dockerHas('volume', volume)) docker('volume', 'rm', volume);
+  }
+  assert.deepEqual(
+    fixtureVolumes.filter((volume) => dockerHas('volume', volume)),
+    [],
+    'the fixture leaves no anonymous volume behind',
+  );
+  assert.equal(
+    dockerHas('container', container),
+    false,
+    'the fixture leaves no container behind',
+  );
+}
 
 async function principal() {
   const { rows } = await migrator.query(
