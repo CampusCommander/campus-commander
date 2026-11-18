@@ -442,6 +442,34 @@ test('the frozen call lists every kept field before each new field', () => {
   );
 });
 
+test('an edit names each property that moves and freezes its new value', () => {
+  // B section 6.1: a save changes labels, visibility, searchable, the range, and one value to
+  // multiple values. Each moving property enters the change list, and the body carries the draft.
+  const plan = buildCategoryPlan(
+    editPlan([
+      keptField({
+        multiValued: true,
+        indexed: false,
+        readAccessType: 'ALL_DOMAIN_USERS',
+      }),
+      gradeField(),
+    ]),
+    cached(),
+  );
+  const changed = plan.changes.find((change) => change.change === 'changed');
+  assert.deepEqual(changed.properties, [
+    'multiValued',
+    'indexed',
+    'readAccessType',
+  ]);
+  const body = plan.body.fields.find(
+    (field) => field.fieldId === 'fld-homeroom',
+  );
+  assert.equal(body.multiValued, true);
+  assert.equal(body.indexed, false);
+  assert.equal(body.readAccessType, 'ALL_DOMAIN_USERS');
+});
+
 test('a delete plan freezes the cached label as its phrase', () => {
   const plan = buildCategoryPlan(deletePlan(), cached());
   assert.equal(plan.method, 'delete');
