@@ -597,6 +597,93 @@ describe('the users store', () => {
     expect(store.categoriesRecovery()).toBe(true);
   });
 
+  it('ends the loading state when the first category read fails', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json(
+          { reason: 'user-schema-read-failed', failure: 'backend-error' },
+          { status: 503 },
+        ),
+      );
+    const store = setup(request);
+    await store.loadCategories();
+    expect(store.categoriesLoading()).toBe(false);
+    expect(store.categoriesFailure()).toEqual({
+      status: 503,
+      failure: 'backend-error',
+    });
+  });
+
+  it('reads Google again on Refresh and replaces the cached set (B section 9)', async () => {
+    const refreshed: UserAttributeCategories = {
+      ...categories,
+      categories: [
+        ...categories.categories,
+        {
+          ...categories.categories[0],
+          schemaId: 'schema-staff',
+          schemaName: 'Staff',
+          displayName: 'Staff information',
+          holders: 40,
+        },
+      ],
+      limits: {
+        categories: 2,
+        categoryLimit: 100,
+        attributes: 2,
+        attributeLimit: 100,
+      },
+      observedAt: '2026-11-16T13:00:00.000Z',
+    };
+    const request = vi.fn((path: string) =>
+      Promise.resolve(
+        Response.json(
+          path === '/api/users/attribute-categories/refresh'
+            ? refreshed
+            : (answers[path] ?? {}),
+        ),
+      ),
+    );
+    const store = setup(request);
+    await store.loadCategories();
+    expect(store.categories()?.limits.categories).toBe(1);
+    await store.refreshCategories();
+    expect(request).toHaveBeenCalledWith(
+      '/api/users/attribute-categories/refresh',
+      {},
+    );
+    expect(store.categories()?.limits.categories).toBe(2);
+    expect(store.categoriesFailure()).toBeNull();
+    expect(store.categoriesRefreshing()).toBe(false);
+  });
+
+  it('keeps the cached categories when Refresh fails (UI-08)', async () => {
+    const request = vi.fn((path: string) =>
+      Promise.resolve(
+        path === '/api/users/attribute-categories/refresh'
+          ? Response.json(
+              {
+                reason: 'user-schema-read-failed',
+                failure: 'backend-error',
+              },
+              { status: 503 },
+            )
+          : Response.json(answers[path] ?? {}),
+      ),
+    );
+    const store = setup(request);
+    await store.loadCategories();
+    await store.refreshCategories();
+    expect(store.categories()?.limits.categories).toBe(1);
+    expect(store.categoriesFailure()).toEqual({
+      status: 503,
+      failure: 'backend-error',
+    });
+    expect(store.categoriesError()).toBe('');
+    expect(store.categoriesRefreshing()).toBe(false);
+  });
+
   it('takes a newer refresh run over the completed run before it (R2)', async () => {
     const first = sync('ready', {
       startedAt: '2026-11-16T12:00:00.000Z',

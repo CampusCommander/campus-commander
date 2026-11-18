@@ -95,6 +95,11 @@ function setup(options: {
     attributes: signal([]),
     categoriesError: signal(''),
     categoriesRecovery: signal(false),
+    categories: signal(null),
+    categoriesLoading: signal(false),
+    categoriesRefreshing: signal(false),
+    categoriesFailure: signal(null),
+    refreshCategories: vi.fn().mockResolvedValue(undefined),
     offline: signal(options.offline ?? false),
     error: signal(''),
     revision: signal(0),
@@ -192,10 +197,52 @@ describe('the Users page', () => {
     });
     const fixture = render();
     const element = fixture.nativeElement as HTMLElement;
-    const tab = element.querySelector('nav[aria-label="Users views"] a');
+    const tab = element.querySelector(
+      'nav[aria-label="Users views"] [mat-tab-link]',
+    );
     expect(tab?.textContent?.trim()).toBe('Users');
     expect(tab?.getAttribute('aria-selected')).toBe('true');
     expect(element.querySelector('app-user-grid')).not.toBeNull();
+  });
+
+  it('shows the Custom attributes tab beside Users (U2)', () => {
+    setup({
+      sync: ready(),
+      page: { matching: 12, total: 450, observedAt: null },
+    });
+    const fixture = render();
+    const element = fixture.nativeElement as HTMLElement;
+    const tabs = [
+      ...element.querySelectorAll(
+        'nav[aria-label="Users views"] [mat-tab-link]',
+      ),
+    ].map((tab) => tab.textContent?.trim());
+    expect(tabs).toEqual(['Users', 'Custom attributes']);
+  });
+
+  it('swaps the grid for the category tab and back', () => {
+    setup({
+      sync: ready(),
+      page: { matching: 12, total: 450, observedAt: null },
+    });
+    const fixture = render();
+    const element = fixture.nativeElement as HTMLElement;
+    const tabs = element.querySelectorAll(
+      'nav[aria-label="Users views"] [mat-tab-link]',
+    );
+    (tabs[1] as HTMLElement).click();
+    fixture.detectChanges();
+    expect(
+      element.querySelector('app-user-attribute-categories'),
+    ).not.toBeNull();
+    expect(element.querySelector('app-user-grid')).toBeNull();
+    expect(element.textContent).toContain('Loading custom attributes…');
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+    expect(tabs[0].getAttribute('aria-selected')).toBe('false');
+    (tabs[0] as HTMLElement).click();
+    fixture.detectChanges();
+    expect(element.querySelector('app-user-grid')).not.toBeNull();
+    expect(element.querySelector('app-user-attribute-categories')).toBeNull();
   });
 
   it('says no user matches the filters and clears them', () => {
