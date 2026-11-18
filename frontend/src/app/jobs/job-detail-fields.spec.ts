@@ -499,6 +499,90 @@ describe('latest activity', () => {
     );
   });
 
+  it('drafts a user refresh job line with users', () => {
+    const time = formatTime('2026-10-19T10:42:00.000Z');
+    const userRefresh = (overrides: Partial<JobDetail> = {}) =>
+      job({
+        displayId: 'REF-012',
+        action: 'refresh-inventory',
+        status: 'completed',
+        entityType: 'user',
+        changes: null,
+        scope: { kind: 'devices', deviceCount: 4 },
+        progress: progress({
+          total: 4,
+          succeeded: 4,
+          failed: 0,
+          unknown: 0,
+          pending: 0,
+        }),
+        latestActivity: {
+          at: '2026-10-19T10:42:00.000Z',
+          failed: { count: 0, operations: [] },
+          unknown: { count: 0, operations: [] },
+        },
+        phase: null,
+        exportSummary: null,
+        importSummary: null,
+        exportFile: null,
+        importSource: null,
+        plan: null,
+        importDisplayId: null,
+        waitsForDisplayId: null,
+        waitingDisplayIds: null,
+        planJobs: null,
+        executionCounts: null,
+        ...overrides,
+      });
+    expect(latestActivityLine(userRefresh())).toBe(
+      `${time} · 4 users read. The refresh completed.`,
+    );
+    expect(
+      latestActivityLine(
+        userRefresh({
+          status: 'running',
+          progress: progress({
+            total: 4,
+            succeeded: 2,
+            failed: 0,
+            unknown: 0,
+            pending: 2,
+          }),
+        }),
+      ),
+    ).toBe(`${time} · 2 users read. Two users remain to read.`);
+    expect(
+      latestActivityLine(
+        userRefresh({
+          status: 'running',
+          progress: progress({
+            total: 1,
+            succeeded: 0,
+            failed: 0,
+            unknown: 0,
+            pending: 1,
+          }),
+        }),
+      ),
+    ).toBe(`${time} · 0 users read. One user remains to read.`);
+    expect(
+      latestActivityLine(
+        userRefresh({
+          status: 'completed-with-errors',
+          progress: progress({
+            total: 4,
+            succeeded: 2,
+            failed: 1,
+            unknown: 0,
+            pending: 1,
+          }),
+        }),
+      ),
+    ).toBe(
+      `${time} · 2 users read. 1 user could not be read. The refresh completed with errors.`,
+    );
+  });
+
   it('drafts a running refresh without a known pending count', () => {
     const time = formatTime('2026-10-19T10:42:00.000Z');
     const current = job({
@@ -979,6 +1063,39 @@ describe('job detail fields', () => {
     expect(
       identityLine(current, new Date('2026-10-19T12:00:00.000Z')),
     ).toContain('Duration: 5m 02s');
+  });
+
+  it('names users in the heading of a user job', () => {
+    expect(
+      scopeHeading(
+        job({
+          displayId: 'REF-012',
+          action: 'refresh-inventory',
+          entityType: 'user',
+          scope: { kind: 'devices', deviceCount: 4 },
+        }),
+      ),
+    ).toBe('REF-012 · 4 users');
+    expect(
+      scopeHeading(
+        job({
+          displayId: 'REF-012',
+          action: 'refresh-inventory',
+          entityType: 'user',
+          scope: { kind: 'devices', deviceCount: 1 },
+        }),
+      ),
+    ).toBe('REF-012 · 1 user');
+    expect(
+      scopeHeading(
+        job({
+          displayId: 'REF-012',
+          action: 'refresh-inventory',
+          entityType: 'user',
+          scope: { kind: 'all-devices', deviceCount: null },
+        }),
+      ),
+    ).toBe('REF-012');
   });
 
   it('renders operation values and tones', () => {
@@ -2091,6 +2208,73 @@ describe('cancel', () => {
     ]);
   });
 
+  it('drafts the refresh questions of a user job with users', () => {
+    const all = cancelQuestion(
+      job({
+        displayId: 'REF-012',
+        action: 'refresh-inventory',
+        status: 'running',
+        entityType: 'user',
+        scope: { kind: 'all-devices', deviceCount: null },
+        progress: progress({
+          total: null,
+          succeeded: 600,
+          failed: 0,
+          unknown: 0,
+          pending: null,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(all.paragraphs).toEqual([
+      'The refresh has read 600 users. It stops at its next page.',
+      'It saves none of this refresh and marks no user removed. The inventory keeps its earlier data.',
+    ]);
+
+    const selected = cancelQuestion(
+      job({
+        displayId: 'REF-013',
+        action: 'refresh-inventory',
+        status: 'running',
+        entityType: 'user',
+        scope: { kind: 'devices', deviceCount: 4 },
+        progress: progress({
+          total: 4,
+          succeeded: 2,
+          failed: 0,
+          unknown: 0,
+          pending: 2,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(selected.paragraphs).toEqual([
+      '2 of 4 users are read. The refresh stops at its next batch.',
+      'Users already read keep their new data. The other users keep their earlier data.',
+    ]);
+
+    const one = cancelQuestion(
+      job({
+        displayId: 'REF-014',
+        action: 'refresh-inventory',
+        status: 'running',
+        entityType: 'user',
+        scope: { kind: 'devices', deviceCount: 1 },
+        progress: progress({
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          unknown: 0,
+          pending: 1,
+        }),
+        finishedAt: null,
+      }),
+    );
+    expect(one.paragraphs[0]).toBe(
+      '0 of 1 user is read. The refresh stops at its next batch.',
+    );
+  });
+
   it('names the inventory that a cancelled Refresh all did not save', () => {
     const refreshAll = job({
       displayId: 'REF-001',
@@ -2109,6 +2293,29 @@ describe('cancel', () => {
     );
     expect(cancelActivitySentence(selected)).toBe(
       'Cancellation ended the refresh. Devices already read keep their data.',
+    );
+  });
+
+  it('names the users that a cancelled user refresh did not save', () => {
+    const refreshAll = job({
+      displayId: 'REF-012',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      entityType: 'user',
+      scope: { kind: 'all-devices', deviceCount: null },
+    });
+    const selected = job({
+      displayId: 'REF-013',
+      action: 'refresh-inventory',
+      status: 'cancelled',
+      entityType: 'user',
+      scope: { kind: 'devices', deviceCount: 4 },
+    });
+    expect(cancelActivitySentence(refreshAll)).toBe(
+      'Cancellation ended the refresh. It saved none of the users that it read, and it marked no user removed.',
+    );
+    expect(cancelActivitySentence(selected)).toBe(
+      'Cancellation ended the refresh. Users already read keep their data.',
     );
   });
 

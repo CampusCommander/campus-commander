@@ -207,6 +207,83 @@ it('shows the eight fields in the six-column frame composition', () => {
   expect(details?.getAttribute('href')).toBe('/jobs/UPD-014');
 });
 
+it('names a user job with user strings beside an unchanged device job', () => {
+  const { element } = setup({
+    page: page([
+      job({
+        jobId: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+        displayId: 'REF-012',
+        action: 'refresh-inventory',
+        status: 'completed',
+        entityType: 'user',
+        scope: { kind: 'devices', deviceCount: 4 },
+        progress: {
+          total: 4,
+          succeeded: 4,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: 0,
+        },
+        startedAt: '2026-10-19T12:00:00.000Z',
+        finishedAt: '2026-10-19T12:00:42.000Z',
+      }),
+      job({
+        jobId: '7f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+        displayId: 'REF-013',
+        action: 'refresh-inventory',
+        status: 'completed',
+        entityType: 'user',
+        scope: { kind: 'all-devices', deviceCount: null },
+        progress: {
+          total: null,
+          succeeded: 128,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: null,
+        },
+        startedAt: '2026-10-19T12:00:00.000Z',
+        finishedAt: '2026-10-19T12:03:00.000Z',
+      }),
+      job({
+        jobId: '8f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
+        displayId: 'REF-004',
+        action: 'refresh-inventory',
+        status: 'completed',
+        scope: { kind: 'all-devices', deviceCount: null },
+        progress: {
+          total: null,
+          succeeded: 128,
+          failed: 0,
+          unknown: 0,
+          skipped: 0,
+          expired: 0,
+          cancelled: 0,
+          pending: null,
+        },
+      }),
+    ]),
+  });
+  const rows = [...element.querySelectorAll('tbody tr')].map(
+    (row) => row.textContent ?? '',
+  );
+  // The user refresh job names users in its progress and its scope.
+  expect(rows[0]).toContain('4 users read');
+  expect(rows[0]).toContain('4 users');
+  expect(rows[0]).not.toContain('devices');
+  // The full user sync names users too.
+  expect(rows[1]).toContain('128 users read');
+  expect(rows[1]).toContain('All users');
+  // The device job keeps every string.
+  expect(rows[2]).toContain('128 devices read');
+  expect(rows[2]).toContain('All devices');
+});
+
 it('names the command and status job kinds', () => {
   const { element } = setup({
     page: page([
