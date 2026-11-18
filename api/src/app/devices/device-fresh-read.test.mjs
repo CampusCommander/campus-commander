@@ -265,7 +265,11 @@ test('a device that Google no longer returns is soft-deleted', async () => {
     harness.writes.map((write) => write.text.match(/cc\.\w+/)[0]),
     ['cc.upsert_devices', 'cc.soft_delete_devices'],
   );
-  assert.deepEqual(harness.writes[1].values, [customer, '["d2"]']);
+  assert.deepEqual(harness.writes[1].values, [
+    customer,
+    '["d2"]',
+    '2026-10-23T12:00:01.000Z',
+  ]);
 });
 
 test('a missing device credential answers 409 connection-required', async () => {

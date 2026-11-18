@@ -239,10 +239,17 @@ export class EntitySyncBatch {
         customerId,
         JSON.stringify(batteries),
       ]);
-    await this.call('SELECT cc.soft_delete_devices($1,$2) AS result', [
-      customerId,
-      JSON.stringify(read.missing),
-    ]);
+    // The store answers the removals this observation holds. A 404 older than a newer presence
+    // returns no device ID, so the cache eviction and the event below follow the accepted removals.
+    const removed = z
+      .array(z.string())
+      .parse(
+        await this.call('SELECT cc.soft_delete_devices($1,$2,$3) AS result', [
+          customerId,
+          JSON.stringify(read.missing),
+          syncedAt,
+        ]),
+      );
     const records = recordsSchema.parse(
       await this.call('SELECT cc.read_device_records($1,$2) AS result', [
         customerId,
@@ -257,11 +264,11 @@ export class EntitySyncBatch {
       })),
     );
     await this.cache.remove(
-      read.missing.map((id) => entityKey('device', customerId, id)),
+      removed.map((id) => entityKey('device', customerId, id)),
     );
     return {
       updated: records.map((entry) => entry.record.deviceId),
-      removed: read.missing,
+      removed,
     };
   }
 

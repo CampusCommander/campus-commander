@@ -110,6 +110,7 @@ This work is infrastructure under this workflow. It is not a new workflow. Devel
 - The server pushes refresh signals over Server-Sent Events. The 2 second status poll is removed.
 - Google returning 404 for one device marks that device removed. Removed devices stay in the database.
 - A full sync marks every device that Google no longer returns as removed, when that sync succeeds.
+- Presence and removal order by observation time. A refresh answer older than the newest removal never restores the device, and a 404 older than the newest presence stores no removal.
 - Nothing is deleted from the database.
 
 ## Owner decisions — 2026-10-16

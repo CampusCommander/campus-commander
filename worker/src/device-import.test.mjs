@@ -317,6 +317,7 @@ function fakeDatabase(options = {}) {
     tags: [],
     upsert: [],
     removed: [],
+    removeStamps: [],
     source: [],
     transactions: 0,
     order: [],
@@ -539,11 +540,16 @@ function fakeDatabase(options = {}) {
       if (name === 'soft_delete_devices') {
         const removed = JSON.parse(values[1]);
         calls.removed.push(removed);
-        for (const deviceId of removed) {
+        calls.removeStamps.push(values[2]);
+        // A 404 that a newer presence observation predates stores no removal.
+        const accepted = removed.filter(
+          (deviceId) => !(options.refuseRemovals ?? []).includes(deviceId),
+        );
+        for (const deviceId of accepted) {
           const row = devices.get(deviceId);
           if (row !== undefined) row.removed_at = new Date(stamp);
         }
-        return { rows: [{ result: removed.length }] };
+        return { rows: [{ result: accepted }] };
       }
       if (sql.includes('asset_tag=ANY')) {
         const [tagCustomer, tags] = values;
@@ -923,6 +929,46 @@ test('the refresh stores the found and the missing devices in one transaction', 
       .map((line) => [line.sourceRow, line.reason]),
     [[3, 'Google no longer returns this device.']],
   );
+});
+
+test('a removal that a newer presence observation predates rejects no row as removed', async () => {
+  const text = csvText([
+    cellsOf({ deviceId: 'dev-a', notes: 'one', orgUnitPath: '/Schools/North' }),
+    cellsOf({ deviceId: 'dev-b', notes: 'two', orgUnitPath: '/Schools/North' }),
+  ]);
+  const harnessed = harness({
+    text,
+    devices: [device('dev-a'), device('dev-b')],
+    database: { refuseRemovals: ['dev-b'] },
+    reader: {
+      deviceStates: (ids) =>
+        ids.map((deviceId) =>
+          deviceId === 'dev-b'
+            ? { deviceId, status: 'missing' }
+            : {
+                deviceId,
+                status: 'found',
+                device: observation(deviceId, { notes: 'two' }),
+              },
+        ),
+    },
+  });
+
+  const answer = await harnessed.run();
+
+  assert.equal(answer.outcome, 'completed');
+  // The 404 reaches the store with the read stamp that the refresh took before the Google call.
+  assert.deepEqual(harnessed.database.calls.removed, [['dev-b']]);
+  assert.deepEqual(harnessed.database.calls.removeStamps, [stamp]);
+  // The store refused it because a newer presence observation exists, so no row is rejected.
+  assert.deepEqual(
+    harnessed.database.calls.lines
+      .flat()
+      .filter((line) => line.kind === 'rejection')
+      .map((line) => [line.sourceRow, line.reason]),
+    [],
+  );
+  assert.equal(answer.counts.rejected, 0);
 });
 
 test('only stale devices are read', async () => {
