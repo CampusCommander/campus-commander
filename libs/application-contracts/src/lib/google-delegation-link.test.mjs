@@ -87,13 +87,13 @@ test('the delegation scopes hold the sorted union without duplicates', () => {
   ]);
 });
 
-test('the delegation link lists the nine setup scopes in sorted order', () => {
+test('the delegation link lists the ten setup scopes in sorted order', () => {
   const listed = new URL(
     delegationLink({ clientId: '123456789', scopes: GOOGLE_SETUP_SCOPES }),
   ).searchParams
     .get('clientScopeToAdd')
     .split(',');
-  assert.equal(listed.length, 9);
+  assert.equal(listed.length, 10);
   assert.deepEqual(listed, [...GOOGLE_SETUP_SCOPES].sort());
   assert.ok(listed.includes(DRIVE), 'The link lists the Drive scope.');
   assert.ok(
@@ -107,6 +107,12 @@ test('the delegation link lists the nine setup scopes in sorted order', () => {
       'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
     ),
     'The link lists the user schema read scope.',
+  );
+  assert.ok(
+    listed.includes(
+      'https://www.googleapis.com/auth/admin.directory.userschema',
+    ),
+    'The link lists the user schema write scope.',
   );
 });
 
