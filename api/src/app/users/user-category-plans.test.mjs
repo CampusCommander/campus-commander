@@ -210,6 +210,32 @@ test('a create plan refuses a category name that the cache holds, without letter
   }
 });
 
+test('an attribute name differs from every other name in its category', () => {
+  // B section 5 uniqueness: a create compares its new names, and an edit compares a new name with
+  // each kept one. Both compare without letter case.
+  for (const [label, request] of [
+    [
+      'create',
+      createPlan([
+        draftField({ fieldName: 'Team', displayName: 'Team' }),
+        draftField({ fieldName: 'team', displayName: 'Squad' }),
+      ]),
+    ],
+    [
+      'edit',
+      editPlan([
+        keptField(),
+        gradeField(),
+        draftField({ fieldName: 'homeroom', displayName: 'Homeroom note' }),
+      ]),
+    ],
+  ]) {
+    const { status, body } = refusal(() => buildCategoryPlan(request, cached()));
+    assert.equal(status, 422, label);
+    assert.deepEqual(body, { reason: 'name-in-use' }, label);
+  }
+});
+
 test('C2 refuses a repeated display name after trimming and case folding', () => {
   const { status, body } = refusal(() =>
     buildCategoryPlan(
