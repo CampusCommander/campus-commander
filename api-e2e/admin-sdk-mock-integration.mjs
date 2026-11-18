@@ -846,6 +846,23 @@ async function runAdminSdkMockIntegration({
     `a category edit settles ${editJob.status} and the read shows Club details: pass`,
   );
 
+  // R6: the settlement publishes the schema change and moves the user query generation.
+  const schemaSubscriber = redis.duplicate();
+  const schemaEvents = [];
+  schemaSubscriber.on('error', () => undefined);
+  await schemaSubscriber.connect();
+  await schemaSubscriber.subscribe(
+    `cc:entity-events:${mock.customerId}`,
+    (message) => {
+      try {
+        schemaEvents.push(JSON.parse(message));
+      } catch {
+        /* The assertion below reports a malformed message. */
+      }
+    },
+  );
+  const generationKey = `cc:query-gen:user:${mock.customerId}`;
+  const generationBefore = (await redis.get(generationKey)) ?? '0';
   const deletion = await categoryPlan({
     kind: 'delete-category',
     schemaId: edited.schemaId,
@@ -863,6 +880,28 @@ async function runAdminSdkMockIntegration({
   categoryResults.push(
     `a category delete settles ${deleteJob.status} and purges the cached category: pass`,
   );
+  {
+    const deadline = Date.now() + 20_000;
+    while (
+      !schemaEvents.some((event) => event.type === 'schema-change') &&
+      Date.now() < deadline
+    )
+      await delay(100);
+    await schemaSubscriber.unsubscribe(`cc:entity-events:${mock.customerId}`);
+    await schemaSubscriber.quit();
+    assert.ok(
+      schemaEvents.some((event) => event.type === 'schema-change'),
+      `The delete publishes one schema change: ${JSON.stringify(schemaEvents)}`,
+    );
+    assert.notEqual(
+      (await redis.get(generationKey)) ?? '0',
+      generationBefore,
+      'The delete moves the user query generation.',
+    );
+    categoryResults.push(
+      'a category delete publishes the schema change and moves the user query generation: pass',
+    );
+  }
 
   // B6: the write scope, its check, and the write-access projection.
   // Every Google call in this block goes to the mock. The scope removal, the

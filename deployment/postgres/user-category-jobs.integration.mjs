@@ -45,6 +45,20 @@ export async function qualifyUserCategoryJobs({
   const failures = [];
   const check = async (name, body) => {
     try {
+      // End any job a failed check left open, so one failure does not poison the checks after it.
+      // A category job carries its cancel request. Another kind ends failed, because no cancel
+      // principal is available for it here.
+      await migrator.query(
+        `UPDATE cc.jobs SET status='cancelled',cancel_requested_at=clock_timestamp(),
+          cancel_requested_by=$2,finished_at=clock_timestamp()
+         WHERE customer_id=$1 AND kind='user-schema-change' AND status IN ('accepted','running')`,
+        [customer, manager],
+      );
+      await migrator.query(
+        `UPDATE cc.jobs SET status='failed',failure='interrupted',finished_at=clock_timestamp()
+         WHERE customer_id=$1 AND kind<>'user-schema-change' AND status IN ('accepted','running')`,
+        [customer],
+      );
       await body();
       results.push(`${name}: pass`);
     } catch (error) {
@@ -151,12 +165,13 @@ export async function qualifyUserCategoryJobs({
     baseEtag,
     body,
     phrase,
+    changes = [],
   }) => {
     const planId = randomUUID();
     await migrator.query(
       `INSERT INTO cc.user_category_plans(plan_id,customer_id,created_by,permission_version,
         generation,action,schema_id,schema_name,base_etag,body,changes,limits,phrase,digest,expires_at)
-       VALUES($1,$2,$3,1,$4,$5,$6,$7,$8,$9,'[]','{}',$10,$11,clock_timestamp()+interval '15 minutes')`,
+       VALUES($1,$2,$3,1,$4,$5,$6,$7,$8,$9,$10,'{}',$11,$12,clock_timestamp()+interval '15 minutes')`,
       [
         planId,
         customer,
@@ -167,6 +182,7 @@ export async function qualifyUserCategoryJobs({
         schemaName,
         baseEtag ?? null,
         body === undefined || body === null ? null : JSON.stringify(body),
+        JSON.stringify(changes),
         phrase ?? null,
         'a'.repeat(64),
       ],
@@ -201,6 +217,35 @@ export async function qualifyUserCategoryJobs({
       jobId,
       token,
       attempt,
+    ]);
+  /** The atomic send gate of R4, as the worker calls it immediately before the one Google call. */
+  const beginWrite = (jobId, token, attempt) =>
+    result('SELECT cc.begin_user_schema_change_write($1,$2,$3,$4) AS result', [
+      customer,
+      jobId,
+      token,
+      attempt,
+    ]);
+  /** One user page observation at a chosen read time, as the user sync delivers it (R7). */
+  const observeUser = (userId, customSchemas, observedAt) =>
+    result('SELECT cc.upsert_users($1,$2,$3) AS result', [
+      customer,
+      JSON.stringify([
+        {
+          userId,
+          primaryEmail: `${userId}@example.org`,
+          orgUnitPath: '/Students',
+          givenName: 'K16',
+          familyName: 'Observation',
+          fullName: 'K16 Observation',
+          suspended: false,
+          archived: false,
+          twoStepEnrolled: false,
+          aliases: [],
+          customSchemas,
+        },
+      ]),
+      observedAt,
     ]);
   const settle = (jobId, token, attempt, values) =>
     result(
@@ -264,6 +309,7 @@ export async function qualifyUserCategoryJobs({
       async () => {
         const functions = [
           'cc.claim_user_schema_change(text,uuid,uuid,uuid)',
+          'cc.begin_user_schema_change_write(text,uuid,uuid,uuid)',
           'cc.settle_user_schema_change(text,uuid,uuid,uuid,text,text,text,jsonb,jsonb,timestamptz)',
           'cc.recover_user_schema_change_jobs(text)',
           'cc.record_user_schema_change_start(text,uuid,uuid,text)',
@@ -432,10 +478,18 @@ export async function qualifyUserCategoryJobs({
         const first = await detail(job.jobId);
         assert.ok(first.first_claimed_at !== null);
         assert.equal(first.attempt, attempt);
-        // A second claim of a claimed job only reads back.
-        const again = await claim(job.jobId, admitted.dispatchToken);
+        // A same-owner repeat claim answers the plan and reads Google back only after the call began.
+        const again = await claim(job.jobId, admitted.dispatchToken, attempt);
         assert.equal(again.outcome, 'claimed');
-        assert.equal(again.resume, true);
+        assert.equal(again.resume, false);
+        // R1: another attempt while the lease is live never takes ownership.
+        const intruder = await claim(
+          job.jobId,
+          admitted.dispatchToken,
+          randomUUID(),
+        );
+        assert.deepEqual(intruder, { outcome: 'busy' });
+        assert.equal((await detail(job.jobId)).attempt, attempt);
         await settle(
           job.jobId,
           admitted.dispatchToken,
@@ -447,6 +501,82 @@ export async function qualifyUserCategoryJobs({
           },
         );
         await endJob(job.jobId, 'failed');
+      },
+    );
+
+    await check(
+      'K16 an expired attempt cannot settle, and a new claim takes over for the read-back (R1)',
+      async () => {
+        const job = await makeJob({
+          action: 'create-category',
+          schemaName: 'LeaseInfo',
+          body: {
+            schemaName: 'LeaseInfo',
+            displayName: 'Lease Info',
+            fields: [
+              { fieldName: 'Code', displayName: 'Code', fieldType: 'STRING' },
+            ],
+          },
+        });
+        const admitted = await admit();
+        assert.equal(admitted.jobId, job.jobId);
+        const first = randomUUID();
+        assert.equal(
+          (await claim(job.jobId, admitted.dispatchToken, first)).outcome,
+          'claimed',
+        );
+        assert.deepEqual(
+          await beginWrite(job.jobId, admitted.dispatchToken, first),
+          { outcome: 'writing' },
+        );
+        // The runner stalls past its lease. Its settlement is fenced and writes nothing.
+        await migrator.query(
+          "UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [job.jobId],
+        );
+        assert.deepEqual(
+          await settle(job.jobId, admitted.dispatchToken, first, {
+            outcome: 'succeeded',
+            schema: observation({
+              schemaId: 'schema-lease',
+              schemaName: 'LeaseInfo',
+              displayName: 'Lease Info',
+            }),
+          }),
+          { outcome: 'fenced' },
+        );
+        assert.equal(
+          (
+            await one(
+              'SELECT count(*)::integer AS count FROM cc.user_attribute_categories WHERE customer_id=$1 AND schema_id=$2',
+              [customer, 'schema-lease'],
+            )
+          ).count,
+          0,
+        );
+        assert.equal((await header(job.jobId)).status, 'running');
+        // A new runner takes ownership because the lease expired. The call began, so it reads back.
+        const second = randomUUID();
+        const taken = await claim(job.jobId, admitted.dispatchToken, second);
+        assert.equal(taken.outcome, 'claimed');
+        assert.equal(taken.resume, true);
+        assert.equal((await detail(job.jobId)).attempt, second);
+        // The old owner never writes after the transfer.
+        assert.deepEqual(
+          await beginWrite(job.jobId, admitted.dispatchToken, first),
+          { outcome: 'fenced' },
+        );
+        const settled = await settle(
+          job.jobId,
+          admitted.dispatchToken,
+          second,
+          {
+            outcome: 'failed',
+            failure: 'request-failed',
+            reason: 'fixture',
+          },
+        );
+        assert.equal(settled.status, 'failed');
       },
     );
 
@@ -522,6 +652,16 @@ export async function qualifyUserCategoryJobs({
         await storeUser('user-delete-2', {
           DeleteInfo: { Alpha: { value: 'three' } },
         });
+        // R7: the observation below reads Google before the delete, so it must not restore the value.
+        const before = (await one('SELECT clock_timestamp() AS now')).now;
+        const versionOf = async (userId) =>
+          (
+            await one(
+              'SELECT record_version FROM cc.users WHERE customer_id=$1 AND user_id=$2',
+              [customer, userId],
+            )
+          ).record_version;
+        const versionBefore = await versionOf('user-delete-1');
         const job = await makeJob({
           action: 'delete-category',
           schemaId: 'schema-delete',
@@ -548,6 +688,28 @@ export async function qualifyUserCategoryJobs({
           KeepInfo: { Code: { value: 'kept' } },
         });
         assert.deepEqual(await customSchemas('user-delete-2'), {});
+        // R6: the purge moves the record version, so a warm cache entry fails its version check and a
+        // warm query is unreachable through the moved query generation.
+        assert.ok(
+          (await versionOf('user-delete-1')) > versionBefore,
+          'The purge moves the user record version.',
+        );
+        // R7: an observation older than the delete writes no value back, though the row still stores
+        // the newer read of its other columns.
+        assert.equal(
+          await observeUser(
+            'user-delete-1',
+            {
+              DeleteInfo: { Alpha: { value: 'one' }, Beta: { value: 'two' } },
+              KeepInfo: { Code: { value: 'stale' } },
+            },
+            before,
+          ),
+          1,
+        );
+        assert.deepEqual(await customSchemas('user-delete-1'), {
+          KeepInfo: { Code: { value: 'kept' } },
+        });
       },
     );
 
@@ -559,8 +721,11 @@ export async function qualifyUserCategoryJobs({
           field({ fieldId: 'fld-b', fieldName: 'Beta', displayName: 'Beta' }),
         ]);
         await storeUser('user-edit-1', {
-          EditInfo: { Alpha: { value: 'one' }, Beta: { value: 'two' } },
+          EditInfo: { Alpha: 'one', Beta: 'two' },
+          OtherInfo: { Code: 'keep' },
         });
+        const removedBefore = (await one('SELECT clock_timestamp() AS now'))
+          .now;
         const job = await makeJob({
           action: 'edit-category',
           schemaId: 'schema-edit',
@@ -578,6 +743,17 @@ export async function qualifyUserCategoryJobs({
               },
             ],
           },
+          // The plan's own change list names the removal, so a cache refresh cannot drop it (R3).
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-b',
+              fieldName: 'Beta',
+              displayName: 'Beta',
+              properties: [],
+              holders: 1,
+            },
+          ],
         });
         const { token, attempt } = await runningJob(job);
         await settle(job.jobId, token, attempt, {
@@ -597,7 +773,21 @@ export async function qualifyUserCategoryJobs({
           }),
         });
         assert.deepEqual(await customSchemas('user-edit-1'), {
-          EditInfo: { Alpha: { value: 'one' } },
+          EditInfo: { Alpha: 'one' },
+          OtherInfo: { Code: 'keep' },
+        });
+        // R7: an observation that predates the removal cannot restore the removed value.
+        assert.equal(
+          await observeUser(
+            'user-edit-1',
+            { EditInfo: { Alpha: 'one', Beta: 'two' } },
+            removedBefore,
+          ),
+          1,
+        );
+        assert.deepEqual(await customSchemas('user-edit-1'), {
+          EditInfo: { Alpha: 'one' },
+          OtherInfo: { Code: 'keep' },
         });
       },
     );
@@ -608,8 +798,12 @@ export async function qualifyUserCategoryJobs({
         await storeCategory('schema-wide', 'WideInfo', 'Wide Info', 'etag-w', [
           field({ fieldId: 'fld-tag', fieldName: 'Tag', displayName: 'Tag' }),
         ]);
-        await storeUser('user-wide-1', { WideInfo: { Tag: { value: 'one' } } });
-        await storeUser('user-wide-2', { WideInfo: { Tag: { value: 'two' } } });
+        await storeUser('user-wide-1', { WideInfo: { Tag: 'one' } });
+        await storeUser('user-wide-2', {
+          WideInfo: { Tag: ['one', 'two'] },
+          OtherInfo: { Code: 'keep' },
+        });
+        const wideBefore = (await one('SELECT clock_timestamp() AS now')).now;
         const job = await makeJob({
           action: 'edit-category',
           schemaId: 'schema-wide',
@@ -628,6 +822,16 @@ export async function qualifyUserCategoryJobs({
               },
             ],
           },
+          changes: [
+            {
+              change: 'changed',
+              fieldId: 'fld-tag',
+              fieldName: 'Tag',
+              displayName: 'Tag',
+              properties: ['multiValued'],
+              holders: null,
+            },
+          ],
         });
         const { token, attempt } = await runningJob(job);
         await settle(job.jobId, token, attempt, {
@@ -647,11 +851,262 @@ export async function qualifyUserCategoryJobs({
             ],
           }),
         });
+        // C12: a raw scalar becomes one entry object. A list keeps its own entries (R2).
         assert.deepEqual(await customSchemas('user-wide-1'), {
           WideInfo: { Tag: [{ value: 'one' }] },
         });
         assert.deepEqual(await customSchemas('user-wide-2'), {
-          WideInfo: { Tag: [{ value: 'two' }] },
+          WideInfo: { Tag: ['one', 'two'] },
+          OtherInfo: { Code: 'keep' },
+        });
+        // R7: an observation that predates the conversion cannot restore the scalar.
+        assert.equal(
+          await observeUser(
+            'user-wide-1',
+            { WideInfo: { Tag: 'one' } },
+            wideBefore,
+          ),
+          1,
+        );
+        assert.deepEqual(await customSchemas('user-wide-1'), {
+          WideInfo: { Tag: [{ value: 'one' }] },
+        });
+      },
+    );
+
+    await check(
+      'K16 C12 wraps text, zero, and false from production-shaped scalars (R2)',
+      async () => {
+        await storeCategory(
+          'schema-scale',
+          'ScaleInfo',
+          'Scale Info',
+          'etag-s2',
+          [
+            field({
+              fieldId: 'fld-note',
+              fieldName: 'Note',
+              displayName: 'Note',
+            }),
+            field({
+              fieldId: 'fld-count',
+              fieldName: 'Count',
+              displayName: 'Count',
+              fieldType: 'INT64',
+            }),
+            field({
+              fieldId: 'fld-flag',
+              fieldName: 'Flag',
+              displayName: 'Flag',
+              fieldType: 'BOOL',
+            }),
+          ],
+        );
+        // The production reader stores raw scalars: a string, a number, and a boolean.
+        await storeUser('user-scale-1', {
+          ScaleInfo: { Note: 'note', Count: 0, Flag: false },
+        });
+        await storeUser('user-scale-2', {
+          ScaleInfo: { Note: 'kept', Count: [{ value: 4 }], Flag: true },
+          KeepInfo: { Code: 'same' },
+        });
+        const job = await makeJob({
+          action: 'edit-category',
+          schemaId: 'schema-scale',
+          schemaName: 'ScaleInfo',
+          baseEtag: 'etag-s2',
+          body: {
+            schemaName: 'ScaleInfo',
+            displayName: 'Scale Info',
+            fields: [
+              {
+                fieldId: 'fld-note',
+                fieldName: 'Note',
+                displayName: 'Note',
+                fieldType: 'STRING',
+                multiValued: true,
+              },
+              {
+                fieldId: 'fld-count',
+                fieldName: 'Count',
+                displayName: 'Count',
+                fieldType: 'INT64',
+                multiValued: true,
+              },
+              {
+                fieldId: 'fld-flag',
+                fieldName: 'Flag',
+                displayName: 'Flag',
+                fieldType: 'BOOL',
+                multiValued: true,
+              },
+            ],
+          },
+          changes: ['Note', 'Count', 'Flag'].map((name) => ({
+            change: 'changed',
+            fieldId:
+              name === 'Note'
+                ? 'fld-note'
+                : name === 'Count'
+                  ? 'fld-count'
+                  : 'fld-flag',
+            fieldName: name,
+            displayName: name,
+            properties: ['multiValued'],
+            holders: null,
+          })),
+        });
+        const { token, attempt } = await runningJob(job);
+        await settle(job.jobId, token, attempt, {
+          outcome: 'succeeded',
+          schema: observation({
+            schemaId: 'schema-scale',
+            schemaName: 'ScaleInfo',
+            displayName: 'Scale Info',
+            etag: 'etag-s3',
+            fields: [
+              field({
+                fieldId: 'fld-note',
+                fieldName: 'Note',
+                displayName: 'Note',
+                multiValued: true,
+              }),
+              field({
+                fieldId: 'fld-count',
+                fieldName: 'Count',
+                displayName: 'Count',
+                fieldType: 'INT64',
+                multiValued: true,
+              }),
+              field({
+                fieldId: 'fld-flag',
+                fieldName: 'Flag',
+                displayName: 'Flag',
+                fieldType: 'BOOL',
+                multiValued: true,
+              }),
+            ],
+          }),
+        });
+        assert.deepEqual(await customSchemas('user-scale-1'), {
+          ScaleInfo: {
+            Note: [{ value: 'note' }],
+            Count: [{ value: 0 }],
+            Flag: [{ value: false }],
+          },
+        });
+        assert.deepEqual(await customSchemas('user-scale-2'), {
+          ScaleInfo: {
+            Note: [{ value: 'kept' }],
+            Count: [{ value: 4 }],
+            Flag: [{ value: true }],
+          },
+          KeepInfo: { Code: 'same' },
+        });
+      },
+    );
+
+    await check(
+      'K16 a cache refresh before the settlement keeps the purge and the conversion (R3)',
+      async () => {
+        await storeCategory(
+          'schema-mixed',
+          'MixedInfo',
+          'Mixed Info',
+          'etag-m',
+          [
+            field({
+              fieldId: 'fld-a',
+              fieldName: 'Alpha',
+              displayName: 'Alpha',
+            }),
+            field({ fieldId: 'fld-b', fieldName: 'Beta', displayName: 'Beta' }),
+          ],
+        );
+        await storeUser('user-mixed-1', {
+          MixedInfo: { Alpha: 'one', Beta: 'two' },
+        });
+        const job = await makeJob({
+          action: 'edit-category',
+          schemaId: 'schema-mixed',
+          schemaName: 'MixedInfo',
+          baseEtag: 'etag-m',
+          body: {
+            schemaName: 'MixedInfo',
+            displayName: 'Mixed Info',
+            fields: [
+              {
+                fieldId: 'fld-a',
+                fieldName: 'Alpha',
+                displayName: 'Alpha',
+                fieldType: 'STRING',
+                multiValued: true,
+              },
+            ],
+          },
+          changes: [
+            {
+              change: 'changed',
+              fieldId: 'fld-a',
+              fieldName: 'Alpha',
+              displayName: 'Alpha',
+              properties: ['multiValued'],
+              holders: null,
+            },
+            {
+              change: 'removed',
+              fieldId: 'fld-b',
+              fieldName: 'Beta',
+              displayName: 'Beta',
+              properties: [],
+              holders: 1,
+            },
+          ],
+        });
+        const { token, attempt } = await runningJob(job);
+        // A real schema-list read replaces the category cache after the plan and before the settle.
+        await migrator.query(
+          'SELECT cc.store_user_attribute_categories($1,$2,$3) AS result',
+          [
+            customer,
+            JSON.stringify([
+              observation({
+                schemaId: 'schema-mixed',
+                schemaName: 'MixedInfo',
+                displayName: 'Mixed Info',
+                etag: 'etag-m2',
+                fields: [
+                  field({
+                    fieldId: 'fld-a',
+                    fieldName: 'Alpha',
+                    displayName: 'Alpha',
+                    multiValued: true,
+                  }),
+                ],
+              }),
+            ]),
+            new Date().toISOString(),
+          ],
+        );
+        await settle(job.jobId, token, attempt, {
+          outcome: 'succeeded',
+          schema: observation({
+            schemaId: 'schema-mixed',
+            schemaName: 'MixedInfo',
+            displayName: 'Mixed Info',
+            etag: 'etag-m2',
+            fields: [
+              field({
+                fieldId: 'fld-a',
+                fieldName: 'Alpha',
+                displayName: 'Alpha',
+                multiValued: true,
+              }),
+            ],
+          }),
+        });
+        assert.deepEqual(await customSchemas('user-mixed-1'), {
+          MixedInfo: { Alpha: [{ value: 'one' }] },
         });
       },
     );
@@ -858,7 +1313,7 @@ export async function qualifyUserCategoryJobs({
     );
 
     await check(
-      'K16 a cancel ends an unclaimed job and refuses a claimed one (B section 7.4)',
+      'K16 a cancel ends a job until its call begins and refuses after (B section 7.4, R4)',
       async () => {
         const pending = await makeJob({
           action: 'create-category',
@@ -880,7 +1335,7 @@ export async function qualifyUserCategoryJobs({
         assert.equal(cancelled.status, 'cancelled');
         assert.equal(cancelled.cancelled, 1);
         assert.ok(cancelled.finished_at !== null);
-        // A claimed job cannot stop its one call.
+        // A claimed job whose call has not begun still ends at once, and its gate then refuses.
         const claimedJob = await makeJob({
           action: 'create-category',
           schemaName: 'ClaimedCancelInfo',
@@ -892,18 +1347,58 @@ export async function qualifyUserCategoryJobs({
             ],
           },
         });
-        await runningJob(claimedJob);
+        const admitted = await admit();
+        assert.equal(admitted.jobId, claimedJob.jobId);
+        const attempt = randomUUID();
+        assert.equal(
+          (await claim(claimedJob.jobId, admitted.dispatchToken, attempt))
+            .outcome,
+          'claimed',
+        );
+        const claimedAnswer = await result(
+          'SELECT cc.request_job_cancel($1,1,$2,$3,$4) AS result',
+          [manager, customer, claimedJob.displayId, randomUUID()],
+        );
+        assert.equal(claimedAnswer.outcome, 'requested');
+        assert.equal((await header(claimedJob.jobId)).status, 'cancelled');
+        assert.deepEqual(
+          await beginWrite(claimedJob.jobId, admitted.dispatchToken, attempt),
+          { outcome: 'fenced' },
+        );
+        // A job whose call began cannot stop its one call.
+        const sentJob = await makeJob({
+          action: 'create-category',
+          schemaName: 'SentCancelInfo',
+          body: {
+            schemaName: 'SentCancelInfo',
+            displayName: 'Sent Cancel Info',
+            fields: [
+              { fieldName: 'Code', displayName: 'Code', fieldType: 'STRING' },
+            ],
+          },
+        });
+        const sent = await admit();
+        assert.equal(sent.jobId, sentJob.jobId);
+        const sentAttempt = randomUUID();
+        assert.equal(
+          (await claim(sentJob.jobId, sent.dispatchToken, sentAttempt)).outcome,
+          'claimed',
+        );
+        assert.deepEqual(
+          await beginWrite(sentJob.jobId, sent.dispatchToken, sentAttempt),
+          { outcome: 'writing' },
+        );
         await rejectsDetail(
           result('SELECT cc.request_job_cancel($1,1,$2,$3,$4) AS result', [
             manager,
             customer,
-            claimedJob.displayId,
+            sentJob.displayId,
             randomUUID(),
           ]),
           'nothing-to-stop',
         );
-        assert.equal((await header(claimedJob.jobId)).status, 'running');
-        await endJob(claimedJob.jobId, 'cancelled');
+        assert.equal((await header(sentJob.jobId)).status, 'running');
+        await endJob(sentJob.jobId, 'cancelled');
       },
     );
 
@@ -938,7 +1433,7 @@ export async function qualifyUserCategoryJobs({
           admitted.dispatchToken,
         );
         assert.equal((await detail(unclaimed.jobId)).dispatch_count, 2);
-        // A claimed call whose attempt lease lapsed ends needs-review with `interrupted`.
+        // A claimed call whose attempt lease lapsed gets one new start for the read-back (R1).
         const lost = await makeJob({
           action: 'create-category',
           schemaName: 'LostInfo',
@@ -953,21 +1448,75 @@ export async function qualifyUserCategoryJobs({
         await endJob(unclaimed.jobId, 'cancelled');
         const lostStart = await admit();
         assert.equal(lostStart.jobId, lost.jobId);
-        const claimed = await claim(lost.jobId, lostStart.dispatchToken);
+        const lostAttempt = randomUUID();
+        const claimed = await claim(
+          lost.jobId,
+          lostStart.dispatchToken,
+          lostAttempt,
+        );
         assert.equal(claimed.outcome, 'claimed');
+        assert.deepEqual(
+          await beginWrite(lost.jobId, lostStart.dispatchToken, lostAttempt),
+          { outcome: 'writing' },
+        );
         await migrator.query(
           "UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
           [lost.jobId],
+        );
+        const restarted = await result(
+          'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+          [customer],
+        );
+        assert.equal(restarted.starts.length, 1);
+        assert.equal(restarted.starts[0].jobId, lost.jobId);
+        assert.notEqual(
+          restarted.starts[0].dispatchToken,
+          lostStart.dispatchToken,
+        );
+        // The new claim transfers ownership because the lease expired, and only reads Google back.
+        const taken = await claim(
+          lost.jobId,
+          restarted.starts[0].dispatchToken,
+          randomUUID(),
+        );
+        assert.equal(taken.outcome, 'claimed');
+        assert.equal(taken.resume, true);
+        assert.equal((await header(lost.jobId)).status, 'running');
+        await endJob(lost.jobId, 'cancelled');
+        // A job that used its three starts ends needs-review with `interrupted`.
+        const spent = await makeJob({
+          action: 'create-category',
+          schemaName: 'SpentInfo',
+          body: {
+            schemaName: 'SpentInfo',
+            displayName: 'Spent Info',
+            fields: [
+              { fieldName: 'Code', displayName: 'Code', fieldType: 'STRING' },
+            ],
+          },
+        });
+        const spentStart = await admit();
+        assert.equal(spentStart.jobId, spent.jobId);
+        const spentAttempt = randomUUID();
+        assert.equal(
+          (await claim(spent.jobId, spentStart.dispatchToken, spentAttempt))
+            .outcome,
+          'claimed',
+        );
+        await migrator.query(
+          `UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second',
+            dispatch_count=3 WHERE job_id=$1`,
+          [spent.jobId],
         );
         const ended = await result(
           'SELECT cc.recover_user_schema_change_jobs($1) AS result',
           [customer],
         );
         assert.deepEqual(ended.starts, []);
-        const lostRow = await header(lost.jobId);
-        assert.equal(lostRow.status, 'needs-review');
-        assert.equal(lostRow.unknown, 1);
-        assert.equal(lostRow.failure, 'interrupted');
+        const spentRow = await header(spent.jobId);
+        assert.equal(spentRow.status, 'needs-review');
+        assert.equal(spentRow.unknown, 1);
+        assert.equal(spentRow.failure, 'interrupted');
       },
     );
   } finally {
