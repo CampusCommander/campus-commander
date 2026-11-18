@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CategorySendRefused } from '@campus/google-connection';
 import { UserSchemaChangeJobs } from './user-schema-change.ts';
 
 const CUSTOMER = 'C0123456';
@@ -141,8 +142,20 @@ const runOf = (store, writer, reader, options) =>
     new AbortController().signal,
   );
 
+/**
+ * A fake category writer. Each write call records the call, then runs the send gate it received as
+ * its last argument, exactly where the real writer runs it: after the token mint and before the
+ * part. A refused gate throws `CategorySendRefused` and returns no part (R4).
+ */
 const writerOf = (overrides = {}) => {
   const calls = [];
+  const gated = async (record) => {
+    const gate = record.values.at(-1);
+    if (typeof gate !== 'function')
+      throw new Error('The write call carries no send gate.');
+    if (!(await gate())) throw new CategorySendRefused();
+    record.gated = true;
+  };
   return {
     calls,
     category: async (...values) => {
@@ -150,19 +163,25 @@ const writerOf = (overrides = {}) => {
       return overrides.category ? overrides.category() : null;
     },
     insertCategory: async (...values) => {
-      calls.push({ name: 'insertCategory', values });
+      const record = { name: 'insertCategory', values, gated: false };
+      calls.push(record);
+      await gated(record);
       return overrides.insertCategory
         ? overrides.insertCategory()
         : answer(observation());
     },
     updateCategory: async (...values) => {
-      calls.push({ name: 'updateCategory', values });
+      const record = { name: 'updateCategory', values, gated: false };
+      calls.push(record);
+      await gated(record);
       return overrides.updateCategory
         ? overrides.updateCategory()
         : answer(observation());
     },
     deleteCategory: async (...values) => {
-      calls.push({ name: 'deleteCategory', values });
+      const record = { name: 'deleteCategory', values, gated: false };
+      calls.push(record);
+      await gated(record);
       return overrides.deleteCategory
         ? overrides.deleteCategory()
         : answer(null);
@@ -479,15 +498,20 @@ test('a live owner fences a second runner and the second runner sends nothing (R
 });
 
 test('a cancelled or expired job stops at the send gate and sends nothing (R4)', async () => {
-  // The gate reads the cancel flag, the attempt, and the lease under one lock.
+  // The gate reads the cancel flag, the attempt, and the lease under one lock. The writer enters
+  // its one write call, and the gate refuses before any part leaves.
   const store = storeOf(claimOf(), { beginWrite: { outcome: 'fenced' } });
   const writer = writerOf();
   assert.deepEqual(await runOf(store, writer), { outcome: 'fenced' });
-  assert.equal(writer.calls.length, 0);
+  assert.deepEqual(
+    writer.calls.map((call) => call.name),
+    ['insertCategory'],
+  );
+  assert.equal(writer.calls[0].gated, false);
   assert.equal(store.settlement(), undefined);
 });
 
-test('the send gate runs after the guard and before the one call (R4)', async () => {
+test('the send gate runs after the guard and inside the one write call (R4)', async () => {
   const store = storeOf(
     claimOf({
       action: 'edit-category',
@@ -505,8 +529,13 @@ test('the send gate runs after the guard and before the one call (R4)', async ()
         : 'other',
   );
   assert.deepEqual(names.slice(0, 2), ['claim', 'begin']);
-  assert.equal(writer.calls[0].name, 'category');
-  assert.equal(writer.calls[1].name, 'updateCategory');
+  // The guard read is the first writer call, and the gate runs inside the write call that follows.
+  assert.deepEqual(
+    writer.calls.map((call) => call.name),
+    ['category', 'updateCategory'],
+  );
+  assert.equal(writer.calls[1].gated, true);
+  assert.equal(store.settlement().values[4], 'succeeded');
 });
 
 test('a repeated claim reads back without the send gate or a second call', async () => {

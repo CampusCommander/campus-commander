@@ -580,6 +580,111 @@ export async function qualifyUserCategoryJobs({
       },
     );
 
+    await check(
+      'K16 a lease that lapses during a cached-user wait fences the settlement (R1)',
+      async () => {
+        await storeCategory(
+          'schema-lease-wait',
+          'LeaseWaitInfo',
+          'Lease Wait Info',
+          'etag-lw',
+          [
+            field({
+              fieldId: 'fld-lw',
+              fieldName: 'Code',
+              displayName: 'Code',
+            }),
+          ],
+        );
+        await storeUser('user-lease-wait', {
+          LeaseWaitInfo: { Code: { value: 'one' } },
+        });
+        const job = await makeJob({
+          action: 'delete-category',
+          schemaId: 'schema-lease-wait',
+          schemaName: 'LeaseWaitInfo',
+          baseEtag: 'etag-lw',
+          body: null,
+        });
+        const { token, attempt } = await runningJob(job);
+        // Hold the affected cached user row in another transaction. The purge below waits on it,
+        // and that wait is independent of the category lock.
+        const holder = await connect('cc-migrator', 'cc-app');
+        const settler = await connect('cc-app', 'cc-app');
+        try {
+          await holder.query('BEGIN');
+          await holder.query(
+            'SELECT 1 FROM cc.users WHERE customer_id=$1 AND user_id=$2 FOR UPDATE',
+            [customer, 'user-lease-wait'],
+          );
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          // The attempt lease ends while the settlement waits on that row.
+          await migrator.query(
+            "UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()+interval '2 seconds' WHERE job_id=$1",
+            [job.jobId],
+          );
+          const settlerPid = (
+            await settler.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const settlement = settler.query(
+            'SELECT cc.settle_user_schema_change($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
+            [
+              customer,
+              job.jobId,
+              token,
+              attempt,
+              'succeeded',
+              null,
+              null,
+              null,
+              null,
+              new Date().toISOString(),
+            ],
+          );
+          // Confirm the settlement waits on the held row before the lease ends.
+          let waiting = false;
+          for (let poll = 0; poll < 100 && !waiting; poll += 1) {
+            waiting = (
+              await one(
+                'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS waiting',
+                [settlerPid, holderPid],
+              )
+            ).waiting;
+            if (!waiting)
+              await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          assert.equal(waiting, true, 'the settlement waits on the user row');
+          // Release the row after the lease lapsed.
+          await new Promise((resolve) => setTimeout(resolve, 2_200));
+          await holder.query('COMMIT');
+          assert.deepEqual((await settlement).rows[0].result, {
+            outcome: 'fenced',
+          });
+          // Nothing committed: the header, the cache row, and the cached user value remain.
+          assert.equal((await header(job.jobId)).status, 'running');
+          assert.deepEqual(await customSchemas('user-lease-wait'), {
+            LeaseWaitInfo: { Code: { value: 'one' } },
+          });
+          assert.equal(
+            (
+              await one(
+                'SELECT count(*)::integer AS count FROM cc.user_attribute_categories WHERE customer_id=$1 AND schema_id=$2',
+                [customer, 'schema-lease-wait'],
+              )
+            ).count,
+            1,
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await close(holder);
+          await close(settler);
+        }
+        await endJob(job.jobId, 'cancelled');
+      },
+    );
+
     await check('K16 a created category is written to the cache', async () => {
       const job = await makeJob({
         action: 'create-category',
@@ -1517,6 +1622,128 @@ export async function qualifyUserCategoryJobs({
         assert.equal(spentRow.status, 'needs-review');
         assert.equal(spentRow.unknown, 1);
         assert.equal(spentRow.failure, 'interrupted');
+      },
+    );
+
+    await check(
+      'K16 a recovery start keeps its window before the next recovery (R8)',
+      async () => {
+        const job = await makeJob({
+          action: 'create-category',
+          schemaName: 'WindowInfo',
+          body: {
+            schemaName: 'WindowInfo',
+            displayName: 'Window Info',
+            fields: [
+              { fieldName: 'Code', displayName: 'Code', fieldType: 'STRING' },
+            ],
+          },
+        });
+        const admitted = await admit();
+        assert.equal(admitted.jobId, job.jobId);
+        const first = randomUUID();
+        assert.equal(
+          (await claim(job.jobId, admitted.dispatchToken, first)).outcome,
+          'claimed',
+        );
+        assert.deepEqual(
+          await beginWrite(job.jobId, admitted.dispatchToken, first),
+          { outcome: 'writing' },
+        );
+        await migrator.query(
+          "UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const lost = await result(
+          'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+          [customer],
+        );
+        assert.equal(lost.starts.length, 1);
+        const keptToken = lost.starts[0].dispatchToken;
+        const issued = await detail(job.jobId);
+        assert.equal(issued.dispatch_count, 2);
+        assert.equal(issued.attempt, null);
+        assert.ok(
+          new Date(issued.start_deadline_at).getTime() > Date.now() + 60_000,
+          'the recovery start keeps a full start window',
+        );
+        // Repeated recovery before a runner claims the new start changes nothing (R8).
+        for (let again = 0; again < 3; again += 1) {
+          const repeated = await result(
+            'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+            [customer],
+          );
+          assert.deepEqual(repeated.starts, []);
+        }
+        const kept = await detail(job.jobId);
+        assert.equal(kept.dispatch_count, 2);
+        assert.equal(kept.dispatch_token, keptToken);
+        assert.equal((await header(job.jobId)).status, 'running');
+        // The new runner claims the kept start, and only reads Google back.
+        const taken = await claim(job.jobId, keptToken, randomUUID());
+        assert.equal(taken.outcome, 'claimed');
+        assert.equal(taken.resume, true);
+        await endJob(job.jobId, 'cancelled');
+        // A recovery start whose window ends with no claim gets the next start, up to the bound.
+        const delayed = await makeJob({
+          action: 'create-category',
+          schemaName: 'DelayedInfo',
+          body: {
+            schemaName: 'DelayedInfo',
+            displayName: 'Delayed Info',
+            fields: [
+              { fieldName: 'Code', displayName: 'Code', fieldType: 'STRING' },
+            ],
+          },
+        });
+        const delayedStart = await admit();
+        assert.equal(delayedStart.jobId, delayed.jobId);
+        const delayedAttempt = randomUUID();
+        assert.equal(
+          (
+            await claim(
+              delayed.jobId,
+              delayedStart.dispatchToken,
+              delayedAttempt,
+            )
+          ).outcome,
+          'claimed',
+        );
+        await migrator.query(
+          "UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [delayed.jobId],
+        );
+        const nextStart = await result(
+          'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+          [customer],
+        );
+        assert.equal(nextStart.starts.length, 1);
+        assert.equal((await detail(delayed.jobId)).dispatch_count, 2);
+        // No runner claims it, and its window ends.
+        await migrator.query(
+          "UPDATE cc.user_schema_change_jobs SET start_deadline_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [delayed.jobId],
+        );
+        const thirdStart = await result(
+          'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+          [customer],
+        );
+        assert.equal(thirdStart.starts.length, 1);
+        assert.equal((await detail(delayed.jobId)).dispatch_count, 3);
+        // The last start also goes unclaimed, so the job ends needs-review.
+        await migrator.query(
+          "UPDATE cc.user_schema_change_jobs SET start_deadline_at=clock_timestamp()-interval '1 second' WHERE job_id=$1",
+          [delayed.jobId],
+        );
+        const exhausted = await result(
+          'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+          [customer],
+        );
+        assert.deepEqual(exhausted.starts, []);
+        const delayedRow = await header(delayed.jobId);
+        assert.equal(delayedRow.status, 'needs-review');
+        assert.equal(delayedRow.unknown, 1);
+        assert.equal(delayedRow.failure, 'interrupted');
       },
     );
   } finally {

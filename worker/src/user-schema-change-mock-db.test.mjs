@@ -18,6 +18,8 @@ import pg from 'pg';
 import { startMock } from '@campuscommander/admin-sdk-mock';
 import { GOOGLE_CAPABILITIES } from '@campus/application-contracts';
 import {
+  GoogleBatchService,
+  GoogleCategoryWriter,
   GoogleUserReader,
   validateServiceAccount,
 } from '@campus/google-connection';
@@ -166,12 +168,15 @@ async function categoryJob(schemaName, options = {}) {
   const number = (
     await migrator.query("SELECT nextval('cc.job_number_cat') AS number")
   ).rows[0].number;
-  await migrator.query(
-    `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,entity_type,status,
-      requested_by,generation,target_count,correlation_id)
-     VALUES($1,cc.job_display_id('CAT',$2),$3,'user-schema-change','devices','user','accepted',$4,$5,1,$6)`,
-    [jobId, number, domain.customerId, actor, generation, randomUUID()],
-  );
+  const row = (
+    await migrator.query(
+      `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,entity_type,status,
+        requested_by,generation,target_count,correlation_id)
+       VALUES($1,cc.job_display_id('CAT',$2),$3,'user-schema-change','devices','user','accepted',$4,$5,1,$6)
+       RETURNING display_id`,
+      [jobId, number, domain.customerId, actor, generation, randomUUID()],
+    )
+  ).rows[0];
   await migrator.query(
     `INSERT INTO cc.user_schema_change_jobs(job_id,plan_id,confirmed_by,confirmer_permission_version)
      VALUES($1,$2,$3,1)`,
@@ -184,7 +189,11 @@ async function categoryJob(schemaName, options = {}) {
     )
   ).rows[0].result;
   assert.equal(admitted.jobId, jobId);
-  return { jobId, dispatchToken: admitted.dispatchToken };
+  return {
+    jobId,
+    dispatchToken: admitted.dispatchToken,
+    displayId: row.display_id,
+  };
 }
 
 /** The stored schema each case checks, apart from the job outcome. */
@@ -498,6 +507,76 @@ test(
     // The stored schema holds the insert, apart from the outcome.
     assert.equal((await storedSchemas()).includes(schemaName), true);
     assert.equal((await cachedCategories()).includes(schemaName), true);
+  },
+);
+
+test(
+  'a cancel during the write-token mint stops the one request and leaves no schema (R4)',
+  { timeout },
+  async () => {
+    const schemaName = 'K16CancelToken';
+    const { jobId, dispatchToken, displayId } = await categoryJob(schemaName);
+    // Hold the write-token mint itself. The worker has claimed and opened the credential, and no
+    // category request has left.
+    let releaseMint;
+    let mintEntered;
+    const mintHeld = new Promise((resolve) => {
+      releaseMint = resolve;
+    });
+    const mintReached = new Promise((resolve) => {
+      mintEntered = resolve;
+    });
+    const batch = new GoogleBatchService({
+      sleep: async () => undefined,
+      random: () => 0,
+    });
+    const heldBatch = {
+      execute: (call) =>
+        batch.execute({
+          ...call,
+          getClient: async (signal) => {
+            mintEntered();
+            await mintHeld;
+            return call.getClient(signal);
+          },
+        }),
+    };
+    const running = new UserSchemaChangeJobs(runtime, cipher, {
+      writer: new GoogleCategoryWriter({ batch: heldBatch }),
+      readTimeoutMilliseconds: 2_000,
+    }).run(
+      {
+        customerId: domain.customerId,
+        jobId,
+        dispatchToken,
+        correlationId: randomUUID(),
+      },
+      new AbortController().signal,
+    );
+    await mintReached;
+    // The call has not begun, so the request ends the job at once (B section 7.4).
+    const cancelled = (
+      await runtime.query(
+        'SELECT cc.request_job_cancel($1,1,$2,$3,$4) AS result',
+        [actor, domain.customerId, displayId, randomUUID()],
+      )
+    ).rows[0].result;
+    assert.equal(cancelled.outcome, 'requested');
+    assert.equal((await jobRow(jobId)).status, 'cancelled');
+    releaseMint();
+    const answer = await running;
+    // The gate refused after the token mint, so nothing left the worker (R4).
+    assert.deepEqual(answer, { outcome: 'fenced' });
+    const detail = (
+      await migrator.query(
+        'SELECT write_started_at FROM cc.user_schema_change_jobs WHERE job_id=$1',
+        [jobId],
+      )
+    ).rows[0];
+    assert.equal(detail.write_started_at, null);
+    assert.equal((await jobRow(jobId)).status, 'cancelled');
+    assert.equal((await storedSchemas()).includes(schemaName), false);
+    assert.equal((await cachedCategories()).includes(schemaName), false);
   },
 );
 
