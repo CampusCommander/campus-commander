@@ -581,22 +581,21 @@ async function scrollGrid(page: Page, top: number): Promise<void> {
   await page.waitForTimeout(100);
 }
 
-/** The row that the details page recorded for Back to users and Next user. */
-async function recordedPosition(page: Page): Promise<{
-  index: number;
-  userId: string;
-  scrollTop: number | null;
-} | null> {
-  return page.evaluate(() => {
-    const ng = (
-      window as unknown as {
-        ng?: { getComponent: (element: Element) => any };
-      }
-    ).ng;
-    const detail = document.querySelector('app-user-detail');
-    if (!ng || !detail) return null;
-    return ng.getComponent(detail)['store'].position();
-  });
+/**
+ * Clicks a details control and returns the grid offset that the click used. A mouse
+ * click at the visible box does not scroll the row first, so the offset is the one a
+ * person saw (A section 4).
+ */
+async function clickDetails(page: Page, control: Locator): Promise<number> {
+  await control.scrollIntoViewIfNeeded();
+  const saved = await gridScrollTop(page);
+  const box = await control.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.click(
+    (box?.x ?? 0) + (box?.width ?? 0) / 2,
+    (box?.y ?? 0) + (box?.height ?? 0) / 2,
+  );
+  return saved;
 }
 
 /** A layout box, or a failure when the element has none. */
@@ -806,17 +805,12 @@ test('returns to the opening page after Next crosses a page boundary (A section 
   await scrollGrid(page, 100_000);
   const control = page.locator(`[row-index="${anchor}"] .details-action`);
   await expect(control).toHaveAccessibleName(`Open details for ${anchorName}`);
-  // A row at the viewport edge moves into full view before the click. That viewed
-  // offset is the one that Back to users must restore.
-  await control.scrollIntoViewIfNeeded();
-  await control.click();
+  // The offset that the click used is the one that Back to users must restore.
+  const saved = await clickDetails(page, control);
   await expect(
     page.getByRole('heading', { name: anchorName, exact: true }),
   ).toBeVisible();
-  // The page records the row and the offset that the person saw at the click.
-  const anchorPosition = await recordedPosition(page);
-  expect(anchorPosition?.index).toBe(anchor);
-  expect(anchorPosition?.scrollTop ?? 0).toBeGreaterThan(0);
+  expect(saved).toBeGreaterThan(0);
   // Next user moves past the page boundary of the grid that opened the details.
   await page.getByRole('button', { name: 'Next user', exact: true }).click();
   await expect(
@@ -830,9 +824,7 @@ test('returns to the opening page after Next crosses a page boundary (A section 
   await expect(
     page.getByRole('button', { name: `Open details for ${anchorName}` }),
   ).toBeFocused();
-  expect(
-    Math.abs((await gridScrollTop(page)) - (anchorPosition?.scrollTop ?? -1)),
-  ).toBeLessThanOrEqual(1);
+  expect(Math.abs((await gridScrollTop(page)) - saved)).toBeLessThanOrEqual(1);
 });
 
 test('returns to the opening scroll position without Next (A section 4, R3)', async ({
@@ -855,18 +847,16 @@ test('returns to the opening scroll position without Next (A section 4, R3)', as
   expect(anchor).not.toBeNull();
   const control = page.locator(`[row-index="${anchor}"] .details-action`);
   const label = (await control.getAttribute('aria-label')) ?? '';
-  // The control scrolls fully into view before the click. That viewed offset is the
-  // one that Back to users must restore instead of centering the row again.
-  await control.scrollIntoViewIfNeeded();
-  await control.click();
+  // The offset that the click used is the one that Back to users must restore instead
+  // of centering the row again.
+  const saved = await clickDetails(page, control);
   await expect(
     page.getByRole('heading', {
       name: label.replace('Open details for ', ''),
       exact: true,
     }),
   ).toBeVisible();
-  const anchorPosition = await recordedPosition(page);
-  expect(anchorPosition?.scrollTop ?? 0).toBeGreaterThan(0);
+  expect(saved).toBeGreaterThan(0);
   await page.getByRole('link', { name: 'Back to users', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Users', exact: true }),
@@ -875,9 +865,7 @@ test('returns to the opening scroll position without Next (A section 4, R3)', as
   await expect(
     page.locator(`[row-index="${anchor}"] .details-action`),
   ).toBeFocused();
-  expect(
-    Math.abs((await gridScrollTop(page)) - (anchorPosition?.scrollTop ?? -1)),
-  ).toBeLessThanOrEqual(1);
+  expect(Math.abs((await gridScrollTop(page)) - saved)).toBeLessThanOrEqual(1);
 });
 
 test('restores focus when the returned block loads after a delay (R4)', async ({
