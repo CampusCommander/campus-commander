@@ -20,20 +20,21 @@ const displayName = z.string().min(1).max(200);
 const productCode = z.string().min(1).max(64);
 
 /** The display IDs of sections 1.4 and 1.6, and of the export and import kinds (design section 1).
- * The number carries at least three digits. */
+ * The category job adds `CAT` (document B section 7.1). The number carries at least three digits. */
 export const jobDisplayIdSchema = z
   .string()
-  .regex(/^(UPD|REF|CMD|STS|EXP|IMP)-\d{3,}$/);
+  .regex(/^(UPD|REF|CMD|STS|EXP|IMP|CAT)-\d{3,}$/);
 export type JobDisplayId = z.infer<typeof jobDisplayIdSchema>;
 export const previewDisplayIdSchema = z.string().regex(/^PV-\d{3,}$/);
 export type PreviewDisplayId = z.infer<typeof previewDisplayIdSchema>;
 
 /** One operation ID. Its prefix and number repeat the display ID of its job (section 1.4). An
- * update row adds the field ID, because an update job answers one row per device and field. */
+ * update row adds the field ID, because an update job answers one row per device and field. A
+ * category job answers one row, and it names no field. */
 export const jobOperationIdSchema = z
   .string()
   .regex(
-    /^(UPD|CMD|STS)-\d{3,}-\d+(-(annotatedLocation|annotatedAssetId|annotatedUser|notes|orgUnitPath))?$/,
+    /^(?:(?:UPD|CMD|STS|CAT)-\d{3,}-\d+|UPD-\d{3,}-\d+-(annotatedLocation|annotatedAssetId|annotatedUser|notes|orgUnitPath))$/,
   );
 
 /** The five writable field IDs of an update operation, in contract order (addendum section 1). */

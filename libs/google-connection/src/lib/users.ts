@@ -11,6 +11,8 @@ import {
   userCustomSchemasSchema,
   userObservationSchema,
   type UserAttributeCategoryObservation,
+  type UserAttributeFieldType,
+  type UserAttributeVisibility,
   type UserObservation,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
@@ -19,6 +21,7 @@ import {
   BatchServiceError,
   GoogleBatchService,
   type BatchFailure,
+  type BatchRequest,
   type BatchResult,
 } from './batch';
 import { GoogleConnectionError, failure, scopedClient } from './provider';
@@ -117,7 +120,9 @@ const categoryPage = z.object({
     .optional(),
 });
 
-function scopeFor(id: 'user-inventory' | 'user-schemas'): string {
+function scopeFor(
+  id: 'user-inventory' | 'user-schemas' | 'user-schema-changes',
+): string {
   return GOOGLE_CAPABILITIES.find((capability) => capability.id === id)!.scope;
 }
 
@@ -499,4 +504,221 @@ export class GoogleUserReader {
     if (failed) throw batchFailure(failed);
     throw new GoogleConnectionError('invalid-response');
   }
+}
+
+/** One attribute of a category write body (B section 6.1). */
+export interface CategoryWriteField {
+  /** The Google field ID of a kept attribute. A new attribute carries none. */
+  fieldId?: string;
+  fieldName: string;
+  displayName: string;
+  fieldType: UserAttributeFieldType;
+  multiValued?: boolean;
+  indexed?: boolean;
+  readAccessType?: UserAttributeVisibility;
+  numericIndexingSpec?: {
+    minValue: number | null;
+    maxValue: number | null;
+  } | null;
+}
+
+/** The complete category body that an insert or an update sends (B section 6.1). */
+export interface CategoryWriteBody {
+  schemaName: string;
+  displayName: string;
+  fields: readonly CategoryWriteField[];
+}
+
+const categoryWriteField = z.strictObject({
+  fieldId: z.string().min(1).max(200).optional(),
+  fieldName: z.string().min(1).max(200),
+  displayName: z.string().min(1).max(200),
+  fieldType: userAttributeFieldTypeSchema,
+  multiValued: z.boolean().optional(),
+  indexed: z.boolean().optional(),
+  readAccessType: userAttributeVisibilitySchema.optional(),
+  numericIndexingSpec: z
+    .strictObject({
+      minValue: z.number().nullable(),
+      maxValue: z.number().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+/** The body that a category write may hold. No other property leaves the process. */
+export const categoryWriteBodySchema = z.strictObject({
+  schemaName: z.string().min(1).max(200),
+  displayName: z.string().min(1).max(200),
+  fields: z.array(categoryWriteField).min(1).max(USER_ATTRIBUTE_FIELD_LIMIT),
+});
+
+/** The etag that an update or a delete carries in `If-Match` (E7, C7). */
+const categoryEtag = z.string().min(1).max(1024);
+
+/**
+ * The part ID of every category call. One operation is one part, so every
+ * category call holds this one ID (B section 7.1).
+ */
+export const CATEGORY_PART_ID = 'category';
+
+export interface GoogleCategoryWriterOptions {
+  batch?: GoogleBatchService;
+  /** A reader that serves the `schemas.get` part. */
+  reader?: Pick<GoogleUserReader, 'category'>;
+}
+
+/**
+ * Write custom attribute categories with one exact-scope token per call.
+ * A read carries the read-only schema scope; an insert, an update, and a delete
+ * carry the schema write scope (design section 4). An update and a delete send
+ * the plan etag in `If-Match` (E7, C7). A transient answer never repeats an
+ * insert, because a second POST may create a second category (B section 7.3).
+ */
+export class GoogleCategoryWriter {
+  private readonly batch: GoogleBatchService;
+  private readonly reader: Pick<GoogleUserReader, 'category'>;
+
+  constructor(options: GoogleCategoryWriterOptions = {}) {
+    this.batch = options.batch ?? new GoogleBatchService();
+    this.reader = options.reader ?? new GoogleUserReader({ batch: this.batch });
+  }
+
+  /** One `schemas.get` part with the read-only schema scope (C8). */
+  category(
+    credential: DelegatedCredential,
+    customerId: string,
+    schemaId: string,
+    signal: AbortSignal,
+  ): Promise<UserAttributeCategoryObservation | null> {
+    return this.reader.category(credential, customerId, schemaId, signal);
+  }
+
+  /** One `schemas.insert` POST part with the write scope and no `If-Match` (C6). */
+  async insertCategory(
+    credential: DelegatedCredential,
+    customerId: string,
+    body: CategoryWriteBody,
+    signal: AbortSignal,
+  ): Promise<BatchResult<UserAttributeCategoryObservation>> {
+    googleCustomerIdSchema.parse(customerId);
+    return this.call(
+      credential,
+      customerId,
+      {
+        id: CATEGORY_PART_ID,
+        method: 'POST',
+        path: `${directoryPath}/customer/${customerId}/schemas`,
+        body: categoryWriteBodySchema.parse(body),
+      },
+      categoryAnswer,
+      signal,
+    );
+  }
+
+  /**
+   * One `schemas.update` PUT part with the complete schema and the plan etag
+   * in `If-Match` (B section 6.1, E7).
+   */
+  async updateCategory(
+    credential: DelegatedCredential,
+    customerId: string,
+    schemaId: string,
+    etag: string,
+    body: CategoryWriteBody,
+    signal: AbortSignal,
+  ): Promise<BatchResult<UserAttributeCategoryObservation>> {
+    googleCustomerIdSchema.parse(customerId);
+    return this.call(
+      credential,
+      customerId,
+      {
+        id: CATEGORY_PART_ID,
+        method: 'PUT',
+        path: `${directoryPath}/customer/${customerId}/schemas/${encodeURIComponent(schemaId)}`,
+        headers: { 'If-Match': categoryEtag.parse(etag) },
+        body: categoryWriteBodySchema.parse(body),
+      },
+      categoryAnswer,
+      signal,
+    );
+  }
+
+  /**
+   * One `schemas.delete` DELETE part with the plan etag in `If-Match` (E7).
+   * Google answers 204, so a succeeded part holds no value.
+   */
+  async deleteCategory(
+    credential: DelegatedCredential,
+    customerId: string,
+    schemaId: string,
+    etag: string,
+    signal: AbortSignal,
+  ): Promise<BatchResult<null>> {
+    googleCustomerIdSchema.parse(customerId);
+    return this.call(
+      credential,
+      customerId,
+      {
+        id: CATEGORY_PART_ID,
+        method: 'DELETE',
+        path: `${directoryPath}/customer/${customerId}/schemas/${encodeURIComponent(schemaId)}`,
+        headers: { 'If-Match': categoryEtag.parse(etag) },
+      },
+      () => null,
+      signal,
+    );
+  }
+
+  /**
+   * Send one part with a write-scope token and keep every part answer.
+   * A caller classifies `failed`: C6 and C7 settle 409 or 412, and an
+   * unanswered insert stays Unknown (B section 7.3).
+   */
+  private async call<T>(
+    credential: DelegatedCredential,
+    customerId: string,
+    request: BatchRequest,
+    parse: (body: unknown) => T,
+    signal: AbortSignal,
+  ): Promise<BatchResult<T>> {
+    const mint: { failure?: GoogleConnectionError } = {};
+    let result: BatchResult<T>;
+    try {
+      result = await this.batch.execute<T>({
+        batchUrl: batchEndpoint,
+        requests: [request],
+        parse,
+        getClient: async (runSignal) => {
+          try {
+            return await scopedClient(
+              credential,
+              scopeFor('user-schema-changes'),
+              runSignal,
+              batchResponseLimit,
+            );
+          } catch (error) {
+            mint.failure = failure(error, 'token');
+            throw mint.failure;
+          }
+        },
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof BatchServiceError)
+        throw new GoogleConnectionError(
+          error.code === 'malformed-response'
+            ? 'invalid-response'
+            : 'request-failed',
+        );
+      throw error;
+    }
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+}
+
+/** Map one category answer of an insert or an update. */
+function categoryAnswer(body: unknown): UserAttributeCategoryObservation {
+  return categoryObservation(categoryResource.parse(body));
 }

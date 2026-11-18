@@ -304,10 +304,14 @@ const partDevice = `/admin/directory/v1/customer/${partCustomer}/devices/chromeo
 const partUser = `/admin/directory/v1/users/${partSegment}`;
 /** One category read. The opaque schema ID stays one percent-encoded segment (C8). */
 const partSchema = `/admin/directory/v1/customer/${partCustomer}/schemas/${partSegment}`;
+/** The category collection. An insert names it with POST; the reads use GET. */
+const partSchemaCollection = `/admin/directory/v1/customer/${partCustomer}/schemas`;
 
 /**
  * The part shapes a batch may carry. Each shape is one call the repository builds.
  * The batch endpoint admits any part syntax, so this list is the only check on a part.
+ * A category write is one part: POST on the collection, PUT or DELETE on the item
+ * (design section 4). No PATCH shape exists, because no card calls `schemas.patch` (C4).
  */
 const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
   GET: [
@@ -325,7 +329,10 @@ const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
     new RegExp(
       `^/admin/directory/v1/customer/${partCustomer}/devices/chromeos:batchChangeStatus$`,
     ),
+    new RegExp(`^${partSchemaCollection}$`),
   ],
+  PUT: [new RegExp(`^${partSchema}$`)],
+  DELETE: [new RegExp(`^${partSchema}$`)],
 };
 
 /** The part allowlist. `validateRequests` refuses every part this function rejects. */
@@ -597,6 +604,10 @@ export class GoogleCustomerVerifier {
                   })
                 ).data,
               );
+              break;
+            // user-schema-changes checks its delegated token only. A health check
+            // never writes a category (design section 4).
+            case 'user-schema-changes':
               break;
           }
           return { capability, scopeVerified, failure: null };

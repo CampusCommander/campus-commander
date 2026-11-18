@@ -21,6 +21,7 @@ export const actionSchema = z.enum([
   'devices:bulk-actions',
   'devices:export',
   'users:read',
+  'users:schema-manage',
   'jobs:read',
   'jobs:manage',
 ]);
@@ -58,6 +59,7 @@ export const actionScopeKinds: Readonly<
   'devices:bulk-actions': ['platform', 'district'],
   'devices:export': ['platform', 'district'],
   'users:read': ['platform', 'district'],
+  'users:schema-manage': ['platform', 'district'],
   'jobs:read': ['platform', 'district'],
   'jobs:manage': ['platform', 'district'],
 };

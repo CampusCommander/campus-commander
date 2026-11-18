@@ -21,6 +21,8 @@ const DRIVE = 'https://www.googleapis.com/auth/drive.file';
 const USER = 'https://www.googleapis.com/auth/admin.directory.user.readonly';
 const SCHEMA =
   'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
+const SCHEMA_WRITE =
+  'https://www.googleapis.com/auth/admin.directory.userschema';
 
 test('the setup scope list holds the connection scopes and the device scopes in order', () => {
   assert.deepEqual(GOOGLE_SETUP_SCOPES, [
@@ -33,6 +35,7 @@ test('the setup scope list holds the connection scopes and the device scopes in 
     DRIVE,
     USER,
     SCHEMA,
+    SCHEMA_WRITE,
   ]);
   assert.equal(
     new Set(GOOGLE_SETUP_SCOPES).size,
@@ -136,7 +139,29 @@ test('the user-schemas capability names its label, scope, method, flags, and evi
       evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet',
     },
   );
-  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), SCHEMA);
+  assert.ok(GOOGLE_SETUP_SCOPES.includes(SCHEMA));
+});
+
+test('the user-schema-changes capability names its label, scope, method, flags, and evidence', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.find(
+      (capability) => capability.id === 'user-schema-changes',
+    ),
+    {
+      id: 'user-schema-changes',
+      requiredForConnection: false,
+      label: 'User attribute changes',
+      enabled: true,
+      qualified: false,
+      scope: SCHEMA_WRITE,
+      method: 'schemas.update',
+      source:
+        'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/update',
+      evidence:
+        'admin-sdk-mock 0.4.0 and live check L2, which called the schema writes directly. No live category job',
+    },
+  );
+  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), SCHEMA_WRITE);
 });
 
 test('no capability evidence ends with a period', () => {
