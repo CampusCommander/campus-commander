@@ -1,0 +1,133 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+.users {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-md);
+}
+.page-header h1 {
+  margin-block-end: 0;
+}
+.subtitle {
+  margin-block-start: var(--cc-space-xs);
+  color: var(--cc-text-secondary);
+}
+.banner {
+  padding: var(--cc-card-padding);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-hover);
+}
+.banner h2 {
+  margin-block-start: 0;
+  font-size: 16px;
+}
+.error {
+  color: var(--cc-status-error-text);
+}
+/* The Users tab. Card K17 adds the Custom attributes tab. The Material tab bar
+   keeps the approved 48 px tab, the padded label, and its underline (R13). */
+.tabs {
+  display: flex;
+  align-items: center;
+  --mat-tab-container-height: 48px;
+  --mat-tab-divider-height: 1px;
+  --mat-tab-divider-color: var(--cc-border);
+}
+.tabs ::ng-deep .mat-mdc-tab-links {
+  justify-content: flex-start;
+}
+.tabs ::ng-deep .mat-mdc-tab-link {
+  min-width: 90px;
+  padding-inline: var(--cc-space-xl);
+}
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-md);
+}
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+}
+.filters,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-sm);
+}
+.dropdown-icon {
+  margin-inline-start: var(--cc-space-xs);
+  font-size: 24px;
+  vertical-align: middle;
+  transform: rotate(0deg);
+  transition: transform 100ms linear 25ms;
+}
+.dropdown-icon-open {
+  transform: rotate(180deg);
+  transition: transform 120ms cubic-bezier(0, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-icon,
+  .dropdown-icon-open {
+    transition: none;
+  }
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-card);
+}
+.chip-body,
+.chip-remove {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--cc-text-primary);
+  cursor: pointer;
+}
+.chip-body {
+  padding-inline: var(--cc-space-md) var(--cc-space-xs);
+}
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--cc-space-xs) var(--cc-space-sm);
+}
+.chip-remove .material-symbols-outlined {
+  font-size: 16px;
+}
+.grid-region {
+  position: relative;
+  height: max(420px, calc(100vh - 360px));
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+}
+.grid-region app-user-grid.hidden {
+  visibility: hidden;
+}
+.grid-message {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 56px;
+  inset-inline: var(--cc-space-lg);
+}
+.grid-message h2 {
+  font-size: 16px;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

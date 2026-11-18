@@ -37,6 +37,16 @@
       <mat-icon fontSet="material-symbols-outlined">laptop_chromebook</mat-icon
       ><span class="nav-label">Devices</span>
     </a>
+    } @if (users.readable()) {
+    <a
+      routerLink="/users"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      aria-label="Users"
+    >
+      <mat-icon fontSet="material-symbols-outlined">group</mat-icon
+      ><span class="nav-label">Users</span>
+    </a>
     } @if (jobsReadable()) {
     <a
       routerLink="/jobs"
@@ -121,8 +131,8 @@
   <header>
     <span class="header-title"
       >{{ router.url.startsWith('/devices') ? 'Devices' :
-      router.url.startsWith('/jobs') ? 'Jobs' :
-      router.url.startsWith('/schools') ? 'Schools' :
+      router.url.startsWith('/users') ? 'Users' : router.url.startsWith('/jobs')
+      ? 'Jobs' : router.url.startsWith('/schools') ? 'Schools' :
       router.url.startsWith('/customer-settings') ? 'Customer settings' :
       router.url.startsWith('/google-connection') ? 'Google customer connection'
       : router.url.startsWith('/platform-users') ? 'Platform access' :
