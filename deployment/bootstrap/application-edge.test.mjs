@@ -272,11 +272,7 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/api/users/${'x'.repeat(129)}`, 404],
       // The plan paths take one UUID plan ID, no extra segment, and one method each.
       ['GET', '/api/users/attribute-categories/plans/not-a-uuid', 404],
-      [
-        'POST',
-        '/api/users/attribute-categories/plans/not-a-uuid/confirm',
-        404,
-      ],
+      ['POST', '/api/users/attribute-categories/plans/not-a-uuid/confirm', 404],
       ['GET', `/api/users/attribute-categories/plans/${id}/extra`, 404],
       [
         'POST',
