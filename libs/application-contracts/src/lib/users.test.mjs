@@ -1100,6 +1100,49 @@ test('a category plan answers its Google method, its changes, and its typed phra
   );
 });
 
+test('an edit plan labels a category without an attribute change', () => {
+  const request = {
+    kind: 'edit-category',
+    schemaId: opaqueSchemaId,
+    baseEtag: '"abc123"',
+    draft: {
+      displayName: 'Student information and programs',
+      fields: [keptAttribute],
+    },
+  };
+  assert.deepEqual(
+    userAttributeCategoryPlanRequestSchema.parse(request),
+    request,
+  );
+  const plan = {
+    planId,
+    kind: 'edit-category',
+    method: 'update',
+    schemaId: opaqueSchemaId,
+    schemaName: 'StudentInfo',
+    displayName: 'Student information and programs',
+    baseEtag: '"abc123"',
+    changes: [],
+    phrase: null,
+    limits: planLimits,
+    preparedAt: at,
+    expiresAt: planExpiry,
+    digest: planDigest,
+  };
+  assert.deepEqual(userAttributeCategoryPlanSchema.parse(plan), plan);
+  // A create still adds the attributes of its draft.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...plan,
+      kind: 'create-category',
+      method: 'insert',
+      schemaId: null,
+      baseEtag: null,
+    }).success,
+    false,
+  );
+});
+
 test('a category plan confirm carries the digest, the acknowledgment, and the typed phrase', () => {
   const confirm = { digest: planDigest, acknowledged: true };
   assert.deepEqual(

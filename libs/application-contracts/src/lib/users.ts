@@ -754,9 +754,9 @@ export const userAttributeCategoryPlanSchema = z
     { message: 'A delete plan removes attributes.' },
   )
   .refine(
-    (plan) => plan.kind === 'delete-category' || plan.changes.length > 0,
+    (plan) => plan.kind !== 'create-category' || plan.changes.length > 0,
     {
-      message: 'A create or an edit plan holds one change.',
+      message: 'A create plan adds one attribute.',
     },
   )
   .refine(
