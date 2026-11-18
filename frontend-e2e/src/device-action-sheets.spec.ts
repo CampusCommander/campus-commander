@@ -211,6 +211,7 @@ const job = (options: {
   revision: 1,
   action: options.action,
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: options.deviceCount },
   requestedBy: {
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
