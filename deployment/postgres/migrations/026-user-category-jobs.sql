@@ -412,7 +412,9 @@ $$;
 -- transaction (B section 9), and purges the removed attributes of a removal or a delete.
 -- A stale attempt is fenced and writes nothing. An expired attempt is fenced too: after the header,
 -- detail, and connection waits the clock reads again, so a runner that lost its lease cannot settle
--- over a newer owner (R1).
+-- over a newer owner (R1). The writes themselves sit in one guarded block: if the lease lapses during
+-- any wait they acquire, the closing fence raises and the block rolls back, so an observation that
+-- added a matching user after the pre-lock snapshot keeps its value (R1).
 CREATE FUNCTION cc.settle_user_schema_change(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
   p_outcome text,p_failure text DEFAULT NULL,p_reason text DEFAULT NULL,p_schema jsonb DEFAULT NULL,
   p_categories jsonb DEFAULT NULL,p_observed_at timestamptz DEFAULT NULL) RETURNS jsonb
@@ -458,49 +460,64 @@ BEGIN
   PERFORM 1 FROM cc.user_attribute_categories c WHERE c.customer_id=p_customer
     ORDER BY c.schema_id FOR UPDATE;
   PERFORM 1 FROM cc.user_attribute_category_state s WHERE s.customer_id=p_customer FOR UPDATE;
-  -- The last blocking wait has passed, so the lease reads here and every write below holds its
-  -- row already. An expiry during a row wait fences this settlement before any write (R1).
+  -- The first fence covers the waits above. A lease that lapsed before any write refuses here (R1).
   now_at:=clock_timestamp();
   IF detail.attempt_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
-  -- A refreshed set from a failed call replaces the cache before the outcome (C6).
-  IF p_categories IS NOT NULL THEN
-    PERFORM cc.store_user_attribute_categories(p_customer,p_categories,p_observed_at);
-    changed:=true;
-  END IF;
-  -- A delete that succeeded leaves the cache and purges the whole category from every cached user.
-  IF p_outcome='succeeded' AND plan.action='delete-category' THEN
-    DELETE FROM cc.user_attribute_categories c
-      WHERE c.customer_id=p_customer AND c.schema_id=plan.schema_id;
-    PERFORM cc.remove_user_category(p_customer,plan.schema_name);
-    INSERT INTO cc.user_attribute_category_state(customer_id,read_at) VALUES(p_customer,p_observed_at)
-    ON CONFLICT(customer_id) DO UPDATE SET read_at=EXCLUDED.read_at;
-    changed:=true;
-  ELSE
-    -- The purge and the C12 conversion come from the confirmed plan, so a category refresh between
-    -- the plan and this settlement drops neither (R3).
-    IF p_outcome='succeeded' THEN
-      PERFORM cc.apply_user_category_change(p_customer,plan);
-    END IF;
-    IF p_schema IS NOT NULL THEN
-      -- The answered schema of an insert or an update, and the fresh schema of a changed category.
-      PERFORM cc.store_user_attribute_category(p_customer,p_schema);
+  -- R1 (round 4): the pre-lock above reads one statement snapshot. A production `cc.upsert_users`
+  -- observation can add the category to a user after that snapshot. The purge below then waits on
+  -- the new user row, after the check above. Every write sits in one guarded block, and the closing
+  -- fence reads the clock after every mutation wait. An expiry during any of those waits raises and
+  -- rolls the block back, so no user, cache, header, revision, or publication change commits. The
+  -- observation that added the user committed before this settlement, so it stays.
+  BEGIN
+    -- A refreshed set from a failed call replaces the cache before the outcome (C6).
+    IF p_categories IS NOT NULL THEN
+      PERFORM cc.store_user_attribute_categories(p_customer,p_categories,p_observed_at);
       changed:=true;
     END IF;
-  END IF;
-  IF p_outcome='succeeded' THEN
-    UPDATE cc.jobs SET status='completed',succeeded=1,finished_at=now_at WHERE job_id=p_job;
-  ELSIF p_outcome='failed' THEN
-    UPDATE cc.jobs SET status='failed',failed=1,failure=p_failure,finished_at=now_at WHERE job_id=p_job;
-    UPDATE cc.user_schema_change_jobs SET failure_reason=p_reason WHERE job_id=p_job;
-  ELSE
-    -- An unanswered call may have applied. The job holds needs-review, and the schema state above
-    -- stays as the worker observed it (B section 7.3). The Google reason explains the answer.
-    UPDATE cc.jobs SET status='needs-review',unknown=1,failure=p_failure,finished_at=now_at WHERE job_id=p_job;
-    UPDATE cc.user_schema_change_jobs SET failure_reason=p_reason WHERE job_id=p_job;
-  END IF;
-  PERFORM cc.record_job_change(p_job,true);
+    -- A delete that succeeded leaves the cache and purges the whole category from every cached user.
+    IF p_outcome='succeeded' AND plan.action='delete-category' THEN
+      DELETE FROM cc.user_attribute_categories c
+        WHERE c.customer_id=p_customer AND c.schema_id=plan.schema_id;
+      PERFORM cc.remove_user_category(p_customer,plan.schema_name);
+      INSERT INTO cc.user_attribute_category_state(customer_id,read_at) VALUES(p_customer,p_observed_at)
+      ON CONFLICT(customer_id) DO UPDATE SET read_at=EXCLUDED.read_at;
+      changed:=true;
+    ELSE
+      -- The purge and the C12 conversion come from the confirmed plan, so a category refresh between
+      -- the plan and this settlement drops neither (R3).
+      IF p_outcome='succeeded' THEN
+        PERFORM cc.apply_user_category_change(p_customer,plan);
+      END IF;
+      IF p_schema IS NOT NULL THEN
+        -- The answered schema of an insert or an update, and the fresh schema of a changed category.
+        PERFORM cc.store_user_attribute_category(p_customer,p_schema);
+        changed:=true;
+      END IF;
+    END IF;
+    IF p_outcome='succeeded' THEN
+      UPDATE cc.jobs SET status='completed',succeeded=1,finished_at=now_at WHERE job_id=p_job;
+    ELSIF p_outcome='failed' THEN
+      UPDATE cc.jobs SET status='failed',failed=1,failure=p_failure,finished_at=now_at WHERE job_id=p_job;
+      UPDATE cc.user_schema_change_jobs SET failure_reason=p_reason WHERE job_id=p_job;
+    ELSE
+      -- An unanswered call may have applied. The job holds needs-review, and the schema state above
+      -- stays as the worker observed it (B section 7.3). The Google reason explains the answer.
+      UPDATE cc.jobs SET status='needs-review',unknown=1,failure=p_failure,finished_at=now_at WHERE job_id=p_job;
+      UPDATE cc.user_schema_change_jobs SET failure_reason=p_reason WHERE job_id=p_job;
+    END IF;
+    PERFORM cc.record_job_change(p_job,true);
+    -- The fence after the last mutation wait. The clock only moves forward, so an expiry during any
+    -- earlier wait shows here, and the handler rolls every write above back (R1).
+    now_at:=clock_timestamp();
+    IF detail.attempt_expires_at<=now_at THEN
+      RAISE EXCEPTION 'The category job attempt expired during the settlement.' USING ERRCODE='P0007';
+    END IF;
+  EXCEPTION WHEN SQLSTATE 'P0007' THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END;
   -- The worker publishes the schema change after this transaction commits (B section 6.2 step 5).
   RETURN jsonb_build_object('outcome','settled','status',(SELECT j.status FROM cc.jobs j WHERE j.job_id=p_job),
     'schemaChanged',changed);
