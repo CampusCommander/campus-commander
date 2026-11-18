@@ -19,6 +19,17 @@
         <button
           mat-icon-button
           type="button"
+          [attr.aria-label]="ATTRIBUTE_HELP_LABEL"
+          aria-controls="attribute-help-dialog"
+          [attr.aria-expanded]="helpOpen()"
+          [class.help-on]="helpOpen()"
+          (click)="helpOpen.set(!helpOpen())"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
           [attr.aria-label]="CLOSE_LABEL"
           (click)="closed.emit()"
         >
@@ -28,6 +39,12 @@
         </button>
       </div>
     </header>
+
+    @if (helpOpen()) {
+    <div class="dialog-help">
+      <app-user-attribute-help id="attribute-help-dialog" />
+    </div>
+    }
 
     <div class="dialog-body">
       <div class="category-fields">
@@ -54,6 +71,7 @@
               <col class="a4" />
               <col class="a5" />
               <col class="a6" />
+              <col class="a7" />
             </colgroup>
             <thead>
               <tr>
@@ -63,6 +81,7 @@
                 <th scope="col" class="center">{{ COLUMN_MULTIPLE_VALUES }}</th>
                 <th scope="col">{{ COLUMN_VISIBILITY }}</th>
                 <th scope="col" class="center">{{ COLUMN_SEARCHABLE }}</th>
+                <th scope="col" class="gutter"></th>
               </tr>
             </thead>
             <tbody>
@@ -108,6 +127,7 @@
                     />
                   </span>
                 </td>
+                <td class="gutter"></td>
               </tr>
               }
             </tbody>

@@ -36,6 +36,12 @@
   margin-inline-start: auto;
 }
 
+/* The help control keeps its pressed state while the pane shows (choice 15). */
+.toolbar-actions .help-on {
+  color: var(--cc-text-link);
+  background: var(--cc-surface-selected);
+}
+
 .loading {
   margin: 0;
 }

@@ -1,6 +1,7 @@
 import {
   Component,
   Injector,
+  OnInit,
   afterNextRender,
   computed,
   inject,
@@ -11,7 +12,9 @@ import { RouterLink } from '@angular/router';
 import type { UserAttributeCategory } from '@campus/application-contracts';
 import { UsersStore } from './users.store';
 import { categoryReadText } from './user-fields';
+import { UserAttributeHelp } from './user-attribute-help';
 import {
+  ATTRIBUTE_HELP_LABEL,
   CATEGORIES_EMPTY_BODY,
   CATEGORIES_EMPTY_TITLE,
   CATEGORIES_ERROR_TITLE,
@@ -36,11 +39,11 @@ import { UserCategoryDialog } from './user-category-dialog';
  */
 @Component({
   selector: 'app-user-attribute-categories',
-  imports: [MatButtonModule, RouterLink, UserCategoryDialog],
+  imports: [MatButtonModule, RouterLink, UserAttributeHelp, UserCategoryDialog],
   templateUrl: './user-attribute-categories.html',
   styleUrl: './user-attribute-categories.css',
 })
-export class UserAttributeCategories {
+export class UserAttributeCategories implements OnInit {
   protected readonly store = inject(UsersStore);
   private readonly injector = inject(Injector);
 
@@ -48,9 +51,12 @@ export class UserAttributeCategories {
   protected readonly dialogCategory = signal<UserAttributeCategory | null>(
     null,
   );
+  /** The contextual help disclosure of the page toolbar (composition choice 15). */
+  protected readonly helpOpen = signal(false);
   /** The category link that opened the dialog. Focus returns to it on close (UI-09). */
   private opener: HTMLElement | null = null;
 
+  protected readonly ATTRIBUTE_HELP_LABEL = ATTRIBUTE_HELP_LABEL;
   protected readonly CATEGORIES_EMPTY_BODY = CATEGORIES_EMPTY_BODY;
   protected readonly CATEGORIES_EMPTY_TITLE = CATEGORIES_EMPTY_TITLE;
   protected readonly CATEGORIES_ERROR_TITLE = CATEGORIES_ERROR_TITLE;
@@ -103,6 +109,15 @@ export class UserAttributeCategories {
   protected readonly refreshFailed = computed(
     () => !!this.store.categories() && !!this.failureText(),
   );
+
+  /**
+   * The tab opened. The API reads `schemas.list` when the tab opens and its cache is
+   * older than 24 hours (B section 9), so every activation asks. The component is
+   * created by the tab panel, so a reopen asks again.
+   */
+  ngOnInit(): void {
+    void this.store.loadCategories();
+  }
 
   protected count(value: number): string {
     return countText(value);

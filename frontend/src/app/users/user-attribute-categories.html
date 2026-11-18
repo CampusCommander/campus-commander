@@ -13,8 +13,23 @@
         }}
       </button>
       }
+      <button
+        mat-icon-button
+        type="button"
+        [attr.aria-label]="ATTRIBUTE_HELP_LABEL"
+        aria-controls="attribute-help-page"
+        [attr.aria-expanded]="helpOpen()"
+        [class.help-on]="helpOpen()"
+        (click)="helpOpen.set(!helpOpen())"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">info</span>
+      </button>
     </div>
   </div>
+
+  @if (helpOpen()) {
+  <app-user-attribute-help id="attribute-help-page" />
+  }
 
   @if (loading()) {
   <p class="loading" role="status">{{ CATEGORIES_LOADING_TEXT }}</p>

@@ -68,6 +68,7 @@ function setup(state: {
     categoriesRefreshing: signal(state.refreshing ?? false),
     categoriesFailure: signal(state.failure ?? null),
     categoriesRecovery: signal(state.recovery ?? false),
+    loadCategories: vi.fn().mockResolvedValue(undefined),
     refreshCategories: vi.fn().mockResolvedValue(undefined),
   };
   TestBed.configureTestingModule({
@@ -86,6 +87,12 @@ const element = (fixture: ReturnType<typeof render>) =>
   fixture.nativeElement as HTMLElement;
 
 describe('the Custom attributes tab', () => {
+  it('reads the categories when the tab opens (B section 9)', () => {
+    const store = setup({ categories: three });
+    render();
+    expect(store.loadCategories).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the loading line before the category read answers', () => {
     setup({});
     const fixture = render();
@@ -238,6 +245,29 @@ describe('the Custom attributes tab', () => {
     const link = element(fixture).querySelector('button.category-link');
     expect(link?.getAttribute('title')).toBe(longName);
     expect(link?.getAttribute('aria-label')).toBe(`Open category ${longName}`);
+  });
+
+  it('opens the sourced help from the toolbar (composition choice 15)', () => {
+    setup({ categories: three });
+    const fixture = render();
+    const help = element(fixture).querySelector(
+      'button[aria-label="Custom attributes help"]',
+    ) as HTMLButtonElement;
+    expect(help).not.toBeNull();
+    expect(help.getAttribute('aria-controls')).toBe('attribute-help-page');
+    expect(help.getAttribute('aria-expanded')).toBe('false');
+    help.click();
+    fixture.detectChanges();
+    expect(help.getAttribute('aria-expanded')).toBe('true');
+    const pane = element(fixture).querySelector('#attribute-help-page');
+    expect(pane?.textContent).toContain('Google Workspace allows 100');
+    expect(pane?.textContent).toContain(
+      'A visibility change can take up to 24 hours in Google.',
+    );
+    help.click();
+    fixture.detectChanges();
+    expect(help.getAttribute('aria-expanded')).toBe('false');
+    expect(element(fixture).querySelector('#attribute-help-page')).toBeNull();
   });
 
   it('opens the read-only dialog and returns focus to the link (UI-09)', async () => {

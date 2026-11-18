@@ -3,14 +3,17 @@ import {
   Component,
   input,
   output,
+  signal,
 } from '@angular/core';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import type { UserAttributeField } from '@campus/application-contracts';
+import { UserAttributeHelp } from './user-attribute-help';
 import {
   ADD_ATTRIBUTE_LABEL,
   ADD_ATTRIBUTE_NOTE,
+  ATTRIBUTE_HELP_LABEL,
   ATTRIBUTE_TYPE_LABELS,
   ATTRIBUTE_VISIBILITY_LABELS,
   ATTRIBUTES_LABEL,
@@ -32,7 +35,12 @@ import {
  */
 @Component({
   selector: 'app-user-category-dialog',
-  imports: [CdkTrapFocus, MatButtonModule, MatCheckboxModule],
+  imports: [
+    CdkTrapFocus,
+    MatButtonModule,
+    MatCheckboxModule,
+    UserAttributeHelp,
+  ],
   templateUrl: './user-category-dialog.html',
   styleUrls: ['../devices/device-dialog.css', './user-category-dialog.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,8 +54,12 @@ export class UserCategoryDialog {
   }>();
   readonly closed = output<void>();
 
+  /** The contextual help disclosure of the dialog title row (composition choice 15). */
+  protected readonly helpOpen = signal(false);
+
   protected readonly ADD_ATTRIBUTE_LABEL = ADD_ATTRIBUTE_LABEL;
   protected readonly ADD_ATTRIBUTE_NOTE = ADD_ATTRIBUTE_NOTE;
+  protected readonly ATTRIBUTE_HELP_LABEL = ATTRIBUTE_HELP_LABEL;
   protected readonly ATTRIBUTES_LABEL = ATTRIBUTES_LABEL;
   protected readonly CLOSE_LABEL = CLOSE_LABEL;
   protected readonly COLUMN_ATTRIBUTE_NAME = COLUMN_ATTRIBUTE_NAME;

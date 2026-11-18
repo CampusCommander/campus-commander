@@ -46,6 +46,21 @@ export const FIELD_CATEGORY_NAME = 'Category name';
 /** The Close action of the read-only dialog. */
 export const CLOSE_LABEL = 'Close';
 
+/**
+ * The contextual help of the page toolbar and of the dialog title row (CA composition
+ * choice 15). The claims come from document B section 3 and from CA notes question 6.
+ */
+export const ATTRIBUTE_HELP_LABEL = 'Custom attributes help';
+export const ATTRIBUTE_HELP_TITLE = 'Custom attributes';
+export const ATTRIBUTE_HELP_INTRO =
+  'Custom attributes are Google Workspace categories that hold values on each user in the domain.';
+export const ATTRIBUTE_HELP_RULES: readonly string[] = [
+  'Google Workspace allows 100 categories and 100 attributes over all categories.',
+  'A category name and an attribute info type cannot change after creation.',
+  'A visibility change can take up to 24 hours in Google.',
+  'Google warns against government ID numbers, financial data, and health data in a custom attribute.',
+];
+
 /** The info type labels of B section 8.1. */
 export const ATTRIBUTE_TYPE_LABELS: Readonly<
   Record<UserAttributeFieldType, string>

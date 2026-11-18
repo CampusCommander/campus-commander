@@ -99,6 +99,7 @@ function setup(options: {
     categoriesLoading: signal(false),
     categoriesRefreshing: signal(false),
     categoriesFailure: signal(null),
+    loadCategories: vi.fn().mockResolvedValue(undefined),
     refreshCategories: vi.fn().mockResolvedValue(undefined),
     offline: signal(options.offline ?? false),
     error: signal(''),
@@ -163,6 +164,14 @@ const button = (fixture: ReturnType<typeof render>, label: string) =>
   [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')].find(
     (element) => element.textContent?.includes(label),
   );
+
+/** The two view tabs of the page. */
+const viewTabs = (fixture: ReturnType<typeof render>) =>
+  [
+    ...(fixture.nativeElement as HTMLElement).querySelectorAll(
+      'nav[aria-label="Users views"] [mat-tab-link]',
+    ),
+  ] as HTMLElement[];
 
 describe('the Users page', () => {
   it('shows the loading line before the status read answers', () => {
@@ -243,6 +252,37 @@ describe('the Users page', () => {
     fixture.detectChanges();
     expect(element.querySelector('app-user-grid')).not.toBeNull();
     expect(element.querySelector('app-user-attribute-categories')).toBeNull();
+  });
+
+  it('keeps both tabs while the directory has no observation (R1)', () => {
+    setup({ sync: ready({ status: 'never', observedAt: null }) });
+    const fixture = render();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(viewTabs(fixture).map((tab) => tab.textContent?.trim())).toEqual([
+      'Users',
+      'Custom attributes',
+    ]);
+    expect(text(fixture)).toContain('No user directory yet');
+    viewTabs(fixture)[1].click();
+    fixture.detectChanges();
+    expect(
+      element.querySelector('app-user-attribute-categories'),
+    ).not.toBeNull();
+  });
+
+  it('keeps both tabs when the directory status read failed (R1)', () => {
+    setup({ sync: null, statusError: 'User directory status is unavailable.' });
+    const fixture = render();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(viewTabs(fixture).map((tab) => tab.textContent?.trim())).toEqual([
+      'Users',
+      'Custom attributes',
+    ]);
+    viewTabs(fixture)[1].click();
+    fixture.detectChanges();
+    expect(
+      element.querySelector('app-user-attribute-categories'),
+    ).not.toBeNull();
   });
 
   it('says no user matches the filters and clears them', () => {

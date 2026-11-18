@@ -104,6 +104,37 @@ describe('the read-only category dialog (CA state 09)', () => {
     );
   });
 
+  it('opens the sourced help in the title row (composition choice 15)', () => {
+    const fixture = render();
+    const help = element(fixture).querySelector(
+      'button[aria-label="Custom attributes help"]',
+    ) as HTMLButtonElement;
+    expect(help).not.toBeNull();
+    expect(help.getAttribute('aria-controls')).toBe('attribute-help-dialog');
+    expect(help.getAttribute('aria-expanded')).toBe('false');
+    help.click();
+    fixture.detectChanges();
+    expect(help.getAttribute('aria-expanded')).toBe('true');
+    const pane = element(fixture).querySelector('#attribute-help-dialog');
+    expect(pane?.textContent).toContain('Custom attributes');
+    expect(pane?.textContent).toContain('100 categories and 100 attributes');
+  });
+
+  it('keeps the approved trailing gutter of the attribute table (R5)', () => {
+    const fixture = render();
+    const headers = [
+      ...element(fixture).querySelectorAll('thead th'),
+    ] as HTMLElement[];
+    expect(headers.length).toBe(7);
+    expect(headers[6].textContent?.trim()).toBe('');
+    expect(headers[6].classList.contains('gutter')).toBe(true);
+    const cells = [
+      ...element(fixture).querySelectorAll('tbody tr:first-child td'),
+    ] as HTMLElement[];
+    expect(cells.length).toBe(7);
+    expect(cells[6].classList.contains('gutter')).toBe(true);
+  });
+
   it('closes on Escape and on Close', () => {
     const fixture = render();
     const closed = vi.fn();

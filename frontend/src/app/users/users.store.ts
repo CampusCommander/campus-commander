@@ -256,6 +256,8 @@ export class UsersStore {
   private epoch = 0;
   private readonly requests = new Set<number>();
   private refreshSequence = 0;
+  /** The newest category read owns the published answer (R3). */
+  private categoryRead = 0;
   private identity: string | null = this.auth.session()?.identity.id ?? null;
   private away = false;
   private counted = countsKey(defaultView());
@@ -862,43 +864,7 @@ export class UsersStore {
   }
 
   async loadCategories(): Promise<void> {
-    const epoch = this.epoch;
-    const response = await this.call(
-      '/api/users/attribute-categories',
-      undefined,
-      () => this.owns(epoch),
-    );
-    if (!this.owns(epoch)) return;
-    this.categoriesLoading.set(false);
-    if (!response?.ok) {
-      const body = (await response?.json().catch(() => null)) as {
-        failure?: unknown;
-      } | null;
-      if (!this.owns(epoch)) return;
-      const failure =
-        typeof body?.failure === 'string' ? body.failure : undefined;
-      this.categoriesError.set(categoryFailureText(response?.status, failure));
-      this.categoriesRecovery.set(
-        categoryNeedsConnection(response?.status, failure),
-      );
-      this.categoriesFailure.set({ status: response?.status, failure });
-      return;
-    }
-    try {
-      const categories = userAttributeCategoriesSchema.parse(
-        await response.json(),
-      );
-      if (!this.owns(epoch)) return;
-      this.categories.set(categories);
-      this.categoriesError.set('');
-      this.categoriesRecovery.set(false);
-      this.categoriesFailure.set(null);
-    } catch {
-      if (!this.owns(epoch)) return;
-      this.categoriesError.set('Custom attribute columns are unavailable.');
-      this.categoriesRecovery.set(false);
-      this.categoriesFailure.set({ status: undefined, failure: undefined });
-    }
+    await this.readCategories('/api/users/attribute-categories', undefined);
   }
 
   /**
@@ -906,44 +872,75 @@ export class UsersStore {
    * keeps the categories that the cache holds, so the list stays usable (UI-08).
    */
   async refreshCategories(): Promise<void> {
-    const epoch = this.epoch;
     if (this.categoriesRefreshing()) return;
-    this.categoriesRefreshing.set(true);
+    await this.readCategories('/api/users/attribute-categories/refresh', {}, true);
+  }
+
+  /**
+   * The cache-aware read of B section 9, and the forced read of Refresh. One request owns
+   * the published answer: a late answer of an older read never replaces a newer set, never
+   * restores a failure that a newer answer cleared, and never clears another read's busy
+   * state (R3). The principal epoch still fences every answer (R1).
+   */
+  private async readCategories(
+    path: string,
+    body: unknown,
+    refresh = false,
+  ): Promise<void> {
+    const epoch = this.epoch;
+    const read = ++this.categoryRead;
+    const current = () => this.owns(epoch) && read === this.categoryRead;
+    if (refresh) this.categoriesRefreshing.set(true);
     try {
-      const response = await this.call(
-        '/api/users/attribute-categories/refresh',
-        {},
-        () => this.owns(epoch),
-      );
-      if (!this.owns(epoch)) return;
+      const response = await this.call(path, body, current);
+      if (!current()) return;
       if (!response?.ok) {
-        const body = (await response?.json().catch(() => null)) as {
-          failure?: unknown;
-        } | null;
-        if (!this.owns(epoch)) return;
-        const failure =
-          typeof body?.failure === 'string' ? body.failure : undefined;
-        this.categoriesRecovery.set(
-          categoryNeedsConnection(response?.status, failure),
-        );
-        this.categoriesFailure.set({ status: response?.status, failure });
+        const failure = await this.categoryFailureOf(response);
+        if (!current()) return;
+        this.publishCategoryFailure(response?.status, failure, refresh);
         return;
       }
-      const categories = userAttributeCategoriesSchema.parse(
-        await response.json(),
-      );
-      if (!this.owns(epoch)) return;
+      let categories: UserAttributeCategories;
+      try {
+        categories = userAttributeCategoriesSchema.parse(await response.json());
+      } catch {
+        if (!current()) return;
+        this.publishCategoryFailure(undefined, undefined, refresh);
+        return;
+      }
+      if (!current()) return;
       this.categories.set(categories);
       this.categoriesError.set('');
       this.categoriesRecovery.set(false);
       this.categoriesFailure.set(null);
-    } catch {
-      if (!this.owns(epoch)) return;
-      this.categoriesRecovery.set(false);
-      this.categoriesFailure.set({ status: undefined, failure: undefined });
     } finally {
-      if (this.owns(epoch)) this.categoriesRefreshing.set(false);
+      // The newest read owns the busy state, also when it superseded a Refresh.
+      if (current()) {
+        this.categoriesLoading.set(false);
+        this.categoriesRefreshing.set(false);
+      }
     }
+  }
+
+  /** The API failure code of a category answer, when the body holds one. */
+  private async categoryFailureOf(
+    response: Response | null,
+  ): Promise<string | undefined> {
+    const body = (await response?.json().catch(() => null)) as {
+      failure?: unknown;
+    } | null;
+    return typeof body?.failure === 'string' ? body.failure : undefined;
+  }
+
+  /** Record a category failure. A Refresh keeps the cached list and its error line (UI-08). */
+  private publishCategoryFailure(
+    status: number | undefined,
+    failure: string | undefined,
+    refresh: boolean,
+  ): void {
+    if (!refresh) this.categoriesError.set(categoryFailureText(status, failure));
+    this.categoriesRecovery.set(categoryNeedsConnection(status, failure));
+    this.categoriesFailure.set({ status, failure });
   }
 
   async loadOrgUnits(): Promise<void> {

@@ -63,6 +63,17 @@
   color: var(--cc-text-secondary);
 }
 
+/* The help control keeps its pressed state while the pane shows (choice 15). */
+.dialog-tools .mat-mdc-icon-button.help-on {
+  color: var(--cc-text-link);
+  background: var(--cc-surface-selected);
+}
+
+.dialog-help {
+  flex: none;
+  padding: 0 var(--cc-space-xl) var(--cc-space-lg);
+}
+
 .dialog-body {
   display: flex;
   flex: 1;
@@ -159,6 +170,12 @@
 
 .attribute-table col.a6 {
   width: 88px;
+}
+
+/* The read-only table keeps the approved 50 px trailing gutter of the action column.
+   The state draws no removal action there (composition choice 12, R5). */
+.attribute-table col.a7 {
+  width: 50px;
 }
 
 .attribute-table th {

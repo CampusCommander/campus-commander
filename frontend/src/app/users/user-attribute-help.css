@@ -1,0 +1,41 @@
+/*
+ * The contextual help pane of the Custom attributes tab and its read-only dialog
+ * (composition choice 15). Documentation type in the 12 px help style of the built
+ * export and import help. Every value is a token of `theme/tokens.css`.
+ */
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.attribute-help {
+  padding: var(--cc-space-lg) var(--cc-space-xl);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-app);
+}
+
+.attribute-help h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.attribute-help p {
+  margin: var(--cc-space-sm) 0 0;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.attribute-help ul {
+  margin: var(--cc-space-sm) 0 0;
+  padding-inline-start: 16px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.attribute-help li + li {
+  margin-block-start: 2px;
+}

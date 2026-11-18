@@ -4,79 +4,11 @@
     <p class="subtitle">Google Workspace accounts</p>
   </header>
 
-  @if (store.offline()) {
-  <section class="banner" aria-labelledby="users-offline-title">
-    <h2 id="users-offline-title">Cannot reach Campus Commander</h2>
-    <p>Cached directory remains visible.</p>
-    <button mat-stroked-button type="button" (click)="reconnect()">
-      Reconnect
-    </button>
-  </section>
-  } @else if (published() && banner()) {
-  <section
-    class="banner"
-    aria-labelledby="users-stale-title"
-    [attr.aria-live]="banner()!.refreshing ? 'polite' : null"
-  >
-    <h2 id="users-stale-title">{{ banner()!.title }}</h2>
-    <p>{{ banner()!.body }}</p>
-    @if (!banner()!.refreshing) {
-    <button
-      mat-stroked-button
-      type="button"
-      [disabled]="store.refreshing()"
-      (click)="refresh()"
-    >
-      Refresh users
-    </button>
-    } @if (connectionNeeded()) {
-    <a mat-stroked-button routerLink="/google-connection"
-      >Open Google connection</a
-    >
-    }
-  </section>
-  } @if (store.statusError()) {
-  <section class="banner" aria-labelledby="users-status-title">
-    <h2 id="users-status-title">User directory status</h2>
-    <p role="alert">{{ store.statusError() }}</p>
-    @if (store.statusRetryable()) {
-    <button mat-stroked-button type="button" (click)="retry()">Retry</button>
-    }
-  </section>
-  } @if (store.error() && !store.statusError()) {
-  <p class="error" role="alert">{{ store.error() }}</p>
-  } @if (!store.syncLoaded() && !store.statusError()) { @if (!store.offline()) {
-  <p role="status">Loading users…</p>
-  } } @else if (!sync() && !store.statusError()) {
-  <section class="card" aria-labelledby="users-connect-title">
-    <h2 id="users-connect-title">Connect Google Workspace</h2>
-    <p>Users come from the connected Google Workspace customer.</p>
-    <a mat-flat-button routerLink="/google-connection"
-      >Open Google connection</a
-    >
-  </section>
-  } @else if (!published() && !store.statusError()) {
-  <section class="card" aria-labelledby="users-first-title" aria-live="polite">
-    @if (store.refreshing()) {
-    <h2 id="users-first-title">Reading users from Google Workspace</h2>
-    <p>The directory appears here when the refresh finishes.</p>
-    } @else {
-    <h2 id="users-first-title">No user directory yet</h2>
-    <p>
-      {{ sync()?.status === 'failed' ? failureText() : 'Refresh users to read
-      the directory from Google Workspace.' }}
-    </p>
-    @if (connectionNeeded()) {
-    <a mat-stroked-button routerLink="/google-connection"
-      >Open Google connection</a
-    >
-    }
-    <button mat-flat-button type="button" (click)="refresh()">
-      Refresh users
-    </button>
-    }
-  </section>
-  } @else if (published()) {
+  <!--
+    Both tabs need users:read (U4). The /users route holds that check, so the tab bar
+    does not wait for the user directory to publish. The Users panel keeps every
+    directory state, and the Custom attributes panel reads its own route (R1).
+  -->
   <nav
     mat-tab-nav-bar
     class="tabs"
@@ -103,7 +35,80 @@
   </nav>
 
   <mat-tab-nav-panel #usersView class="view">
-    @if (tab() === 'users') {
+    @if (tab() === 'users') { @if (store.offline()) {
+    <section class="banner" aria-labelledby="users-offline-title">
+      <h2 id="users-offline-title">Cannot reach Campus Commander</h2>
+      <p>Cached directory remains visible.</p>
+      <button mat-stroked-button type="button" (click)="reconnect()">
+        Reconnect
+      </button>
+    </section>
+    } @else if (published() && banner()) {
+    <section
+      class="banner"
+      aria-labelledby="users-stale-title"
+      [attr.aria-live]="banner()!.refreshing ? 'polite' : null"
+    >
+      <h2 id="users-stale-title">{{ banner()!.title }}</h2>
+      <p>{{ banner()!.body }}</p>
+      @if (!banner()!.refreshing) {
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="store.refreshing()"
+        (click)="refresh()"
+      >
+        Refresh users
+      </button>
+      } @if (connectionNeeded()) {
+      <a mat-stroked-button routerLink="/google-connection"
+        >Open Google connection</a
+      >
+      }
+    </section>
+    } @if (store.statusError()) {
+    <section class="banner" aria-labelledby="users-status-title">
+      <h2 id="users-status-title">User directory status</h2>
+      <p role="alert">{{ store.statusError() }}</p>
+      @if (store.statusRetryable()) {
+      <button mat-stroked-button type="button" (click)="retry()">Retry</button>
+      }
+    </section>
+    } @if (store.error() && !store.statusError()) {
+    <p class="error" role="alert">{{ store.error() }}</p>
+    } @if (!store.syncLoaded() && !store.statusError()) { @if (!store.offline())
+    {
+    <p role="status">Loading users…</p>
+    } } @else if (!sync() && !store.statusError()) {
+    <section class="card" aria-labelledby="users-connect-title">
+      <h2 id="users-connect-title">Connect Google Workspace</h2>
+      <p>Users come from the connected Google Workspace customer.</p>
+      <a mat-flat-button routerLink="/google-connection"
+        >Open Google connection</a
+      >
+    </section>
+    } @else if (!published() && !store.statusError()) {
+    <section class="card" aria-labelledby="users-first-title" aria-live="polite">
+      @if (store.refreshing()) {
+      <h2 id="users-first-title">Reading users from Google Workspace</h2>
+      <p>The directory appears here when the refresh finishes.</p>
+      } @else {
+      <h2 id="users-first-title">No user directory yet</h2>
+      <p>
+        {{ sync()?.status === 'failed' ? failureText() : 'Refresh users to read
+        the directory from Google Workspace.' }}
+      </p>
+      @if (connectionNeeded()) {
+      <a mat-stroked-button routerLink="/google-connection"
+        >Open Google connection</a
+      >
+      }
+      <button mat-flat-button type="button" (click)="refresh()">
+        Refresh users
+      </button>
+      }
+    </section>
+    } @else if (published()) {
     <div class="filter-row">
       <div class="filters">
         @for (predicate of store.predicates(); track $index) {
@@ -250,9 +255,8 @@
         (opened)="recordRow($event)"
       />
     </div>
-    } @else {
+    } } @else {
     <app-user-attribute-categories />
     }
   </mat-tab-nav-panel>
-  }
 </div>

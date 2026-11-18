@@ -684,6 +684,109 @@ describe('the users store', () => {
     expect(store.categoriesRefreshing()).toBe(false);
   });
 
+  it('keeps a newer Refresh set when an older read answers late (R3)', async () => {
+    const older = held<Response>();
+    const newer = held<Response>();
+    const refreshed: UserAttributeCategories = {
+      ...categories,
+      categories: [
+        ...categories.categories,
+        {
+          ...categories.categories[0],
+          schemaId: 'schema-staff',
+          schemaName: 'Staff',
+          displayName: 'Staff information',
+          holders: 40,
+        },
+      ],
+      limits: {
+        categories: 2,
+        categoryLimit: 100,
+        attributes: 2,
+        attributeLimit: 100,
+      },
+      observedAt: '2026-11-16T13:00:00.000Z',
+    };
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-categories') return older.promise;
+      if (path === '/api/users/attribute-categories/refresh')
+        return newer.promise;
+      return Promise.resolve(Response.json(answers[path] ?? {}));
+    });
+    const store = setup(request);
+    // A read starts, then Refresh starts after it. The read answers last.
+    const load = store.loadCategories();
+    const refresh = store.refreshCategories();
+    newer.release(Response.json(refreshed));
+    await refresh;
+    older.release(Response.json(categories));
+    await load;
+    expect(store.categories()?.limits.categories).toBe(2);
+    expect(store.categoriesFailure()).toBeNull();
+    expect(store.categoriesRefreshing()).toBe(false);
+  });
+
+  it('keeps the cleared failure when an older read fails late (R3)', async () => {
+    const older = held<Response>();
+    const newer = held<Response>();
+    const refreshed: UserAttributeCategories = {
+      ...categories,
+      limits: {
+        categories: 1,
+        categoryLimit: 100,
+        attributes: 1,
+        attributeLimit: 100,
+      },
+      observedAt: '2026-11-16T13:00:00.000Z',
+    };
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-categories') return older.promise;
+      if (path === '/api/users/attribute-categories/refresh')
+        return newer.promise;
+      return Promise.resolve(Response.json(answers[path] ?? {}));
+    });
+    const store = setup(request);
+    const load = store.loadCategories();
+    const refresh = store.refreshCategories();
+    newer.release(Response.json(refreshed));
+    await refresh;
+    older.release(
+      Response.json(
+        { reason: 'user-schema-read-failed', failure: 'backend-error' },
+        { status: 503 },
+      ),
+    );
+    await load;
+    expect(store.categories()?.limits.categories).toBe(1);
+    expect(store.categoriesFailure()).toBeNull();
+    expect(store.categoriesRecovery()).toBe(false);
+    expect(store.categoriesRefreshing()).toBe(false);
+  });
+
+  it('takes the categories when a later read follows a failed one (R2)', async () => {
+    let reads = 0;
+    const request = vi.fn((path: string) => {
+      if (path !== '/api/users/attribute-categories')
+        return Promise.resolve(Response.json(answers[path] ?? {}));
+      reads++;
+      if (reads === 1)
+        return Promise.resolve(
+          Response.json(
+            { reason: 'user-schema-read-failed', failure: 'backend-error' },
+            { status: 503 },
+          ),
+        );
+      return Promise.resolve(Response.json(categories));
+    });
+    const store = setup(request);
+    await store.loadCategories();
+    expect(store.categoriesFailure()).not.toBeNull();
+    await store.loadCategories();
+    expect(store.categories()?.limits.categories).toBe(1);
+    expect(store.categoriesFailure()).toBeNull();
+    expect(store.categoriesLoading()).toBe(false);
+  });
+
   it('takes a newer refresh run over the completed run before it (R2)', async () => {
     const first = sync('ready', {
       startedAt: '2026-11-16T12:00:00.000Z',
