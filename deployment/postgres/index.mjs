@@ -121,6 +121,7 @@ export async function loadMigrations() {
       '022-user-refresh-targets',
       '023-device-removal-fence',
       '024-user-attribute-categories',
+      '025-user-category-plan-routes',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -384,6 +385,13 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
       await client.query(
         `GRANT SELECT ON cc.user_category_plans, cc.user_schema_change_jobs TO ${role}`,
       );
+    }
+    if (migrations.some(({ id }) => id === '025-user-category-plan-routes')) {
+      await client.query(`GRANT EXECUTE ON FUNCTION
+        cc.read_user_category_plan_base(uuid,integer),
+        cc.create_user_category_plan(uuid,integer,text,integer,text,text,text,text,text,jsonb,jsonb,text,text,integer),
+        cc.read_user_category_plan(uuid,integer,uuid),
+        cc.confirm_user_category_plan(uuid,integer,uuid,text,text,uuid) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
