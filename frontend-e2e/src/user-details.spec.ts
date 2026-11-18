@@ -18,6 +18,12 @@ const at = (hoursAgo: number) =>
 const observedAt = at(2);
 /** The moment that Google stopped returning the removed user (A section 11). */
 const removedAt = at(3);
+/** One test sends a long attribute value to prove that it stays inside its card. */
+let longProgram: string | null = null;
+
+test.afterEach(() => {
+  longProgram = null;
+});
 
 /** One time as the page renders it, in the zone that the spec pins. */
 function shownTime(iso: string): string {
@@ -149,7 +155,32 @@ const rows = people.map((person) => {
 /** The details answer of one user, with the record shape of the API. */
 function detailOf(person: FixtureUser) {
   const row = rows.find((candidate) => candidate.userId === person.userId);
-  return { user: { ...row, removedAt: person.removedAt ?? null } };
+  return {
+    user: { ...withLongProgram(row), removedAt: person.removedAt ?? null },
+  };
+}
+
+/** The record of the first user with the long attribute value of one test. */
+function withLongProgram<T extends Record<string, unknown> | undefined>(
+  row: T,
+) {
+  if (!longProgram || !row || row['userId'] !== people[0].userId) return row;
+  const student = {
+    ...(row['customSchemas'] as Record<string, Record<string, unknown>>)[
+      'Student'
+    ],
+  };
+  const programs = [
+    ...((student['programs'] as { value: string }[] | undefined) ?? []),
+    { value: longProgram },
+  ];
+  return {
+    ...row,
+    customSchemas: {
+      ...(row['customSchemas'] as Record<string, unknown>),
+      Student: { ...student, programs },
+    },
+  } as T;
 }
 
 const categories = {
@@ -339,9 +370,12 @@ function answerFor(body: any) {
     (item) => item.field === 'attribute' && item.fieldName === 'grade_level',
   );
   // A removed user stays out of rows and counts (A section 11).
-  let matched = rows.filter(
-    (row) => !people.find((person) => person.userId === row.userId)?.removedAt,
-  );
+  let matched = rows
+    .filter(
+      (row) =>
+        !people.find((person) => person.userId === row.userId)?.removedAt,
+    )
+    .map((row) => withLongProgram(row));
   if (body?.selection)
     matched = matched.filter((row) => selectionState.ids.has(row.userId));
   if (grade)
@@ -702,6 +736,49 @@ test('opens the details page from the user name', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Ania Reyes', exact: true }),
   ).toBeVisible();
+});
+
+test('keeps a long attribute value inside its card and stacks at a narrow width', async ({
+  page,
+}) => {
+  longProgram =
+    'Extended Learning Opportunity Program for the Visual and Performing Arts';
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  const card = measured(await page.locator('section.attrs').boundingBox());
+  const chip = measured(
+    await page
+      .locator('.value-chips li', { hasText: 'Extended Learning' })
+      .boundingBox(),
+  );
+  // A long value wraps inside its chip instead of leaving the card.
+  expect(chip.x + chip.width).toBeLessThanOrEqual(card.x + card.width + 1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  // The two columns stack when the viewport narrows (UI-09 reflow).
+  await page.setViewportSize({ width: 900, height: 900 });
+  const account = measured(await page.locator('section.account').boundingBox());
+  const attributes = measured(
+    await page.locator('section.attrs').boundingBox(),
+  );
+  expect(attributes.y).toBeGreaterThan(account.y + account.height);
+  expect(Math.abs(attributes.x - account.x)).toBeLessThanOrEqual(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: `${scratch}/um-04c-narrow-long-value.png`,
+    fullPage: false,
+  });
 });
 
 test('keeps the name link in every grid row (GRID-03)', async ({ page }) => {

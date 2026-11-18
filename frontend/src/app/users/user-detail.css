@@ -128,13 +128,15 @@
 .value-chips li {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   min-height: 24px;
   padding: 0 var(--cc-space-md);
   border-radius: var(--cc-radius-chip);
   background: var(--cc-surface-hover);
   font-size: 12px;
   line-height: 16px;
-  white-space: nowrap;
+  /* A long attribute value wraps inside its chip instead of leaving the card. */
+  overflow-wrap: anywhere;
 }
 /* Without the category read the page shows the raw keys beside the scope message (A section 11). */
 .scope-note {
