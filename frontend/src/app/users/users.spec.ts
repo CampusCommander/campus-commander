@@ -29,6 +29,7 @@ class GridStub {
   readonly selection = input<unknown>();
   readonly rowRefresh = input<unknown>();
   readonly focusIndex = input<number | null>(null);
+  readonly focusScroll = input<number | null>(null);
   readonly filtersChange = output<unknown>();
   readonly details = output<{ row: unknown; index: number }>();
   readonly opened = output<{ row: unknown; index: number }>();
@@ -85,6 +86,7 @@ function setup(options: {
     gridState: signal(null),
     selectedView: signal(false),
     position: signal(null),
+    cursor: signal(null),
     emptyFilter,
     setEmptyFilter: vi.fn((empty: boolean) => emptyFilter.set(empty)),
     setView: vi.fn(),

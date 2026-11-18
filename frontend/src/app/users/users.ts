@@ -205,16 +205,28 @@ export class UsersPage implements OnInit, OnDestroy {
   }
 
   /** GRID-03: the details control records the row, then opens that user (A section 4). */
-  protected openDetails(event: { row: UserRow; index: number }): void {
+  protected openDetails(event: {
+    row: UserRow;
+    index: number;
+    scrollTop: number | null;
+  }): void {
     this.recordRow(event);
     void this.router.navigate(['/users', event.row.userId]);
   }
 
-  /** The Name link navigates itself. Recording the row keeps Next user and Back to users. */
-  protected recordRow(event: { row: UserRow; index: number }): void {
-    this.store.position.set({
-      index: event.index,
-      userId: event.row.userId,
-    });
+  /**
+   * The row that opened the details stays the return anchor. Next user moves only the
+   * cursor, so Back to users returns to this row, its page, and its scroll position
+   * (A section 4, R3).
+   */
+  protected recordRow(event: {
+    row: UserRow;
+    index: number;
+    scrollTop: number | null;
+  }): void {
+    const { index } = event;
+    const { userId } = event.row;
+    this.store.position.set({ index, userId, scrollTop: event.scrollTop });
+    this.store.cursor.set({ index, userId });
   }
 }
