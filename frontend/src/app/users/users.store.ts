@@ -74,6 +74,27 @@ const defaultView = (): UserView => ({
   selection: null,
 });
 
+/** The row that opened the details: its place in the filtered order and the grid offset. */
+export interface UserRowAnchor {
+  index: number;
+  userId: string;
+  scrollTop: number | null;
+}
+
+/**
+ * The answer of one details read (A section 11). A missing record is a 404 and nothing
+ * else. Denied, failed, offline, and unreadable answers stay apart, so the page never
+ * reports a failed read as a missing user (R5). `stale` marks an answer of an earlier
+ * person, which no caller may show (R1).
+ */
+export type UserRead =
+  | { kind: 'user'; user: UserDetail }
+  | { kind: 'missing' }
+  | { kind: 'denied' }
+  | { kind: 'offline' }
+  | { kind: 'failed' }
+  | { kind: 'stale' };
+
 /** Only the outermost query reports counts. */
 const countsKey = (view: UserView): string =>
   JSON.stringify([view.predicates, view.selection]);
@@ -172,10 +193,15 @@ export class UsersStore {
   readonly gridState = signal<GridState | null>(null);
   readonly selectedView = signal(false);
   /**
-   * The row that the person opened: its index in the filtered order and its ID.
-   * Next user walks that order, and Back to users returns focus to that row.
+   * The row that the person opened: its index in the filtered order, its ID, and the
+   * grid offset. Back to users returns to this row, page, and scroll (A section 4).
    */
-  readonly position = signal<{ index: number; userId: string } | null>(null);
+  readonly position = signal<UserRowAnchor | null>(null);
+  /**
+   * The row that the details page shows while Next user walks the filtered order.
+   * It starts at the opened row and never moves the return anchor (A section 4).
+   */
+  readonly cursor = signal<{ index: number; userId: string } | null>(null);
   /**
    * The grid shows a filter that the query cannot express, such as an empty BOOLEAN
    * set. No row matches, and the page offers filter recovery (R6).
@@ -270,6 +296,7 @@ export class UsersStore {
     this.gridState.set(null);
     this.selectedView.set(false);
     this.position.set(null);
+    this.cursor.set(null);
     this.emptyFilter.set(false);
     this.emptyEpoch++;
     this.emptySnapshot = null;
@@ -637,16 +664,34 @@ export class UsersStore {
     return (await this.rows(index, 1))?.rows[0] ?? null;
   }
 
-  /** One user for the details page, or null when the API does not answer the read. */
-  async user(id: string): Promise<UserDetail | null> {
+  /**
+   * One user for the details page (A section 9). A missing user is a 404 and nothing
+   * else: a denied, failed, offline, or unreadable answer is its own result (R5). The
+   * answer of an earlier person never leaves the store, even when its body arrives
+   * after the change (R1).
+   */
+  async user(id: string): Promise<UserRead> {
     const epoch = this.epoch;
     const response = await this.call(
       `/api/users/${encodeURIComponent(id)}`,
       undefined,
       () => this.owns(epoch),
     );
-    if (!this.owns(epoch) || !response?.ok) return null;
-    return userDetailSchema.parse((await response.json()).user);
+    if (!this.owns(epoch)) return { kind: 'stale' };
+    if (!response) return { kind: 'offline' };
+    if (response.status === 404) return { kind: 'missing' };
+    if (response.status === 401 || response.status === 403)
+      return { kind: 'denied' };
+    if (!response.ok) return { kind: 'failed' };
+    let user: UserDetail;
+    try {
+      user = userDetailSchema.parse((await response.json()).user);
+    } catch {
+      return { kind: 'failed' };
+    }
+    // The body can arrive after another person signed in. It belongs to nobody then.
+    if (!this.owns(epoch)) return { kind: 'stale' };
+    return { kind: 'user', user };
   }
 
   /** A response for a query that changed meanwhile must not replace the counts. */
@@ -858,6 +903,7 @@ export class UsersStore {
     this.predicates.set(predicates);
     // A new query holds a new order, so Next user and Back to users forget the opened row.
     this.position.set(null);
+    this.cursor.set(null);
   }
 
   /**
@@ -917,6 +963,7 @@ export class UsersStore {
     this.view.set(view);
     // A different query holds a different order, so Next user and Back to users forget it.
     this.position.set(null);
+    this.cursor.set(null);
     const key = countsKey(view);
     if (key === this.counted) return;
     this.counted = key;

@@ -883,15 +883,64 @@ describe('the users store', () => {
     );
     const store = setup(request);
     const read = await store.user('110000000000000000001');
-    expect(read?.fullName).toBe('Aaliyah Brooks');
-    expect(read?.removedAt).toBeNull();
+    expect(read).toMatchObject({ kind: 'user' });
+    if (read.kind !== 'user') throw new Error('the read did not answer a user');
+    expect(read.user.fullName).toBe('Aaliyah Brooks');
+    expect(read.user.removedAt).toBeNull();
     expect(request).toHaveBeenCalledWith(
       '/api/users/110000000000000000001',
       undefined,
     );
     // The ID is one path segment, so a separator in the ID stays encoded.
-    expect(await store.user('8f/2')).toBeNull();
+    expect(await store.user('8f/2')).toEqual({ kind: 'missing' });
     expect(request).toHaveBeenCalledWith('/api/users/8f%2F2', undefined);
+  });
+
+  it('keeps a failed details read apart from a missing user (R5)', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({}, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({}, { status: 403 }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const store = setup(request);
+    expect(await store.user('110000000000000000001')).toEqual({
+      kind: 'failed',
+    });
+    expect(await store.user('110000000000000000001')).toEqual({
+      kind: 'denied',
+    });
+    // A transport failure is the offline answer, not a missing record.
+    expect(await store.user('110000000000000000001')).toEqual({
+      kind: 'offline',
+    });
+  });
+
+  it('reports an unreadable details body as a failed read (R5)', async () => {
+    const request = vi.fn(() =>
+      Promise.resolve(Response.json({ user: { userId: 'not-a-record' } })),
+    );
+    expect(await setup(request).user('110000000000000000001')).toEqual({
+      kind: 'failed',
+    });
+  });
+
+  it('rejects a details body that decodes after the person changed (R1)', async () => {
+    const body = held<unknown>();
+    const session = signal(sessionFor('actor'));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => body.promise,
+      } as unknown as Response),
+    );
+    const store = setup(request, session);
+    const read = store.user('110000000000000000001');
+    // The next person signs in while the valid body of the first person is in flight.
+    session.set(sessionFor('second'));
+    TestBed.tick();
+    body.release({ user: { ...userRow(), removedAt: null } });
+    expect(await read).toEqual({ kind: 'stale' });
   });
 
   it('reads the next row of the current order for Next user', async () => {
@@ -925,19 +974,31 @@ describe('the users store', () => {
 
   it('forgets the opened row when the query changes', () => {
     const store = setup(answer());
-    store.position.set({ index: 3, userId: '110000000000000000001' });
+    store.position.set({
+      index: 3,
+      userId: '110000000000000000001',
+      scrollTop: 840,
+    });
+    store.cursor.set({ index: 3, userId: '110000000000000000001' });
     // A filter change holds a new order, so Next user and Back to users forget the row.
     store.setPredicates([
       { field: 'fullName', operator: 'contains', value: 'a' },
     ]);
     expect(store.position()).toBeNull();
-    store.position.set({ index: 3, userId: '110000000000000000001' });
+    expect(store.cursor()).toBeNull();
+    store.position.set({
+      index: 3,
+      userId: '110000000000000000001',
+      scrollTop: 840,
+    });
+    store.cursor.set({ index: 3, userId: '110000000000000000001' });
     store.setView({
       predicates: [],
       sort: { field: 'primaryEmail', direction: 'asc' },
       selection: null,
     });
     expect(store.position()).toBeNull();
+    expect(store.cursor()).toBeNull();
   });
 
   it('keeps the opened row when the grid runs its query again', () => {
@@ -948,12 +1009,23 @@ describe('the users store', () => {
       selection: null,
     };
     store.setView(view);
-    store.position.set({ index: 3, userId: '110000000000000000001' });
+    store.position.set({
+      index: 3,
+      userId: '110000000000000000001',
+      scrollTop: 840,
+    });
+    store.cursor.set({ index: 4, userId: '110000000000000000002' });
     // Back to users reports the same order again, so the row stays for the focus return.
     store.setView({ ...view });
     expect(store.position()).toEqual({
       index: 3,
       userId: '110000000000000000001',
+      scrollTop: 840,
+    });
+    // Next user moved the cursor alone. The return anchor and its scroll are untouched.
+    expect(store.cursor()).toEqual({
+      index: 4,
+      userId: '110000000000000000002',
     });
   });
 });
