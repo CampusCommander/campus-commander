@@ -122,34 +122,42 @@ async function connectAdmin() {
 const cipher = { open: () => credential };
 
 /** One accepted category job with its plan, as `cc.confirm_user_category_plan` writes them. */
-async function categoryJob(schemaName) {
+async function categoryJob(schemaName, options = {}) {
+  const action = options.action ?? 'create-category';
+  const body =
+    options.body === undefined
+      ? {
+          schemaName,
+          displayName: `${schemaName} display`,
+          fields: [
+            {
+              fieldName: 'Code',
+              displayName: 'Code',
+              fieldType: 'STRING',
+              multiValued: false,
+              indexed: true,
+              readAccessType: 'ALL_DOMAIN_USERS',
+              numericIndexingSpec: null,
+            },
+          ],
+        }
+      : options.body;
   const planId = randomUUID();
   await migrator.query(
     `INSERT INTO cc.user_category_plans(plan_id,customer_id,created_by,permission_version,
       generation,action,schema_id,schema_name,base_etag,body,changes,limits,phrase,digest,expires_at)
-     VALUES($1,$2,$3,1,$4,'create-category',NULL,$5,NULL,$6,'[]','{}',NULL,$7,
+     VALUES($1,$2,$3,1,$4,$5,$6,$7,$8,$9,'[]','{}',NULL,$10,
        clock_timestamp()+interval '15 minutes')`,
     [
       planId,
       domain.customerId,
       actor,
       generation,
+      action,
+      options.schemaId ?? null,
       schemaName,
-      JSON.stringify({
-        schemaName,
-        displayName: `${schemaName} display`,
-        fields: [
-          {
-            fieldName: 'Code',
-            displayName: 'Code',
-            fieldType: 'STRING',
-            multiValued: false,
-            indexed: true,
-            readAccessType: 'ALL_DOMAIN_USERS',
-            numericIndexingSpec: null,
-          },
-        ],
-      }),
+      options.baseEtag ?? null,
+      JSON.stringify(body),
       'a'.repeat(64),
     ],
   );
@@ -377,6 +385,83 @@ test(
     // The stored schema stays absent, apart from the outcome.
     assert.equal((await storedSchemas()).includes(schemaName), false);
     assert.equal((await cachedCategories()).includes(schemaName), false);
+  },
+);
+
+test(
+  'a changed etag fails category-changed and the mock keeps its category',
+  { timeout },
+  async () => {
+    const schemaName = 'K16EtagGuard';
+    // Create the category through the worker, so the mock holds a real etag.
+    const create = await categoryJob(schemaName);
+    const created = await new UserSchemaChangeJobs(runtime, cipher, {
+      readTimeoutMilliseconds: 2_000,
+    }).run(
+      {
+        customerId: domain.customerId,
+        jobId: create.jobId,
+        dispatchToken: create.dispatchToken,
+        correlationId: randomUUID(),
+      },
+      new AbortController().signal,
+    );
+    assert.equal(created.outcome, 'settled');
+    assert.equal((await jobRow(create.jobId)).status, 'completed');
+    const cached = (
+      await migrator.query(
+        'SELECT schema_id,etag,display_name FROM cc.user_attribute_categories WHERE customer_id=$1 AND schema_name=$2',
+        [domain.customerId, schemaName],
+      )
+    ).rows[0];
+    assert.ok(cached, 'The created category is in the cache.');
+
+    // An edit whose plan froze an older etag sends nothing (C7).
+    const edit = await categoryJob(schemaName, {
+      action: 'edit-category',
+      schemaId: cached.schema_id,
+      baseEtag: '"stale-etag"',
+      body: {
+        schemaName,
+        displayName: 'K16 etag guard renamed',
+        fields: [
+          {
+            fieldName: 'Code',
+            displayName: 'Code',
+            fieldType: 'STRING',
+            multiValued: false,
+            indexed: true,
+            readAccessType: 'ALL_DOMAIN_USERS',
+            numericIndexingSpec: null,
+          },
+        ],
+      },
+    });
+    const answer = await new UserSchemaChangeJobs(runtime, cipher, {
+      readTimeoutMilliseconds: 2_000,
+    }).run(
+      {
+        customerId: domain.customerId,
+        jobId: edit.jobId,
+        dispatchToken: edit.dispatchToken,
+        correlationId: randomUUID(),
+      },
+      new AbortController().signal,
+    );
+    assert.equal(answer.outcome, 'settled');
+    const job = await jobRow(edit.jobId);
+    assert.equal(job.status, 'failed');
+    assert.equal(job.failure, 'category-changed');
+    // The mock keeps the created display name, so no update left the worker.
+    const now = await new GoogleUserReader().categories(
+      credential,
+      domain.customerId,
+      AbortSignal.timeout(10_000),
+    );
+    assert.equal(
+      now.find((category) => category.schemaName === schemaName)?.displayName,
+      `${schemaName} display`,
+    );
   },
 );
 
