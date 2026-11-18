@@ -51,6 +51,10 @@ import {
   type DeviceImportDatabase,
   type DeviceImportRequest,
 } from './device-import';
+import {
+  UserSchemaChangeJobs,
+  type UserSchemaChangeRequest,
+} from './user-schema-change';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -255,6 +259,12 @@ export class GoogleWorker {
   ) {
     const { pool, cipher } = this.resources();
     return this.updates(pool, cipher).runPoll(input, signal);
+  }
+
+  /** The one call of a category job (design card K16, document B section 7.1). */
+  async changeUserSchema(input: UserSchemaChangeRequest, signal: AbortSignal) {
+    const { pool, cipher } = this.resources();
+    return new UserSchemaChangeJobs(pool, cipher).run(input, signal);
   }
 
   /**
