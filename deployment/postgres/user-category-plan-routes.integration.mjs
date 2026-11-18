@@ -237,6 +237,29 @@ export async function qualifyUserCategoryPlans({
     );
 
     await check(
+      'K15 the runtime role executes each plan function, and no other role does',
+      async () => {
+        for (const signature of [
+          'cc.read_user_category_plan_base(uuid,integer)',
+          'cc.create_user_category_plan(uuid,integer,text,integer,text,text,text,text,text,jsonb,jsonb,text,text,integer)',
+          'cc.read_user_category_plan(uuid,integer,uuid)',
+          'cc.confirm_user_category_plan(uuid,integer,uuid,text,text,uuid)',
+        ]) {
+          const allowed = await one(
+            `SELECT has_function_privilege('cc-app',$1,'EXECUTE') AS allowed`,
+            [signature],
+          );
+          assert.equal(allowed.allowed, true, signature);
+          const denied = await one(
+            `SELECT has_function_privilege('cc-kestra',$1,'EXECUTE') AS allowed`,
+            [signature],
+          );
+          assert.equal(denied.allowed, false, signature);
+        }
+      },
+    );
+
+    await check(
       'K15 a create plan refuses a category name that the cache holds',
       async () => {
         const answer = await createPlan(manager, {
