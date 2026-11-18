@@ -394,49 +394,67 @@ export async function qualifyUserCategoryPlanHttp({
     );
 
     await check(
-      'K15 a padded category label passes the trimmed confirmation and refuses a wrong case',
+      'K15 a padded category label passes the trimmed confirmation for each whitespace class and refuses a wrong case',
       async () => {
-        await migrator.query(
-          `UPDATE cc.user_attribute_categories SET display_name='  Student info  ',etag='"etag-padded"'
-           WHERE customer_id=$1 AND schema_id=$2`,
-          [customer, schemaId],
-        );
-        const deletion = await request('POST', '', {
-          kind: 'delete-category',
-          schemaId,
-          baseEtag: '"etag-padded"',
-        });
-        assert.equal(deletion.status, 201, JSON.stringify(deletion.body));
-        assert.equal(deletion.body.phrase, '  Student info  ');
-        assert.equal(deletion.body.displayName, '  Student info  ');
-        const confirmed = await request(
-          'POST',
-          `/${deletion.body.planId}/confirm`,
-          {
-            digest: deletion.body.digest,
-            acknowledged: true,
-            typedPhrase: '  Student info  ',
-          },
-        );
-        assert.equal(confirmed.status, 201, JSON.stringify(confirmed.body));
-        assert.equal(confirmed.body.action, 'delete-category');
-        const second = await request('POST', '', {
-          kind: 'delete-category',
-          schemaId,
-          baseEtag: '"etag-padded"',
-        });
-        assert.equal(second.status, 201, JSON.stringify(second.body));
-        const refused = await request(
-          'POST',
-          `/${second.body.planId}/confirm`,
-          {
-            digest: second.body.digest,
-            acknowledged: true,
-            typedPhrase: 'student info',
-          },
-        );
-        assert.equal(refused.status, 422, JSON.stringify(refused.body));
-        assert.deepEqual(refused.body, { reason: 'phrase-mismatch' });
+        // Every character that JavaScript String.prototype.trim removes: ASCII space, nonbreaking
+        // space, vertical tab, em space, and the byte-order mark. The route trims the typed phrase
+        // with trim(), so the SQL comparison must remove the same characters from the frozen label.
+        const pads = ['  ', '\u00a0', '\u000b', '\u2003', '\ufeff'];
+        for (const [index, pad] of pads.entries()) {
+          const label = `${pad}Student info${pad}`;
+          const etag = `"etag-padded-${index}"`;
+          await migrator.query(
+            `UPDATE cc.user_attribute_categories SET display_name=$3,etag=$4
+             WHERE customer_id=$1 AND schema_id=$2`,
+            [customer, schemaId, label, etag],
+          );
+          const deletion = await request('POST', '', {
+            kind: 'delete-category',
+            schemaId,
+            baseEtag: etag,
+          });
+          assert.equal(deletion.status, 201, JSON.stringify(deletion.body));
+          // The plan answer keeps the cached label and phrase with their padding.
+          assert.equal(deletion.body.phrase, label);
+          assert.equal(deletion.body.displayName, label);
+          const confirmed = await request(
+            'POST',
+            `/${deletion.body.planId}/confirm`,
+            {
+              digest: deletion.body.digest,
+              acknowledged: true,
+              typedPhrase: 'Student info',
+            },
+          );
+          assert.equal(
+            confirmed.status,
+            201,
+            `${JSON.stringify(pad)} ${JSON.stringify(confirmed.body)}`,
+          );
+          assert.equal(confirmed.body.action, 'delete-category');
+          assert.equal(await jobCount(deletion.body.planId), 1);
+          const second = await request('POST', '', {
+            kind: 'delete-category',
+            schemaId,
+            baseEtag: etag,
+          });
+          assert.equal(second.status, 201, JSON.stringify(second.body));
+          const refused = await request(
+            'POST',
+            `/${second.body.planId}/confirm`,
+            {
+              digest: second.body.digest,
+              acknowledged: true,
+              typedPhrase: 'student info',
+            },
+          );
+          assert.equal(
+            refused.status,
+            422,
+            `${JSON.stringify(pad)} ${JSON.stringify(refused.body)}`,
+          );
+          assert.deepEqual(refused.body, { reason: 'phrase-mismatch' });
+        }
       },
     );
   } finally {

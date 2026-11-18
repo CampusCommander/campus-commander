@@ -1139,95 +1139,106 @@ export async function qualifyUserCategoryPlans({
     );
 
     await check(
-      'K15 a padded category label passes the trimmed confirmation and refuses a wrong case',
+      'K15 a padded category label passes the trimmed confirmation for each whitespace class and refuses a wrong case',
       async () => {
+        // Every character that JavaScript String.prototype.trim removes: ASCII space, nonbreaking
+        // space, vertical tab, em space, and the byte-order mark. The route trims the typed phrase
+        // with trim(), so the SQL comparison must remove the same characters from the frozen label.
+        const pads = ['  ', '\u00a0', '\u000b', '\u2003', '\ufeff'];
+        const fields = [
+          {
+            fieldId: 'fld-padded-note',
+            fieldName: 'Note',
+            displayName: 'Note',
+            fieldType: 'STRING',
+            multiValued: false,
+            indexed: true,
+            readAccessType: 'ADMINS_AND_SELF',
+            numericIndexingSpec: null,
+            holders: 0,
+          },
+        ];
+        const changes = [
+          {
+            change: 'removed',
+            fieldId: 'fld-padded-note',
+            fieldName: 'Note',
+            displayName: 'Note',
+            properties: [],
+            holders: 0,
+          },
+        ];
         await storeCategory(
           'schem=PaddedInfo',
           'PaddedInfo',
           '  Padded info  ',
           '"etag-padded"',
-          [
-            {
-              fieldId: 'fld-padded-note',
-              fieldName: 'Note',
-              displayName: 'Note',
-              fieldType: 'STRING',
-              multiValued: false,
-              indexed: true,
-              readAccessType: 'ADMINS_AND_SELF',
-              numericIndexingSpec: null,
-              holders: 0,
-            },
-          ],
+          fields,
         );
-        const stored = await createPlan(manager, {
-          kind: 'delete-category',
-          schemaId: 'schem=PaddedInfo',
-          baseEtag: '"etag-padded"',
-          schemaName: 'PaddedInfo',
-          displayName: '  Padded info  ',
-          phrase: '  Padded info  ',
-          changes: [
-            {
-              change: 'removed',
-              fieldId: 'fld-padded-note',
-              fieldName: 'Note',
-              displayName: 'Note',
-              properties: [],
-              holders: 0,
-            },
-          ],
-        });
-        assert.equal(
-          stored.result.outcome,
-          'created',
-          JSON.stringify(stored.result),
-        );
-        // The plan answer keeps the cached label with its surrounding whitespace.
-        assert.equal(stored.result.plan.phrase, '  Padded info  ');
-        assert.equal(stored.result.plan.displayName, '  Padded info  ');
-        // The route trims the typed phrase, and the function trims the frozen phrase the same way.
-        const confirmed = await confirmPlan(
-          manager,
-          stored.result.plan.planId,
-          stored.result.plan.digest,
-          'Padded info',
-        );
-        assert.equal(
-          confirmed.result.outcome,
-          'created',
-          JSON.stringify(confirmed.result),
-        );
-        const second = await createPlan(manager, {
-          kind: 'delete-category',
-          schemaId: 'schem=PaddedInfo',
-          baseEtag: '"etag-padded"',
-          schemaName: 'PaddedInfo',
-          displayName: '  Padded info  ',
-          phrase: '  Padded info  ',
-          changes: [
-            {
-              change: 'removed',
-              fieldId: 'fld-padded-note',
-              fieldName: 'Note',
-              displayName: 'Note',
-              properties: [],
-              holders: 0,
-            },
-          ],
-        });
-        assert.equal(
-          second.result.outcome,
-          'created',
-          JSON.stringify(second.result),
-        );
-        const refused = await confirmPlan(
-          manager,
-          second.result.plan.planId,
-          second.result.plan.digest,
-          'padded info',
-        );
-        assert.equal(refused.result.outcome, 'phrase-mismatch');
+        for (const [index, pad] of pads.entries()) {
+          const label = `${pad}Padded info${pad}`;
+          const etag = `"etag-padded-${index}"`;
+          await migrator.query(
+            `UPDATE cc.user_attribute_categories SET display_name=$2,etag=$3
+             WHERE schema_id=$1`,
+            ['schem=PaddedInfo', label, etag],
+          );
+          const stored = await createPlan(manager, {
+            kind: 'delete-category',
+            schemaId: 'schem=PaddedInfo',
+            baseEtag: etag,
+            schemaName: 'PaddedInfo',
+            displayName: label,
+            phrase: label,
+            changes,
+          });
+          assert.equal(
+            stored.result.outcome,
+            'created',
+            JSON.stringify(stored.result),
+          );
+          // The plan answer keeps the cached label and phrase with their padding.
+          assert.equal(stored.result.plan.phrase, label);
+          assert.equal(stored.result.plan.displayName, label);
+          // The route trims the typed phrase, and the function trims the frozen phrase the same
+          // way.
+          const confirmed = await confirmPlan(
+            manager,
+            stored.result.plan.planId,
+            stored.result.plan.digest,
+            'Padded info',
+          );
+          assert.equal(
+            confirmed.result.outcome,
+            'created',
+            `${JSON.stringify(pad)} ${JSON.stringify(confirmed.result)}`,
+          );
+          const second = await createPlan(manager, {
+            kind: 'delete-category',
+            schemaId: 'schem=PaddedInfo',
+            baseEtag: etag,
+            schemaName: 'PaddedInfo',
+            displayName: label,
+            phrase: label,
+            changes,
+          });
+          assert.equal(
+            second.result.outcome,
+            'created',
+            JSON.stringify(second.result),
+          );
+          const refused = await confirmPlan(
+            manager,
+            second.result.plan.planId,
+            second.result.plan.digest,
+            'padded info',
+          );
+          assert.equal(
+            refused.result.outcome,
+            'phrase-mismatch',
+            JSON.stringify(pad),
+          );
+        }
         await migrator.query(
           `DELETE FROM cc.user_attribute_categories WHERE schema_id='schem=PaddedInfo'`,
         );
