@@ -51,6 +51,7 @@ const summary = {
   revision: 3,
   action: 'update-device-annotations',
   status: 'running',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 12 },
   requestedBy: { id: requesterId, displayName: 'Alex Rivera' },
   createdAt: at,
@@ -341,6 +342,30 @@ test('job summaries are strict objects', () => {
   const missing = { ...summary };
   delete missing.displayId;
   assert.equal(jobSummarySchema.safeParse(missing).success, false);
+});
+
+test('a job summary names the entity type that its count counts', () => {
+  // A user refresh reads four users, and its scope counts those users (document A section 5).
+  const user = {
+    ...summary,
+    displayId: 'REF-004',
+    action: 'refresh-inventory',
+    entityType: 'user',
+    scope: { kind: 'devices', deviceCount: 4 },
+  };
+  assert.deepEqual(jobSummarySchema.parse(user), user);
+  assert.equal(jobSummarySchema.parse(user).entityType, 'user');
+  assert.equal(jobSummarySchema.parse(summary).entityType, 'device');
+  // The detail names it too, because the detail extends the summary.
+  assert.equal(jobDetailSchema.parse(detailOf(user)).entityType, 'user');
+  // A summary without the entity type is refused, and so is an unknown one.
+  const withoutType = { ...user };
+  delete withoutType.entityType;
+  assert.equal(jobSummarySchema.safeParse(withoutType).success, false);
+  assert.equal(
+    jobSummarySchema.safeParse({ ...user, entityType: 'group' }).success,
+    false,
+  );
 });
 
 test('progress counts total and pending together', () => {

@@ -27,6 +27,7 @@ const jobRow = (overrides = {}) => ({
   customer_id: 'C0123456',
   kind: 'inventory-refresh',
   scope_kind: 'devices',
+  entity_type: 'device',
   status: 'completed',
   requested_by: REQUESTER,
   requested_by_name: 'Ada Lovelace',
@@ -108,6 +109,7 @@ const jobColumns = new Set([
   'customer_id',
   'kind',
   'scope_kind',
+  'entity_type',
   'status',
   'requested_by',
   'generation',
@@ -195,6 +197,44 @@ test('a write summary reads the UPD- action', () => {
     jobRow({ kind: 'device-update', display_id: 'UPD-006', status: 'failed' }),
   );
   assert.equal(summary.action, 'update-device-annotations');
+});
+
+test('a summary names the entity type that its scope counts', () => {
+  // A device job counts devices.
+  assert.equal(jobSummary(jobRow()).entityType, 'device');
+  // A user refresh reads four users, so its count counts users (document A section 5).
+  const refresh = jobSummary(
+    jobRow({ display_id: 'REF-004', entity_type: 'user', target_count: 4 }),
+  );
+  assert.equal(refresh.action, 'refresh-inventory');
+  assert.equal(refresh.entityType, 'user');
+  assert.equal(refresh.scope.deviceCount, 4);
+  // A full user sync shares the kind and the all-devices scope of a device full sync.
+  const sync = jobSummary(
+    jobRow({
+      display_id: 'REF-005',
+      scope_kind: 'all-devices',
+      entity_type: 'user',
+      target_count: null,
+      finished_at: null,
+    }),
+  );
+  assert.equal(sync.entityType, 'user');
+  assert.equal(sync.scope.kind, 'all-devices');
+  assert.equal(sync.scope.deviceCount, null);
+});
+
+test('the detail of a user refresh names the user entity type', async () => {
+  const db = database([
+    [
+      'LEFT JOIN cc.device_update_jobs u',
+      [jobRow({ display_id: 'REF-004', entity_type: 'user', target_count: 4 })],
+    ],
+    ['FROM cc.device_update_operations', []],
+  ]);
+  const detail = await new Jobs(db).detail(session(), 'C0123456', 'REF-004');
+  assert.equal(detail.entityType, 'user');
+  assert.equal(detail.scope.deviceCount, 4);
 });
 
 /** The clock of the state 26 fixtures. Each plan expiry is compared against it. */
@@ -517,6 +557,54 @@ test('the list applies every filter, the keyset, and the page limit', async () =
   const [paged, pagedValues] = db.calls[1];
   assert.ok(paged.includes('(j.created_at,j.display_id)<'));
   assert.equal(pagedValues.at(-1), 11);
+});
+
+test('the list filters by each entity type and by both', async () => {
+  const rows = [
+    jobRow({ display_id: 'REF-004', entity_type: 'user', target_count: 4 }),
+    jobRow({ display_id: 'REF-001', entity_type: 'device' }),
+  ];
+  const page = async (entityType) => {
+    const db = database([
+      [
+        'AS matching',
+        [{ matching: 1, observed_at: new Date('2026-10-06T12:10:00.000Z') }],
+      ],
+      ['ORDER BY j.created_at DESC', rows],
+    ]);
+    const answer = await new Jobs(db).list(
+      session(),
+      'C0123456',
+      { entityType },
+      undefined,
+      10,
+    );
+    return { answer, db };
+  };
+
+  // A user filter, a device filter, and both values each reach the stored column.
+  const cases = [
+    [['user'], ['user']],
+    [['device'], ['device']],
+    [
+      ['user', 'device'],
+      ['user', 'device'],
+    ],
+  ];
+  for (const [filter, stored] of cases) {
+    const { answer, db } = await page(filter);
+    const [counted, countedValues] = db.calls[0];
+    const [paged, pagedValues] = db.calls[1];
+    assert.ok(counted.includes('j.entity_type=ANY($4::text[])'), filter.join());
+    assert.ok(!counted.includes('false'), 'A filter matches stored jobs.');
+    assert.deepEqual(countedValues[3], stored);
+    assert.ok(paged.includes('j.entity_type=ANY($4::text[])'), filter.join());
+    assert.deepEqual(pagedValues[3], stored);
+    assert.deepEqual(
+      answer.jobs.map((job) => job.entityType),
+      ['user', 'device'],
+    );
+  }
 });
 
 test('the list answers a next cursor when more rows exist', async () => {
