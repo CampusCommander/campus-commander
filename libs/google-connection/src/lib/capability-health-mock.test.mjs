@@ -74,12 +74,16 @@ function check(credential, requested = capabilities) {
 test('the harness service-account grant passes every capability check', async () => {
   assert.equal(
     capabilities.length,
-    9,
-    'admin-sdk-mock 0.4.0 serves nine scopes',
+    10,
+    'admin-sdk-mock 0.4.0 serves ten scopes',
   );
   // The harness grant names both new read scopes. A later edit that drops one
   // from the shared grant fails the token exchange below.
-  for (const capability of ['user-inventory', 'user-schemas'])
+  for (const capability of [
+    'user-inventory',
+    'user-schemas',
+    'user-schema-changes',
+  ])
     assert.ok(
       GOOGLE_HARNESS_SCOPES.includes(scopeOf(capability)),
       `The harness grant names the ${capability} scope.`,
@@ -156,6 +160,19 @@ test('the harness grant without the user read scope fails only user-inventory', 
     capabilities.map((capability) => [
       capability,
       capability === 'user-inventory' ? 'delegation-not-authorized' : null,
+    ]),
+  );
+});
+
+/** The harness grant without the schema write scope. */
+test('the harness grant without the user schema write scope fails only user-schema-changes', async () => {
+  assert.ok(GOOGLE_HARNESS_SCOPES.includes(scopeOf('user-schema-changes')));
+  const result = await check(credentialFor(without('user-schema-changes')));
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'user-schema-changes' ? 'delegation-not-authorized' : null,
     ]),
   );
 });

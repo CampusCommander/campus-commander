@@ -124,6 +124,19 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
       'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/list',
     evidence: 'admin-sdk-mock 0.4.0 only. No live read-only check yet',
   },
+  {
+    id: 'user-schema-changes',
+    requiredForConnection: false,
+    label: 'User attribute changes',
+    enabled: true,
+    qualified: false,
+    scope: GOOGLE_SCHEMA_WRITE_SCOPE,
+    method: 'schemas.update',
+    source:
+      'https://developers.google.com/workspace/admin/directory/reference/rest/v1/schemas/update',
+    evidence:
+      'admin-sdk-mock 0.4.0 and live check L2, which called the schema writes directly. No live category job',
+  },
 ] as const);
 
 /** Capability ids that the Google connection page lists during setup, in page order. */
@@ -137,6 +150,7 @@ const GOOGLE_SETUP_CAPABILITY_IDS = [
   'drive-files',
   'user-inventory',
   'user-schemas',
+  'user-schema-changes',
 ] as const;
 
 /**

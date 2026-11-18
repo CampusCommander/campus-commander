@@ -219,7 +219,7 @@ test('successful capability checks produce one consistent customer observation w
   assert.equal(JSON.stringify(result).includes('synthetic-private-key'), false);
 });
 
-test('all nine capabilities request one exact scope each and read the smallest page', async (t) => {
+test('all ten capabilities request one exact scope each and read the smallest page', async (t) => {
   const calls = stub(t);
   const result = await check(capabilities);
   assert.deepEqual(
@@ -230,7 +230,7 @@ test('all nine capabilities request one exact scope each and read the smallest p
       failure: null,
     })),
   );
-  assert.equal(capabilities.length, 9);
+  assert.equal(capabilities.length, 10);
   assert.equal(result.observation?.customerId, customer.id);
   const tokens = calls.filter((call) => call.operation === 'token');
   assert.equal(tokens.length, capabilities.length);
@@ -240,7 +240,11 @@ test('all nine capabilities request one exact scope each and read the smallest p
     capabilities.map(scopeOf).sort(),
   );
   const read = reads(calls);
-  assert.equal(read.length, 8, 'the device write capability reads nothing');
+  assert.equal(
+    read.length,
+    8,
+    'the device write and category write capabilities read nothing',
+  );
   assert.ok(read.every((call) => call.method === 'GET'));
   const orgUnitsRead = read.find((call) => call.url.endsWith('/orgunits'));
   assert.deepEqual(orgUnitsRead.params, {
@@ -408,6 +412,42 @@ test('the user schemas check reads one schema ID with its own exact scope', asyn
   assert.equal(calls.length, 2, 'the category check sends no write');
 });
 
+test('the user schema changes check requests its token only and sends no write request', async (t) => {
+  const calls = stub(t);
+  const result = await check(['user-schema-changes']);
+  assert.deepEqual(result.results, [
+    { capability: 'user-schema-changes', scopeVerified: true, failure: null },
+  ]);
+  assert.equal(result.observation, null);
+  assert.deepEqual(calls, [
+    { operation: 'token', scopes: [scopeOf('user-schema-changes')] },
+  ]);
+  assert.equal(
+    calls.some((call) => call.operation === 'read'),
+    false,
+    'the health check never writes a category',
+  );
+});
+
+test('a denied user schema write scope fails user-schema-changes only', async (t) => {
+  stub(t, {
+    tokenFailure: (scope) =>
+      scope === scopeOf('user-schema-changes')
+        ? {
+            response: { status: 401, data: { error: 'unauthorized_client' } },
+          }
+        : undefined,
+  });
+  const result = await check(capabilities);
+  assert.deepEqual(
+    result.results.map((entry) => [entry.capability, entry.failure]),
+    capabilities.map((capability) => [
+      capability,
+      capability === 'user-schema-changes' ? 'delegation-not-authorized' : null,
+    ]),
+  );
+});
+
 test('an account without a user or a category passes both read checks', async (t) => {
   t.mock.method(JWT.prototype, 'getAccessToken', async function () {
     return { token: this.scopes[0] };
@@ -522,6 +562,11 @@ test('an inconsistent customer/domain observation keeps every other capability r
     },
     {
       capability: 'user-schemas',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'user-schema-changes',
       scopeVerified: true,
       failure: null,
     },
