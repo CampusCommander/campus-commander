@@ -106,6 +106,8 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'EXP-001',
     'IMP-007',
     'EXP-1000',
+    'CAT-001',
+    'CAT-1000',
   ])
     assert.equal(jobDisplayIdSchema.safeParse(id).success, true);
   for (const id of [
@@ -117,6 +119,10 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'EXP-01',
     'IMPORT-001',
     'exp-001',
+    'CAT-01',
+    'CAT',
+    'cat-001',
+    'UAT-001',
   ])
     assert.equal(jobDisplayIdSchema.safeParse(id).success, false);
   assert.deepEqual(jobStatusSchema.options, [
@@ -209,6 +215,7 @@ test('the command and status vocabulary is accepted', () => {
     'UPD-006-3-annotatedUser',
     'UPD-006-3-notes',
     'UPD-006-3-orgUnitPath',
+    'CAT-001-1',
   ])
     assert.equal(jobOperationIdSchema.safeParse(operationId).success, true);
   for (const operationId of [
@@ -217,6 +224,7 @@ test('the command and status vocabulary is accepted', () => {
     'CMD-001',
     'UPD-006-3-assetTag',
     'UPD-006-3-annotatedlocation',
+    'CAT-001-1-notes',
   ])
     assert.equal(jobOperationIdSchema.safeParse(operationId).success, false);
   // A command row names no field, and an update row names exactly one of the five.

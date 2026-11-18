@@ -5,6 +5,12 @@ import {
   USER_ATTRIBUTE_FIELD_LIMIT,
   USER_BY_IDS_LIMIT,
   userAttributeCategoriesSchema,
+  userAttributeCategoryCreateDraftSchema,
+  userAttributeCategoryJobReceiptSchema,
+  userAttributeCategoryPlanChangeSchema,
+  userAttributeCategoryPlanConfirmRequestSchema,
+  userAttributeCategoryPlanRequestSchema,
+  userAttributeCategoryPlanSchema,
   userAttributeCategorySchema,
   userAttributeFieldSchema,
   userAttributeKey,
@@ -752,6 +758,412 @@ test('the category read carries the limit counts of the Google account', () => {
     userAttributeCategoriesSchema.safeParse({
       ...answer,
       limits: { categories: 1 },
+    }).success,
+    false,
+  );
+});
+
+const planId = '00000000-0000-4000-8000-000000000001';
+const planDigest = 'a'.repeat(64);
+const planExpiry = '2026-11-16T12:15:00.000Z';
+const planLimits = {
+  categories: 3,
+  categoryLimit: USER_ATTRIBUTE_CATEGORY_LIMIT,
+  attributes: 10,
+  attributeLimit: USER_ATTRIBUTE_FIELD_LIMIT,
+};
+/** A cached attribute and a new one, as the category editor sends them (B section 6.1). */
+const keptAttribute = {
+  fieldId: '00f1',
+  fieldName: 'Homeroom',
+  displayName: 'Homeroom',
+  fieldType: 'STRING',
+  multiValued: false,
+  indexed: true,
+  readAccessType: 'ADMINS_AND_SELF',
+  numericIndexingSpec: null,
+};
+const newAttribute = {
+  fieldId: null,
+  fieldName: 'GradeLevel',
+  displayName: 'Grade level',
+  fieldType: 'INT64',
+  multiValued: false,
+  indexed: true,
+  readAccessType: 'ALL_DOMAIN_USERS',
+  numericIndexingSpec: { minValue: 0, maxValue: 12 },
+};
+/** The `schemaId` of check L2 holds characters outside `[A-Za-z0-9_-]` and stays opaque (C8). */
+const opaqueSchemaId = 'schem=Id/1';
+
+test('a category plan request names its kind, the cached category, and the draft', () => {
+  const create = {
+    kind: 'create-category',
+    draft: {
+      schemaName: 'StudentInfo',
+      displayName: 'Student information',
+      fields: [newAttribute],
+    },
+  };
+  assert.deepEqual(
+    userAttributeCategoryPlanRequestSchema.parse(create),
+    create,
+  );
+  const edit = {
+    kind: 'edit-category',
+    schemaId: opaqueSchemaId,
+    baseEtag: '"abc123"',
+    draft: {
+      displayName: 'Student information',
+      fields: [keptAttribute, newAttribute],
+    },
+  };
+  assert.deepEqual(userAttributeCategoryPlanRequestSchema.parse(edit), edit);
+  const remove = {
+    kind: 'delete-category',
+    schemaId: opaqueSchemaId,
+    baseEtag: '"abc123"',
+  };
+  assert.deepEqual(
+    userAttributeCategoryPlanRequestSchema.parse(remove),
+    remove,
+  );
+  // A create names no cached category; an edit and a delete name one and its etag.
+  assert.equal(
+    userAttributeCategoryPlanRequestSchema.safeParse({
+      ...create,
+      schemaId: opaqueSchemaId,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanRequestSchema.safeParse({
+      kind: 'edit-category',
+      schemaId: opaqueSchemaId,
+      draft: edit.draft,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanRequestSchema.safeParse({
+      ...remove,
+      draft: edit.draft,
+    }).success,
+    false,
+  );
+  // A new category holds at least one attribute, and none of them carries a field ID.
+  assert.equal(
+    userAttributeCategoryCreateDraftSchema.safeParse({
+      ...create.draft,
+      fields: [],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryCreateDraftSchema.safeParse({
+      ...create.draft,
+      fields: [keptAttribute],
+    }).success,
+    false,
+  );
+  // K19: only a whole-number or a decimal attribute carries a number range.
+  assert.equal(
+    userAttributeCategoryCreateDraftSchema.safeParse({
+      ...create.draft,
+      fields: [{ ...newAttribute, fieldType: 'STRING' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryCreateDraftSchema.safeParse({
+      ...create.draft,
+      fields: [{ ...newAttribute, fieldType: 'DOUBLE' }],
+    }).success,
+    true,
+  );
+});
+
+test('a category plan change names the attribute and what moved', () => {
+  const added = {
+    change: 'added',
+    fieldId: null,
+    fieldName: 'GradeLevel',
+    displayName: 'Grade level',
+    properties: [],
+    holders: null,
+  };
+  assert.deepEqual(userAttributeCategoryPlanChangeSchema.parse(added), added);
+  const changed = {
+    change: 'changed',
+    fieldId: '00f1',
+    fieldName: 'Homeroom',
+    displayName: 'Homeroom',
+    properties: ['displayName', 'readAccessType'],
+    holders: null,
+  };
+  assert.deepEqual(
+    userAttributeCategoryPlanChangeSchema.parse(changed),
+    changed,
+  );
+  const removed = {
+    change: 'removed',
+    fieldId: '00f2',
+    fieldName: 'Nickname',
+    displayName: 'Nickname',
+    properties: [],
+    holders: 1988,
+  };
+  assert.deepEqual(
+    userAttributeCategoryPlanChangeSchema.parse(removed),
+    removed,
+  );
+  // A removed attribute alone carries its holder count.
+  assert.equal(
+    userAttributeCategoryPlanChangeSchema.safeParse({
+      ...removed,
+      holders: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanChangeSchema.safeParse({
+      ...changed,
+      holders: 3,
+    }).success,
+    false,
+  );
+  // A changed attribute names at least one property; an added one names none.
+  assert.equal(
+    userAttributeCategoryPlanChangeSchema.safeParse({
+      ...changed,
+      properties: [],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanChangeSchema.safeParse({
+      ...added,
+      properties: ['displayName'],
+    }).success,
+    false,
+  );
+  // A changed attribute is cached, so it carries its ID.
+  assert.equal(
+    userAttributeCategoryPlanChangeSchema.safeParse({
+      ...changed,
+      fieldId: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanChangeSchema.safeParse({
+      ...added,
+      fieldId: '00f3',
+    }).success,
+    false,
+  );
+});
+
+test('a category plan answers its Google method, its changes, and its typed phrase', () => {
+  const plan = {
+    planId,
+    kind: 'edit-category',
+    method: 'update',
+    schemaId: opaqueSchemaId,
+    schemaName: 'StudentInfo',
+    displayName: 'Student information',
+    baseEtag: '"abc123"',
+    changes: [
+      {
+        change: 'added',
+        fieldId: null,
+        fieldName: 'GradeLevel',
+        displayName: 'Grade level',
+        properties: [],
+        holders: null,
+      },
+      {
+        change: 'changed',
+        fieldId: '00f1',
+        fieldName: 'Homeroom',
+        displayName: 'Homeroom',
+        properties: ['displayName'],
+        holders: null,
+      },
+      {
+        change: 'removed',
+        fieldId: '00f2',
+        fieldName: 'Nickname',
+        displayName: 'Nickname',
+        properties: [],
+        holders: 1988,
+      },
+    ],
+    phrase: 'Nickname',
+    limits: planLimits,
+    preparedAt: at,
+    expiresAt: planExpiry,
+    digest: planDigest,
+  };
+  assert.deepEqual(userAttributeCategoryPlanSchema.parse(plan), plan);
+  // The Google method follows the kind.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({ ...plan, method: 'insert' })
+      .success,
+    false,
+  );
+  // A creation plan inserts, and a deletion plan deletes.
+  const create = {
+    ...plan,
+    kind: 'create-category',
+    method: 'insert',
+    schemaId: null,
+    baseEtag: null,
+    changes: [plan.changes[0]],
+    phrase: null,
+  };
+  assert.deepEqual(userAttributeCategoryPlanSchema.parse(create), create);
+  const remove = {
+    ...plan,
+    kind: 'delete-category',
+    method: 'delete',
+    changes: [],
+    phrase: 'Student information',
+  };
+  assert.deepEqual(userAttributeCategoryPlanSchema.parse(remove), remove);
+  // A create carries no cached ID; an edit and a delete carry one.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...create,
+      schemaId: opaqueSchemaId,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({ ...plan, schemaId: null })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...create,
+      baseEtag: '"abc123"',
+    }).success,
+    false,
+  );
+  // A removal and a delete require the typed phrase, and another plan carries none.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({ ...plan, phrase: null })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({ ...create, phrase: 'Homeroom' })
+      .success,
+    false,
+  );
+  // A create adds attributes, a delete removes them, and neither carries another change.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...create,
+      changes: [plan.changes[2]],
+      phrase: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...remove,
+      changes: [plan.changes[0]],
+    }).success,
+    false,
+  );
+  // The digest is the 64-unit hexadecimal form of the device previews.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...plan,
+      digest: 'a'.repeat(63),
+    }).success,
+    false,
+  );
+  // A plan expires after it was prepared.
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({
+      ...plan,
+      expiresAt: plan.preparedAt,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanSchema.safeParse({ ...plan, extra: true }).success,
+    false,
+  );
+});
+
+test('a category plan confirm carries the digest, the acknowledgment, and the typed phrase', () => {
+  const confirm = { digest: planDigest, acknowledged: true };
+  assert.deepEqual(
+    userAttributeCategoryPlanConfirmRequestSchema.parse(confirm),
+    confirm,
+  );
+  const withPhrase = { ...confirm, typedPhrase: 'Device program' };
+  assert.deepEqual(
+    userAttributeCategoryPlanConfirmRequestSchema.parse(withPhrase),
+    withPhrase,
+  );
+  assert.equal(
+    userAttributeCategoryPlanConfirmRequestSchema.safeParse({
+      ...confirm,
+      acknowledged: false,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanConfirmRequestSchema.safeParse({
+      acknowledged: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryPlanConfirmRequestSchema.safeParse({
+      ...confirm,
+      typedPhrase: '',
+    }).success,
+    false,
+  );
+});
+
+test('a category job receipt names the CAT job and its change count', () => {
+  const receipt = {
+    jobId: planId,
+    displayId: 'CAT-007',
+    status: 'accepted',
+    action: 'create-category',
+    changeCount: 2,
+  };
+  assert.deepEqual(
+    userAttributeCategoryJobReceiptSchema.parse(receipt),
+    receipt,
+  );
+  assert.equal(
+    userAttributeCategoryJobReceiptSchema.safeParse({
+      ...receipt,
+      status: 'queued',
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeCategoryJobReceiptSchema.safeParse({
+      ...receipt,
+      changeCount: -1,
+    }).success,
+    false,
+  );
+  // A category receipt names a CAT job, not another job kind.
+  assert.equal(
+    userAttributeCategoryJobReceiptSchema.safeParse({
+      ...receipt,
+      displayId: 'UPD-007',
     }).success,
     false,
   );
