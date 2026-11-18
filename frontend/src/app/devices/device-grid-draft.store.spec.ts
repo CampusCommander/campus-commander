@@ -115,6 +115,7 @@ function jobOf(
     revision: 1,
     action: 'update-device-annotations',
     status,
+    entityType: 'device',
     scope: { kind: 'devices', deviceCount: counts.total },
     requestedBy: { id: principal, displayName: 'District operator' },
     createdAt: '2026-10-21T18:03:00.000Z',
