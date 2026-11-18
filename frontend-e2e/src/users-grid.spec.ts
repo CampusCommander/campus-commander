@@ -506,6 +506,19 @@ function columnCell(page: Page, name: string, colId: string) {
     .locator(`[col-id="${colId}"]`);
 }
 
+/**
+ * The position of a column header. AG Grid keeps the header DOM order fixed and
+ * moves cells with inline offsets, so the DOM order proves nothing.
+ */
+async function headerIndex(page: Page, colId: string): Promise<number> {
+  return Number(
+    await page
+      .locator(`.ag-header-cell[col-id="${colId}"]`)
+      .first()
+      .getAttribute('aria-colindex'),
+  );
+}
+
 /** Show the demonstrated attribute columns and scroll them beside the pinned Name. */
 async function showAttributeColumns(page: Page) {
   await page.getByRole('tab', { name: 'Columns', exact: true }).click();
@@ -621,6 +634,91 @@ test('reproduces UM state 02: the Columns panel and focus return (UI-09)', async
   await columnsTab.click();
   await expect(panel).toBeHidden();
   await expect(columnsTab).toBeFocused();
+});
+
+test('moves a Users column from the keyboard and keeps the approved rest look (UI-09)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+  const panel = page.locator('.lgr-columns-tool-panel');
+  await expect(panel).toBeVisible();
+  const leafRows = panel.locator('.lgr-columns-row[data-column-id]');
+  const statusRow = panel.locator('.lgr-columns-row[data-column-id="status"]');
+
+  // State 02 at rest: the pointer sits outside the panel and no row holds focus,
+  // so no move control shows. The pin controls are out of the tab order entirely.
+  const restOpacity = await leafRows
+    .locator('.lgr-columns-row-actions')
+    .evaluateAll((list) => list.map((el) => getComputedStyle(el).opacity));
+  expect(restOpacity.length).toBeGreaterThan(0);
+  expect(restOpacity.every((opacity) => opacity === '0')).toBe(true);
+  const pinButtons = panel.locator(
+    '.lgr-columns-row-actions button[aria-label^="Pin "], .lgr-columns-row-actions button[aria-label^="Unpin "]',
+  );
+  expect(await pinButtons.count()).toBeGreaterThan(0);
+  expect(
+    await pinButtons.evaluateAll((list) =>
+      list.every((el) => getComputedStyle(el).display === 'none'),
+    ),
+  ).toBe(true);
+  expect(
+    await panel.getByRole('button', { name: /^(Pin|Unpin) / }).count(),
+  ).toBe(0);
+  await page.screenshot({
+    path: `${scratch}/um-02c-columns-panel-rest.png`,
+    fullPage: false,
+  });
+
+  // The move runs on the keyboard: Tab reaches the move control and Enter moves
+  // the column. The org unit cell starts directly before Status.
+  const before = await headerIndex(page, 'status');
+  expect(before).toBe((await headerIndex(page, 'orgUnitPath')) + 1);
+  await panel.getByRole('searchbox', { name: 'Search columns' }).focus();
+  const moveUp = panel.getByRole('button', {
+    name: 'Move Status up',
+    exact: true,
+  });
+  for (let press = 0; press < 40; press += 1) {
+    if (await moveUp.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(moveUp).toBeFocused();
+  // The focused row shows its move controls.
+  expect(
+    await statusRow
+      .locator('.lgr-columns-row-actions')
+      .evaluate((element) => getComputedStyle(element).opacity),
+  ).toBe('1');
+  await page.keyboard.press('Enter');
+
+  // The header order changes, and focus returns to the moved row's control.
+  await expect
+    .poll(async () => (await headerIndex(page, 'status')) < before)
+    .toBe(true);
+  expect(await headerIndex(page, 'status')).toBeLessThan(
+    await headerIndex(page, 'orgUnitPath'),
+  );
+  await expect(
+    page.getByRole('button', { name: 'Move Status up', exact: true }),
+  ).toBeFocused();
+  await page.screenshot({
+    path: `${scratch}/um-02d-columns-panel-focused.png`,
+    fullPage: false,
+  });
+
+  // A Tab sweep never lands on a pin or unpin control.
+  const reached: string[] = [];
+  for (let press = 0; press < 40; press += 1) {
+    await page.keyboard.press('Tab');
+    reached.push(
+      await page.evaluate(
+        () => document.activeElement?.getAttribute('aria-label') ?? '',
+      ),
+    );
+  }
+  expect(reached.filter((label) => /^(Pin|Unpin) /.test(label))).toEqual([]);
 });
 
 test('reproduces UM state 03: the attribute filter editor', async ({
