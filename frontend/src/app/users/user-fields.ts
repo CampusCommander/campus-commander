@@ -436,6 +436,21 @@ export function categoryFailureText(
   return 'Custom attribute columns are unavailable.';
 }
 
+/**
+ * The category tab read failure (CA states 01 and 11). The tab names the categories,
+ * not the grid columns, and it offers Refresh as the retry (B section 9).
+ */
+export function categoryReadText(
+  status: number | undefined,
+  failure: string | null | undefined,
+): string {
+  if (status === 409)
+    return 'Custom attribute categories need a Google Workspace connection.';
+  if (failure && accessFailures.has(failure))
+    return `Custom attribute categories are unavailable. Add ${schemaScope} to the delegation client in the Google Admin Console.`;
+  return 'Custom attribute categories are unavailable.';
+}
+
 /** Whether the Google connection page carries the fix for a category read failure. */
 export function categoryNeedsConnection(
   status: number | undefined,

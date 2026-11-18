@@ -221,6 +221,15 @@ export class UsersStore {
   readonly categoriesError = signal('');
   /** The Google connection page carries the fix for the category read. */
   readonly categoriesRecovery = signal(false);
+  /** The category read has not answered yet, so the tab shows its loading state (UI-08). */
+  readonly categoriesLoading = signal(true);
+  /** Refresh reads the categories from Google now (B section 9). */
+  readonly categoriesRefreshing = signal(false);
+  /** The last category read failure, in the words of the tab (`categoryReadText`). */
+  readonly categoriesFailure = signal<{
+    status: number | undefined;
+    failure: string | undefined;
+  } | null>(null);
   readonly offline = signal(false);
   readonly error = signal('');
   readonly refreshing = computed(() => this.sync()?.status === 'running');
@@ -312,6 +321,9 @@ export class UsersStore {
     this.categories.set(null);
     this.categoriesError.set('');
     this.categoriesRecovery.set(false);
+    this.categoriesLoading.set(true);
+    this.categoriesRefreshing.set(false);
+    this.categoriesFailure.set(null);
     this.offline.set(false);
     this.error.set('');
     this.refreshStatus.set('');
@@ -857,6 +869,7 @@ export class UsersStore {
       () => this.owns(epoch),
     );
     if (!this.owns(epoch)) return;
+    this.categoriesLoading.set(false);
     if (!response?.ok) {
       const body = (await response?.json().catch(() => null)) as {
         failure?: unknown;
@@ -868,6 +881,7 @@ export class UsersStore {
       this.categoriesRecovery.set(
         categoryNeedsConnection(response?.status, failure),
       );
+      this.categoriesFailure.set({ status: response?.status, failure });
       return;
     }
     try {
@@ -878,10 +892,57 @@ export class UsersStore {
       this.categories.set(categories);
       this.categoriesError.set('');
       this.categoriesRecovery.set(false);
+      this.categoriesFailure.set(null);
     } catch {
       if (!this.owns(epoch)) return;
       this.categoriesError.set('Custom attribute columns are unavailable.');
       this.categoriesRecovery.set(false);
+      this.categoriesFailure.set({ status: undefined, failure: undefined });
+    }
+  }
+
+  /**
+   * Refresh on the Custom attributes tab: read `schemas.list` now (B section 9). A failure
+   * keeps the categories that the cache holds, so the list stays usable (UI-08).
+   */
+  async refreshCategories(): Promise<void> {
+    const epoch = this.epoch;
+    if (this.categoriesRefreshing()) return;
+    this.categoriesRefreshing.set(true);
+    try {
+      const response = await this.call(
+        '/api/users/attribute-categories/refresh',
+        {},
+        () => this.owns(epoch),
+      );
+      if (!this.owns(epoch)) return;
+      if (!response?.ok) {
+        const body = (await response?.json().catch(() => null)) as {
+          failure?: unknown;
+        } | null;
+        if (!this.owns(epoch)) return;
+        const failure =
+          typeof body?.failure === 'string' ? body.failure : undefined;
+        this.categoriesRecovery.set(
+          categoryNeedsConnection(response?.status, failure),
+        );
+        this.categoriesFailure.set({ status: response?.status, failure });
+        return;
+      }
+      const categories = userAttributeCategoriesSchema.parse(
+        await response.json(),
+      );
+      if (!this.owns(epoch)) return;
+      this.categories.set(categories);
+      this.categoriesError.set('');
+      this.categoriesRecovery.set(false);
+      this.categoriesFailure.set(null);
+    } catch {
+      if (!this.owns(epoch)) return;
+      this.categoriesRecovery.set(false);
+      this.categoriesFailure.set({ status: undefined, failure: undefined });
+    } finally {
+      if (this.owns(epoch)) this.categoriesRefreshing.set(false);
     }
   }
 

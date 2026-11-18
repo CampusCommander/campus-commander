@@ -84,10 +84,26 @@
     [tabPanel]="usersView"
     aria-label="Users views"
   >
-    <a mat-tab-link [active]="true" routerLink="/users">Users</a>
+    <button
+      mat-tab-link
+      type="button"
+      [active]="tab() === 'users'"
+      (click)="tab.set('users')"
+    >
+      Users
+    </button>
+    <button
+      mat-tab-link
+      type="button"
+      [active]="tab() === 'attributes'"
+      (click)="tab.set('attributes')"
+    >
+      {{ CUSTOM_ATTRIBUTES_LABEL }}
+    </button>
   </nav>
 
   <mat-tab-nav-panel #usersView class="view">
+    @if (tab() === 'users') {
     <div class="filter-row">
       <div class="filters">
         @for (predicate of store.predicates(); track $index) {
@@ -234,6 +250,9 @@
         (opened)="recordRow($event)"
       />
     </div>
+    } @else {
+    <app-user-attribute-categories />
+    }
   </mat-tab-nav-panel>
   }
 </div>

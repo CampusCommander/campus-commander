@@ -21,6 +21,8 @@ import type {
 } from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
+import { CUSTOM_ATTRIBUTES_LABEL } from './user-attribute-messages';
+import { UserAttributeCategories } from './user-attribute-categories';
 import { UserFilter } from './user-filter';
 import {
   chipLabel,
@@ -44,6 +46,7 @@ import { UsersStore } from './users.store';
     MatMenuModule,
     MatTabsModule,
     RouterLink,
+    UserAttributeCategories,
     UserFilter,
     UserGrid,
   ],
@@ -57,6 +60,9 @@ export class UsersPage implements OnInit, OnDestroy {
   private readonly injector = inject(Injector);
 
   protected readonly editingIndex = signal<number | null>(null);
+  /** The selected tab: the Users grid, or the Custom attributes categories (U2). */
+  protected readonly tab = signal<'users' | 'attributes'>('users');
+  protected readonly CUSTOM_ATTRIBUTES_LABEL = CUSTOM_ATTRIBUTES_LABEL;
   private readonly chips = viewChildren<ElementRef<HTMLButtonElement>>('chip');
   protected readonly refreshMenuOpen = signal(false);
   protected readonly editing = computed(() => {

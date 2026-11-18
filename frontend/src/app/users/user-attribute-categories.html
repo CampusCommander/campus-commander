@@ -1,0 +1,119 @@
+<div class="attribute-tab">
+  <div class="toolbar">
+    <div class="toolbar-start"></div>
+    <div class="toolbar-actions">
+      @if (!failed()) {
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="loading() || refreshing()"
+        (click)="refresh()"
+      >
+        {{ refreshing() ? CATEGORIES_REFRESHING_LABEL : CATEGORIES_REFRESH_LABEL
+        }}
+      </button>
+      }
+    </div>
+  </div>
+
+  @if (loading()) {
+  <p class="loading" role="status">{{ CATEGORIES_LOADING_TEXT }}</p>
+  } @else if (failed()) {
+  <section class="card error-card" aria-labelledby="categories-error-title">
+    <h2 id="categories-error-title">{{ CATEGORIES_ERROR_TITLE }}</h2>
+    <p role="alert">{{ failureText() }}</p>
+    <div class="error-actions">
+      @if (recovery()) {
+      <a mat-stroked-button routerLink="/google-connection"
+        >Open Google connection</a
+      >
+      }
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="refreshing()"
+        (click)="refresh()"
+      >
+        {{ refreshing() ? CATEGORIES_REFRESHING_LABEL : CATEGORIES_REFRESH_LABEL
+        }}
+      </button>
+    </div>
+  </section>
+  } @else { @if (refreshFailed()) {
+  <p class="refresh-error" role="alert">
+    {{ failureText() }} @if (recovery()) {
+    <a routerLink="/google-connection">Open Google connection</a>
+    }
+  </p>
+  }
+  <p class="limits-line" role="status">{{ limitsText() }}</p>
+  @if (!hasCategories()) {
+  <section class="card empty-card" aria-labelledby="categories-empty-title">
+    <h2 id="categories-empty-title">{{ CATEGORIES_EMPTY_TITLE }}</h2>
+    <p>{{ CATEGORIES_EMPTY_BODY }}</p>
+  </section>
+  } @else {
+  <div class="grid-region">
+    <table class="category-table" [attr.aria-label]="CATEGORIES_TABLE_LABEL">
+      <colgroup>
+        <col class="c1" />
+        <col class="c2" />
+        <col class="c3" />
+        <col class="c4" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col" aria-sort="ascending">
+            <span class="th-in">
+              <span>{{ COLUMN_CATEGORY }}</span>
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >arrow_upward</span
+              >
+            </span>
+            <span class="rz" aria-hidden="true"></span>
+          </th>
+          <th scope="col">
+            <span class="th-in">{{ COLUMN_CATEGORY_NAME }}</span>
+            <span class="rz" aria-hidden="true"></span>
+          </th>
+          <th scope="col" class="num">
+            <span class="th-in">{{ COLUMN_ATTRIBUTES }}</span>
+            <span class="rz" aria-hidden="true"></span>
+          </th>
+          <th scope="col" class="num">
+            <span class="th-in">{{ COLUMN_USERS_WITH_VALUES }}</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (category of categories(); track category.schemaId) {
+        <tr>
+          <td>
+            <button
+              type="button"
+              class="category-link"
+              [attr.aria-label]="openLabel(category)"
+              [title]="category.displayName"
+              (click)="open(category, $event)"
+            >
+              {{ category.displayName }}
+            </button>
+          </td>
+          <td>
+            <span class="identifier" [title]="category.schemaName"
+              >{{ category.schemaName }}</span
+            >
+          </td>
+          <td class="num">{{ category.fields.length }}</td>
+          <td class="num">{{ count(category.holders) }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  } }
+</div>
+
+@if (dialogCategory(); as category) {
+<app-user-category-dialog [category]="category" (closed)="closeDialog()" />
+}

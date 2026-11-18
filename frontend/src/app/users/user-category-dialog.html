@@ -1,0 +1,135 @@
+<div class="picker-scrim" aria-hidden="true" (click)="closed.emit()"></div>
+<div class="picker-wrap">
+  <section
+    class="category-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="category-dialog-title"
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown)="keydown($event)"
+  >
+    <header class="dialog-head">
+      <div class="dialog-titles">
+        <h2 id="category-dialog-title" tabindex="-1" cdkFocusInitial>
+          {{ category().displayName }}
+        </h2>
+      </div>
+      <div class="dialog-tools">
+        <button
+          mat-icon-button
+          type="button"
+          [attr.aria-label]="CLOSE_LABEL"
+          (click)="closed.emit()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
+        </button>
+      </div>
+    </header>
+
+    <div class="dialog-body">
+      <div class="category-fields">
+        <div class="field-static">
+          <span class="static-label">{{ FIELD_DISPLAY_NAME }}</span>
+          <span class="static-value">{{ category().displayName }}</span>
+        </div>
+        <div class="field-static">
+          <span class="static-label">{{ FIELD_CATEGORY_NAME }}</span>
+          <span class="static-value identifier"
+            >{{ category().schemaName }}</span
+          >
+        </div>
+      </div>
+
+      <section class="group" aria-labelledby="attributes-label">
+        <p class="list-label" id="attributes-label">{{ ATTRIBUTES_LABEL }}</p>
+        <div class="attribute-panel">
+          <table class="attribute-table" aria-labelledby="attributes-label">
+            <colgroup>
+              <col class="a1" />
+              <col class="a2" />
+              <col class="a3" />
+              <col class="a4" />
+              <col class="a5" />
+              <col class="a6" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">{{ COLUMN_DISPLAY_NAME }}</th>
+                <th scope="col">{{ COLUMN_ATTRIBUTE_NAME }}</th>
+                <th scope="col">{{ COLUMN_INFO_TYPE }}</th>
+                <th scope="col" class="center">{{ COLUMN_MULTIPLE_VALUES }}</th>
+                <th scope="col">{{ COLUMN_VISIBILITY }}</th>
+                <th scope="col" class="center">{{ COLUMN_SEARCHABLE }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (attribute of category().fields; track attribute.fieldId) {
+              <tr>
+                <td>
+                  <span class="cell-text" [title]="attribute.displayName"
+                    >{{ attribute.displayName }}</span
+                  >
+                </td>
+                <td>
+                  <span
+                    class="cell-text identifier"
+                    [title]="attribute.fieldName"
+                    >{{ attribute.fieldName }}</span
+                  >
+                </td>
+                <td>
+                  <span class="cell-text">{{ typeLabel(attribute) }}</span>
+                </td>
+                <td class="center">
+                  <span class="cell-box">
+                    <mat-checkbox
+                      [checked]="attribute.multiValued"
+                      disabled
+                      [aria-label]="
+                        'Multiple values for ' + attribute.displayName
+                      "
+                    />
+                  </span>
+                </td>
+                <td>
+                  <span class="cell-text" [title]="visibilityLabel(attribute)"
+                    >{{ visibilityLabel(attribute) }}</span
+                  >
+                </td>
+                <td class="center">
+                  <span class="cell-box">
+                    <mat-checkbox
+                      [checked]="attribute.indexed"
+                      disabled
+                      [aria-label]="'Searchable ' + attribute.displayName"
+                    />
+                  </span>
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="add-row">
+          <button mat-button type="button" disabled>
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >add</span
+            >
+            {{ ADD_ATTRIBUTE_LABEL }}
+          </button>
+          <span class="limit-line">{{ ADD_ATTRIBUTE_NOTE }}</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="dialog-actions">
+      <span class="dialog-state"></span>
+      <button mat-flat-button type="button" (click)="closed.emit()">
+        {{ CLOSE_LABEL }}
+      </button>
+    </div>
+  </section>
+</div>

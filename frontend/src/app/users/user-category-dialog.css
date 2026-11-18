@@ -1,0 +1,258 @@
+/*
+ * The read-only category dialog (CA state 09). The scrim, the wrap, and the surface
+ * size follow the built dialog shell: `device-dialog.css` supplies the scrim and wrap,
+ * and this file adds the 1120 px surface, header, body, table, and action bar of the
+ * approved frame. Every value is a token of `theme/tokens.css`.
+ */
+:host {
+  display: contents;
+}
+
+.category-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 1120px;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: var(--mat-sys-corner-extra-large, 28px);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-primary);
+  box-shadow: 0 8px 24px rgb(32 33 36 / 18%);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.dialog-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--cc-space-lg);
+  padding: var(--cc-space-lg) var(--cc-space-lg) var(--cc-space-lg)
+    var(--cc-space-xl);
+}
+
+.dialog-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font:
+    400 24px / 32px Roboto,
+    sans-serif;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The title takes the opening focus, so the ring would only mark a heading. */
+.dialog-head h2:focus {
+  outline: none;
+}
+
+.dialog-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  margin-block-start: -4px;
+}
+
+.dialog-tools .mat-mdc-icon-button {
+  color: var(--cc-text-secondary);
+}
+
+.dialog-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: var(--cc-space-xl);
+  padding: 0 var(--cc-space-xl) var(--cc-space-xl);
+  overflow-y: auto;
+}
+
+/* Display name and Category name sit side by side, as the approved frame draws them. */
+.category-fields {
+  display: grid;
+  flex: none;
+  grid-template-columns: 320px 320px;
+  gap: var(--cc-space-lg);
+  align-items: start;
+  padding-block-start: 6px;
+}
+
+.field-static {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: 56px;
+}
+
+.static-label {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.static-value {
+  min-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+/* The identifier style of the built client: category and attribute names. */
+.identifier {
+  font-family: 'Roboto Mono', monospace;
+}
+
+.group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.list-label {
+  margin: 0 0 var(--cc-space-sm);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.attribute-panel {
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  overflow: hidden;
+}
+
+.attribute-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* The approved column widths keep every read-only table in one shape. */
+.attribute-table col.a1 {
+  width: 196px;
+}
+
+.attribute-table col.a2 {
+  width: 224px;
+}
+
+.attribute-table col.a3 {
+  width: 168px;
+}
+
+.attribute-table col.a4 {
+  width: 104px;
+}
+
+.attribute-table col.a5 {
+  width: 240px;
+}
+
+.attribute-table col.a6 {
+  width: 88px;
+}
+
+.attribute-table th {
+  height: 36px;
+  padding: 0 var(--cc-space-sm);
+  border-block-end: 1px solid var(--cc-border);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.attribute-table td {
+  height: 49px;
+  padding: 4px var(--cc-space-sm);
+  border-block-start: 1px solid var(--cc-border);
+  vertical-align: middle;
+}
+
+.attribute-table tbody tr:first-child td {
+  border-block-start: 0;
+}
+
+.attribute-table th:first-child,
+.attribute-table td:first-child {
+  padding-inline-start: var(--cc-space-lg);
+}
+
+.attribute-table th:last-child,
+.attribute-table td:last-child {
+  padding-inline-end: var(--cc-space-sm);
+}
+
+.attribute-table .center {
+  text-align: center;
+}
+
+/* A plain cell: the text sits on the 40 px line of the fields and cuts at its end. */
+.cell-text {
+  display: block;
+  min-height: 40px;
+  padding-block: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.attribute-table .mat-mdc-checkbox {
+  margin: 0;
+}
+
+.add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-md);
+  margin-block-start: var(--cc-space-sm);
+}
+
+.add-row .mat-mdc-button {
+  color: var(--cc-text-link);
+}
+
+/* A disabled Add attribute keeps the secondary color of a permission note. */
+.add-row .mat-mdc-button.mat-mdc-button-disabled {
+  color: var(--cc-text-disabled);
+}
+
+.limit-line {
+  color: var(--cc-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The action bar stays in place across the steps of the dialog (composition choice 11). */
+.dialog-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 72px;
+  padding: var(--cc-space-lg) var(--cc-space-xl);
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.dialog-state {
+  flex: 1;
+  min-width: 0;
+}
