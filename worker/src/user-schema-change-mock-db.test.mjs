@@ -146,7 +146,7 @@ async function categoryJob(schemaName, options = {}) {
   await migrator.query(
     `INSERT INTO cc.user_category_plans(plan_id,customer_id,created_by,permission_version,
       generation,action,schema_id,schema_name,base_etag,body,changes,limits,phrase,digest,expires_at)
-     VALUES($1,$2,$3,1,$4,$5,$6,$7,$8,$9,'[]','{}',NULL,$10,
+     VALUES($1,$2,$3,1,$4,$5,$6,$7,$8,$9,$11,'{}',NULL,$10,
        clock_timestamp()+interval '15 minutes')`,
     [
       planId,
@@ -159,6 +159,7 @@ async function categoryJob(schemaName, options = {}) {
       options.baseEtag ?? null,
       JSON.stringify(body),
       'a'.repeat(64),
+      JSON.stringify(options.changes ?? []),
     ],
   );
   const jobId = randomUUID();
@@ -497,5 +498,113 @@ test(
     // The stored schema holds the insert, apart from the outcome.
     assert.equal((await storedSchemas()).includes(schemaName), true);
     assert.equal((await cachedCategories()).includes(schemaName), true);
+  },
+);
+
+test(
+  'an edit to multiple values wraps each cached value through the worker (C12, R2)',
+  { timeout },
+  async () => {
+    const schemaName = 'K16WidenValue';
+    // Create the category through the worker, so the mock holds a real etag and field id.
+    const create = await categoryJob(schemaName);
+    const created = await new UserSchemaChangeJobs(runtime, cipher, {
+      readTimeoutMilliseconds: 2_000,
+    }).run(
+      {
+        customerId: domain.customerId,
+        jobId: create.jobId,
+        dispatchToken: create.dispatchToken,
+        correlationId: randomUUID(),
+      },
+      new AbortController().signal,
+    );
+    assert.equal(created.outcome, 'settled');
+    assert.equal((await jobRow(create.jobId)).status, 'completed');
+    const cached = (
+      await migrator.query(
+        "SELECT schema_id,etag,fields->0->>'fieldId' AS field_id FROM cc.user_attribute_categories WHERE customer_id=$1 AND schema_name=$2",
+        [domain.customerId, schemaName],
+      )
+    ).rows[0];
+    assert.ok(cached, 'The created category is in the cache.');
+    // Both shapes the production reader stores: a raw scalar, and an existing list beside another
+    // category.
+    const userIds = ['k16-widen-scalar', 'k16-widen-list'];
+    const values = [
+      JSON.stringify({ [schemaName]: { Code: 'one' } }),
+      JSON.stringify({
+        [schemaName]: { Code: ['one', 'two'] },
+        OtherInfo: { Note: 'keep' },
+      }),
+    ];
+    await migrator.query(
+      `INSERT INTO cc.users(customer_id,user_id,primary_email,org_unit_path,suspended,archived,
+        two_step_enrolled,custom_schemas,last_entity_sync)
+       SELECT $1,u.user_id,u.user_id||'@example.org','/Students',false,false,false,u.custom_schemas,
+         clock_timestamp()
+       FROM unnest($2::text[],$3::jsonb[]) AS u(user_id,custom_schemas)`,
+      [domain.customerId, userIds, values],
+    );
+    const edit = await categoryJob(schemaName, {
+      action: 'edit-category',
+      schemaId: cached.schema_id,
+      baseEtag: cached.etag,
+      body: {
+        schemaName,
+        displayName: `${schemaName} display`,
+        fields: [
+          {
+            fieldId: cached.field_id,
+            fieldName: 'Code',
+            displayName: 'Code',
+            fieldType: 'STRING',
+            multiValued: true,
+            indexed: true,
+            readAccessType: 'ALL_DOMAIN_USERS',
+            numericIndexingSpec: null,
+          },
+        ],
+      },
+      changes: [
+        {
+          change: 'changed',
+          fieldId: cached.field_id,
+          fieldName: 'Code',
+          displayName: 'Code',
+          properties: ['multiValued'],
+          holders: null,
+        },
+      ],
+    });
+    const answer = await new UserSchemaChangeJobs(runtime, cipher, {
+      readTimeoutMilliseconds: 2_000,
+    }).run(
+      {
+        customerId: domain.customerId,
+        jobId: edit.jobId,
+        dispatchToken: edit.dispatchToken,
+        correlationId: randomUUID(),
+      },
+      new AbortController().signal,
+    );
+    assert.equal(answer.outcome, 'settled');
+    assert.equal((await jobRow(edit.jobId)).status, 'completed');
+    // C12: the scalar becomes one entry object, and the existing list keeps its shape (R2).
+    const schemas = Object.fromEntries(
+      (
+        await migrator.query(
+          'SELECT user_id,custom_schemas FROM cc.users WHERE customer_id=$1 AND user_id=ANY($2)',
+          [domain.customerId, userIds],
+        )
+      ).rows.map((row) => [row.user_id, row.custom_schemas]),
+    );
+    assert.deepEqual(schemas['k16-widen-scalar'], {
+      [schemaName]: { Code: [{ value: 'one' }] },
+    });
+    assert.deepEqual(schemas['k16-widen-list'], {
+      [schemaName]: { Code: ['one', 'two'] },
+      OtherInfo: { Note: 'keep' },
+    });
   },
 );

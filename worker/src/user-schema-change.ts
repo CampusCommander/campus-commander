@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
+  entityEventsChannel,
   googleCustomerIdSchema,
+  queryGenerationKey,
   userAttributeCategoryPlanKindSchema,
   type UserAttributeCategoryObservation,
 } from '@campus/application-contracts';
+import type { EntityCache } from './entity-cache';
 import {
   CATEGORY_PART_ID,
   GoogleCategoryWriter,
@@ -99,10 +102,12 @@ const claimSchema = z.discriminatedUnion('outcome', [
     body: categoryWriteBodySchema.nullable(),
     baseEtag: z.string().min(1).max(1024).nullable(),
     planId: z.uuid(),
-    /** True when an earlier attempt claimed the call. The worker only reads Google back. */
+    /** True when an earlier attempt began the call. The worker only reads Google back. */
     resume: z.boolean(),
   }),
   z.object({ outcome: z.literal('fenced') }),
+  /** Another runner holds a live lease. This runner changes nothing (R1). */
+  z.object({ outcome: z.literal('busy') }),
   z.object({
     outcome: z.literal('stopped'),
     failure: z.string().min(1).max(64),
@@ -111,9 +116,15 @@ const claimSchema = z.discriminatedUnion('outcome', [
 type Claim = z.infer<typeof claimSchema>;
 type Claimed = Extract<Claim, { outcome: 'claimed' }>;
 
+const beginWriteSchema = z.object({
+  outcome: z.enum(['writing', 'fenced']),
+});
+
 const settlementAnswerSchema = z.object({
   outcome: z.enum(['settled', 'fenced']),
   status: z.string().optional(),
+  /** True when the settlement wrote the schema cache, so the worker publishes a schema change. */
+  schemaChanged: z.boolean().optional(),
 });
 
 /** One part answer of one call. A delete answers no value. */
@@ -135,7 +146,8 @@ interface Settlement {
 export type UserSchemaChangeAnswer =
   | { outcome: 'settled'; status: string }
   | { outcome: 'stopped'; failure: string }
-  | { outcome: 'fenced' };
+  | { outcome: 'fenced' }
+  | { outcome: 'busy' };
 
 export interface UserSchemaChangeOptions {
   /** The deadline of the one Google write part. Defaults to 60 seconds. */
@@ -147,6 +159,8 @@ export interface UserSchemaChangeOptions {
     'category' | 'insertCategory' | 'updateCategory' | 'deleteCategory'
   >;
   reader?: Pick<GoogleUserReader, 'categories'>;
+  /** The event cache of the schema change that follows a settlement (B section 6.2 step 5). */
+  cache?: Pick<EntityCache, 'increment' | 'publish'>;
 }
 
 const DEFAULT_WRITE_TIMEOUT_MS = 60_000;
@@ -180,6 +194,7 @@ export class UserSchemaChangeJobs {
     'category' | 'insertCategory' | 'updateCategory' | 'deleteCategory'
   >;
   private readonly reader: Pick<GoogleUserReader, 'categories'>;
+  private readonly cache: Pick<EntityCache, 'increment' | 'publish'>;
   private readonly writeTimeoutMilliseconds: number;
   private readonly readTimeoutMilliseconds: number;
 
@@ -192,6 +207,7 @@ export class UserSchemaChangeJobs {
     this.cipher = cipher;
     this.writer = options.writer ?? new GoogleCategoryWriter();
     this.reader = options.reader ?? new GoogleUserReader();
+    this.cache = options.cache ?? noSchemaEvents;
     this.writeTimeoutMilliseconds =
       options.writeTimeoutMilliseconds ?? DEFAULT_WRITE_TIMEOUT_MS;
     this.readTimeoutMilliseconds =
@@ -254,7 +270,14 @@ export class UserSchemaChangeJobs {
         categories: null,
       });
     }
-    const settlement = await this.change(input, claim, credential, signal);
+    const settlement = await this.change(
+      input,
+      claim,
+      credential,
+      attempt,
+      signal,
+    );
+    if (settlement === 'fenced') return { outcome: 'fenced' };
     return this.settle(input, attempt, settlement);
   }
 
@@ -263,9 +286,10 @@ export class UserSchemaChangeJobs {
     input: UserSchemaChangeRequest,
     claim: Claimed,
     credential: DelegatedCredential,
+    attempt: string,
     signal: AbortSignal,
-  ): Promise<Settlement> {
-    // A repeated claim of a job whose call left only reads Google back (B section 7.3).
+  ): Promise<Settlement | 'fenced'> {
+    // A claim that follows a begun call only reads Google back (B section 7.3).
     if (claim.resume)
       return this.readBack(input, claim, credential, signal, null);
     const body =
@@ -283,6 +307,9 @@ export class UserSchemaChangeJobs {
           schema: observed,
         };
     }
+    // R4: the send gate runs last. A cancel, a lost ownership, or an expired lease before it stops
+    // the write here, and the job state already holds the outcome.
+    if (!(await this.beginWrite(input, attempt))) return 'fenced';
     let part: PartAnswer;
     try {
       part = await this.send(input, claim, body, credential, signal);
@@ -302,6 +329,19 @@ export class UserSchemaChangeJobs {
       return this.classify(input, claim, credential, signal, part.failed);
     if (part.value === undefined)
       return { ...refused('invalid-response'), outcome: 'unknown' };
+    // B section 7.3: a 2xx answer settles Succeeded only with the requested result. A schema that
+    // differs proves the call applied something else, so the job reads Google back (R5).
+    if (
+      body !== null &&
+      (part.value === null || !bodyMatches(part.value, body))
+    )
+      return {
+        outcome: 'unknown',
+        failure: 'invalid-response',
+        reason: null,
+        schema: part.value,
+        categories: null,
+      };
     return {
       outcome: 'succeeded',
       failure: null,
@@ -309,6 +349,20 @@ export class UserSchemaChangeJobs {
       schema: part.value,
       categories: null,
     };
+  }
+
+  /** The atomic send gate of R4. True only while this attempt owns the job and no cancel landed. */
+  private async beginWrite(
+    input: UserSchemaChangeRequest,
+    attempt: string,
+  ): Promise<boolean> {
+    const answer = beginWriteSchema.parse(
+      await this.call(
+        'SELECT cc.begin_user_schema_change_write($1,$2,$3,$4) AS result',
+        [input.customerId, input.jobId, input.dispatchToken, attempt],
+      ),
+    );
+    return answer.outcome === 'writing';
   }
 
   /** Send the one part of the plan. An update and a delete carry the plan etag in `If-Match`. */
@@ -543,9 +597,36 @@ export class UserSchemaChangeJobs {
       ),
     );
     if (answer.outcome === 'fenced') return { outcome: 'fenced' };
+    // B section 6.2 step 5 and section 9: the worker publishes the schema change after the
+    // settlement committed, and moves the user query generation so no cached query serves the old
+    // values (R6).
+    if (answer.schemaChanged) await this.publishSchemaChange(input.customerId);
     return { outcome: 'settled', status: String(answer.status ?? '') };
   }
+
+  /**
+   * Publish one schema change on the entity channel and invalidate the user query cache. A Redis
+   * failure leaves the next category read and the next user query to fill both; it never fails a
+   * settled job.
+   */
+  private async publishSchemaChange(customerId: string): Promise<void> {
+    try {
+      await this.cache.increment(queryGenerationKey('user', customerId));
+      await this.cache.publish(
+        entityEventsChannel(customerId),
+        JSON.stringify({ type: 'schema-change', entityType: 'user' }),
+      );
+    } catch {
+      // The next read fills the cache.
+    }
+  }
 }
+
+/** The event cache when Redis is not configured. A settled job never fails on a missing cache. */
+const noSchemaEvents: Pick<EntityCache, 'increment' | 'publish'> = {
+  increment: async () => undefined,
+  publish: async () => undefined,
+};
 
 /** A settlement that stored no schema. */
 function refused(failure: string): Settlement {
@@ -558,7 +639,9 @@ function refused(failure: string): Settlement {
   };
 }
 
-/** Compare the observed category with the plan body that the write sent (B section 7.1). */
+/** Compare the observed category with the plan body that the write sent (B section 7.1). The
+ * comparison covers every requested property: the label, each attribute, its retained Google field
+ * ID, and its number range (R5). */
 export function bodyMatches(
   observed: UserAttributeCategoryObservation,
   body: CategoryWriteBody,
@@ -571,12 +654,27 @@ export function bodyMatches(
       (one) => one.fieldName === field.fieldName,
     );
     if (seen === undefined) return false;
+    if (field.fieldId !== undefined && seen.fieldId !== field.fieldId)
+      return false;
     if (seen.displayName !== field.displayName) return false;
     if (seen.fieldType !== field.fieldType) return false;
     if (seen.multiValued !== (field.multiValued ?? false)) return false;
     if (seen.indexed !== (field.indexed ?? true)) return false;
     if (seen.readAccessType !== (field.readAccessType ?? 'ALL_DOMAIN_USERS'))
       return false;
+    if (!sameRange(seen.numericIndexingSpec, field.numericIndexingSpec ?? null))
+      return false;
   }
   return true;
+}
+
+/** Compare two number ranges. An absent range equals a range with two null bounds (C3). */
+function sameRange(
+  seen: { minValue: number | null; maxValue: number | null } | null,
+  wanted: { minValue: number | null; maxValue: number | null } | null,
+): boolean {
+  return (
+    (seen?.minValue ?? null) === (wanted?.minValue ?? null) &&
+    (seen?.maxValue ?? null) === (wanted?.maxValue ?? null)
+  );
 }

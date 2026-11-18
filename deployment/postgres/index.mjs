@@ -399,6 +399,7 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.record_user_schema_change_start(text,uuid,uuid,text),
         cc.abandon_user_schema_change_start(text,uuid,uuid),
         cc.claim_user_schema_change(text,uuid,uuid,uuid),
+        cc.begin_user_schema_change_write(text,uuid,uuid,uuid),
         cc.settle_user_schema_change(text,uuid,uuid,uuid,text,text,text,jsonb,jsonb,timestamptz),
         cc.recover_user_schema_change_jobs(text) TO ${role}`);
     }

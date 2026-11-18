@@ -76,8 +76,9 @@ const failed = (failure) => ({
   failed: new Map([['category', failure]]),
 });
 
-/** A store that answers the claim, the clock, and the settlement, and records every call. */
-function storeOf(claim = claimOf()) {
+/** A store that answers the claim, the send gate, the clock, and the settlement, and records every
+ * call. */
+function storeOf(claim = claimOf(), options = {}) {
   const calls = [];
   return {
     calls,
@@ -85,16 +86,32 @@ function storeOf(claim = claimOf()) {
       calls.push({ text, values });
       if (text.includes('cc.claim_user_schema_change'))
         return { rows: [{ result: claim }] };
+      if (text.includes('cc.begin_user_schema_change_write'))
+        return {
+          rows: [{ result: options.beginWrite ?? { outcome: 'writing' } }],
+        };
       if (text.includes('clock_timestamp'))
         return { rows: [{ result: new Date(OBSERVED_AT) }] };
       if (text.includes('cc.settle_user_schema_change'))
         return {
-          rows: [{ result: { outcome: 'settled', status: 'completed' } }],
+          rows: [
+            {
+              result: {
+                outcome: 'settled',
+                status: options.status ?? 'completed',
+                schemaChanged: options.schemaChanged ?? true,
+              },
+            },
+          ],
         };
       throw new Error(`Unexpected statement: ${text}`);
     },
     settlement: () =>
       calls.find((call) => call.text.includes('cc.settle_user_schema_change')),
+    begin: () =>
+      calls.find((call) =>
+        call.text.includes('cc.begin_user_schema_change_write'),
+      ),
   };
 }
 
@@ -450,4 +467,190 @@ test('a quota answer fails the job with quota', async () => {
   });
   await runOf(store, writer);
   assert.equal(store.settlement().values[5], 'quota');
+});
+
+test('a live owner fences a second runner and the second runner sends nothing (R1)', async () => {
+  // The claim answers busy while another attempt holds its lease.
+  const store = storeOf({ outcome: 'busy' });
+  const writer = writerOf();
+  assert.deepEqual(await runOf(store, writer), { outcome: 'busy' });
+  assert.equal(writer.calls.length, 0);
+  assert.equal(store.settlement(), undefined);
+});
+
+test('a cancelled or expired job stops at the send gate and sends nothing (R4)', async () => {
+  // The gate reads the cancel flag, the attempt, and the lease under one lock.
+  const store = storeOf(claimOf(), { beginWrite: { outcome: 'fenced' } });
+  const writer = writerOf();
+  assert.deepEqual(await runOf(store, writer), { outcome: 'fenced' });
+  assert.equal(writer.calls.length, 0);
+  assert.equal(store.settlement(), undefined);
+});
+
+test('the send gate runs after the guard and before the one call (R4)', async () => {
+  const store = storeOf(
+    claimOf({
+      action: 'edit-category',
+      schemaId: 'schema-1',
+      baseEtag: 'etag-1',
+    }),
+  );
+  const writer = writerOf({ category: () => observation() });
+  await runOf(store, writer);
+  const names = store.calls.map((call) =>
+    call.text.includes('cc.claim_user_schema_change')
+      ? 'claim'
+      : call.text.includes('cc.begin_user_schema_change_write')
+        ? 'begin'
+        : 'other',
+  );
+  assert.deepEqual(names.slice(0, 2), ['claim', 'begin']);
+  assert.equal(writer.calls[0].name, 'category');
+  assert.equal(writer.calls[1].name, 'updateCategory');
+});
+
+test('a repeated claim reads back without the send gate or a second call', async () => {
+  const store = storeOf(claimOf({ resume: ATTEMPT_EXISTS }));
+  const writer = writerOf({ category: () => observation() });
+  await runOf(store, writer);
+  assert.equal(store.begin(), undefined);
+  assert.equal(
+    writer.calls.some((call) => call.name === 'insertCategory'),
+    false,
+  );
+});
+
+test('a successful answer with another number range is Unknown, not Succeeded (R5)', async () => {
+  const store = storeOf(
+    claimOf({
+      body: body({
+        fields: [
+          {
+            fieldName: 'Homeroom',
+            displayName: 'Homeroom',
+            fieldType: 'INT64',
+            numericIndexingSpec: { minValue: 1, maxValue: 9 },
+          },
+        ],
+      }),
+    }),
+  );
+  const writer = writerOf({
+    insertCategory: () =>
+      answer(
+        observation({
+          fields: [
+            field({
+              fieldType: 'INT64',
+              numericIndexingSpec: { minValue: 0, maxValue: 12 },
+            }),
+          ],
+        }),
+      ),
+  });
+  await runOf(store, writer);
+  const settlement = store.settlement();
+  assert.equal(settlement.values[4], 'unknown');
+  assert.equal(settlement.values[5], 'invalid-response');
+  // The observed schema stays in the cache, apart from the outcome.
+  assert.equal(
+    JSON.parse(settlement.values[7]).fields[0].numericIndexingSpec.maxValue,
+    12,
+  );
+});
+
+test('a successful answer with another kept field is Unknown, not Succeeded (R5)', async () => {
+  const store = storeOf(
+    claimOf({
+      action: 'edit-category',
+      schemaId: 'schema-1',
+      baseEtag: 'etag-1',
+      body: body({ fields: [{ ...body().fields[0], fieldId: 'field-1' }] }),
+    }),
+  );
+  const writer = writerOf({
+    category: () => observation(),
+    updateCategory: () =>
+      answer(observation({ fields: [field({ fieldId: 'field-2' })] })),
+  });
+  await runOf(store, writer);
+  const settlement = store.settlement();
+  assert.equal(settlement.values[4], 'unknown');
+  assert.equal(settlement.values[5], 'invalid-response');
+});
+
+test('a matching successful answer still settles Succeeded (control)', async () => {
+  const store = storeOf(
+    claimOf({
+      action: 'edit-category',
+      schemaId: 'schema-1',
+      baseEtag: 'etag-1',
+      body: body({
+        fields: [
+          {
+            fieldId: 'field-1',
+            fieldName: 'Homeroom',
+            displayName: 'Homeroom',
+            fieldType: 'INT64',
+            numericIndexingSpec: { minValue: 1, maxValue: 9 },
+          },
+        ],
+      }),
+    }),
+  );
+  const writer = writerOf({
+    category: () => observation(),
+    updateCategory: () =>
+      answer(
+        observation({
+          fields: [
+            field({
+              fieldType: 'INT64',
+              numericIndexingSpec: { minValue: 1, maxValue: 9 },
+            }),
+          ],
+        }),
+      ),
+  });
+  await runOf(store, writer);
+  assert.equal(store.settlement().values[4], 'succeeded');
+});
+
+test('a settled schema change publishes one event and moves the user generation (R6)', async () => {
+  const events = [];
+  const store = storeOf();
+  const writer = writerOf();
+  await runOf(store, writer, undefined, {
+    cache: {
+      increment: async (key) => {
+        events.push({ kind: 'increment', key });
+      },
+      publish: async (channel, message) => {
+        events.push({ kind: 'publish', channel, message });
+      },
+    },
+  });
+  assert.deepEqual(events[0], {
+    kind: 'increment',
+    key: `cc:query-gen:user:${CUSTOMER}`,
+  });
+  assert.equal(events[1].kind, 'publish');
+  assert.equal(events[1].channel, `cc:entity-events:${CUSTOMER}`);
+  assert.deepEqual(JSON.parse(events[1].message), {
+    type: 'schema-change',
+    entityType: 'user',
+  });
+});
+
+test('a settlement that stores no schema publishes nothing (control)', async () => {
+  const events = [];
+  const store = storeOf(claimOf(), { schemaChanged: false });
+  const writer = writerOf();
+  await runOf(store, writer, undefined, {
+    cache: {
+      increment: async () => events.push('increment'),
+      publish: async () => events.push('publish'),
+    },
+  });
+  assert.deepEqual(events, []);
 });

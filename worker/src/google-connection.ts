@@ -264,7 +264,14 @@ export class GoogleWorker {
   /** The one call of a category job (design card K16, document B section 7.1). */
   async changeUserSchema(input: UserSchemaChangeRequest, signal: AbortSignal) {
     const { pool, cipher } = this.resources();
-    return new UserSchemaChangeJobs(pool, cipher).run(input, signal);
+    // A missing Redis configuration only skips the schema-change publication (B section 9).
+    let cache: EntityCache;
+    try {
+      cache = this.cache();
+    } catch {
+      cache = noEntityCache;
+    }
+    return new UserSchemaChangeJobs(pool, cipher, { cache }).run(input, signal);
   }
 
   /**

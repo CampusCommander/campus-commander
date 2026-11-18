@@ -14,11 +14,18 @@ ALTER TABLE cc.user_schema_change_jobs
   ADD COLUMN start_deadline_at timestamptz,
   ADD COLUMN kestra_execution_id text,
   ADD COLUMN first_claimed_at timestamptz,
+  -- The moment the worker begins the send. Cancel stops only while this is null, and a claim after
+  -- a lost runner reads Google back only when this is set (R4, R1).
+  ADD COLUMN write_started_at timestamptz,
   ADD COLUMN attempt uuid,
   ADD COLUMN attempt_expires_at timestamptz,
   -- The Google reason of a failed call stays beside the job failure code, which holds one token
   -- (B section 7.3 "with the Google reason").
   ADD COLUMN failure_reason text CHECK(failure_reason IS NULL OR length(failure_reason) BETWEEN 1 AND 256);
+
+-- 1b. R7: the local category transitions write `custom_schemas` directly. This column holds the time
+-- of the newest local transition. An older Google observation never writes the column (section 13).
+ALTER TABLE cc.users ADD COLUMN custom_schemas_changed_at timestamptz;
 
 -- 2. The three outcome codes of the category call join the job failure vocabulary (B section 7.3).
 ALTER TABLE cc.jobs DROP CONSTRAINT jobs_failure_check;
@@ -55,35 +62,40 @@ $$;
 
 -- 4. The cache purge of B section 9. A removal drops one attribute name from every cached user.
 -- A delete drops the whole category name. Both run inside the settlement transaction that writes
--- the schema cache.
+-- the schema cache. Each mutation stamps the local transition, so an older Google observation
+-- cannot restore the value (R7).
 CREATE FUNCTION cc.remove_user_attribute(p_customer text,p_schema_name text,p_field_name text) RETURNS void
 LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   UPDATE cc.users u SET custom_schemas=jsonb_set(u.custom_schemas,ARRAY[p_schema_name],
-      (u.custom_schemas->p_schema_name)-p_field_name)
+      (u.custom_schemas->p_schema_name)-p_field_name),
+    custom_schemas_changed_at=clock_timestamp()
     WHERE u.customer_id=p_customer AND u.custom_schemas ? p_schema_name
       AND u.custom_schemas->p_schema_name ? p_field_name;
 $$;
 CREATE FUNCTION cc.remove_user_category(p_customer text,p_schema_name text) RETURNS void
 LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-  UPDATE cc.users u SET custom_schemas=u.custom_schemas-p_schema_name
+  UPDATE cc.users u SET custom_schemas=u.custom_schemas-p_schema_name,
+    custom_schemas_changed_at=clock_timestamp()
     WHERE u.customer_id=p_customer AND u.custom_schemas ? p_schema_name;
 $$;
 -- C12: after an edit makes one attribute multi-valued, each cached single value becomes a list of
--- one entry. The write runs in the transaction of the schema cache write.
+-- one entry `{value: scalar}` (B section 8.2). The write runs in the transaction of the schema
+-- cache write. A value that is already a list, or an object entry, keeps its shape.
 CREATE FUNCTION cc.widen_user_attribute(p_customer text,p_schema_name text,p_field_name text) RETURNS void
 LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
   UPDATE cc.users u SET custom_schemas=jsonb_set(u.custom_schemas,ARRAY[p_schema_name,p_field_name],
-      jsonb_build_array(u.custom_schemas->p_schema_name->p_field_name))
+      jsonb_build_array(jsonb_build_object('value',u.custom_schemas->p_schema_name->p_field_name))),
+    custom_schemas_changed_at=clock_timestamp()
     WHERE u.customer_id=p_customer AND u.custom_schemas ? p_schema_name
       AND u.custom_schemas->p_schema_name ? p_field_name
-      AND jsonb_typeof(u.custom_schemas->p_schema_name->p_field_name) NOT IN ('array','null');
+      AND jsonb_typeof(u.custom_schemas->p_schema_name->p_field_name) IN ('string','number','boolean');
 $$;
 
--- 5. One schema observation: the cached row and every purge that the observation implies (B
--- section 9, C12). The caller holds the category advisory lock and the settlement transaction.
+-- 5. One schema observation: the cached row. The purge and the C12 conversion of a confirmed edit
+-- run from the plan, not from this comparison, so an intervening refresh cannot drop them (R3).
+-- The caller holds the category advisory lock and the settlement transaction.
 CREATE FUNCTION cc.store_user_attribute_category(p_customer text,p_schema jsonb) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE previous jsonb; schema_name text; removed jsonb; widened jsonb;
 BEGIN
   IF jsonb_typeof(p_schema) IS DISTINCT FROM 'object' OR
     jsonb_typeof(p_schema->'schemaId') IS DISTINCT FROM 'string' OR
@@ -94,33 +106,36 @@ BEGIN
     (p_schema ? 'etag' AND jsonb_typeof(p_schema->'etag') NOT IN ('string','null')) THEN
     RAISE EXCEPTION 'The category observation is invalid.' USING ERRCODE='22023';
   END IF;
-  schema_name:=p_schema->>'schemaName';
-  SELECT c.fields INTO previous FROM cc.user_attribute_categories c
-    WHERE c.customer_id=p_customer AND c.schema_id=p_schema->>'schemaId';
-  -- A removed attribute is one cached field name that the new observation does not hold.
-  IF previous IS NOT NULL THEN
-    SELECT jsonb_agg(DISTINCT old_field->>'fieldName') INTO removed
-      FROM jsonb_array_elements(previous) old_field
-      WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_schema->'fields') new_field
-        WHERE new_field->>'fieldName'=old_field->>'fieldName');
-    FOR schema_name IN SELECT jsonb_array_elements_text(COALESCE(removed,'[]'::jsonb)) LOOP
-      PERFORM cc.remove_user_attribute(p_customer,p_schema->>'schemaName',schema_name);
-    END LOOP;
-    -- C12: a kept field that turns multi-valued wraps the single value of every cached user.
-    FOR widened IN SELECT new_field FROM jsonb_array_elements(p_schema->'fields') new_field
-        WHERE COALESCE((new_field->>'multiValued')::boolean,false)
-          AND EXISTS(SELECT 1 FROM jsonb_array_elements(previous) old_field
-            WHERE old_field->>'fieldId'=new_field->>'fieldId'
-              AND NOT COALESCE((old_field->>'multiValued')::boolean,false)) LOOP
-      PERFORM cc.widen_user_attribute(p_customer,p_schema->>'schemaName',widened->>'fieldName');
-    END LOOP;
-  END IF;
   INSERT INTO cc.user_attribute_categories(customer_id,schema_id,schema_name,display_name,etag,fields,read_at)
     VALUES(p_customer,p_schema->>'schemaId',p_schema->>'schemaName',p_schema->>'displayName',
       CASE WHEN jsonb_typeof(p_schema->'etag')='string' THEN p_schema->>'etag' END,
       p_schema->'fields',clock_timestamp())
   ON CONFLICT(customer_id,schema_id) DO UPDATE SET schema_name=EXCLUDED.schema_name,
     display_name=EXCLUDED.display_name,etag=EXCLUDED.etag,fields=EXCLUDED.fields,read_at=EXCLUDED.read_at;
+END;
+$$;
+
+-- 5b. The obligations of one confirmed edit (R3): every attribute that the plan removes leaves
+-- every cached user, and every kept attribute that the plan turns multi-valued wraps each cached
+-- value (C12). The plan is immutable, so a metadata refresh before the settlement cannot drop
+-- either obligation. A create and a delete carry none; the delete purges its whole category.
+CREATE FUNCTION cc.apply_user_category_change(p_customer text,p_plan cc.user_category_plans) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE item jsonb; body_field jsonb;
+BEGIN
+  IF p_plan.action<>'edit-category' OR p_plan.body IS NULL THEN RETURN; END IF;
+  FOR item IN SELECT e.value FROM jsonb_array_elements(p_plan.changes) e
+      WHERE e.value->>'change'='removed' LOOP
+    PERFORM cc.remove_user_attribute(p_customer,p_plan.schema_name,item->>'fieldName');
+  END LOOP;
+  FOR item IN SELECT e.value FROM jsonb_array_elements(p_plan.changes) e
+      WHERE e.value->>'change'='changed' AND e.value->'properties' ? 'multiValued' LOOP
+    SELECT f.value INTO body_field FROM jsonb_array_elements(p_plan.body->'fields') f
+      WHERE f.value->>'fieldName'=item->>'fieldName';
+    IF body_field IS NOT NULL AND COALESCE((body_field->>'multiValued')::boolean,false) THEN
+      PERFORM cc.widen_user_attribute(p_customer,p_plan.schema_name,item->>'fieldName');
+    END IF;
+  END LOOP;
 END;
 $$;
 
@@ -292,6 +307,9 @@ $$;
 -- and answers the plan, the frozen body, and the encrypted credential (B section 6.2 step 1).
 -- A claim that finds the job stopped settles Failed and answers `stopped`. A repeated claim of a
 -- claimed job answers `resume`, because a POST is never sent twice (B section 7.3).
+-- R1: a live attempt keeps its lease, so a second runner never takes ownership of a job that another
+-- runner still holds. Only an expired lease transfers ownership, and the new owner then reads Google
+-- back when the earlier runner may have sent. A live owner still settles its own call.
 CREATE FUNCTION cc.claim_user_schema_change(p_customer text,p_job uuid,p_token uuid,p_attempt uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -312,6 +330,12 @@ BEGIN
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.job_id IS NULL OR
     detail.dispatch_token IS DISTINCT FROM p_token THEN
     RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  -- R1: the live owner keeps the job. Another attempt is fenced and changes nothing, so a second
+  -- runner never takes over a call that is still inside its lease.
+  IF detail.attempt IS NOT NULL AND detail.attempt IS DISTINCT FROM p_attempt AND
+    detail.attempt_expires_at IS NOT NULL AND detail.attempt_expires_at>now_at THEN
+    RETURN jsonb_build_object('outcome','busy');
   END IF;
   SELECT * INTO plan FROM cc.user_category_plans p WHERE p.plan_id=detail.plan_id;
   IF plan.plan_id IS NULL THEN
@@ -347,19 +371,53 @@ BEGIN
     'credentialId',connection.credential_id,'envelope',envelope,'action',plan.action,
     'schemaId',plan.schema_id,'schemaName',plan.schema_name,'body',plan.body,
     'baseEtag',plan.base_etag,'planId',plan.plan_id,
-    -- A second claim of a job whose call already left only reads Google back.
-    'resume',detail.first_claimed_at IS NOT NULL);
+    -- A claim that follows a send only reads Google back. The marker survives an ownership
+    -- transfer, so a takeover after a lost runner never sends a second POST.
+    'resume',detail.write_started_at IS NOT NULL);
+END;
+$$;
+
+-- 9b. The atomic send gate (R4). The worker calls it once, immediately before the Google call.
+-- Cancel refuses only after this marker, so a cancel that lands before the marker stops the job and
+-- a cancel that lands after it answers `nothing-to-stop`. The same lock and check fence a stale
+-- attempt, an expired lease, and a cancelled job, so no write follows a lost ownership.
+CREATE FUNCTION cc.begin_user_schema_change_write(p_customer text,p_job uuid,p_token uuid,p_attempt uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.user_schema_change_jobs; now_at timestamptz;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL THEN
+    RAISE EXCEPTION 'The category job attempt is fenced.' USING DETAIL='attempt-fenced';
+  END IF;
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'user-schema-change' THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  SELECT * INTO detail FROM cc.user_schema_change_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL OR
+    detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token OR
+    detail.attempt IS DISTINCT FROM p_attempt OR detail.attempt_expires_at IS NULL OR
+    detail.attempt_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  UPDATE cc.user_schema_change_jobs SET write_started_at=COALESCE(write_started_at,now_at)
+    WHERE job_id=p_job;
+  RETURN jsonb_build_object('outcome','writing');
 END;
 $$;
 
 -- 10. The settlement of the one call. It applies the job outcome and the schema cache write in one
 -- transaction (B section 9), and purges the removed attributes of a removal or a delete.
--- A stale attempt is fenced and writes nothing.
+-- A stale attempt is fenced and writes nothing. An expired attempt is fenced too: after the header,
+-- detail, and connection waits the clock reads again, so a runner that lost its lease cannot settle
+-- over a newer owner (R1).
 CREATE FUNCTION cc.settle_user_schema_change(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
   p_outcome text,p_failure text DEFAULT NULL,p_reason text DEFAULT NULL,p_schema jsonb DEFAULT NULL,
   p_categories jsonb DEFAULT NULL,p_observed_at timestamptz DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.user_schema_change_jobs; plan cc.user_category_plans; now_at timestamptz;
+  changed boolean:=false;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR p_observed_at IS NULL OR
     p_outcome IS NULL OR p_outcome NOT IN ('succeeded','failed','unknown') OR
@@ -380,14 +438,21 @@ BEGIN
   SELECT * INTO detail FROM cc.user_schema_change_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.job_id IS NULL OR
-    detail.dispatch_token IS DISTINCT FROM p_token OR detail.attempt IS DISTINCT FROM p_attempt THEN
+    detail.dispatch_token IS DISTINCT FROM p_token OR detail.attempt IS DISTINCT FROM p_attempt OR
+    detail.attempt_expires_at IS NULL OR detail.attempt_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT * INTO plan FROM cc.user_category_plans p WHERE p.plan_id=detail.plan_id;
   PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  -- The connection wait is the last one before the first write, so the lease reads again here.
+  now_at:=clock_timestamp();
+  IF detail.attempt_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
   -- A refreshed set from a failed call replaces the cache before the outcome (C6).
   IF p_categories IS NOT NULL THEN
     PERFORM cc.store_user_attribute_categories(p_customer,p_categories,p_observed_at);
+    changed:=true;
   END IF;
   -- A delete that succeeded leaves the cache and purges the whole category from every cached user.
   IF p_outcome='succeeded' AND plan.action='delete-category' THEN
@@ -396,9 +461,18 @@ BEGIN
     PERFORM cc.remove_user_category(p_customer,plan.schema_name);
     INSERT INTO cc.user_attribute_category_state(customer_id,read_at) VALUES(p_customer,p_observed_at)
     ON CONFLICT(customer_id) DO UPDATE SET read_at=EXCLUDED.read_at;
-  ELSIF p_schema IS NOT NULL THEN
-    -- The answered schema of an insert or an update, and the fresh schema of a changed category.
-    PERFORM cc.store_user_attribute_category(p_customer,p_schema);
+    changed:=true;
+  ELSE
+    -- The purge and the C12 conversion come from the confirmed plan, so a category refresh between
+    -- the plan and this settlement drops neither (R3).
+    IF p_outcome='succeeded' THEN
+      PERFORM cc.apply_user_category_change(p_customer,plan);
+    END IF;
+    IF p_schema IS NOT NULL THEN
+      -- The answered schema of an insert or an update, and the fresh schema of a changed category.
+      PERFORM cc.store_user_attribute_category(p_customer,p_schema);
+      changed:=true;
+    END IF;
   END IF;
   IF p_outcome='succeeded' THEN
     UPDATE cc.jobs SET status='completed',succeeded=1,finished_at=now_at WHERE job_id=p_job;
@@ -412,13 +486,17 @@ BEGIN
     UPDATE cc.user_schema_change_jobs SET failure_reason=p_reason WHERE job_id=p_job;
   END IF;
   PERFORM cc.record_job_change(p_job,true);
-  RETURN jsonb_build_object('outcome','settled','status',(SELECT j.status FROM cc.jobs j WHERE j.job_id=p_job));
+  -- The worker publishes the schema change after this transaction commits (B section 6.2 step 5).
+  RETURN jsonb_build_object('outcome','settled','status',(SELECT j.status FROM cc.jobs j WHERE j.job_id=p_job),
+    'schemaChanged',changed);
 END;
 $$;
 
 -- 11. The recovery of the job service (design section 5.3). A running job that never claimed and
 -- passed its start window gets one new start, up to 3. A claimed call whose attempt lease lapsed
--- lost its runner: the call may have applied, so the job ends needs-review with `interrupted`.
+-- lost its runner. The call may have applied, so the job gets one new start for the read-back,
+-- under the same bound; the claim transfers ownership because the lease expired, and the new owner
+-- reads Google back alone (R1). A job that used its starts ends needs-review with `interrupted`.
 CREATE FUNCTION cc.recover_user_schema_change_jobs(p_customer text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.user_schema_change_jobs; now_at timestamptz; token uuid;
@@ -441,9 +519,19 @@ BEGIN
     now_at:=clock_timestamp();
     IF detail.first_claimed_at IS NOT NULL THEN
       IF detail.attempt IS NOT NULL AND detail.attempt_expires_at IS NOT NULL AND detail.attempt_expires_at<=now_at THEN
-        UPDATE cc.jobs SET status='needs-review',unknown=1,failure='interrupted',finished_at=now_at
-          WHERE job_id=job.job_id;
-        PERFORM cc.record_job_change(job.job_id,true);
+        IF detail.dispatch_count>=3 THEN
+          UPDATE cc.jobs SET status='needs-review',unknown=1,failure='interrupted',finished_at=now_at
+            WHERE job_id=job.job_id;
+          PERFORM cc.record_job_change(job.job_id,true);
+        ELSE
+          UPDATE cc.user_schema_change_jobs SET dispatch_token=gen_random_uuid(),
+            dispatch_count=dispatch_count+1,start_deadline_at=now_at+interval '120 seconds'
+            WHERE job_id=job.job_id RETURNING dispatch_token INTO token;
+          starts:=starts||jsonb_build_object('jobId',job.job_id,'displayId',job.display_id,
+            'dispatchToken',token,'correlationId',job.correlation_id,'targetCount',job.target_count,
+            'kind',job.kind);
+          PERFORM cc.record_job_change(job.job_id,true);
+        END IF;
       END IF;
     ELSIF detail.start_deadline_at IS NOT NULL AND detail.start_deadline_at<=now_at THEN
       IF detail.dispatch_count>=3 THEN
@@ -465,8 +553,9 @@ BEGIN
 END;
 $$;
 
--- 12. The cancel rule of B section 7.4. A category job that never claimed ends at once. After its
--- one call leaves, the call cannot stop, and the request answers `nothing-to-stop`.
+-- 12. The cancel rule of B section 7.4. A category job that never began its one call ends at once,
+-- before or after the claim, because the write gate of 9b runs last (R4). After the call begins, the
+-- call cannot stop, and the request answers `nothing-to-stop`.
 -- This is the 020 definition with one detail lock and one decision branch for the category kind.
 CREATE OR REPLACE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer text,p_display_id text,
   p_correlation uuid) RETURNS jsonb
@@ -545,10 +634,12 @@ BEGIN
       RAISE EXCEPTION 'The job holds no work to stop.' USING DETAIL='nothing-to-stop';
     END IF;
   ELSIF job.kind='user-schema-change' THEN
-    -- B section 7.4: a category job holds one call. Before that call leaves, the request ends the job
-    -- at once. After it leaves, the call cannot stop, so the request answers `nothing-to-stop`.
+    -- B section 7.4: a category job holds one call. Before that call begins, the request ends the
+    -- job at once, even after the claim. After it begins, the call cannot stop, so the request
+    -- answers `nothing-to-stop`. The write gate of 9b reads cancel_requested_at under this lock, so
+    -- a cancel before the gate always stops the send (R4).
     SELECT * INTO schema_detail FROM cc.user_schema_change_jobs u WHERE u.job_id=job.job_id;
-    IF schema_detail.first_claimed_at IS NOT NULL THEN
+    IF schema_detail.write_started_at IS NOT NULL THEN
       RAISE EXCEPTION 'The job holds no work to stop.' USING DETAIL='nothing-to-stop';
     END IF;
     stop_now:=true;
@@ -682,14 +773,71 @@ END;
 $$;
 
 
+-- 13. R7: the shared user upsert keeps the local `custom_schemas` value while an observation is
+-- older than the newest local transition (section 1b). The other columns still store the newer read,
+-- so the freshness rule stays as it was.
+CREATE OR REPLACE FUNCTION cc.upsert_users(p_customer text,p_users jsonb,p_synced_at timestamptz) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE written integer;
+BEGIN
+  IF jsonb_typeof(p_users) IS DISTINCT FROM 'array' OR jsonb_array_length(p_users)>1000 OR
+    p_synced_at IS NULL THEN
+    RAISE EXCEPTION 'The user page is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- S1: a page user without a row checks the connection foreign key on insert, and that check takes
+  -- the connection row FOR KEY SHARE. The lock comes here, before every user row.
+  PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
+  PERFORM 1 FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id IN (
+      SELECT e.value->>'userId' FROM jsonb_array_elements(p_users) e)
+    ORDER BY u.user_id FOR UPDATE;
+  WITH incoming AS (
+    SELECT DISTINCT ON (e.value->>'userId') e.value->>'userId' AS user_id,e.value AS row_value
+    FROM jsonb_array_elements(p_users) WITH ORDINALITY e(value,position)
+    ORDER BY e.value->>'userId',e.position DESC
+  ), upserted AS (
+    INSERT INTO cc.users(customer_id,user_id,primary_email,org_unit_path,given_name,family_name,full_name,
+      suspended,suspension_reason,archived,last_login_time,creation_time,two_step_enrolled,department,title,
+      aliases,custom_schemas,last_entity_sync)
+    SELECT p_customer,i.user_id,i.row_value->>'primaryEmail',i.row_value->>'orgUnitPath',
+      i.row_value->>'givenName',i.row_value->>'familyName',i.row_value->>'fullName',
+      COALESCE((i.row_value->>'suspended')::boolean,false),i.row_value->>'suspensionReason',
+      COALESCE((i.row_value->>'archived')::boolean,false),(i.row_value->>'lastLoginTime')::timestamptz,
+      (i.row_value->>'creationTime')::timestamptz,COALESCE((i.row_value->>'twoStepEnrolled')::boolean,false),
+      i.row_value->>'department',i.row_value->>'title',COALESCE(i.row_value->'aliases','[]'::jsonb),
+      COALESCE(i.row_value->'customSchemas','{}'::jsonb),p_synced_at
+    FROM incoming i
+    ON CONFLICT(customer_id,user_id) DO UPDATE SET
+      primary_email=EXCLUDED.primary_email,org_unit_path=EXCLUDED.org_unit_path,
+      given_name=EXCLUDED.given_name,family_name=EXCLUDED.family_name,full_name=EXCLUDED.full_name,
+      suspended=EXCLUDED.suspended,suspension_reason=EXCLUDED.suspension_reason,
+      archived=EXCLUDED.archived,last_login_time=EXCLUDED.last_login_time,
+      creation_time=EXCLUDED.creation_time,two_step_enrolled=EXCLUDED.two_step_enrolled,
+      department=EXCLUDED.department,title=EXCLUDED.title,aliases=EXCLUDED.aliases,
+      -- R7: an observation older than the newest local category transition keeps the local value.
+      custom_schemas=CASE WHEN cc.users.custom_schemas_changed_at IS NULL OR
+          EXCLUDED.last_entity_sync>=cc.users.custom_schemas_changed_at
+        THEN EXCLUDED.custom_schemas ELSE cc.users.custom_schemas END,
+      last_entity_sync=EXCLUDED.last_entity_sync,removed_at=NULL
+    WHERE cc.users.last_entity_sync<=EXCLUDED.last_entity_sync AND
+      (cc.users.removed_at IS NULL OR cc.users.removed_at<EXCLUDED.last_entity_sync)
+    RETURNING cc.users.user_id
+  )
+  SELECT count(*) INTO written FROM upserted;
+  RETURN written;
+END;
+$$;
+
+
 REVOKE ALL ON FUNCTION cc.user_schema_change_stop_reason(text,uuid,integer,integer),
   cc.remove_user_attribute(text,text,text),
   cc.remove_user_category(text,text),
   cc.widen_user_attribute(text,text,text),
+  cc.apply_user_category_change(text,cc.user_category_plans),
   cc.store_user_attribute_category(text,jsonb),
   cc.store_user_attribute_categories(text,jsonb,timestamptz),
   cc.record_user_schema_change_start(text,uuid,uuid,text),
   cc.abandon_user_schema_change_start(text,uuid,uuid),
   cc.claim_user_schema_change(text,uuid,uuid,uuid),
+  cc.begin_user_schema_change_write(text,uuid,uuid,uuid),
   cc.settle_user_schema_change(text,uuid,uuid,uuid,text,text,text,jsonb,jsonb,timestamptz),
   cc.recover_user_schema_change_jobs(text) FROM PUBLIC;
