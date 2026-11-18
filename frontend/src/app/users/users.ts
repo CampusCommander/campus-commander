@@ -13,8 +13,12 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTabsModule } from '@angular/material/tabs';
-import { RouterLink } from '@angular/router';
-import type { Action, UserPredicate } from '@campus/application-contracts';
+import { Router, RouterLink } from '@angular/router';
+import type {
+  Action,
+  UserPredicate,
+  UserRow,
+} from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
 import { UserFilter } from './user-filter';
@@ -49,6 +53,7 @@ import { UsersStore } from './users.store';
 export class UsersPage implements OnInit, OnDestroy {
   protected readonly store = inject(UsersStore);
   private readonly auth = inject(AuthStore);
+  private readonly router = inject(Router);
   private readonly injector = inject(Injector);
 
   protected readonly editingIndex = signal<number | null>(null);
@@ -197,5 +202,31 @@ export class UsersPage implements OnInit, OnDestroy {
     afterNextRender(() => this.chips()[index]?.nativeElement.focus(), {
       injector: this.injector,
     });
+  }
+
+  /** GRID-03: the details control records the row, then opens that user (A section 4). */
+  protected openDetails(event: {
+    row: UserRow;
+    index: number;
+    scrollTop: number | null;
+  }): void {
+    this.recordRow(event);
+    void this.router.navigate(['/users', event.row.userId]);
+  }
+
+  /**
+   * The row that opened the details stays the return anchor. Next user moves only the
+   * cursor, so Back to users returns to this row, its page, and its scroll position
+   * (A section 4, R3).
+   */
+  protected recordRow(event: {
+    row: UserRow;
+    index: number;
+    scrollTop: number | null;
+  }): void {
+    const { index } = event;
+    const { userId } = event.row;
+    this.store.position.set({ index, userId, scrollTop: event.scrollTop });
+    this.store.cursor.set({ index, userId });
   }
 }

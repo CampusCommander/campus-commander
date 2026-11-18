@@ -23,6 +23,7 @@ import {
   type GridOptions,
   type GridReadyEvent,
   type GridState,
+  type IRowNode,
   type ToolPanelVisibleChangedEvent,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
@@ -39,6 +40,7 @@ import { FiltersToolPanelModule } from '@libregrid/filters-tool-panel';
 import { StatusBarModule } from '@libregrid/status-bar';
 import type {
   UserOrgUnit,
+  UserPage,
   UserPredicate,
   UserRow,
 } from '@campus/application-contracts';
@@ -57,7 +59,11 @@ import {
   predicatesFromFilterModel,
   samePredicates,
 } from './user-filter-model';
-import { userGridFeatures } from './user-grid-options';
+import {
+  userGridFeatures,
+  detailsKeyHandler,
+  showRow,
+} from './user-grid-options';
 import type { UserRowRefresh } from './user-row-refresh';
 import type { UserAttributeColumn } from './user-fields';
 import { UserStatusPanel } from './user-status-panel';
@@ -157,6 +163,22 @@ export class UserGrid implements OnInit {
   }>();
   /** Refresh signals update the rows this grid holds. */
   readonly rowRefresh = input<UserRowRefresh | null>(null);
+  /** Row to focus after the first block loads, such as the row that opened the details (UI-09). */
+  readonly focusIndex = input<number | null>(null);
+  /** The grid offset of that row, so Back to users restores the scroll position (A section 4). */
+  readonly focusScroll = input<number | null>(null);
+  /** GRID-03: the details control of a row opens that user's details page. */
+  readonly details = output<{
+    row: UserRow;
+    index: number;
+    scrollTop: number | null;
+  }>();
+  /** The Name link records the row before the router opens its details page. */
+  readonly opened = output<{
+    row: UserRow;
+    index: number;
+    scrollTop: number | null;
+  }>();
 
   /** The selection footer lives in the status bar. LibreGrid fills it on ready. */
   private readonly footer = document.createElement('div');
@@ -175,6 +197,15 @@ export class UserGrid implements OnInit {
   /** The predicates that the loaded rows follow, so a model change never reloads twice (R4). */
   private appliedPredicates: readonly UserPredicate[] = [];
   private datasourceReady = false;
+  /**
+   * The row that focus returns to is in place. It stays false until focus lands, so a
+   * block that loads later resumes the restoration (R4).
+   */
+  private restored = false;
+  /** One restoration loop runs at a time. A block answer joins the running loop. */
+  private focusing = false;
+  /** The grid ended. A pending frame or block answer must not touch focus (R4). */
+  private destroyed = false;
   protected options!: GridOptions<UserRow>;
 
   constructor() {
@@ -207,6 +238,10 @@ export class UserGrid implements OnInit {
         this.selectionEnded();
       });
     });
+    // A frame or block answer that lands after the grid ended must leave focus alone (R4).
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
   }
 
   ngOnInit(): void {
@@ -231,6 +266,8 @@ export class UserGrid implements OnInit {
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
       onToolPanelVisibleChanged: (event) => this.panelToggled(event),
+      onCellKeyDown: (event) =>
+        detailsKeyHandler((row, node) => this.open(row, node))(event),
       onGridPreDestroyed: ({ state, api }) => {
         this.saveState()(
           savedGridState(state),
@@ -261,7 +298,36 @@ export class UserGrid implements OnInit {
     return userColumnDefs({
       attributes: this.attributes(),
       orgUnits: () => this.orgUnits().map((unit) => unit.path),
+      onDetails: (row, node) => this.open(row, node),
+      onOpen: (row, node) => this.openedRow(row, node),
     });
+  }
+
+  /** GRID-03: the details control opens the page, so the row is recorded first. */
+  private open(row: UserRow, node: IRowNode<UserRow>): void {
+    const index = node.rowIndex;
+    if (index === null || index < 0) return;
+    this.details.emit({ row, index, scrollTop: this.scrollTop() });
+  }
+
+  /** The Name link keeps its own navigation. The page records the row for Next user. */
+  private openedRow(row: UserRow, node: IRowNode<UserRow>): void {
+    const index = node.rowIndex;
+    if (index === null || index < 0) return;
+    this.opened.emit({ row, index, scrollTop: this.scrollTop() });
+  }
+
+  /** The body's vertical offset, so Back to users returns to the same view (A section 4). */
+  private scrollTop(): number | null {
+    const viewport = this.bodyViewport();
+    return viewport ? Math.round(viewport.scrollTop) : null;
+  }
+
+  /** The element that scrolls the rows vertically. */
+  private bodyViewport(): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(
+      '.ag-grid-viewport',
+    );
   }
 
   protected ready(event: GridReadyEvent<UserRow>): void {
@@ -280,7 +346,7 @@ export class UserGrid implements OnInit {
       'serverSideDatasource',
       userDatasource(
         (offset, limit, view) => this.load()(offset, limit, view),
-        () => this.restore(),
+        (page) => this.restore(page),
         { gridId: 'users', tabId: this.selection().tabId },
         () => this.attributes(),
         // Alias and has-a-value chips have no column filter. The query keeps them.
@@ -353,8 +419,87 @@ export class UserGrid implements OnInit {
     this.filtersChange.emit(next);
   }
 
-  private restore(): void {
-    // K10 holds no row position to restore.
+  /** A block of rows arrived. Focus returns to the opening row once its cell exists. */
+  private restore(page?: UserPage): void {
+    if (this.restored || this.destroyed) return;
+    const index = this.focusIndex();
+    if (index === null || !page || page.matching <= index) return;
+    this.placeFocus(index);
+  }
+
+  /**
+   * UI-09: Back to users returns focus to the row that opened the details, at the page
+   * and scroll position that held it (A section 4). A row outside the first block needs
+   * the block that holds it, so a later block answer resumes this restoration (R4).
+   */
+  private placeFocus(index: number, attempt = 0): void {
+    if (this.restored || this.destroyed || this.focusing) return;
+    const api = this.api;
+    if (!api) return;
+    this.focusing = true;
+    requestAnimationFrame(() => {
+      this.focusing = false;
+      if (this.restored || this.destroyed) return;
+      // The row is usable once its control exists. A cell that still renders its
+      // Angular content holds no focus target yet (R4).
+      const button = this.detailsButton(index);
+      this.revealRow(api, index);
+      if (button) {
+        // Focus must not scroll the grid away from the restored offset.
+        button.focus({ preventScroll: true });
+        this.restored = true;
+        // The row model can still grow its scroll height for a frame or two. Keep the
+        // saved offset until the layout settles, or a clamp shortens it (R3).
+        this.settleScroll();
+        return;
+      }
+      if (attempt < 30) this.placeFocus(index, attempt + 1);
+    });
+  }
+
+  /** Reapplies the saved offset while the restored grid finishes its layout. */
+  private settleScroll(remaining = 6): void {
+    if (this.destroyed || remaining <= 0) return;
+    requestAnimationFrame(() => {
+      if (this.destroyed) return;
+      this.applySavedScroll();
+      this.settleScroll(remaining - 1);
+    });
+  }
+
+  /** The grid offset that Back to users returns to, when the page holds it. */
+  private applySavedScroll(): void {
+    const top = this.focusScroll();
+    const viewport = this.bodyViewport();
+    if (top === null || !viewport) return;
+    viewport.scrollTop = top;
+  }
+
+  /** The details control of one row, once the grid has rendered its content. */
+  private detailsButton(index: number): HTMLElement | null {
+    const cell = this.host.nativeElement.querySelector<HTMLElement>(
+      `[row-index="${index}"] [col-id="details"]`,
+    );
+    return cell?.querySelector<HTMLElement>('button') ?? null;
+  }
+
+  /**
+   * Bring the opening row into view. A page change centers it. A row on the restored
+   * page returns to the saved offset instead of the center (R3).
+   */
+  private revealRow(api: GridApi<UserRow>, index: number): void {
+    const page = Math.floor(index / api.paginationGetPageSize());
+    if (page !== api.paginationGetCurrentPage()) {
+      showRow(api, index);
+      return;
+    }
+    const top = this.focusScroll();
+    const viewport = this.bodyViewport();
+    if (top === null || !viewport) {
+      showRow(api, index);
+      return;
+    }
+    viewport.scrollTop = top;
   }
 
   /**

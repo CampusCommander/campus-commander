@@ -84,6 +84,17 @@ export const routes: Routes = [
         loadComponent: () => import('./users/users').then((m) => m.UsersPage),
       },
       {
+        path: 'users/:userId',
+        title: 'User details · Campus Commander',
+        canActivate: [
+          () =>
+            usersReadable(inject(AuthStore)) ||
+            inject(Router).parseUrl('/account'),
+        ],
+        loadComponent: () =>
+          import('./users/user-detail').then((m) => m.UserDetailPage),
+      },
+      {
         path: 'jobs',
         title: 'Jobs · Campus Commander',
         canActivate: [

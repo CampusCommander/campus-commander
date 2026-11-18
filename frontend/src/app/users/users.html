@@ -228,6 +228,10 @@
         (selectedViewChange)="store.selectedView.set($event)"
         [selection]="selection"
         [rowRefresh]="store.rowRefresh"
+        [focusIndex]="store.position()?.index ?? null"
+        [focusScroll]="store.position()?.scrollTop ?? null"
+        (details)="openDetails($event)"
+        (opened)="recordRow($event)"
       />
     </div>
   </mat-tab-nav-panel>
