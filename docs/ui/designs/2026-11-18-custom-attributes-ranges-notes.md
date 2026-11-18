@@ -136,7 +136,7 @@ Checks:
 4. A changed range field takes the pending surface of state 12: the accent outline and the selected fill. Composition choice 14 of version 1 defines it. An invalid field shows the error look instead.
 5. Each range field carries its own floating label, `Minimum` or `Maximum`. The range line has no column header, and rules.md UI-05 asks for persistent field labels. The accessible names add the attribute, for example `Grade level minimum`.
 6. Each error marks one field, in the pattern of state 03. A minimum above the maximum marks the Maximum field with `Enter 12 or more.`, which names the minimum. A decimal bound on a Whole number attribute marks its field with `Enter a whole number.`. The approved users mockup uses that text in state 05. The action bar counts `2 fields have errors`, and Review changes is disabled.
-7. An empty field means no bound. A range can hold one bound only, because the contract allows each bound to be empty (`libs/application-contracts/src/lib/users.ts:444-447`). State 14 shows Graduation year with a minimum and no maximum.
+7. An empty field means no bound. A range can hold one bound only, because the contract allows each bound to be empty (`libs/application-contracts/src/lib/users.ts:451-452`). State 14 shows Graduation year with a minimum and no maximum.
 8. The review row of state 15 holds three cells. The change chip is `Set range` with the info tone. The attribute cell is `Grade level 0 to 12`. The effect is `No user values change`.
    The attribute cell copies the phrase of default 3 and the filter chip form of the users mockup. Google does not enforce the range, so no stored value changes.
 9. State 15 shows no typed phrase gate. Document B section 5 asks for a typed phrase only for two changes (`docs/research/custom-user-attributes-technical-design.md:164-169`). They are a plan that removes an attribute and a category delete. So `Save 1 change` is enabled at once. The domain line takes the singular text of state 08.
@@ -155,7 +155,7 @@ Product questions for the owner:
 Per-field limits (for the design document):
 
 - A bound of a Whole number attribute is a whole number. A bound of a Decimal number attribute is a finite number. Google stores both as `minValue` and `maxValue` of `numericIndexingSpec`.
-- The minimum is at or below the maximum. An equal minimum and maximum pass, as the filter rule of the contract does (`users.ts:181`).
+- The minimum is at or below the maximum. An equal minimum and maximum pass, as the filter rule of the contract does (`users.ts:186-187`).
 - A bound of a Whole number attribute stays within the JSON safe range of E10.
 
 Design gaps that the build closes with these choices (no owner question):
