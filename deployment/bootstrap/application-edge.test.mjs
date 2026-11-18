@@ -175,6 +175,10 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/users/org-units', 'api'],
       ['GET', '/api/users/attribute-categories', 'api'],
       ['POST', '/api/users/attribute-categories/refresh', 'api'],
+      // Card K15 stores one category plan, reads it, and confirms it.
+      ['GET', `/api/users/attribute-categories/plans/${id}`, 'api'],
+      ['POST', '/api/users/attribute-categories/plans', 'api'],
+      ['POST', `/api/users/attribute-categories/plans/${id}/confirm`, 'api'],
       // A single device segment still reads as a device route, and only a POST to it streams.
       ['GET', '/api/devices/imports', 'api'],
       ['GET', '/devices', 'frontend'],
@@ -266,6 +270,18 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['POST', '/api/users/synthetic-user-1', 405],
       ['GET', '/api/users/a/b', 404],
       ['GET', `/api/users/${'x'.repeat(129)}`, 404],
+      // The plan paths take one UUID plan ID, no extra segment, and one method each.
+      ['GET', '/api/users/attribute-categories/plans/not-a-uuid', 404],
+      ['POST', '/api/users/attribute-categories/plans/not-a-uuid/confirm', 404],
+      ['GET', `/api/users/attribute-categories/plans/${id}/extra`, 404],
+      [
+        'POST',
+        `/api/users/attribute-categories/plans/${id}/confirm/extra`,
+        404,
+      ],
+      ['GET', '/api/users/attribute-categories/plans', 405],
+      ['POST', `/api/users/attribute-categories/plans/${id}`, 405],
+      ['GET', `/api/users/attribute-categories/plans/${id}/confirm`, 405],
       ['POST', '/api/devices/selection/other', 404],
       ['POST', '/api/devices/by-ids/extra', 404],
       ['GET', '/api/devices/selection/ops', 405],

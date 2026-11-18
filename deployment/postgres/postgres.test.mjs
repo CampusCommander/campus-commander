@@ -121,6 +121,7 @@ test('the release identifies its SQL migration by content checksum', async () =>
       '022-user-refresh-targets',
       '023-device-removal-fence',
       '024-user-attribute-categories',
+      '025-user-category-plan-routes',
     ],
   );
   for (const migration of migrations)

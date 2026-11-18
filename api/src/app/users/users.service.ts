@@ -18,6 +18,10 @@ import {
   userSyncStateSchema,
   type SessionResponse,
   type UserAttributeCategories,
+  type UserAttributeCategoryJobReceipt,
+  type UserAttributeCategoryPlan,
+  type UserAttributeCategoryPlanConfirmRequest,
+  type UserAttributeCategoryPlanRequest,
   type UserDetail,
   type UserFreshness,
   type UserOrgUnit,
@@ -37,6 +41,11 @@ import { CacheService } from '../cache/cache.service';
 import { DatabaseService } from '../database/database.service';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { UserAttributeCategoriesRoute } from './user-attribute-categories';
+import {
+  UserCategoryPlans,
+  userCategoryPlanBaseSchema,
+  type UserCategoryPlanBase,
+} from './user-category-plans';
 import { UserDomainRefresh } from './user-domain-refresh';
 import { UserPager, type Rows } from './user-pager';
 import {
@@ -101,6 +110,7 @@ export class UsersService {
   private readonly refresh: UserRefresh;
   private readonly selectionRefresh: UserSelectionRefresh;
   private readonly categoriesRoute: UserAttributeCategoriesRoute;
+  private readonly categoryPlans: UserCategoryPlans;
   readonly pager: UserPager;
   readonly domainRefresh: UserDomainRefresh;
 
@@ -159,6 +169,56 @@ export class UsersService {
           session,
           { customerId, generation, capabilities },
           correlationId,
+        ),
+    });
+    this.categoryPlans = new UserCategoryPlans({
+      base: (session) => this.categoryPlanBase(session),
+      authorize: (session, customerId, correlationId) =>
+        this.auth.authorize(
+          session,
+          'users:schema-manage',
+          { kind: 'district', customerId },
+          correlationId,
+        ),
+      create: (session, plan) =>
+        this.result(
+          `SELECT cc.create_user_category_plan($1::uuid,$2::integer,$3::text,$4::integer,
+            $5::text,$6::text,$7::text,$8::text,$9::text,$10::jsonb,$11::jsonb,$12::text,
+            $13::text,$14::integer) AS result`,
+          [
+            session.identity.id,
+            session.identity.permissionVersion,
+            plan.customerId,
+            plan.generation,
+            plan.kind,
+            plan.schemaId,
+            plan.baseEtag,
+            plan.schemaName,
+            plan.displayName,
+            plan.body === null ? null : JSON.stringify(plan.body),
+            JSON.stringify(plan.changes),
+            plan.phrase,
+            plan.digest,
+            plan.expiresMinutes,
+          ],
+        ),
+      read: (session, planId) =>
+        this.result(
+          'SELECT cc.read_user_category_plan($1::uuid,$2::integer,$3::uuid) AS result',
+          [session.identity.id, session.identity.permissionVersion, planId],
+        ),
+      confirm: (session, planId, digest, phrase, correlationId) =>
+        this.result(
+          `SELECT cc.confirm_user_category_plan($1::uuid,$2::integer,$3::uuid,$4::text,
+            $5::text,$6::uuid) AS result`,
+          [
+            session.identity.id,
+            session.identity.permissionVersion,
+            planId,
+            digest,
+            phrase,
+            correlationId,
+          ],
         ),
     });
   }
@@ -559,10 +619,55 @@ export class UsersService {
     return this.categoriesRoute.read(session);
   }
 
+  /** The cached set under the schema-manage gate, with the customer and generation of a plan. */
+  private async categoryPlanBase(
+    session: SessionResponse,
+  ): Promise<UserCategoryPlanBase | null> {
+    return userCategoryPlanBaseSchema
+      .nullable()
+      .parse(
+        await this.result(
+          'SELECT cc.read_user_category_plan_base($1,$2) AS result',
+          this.actor(session),
+        ),
+      );
+  }
+
   /** Read schemas.list now and replace the cached set (B section 9). */
   async refreshAttributeCategories(
     session: SessionResponse,
   ): Promise<UserAttributeCategories> {
     return this.categoriesRoute.refresh(session);
+  }
+
+  /** The plan route of B section 10. It accepts `numericIndexingSpec` in every draft field. */
+  async createUserCategoryPlan(
+    session: SessionResponse,
+    request: UserAttributeCategoryPlanRequest,
+    correlationId: string,
+  ): Promise<UserAttributeCategoryPlan> {
+    return this.categoryPlans.plan(session, request, correlationId);
+  }
+
+  /** One category plan, to its creator only. */
+  async userCategoryPlan(
+    session: SessionResponse,
+    planId: string,
+    correlationId: string,
+  ): Promise<UserAttributeCategoryPlan> {
+    return this.categoryPlans.byId(session, planId, correlationId);
+  }
+
+  /** Confirm one plan: one `user-schema-change` job or the receipt of the first confirm. */
+  async confirmUserCategoryPlan(
+    session: SessionResponse,
+    planId: string,
+    input: UserAttributeCategoryPlanConfirmRequest,
+    correlationId: string,
+  ): Promise<{
+    receipt: UserAttributeCategoryJobReceipt;
+    existing: boolean;
+  }> {
+    return this.categoryPlans.confirm(session, planId, input, correlationId);
   }
 }

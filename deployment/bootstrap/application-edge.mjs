@@ -75,11 +75,12 @@ const schoolWrite = new RegExp(
 );
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
 // The users read of design card K8: the sync state, the organization unit list, the attribute
-// category cache, and one user.
+// category cache, and one user. Card K15 adds the plan read, the plan create, and the plan
+// confirm write.
 const userRead =
-  /^\/api\/users\/(?:sync|org-units|attribute-categories|[A-Za-z0-9_-]{1,128})$/;
+  /^\/api\/users\/(?:sync|org-units|attribute-categories|attribute-categories\/plans\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[A-Za-z0-9_-]{1,128})$/;
 const userWrite =
-  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh)$/;
+  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
