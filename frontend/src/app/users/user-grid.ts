@@ -23,6 +23,7 @@ import {
   type GridOptions,
   type GridReadyEvent,
   type GridState,
+  type IRowNode,
   type ToolPanelVisibleChangedEvent,
 } from 'ag-grid-community';
 import { ServerSideRowModelModule } from '@libregrid/server-side-row-model';
@@ -39,6 +40,7 @@ import { FiltersToolPanelModule } from '@libregrid/filters-tool-panel';
 import { StatusBarModule } from '@libregrid/status-bar';
 import type {
   UserOrgUnit,
+  UserPage,
   UserPredicate,
   UserRow,
 } from '@campus/application-contracts';
@@ -57,7 +59,11 @@ import {
   predicatesFromFilterModel,
   samePredicates,
 } from './user-filter-model';
-import { userGridFeatures } from './user-grid-options';
+import {
+  userGridFeatures,
+  detailsKeyHandler,
+  showRow,
+} from './user-grid-options';
 import type { UserRowRefresh } from './user-row-refresh';
 import type { UserAttributeColumn } from './user-fields';
 import { UserStatusPanel } from './user-status-panel';
@@ -157,6 +163,12 @@ export class UserGrid implements OnInit {
   }>();
   /** Refresh signals update the rows this grid holds. */
   readonly rowRefresh = input<UserRowRefresh | null>(null);
+  /** Row to focus after the first block loads, such as the row that opened the details (UI-09). */
+  readonly focusIndex = input<number | null>(null);
+  /** GRID-03: the details control of a row opens that user's details page. */
+  readonly details = output<{ row: UserRow; index: number }>();
+  /** The Name link records the row before the router opens its details page. */
+  readonly opened = output<{ row: UserRow; index: number }>();
 
   /** The selection footer lives in the status bar. LibreGrid fills it on ready. */
   private readonly footer = document.createElement('div');
@@ -175,6 +187,8 @@ export class UserGrid implements OnInit {
   /** The predicates that the loaded rows follow, so a model change never reloads twice (R4). */
   private appliedPredicates: readonly UserPredicate[] = [];
   private datasourceReady = false;
+  /** The row that focus returned to is placed, so a later block does not move it again. */
+  private focused = false;
   protected options!: GridOptions<UserRow>;
 
   constructor() {
@@ -231,6 +245,8 @@ export class UserGrid implements OnInit {
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
       onToolPanelVisibleChanged: (event) => this.panelToggled(event),
+      onCellKeyDown: (event) =>
+        detailsKeyHandler((row, node) => this.open(row, node))(event),
       onGridPreDestroyed: ({ state, api }) => {
         this.saveState()(
           savedGridState(state),
@@ -261,7 +277,23 @@ export class UserGrid implements OnInit {
     return userColumnDefs({
       attributes: this.attributes(),
       orgUnits: () => this.orgUnits().map((unit) => unit.path),
+      onDetails: (row, node) => this.open(row, node),
+      onOpen: (row, node) => this.openedRow(row, node),
     });
+  }
+
+  /** GRID-03: the details control opens the page, so the row is recorded first. */
+  private open(row: UserRow, node: IRowNode<UserRow>): void {
+    const index = node.rowIndex;
+    if (index === null || index < 0) return;
+    this.details.emit({ row, index });
+  }
+
+  /** The Name link keeps its own navigation. The page records the row for Next user. */
+  private openedRow(row: UserRow, node: IRowNode<UserRow>): void {
+    const index = node.rowIndex;
+    if (index === null || index < 0) return;
+    this.opened.emit({ row, index });
   }
 
   protected ready(event: GridReadyEvent<UserRow>): void {
@@ -280,7 +312,7 @@ export class UserGrid implements OnInit {
       'serverSideDatasource',
       userDatasource(
         (offset, limit, view) => this.load()(offset, limit, view),
-        () => this.restore(),
+        (page) => this.restore(page),
         { gridId: 'users', tabId: this.selection().tabId },
         () => this.attributes(),
         // Alias and has-a-value chips have no column filter. The query keeps them.
@@ -353,8 +385,33 @@ export class UserGrid implements OnInit {
     this.filtersChange.emit(next);
   }
 
-  private restore(): void {
-    // K10 holds no row position to restore.
+  private restore(page?: UserPage): void {
+    const index = this.focusIndex();
+    if (this.focused || index === null || !page || page.matching <= index)
+      return;
+    this.focused = true;
+    this.focusRow(index);
+  }
+
+  /**
+   * UI-09: Back to users returns focus to the row that opened the details. The row
+   * holds a control once its block renders, so wait for the cell before focusing it.
+   */
+  private focusRow(index: number, attempt = 0): void {
+    const api = this.api;
+    if (!api) return;
+    requestAnimationFrame(() => {
+      showRow(api, index);
+      const cell = this.host.nativeElement.querySelector<HTMLElement>(
+        `[row-index="${index}"] [col-id="details"]`,
+      );
+      if (cell) {
+        (cell.querySelector('button') ?? cell).focus();
+        return;
+      }
+      // A page change loads its block first. Poll a bounded number of frames for it.
+      if (attempt < 30) this.focusRow(index, attempt + 1);
+    });
   }
 
   /**

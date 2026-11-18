@@ -1,6 +1,12 @@
-import type { ColDef, ColGroupDef, IFilterOptionDef } from 'ag-grid-community';
+import type {
+  ColDef,
+  ColGroupDef,
+  IFilterOptionDef,
+  IRowNode,
+} from 'ag-grid-community';
 import type { UserRow } from '@campus/application-contracts';
 import { UserDetailsCell } from './user-details-cell';
+import { UserNameCell } from './user-name-cell';
 import {
   STATUS_LABELS,
   TWO_STEP_LABELS,
@@ -201,10 +207,16 @@ export function userColumnDefs(
   options: {
     attributes?: readonly UserAttributeColumn[];
     orgUnits?: () => readonly string[];
+    /** GRID-03: the details icon opens the user's details page. */
+    onDetails?: (row: UserRow, node: IRowNode<UserRow>) => void;
+    /** The Name link records the row before the router opens the details page. */
+    onOpen?: (row: UserRow, node: IRowNode<UserRow>) => void;
   } = {},
 ): (ColDef<UserRow> | ColGroupDef<UserRow>)[] {
   const orgUnits = options.orgUnits ?? (() => []);
   const attributes = options.attributes ?? [];
+  const onDetails = options.onDetails ?? (() => undefined);
+  const onOpen = options.onOpen ?? (() => undefined);
   const columns: ColDef<UserRow>[] = [
     {
       colId: 'details',
@@ -221,6 +233,7 @@ export function userColumnDefs(
       sortable: false,
       resizable: false,
       cellRenderer: UserDetailsCell,
+      cellRendererParams: { onDetails },
       // The marker centers in the narrow column and no cell padding can wrap it.
       cellStyle: {
         display: 'flex',
@@ -242,6 +255,13 @@ export function userColumnDefs(
         width: WIDTHS[field.id] ?? 165,
         minWidth: 100,
         valueGetter: ({ data }) => (data ? text(data, field.id) : ''),
+        // The Name cell is the link to the details page (A section 9).
+        ...(field.id === 'fullName'
+          ? {
+              cellRenderer: UserNameCell,
+              cellRendererParams: { onOpen },
+            }
+          : {}),
         sortable,
         ...columnFilter(field, orgUnits),
         hide: field.optional,

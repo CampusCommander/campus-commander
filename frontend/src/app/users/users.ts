@@ -13,8 +13,12 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatTabsModule } from '@angular/material/tabs';
-import { RouterLink } from '@angular/router';
-import type { Action, UserPredicate } from '@campus/application-contracts';
+import { Router, RouterLink } from '@angular/router';
+import type {
+  Action,
+  UserPredicate,
+  UserRow,
+} from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
 import { UserFilter } from './user-filter';
@@ -49,6 +53,7 @@ import { UsersStore } from './users.store';
 export class UsersPage implements OnInit, OnDestroy {
   protected readonly store = inject(UsersStore);
   private readonly auth = inject(AuthStore);
+  private readonly router = inject(Router);
   private readonly injector = inject(Injector);
 
   protected readonly editingIndex = signal<number | null>(null);
@@ -196,6 +201,20 @@ export class UsersPage implements OnInit, OnDestroy {
     if (index === null) return;
     afterNextRender(() => this.chips()[index]?.nativeElement.focus(), {
       injector: this.injector,
+    });
+  }
+
+  /** GRID-03: the details control records the row, then opens that user (A section 4). */
+  protected openDetails(event: { row: UserRow; index: number }): void {
+    this.recordRow(event);
+    void this.router.navigate(['/users', event.row.userId]);
+  }
+
+  /** The Name link navigates itself. Recording the row keeps Next user and Back to users. */
+  protected recordRow(event: { row: UserRow; index: number }): void {
+    this.store.position.set({
+      index: event.index,
+      userId: event.row.userId,
     });
   }
 }

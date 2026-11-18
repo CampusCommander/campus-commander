@@ -1,7 +1,11 @@
 import type {
+  CellKeyDownEvent,
+  FullWidthCellKeyDownEvent,
+  GridApi,
   GridOptions,
   IStatusPanelComp,
   IStatusPanelParams,
+  IRowNode,
 } from 'ag-grid-community';
 import type {
   ServerSideSelectionProvider,
@@ -121,5 +125,46 @@ export function userGridFeatures(
         features.onSelectionReady?.(service);
       },
     },
+  };
+}
+
+/**
+ * Open the page that holds a row, then scroll to it. Next user can leave the page that
+ * Back to users returns to (A section 4).
+ */
+export function showRow(
+  api: Pick<
+    GridApi,
+    | 'paginationGetPageSize'
+    | 'paginationGetCurrentPage'
+    | 'paginationGoToPage'
+    | 'ensureIndexVisible'
+  >,
+  index: number,
+): void {
+  const page = Math.floor(index / api.paginationGetPageSize());
+  if (page !== api.paginationGetCurrentPage()) api.paginationGoToPage(page);
+  api.ensureIndexVisible(index, 'middle');
+}
+
+/**
+ * Enter on a focused details cell opens the user (UI-09). The details control is a
+ * button, so its own Enter and Space activation stays with the button.
+ */
+export function detailsKeyHandler(
+  onDetails: (row: UserRow, node: IRowNode<UserRow>) => void,
+) {
+  return (
+    event: CellKeyDownEvent<UserRow> | FullWidthCellKeyDownEvent<UserRow>,
+  ): void => {
+    const keyboard = event.event as KeyboardEvent | null | undefined;
+    if (!('column' in event) || event.column.getColId() !== 'details') return;
+    if (keyboard?.key !== 'Enter') return;
+    const target = keyboard.target;
+    if (target instanceof HTMLElement && target.closest('button, a') !== null)
+      return;
+    if (!event.data || event.node.group) return;
+    keyboard.preventDefault();
+    onDetails(event.data, event.node);
   };
 }

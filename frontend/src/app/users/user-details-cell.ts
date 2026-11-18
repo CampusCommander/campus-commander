@@ -1,18 +1,29 @@
-import { Component } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
 import type { ICellRendererAngularComp } from 'ag-grid-angular';
+import type { ICellRendererParams, IRowNode } from 'ag-grid-community';
+import type { UserRow } from '@campus/application-contracts';
+import { userName } from './user-fields';
+
+export interface UserDetailsCellParams extends ICellRendererParams<UserRow> {
+  onDetails(row: UserRow, node: IRowNode<UserRow>): void;
+}
 
 /**
- * GRID-03 details icon of the users grid.
+ * GRID-03 details icon of the users grid. The icon opens the user details page.
  *
- * The users details page arrives with card K11. Until then the icon draws the row
- * marker and is not a control, so no click leads to a missing page.
  * The eye is inline SVG: the icon font painted a stray ellipsis under the glyph in
- * the grid cell, and the marker must match the approved screen exactly.
+ * the grid cell, and the control must match the approved screen exactly.
  */
 @Component({
   selector: 'app-user-details-cell',
   template: `
-    <span class="details-mark">
+    <button
+      type="button"
+      class="details-action"
+      [attr.aria-label]="label()"
+      [attr.title]="label()"
+      (click)="activate()"
+    >
       <svg
         aria-hidden="true"
         focusable="false"
@@ -26,15 +37,22 @@ import type { ICellRendererAngularComp } from 'ag-grid-angular';
         />
         <circle cx="12" cy="12" r="3.1" />
       </svg>
-    </span>
+    </button>
   `,
   styles: `
-    .details-mark {
+    .details-action {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      min-height: 24px;
+      padding: 0;
+      border: 0;
+      background: transparent;
       color: var(--cc-text-link);
+      cursor: pointer;
     }
-    .details-mark svg {
+    .details-action svg {
       width: 24px;
       height: 24px;
       display: block;
@@ -42,11 +60,24 @@ import type { ICellRendererAngularComp } from 'ag-grid-angular';
   `,
 })
 export class UserDetailsCell implements ICellRendererAngularComp {
-  agInit(): void {
-    // The icon carries no data until the details page lands (card K11).
+  private readonly params = signal<UserDetailsCellParams | null>(null);
+  protected readonly label = computed(() => {
+    const data = this.params()?.data;
+    return data ? `Open details for ${userName(data)}` : 'Open details';
+  });
+
+  agInit(params: UserDetailsCellParams): void {
+    this.params.set(params);
   }
 
-  refresh(): boolean {
+  refresh(params: UserDetailsCellParams): boolean {
+    this.params.set(params);
     return true;
+  }
+
+  protected activate(): void {
+    const params = this.params();
+    if (params?.data && !params.node.group)
+      params.onDetails(params.data, params.node);
   }
 }

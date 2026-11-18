@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ColDef, ColGroupDef } from 'ag-grid-community';
 import type { UserAttributeCategory } from '@campus/application-contracts';
 import { UserDetailsCell } from './user-details-cell';
+import { UserNameCell } from './user-name-cell';
 import { userColumnDefs } from './user-columns';
 import { attributeColumns } from './user-fields';
 
@@ -109,5 +110,31 @@ describe('the users grid columns', () => {
     }) => boolean;
     expect(rule({ data: { stale: true } })).toBe(true);
     expect(rule({ data: { stale: false } })).toBe(false);
+  });
+
+  it('gives the details column the control that opens a user', () => {
+    const onDetails = vi.fn();
+    const defs = userColumnDefs({ onDetails }) as (
+      | ColDef<never>
+      | ColGroupDef<never>
+    )[];
+    const details = defs.find(
+      (column): column is ColDef<never> => !('children' in column),
+    );
+    expect(details?.cellRendererParams).toEqual({ onDetails });
+  });
+
+  it('renders the Name cell as the link to the details page', () => {
+    const onOpen = vi.fn();
+    const defs = userColumnDefs({ onOpen }) as (
+      | ColDef<never>
+      | ColGroupDef<never>
+    )[];
+    const name = defs.find(
+      (column): column is ColDef<never> =>
+        !('children' in column) && column.colId === 'fullName',
+    );
+    expect(name?.cellRenderer).toBe(UserNameCell);
+    expect(name?.cellRendererParams).toEqual({ onOpen });
   });
 });
