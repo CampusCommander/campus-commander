@@ -9,6 +9,7 @@ import {
 import {
   USER_BY_IDS_LIMIT,
   userAttributeCategoriesSchema,
+  userDetailSchema,
   userDomainRefreshSchema,
   userFreshnessSchema,
   userOrgUnitsSchema,
@@ -19,10 +20,12 @@ import {
   userSyncStateSchema,
   type DeviceSyncFailure,
   type UserAttributeCategories,
+  type UserDetail,
   type UserFreshness,
   type UserOrgUnit,
   type UserPage,
   type UserPredicate,
+  type UserRow,
   type UserSyncState,
 } from '@campus/application-contracts';
 import { z } from 'zod';
@@ -169,6 +172,11 @@ export class UsersStore {
   readonly gridState = signal<GridState | null>(null);
   readonly selectedView = signal(false);
   /**
+   * The row that the person opened: its index in the filtered order and its ID.
+   * Next user walks that order, and Back to users returns focus to that row.
+   */
+  readonly position = signal<{ index: number; userId: string } | null>(null);
+  /**
    * The grid shows a filter that the query cannot express, such as an empty BOOLEAN
    * set. No row matches, and the page offers filter recovery (R6).
    */
@@ -261,6 +269,7 @@ export class UsersStore {
     this.view.set(defaultView());
     this.gridState.set(null);
     this.selectedView.set(false);
+    this.position.set(null);
     this.emptyFilter.set(false);
     this.emptyEpoch++;
     this.emptySnapshot = null;
@@ -622,6 +631,24 @@ export class UsersStore {
     return page;
   }
 
+  /** The next row of the current filtered order, for Next user (A section 4). */
+  async neighbor(index: number): Promise<UserRow | null> {
+    if (index < 0) return null;
+    return (await this.rows(index, 1))?.rows[0] ?? null;
+  }
+
+  /** One user for the details page, or null when the API does not answer the read. */
+  async user(id: string): Promise<UserDetail | null> {
+    const epoch = this.epoch;
+    const response = await this.call(
+      `/api/users/${encodeURIComponent(id)}`,
+      undefined,
+      () => this.owns(epoch),
+    );
+    if (!this.owns(epoch) || !response?.ok) return null;
+    return userDetailSchema.parse((await response.json()).user);
+  }
+
   /** A response for a query that changed meanwhile must not replace the counts. */
   private keepCounts(
     view: UserView,
@@ -829,6 +856,8 @@ export class UsersStore {
     if (samePredicates(predicates, this.predicates(), this.attributes()))
       return;
     this.predicates.set(predicates);
+    // A new query holds a new order, so Next user and Back to users forget the opened row.
+    this.position.set(null);
   }
 
   /**
@@ -886,6 +915,8 @@ export class UsersStore {
   setView(view: UserView): void {
     if (JSON.stringify(view) === JSON.stringify(this.view())) return;
     this.view.set(view);
+    // A different query holds a different order, so Next user and Back to users forget it.
+    this.position.set(null);
     const key = countsKey(view);
     if (key === this.counted) return;
     this.counted = key;

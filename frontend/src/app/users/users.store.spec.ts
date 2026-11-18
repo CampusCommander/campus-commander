@@ -872,4 +872,88 @@ describe('the users store', () => {
     expect(store.page()?.matching).toBe(96);
     await vi.waitFor(() => expect(store.freshness()?.stale).toBe(2));
   });
+
+  it('reads one user for the details page', async () => {
+    const request = vi.fn((path: string) =>
+      Promise.resolve(
+        path === '/api/users/110000000000000000001'
+          ? Response.json({ user: { ...userRow(), removedAt: null } })
+          : Response.json({ reason: 'user-not-found' }, { status: 404 }),
+      ),
+    );
+    const store = setup(request);
+    const read = await store.user('110000000000000000001');
+    expect(read?.fullName).toBe('Aaliyah Brooks');
+    expect(read?.removedAt).toBeNull();
+    expect(request).toHaveBeenCalledWith(
+      '/api/users/110000000000000000001',
+      undefined,
+    );
+    // The ID is one path segment, so a separator in the ID stays encoded.
+    expect(await store.user('8f/2')).toBeNull();
+    expect(request).toHaveBeenCalledWith('/api/users/8f%2F2', undefined);
+  });
+
+  it('reads the next row of the current order for Next user', async () => {
+    const request = vi.fn((path: string) =>
+      Promise.resolve(
+        Response.json(
+          path === '/api/users/query'
+            ? { page: page({ rows: [userRow()] }) }
+            : (answers[path] ?? {}),
+        ),
+      ),
+    );
+    const store = setup(request);
+    store.setView({
+      predicates: [],
+      sort: { field: 'fullName', direction: 'asc' },
+      selection: null,
+    });
+    const next = await store.neighbor(2);
+    expect(next?.userId).toBe('110000000000000000001');
+    expect(request).toHaveBeenCalledWith('/api/users/query', {
+      predicates: [],
+      sort: { field: 'fullName', direction: 'asc' },
+      selection: null,
+      offset: 2,
+      limit: 1,
+    });
+    // No row sits before the first row.
+    expect(await store.neighbor(-1)).toBeNull();
+  });
+
+  it('forgets the opened row when the query changes', () => {
+    const store = setup(answer());
+    store.position.set({ index: 3, userId: '110000000000000000001' });
+    // A filter change holds a new order, so Next user and Back to users forget the row.
+    store.setPredicates([
+      { field: 'fullName', operator: 'contains', value: 'a' },
+    ]);
+    expect(store.position()).toBeNull();
+    store.position.set({ index: 3, userId: '110000000000000000001' });
+    store.setView({
+      predicates: [],
+      sort: { field: 'primaryEmail', direction: 'asc' },
+      selection: null,
+    });
+    expect(store.position()).toBeNull();
+  });
+
+  it('keeps the opened row when the grid runs its query again', () => {
+    const store = setup(answer());
+    const view = {
+      predicates: [],
+      sort: { field: 'fullName' as const, direction: 'asc' as const },
+      selection: null,
+    };
+    store.setView(view);
+    store.position.set({ index: 3, userId: '110000000000000000001' });
+    // Back to users reports the same order again, so the row stays for the focus return.
+    store.setView({ ...view });
+    expect(store.position()).toEqual({
+      index: 3,
+      userId: '110000000000000000001',
+    });
+  });
 });

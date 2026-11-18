@@ -1,0 +1,183 @@
+<div class="detail" [attr.aria-busy]="busy()">
+  @switch (view()) { @case ('loading') {
+  <section aria-label="Loading user details" aria-busy="true">
+    <p role="status">Loading user details…</p>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+    <div class="skeleton" aria-hidden="true"></div>
+  </section>
+  } @case ('error') {
+  <section class="card" aria-labelledby="user-status-title">
+    <h1 #heading tabindex="-1" id="user-status-title">User directory status</h1>
+    <p role="alert">{{ store.statusError() }}</p>
+    @if (store.statusRetryable()) {
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+      <button mat-flat-button type="button" (click)="retryStatus()">
+        Retry
+      </button>
+    </div>
+    } @else {
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+    </div>
+    }
+  </section>
+  } @case ('connection') {
+  <section class="card" aria-labelledby="user-connect-title">
+    <h1 #heading tabindex="-1" id="user-connect-title">
+      Connect Google Workspace
+    </h1>
+    <p>Users come from the connected Google Workspace customer.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+      <a mat-flat-button routerLink="/google-connection"
+        >Open Google connection</a
+      >
+    </div>
+  </section>
+  } @case ('offline') {
+  <section class="card" aria-labelledby="user-offline-title">
+    <h1 #heading tabindex="-1" id="user-offline-title">
+      Cannot reach Campus Commander
+    </h1>
+    <p>User details need a connection.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+      <button mat-flat-button type="button" (click)="retry()">Retry</button>
+    </div>
+  </section>
+  } @case ('missing') {
+  <section class="card" aria-labelledby="user-missing-title">
+    <h1 #heading tabindex="-1" id="user-missing-title">User not found</h1>
+    <p>The current directory has no user with this ID.</p>
+    <div class="actions">
+      <a mat-stroked-button routerLink="/users">Back to users</a>
+    </div>
+  </section>
+  } @case ('ready') { @if (user(); as current) {
+  <header class="page-header">
+    <h1 #heading tabindex="-1">{{ title(current) }}</h1>
+    <p class="subtitle">User details · {{ current.orgUnitPath }}</p>
+  </header>
+  @if (current.removedAt) {
+  <p class="removed" role="status">
+    Google no longer returns this user (since {{ current.removedAt | date: 'MMM
+    d, h:mm a' }}).
+  </p>
+  }
+  <div class="actions">
+    <a mat-stroked-button routerLink="/users">Back to users</a>
+    <button
+      mat-stroked-button
+      type="button"
+      [disabled]="!hasNext()"
+      (click)="next()"
+    >
+      Next user
+    </button>
+  </div>
+  <div class="detail-layout">
+    <section class="card account" aria-labelledby="user-account-title">
+      <h2 id="user-account-title">Account</h2>
+      <dl class="facts-list">
+        <div>
+          <dt>Primary email</dt>
+          <dd>{{ current.primaryEmail }}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>{{ statusLabel(current) }}</dd>
+        </div>
+        @if (current.suspensionReason) {
+        <div>
+          <dt>Suspension reason</dt>
+          <dd>{{ current.suspensionReason }}</dd>
+        </div>
+        }
+        <div>
+          <dt>Last sign-in</dt>
+          <dd>{{ lastSignIn(current) }}</dd>
+        </div>
+        <div>
+          <dt>2-step verification</dt>
+          <dd>{{ twoStepLabel(current) }}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{{ created(current) }}</dd>
+        </div>
+        @if (current.aliases.length) {
+        <div>
+          <dt>Aliases</dt>
+          <dd>{{ current.aliases.join(', ') }}</dd>
+        </div>
+        }
+      </dl>
+      @if (current.stale || current.removedAt) {
+      <p class="secondary read-age">
+        Read from Google {{ relative(current.lastEntitySync) }}
+      </p>
+      }
+    </section>
+
+    <section class="card org" aria-labelledby="user-organization-title">
+      <h2 id="user-organization-title">Organization</h2>
+      <dl class="facts-list">
+        <div>
+          <dt>Organization unit</dt>
+          <dd>{{ current.orgUnitPath }}</dd>
+        </div>
+        <div>
+          <dt>Department</dt>
+          <dd>{{ current.department || 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt>Title</dt>
+          <dd>{{ current.title || 'Not set' }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="card attrs" aria-labelledby="user-attributes-title">
+      <div class="card-head">
+        <h2 id="user-attributes-title">Custom attributes</h2>
+      </div>
+      @if (store.categoriesError()) {
+      <p class="scope-note">
+        {{ store.categoriesError() }} @if (store.categoriesRecovery()) {
+        <a routerLink="/google-connection">Open Google connection</a>
+        }
+      </p>
+      } @if (sections().length === 0) {
+      <p class="empty">No values set</p>
+      } @for (section of sections(); track section.schemaName) {
+      <section class="attr-section">
+        <h3>{{ section.displayName }}</h3>
+        @if (section.values.length === 0) {
+        <p class="empty">No values set</p>
+        } @else {
+        <dl class="annotations">
+          @for (value of section.values; track value.fieldName) {
+          <div class="annotation">
+            <dt>{{ value.label }}</dt>
+            <dd>
+              @if (value.values.length === 0) { Not set } @else if
+              (value.multiValued) {
+              <ul class="value-chips">
+                @for (item of value.values; track $index) {
+                <li>{{ item }}</li>
+                }
+              </ul>
+              } @else { {{ value.values.join(', ') }} }
+            </dd>
+          </div>
+          }
+        </dl>
+        }
+      </section>
+      }
+    </section>
+  </div>
+  } } }
+</div>
