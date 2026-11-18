@@ -377,10 +377,11 @@ BEGIN
 END;
 $$;
 
--- 9b. The atomic send gate (R4). The worker calls it once, immediately before the Google call.
--- Cancel refuses only after this marker, so a cancel that lands before the marker stops the job and
--- a cancel that lands after it answers `nothing-to-stop`. The same lock and check fence a stale
--- attempt, an expired lease, and a cancelled job, so no write follows a lost ownership.
+-- 9b. The atomic send gate (R4). The writer calls it after the write-token mint and immediately
+-- before the one category request. Cancel refuses only after this marker, so a cancel that lands
+-- before the marker stops the job and a cancel that lands after it answers `nothing-to-stop`. The
+-- same lock and check fence a stale attempt, an expired lease, and a cancelled job, so no write
+-- follows a lost ownership.
 CREATE FUNCTION cc.begin_user_schema_change_write(p_customer text,p_job uuid,p_token uuid,p_attempt uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
@@ -444,7 +445,21 @@ BEGIN
   END IF;
   SELECT * INTO plan FROM cc.user_category_plans p WHERE p.plan_id=detail.plan_id;
   PERFORM 1 FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
-  -- The connection wait is the last one before the first write, so the lease reads again here.
+  -- R1: the users upsert locks the connection row before a user row, and this settlement keeps
+  -- that order. The purge and the C12 conversion below then wait on cached user rows, and that
+  -- wait is independent of the category lock. Lock every row they can update here, before the
+  -- lease check, so a lease that lapses during a row wait cannot commit.
+  IF plan.plan_id IS NOT NULL THEN
+    PERFORM 1 FROM cc.users u WHERE u.customer_id=p_customer AND
+      u.custom_schemas ? plan.schema_name ORDER BY u.user_id FOR UPDATE;
+  END IF;
+  -- The cache row and the state row are the other rows this settlement writes. The category
+  -- advisory lock above serializes the cache writers, so these locks never wait on one of them.
+  PERFORM 1 FROM cc.user_attribute_categories c WHERE c.customer_id=p_customer
+    ORDER BY c.schema_id FOR UPDATE;
+  PERFORM 1 FROM cc.user_attribute_category_state s WHERE s.customer_id=p_customer FOR UPDATE;
+  -- The last blocking wait has passed, so the lease reads here and every write below holds its
+  -- row already. An expiry during a row wait fences this settlement before any write (R1).
   now_at:=clock_timestamp();
   IF detail.attempt_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
@@ -496,7 +511,9 @@ $$;
 -- passed its start window gets one new start, up to 3. A claimed call whose attempt lease lapsed
 -- lost its runner. The call may have applied, so the job gets one new start for the read-back,
 -- under the same bound; the claim transfers ownership because the lease expired, and the new owner
--- reads Google back alone (R1). A job that used its starts ends needs-review with `interrupted`.
+-- reads Google back alone (R1). A recovery start keeps its full 120-second window, so a repeated
+-- recovery before a runner claims it changes nothing (R8). A job that used its starts ends
+-- needs-review with `interrupted`.
 CREATE FUNCTION cc.recover_user_schema_change_jobs(p_customer text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.user_schema_change_jobs; now_at timestamptz; token uuid;
@@ -517,10 +534,11 @@ BEGIN
   FOREACH job IN ARRAY candidates LOOP
     SELECT * INTO detail FROM cc.user_schema_change_jobs u WHERE u.job_id=job.job_id FOR UPDATE;
     now_at:=clock_timestamp();
-    IF detail.first_claimed_at IS NOT NULL THEN
-      IF detail.attempt IS NOT NULL AND detail.attempt_expires_at IS NOT NULL AND detail.attempt_expires_at<=now_at THEN
+    IF detail.first_claimed_at IS NULL THEN
+      -- The first start never claimed. Its own window decides, as before.
+      IF detail.start_deadline_at IS NOT NULL AND detail.start_deadline_at<=now_at THEN
         IF detail.dispatch_count>=3 THEN
-          UPDATE cc.jobs SET status='needs-review',unknown=1,failure='interrupted',finished_at=now_at
+          UPDATE cc.jobs SET status='failed',failed=1,failure='orchestration-unavailable',finished_at=now_at
             WHERE job_id=job.job_id;
           PERFORM cc.record_job_change(job.job_id,true);
         ELSE
@@ -533,9 +551,31 @@ BEGIN
           PERFORM cc.record_job_change(job.job_id,true);
         END IF;
       END IF;
-    ELSIF detail.start_deadline_at IS NOT NULL AND detail.start_deadline_at<=now_at THEN
+    -- R8: a lapsed attempt gets one recovery start, and that start keeps its full start window.
+    -- The lapsed attempt clears here, so a repeated recovery before the new window ends neither
+    -- rotates the token nor consumes a start.
+    ELSIF detail.attempt IS NOT NULL AND detail.attempt_expires_at IS NOT NULL AND
+      detail.attempt_expires_at<=now_at THEN
       IF detail.dispatch_count>=3 THEN
-        UPDATE cc.jobs SET status='failed',failed=1,failure='orchestration-unavailable',finished_at=now_at
+        UPDATE cc.jobs SET status='needs-review',unknown=1,failure='interrupted',finished_at=now_at
+          WHERE job_id=job.job_id;
+        PERFORM cc.record_job_change(job.job_id,true);
+      ELSE
+        UPDATE cc.user_schema_change_jobs SET dispatch_token=gen_random_uuid(),
+          dispatch_count=dispatch_count+1,start_deadline_at=now_at+interval '120 seconds',
+          attempt=NULL,attempt_expires_at=NULL
+          WHERE job_id=job.job_id RETURNING dispatch_token INTO token;
+        starts:=starts||jsonb_build_object('jobId',job.job_id,'displayId',job.display_id,
+          'dispatchToken',token,'correlationId',job.correlation_id,'targetCount',job.target_count,
+          'kind',job.kind);
+        PERFORM cc.record_job_change(job.job_id,true);
+      END IF;
+    -- A recovery start that no runner claimed within its window gets the next start, up to the
+    -- same bound. The job never sits running without a start behind it.
+    ELSIF detail.attempt IS NULL AND detail.start_deadline_at IS NOT NULL AND
+      detail.start_deadline_at<=now_at THEN
+      IF detail.dispatch_count>=3 THEN
+        UPDATE cc.jobs SET status='needs-review',unknown=1,failure='interrupted',finished_at=now_at
           WHERE job_id=job.job_id;
         PERFORM cc.record_job_change(job.job_id,true);
       ELSE
@@ -554,8 +594,9 @@ END;
 $$;
 
 -- 12. The cancel rule of B section 7.4. A category job that never began its one call ends at once,
--- before or after the claim, because the write gate of 9b runs last (R4). After the call begins, the
--- call cannot stop, and the request answers `nothing-to-stop`.
+-- before or after the claim, because the write gate of 9b runs after the token mint and immediately
+-- before the request (R4). After the call begins, the call cannot stop, and the request answers
+-- `nothing-to-stop`.
 -- This is the 020 definition with one detail lock and one decision branch for the category kind.
 CREATE OR REPLACE FUNCTION cc.request_job_cancel(p_actor uuid,p_version integer,p_customer text,p_display_id text,
   p_correlation uuid) RETURNS jsonb
