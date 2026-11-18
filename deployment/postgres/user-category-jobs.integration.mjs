@@ -685,6 +685,202 @@ export async function qualifyUserCategoryJobs({
       },
     );
 
+    await check(
+      'K16 a lease that lapses during a later membership wait fences the settlement (R1)',
+      async () => {
+        // A user that joins the cache after the pre-lock snapshot makes the purge acquire one more
+        // row lock. The lease lapses during that wait, and the settlement must roll back instead of
+        // committing over the expired attempt. The committed observation of the new user stays.
+        await storeCategory(
+          'schema-membership-wait',
+          'MembershipWaitInfo',
+          'Membership Wait Info',
+          'etag-mw',
+          [
+            field({
+              fieldId: 'fld-mw',
+              fieldName: 'Code',
+              displayName: 'Code',
+            }),
+          ],
+        );
+        await storeUser('user-membership-a', {
+          MembershipWaitInfo: { Code: { value: 'a' } },
+        });
+        await storeUser('user-membership-b', {});
+        const job = await makeJob({
+          action: 'delete-category',
+          schemaId: 'schema-membership-wait',
+          schemaName: 'MembershipWaitInfo',
+          baseEtag: 'etag-mw',
+          body: null,
+        });
+        const { token, attempt } = await runningJob(job);
+        const before = await header(job.jobId);
+        const publicationsBefore = (
+          await one(
+            'SELECT count(*)::integer AS count FROM cc.job_publications WHERE job_id=$1',
+            [job.jobId],
+          )
+        ).count;
+        // The attempt lease ends during the second wait. The settlement reads this value with its
+        // detail lock, so the shortened lease must exist before the settlement query starts.
+        await migrator.query(
+          "UPDATE cc.user_schema_change_jobs SET attempt_expires_at=clock_timestamp()+interval '5 seconds' WHERE job_id=$1",
+          [job.jobId],
+        );
+        const holderA = await connect('cc-migrator', 'cc-app');
+        const holderB = await connect('cc-migrator', 'cc-app');
+        const settler = await connect('cc-app', 'cc-app');
+        let settlement = null;
+        try {
+          await holderA.query('BEGIN');
+          await holderA.query(
+            'SELECT 1 FROM cc.users WHERE customer_id=$1 AND user_id=$2 FOR UPDATE',
+            [customer, 'user-membership-a'],
+          );
+          const holderAPid = (
+            await holderA.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          const settlerPid = (
+            await settler.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          settlement = settler.query(
+            'SELECT cc.settle_user_schema_change($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
+            [
+              customer,
+              job.jobId,
+              token,
+              attempt,
+              'succeeded',
+              null,
+              null,
+              null,
+              null,
+              new Date().toISOString(),
+            ],
+          );
+          // The pre-lock query waits on the user that matched its snapshot.
+          let waitingOnA = false;
+          for (let poll = 0; poll < 200 && !waitingOnA; poll += 1) {
+            waitingOnA = (
+              await one(
+                'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS waiting',
+                [settlerPid, holderAPid],
+              )
+            ).waiting;
+            if (!waitingOnA)
+              await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          assert.equal(
+            waitingOnA,
+            true,
+            'the pre-lock waits on the original matching user',
+          );
+          // A production observation adds the category to a second user after that snapshot.
+          await observeUser(
+            'user-membership-b',
+            { MembershipWaitInfo: { Code: { value: 'b' } } },
+            new Date(Date.now() + 60_000).toISOString(),
+          );
+          assert.deepEqual(await customSchemas('user-membership-b'), {
+            MembershipWaitInfo: { Code: { value: 'b' } },
+          });
+          // Hold the newly matching row, so the purge itself waits on it.
+          await holderB.query('BEGIN');
+          await holderB.query(
+            'SELECT 1 FROM cc.users WHERE customer_id=$1 AND user_id=$2 FOR UPDATE',
+            [customer, 'user-membership-b'],
+          );
+          const holderBPid = (
+            await holderB.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          // Release the first row while the lease is live. The purge then waits on the new one.
+          await holderA.query('COMMIT');
+          let waitingOnB = false;
+          for (let poll = 0; poll < 200 && !waitingOnB; poll += 1) {
+            waitingOnB = (
+              await one(
+                'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS waiting',
+                [settlerPid, holderBPid],
+              )
+            ).waiting;
+            if (!waitingOnB)
+              await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          assert.equal(
+            waitingOnB,
+            true,
+            'the purge waits on the newly matching user',
+          );
+          // Let the lease lapse while the purge waits.
+          for (let poll = 0; poll < 100; poll += 1) {
+            const live = (
+              await one(
+                'SELECT attempt_expires_at>clock_timestamp() AS live FROM cc.user_schema_change_jobs WHERE job_id=$1',
+                [job.jobId],
+              )
+            ).live;
+            if (!live) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          assert.equal(
+            (
+              await one(
+                'SELECT attempt_expires_at<=clock_timestamp() AS expired FROM cc.user_schema_change_jobs WHERE job_id=$1',
+                [job.jobId],
+              )
+            ).expired,
+            true,
+            'the lease lapses during the wait',
+          );
+          await holderB.query('COMMIT');
+          assert.deepEqual((await settlement).rows[0].result, {
+            outcome: 'fenced',
+          });
+          settlement = null;
+          // Nothing committed: header, revision, publications, cache, and both users remain.
+          const after = await header(job.jobId);
+          assert.equal(after.status, 'running');
+          assert.equal(after.revision, before.revision);
+          assert.equal(after.finished_at, null);
+          assert.equal(
+            (
+              await one(
+                'SELECT count(*)::integer AS count FROM cc.job_publications WHERE job_id=$1',
+                [job.jobId],
+              )
+            ).count,
+            publicationsBefore,
+          );
+          assert.equal(
+            (
+              await one(
+                'SELECT count(*)::integer AS count FROM cc.user_attribute_categories WHERE customer_id=$1 AND schema_id=$2',
+                [customer, 'schema-membership-wait'],
+              )
+            ).count,
+            1,
+          );
+          assert.deepEqual(await customSchemas('user-membership-a'), {
+            MembershipWaitInfo: { Code: { value: 'a' } },
+          });
+          // The observation that added the second user committed before the refusal and stays.
+          assert.deepEqual(await customSchemas('user-membership-b'), {
+            MembershipWaitInfo: { Code: { value: 'b' } },
+          });
+        } finally {
+          await settlement?.catch(() => undefined);
+          await holderA.query('ROLLBACK').catch(() => undefined);
+          await holderB.query('ROLLBACK').catch(() => undefined);
+          await close(holderA);
+          await close(holderB);
+          await close(settler);
+        }
+        await endJob(job.jobId, 'cancelled');
+      },
+    );
+
     await check('K16 a created category is written to the cache', async () => {
       const job = await makeJob({
         action: 'create-category',
