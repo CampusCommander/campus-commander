@@ -832,6 +832,10 @@ test('keeps an active Columns row label clear of its move controls (UI-09)', asy
   await row.locator('label').hover();
   const hovered = await panelRowLayout(row);
   expect(hovered.actionsLeft - hovered.contentRight).toBeGreaterThanOrEqual(5);
+  await page.screenshot({
+    path: `${scratch}/um-02f-columns-panel-long-label-hover.png`,
+    fullPage: false,
+  });
   await page.mouse.move(0, 0);
   await expect
     .poll(async () => (await panelRowLayout(row)).paddingRight)
