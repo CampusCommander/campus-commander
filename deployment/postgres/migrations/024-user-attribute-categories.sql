@@ -60,8 +60,10 @@ CREATE INDEX user_category_plans_expiry ON cc.user_category_plans(expires_at)
   WHERE confirmed_at IS NULL;
 
 -- One category job of the header kind `user-schema-change`. The plan owns the action, and the row
--- keeps the confirmer that the worker revalidates (document B section 6.2 step 1). The job stores
--- `scope_kind` `devices` with `target_count` 1, because one plan is one operation.
+-- keeps the confirmer that the worker revalidates (document B section 6.2 step 1). The header
+-- stores `scope_kind` `devices` with `target_count` 1, because one plan is one operation, and the
+-- `entity_type` `user`, because the change touches user schema. The jobs grid still reads a
+-- device scope for every job; the design draws no category job row (K18).
 CREATE TABLE cc.user_schema_change_jobs (
   job_id uuid PRIMARY KEY REFERENCES cc.jobs(job_id) ON DELETE CASCADE,
   plan_id uuid NOT NULL UNIQUE REFERENCES cc.user_category_plans(plan_id),
