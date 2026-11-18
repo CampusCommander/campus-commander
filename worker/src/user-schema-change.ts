@@ -10,11 +10,13 @@ import {
 import type { EntityCache } from './entity-cache';
 import {
   CATEGORY_PART_ID,
+  CategorySendRefused,
   GoogleCategoryWriter,
   GoogleUserReader,
   categoryWriteBodySchema,
   type BatchFailure,
   type BatchResult,
+  type CategorySendGate,
   type CategoryWriteBody,
   type CredentialCipher,
   type DelegatedCredential,
@@ -307,13 +309,16 @@ export class UserSchemaChangeJobs {
           schema: observed,
         };
     }
-    // R4: the send gate runs last. A cancel, a lost ownership, or an expired lease before it stops
-    // the write here, and the job state already holds the outcome.
-    if (!(await this.beginWrite(input, attempt))) return 'fenced';
+    // R4: the send gate runs inside the writer, after the token mint and immediately before the
+    // multipart request. A cancel or a lost ownership before it stops the write there, and the job
+    // state already holds the outcome.
     let part: PartAnswer;
     try {
-      part = await this.send(input, claim, body, credential, signal);
+      part = await this.send(input, claim, body, credential, attempt, signal);
     } catch (error) {
+      // The gate refused the one request, so nothing left the worker and the job already holds its
+      // fence (R4).
+      if (error instanceof CategorySendRefused) return 'fenced';
       const code =
         error instanceof Error && 'code' in error
           ? jobFailure(String((error as { code: unknown }).code))
@@ -365,15 +370,21 @@ export class UserSchemaChangeJobs {
     return answer.outcome === 'writing';
   }
 
-  /** Send the one part of the plan. An update and a delete carry the plan etag in `If-Match`. */
+  /**
+   * Send the one part of the plan. An update and a delete carry the plan etag in `If-Match`.
+   * The gate is passed into the writer, which calls it after the token mint and immediately before
+   * the request, so a cancel during token acquisition still stops the call (R4).
+   */
   private async send(
     input: UserSchemaChangeRequest,
     claim: Claimed,
     body: CategoryWriteBody | null,
     credential: DelegatedCredential,
+    attempt: string,
     signal: AbortSignal,
   ): Promise<PartAnswer> {
     const writeSignal = this.deadline(signal, this.writeTimeoutMilliseconds);
+    const beforeSend: CategorySendGate = () => this.beginWrite(input, attempt);
     if (claim.action === 'create-category') {
       if (body === null) return { failed: undefined };
       return partAnswer(
@@ -382,6 +393,7 @@ export class UserSchemaChangeJobs {
           input.customerId,
           body,
           writeSignal,
+          beforeSend,
         ),
       );
     }
@@ -397,6 +409,7 @@ export class UserSchemaChangeJobs {
           claim.baseEtag,
           body,
           writeSignal,
+          beforeSend,
         ),
       );
     }
@@ -407,6 +420,7 @@ export class UserSchemaChangeJobs {
         claim.schemaId,
         claim.baseEtag,
         writeSignal,
+        beforeSend,
       ),
     );
   }
