@@ -118,6 +118,7 @@ export async function loadMigrations() {
       '019-user-inventory',
       '020-user-sync',
       '021-user-api',
+      '021-user-refresh-targets',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
