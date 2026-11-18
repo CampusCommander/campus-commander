@@ -14,12 +14,15 @@ import {
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import type {
+  EntityType,
   JobAction,
   JobPerson,
   JobStatus,
 } from '@campus/application-contracts';
 import {
+  ENTITY_TYPE_LABELS,
   JOB_ACTIONS,
+  JOB_ENTITY_TYPES,
   JOB_FILTER_FIELDS,
   JOB_STATUSES,
   JOB_STATUS_LABELS,
@@ -78,7 +81,7 @@ export class JobFilterEditor {
   protected readonly jobId = signal('');
   protected readonly statuses = signal<readonly JobStatus[]>([]);
   protected readonly actions = signal<readonly JobAction[]>([]);
-  protected readonly entities = signal<readonly 'device'[]>([]);
+  protected readonly entities = signal<readonly EntityType[]>([]);
   protected readonly person = signal<JobPerson | null>(null);
   protected readonly personQuery = signal('');
   protected readonly people = signal<readonly JobPerson[]>([]);
@@ -89,7 +92,9 @@ export class JobFilterEditor {
   protected readonly fields = JOB_FILTER_FIELDS;
   protected readonly statusOptions = JOB_STATUSES;
   protected readonly actionOptions = JOB_ACTIONS;
+  protected readonly entityOptions = JOB_ENTITY_TYPES;
   protected readonly statusLabels = JOB_STATUS_LABELS;
+  protected readonly entityLabels = ENTITY_TYPE_LABELS;
   protected readonly actionLabel = actionLabel;
 
   protected readonly suggestions = computed<Suggestion[]>(() => {
@@ -150,7 +155,7 @@ export class JobFilterEditor {
           : null;
       case 'entityType':
         return this.entities().length
-          ? { field: 'entityType', values: ['device'] }
+          ? { field: 'entityType', values: [...this.entities()] }
           : null;
       case 'requestedBy': {
         const person = this.person();
@@ -288,7 +293,7 @@ export class JobFilterEditor {
         this.actions.set([...filter.values]);
         break;
       case 'entityType':
-        this.entities.set(['device']);
+        this.entities.set([...filter.values]);
         break;
       case 'requestedBy':
         this.person.set({ id: filter.id, displayName: filter.displayName });
@@ -318,8 +323,12 @@ export class JobFilterEditor {
     );
   }
 
-  protected toggleEntity(checked: boolean): void {
-    this.entities.set(checked ? ['device'] : []);
+  protected toggleEntity(entity: EntityType, checked: boolean): void {
+    this.entities.update((values) =>
+      checked
+        ? [...values.filter((item) => item !== entity), entity]
+        : values.filter((item) => item !== entity),
+    );
   }
 
   protected async search(query: string): Promise<void> {
