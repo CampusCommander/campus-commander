@@ -153,6 +153,7 @@ function jobOf(
     revision: 1,
     action,
     status: 'running',
+    entityType: 'device',
     scope: { kind: 'devices', deviceCount: 6 },
     requestedBy: { id: principal, displayName: 'District operator' },
     createdAt: '2026-10-20T19:03:00.000Z',

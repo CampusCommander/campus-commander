@@ -230,6 +230,7 @@ const importJob = (name: ImportCase) => ({
         : name === 'cancelled'
           ? 'cancelled'
           : 'completed',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 48 },
   requestedBy: person,
   createdAt: new Date(Date.now() - 120_000).toISOString(),
@@ -351,6 +352,7 @@ const exportJob = {
   revision: 4,
   action: 'export-devices',
   status: 'completed',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: rows.length },
   requestedBy: person,
   createdAt: new Date(Date.now() - 120_000).toISOString(),

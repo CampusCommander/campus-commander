@@ -62,6 +62,7 @@ const job = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   revision: 4,
   action: 'update-device-annotations',
   status: 'needs-review',
+  entityType: 'device',
   scope: { kind: 'devices', deviceCount: 6 },
   requestedBy: person,
   createdAt: '2026-10-19T10:31:00.000Z',

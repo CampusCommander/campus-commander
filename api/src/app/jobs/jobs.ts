@@ -18,6 +18,7 @@ import {
   jobRequestersSchema,
   jobSeenSchema,
   jobSummarySchema,
+  type EntityType,
   type JobAction,
   type JobActivity,
   type JobCancelRefusal,
@@ -61,7 +62,7 @@ export interface JobFilters {
   jobId?: string;
   status?: JobStatus[];
   action?: JobAction[];
-  entityType?: string[];
+  entityType?: EntityType[];
   requestedBy?: string[];
   createdFrom?: string;
   createdTo?: string;
@@ -281,6 +282,7 @@ export function jobSummary(
             : (writeActions[String(row['action'])] ??
               'update-device-annotations'),
     status: row['status'],
+    entityType: row['entity_type'],
     scope: { kind: row['scope_kind'], deviceCount: total },
     requestedBy: {
       id: row['requested_by'],
@@ -564,8 +566,9 @@ export class Jobs {
             `(j.kind NOT IN ('device-command','device-status') OR u.action=ANY(${add(stored)}::text[]))`,
           );
       }
-      if (filters.entityType?.length && !filters.entityType.includes('device'))
-        where.push('false');
+      // The entity type of the job names what the count counts (document A section 5).
+      if (filters.entityType?.length)
+        where.push(`j.entity_type=ANY(${add(filters.entityType)}::text[])`);
       if (filters.requestedBy?.length)
         where.push(`j.requested_by=ANY(${add(filters.requestedBy)}::uuid[])`);
       if (filters.createdFrom)
