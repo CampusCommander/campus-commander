@@ -291,6 +291,9 @@ CREATE FUNCTION cc.confirm_user_category_plan(p_actor uuid,p_version integer,p_p
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE plan cc.user_category_plans; connection cc.google_connection; job cc.jobs;
   category cc.user_attribute_categories; number bigint; now_at timestamptz;
+  -- The ECMAScript WhiteSpace and LineTerminator set that String.prototype.trim removes. The
+  -- caller trims the entered phrase with trim(), so the frozen phrase must trim the same set.
+  phrase_whitespace constant text := E' \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
 BEGIN
   IF p_actor IS NULL OR p_version IS NULL OR p_plan_id IS NULL OR p_digest IS NULL OR
     p_digest !~ '^[a-f0-9]{64}$' OR p_correlation IS NULL OR
@@ -326,10 +329,11 @@ BEGIN
   IF p_digest IS DISTINCT FROM plan.digest THEN
     RETURN jsonb_build_object('outcome','plan-changed');
   END IF;
-  -- B section 5 trims the typed phrase. The caller trims the entered phrase, so the frozen phrase
+  -- B section 5 trims the typed phrase. The caller trims the entered phrase with ECMAScript
+  -- String.prototype.trim, and `phrase_whitespace` names the same characters, so the frozen phrase
   -- trims the same way; a category label keeps its surrounding whitespace in the plan answer. A
   -- plan without a removal or a delete expects no phrase.
-  IF btrim(p_phrase,E' \t\n\r\f') IS DISTINCT FROM btrim(plan.phrase,E' \t\n\r\f') THEN
+  IF btrim(p_phrase,phrase_whitespace) IS DISTINCT FROM btrim(plan.phrase,phrase_whitespace) THEN
     RETURN jsonb_build_object('outcome','phrase-mismatch');
   END IF;
   -- B section 6.2: the plan froze a cached etag, and the confirm compares the cache again. A
