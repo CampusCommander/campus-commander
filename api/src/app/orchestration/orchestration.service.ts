@@ -302,6 +302,25 @@ export class OrchestrationService {
     });
   }
 
+  /** Start the one call of an admitted category job (design card K16, B section 7.1). */
+  async startUserSchemaChange(input: {
+    customerId: string;
+    jobId: string;
+    dispatchToken: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        dispatchToken: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow('user-schema-change.yaml', 'user_schema_change');
+    return this.execute('user_schema_change', values);
+  }
+
   async check(correlationId: string) {
     await this.deployFlow('phase2-connection.yaml', 'phase2_connection');
     const marker = 'campus-commander-phase-2';
