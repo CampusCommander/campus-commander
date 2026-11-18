@@ -732,6 +732,138 @@ async function runAdminSdkMockIntegration({
     'The category read lists GradeLevel.',
   );
 
+  // K16: one create, one edit, and one delete reach Google through the job service and settle.
+  const categoryResults = [];
+  const categoryField = (name) => ({
+    fieldId: null,
+    fieldName: name,
+    displayName: name,
+    fieldType: 'STRING',
+    multiValued: false,
+    indexed: true,
+    readAccessType: 'ADMINS_AND_SELF',
+    numericIndexingSpec: null,
+  });
+  const categoryPlan = async (body) => {
+    const answer = await call('/api/users/attribute-categories/plans', {
+      method: 'POST',
+      headers: headers(),
+      body,
+    });
+    assert.equal(answer.status, 201, answer.text);
+    return JSON.parse(answer.text);
+  };
+  const categoryJob = async (plan) => {
+    const answer = await call(
+      `/api/users/attribute-categories/plans/${plan.planId}/confirm`,
+      {
+        method: 'POST',
+        headers: headers(),
+        body: {
+          digest: plan.digest,
+          acknowledged: true,
+          ...(plan.phrase === null ? {} : { typedPhrase: plan.phrase }),
+        },
+      },
+    );
+    assert.equal(answer.status, 201, answer.text);
+    const { receipt } = JSON.parse(answer.text);
+    assert.match(receipt.displayId, /^CAT-\d+$/);
+    return receipt;
+  };
+  const settledCategoryJob = async (receipt, label) => {
+    const deadline = Date.now() + 90_000;
+    for (;;) {
+      const listed = await call(
+        `/api/jobs?jobId=${encodeURIComponent(receipt.displayId)}&limit=1`,
+      );
+      assert.equal(listed.status, 200, listed.text);
+      const [job] = JSON.parse(listed.text).jobs;
+      if (job?.status === 'completed') return job;
+      if (job?.status === 'failed' || job?.status === 'needs-review')
+        assert.fail(`${label} settled ${job.status}: ${JSON.stringify(job)}`);
+      assert.ok(
+        Date.now() < deadline,
+        `${label} did not settle: ${JSON.stringify(job ?? null)}`,
+      );
+      await delay(500);
+    }
+  };
+  const categoriesNow = async () =>
+    JSON.parse((await call('/api/users/attribute-categories')).text).categories;
+  const categoryOf = async (schemaName) =>
+    (await categoriesNow()).find(
+      (category) => category.schemaName === schemaName,
+    );
+
+  const schemaName = `ClubInfo${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+  const creation = await categoryPlan({
+    kind: 'create-category',
+    draft: {
+      schemaName,
+      displayName: 'Club info',
+      fields: [categoryField('ClubName')],
+    },
+  });
+  const createJob = await settledCategoryJob(
+    await categoryJob(creation),
+    'The category create',
+  );
+  const created = await categoryOf(schemaName);
+  assert.ok(created, `The category read lists ${schemaName}.`);
+  assert.equal(created.displayName, 'Club info');
+  categoryResults.push(
+    `a category create settles ${createJob.status} and the read lists ${schemaName}: pass`,
+  );
+
+  const editPlan = await categoryPlan({
+    kind: 'edit-category',
+    schemaId: created.schemaId,
+    baseEtag: created.etag,
+    draft: {
+      displayName: 'Club details',
+      fields: created.fields.map((field) => ({
+        fieldId: field.fieldId,
+        fieldName: field.fieldName,
+        displayName: field.fieldName,
+        fieldType: field.fieldType,
+        multiValued: field.multiValued,
+        indexed: field.indexed,
+        readAccessType: field.readAccessType,
+        numericIndexingSpec: field.numericIndexingSpec,
+      })),
+    },
+  });
+  const editJob = await settledCategoryJob(
+    await categoryJob(editPlan),
+    'The category edit',
+  );
+  const edited = await categoryOf(schemaName);
+  assert.ok(edited, `The category read still lists ${schemaName}.`);
+  assert.equal(edited.displayName, 'Club details');
+  assert.notEqual(edited.etag, created.etag, 'The edit moves the cached etag.');
+  categoryResults.push(
+    `a category edit settles ${editJob.status} and the read shows Club details: pass`,
+  );
+
+  const deletion = await categoryPlan({
+    kind: 'delete-category',
+    schemaId: edited.schemaId,
+    baseEtag: edited.etag,
+  });
+  const deleteJob = await settledCategoryJob(
+    await categoryJob(deletion),
+    'The category delete',
+  );
+  assert.equal(
+    await categoryOf(schemaName),
+    undefined,
+    `The delete purges ${schemaName} from the cache.`,
+  );
+  categoryResults.push(
+    `a category delete settles ${deleteJob.status} and purges the cached category: pass`,
+  );
+
   // B6: the write scope, its check, and the write-access projection.
   // Every Google call in this block goes to the mock. The scope removal, the
   // delegation grant, and the list fault use the mock control API.
@@ -1275,6 +1407,7 @@ async function runAdminSdkMockIntegration({
     `Refresh Selected starts one job, claims every user, and refreshes ${refreshed.selected} users: pass`,
     'a fully claimed Refresh Selected answers 200 and starts no job: pass',
     'the category read lists StudentInfo with GradeLevel: pass',
+    ...categoryResults,
     'Refresh all lists a device whose Asset tag holds 1,024 characters: pass',
     'the write scope check lists one device for the mock administrator and sends no write: pass',
     'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
