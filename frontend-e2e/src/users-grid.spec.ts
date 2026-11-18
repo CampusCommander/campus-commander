@@ -506,6 +506,48 @@ function columnCell(page: Page, name: string, colId: string) {
     .locator(`[col-id="${colId}"]`);
 }
 
+/**
+ * The position of a column header. AG Grid keeps the header DOM order fixed and
+ * moves cells with inline offsets, so the DOM order proves nothing.
+ */
+async function headerIndex(page: Page, colId: string): Promise<number> {
+  return Number(
+    await page
+      .locator(`.ag-header-cell[col-id="${colId}"]`)
+      .first()
+      .getAttribute('aria-colindex'),
+  );
+}
+
+/**
+ * The layout of a Columns panel row: the label content box and the revealed
+ * controls. The label clips its text at the content edge, so the content edge
+ * proves whether the text can run beneath the controls.
+ */
+async function panelRowLayout(row: Locator) {
+  return row.evaluate((element) => {
+    const label = element.querySelector('label') as HTMLElement;
+    const actions = element.querySelector(
+      '.lgr-columns-row-actions',
+    ) as HTMLElement;
+    const range = document.createRange();
+    range.selectNodeContents(label.firstChild as Text);
+    const labelBox = label.getBoundingClientRect();
+    const paddingRight = Number.parseFloat(
+      getComputedStyle(label).paddingRight,
+    );
+    const textBox = range.getBoundingClientRect();
+    return {
+      textLeft: textBox.left,
+      textWidth: textBox.width,
+      labelRight: labelBox.right,
+      paddingRight,
+      contentRight: labelBox.right - paddingRight,
+      actionsLeft: actions.getBoundingClientRect().left,
+    };
+  });
+}
+
 /** Show the demonstrated attribute columns and scroll them beside the pinned Name. */
 async function showAttributeColumns(page: Page) {
   await page.getByRole('tab', { name: 'Columns', exact: true }).click();
@@ -575,6 +617,9 @@ test('reproduces UM state 02: the Columns panel and focus return (UI-09)', async
   await openUsers(page);
   // The approved state shows Grade level and Programs beside the pinned Name.
   const panel = await showAttributeColumns(page);
+  // The pointer left the panel after the checkbox clicks. The approved capture
+  // holds rows at rest, and a hovered row shows its move controls by design.
+  await page.mouse.move(0, 0);
   // The approved panel is 258 px wide beside the 32 px side bar (R13).
   const panelBox = measured(await panel.boundingBox());
   expect(panelBox.width).toBeGreaterThanOrEqual(250);
@@ -621,6 +666,180 @@ test('reproduces UM state 02: the Columns panel and focus return (UI-09)', async
   await columnsTab.click();
   await expect(panel).toBeHidden();
   await expect(columnsTab).toBeFocused();
+});
+
+test('moves a Users column from the keyboard and keeps the approved rest look (UI-09)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+  const panel = page.locator('.lgr-columns-tool-panel');
+  await expect(panel).toBeVisible();
+  const leafRows = panel.locator('.lgr-columns-row[data-column-id]');
+  const statusRow = panel.locator('.lgr-columns-row[data-column-id="status"]');
+
+  // State 02 at rest: the pointer sits outside the panel and no row holds focus,
+  // so no move control shows. The pin controls are out of the tab order entirely.
+  const restOpacity = await leafRows
+    .locator('.lgr-columns-row-actions')
+    .evaluateAll((list) => list.map((el) => getComputedStyle(el).opacity));
+  expect(restOpacity.length).toBeGreaterThan(0);
+  expect(restOpacity.every((opacity) => opacity === '0')).toBe(true);
+  const pinButtons = panel.locator(
+    '.lgr-columns-row-actions button[aria-label^="Pin "], .lgr-columns-row-actions button[aria-label^="Unpin "]',
+  );
+  expect(await pinButtons.count()).toBeGreaterThan(0);
+  expect(
+    await pinButtons.evaluateAll((list) =>
+      list.every((el) => getComputedStyle(el).display === 'none'),
+    ),
+  ).toBe(true);
+  expect(
+    await panel.getByRole('button', { name: /^(Pin|Unpin) / }).count(),
+  ).toBe(0);
+  await page.screenshot({
+    path: `${scratch}/um-02c-columns-panel-rest.png`,
+    fullPage: false,
+  });
+
+  // The move runs on the keyboard: Tab reaches the move control and Enter moves
+  // the column. The org unit cell starts directly before Status.
+  const before = await headerIndex(page, 'status');
+  expect(before).toBe((await headerIndex(page, 'orgUnitPath')) + 1);
+  await panel.getByRole('searchbox', { name: 'Search columns' }).focus();
+  const moveUp = panel.getByRole('button', {
+    name: 'Move Status up',
+    exact: true,
+  });
+  for (let press = 0; press < 40; press += 1) {
+    if (await moveUp.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(moveUp).toBeFocused();
+  // The focused row shows its move controls.
+  expect(
+    await statusRow
+      .locator('.lgr-columns-row-actions')
+      .evaluate((element) => getComputedStyle(element).opacity),
+  ).toBe('1');
+  await page.keyboard.press('Enter');
+
+  // The header order changes, and focus returns to the moved row's control.
+  await expect
+    .poll(async () => (await headerIndex(page, 'status')) < before)
+    .toBe(true);
+  expect(await headerIndex(page, 'status')).toBeLessThan(
+    await headerIndex(page, 'orgUnitPath'),
+  );
+  await expect(
+    page.getByRole('button', { name: 'Move Status up', exact: true }),
+  ).toBeFocused();
+  // Wait for the header animation to settle before the hand-off capture. The
+  // logical order already changed; this keeps two headers from overlapping in
+  // the screenshot.
+  await expect
+    .poll(async () => {
+      const [status, orgUnit] = await Promise.all([
+        page.locator('.ag-header-cell[col-id="status"]').first().boundingBox(),
+        page
+          .locator('.ag-header-cell[col-id="orgUnitPath"]')
+          .first()
+          .boundingBox(),
+      ]);
+      return (
+        status !== null &&
+        orgUnit !== null &&
+        status.x + status.width <= orgUnit.x + 1
+      );
+    })
+    .toBe(true);
+  await page.screenshot({
+    path: `${scratch}/um-02d-columns-panel-focused.png`,
+    fullPage: false,
+  });
+
+  // A Tab sweep never lands on a pin or unpin control.
+  const reached: string[] = [];
+  for (let press = 0; press < 40; press += 1) {
+    await page.keyboard.press('Tab');
+    reached.push(
+      await page.evaluate(
+        () => document.activeElement?.getAttribute('aria-label') ?? '',
+      ),
+    );
+  }
+  expect(reached.filter((label) => /^(Pin|Unpin) /.test(label))).toEqual([]);
+});
+
+test('keeps an active Columns row label clear of its move controls (UI-09)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+  const panel = page.locator('.lgr-columns-tool-panel');
+  await expect(panel).toBeVisible();
+  // The Device program group holds the longest leaf label of the fixture.
+  const row = panel.locator(
+    '.lgr-columns-row[data-column-id="attr:Device.take_home"]',
+  );
+  await expect(row).toHaveAttribute('data-column-movable', 'true');
+  await expect(row.locator('label')).toHaveText('Take-home approved');
+  await row.scrollIntoViewIfNeeded();
+
+  // A row at rest keeps the approved label width: no reserved space and the
+  // whole label visible beside the grip.
+  await page.mouse.move(0, 0);
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  const rest = await panelRowLayout(row);
+  expect(rest.paddingRight).toBe(0);
+  expect(rest.textWidth).toBeLessThanOrEqual(
+    rest.labelRight - rest.textLeft + 1,
+  );
+
+  // Tab reaches the move control of the long label, so the revealed controls
+  // must clear the text and the 5 px focus ring around them.
+  await panel.getByRole('searchbox', { name: 'Search columns' }).focus();
+  const moveUp = page.getByRole('button', {
+    name: 'Move Take-home approved up',
+    exact: true,
+  });
+  for (let press = 0; press < 120; press += 1) {
+    if (await moveUp.evaluate((element) => element === document.activeElement))
+      break;
+    await page.keyboard.press('Tab');
+  }
+  await expect(moveUp).toBeFocused();
+  const focused = await panelRowLayout(row);
+  expect(focused.actionsLeft - focused.contentRight).toBeGreaterThanOrEqual(5);
+  // The reserved space makes the label truncate with an ellipsis instead of
+  // running beneath the controls.
+  expect(focused.textWidth).toBeGreaterThan(
+    focused.contentRight - focused.textLeft,
+  );
+  await page.screenshot({
+    path: `${scratch}/um-02e-columns-panel-long-label.png`,
+    fullPage: false,
+  });
+
+  // The pointer reveals the same separation, and both states give the space
+  // back when the row goes idle.
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  await row.locator('label').hover();
+  const hovered = await panelRowLayout(row);
+  expect(hovered.actionsLeft - hovered.contentRight).toBeGreaterThanOrEqual(5);
+  await page.screenshot({
+    path: `${scratch}/um-02f-columns-panel-long-label-hover.png`,
+    fullPage: false,
+  });
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(async () => (await panelRowLayout(row)).paddingRight)
+    .toBe(0);
 });
 
 test('reproduces UM state 03: the attribute filter editor', async ({

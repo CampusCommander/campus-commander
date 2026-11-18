@@ -38,6 +38,7 @@ const phase3Pages = new Set([
   '/customer-settings',
   '/schools',
   '/devices',
+  '/users',
 ]);
 const invitationReads = new Set([
   '/api/auth/invitations',
@@ -80,6 +81,7 @@ const userRead =
 const userWrite =
   /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh)$/;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
+const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
   /^\/api\/devices\/(?:sync|query|groups|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh)$/;
 const jobDisplayIdPath = '(?:UPD|REF|CMD|STS|EXP|IMP)-\\d{3,}';
@@ -252,6 +254,7 @@ export async function proxyApplication(
     (phase === 3 &&
       (phase3Pages.has(pathname) ||
         devicePage.test(pathname) ||
+        userPage.test(pathname) ||
         jobPage.test(pathname)));
   if (!api && !page && !assets.test(pathname))
     return finish(response, 404, 'Route unavailable.\n');
