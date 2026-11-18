@@ -230,7 +230,9 @@ test('an attribute name differs from every other name in its category', () => {
       ]),
     ],
   ]) {
-    const { status, body } = refusal(() => buildCategoryPlan(request, cached()));
+    const { status, body } = refusal(() =>
+      buildCategoryPlan(request, cached()),
+    );
     assert.equal(status, 422, label);
     assert.deepEqual(body, { reason: 'name-in-use' }, label);
   }
