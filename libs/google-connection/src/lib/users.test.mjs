@@ -544,6 +544,51 @@ test('a category insert leaves as one POST part with the write scope and no If-M
   assert.deepEqual([...result.failed.keys()], []);
 });
 
+test('a refused send gate stops the category request after the token mint (R4)', async (t) => {
+  const { google, scopes } = stubBatch(t, () => ({
+    status: 200,
+    body: category('StudentInfo'),
+  }));
+  let gates = 0;
+  await assert.rejects(
+    new GoogleCategoryWriter({ batch: fastBatch() }).insertCategory(
+      credential,
+      'C0123456',
+      writeBody(),
+      signal(),
+      async () => {
+        gates += 1;
+        return false;
+      },
+    ),
+    { name: 'CategorySendRefused' },
+  );
+  assert.equal(gates, 1, 'the gate runs once');
+  // The token minted before the gate, and the refused gate sent no batch.
+  assert.deepEqual(scopes, [schemaWriteScope]);
+  assert.equal(google.sent.length, 0, 'a refused gate sends no request');
+});
+
+test('a passing send gate leaves the category insert as the one POST part (control)', async (t) => {
+  const { google } = stubBatch(t, () => ({
+    status: 200,
+    body: category('StudentInfo'),
+  }));
+  let gates = 0;
+  const result = await new GoogleCategoryWriter({
+    batch: fastBatch(),
+  }).insertCategory(credential, 'C0123456', writeBody(), signal(), async () => {
+    gates += 1;
+    return true;
+  });
+  assert.equal(gates, 1);
+  assert.equal(google.sent.length, 1);
+  assert.equal(
+    result.succeeded.get(CATEGORY_PART_ID)?.[0].schemaName,
+    'StudentInfo',
+  );
+});
+
 test('a category update leaves as one PUT part with the plan etag in If-Match', async (t) => {
   const body = writeBody({
     displayName: 'Student records',

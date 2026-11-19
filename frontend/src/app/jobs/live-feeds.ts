@@ -12,6 +12,7 @@ const STREAM_EVENTS = [
   'job-finished',
   'full-sync',
   'user-full-sync',
+  'schema-change',
 ] as const;
 
 /** One store that follows a feed. */
