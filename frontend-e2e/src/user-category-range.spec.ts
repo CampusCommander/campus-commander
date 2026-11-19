@@ -182,7 +182,7 @@ interface MockState {
 
 const state: MockState = { requests: [], confirmations: [] };
 
-async function signIn(page: Page) {
+async function signIn(page: Page, theme: 'light' | 'dark' = 'light') {
   await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -205,7 +205,7 @@ async function signIn(page: Page) {
             permissionVersion: 1,
             permissions: [],
             grants,
-            preferences: { theme: 'light', navigationCollapsed: false },
+            preferences: { theme, navigationCollapsed: false },
           },
           csrfToken: 'a'.repeat(64),
           expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
@@ -307,10 +307,10 @@ async function signIn(page: Page) {
 }
 
 /** Opens the Custom attributes tab at the approved 1440 x 900 viewport. */
-async function openAttributes(page: Page) {
+async function openAttributes(page: Page, theme: 'light' | 'dark' = 'light') {
   state.requests = [];
   state.confirmations = [];
-  await signIn(page);
+  await signIn(page, theme);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/users');
   await expect(
@@ -488,4 +488,23 @@ test('a bound leaves the editor when the info type stops being a number', async 
   await expect(
     dialog(page).getByLabel('Attribute 1 minimum', { exact: true }),
   ).toHaveCount(0);
+});
+
+test('the range line keeps its surfaces in the dark theme (UI-10)', async ({
+  page,
+}) => {
+  await openAttributes(page, 'dark');
+  await openEditor(page);
+  await fill(page, 'Grade level minimum', '0');
+  await fill(page, 'Grade level maximum', '12');
+  await expect(
+    dialog(page).getByLabel('Grade level minimum', { exact: true }),
+  ).toBeVisible();
+  await expect(dialog(page).locator('mat-form-field.is-changed')).toHaveCount(
+    2,
+  );
+  await expect(
+    dialog(page).getByRole('button', { name: 'Review changes' }),
+  ).toBeEnabled();
+  await shot(page, 'k19-13-number-range-dark');
 });
