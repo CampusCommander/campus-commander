@@ -136,6 +136,48 @@ test('an admitted category job starts user_schema_change and records its executi
   ]);
 });
 
+test('an admitted category job header publishes once at once', async () => {
+  const rows = [
+    {
+      publication_id: '7',
+      job_id: JOB,
+      display_id: DISPLAY,
+      revision: '4',
+      requested_by: REQUESTER,
+    },
+  ];
+  // The fake answers the publication read only for a header whose kind the statement admits, as
+  // the SQL filter does. Without the category kind the read finds no row and publishes nothing.
+  const database = databaseOf([
+    ['SELECT COALESCE(max(publication_id),0)', () => [{ value: '0' }]],
+    ['SELECT cc.admit_device_update_job', () => [{ result: admitted() }]],
+    [
+      'SELECT p.publication_id,p.job_id',
+      (values, text) => (text.includes("'user-schema-change'") ? rows : []),
+    ],
+    ['SELECT cc.record_user_schema_change_start', () => [{ result: null }]],
+    ['SELECT cc.complete_job_publications', () => [{ result: 1 }]],
+  ]);
+  const cache = cacheOf();
+  const orchestration = orchestrationOf();
+  const service = serviceOf({ database, cache, orchestration });
+  assert.equal(await service.admit(CUSTOMER), false);
+  const published = cache.calls.filter((call) => call.name === 'publish');
+  assert.equal(published.length, 1);
+  assert.deepEqual(JSON.parse(published[0].values[1]), {
+    type: 'job-changed',
+    jobId: JOB,
+    displayId: DISPLAY,
+    revision: 4,
+    requestedBy: REQUESTER,
+  });
+  assert.ok(
+    database.calls.some((call) =>
+      call.text.includes('cc.complete_job_publications'),
+    ),
+  );
+});
+
 test('a 4xx category start runs the refused start and publishes its row', async () => {
   const rows = [
     {
