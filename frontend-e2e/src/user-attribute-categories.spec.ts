@@ -392,7 +392,7 @@ test('CA state 01: the category list without the Last changed column', async ({
   await expect(
     table(page).getByRole('row', { name: /Student information/ }),
   ).toContainText('4');
-  // Interim: no Create category before card K18.
+  // A session without User Schema Manage shows no Create category (choice 12).
   await expect(
     page.getByRole('button', { name: 'Create category' }),
   ).toHaveCount(0);

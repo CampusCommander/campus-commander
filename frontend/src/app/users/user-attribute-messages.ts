@@ -87,6 +87,16 @@ export function openCategoryLabel(displayName: string): string {
   return `Open category ${displayName}`;
 }
 
+/** The accessible name of the control that opens one category in the editor (K18). */
+export function editCategoryLabel(displayName: string): string {
+  return `Edit category ${displayName}`;
+}
+
+/** The control that opens the create editor (K18, CA state 02). */
+export const CREATE_CATEGORY_LABEL = 'Create category';
+/** The control that opens the editor of one category (K18, CA state 04). */
+export const EDIT_CATEGORY_LABEL = 'Edit category';
+
 /** A count with thousands separators. */
 export function countText(value: number): string {
   return value.toLocaleString('en-US');

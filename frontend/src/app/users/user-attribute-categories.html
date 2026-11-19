@@ -1,6 +1,18 @@
-<div class="attribute-tab">
+<div class="attribute-tab" id="attribute-tab" tabindex="-1">
   <div class="toolbar">
-    <div class="toolbar-start"></div>
+    <div class="toolbar-start">
+      @if (canManage() && hasCategories() && !failed()) {
+      <button
+        id="create-category-toolbar"
+        mat-flat-button
+        type="button"
+        (click)="createCategory($event)"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">add</span>
+        {{ CREATE_CATEGORY_LABEL }}
+      </button>
+      }
+    </div>
     <div class="toolbar-actions">
       @if (!failed()) {
       <button
@@ -42,6 +54,7 @@
       >
       }
       <button
+        id="categories-retry"
         mat-flat-button
         type="button"
         [disabled]="refreshing()"
@@ -64,6 +77,17 @@
   <section class="card empty-card" aria-labelledby="categories-empty-title">
     <h2 id="categories-empty-title">{{ CATEGORIES_EMPTY_TITLE }}</h2>
     <p>{{ CATEGORIES_EMPTY_BODY }}</p>
+    @if (canManage()) {
+    <button
+      id="create-category-empty"
+      mat-flat-button
+      type="button"
+      (click)="createCategory($event)"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">add</span>
+      {{ CREATE_CATEGORY_LABEL }}
+    </button>
+    }
   </section>
   } @else {
   <div class="grid-region">
@@ -129,4 +153,12 @@
 
 @if (dialogCategory(); as category) {
 <app-user-category-dialog [category]="category" (closed)="closeDialog()" />
-}
+} @if (editor(); as state) { @if (limits(); as limits) {
+<app-user-category-editor
+  [mode]="state.mode"
+  [category]="state.category"
+  [limits]="limits"
+  [categories]="categories()"
+  (closed)="closeEditor()"
+/>
+} }

@@ -1,0 +1,336 @@
+/*
+ * Review, result, and progress surfaces of the category editor (CA states 05 to 07).
+ * Kept apart from the editor surface so each stylesheet stays small enough for
+ * the per-component style budget of `frontend/project.json`.
+ */
+/* Review and results (the report table, change chips, and count equation). */
+.change-line {
+  margin: 0;
+  font-weight: 500;
+  max-width: none;
+}
+
+.report-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  overflow: hidden;
+}
+
+.report-views {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cc-space-sm);
+  padding-inline-end: var(--cc-space-sm);
+  border-block-end: 1px solid var(--cc-border);
+}
+
+.report-tabs {
+  display: flex;
+  flex: none;
+  align-items: center;
+  --mat-tab-container-height: 44px;
+  --mat-tab-divider-height: 0;
+}
+
+.report-tabs .mat-mdc-tab-links {
+  justify-content: flex-start;
+}
+
+.report-tabs .mat-mdc-tab-links .mat-mdc-tab-link {
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-inline: var(--cc-space-lg);
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  margin-inline-start: var(--cc-space-sm);
+  padding: 0 6px;
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-count.tone-error {
+  color: var(--cc-status-error-text);
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.report-table th {
+  height: 36px;
+  padding: 0 var(--cc-space-md);
+  border-block-end: 1px solid var(--cc-border);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-align: start;
+}
+
+.report-table td {
+  height: 34px;
+  padding: 7px var(--cc-space-md);
+  border-block-start: 1px solid var(--cc-border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.report-table tbody tr:first-child td {
+  border-block-start: 0;
+}
+
+.report-table th:first-child,
+.report-table td:first-child {
+  padding-inline-start: var(--cc-space-lg);
+}
+
+.report-table col.r1 {
+  width: 200px;
+}
+
+.report-table col.r2 {
+  width: 300px;
+}
+
+.report-table col.r4 {
+  width: 180px;
+}
+
+.empty-report {
+  margin: 0;
+  padding: var(--cc-space-lg);
+  color: var(--cc-text-secondary);
+}
+
+.change-chip,
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 24px;
+  margin-block: -2px;
+  padding-inline: var(--cc-space-md);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-card);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cc-text-primary);
+}
+
+.tone-success .dot {
+  background: var(--cc-status-success);
+}
+
+.tone-error .dot {
+  background: var(--cc-status-error);
+}
+
+.tone-info .dot {
+  background: var(--cc-accent);
+}
+
+.tone-error.change-chip {
+  color: var(--cc-status-error-text);
+}
+
+.tone-success.status-chip {
+  color: var(--cc-status-success-text);
+}
+
+.count-equation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cc-space-md);
+  margin: 0;
+}
+
+.count-term {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cc-space-xs);
+}
+
+.count-term dd {
+  margin: 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-term dt {
+  color: var(--cc-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.count-term.tone-info dd {
+  color: var(--cc-accent);
+}
+
+.count-term.tone-success dd {
+  color: var(--cc-status-success-text);
+}
+
+.count-sign {
+  color: var(--cc-text-secondary);
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.report-step {
+  gap: var(--cc-space-lg);
+}
+
+/* The typed phrase (the built gate): the one-way note in the M3 error container. */
+.gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-lg);
+  max-width: var(--cc-content-max-width);
+}
+
+.one-way {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-sm);
+  padding: var(--cc-space-lg);
+  border-radius: var(--cc-radius-control);
+  background: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.one-way p {
+  margin: 0;
+  max-width: none;
+}
+
+.one-way-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  font-weight: 500;
+}
+
+.one-way-head .sep {
+  color: inherit;
+}
+
+.gate .mat-mdc-form-field {
+  width: 100%;
+}
+
+/* One removal names its own block and its own phrase (B section 5). */
+.removal-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-sm);
+}
+
+.removal-gate .field-error {
+  margin-inline-start: 16px;
+}
+
+/* Progress (state 06): the stepper dots, laid out vertically. */
+.phases {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  grid-template-rows: 40px auto;
+  column-gap: var(--cc-space-md);
+  align-items: center;
+}
+
+.phase-rule {
+  position: absolute;
+  inset-inline-start: 11.5px;
+  inset-block: 32px -8px;
+  width: 1px;
+  background: var(--cc-border);
+}
+
+.phase-dot {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--cc-text-secondary);
+  color: var(--cc-text-on-accent);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.phase.is-done .phase-dot,
+.phase.is-current .phase-dot {
+  background: var(--cc-accent);
+}
+
+.phase-label {
+  color: var(--cc-text-secondary);
+}
+
+.phase.is-done .phase-label {
+  color: var(--cc-text-primary);
+}
+
+.phase.is-current .phase-label {
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+.phase-detail {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.phase.is-current .phase-detail {
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+.phase > .mat-mdc-progress-bar {
+  grid-column: 2 / -1;
+  margin-block: 0 var(--cc-space-sm);
+}

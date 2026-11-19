@@ -68,6 +68,18 @@ export function usersReadable(auth: InstanceType<typeof AuthStore>): boolean {
   );
 }
 
+/** Whether the session holds the User Schema Manage permission (U4). */
+export function usersSchemaManageable(
+  auth: InstanceType<typeof AuthStore>,
+): boolean {
+  return (
+    auth.metadata()?.phase === 3 &&
+    !!auth
+      .session()
+      ?.identity.grants.some((grant) => grant.action === 'users:schema-manage')
+  );
+}
+
 const defaultView = (): UserView => ({
   predicates: [],
   sort: { field: 'fullName', direction: 'asc' },
@@ -792,10 +804,13 @@ export class UsersStore {
     const interrupted = this.streamInterrupted;
     this.streamInterrupted = false;
     if (!first) {
+      // A gap can hide a schema change. The list reads again before the reconcile (K16).
+      void this.loadCategories();
       await this.reconcile();
       return;
     }
     if (!replaced && !interrupted && this.sync()?.status !== 'running') return;
+    void this.loadCategories();
     await this.reconcile();
   }
 
@@ -837,8 +852,10 @@ export class UsersStore {
       if (event.failure) this.jobFailure.set(event.failure);
       this.scheduleRecount();
     } else if (event.type === 'schema-change') {
-      // A category job changed the schema list. The held rows read the new query generation (R6).
+      // A category job changed the schema list. The held rows read the new query
+      // generation, and the tab reads the new categories and their limit counts (R6).
       this.revision.update((value) => value + 1);
+      void this.loadCategories();
     } else {
       this.setSync(event.sync);
       if (event.sync.status !== 'running')

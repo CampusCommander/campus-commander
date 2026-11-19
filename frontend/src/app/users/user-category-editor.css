@@ -1,0 +1,530 @@
+/*
+ * The category editor (CA states 02 to 08, 10, and 12). The surface, header, body, and
+ * action bar follow the read-only dialog of state 09. The editor, review, saving, and
+ * result steps take the geometry of the approved frames. Every value is a token of
+ * `theme/tokens.css`.
+ */
+:host {
+  display: contents;
+}
+
+.category-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 1120px;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: var(--mat-sys-corner-extra-large, 28px);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-primary);
+  box-shadow: 0 8px 24px rgb(32 33 36 / 18%);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+/* The saving step and the delete question take the built 480 px width (states 06 and 08). */
+.category-dialog.is-narrow {
+  width: 480px;
+  height: auto;
+  max-height: 100%;
+}
+
+.dialog-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--cc-space-lg);
+  padding: var(--cc-space-lg) var(--cc-space-lg) var(--cc-space-lg)
+    var(--cc-space-xl);
+}
+
+.dialog-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font:
+    400 24px / 32px Roboto,
+    sans-serif;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The title takes the opening focus, so the ring would only mark a heading. */
+.dialog-head h2:focus {
+  outline: none;
+}
+
+.dialog-sub {
+  margin: var(--cc-space-xs) 0 0;
+  color: var(--cc-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.dialog-sub a {
+  color: var(--cc-text-link);
+}
+
+.dialog-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  margin-block-start: -4px;
+}
+
+.dialog-tools .mat-mdc-icon-button {
+  color: var(--cc-text-secondary);
+}
+
+/* The help control keeps its pressed state while the pane shows (choice 15). */
+.dialog-tools .mat-mdc-icon-button.help-on {
+  color: var(--cc-text-link);
+  background: var(--cc-surface-selected);
+}
+
+.dialog-help {
+  flex: none;
+  padding: 0 var(--cc-space-xl) var(--cc-space-lg);
+}
+
+.dialog-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--cc-space-xl) var(--cc-space-xl);
+  overflow-y: auto;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-xl);
+  min-width: 0;
+}
+
+/* Editor (states 02 to 04, 10, and 12): the category fields in one row, then the table. */
+.cat-fields {
+  display: grid;
+  grid-template-columns: 320px 320px;
+  gap: var(--cc-space-lg);
+  align-items: start;
+  padding-block-start: 6px;
+}
+
+.cat-fields .mat-mdc-form-field {
+  width: 100%;
+}
+
+/* A field keeps its error line below the control (CA state 03). */
+.field-cell {
+  min-width: 0;
+}
+
+.cat-fields .field-error {
+  margin-inline-start: 16px;
+}
+
+/* A locked value (choice 2): plain text with the lock glyph and its state line. */
+.locked {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: var(--cc-space-xs);
+  align-items: center;
+  min-width: 0;
+}
+
+.locked > .lock {
+  color: var(--cc-text-secondary);
+  font-size: 16px;
+  line-height: 16px;
+}
+
+.locked .val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locked .why {
+  grid-column: 2;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.field-static {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 56px;
+}
+
+.field-static .static-label {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.field-static .static-value {
+  min-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+/* The identifier style of the built client: category and attribute names. */
+.identifier {
+  font-family: 'Roboto Mono', monospace;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.list-label {
+  margin: 0 0 var(--cc-space-sm);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+/* The attribute table of the import dialog with compact fields (choice 7). */
+.attr-panel {
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  overflow: hidden;
+}
+
+.attr-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  --mat-form-field-container-height: 40px;
+  --mat-form-field-container-vertical-padding: 8px;
+}
+
+.attr-table th {
+  height: 36px;
+  padding: 0 var(--cc-space-sm);
+  border-block-end: 1px solid var(--cc-border);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.attr-table td {
+  height: 49px;
+  padding: 4px var(--cc-space-sm);
+  border-block-start: 1px solid var(--cc-border);
+  vertical-align: top;
+}
+
+.attr-table tbody tr:first-child td {
+  border-block-start: 0;
+}
+
+.attr-table th:first-child,
+.attr-table td:first-child {
+  padding-inline-start: var(--cc-space-lg);
+}
+
+.attr-table th:last-child,
+.attr-table td:last-child {
+  padding-inline-end: var(--cc-space-sm);
+  padding-inline-start: 0;
+}
+
+.attr-table th.center,
+.attr-table td.center {
+  text-align: center;
+}
+
+.attr-table .mat-mdc-form-field {
+  width: 100%;
+}
+
+.attr-table input.identifier {
+  font-family: 'Roboto Mono', monospace;
+}
+
+/* The compact fields of the approved frame read at 14 px, and the longest visibility fits. */
+.attr-table ::ng-deep .mat-mdc-input-element,
+.attr-table ::ng-deep .mat-mdc-select-min-line {
+  font-size: 14px;
+}
+
+/* The compact cells give the value the room that the approved frame draws. */
+.attr-table ::ng-deep .mat-mdc-form-field-infix {
+  margin-inline: -13px;
+  padding-inline: 6px;
+}
+
+/* The approved frame draws the longest visibility value beside a narrow arrow. */
+.attr-table ::ng-deep .mat-mdc-select-arrow-wrapper {
+  width: 10px;
+}
+
+.attr-table ::ng-deep .mat-mdc-select-value {
+  padding-inline-end: 0;
+}
+
+.attr-table .mat-mdc-form-field-subscript-wrapper {
+  padding: 0 4px;
+}
+
+.attr-table col.a1 {
+  width: 196px;
+}
+
+.attr-table col.a2 {
+  width: 224px;
+}
+
+.attr-table col.a3 {
+  width: 168px;
+}
+
+.attr-table col.a4 {
+  width: 104px;
+}
+
+.attr-table col.a5 {
+  width: 240px;
+}
+
+.attr-table col.a6 {
+  width: 88px;
+}
+
+.attr-table col.a7 {
+  width: 50px;
+}
+
+/* A plain cell (locked or read-only): the text sits on the 40 px line of the fields. */
+.cell-text {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  min-width: 0;
+}
+
+.cell-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-text .locked {
+  width: 100%;
+}
+
+.cell-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 40px;
+}
+
+.cell-box.with-why {
+  flex-direction: column;
+  gap: 0;
+}
+
+.cell-box .locked-box {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+}
+
+.cell-box .why {
+  max-width: 100%;
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.cell-action {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 40px;
+}
+
+.cell-action .mat-mdc-icon-button {
+  color: var(--cc-text-secondary);
+}
+
+/* A row marked for removal (state 04): struck values and the effect line in the error color. */
+tr.is-removed td {
+  background: color-mix(in srgb, var(--cc-status-error) 6%, transparent);
+}
+
+tr.is-removed .rm-name {
+  color: var(--cc-text-secondary);
+  text-decoration: line-through;
+}
+
+/* Every removed value is struck, not only the display label (state 04). */
+.is-struck {
+  color: var(--cc-text-secondary);
+  text-decoration: line-through;
+}
+
+.rm-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.rm-line {
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* A changed field (state 12): the pending surface of the in-grid draft cell. The
+ * fill sits on the form-field host, because the outlined control is transparent and
+ * the Material child does not accept this component's styles. */
+.mat-mdc-form-field.is-changed {
+  --mat-form-field-outlined-outline-color: var(--cc-accent);
+  --mat-form-field-outlined-outline-width: 2px;
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-selected);
+}
+
+/* The row under the table: Add attribute and the count of the account limit. */
+.add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cc-space-md);
+  margin-block-start: var(--cc-space-sm);
+}
+
+.add-row .mat-mdc-button {
+  color: var(--cc-text-link);
+}
+
+.add-row .mat-mdc-button.mat-mdc-button-disabled {
+  color: var(--cc-text-disabled);
+}
+
+.add-row .limit-line {
+  color: var(--cc-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.state-line {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  margin: var(--cc-space-sm) 0 0;
+  color: var(--cc-text-secondary);
+  max-width: none;
+}
+
+.state-line .material-symbols-outlined {
+  flex: none;
+  color: var(--cc-text-secondary);
+  font-size: 20px;
+}
+
+/* The error line of the form fields and of the action bar. It sits below the
+ * outlined control, and the control marks its boundary invalid (CA state 03). */
+.field-error,
+.form-error {
+  margin: var(--cc-space-xs) 0 0;
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The compact table fields start their error line 4 px beyond the Material indent. */
+.attr-table .cell-error {
+  margin-inline-start: 20px;
+}
+
+/* The Material control follows the host class, because no form directive owns it. */
+.field-invalid ::ng-deep .mat-mdc-notch-piece {
+  border-color: var(--cc-status-error) !important;
+}
+
+.field-invalid ::ng-deep .mdc-floating-label {
+  color: var(--cc-status-error) !important;
+}
+
+.form-error {
+  margin-block-start: var(--cc-space-sm);
+}
+
+.dialog-state.error {
+  color: var(--cc-status-error-text);
+}
+
+.quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.quiet .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* The destructive action of the action bar (states 04, 08, 10, and 12). */
+.dialog-actions .destructive:not(.mat-mdc-button-disabled) {
+  color: var(--cc-status-error-text);
+}
+
+.dialog-actions
+  .mat-mdc-unelevated-button.destructive:not(.mat-mdc-button-disabled) {
+  background: var(--cc-status-error);
+  color: var(--cc-text-on-accent);
+}
+
+/* The action bar stays in place across the steps of the dialog (choice 11). */
+.dialog-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 72px;
+  padding: var(--cc-space-lg) var(--cc-space-xl);
+  border-block-start: 1px solid var(--cc-border);
+}
+
+.dialog-state {
+  flex: 1;
+  min-width: 0;
+  color: var(--cc-text-secondary);
+}
+
+/* An accessibility-only label: it stays in the accessibility tree and takes no space. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
