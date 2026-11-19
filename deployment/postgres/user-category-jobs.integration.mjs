@@ -1248,6 +1248,16 @@ export async function qualifyUserCategoryJobs({
         assert.deepEqual(await customSchemas('user-observation-2'), {
           ObservationInfo: { Code: 'one' },
         });
+        // The shared conversion must answer the pinned instant, not a fresh clock read.
+        assert.equal(
+          (
+            await one('SELECT $1::timestamptz = $2::timestamptz AS same', [
+              observed,
+              pinned,
+            ])
+          ).same,
+          true,
+        );
       },
     );
 
