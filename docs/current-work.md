@@ -68,6 +68,8 @@ The approved mockup is [2026-11-18-custom-attributes-ranges.html](ui/designs/202
 
 On 2026-11-18 the owner signed off slice S1, Browse users. The sign-off package README asked: "Reply `sign off` to accept slice S1 as built." Owner, in the main chat: "sign off".
 
+On 2026-11-18 the owner chose a signed review release from `main` for a real-domain test of the users pages. Question: "Release from `main`: should I have a card built that publishes a signed release from `main` whenever I start it, and updates `install.sh` to trust it?" Owner, in the main chat: "1 Yes". He chose to test slice S1 first, with a fresh installation for each later slice: "2 a".
+
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".

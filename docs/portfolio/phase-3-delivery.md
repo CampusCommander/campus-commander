@@ -14,13 +14,13 @@ It binds the installation and application reports to the same source, immutable 
 The report records restore, upgrade, and fault qualification as `not-run`.
 Candidate-only manifest status and the separate full-production release gate remain unchanged.
 
-The trusted delivery branch is `codex/cc-60-review-delivery`.
+The trusted delivery branch is `main`.
 The installer pins that branch's workflow identity. The workflow rejects other branches before image publication.
 Run the existing dispatcher with:
 
 ```sh
 gh workflow run phase-2-candidate.yml \
-  --ref codex/cc-60-review-delivery -f phase=3 -f mode=lab
+  --ref main -f phase=3 -f mode=lab
 ```
 
 The historical dispatcher name is a development detail. Operators install the current bundle without selecting a development phase.
