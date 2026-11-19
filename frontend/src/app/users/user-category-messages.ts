@@ -151,8 +151,10 @@ export function propertiesText(
   return `Updates ${list}`;
 }
 
-/** The number range of K19: the line under a Whole number or Decimal number row. */
-/** A bound that is not a whole number, in the pattern of CA state 03. */
+/**
+ * The number range of K19: the line under a Whole number or Decimal number row.
+ * A bound that is not a whole number uses the error pattern of CA state 03.
+ */
 export const RANGE_WHOLE_NUMBER_TEXT = 'Enter a whole number.';
 /** A Decimal number bound that is not a finite number. */
 export const RANGE_NUMBER_TEXT = 'Enter a number.';
@@ -172,17 +174,19 @@ export function rangeText(
   displayName: string,
   range: UserAttributeRange | null,
 ): string {
-  if (range === null || (range.minValue === null && range.maxValue === null))
+  if (range === null) return `${displayName} with no range`;
+  const { minValue, maxValue } = range;
+  if (minValue === null && maxValue === null)
     return `${displayName} with no range`;
-  if (range.minValue === null)
+  if (minValue === null && maxValue !== null)
+    return `${displayName} ${rangeNumberText(maxValue)} or less`;
+  if (minValue !== null && maxValue === null)
+    return `${displayName} ${rangeNumberText(minValue)} or more`;
+  if (minValue !== null && maxValue !== null)
     return `${displayName} ${rangeNumberText(
-      range.maxValue as number,
-    )} or less`;
-  if (range.maxValue === null)
-    return `${displayName} ${rangeNumberText(range.minValue)} or more`;
-  return `${displayName} ${rangeNumberText(
-    range.minValue,
-  )} to ${rangeNumberText(range.maxValue)}`;
+      minValue,
+    )} to ${rangeNumberText(maxValue)}`;
+  return `${displayName} with no range`;
 }
 
 /** The typed phrase gate of CA states 05 and 08 (default 1). */

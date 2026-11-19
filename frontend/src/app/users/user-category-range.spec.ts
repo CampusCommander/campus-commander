@@ -160,7 +160,7 @@ describe('the number range rules (K19)', () => {
     expect(sameRange(null, { minValue: null, maxValue: null })).toBe(false);
   });
 
-  it('draws the read-only line only for a range with one bound', () => {
+  it('draws the read-only line only when a range sets a bound', () => {
     expect(hasRange({ minValue: 0, maxValue: 12 })).toBe(true);
     expect(hasRange({ minValue: 12, maxValue: null })).toBe(true);
     expect(hasRange({ minValue: null, maxValue: 12 })).toBe(true);
