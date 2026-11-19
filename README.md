@@ -2,37 +2,44 @@
 
 Campus Commander is a locally hosted Google Workspace administration tool for K–12 districts.
 The intended product centers on device, user, OU, and group administration.
-The owner rejected the current UI and disputed the school-creation and invitation workflows. Documentation and scope are under review.
+The owner signs off each workflow after he reviews a running build.
+The [current work record](docs/current-work.md) holds each sign-off.
+School creation and the built invitation workflow stay disputed. See [workflow gaps](docs/workflow-gaps.md).
 
 **Status: Greenfield application development. Nothing is live.**
 Phases organize development. They are not a user upgrade path. Development test data is disposable.
 Start with [the documentation guide](docs/README.md), [current work](docs/current-work.md), and [workflow gaps](docs/workflow-gaps.md).
 
-## Run the application for review
+## What works today
 
-Use Linux or WSL with Node 24.19, npm, and a running Docker daemon.
-From the repository root, run:
+The owner signed off each workflow below. The date in parentheses is the sign-off date.
 
-```sh
-npm ci
-npm exec -- nx run api-e2e:client-review
-```
+- Device browsing: the grid, typed filters, battery health, and device details (2026-10-16).
+- Update the annotated location of selected devices, with the Jobs page (2026-10-20).
+- Reboot, Disable, and Re-enable (2026-10-22).
+- Update device fields (2026-10-22).
+- Wipe user data, Powerwash, and Deprovision (2026-10-23).
+- In-grid editing and the single-device update (2026-10-24).
+- Cancel pending work on any job (2026-10-28).
+- Device export and import through CSV files (2026-10-30).
+- Google users: browse, filter, refresh, and user details, slice S1 (2026-11-18).
 
-Open the HTTPS URL printed by the command and select **Sign in to Campus Commander**.
-The command runs the current client, API, worker, PostgreSQL, Redis, and Kestra.
-Google sign-in and Workspace responses use a simulator. No Google account or real service-account key is required.
-The terminal prints a generated sample key file and delegated email for the connection form.
-The client displays a development-review notice. Do not upload real credentials to this review environment.
+The [current work record](docs/current-work.md) lists the work in build.
 
-Keep the command running while reviewing. Stop it to remove its disposable environment.
-See [the client review guide](docs/testing/client-review.md) for certificate prompts and the review steps.
-For a prebuilt review candidate, follow [the fresh installation guide](docs/testing/fresh-install-review.md).
-
-## Published installer reference
+## Install a review build
 
 The installer installs the newest signed review build.
 Each review build is published from `main` on request.
-Use the review command above to run current source changes.
+Use the review command below to run current source changes.
+
+A first installation needs:
+
+1. An HTTPS host name and certificate, or the installer's disposable laboratory certificate.
+2. A Google sign-in client, with the redirect URI `https://YOUR-HOST/api/auth/callback`. Register the client through [the application access guide](deployment/bootstrap/APPLICATION-ACCESS.md).
+3. The installer's enrollment of the first platform administrator.
+4. A service account with domain-wide delegation. The **Google connection** page gives a delegation link with the scopes filled in.
+
+Follow [the fresh installation guide](docs/testing/fresh-install-review.md) for the full steps.
 
 Start in a Linux amd64 shell with internet access and root or sudo access.
 Run the installer first:
@@ -69,6 +76,29 @@ Use the [Kubernetes test procedure](deployment/installer/HOSTED-KUBERNETES-TEST.
 Use [published releases](https://github.com/CampusCommander/campus-commander/releases) for signed artifacts.
 Read the [hosted validation record](deployment/installer/HOSTED-VALIDATION.md) for tested behavior and laboratory limits.
 
+## Run the application for review
+
+Use Linux or WSL with Node 24.19, npm, and a running Docker daemon.
+From the repository root, run:
+
+```sh
+npm ci
+npm exec -- nx run api-e2e:client-review
+```
+
+Open the HTTPS URL printed by the command and select **Sign in to Campus Commander**.
+The command runs the current client, API, worker, PostgreSQL, Redis, and Kestra.
+Google sign-in and Workspace responses use a simulator. No Google account or real service-account key is required.
+The terminal prints a generated sample key file and delegated email for the connection form.
+The client displays a development-review notice. Do not upload real credentials to this review environment.
+
+Keep the command running while reviewing. Stop it to remove its disposable environment.
+See [the client review guide](docs/testing/client-review.md) for certificate prompts and the review steps.
+For a prebuilt review candidate, follow [the fresh installation guide](docs/testing/fresh-install-review.md).
+
+The `client-review-mock` target runs the same review environment against the Admin SDK mock.
+See [the client review guide](docs/testing/client-review.md#review-against-admin-sdk-mock) for that target.
+
 ## Retained technology
 
 | Responsibility         | Technology                                                                                      |
@@ -100,8 +130,8 @@ The existing Compose scaffold is not a supported installation release.
 
 ## Repository layout
 
-The current workspace uses root-level `frontend/` and `api/` projects, with supporting libraries and end-to-end projects.
-The planning documents define future worker, contract, domain, database, Google, job, and storage boundaries.
+The workspace holds the `frontend/`, `api/`, and `worker/` projects, the `libs/application-contracts` and `libs/google-connection` libraries, and the `api-e2e/` and `frontend-e2e/` end-to-end projects.
+The `deployment/` directory holds the images, the installer, the profiles, the Kestra flows, and the PostgreSQL migrations.
 Do not create a second `apps/` tree from historical diagrams.
 
 Use npm-prefixed Nx tasks when working with existing projects. Inspect available targets before running a task.
@@ -111,6 +141,7 @@ Published candidates provide prebuilt images and an installer. Customers do not 
 
 - [Documentation guide](docs/README.md): source authority, reading order, and workflow format.
 - [Workflow gaps](docs/workflow-gaps.md): defined behavior, disputed features, and missing product decisions.
+- [Client UI guide](docs/ui/README.md): the shared rules, patterns, and tokens of the client pages.
 - [File inventory](docs/document-index.csv): all indexed project documentation and evidence.
 - [Design portfolio](docs/portfolio/README.md): product, architecture, and interaction references.
 - [Contractor report](docs/reviews/2026-09-04-contractor-report.md): review conclusions and supporting evidence.
@@ -123,7 +154,7 @@ Jira is no longer required for development. Existing issues and task snapshots r
 Do not synchronize or expand Jira unless the owner requests it.
 Use focused `codex/` branches and describe the actual change. Jira keys are not required.
 The [current work record](docs/current-work.md) controls development order.
-Link the Jira task and describe validation evidence in each implementation pull request.
+Describe the validation evidence in each pull request.
 Update task status only when its acceptance criteria have supporting evidence.
 
 ## License
