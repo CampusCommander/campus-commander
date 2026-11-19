@@ -1,0 +1,48 @@
+id: user_schema_change
+namespace: campus.application
+# The job service admits one write job and a unique index enforces it, so this
+# flow sets no concurrency limit. The category job holds one call: the worker
+# claims the plan, compares the fresh etag, sends the one part, and settles
+# (document B section 7.1).
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  - id: dispatchToken
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: change
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/user-schema-change'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "dispatchToken": inputs.dispatchToken,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    # Only a failed worker request retries here. Every Google outcome, every
+    # fenced result, and every stopped job returns 200 and never retries. A
+    # retry claims a job whose call already left and only reads Google back, so
+    # no insert is sent twice (document B section 7.3).
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false
+# The flow holds no errors block. A lost run leaves the job running, and the job
+# service recovery ends it: a start that never claimed restarts, and a claimed
+# call whose attempt lease lapsed ends needs-review with `interrupted`.

@@ -390,6 +390,11 @@ export const userStreamEventSchema = z.discriminatedUnion('type', [
     entityType: z.literal('user'),
     sync: userSyncStateSchema,
   }),
+  // The schema list changed after a category job, so the category tab reads it again (B section 9).
+  z.strictObject({
+    type: z.literal('schema-change'),
+    entityType: z.literal('user'),
+  }),
 ]);
 export type UserStreamEvent = z.infer<typeof userStreamEventSchema>;
 

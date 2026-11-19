@@ -127,6 +127,10 @@ export const jobFailureSchema = z.union([
     'export-too-large',
     'drive-unavailable',
     'sheet-write-failed',
+    // A category job (K16, document B section 7.3).
+    'name-in-use',
+    'category-changed',
+    'not-found',
   ]),
 ]);
 export type JobFailure = z.infer<typeof jobFailureSchema>;

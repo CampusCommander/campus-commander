@@ -124,6 +124,12 @@ export const entityEventSchema = z.discriminatedUnion('type', [
     type: z.literal('user-full-sync'),
     sync: userSyncStateSchema,
   }),
+  // A category job publishes the schema change after its settlement commits (B section 9). The
+  // users feed forwards it; the Devices feed drops it.
+  z.strictObject({
+    type: z.literal('schema-change'),
+    entityType: z.literal('user'),
+  }),
 ]);
 export type EntityEvent = z.infer<typeof entityEventSchema>;
 

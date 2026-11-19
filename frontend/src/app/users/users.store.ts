@@ -411,7 +411,12 @@ export class UsersStore {
     const owns = () => this.owns(epoch);
     this.feed = this.feeds.subscribe('/api/events', {
       open: () => this.eventSource('/api/events'),
-      events: ['entity-batch', 'job-finished', 'user-full-sync'],
+      events: [
+        'entity-batch',
+        'job-finished',
+        'user-full-sync',
+        'schema-change',
+      ],
       opened: (replaced) => {
         if (owns()) void this.onStreamOpen(replaced);
       },
@@ -831,6 +836,9 @@ export class UsersStore {
     } else if (event.type === 'job-finished') {
       if (event.failure) this.jobFailure.set(event.failure);
       this.scheduleRecount();
+    } else if (event.type === 'schema-change') {
+      // A category job changed the schema list. The held rows read the new query generation (R6).
+      this.revision.update((value) => value + 1);
     } else {
       this.setSync(event.sync);
       if (event.sync.status !== 'running')
