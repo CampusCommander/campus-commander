@@ -137,16 +137,18 @@ export async function qualifyUserCategoryJobs({
       ],
     );
   };
-  const storeUser = async (userId, customSchemas) => {
+  const storeUser = async (userId, customSchemas, lastEntitySync = null) => {
     await migrator.query(
       `INSERT INTO cc.users(customer_id,user_id,primary_email,org_unit_path,suspended,archived,
         two_step_enrolled,custom_schemas,last_entity_sync)
-       VALUES($1,$2,$3,'/Students',false,false,false,$4,clock_timestamp())`,
+       VALUES($1,$2,$3,'/Students',false,false,false,$4,
+         COALESCE($5::text::timestamptz,clock_timestamp()))`,
       [
         customer,
         userId,
         `${userId}@example.org`,
         JSON.stringify(customSchemas),
+        lastEntitySync,
       ],
     );
   };
@@ -226,6 +228,13 @@ export async function qualifyUserCategoryJobs({
       token,
       attempt,
     ]);
+  /**
+   * The read time of one R7 observation. The text form keeps the microseconds that the `pg` driver
+   * drops when it parses a `timestamptz` into a `Date`, so an observation read in the same
+   * millisecond as a user write still sorts after that write.
+   */
+  const observationTime = async () =>
+    (await one('SELECT clock_timestamp()::text AS now')).now;
   /** One user page observation at a chosen read time, as the user sync delivers it (R7). */
   const observeUser = (userId, customSchemas, observedAt) =>
     result('SELECT cc.upsert_users($1,$2,$3) AS result', [
@@ -954,7 +963,7 @@ export async function qualifyUserCategoryJobs({
           DeleteInfo: { Alpha: { value: 'three' } },
         });
         // R7: the observation below reads Google before the delete, so it must not restore the value.
-        const before = (await one('SELECT clock_timestamp() AS now')).now;
+        const before = await observationTime();
         const versionOf = async (userId) =>
           (
             await one(
@@ -1025,8 +1034,7 @@ export async function qualifyUserCategoryJobs({
           EditInfo: { Alpha: 'one', Beta: 'two' },
           OtherInfo: { Code: 'keep' },
         });
-        const removedBefore = (await one('SELECT clock_timestamp() AS now'))
-          .now;
+        const removedBefore = await observationTime();
         const job = await makeJob({
           action: 'edit-category',
           schemaId: 'schema-edit',
@@ -1104,7 +1112,7 @@ export async function qualifyUserCategoryJobs({
           WideInfo: { Tag: ['one', 'two'] },
           OtherInfo: { Code: 'keep' },
         });
-        const wideBefore = (await one('SELECT clock_timestamp() AS now')).now;
+        const wideBefore = await observationTime();
         const job = await makeJob({
           action: 'edit-category',
           schemaId: 'schema-wide',
@@ -1171,6 +1179,38 @@ export async function qualifyUserCategoryJobs({
         );
         assert.deepEqual(await customSchemas('user-wide-1'), {
           WideInfo: { Tag: [{ value: 'one' }] },
+        });
+      },
+    );
+
+    await check(
+      'K16 an observation time keeps the microseconds of its read (R7)',
+      async () => {
+        // The `pg` driver parses a `timestamptz` into a `Date`, which holds milliseconds only. The
+        // row below stores a write one microsecond into the observation millisecond, so a truncated
+        // observation time sorts before that write and the upsert answers 0.
+        const observed = await observationTime();
+        const synced = (
+          await one(
+            "SELECT (date_trunc('milliseconds', $1::timestamptz) + interval '1 microsecond')::text AS at",
+            [observed],
+          )
+        ).at;
+        await storeUser(
+          'user-observation-1',
+          { ObservationInfo: { Code: 'one' } },
+          synced,
+        );
+        assert.equal(
+          await observeUser(
+            'user-observation-1',
+            { ObservationInfo: { Code: 'two' } },
+            observed,
+          ),
+          1,
+        );
+        assert.deepEqual(await customSchemas('user-observation-1'), {
+          ObservationInfo: { Code: 'two' },
         });
       },
     );
