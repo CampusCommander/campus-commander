@@ -22,7 +22,7 @@ jobs:
             exit 1
           fi
       - name: Require the trusted review delivery branch
-        run: test "$GITHUB_REF" = refs/heads/codex/cc-60-review-delivery
+        run: test "$GITHUB_REF" = refs/heads/main
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:

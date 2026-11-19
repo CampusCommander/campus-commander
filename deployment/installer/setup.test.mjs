@@ -718,7 +718,7 @@ test('guided Phase 3 setup retains the independently trusted publisher', async (
   assert.equal(plan.config.phase, 3);
   assert.equal(
     plan.operator.trust.identity,
-    'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/codex/cc-60-review-delivery',
+    'https://github.com/CampusCommander/campus-commander/.github/workflows/phase-3-candidate.yml@refs/heads/main',
   );
   assert.equal(
     plan.operator.trust.bundlePath,

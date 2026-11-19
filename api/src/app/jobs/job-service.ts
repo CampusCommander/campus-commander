@@ -537,7 +537,7 @@ export class JobService {
     const rows = await this.rows(
       `SELECT p.publication_id,p.job_id,j.display_id,j.revision,j.requested_by
         FROM cc.job_publications p JOIN cc.jobs j ON j.job_id=p.job_id
-        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status')
+        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status','user-schema-change')
           AND p.status_changed AND jsonb_array_length(p.device_ids)=0 AND jsonb_array_length(p.removed_ids)=0
         ORDER BY p.publication_id`,
       [customerId, after],

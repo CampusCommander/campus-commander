@@ -1,8 +1,7 @@
 # Install the client review build
 
-This procedure installs prebuilt application images through the existing all-Docker installer.
-The selected [review build](https://github.com/CampusCommander/campus-commander/releases/tag/phase-3-lab-a043ef187dc6) uses source `a043ef187dc6efbda7b5db84d7367594f0922cb0`.
-It passed fresh installation and application workflows on 2026-09-17.
+This procedure installs prebuilt application images through the all-Docker installer.
+The installer selects the newest signed review build.
 Use a fresh Linux amd64 environment or a disposable WSL installation with Docker Desktop running.
 Do not use an earlier development installation as a prerequisite.
 
@@ -13,8 +12,8 @@ Its automated installation checks use simulators. They do not establish live Goo
 
 ## Prepare
 
-1. Use the immutable review tag `phase-3-lab-a043ef187dc6`.
-2. Use the installer from the source revision below. Its trusted signing identity matches this review build.
+1. Use the newest signed review build. Pass no `--release` pin.
+2. Use the installer from `main`. Its trusted signing identity matches the review build.
 3. Prepare an HTTPS hostname and certificate, or select the installer's disposable laboratory certificate option.
 4. Prepare the application sign-in client and its protected client-secret file.
 5. Register `https://YOUR-HOST/api/auth/callback` as the sign-in client's redirect URI.
@@ -24,18 +23,21 @@ Do not enter secret values in shell arguments or commit them to Git.
 
 ## Install
 
-Download the installer from the selected source revision:
+Download the installer from `main`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/a043ef187dc6efbda7b5db84d7367594f0922cb0/install.sh \
+curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh \
   -o campus-commander-install.sh
-sh campus-commander-install.sh --profile all-docker --qualification --release phase-3-lab-a043ef187dc6
+sh campus-commander-install.sh --profile all-docker --qualification
 ```
 
 No source checkout or application compilation is required.
 The installer verifies the archive, manifest, image signatures, and file inventory before application startup.
 Follow the guided prerequisite and configuration steps. Select a new installation directory and a disposable `cc-` project name.
 The release determines application features. No development-phase selection is required.
+
+The installer trusts the signing identity of `.github/workflows/phase-3-candidate.yml` at `refs/heads/main`.
+A review build from `codex/cc-60-review-delivery` does not verify with this installer.
 
 Use the installer's enrollment procedure to establish the first platform administrator.
 Open the printed HTTPS application address and sign in with that administrator.
@@ -44,11 +46,10 @@ Then review customer settings, schools, invitations, platform access, and Diagno
 
 ## Build identity and limits
 
-The prerelease tag identifies the source revision. `release-manifest.json` identifies each immutable application image.
+The release notes and `release-manifest.json` name the source revision.
+`release-manifest.json` identifies each immutable application image.
 The delivery run retains packaged authorization and fresh-install workflow reports.
 The extracted report includes the manifest hash, report hashes, command, environment, and actual checked workflows.
-Independent download verification passed both blob signatures, all three image signatures, and 1,991 file checks.
-The [retained release record](../../deployment/evidence/CC-60-review-a043ef1/release-verification.json) links the exact build and reports.
 
 This build retains candidate-only status. It does not claim production qualification.
 Migration, backup, restore, hybrid, Kubernetes, and exhaustive fault qualification are outside this review delivery.
