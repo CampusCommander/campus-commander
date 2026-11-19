@@ -5,6 +5,7 @@ import {
   hasRange,
   isRangeType,
   parseRangeBound,
+  rangeDraftChanged,
   rangeFieldErrors,
   sameRange,
 } from './user-category-range';
@@ -147,6 +148,71 @@ describe('the number range rules (K19)', () => {
     expect(boundChanged('INT64', '0', 0)).toBe(false);
     expect(boundChanged('INT64', '', 0)).toBe(true);
     expect(boundChanged('INT64', 'half', null)).toBe(true);
+  });
+
+  it('counts an invalid bound as a change so its diagnostic is reachable (R1)', () => {
+    // Minimum and Maximum, on both number types, against an empty cached range.
+    expect(rangeDraftChanged('INT64', { min: '2026.5', max: '' }, null)).toBe(
+      true,
+    );
+    expect(rangeDraftChanged('INT64', { min: '', max: 'one' }, null)).toBe(
+      true,
+    );
+    expect(rangeDraftChanged('DOUBLE', { min: '1,5', max: '' }, null)).toBe(
+      true,
+    );
+    expect(rangeDraftChanged('DOUBLE', { min: '', max: '1e999' }, null)).toBe(
+      true,
+    );
+    expect(
+      rangeDraftChanged('INT64', { min: '9007199254740992', max: '' }, null),
+    ).toBe(true);
+    // The empty side of a saved one-bound range, whose other bound stays put.
+    expect(
+      rangeDraftChanged(
+        'INT64',
+        { min: '0', max: 'half' },
+        { minValue: 0, maxValue: null },
+      ),
+    ).toBe(true);
+    expect(
+      rangeDraftChanged(
+        'DOUBLE',
+        { min: 'half', max: '2.5' },
+        { minValue: null, maxValue: 2.5 },
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a valid correction and an empty range unchanged (R1 controls)', () => {
+    // A corrected bound that matches the cache takes the unchanged state.
+    expect(
+      rangeDraftChanged(
+        'INT64',
+        { min: '0', max: '12' },
+        { minValue: 0, maxValue: 12 },
+      ),
+    ).toBe(false);
+    expect(
+      rangeDraftChanged(
+        'DOUBLE',
+        { min: '2.50', max: '' },
+        { minValue: 2.5, maxValue: null },
+      ),
+    ).toBe(false);
+    // An untouched range line stays unchanged, including a cleared range.
+    expect(rangeDraftChanged('INT64', { min: '', max: '' }, null)).toBe(false);
+    expect(
+      rangeDraftChanged(
+        'INT64',
+        { min: ' ', max: '' },
+        { minValue: null, maxValue: null },
+      ),
+    ).toBe(false);
+    // A non-number row carries no range change.
+    expect(rangeDraftChanged('STRING', { min: 'half', max: '' }, null)).toBe(
+      false,
+    );
   });
 
   it('compares ranges by their two bounds', () => {

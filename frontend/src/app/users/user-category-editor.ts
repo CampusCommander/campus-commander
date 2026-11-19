@@ -140,8 +140,8 @@ import {
   boundChanged,
   draftRange,
   isRangeType,
+  rangeDraftChanged,
   rangeFieldErrors,
-  sameRange,
   type RangeErrors,
 } from './user-category-range';
 import {
@@ -567,7 +567,10 @@ export class UserCategoryEditor implements OnInit {
     this.errorCount() ? errorCountText(this.errorCount()) : '',
   );
 
-  /** An edit whose draft changes nothing cannot prepare a plan (B section 5). */
+  /**
+   * An edit whose draft changes nothing cannot prepare a plan (B section 5). An
+   * invalid range bound counts as a change, so its diagnostic is reachable (R1).
+   */
   protected readonly changed = computed(() => {
     if (this.mode() === 'create') return this.visibleRows().length > 0;
     const category = this.category();
@@ -586,7 +589,11 @@ export class UserCategoryEditor implements OnInit {
         row.indexed !== cached.indexed ||
         row.readAccessType !== cached.readAccessType ||
         (isRangeType(row.fieldType) &&
-          !sameRange(this.rangeValue(row), row.cachedRange))
+          rangeDraftChanged(
+            row.fieldType,
+            { min: row.rangeMin, max: row.rangeMax },
+            row.cachedRange,
+          ))
       );
     });
   });

@@ -142,6 +142,45 @@ const rangedCategory: UserAttributeCategory = {
   ],
 };
 
+/** A category whose Grade level holds only the minimum of 0. */
+const oneBoundCategory: UserAttributeCategory = {
+  ...category,
+  fields: [
+    {
+      ...category.fields[0],
+      numericIndexingSpec: { minValue: 0, maxValue: null },
+    },
+    category.fields[1],
+  ],
+};
+
+/** A category with a Decimal number attribute and no range. */
+const decimalCategory: UserAttributeCategory = {
+  ...category,
+  fields: [
+    {
+      ...category.fields[0],
+      fieldId: 'Student.AttendanceRate',
+      fieldName: 'AttendanceRate',
+      displayName: 'Attendance rate',
+      fieldType: 'DOUBLE',
+    },
+    category.fields[1],
+  ],
+};
+
+/** A Decimal number attribute whose saved range holds only the maximum of 2.5. */
+const decimalOneBoundCategory: UserAttributeCategory = {
+  ...decimalCategory,
+  fields: [
+    {
+      ...decimalCategory.fields[0],
+      numericIndexingSpec: { minValue: null, maxValue: 2.5 },
+    },
+    decimalCategory.fields[1],
+  ],
+};
+
 const plan = {
   planId: '11111111-1111-4111-8111-111111111111',
   kind: 'edit-category' as const,
@@ -1131,6 +1170,114 @@ describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
     ).toBe('true');
     expect(button(fixture, 'Review changes')?.disabled).toBe(true);
     expect(flow.prepare).not.toHaveBeenCalled();
+  });
+
+  /**
+   * R1: one invalid bound with no other edit still reaches its diagnostic. The
+   * invalid draft enables Review, the attempt shows the field error, and the plan
+   * route stays untouched.
+   */
+  function expectBoundError(
+    categoryFixture: UserAttributeCategory,
+    label: string,
+    raw: string,
+    message: string,
+  ) {
+    const flow = setup();
+    const fixture = render('edit', { category: categoryFixture });
+    type(fixture, mustField(fixture, label), raw);
+    expect(button(fixture, 'Review changes')?.disabled).toBe(false);
+    button(fixture, 'Review changes')?.click();
+    fixture.detectChanges();
+    expect(text(fixture)).toContain(message);
+    const input = mustField(fixture, label);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).not.toBeNull();
+    expect(text(fixture)).toContain('1 field has errors');
+    expect(element(fixture).querySelectorAll('.field-error')).toHaveLength(1);
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    expect(flow.prepare).not.toHaveBeenCalled();
+  }
+
+  it('reaches the minimum error from an invalid whole number alone (R1)', () => {
+    expectBoundError(
+      category,
+      'Grade level minimum',
+      '2026.5',
+      'Enter a whole number.',
+    );
+  });
+
+  it('reaches the maximum error from an invalid whole number alone (R1)', () => {
+    expectBoundError(
+      category,
+      'Grade level maximum',
+      'one',
+      'Enter a whole number.',
+    );
+  });
+
+  it('reaches the maximum error on the empty side of a saved one-bound range (R1)', () => {
+    expectBoundError(
+      oneBoundCategory,
+      'Grade level maximum',
+      'half',
+      'Enter a whole number.',
+    );
+  });
+
+  it('reaches the minimum error from an invalid decimal alone (R1)', () => {
+    expectBoundError(
+      decimalCategory,
+      'Attendance rate minimum',
+      '1,5',
+      'Enter a number.',
+    );
+  });
+
+  it('reaches the maximum error from an invalid decimal alone (R1)', () => {
+    expectBoundError(
+      decimalCategory,
+      'Attendance rate maximum',
+      '1e999',
+      'Enter a number.',
+    );
+  });
+
+  it('reaches the minimum error on the empty side of a decimal one-bound range (R1)', () => {
+    expectBoundError(
+      decimalOneBoundCategory,
+      'Attendance rate minimum',
+      'half',
+      'Enter a number.',
+    );
+  });
+
+  it('clears an invalid bound on correction and keeps an empty range unchanged (R1)', async () => {
+    const flow = setup();
+    const fixture = render('edit', { category });
+    // An untouched empty range stays unchanged.
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    type(fixture, mustField(fixture, 'Grade level minimum'), '2026.5');
+    button(fixture, 'Review changes')?.click();
+    fixture.detectChanges();
+    expect(text(fixture)).toContain('Enter a whole number.');
+    // A valid correction clears the error and reviews the one bound.
+    const min = mustField(fixture, 'Grade level minimum');
+    type(fixture, min, '12');
+    expect(text(fixture)).not.toContain('Enter a whole number.');
+    expect(button(fixture, 'Review changes')?.disabled).toBe(false);
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() => expect(flow.prepare).toHaveBeenCalledTimes(1));
+    const request = flow.prepare.mock.calls[0][0] as {
+      draft: {
+        fields: { fieldId: string | null; numericIndexingSpec: unknown }[];
+      };
+    };
+    expect(
+      request.draft.fields.find((item) => item.fieldId === 'Student.GradeLevel')
+        ?.numericIndexingSpec,
+    ).toEqual({ minValue: 12, maxValue: null });
   });
 
   it('sends one bound and reviews it (R2)', async () => {

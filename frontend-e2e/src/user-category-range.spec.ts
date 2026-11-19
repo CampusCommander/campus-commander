@@ -467,6 +467,28 @@ test('CA state 14: the range field errors and the error count', async ({
   await shot(page, 'k19-14-range-errors');
 });
 
+test('an invalid bound alone reaches its range error (R1)', async ({
+  page,
+}) => {
+  await openAttributes(page);
+  await openEditor(page);
+  // Only the Minimum changes: no other edit enables Review (R1).
+  await fill(page, 'Grade level minimum', '2026.5');
+  const review = dialog(page).getByRole('button', { name: 'Review changes' });
+  await expect(review).toBeEnabled();
+  await review.click();
+  await expect(
+    dialog(page).getByText('Enter a whole number.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog(page).getByLabel('Grade level minimum', { exact: true }),
+  ).toHaveAttribute('aria-invalid', 'true');
+  await expect(dialog(page)).toContainText('1 field has errors');
+  await expect(review).toBeDisabled();
+  // The invalid draft never reaches the plan route.
+  expect(state.requests).toHaveLength(0);
+});
+
 test('a bound leaves the editor when the info type stops being a number', async ({
   page,
 }) => {

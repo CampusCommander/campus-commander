@@ -127,6 +127,24 @@ export function boundChanged(
   return bound.ok ? bound.value !== cached : true;
 }
 
+/**
+ * Whether a range draft differs from the cached range, for the changed check. An
+ * invalid bound counts as a change: its text is not the cached value, and the draft
+ * must reach its diagnostic (R1). A valid correction that matches the cache compares
+ * equal again, so the review returns to the unchanged state.
+ */
+export function rangeDraftChanged(
+  type: UserAttributeFieldType,
+  draft: RangeDraft,
+  cached: UserAttributeRange | null,
+): boolean {
+  if (!isRangeType(type)) return false;
+  return (
+    boundChanged(type, draft.min, cached?.minValue ?? null) ||
+    boundChanged(type, draft.max, cached?.maxValue ?? null)
+  );
+}
+
 /** Whether a range shows at least one bound, for the read-only line. */
 export function hasRange(range: UserAttributeRange | null): boolean {
   return range !== null && (range.minValue !== null || range.maxValue !== null);
