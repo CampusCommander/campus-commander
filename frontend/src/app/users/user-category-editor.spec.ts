@@ -1262,8 +1262,12 @@ describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
     button(fixture, 'Review changes')?.click();
     fixture.detectChanges();
     expect(text(fixture)).toContain('Enter a whole number.');
-    // A valid correction clears the error and reviews the one bound.
     const min = mustField(fixture, 'Grade level minimum');
+    // Clearing the invalid text returns to the unchanged empty range.
+    type(fixture, min, '');
+    expect(text(fixture)).not.toContain('Enter a whole number.');
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    // A valid correction clears the error and reviews the one bound.
     type(fixture, min, '12');
     expect(text(fixture)).not.toContain('Enter a whole number.');
     expect(button(fixture, 'Review changes')?.disabled).toBe(false);
