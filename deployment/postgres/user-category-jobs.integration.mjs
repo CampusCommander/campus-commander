@@ -231,10 +231,16 @@ export async function qualifyUserCategoryJobs({
   /**
    * The read time of one R7 observation. The text form keeps the microseconds that the `pg` driver
    * drops when it parses a `timestamptz` into a `Date`, so an observation read in the same
-   * millisecond as a user write still sorts after that write.
+   * millisecond as a user write still sorts after that write. The checks pass no `at` value; the
+   * regression passes a pinned instant through the same conversion.
    */
-  const observationTime = async () =>
-    (await one('SELECT clock_timestamp()::text AS now')).now;
+  const observationTime = async (at = null) =>
+    (
+      await one(
+        'SELECT COALESCE($1::text::timestamptz, clock_timestamp())::text AS now',
+        [at],
+      )
+    ).now;
   /** One user page observation at a chosen read time, as the user sync delivers it (R7). */
   const observeUser = (userId, customSchemas, observedAt) =>
     result('SELECT cc.upsert_users($1,$2,$3) AS result', [
@@ -1186,16 +1192,24 @@ export async function qualifyUserCategoryJobs({
     await check(
       'K16 an observation time keeps the microseconds of its read (R7)',
       async () => {
-        // The `pg` driver parses a `timestamptz` into a `Date`, which holds milliseconds only. The
-        // row below stores a write one microsecond into the observation millisecond, so a truncated
-        // observation time sorts before that write and the upsert answers 0.
-        const observed = await observationTime();
+        // The `pg` driver parses a `timestamptz` into a `Date`, which holds milliseconds only. Pin
+        // an instant 500 microseconds into its millisecond, then store a write one microsecond into
+        // that same millisecond. The text read keeps its microseconds and sorts after the write;
+        // the Date form of the same instant drops them and sorts before it. Neither outcome depends
+        // on where the clock falls inside its millisecond.
+        const pinned = (
+          await one(
+            "SELECT (date_trunc('milliseconds', clock_timestamp()) + interval '500 microseconds')::text AS at",
+          )
+        ).at;
+        const observed = await observationTime(pinned);
         const synced = (
           await one(
             "SELECT (date_trunc('milliseconds', $1::timestamptz) + interval '1 microsecond')::text AS at",
             [observed],
           )
         ).at;
+        // The fix: the observation keeps the pinned microseconds, so the newer read writes the row.
         await storeUser(
           'user-observation-1',
           { ObservationInfo: { Code: 'one' } },
@@ -1211,6 +1225,28 @@ export async function qualifyUserCategoryJobs({
         );
         assert.deepEqual(await customSchemas('user-observation-1'), {
           ObservationInfo: { Code: 'two' },
+        });
+        // The defect: the Date form the driver built before the fix truncates the same instant to
+        // its millisecond, so the observation is older than the write and the upsert refuses it.
+        const truncated = (
+          await one('SELECT $1::timestamptz AS at', [observed])
+        ).at;
+        assert.ok(truncated instanceof Date);
+        await storeUser(
+          'user-observation-2',
+          { ObservationInfo: { Code: 'one' } },
+          synced,
+        );
+        assert.equal(
+          await observeUser(
+            'user-observation-2',
+            { ObservationInfo: { Code: 'two' } },
+            truncated,
+          ),
+          0,
+        );
+        assert.deepEqual(await customSchemas('user-observation-2'), {
+          ObservationInfo: { Code: 'one' },
         });
       },
     );
