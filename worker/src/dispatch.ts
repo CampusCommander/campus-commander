@@ -20,6 +20,7 @@ import {
 } from './device-update';
 import { DeviceExportError, deviceExportRequestSchema } from './device-export';
 import { DeviceImportError, deviceImportRequestSchema } from './device-import';
+import { userSchemaChangeRequestSchema } from './user-schema-change';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -244,6 +245,44 @@ export async function handleUserSyncDispatch(
 const entitySyncDispatchSchema = entitySyncBatchRequestSchema.extend({
   executionId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
 });
+
+const userSchemaChangeDispatchSchema = userSchemaChangeRequestSchema.extend({
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+});
+
+/**
+ * The one call of one category job (design card K16, document B section 7.1). Every job outcome
+ * answers 200, so the flow retries only a failed worker request.
+ */
+export async function handleUserSchemaChangeDispatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  context: DispatchContext,
+  google: GoogleWorker,
+): Promise<boolean> {
+  if (
+    request.method !== 'POST' ||
+    request.url !== '/dispatch/user-schema-change'
+  )
+    return false;
+  if (rejected(request, response, context)) return true;
+  try {
+    const { executionId, ...input } = userSchemaChangeDispatchSchema.parse(
+      await readJson(request),
+    );
+    const answer = await google.changeUserSchema(input, context.signal);
+    respond(response, 200, {
+      executionId,
+      correlationId: input.correlationId,
+      status: answer.outcome === 'settled' ? 'completed' : answer.outcome,
+      ...(answer.outcome === 'settled' ? {} : answer),
+      ...(answer.outcome === 'settled' ? { jobStatus: answer.status } : {}),
+    });
+  } catch (error) {
+    respondUpdateError(response, error, 'user-schema-change-unavailable');
+  }
+  return true;
+}
 
 export async function handleEntitySyncDispatch(
   request: IncomingMessage,

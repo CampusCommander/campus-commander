@@ -64,6 +64,13 @@ export interface JobServiceOrchestration {
     leaseId: string;
     correlationId: string;
   }): Promise<string>;
+  /** Start the one call of an admitted category job (design card K16, B section 7.1). */
+  startUserSchemaChange(input: {
+    customerId: string;
+    jobId: string;
+    dispatchToken: string;
+    correlationId: string;
+  }): Promise<string>;
 }
 
 export interface JobServiceOptions {
@@ -81,6 +88,8 @@ export interface AdmittedJob {
   dispatchToken: string;
   correlationId: string;
   targetCount: number;
+  /** The job kind. A category job starts its own flow (design card K16). */
+  kind?: string;
 }
 
 /** One publication element of the relay (design section 3.6). */
@@ -159,7 +168,7 @@ export class JobService {
   async customers(): Promise<string[]> {
     const rows = await this.rows(
       `SELECT DISTINCT j.customer_id FROM cc.jobs j
-        WHERE (j.kind IN ('device-update','device-command','device-status') AND (j.status IN ('accepted','queued','held','running','awaiting-devices')
+        WHERE (j.kind IN ('device-update','device-command','device-status','user-schema-change') AND (j.status IN ('accepted','queued','held','running','awaiting-devices')
           OR EXISTS(SELECT 1 FROM cc.device_update_jobs u WHERE u.job_id=j.job_id
             AND u.hold_written_at IS NOT NULL AND u.hold_cleaned_at IS NULL)))
           OR (j.kind IN ('device-export','device-import') AND j.status='running')
@@ -231,7 +240,7 @@ export class JobService {
     await this.exclusive(async () => {
       const rows = await this.rows(
         `SELECT 1 FROM cc.jobs j WHERE j.customer_id=$1 AND j.job_id=$2
-          AND j.kind IN ('device-update','device-command','device-status') AND j.status IN ${holdReleased}`,
+          AND j.kind IN ('device-update','device-command','device-status','user-schema-change') AND j.status IN ${holdReleased}`,
         [customerId, jobId],
       );
       // Cleanup filters its own registry rows, and admission sees the freed write slot.
@@ -315,6 +324,9 @@ export class JobService {
   ): Promise<boolean> {
     const jobId = String(admitted.jobId);
     const token = String(admitted.dispatchToken);
+    // A category job starts its own flow. The device path below stays unchanged (design card K16).
+    if (String(admitted.kind ?? '') === 'user-schema-change')
+      return this.startUserSchemaChangeLocked(customerId, admitted);
     const detail = (
       await this.rows(
         'SELECT batch_count FROM cc.device_update_jobs WHERE job_id=$1',
@@ -358,9 +370,51 @@ export class JobService {
   }
 
   /**
+   * Start the one call of an admitted category job. The rules of the device start hold: only a 4xx
+   * answer runs the refused start, and a timeout or a 5xx answer waits for the start deadline.
+   */
+  private async startUserSchemaChangeLocked(
+    customerId: string,
+    admitted: AdmittedJob,
+  ): Promise<boolean> {
+    const jobId = String(admitted.jobId);
+    const token = String(admitted.dispatchToken);
+    let executionId: string;
+    try {
+      executionId = await this.orchestration.startUserSchemaChange({
+        customerId,
+        jobId,
+        dispatchToken: token,
+        correlationId: String(admitted.correlationId),
+      });
+    } catch (error) {
+      if (
+        error instanceof ServiceResponseError &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
+        const after = await this.maxPublication(customerId);
+        await this.result(
+          'SELECT cc.abandon_user_schema_change_start($1,$2,$3) AS result',
+          [customerId, jobId, token],
+        );
+        await this.publishCommittedRows(customerId, after);
+        return true;
+      }
+      return false;
+    }
+    await this.result(
+      'SELECT cc.record_user_schema_change_start($1,$2,$3,$4) AS result',
+      [customerId, jobId, token, executionId],
+    ).catch(() => undefined);
+    return false;
+  }
+
+  /**
    * Run the recovery functions and start what they ask for (design sections 5.3, 5.10, and 5).
    * `cc.recover_device_update_jobs` repairs the write jobs. `cc.recover_device_file_jobs` fails a
-   * lost export or validation run with `interrupted`.
+   * lost export or validation run with `interrupted`. `cc.recover_user_schema_change_jobs` restarts
+   * a category start and ends a lost category runner.
    */
   async recover(customerId: string): Promise<boolean> {
     return this.exclusive(() => this.recoverLocked(customerId));
@@ -386,7 +440,16 @@ export class JobService {
       : [];
     // A recovered file run needs no start and no reconcile: it ends Failed or Cancelled.
     const failedFiles = Array.isArray(files.failed) ? files.failed : [];
-    for (const start of starts)
+    // A category start that never claimed and a lost category runner need the same tick.
+    const schema =
+      (await this.step(() =>
+        this.result<{ starts?: unknown[] } | null>(
+          'SELECT cc.recover_user_schema_change_jobs($1) AS result',
+          [customerId],
+        ),
+      )) ?? {};
+    const schemaStarts = Array.isArray(schema.starts) ? schema.starts : [];
+    for (const start of [...starts, ...schemaStarts])
       await this.startLocked(customerId, start as AdmittedJob);
     // The recovery result is committed. A publication failure leaves its rows for the relay and never
     // drops the reconcile starts that the reaper asked for (R1-F1).
@@ -404,7 +467,12 @@ export class JobService {
         // After a reaper run the job service does not retry the flow for `all` (eng-lead ruling 6).
       }
     }
-    return starts.length > 0 || reconciles.length > 0 || failedFiles.length > 0;
+    return (
+      starts.length > 0 ||
+      schemaStarts.length > 0 ||
+      reconciles.length > 0 ||
+      failedFiles.length > 0
+    );
   }
 
   /** Delete the hold of every terminal job through the compare-and-delete script (design section 6.4). */
@@ -469,7 +537,7 @@ export class JobService {
     const rows = await this.rows(
       `SELECT p.publication_id,p.job_id,j.display_id,j.revision,j.requested_by
         FROM cc.job_publications p JOIN cc.jobs j ON j.job_id=p.job_id
-        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status')
+        WHERE p.customer_id=$1 AND p.publication_id>$2::bigint AND j.kind IN ('device-update','device-command','device-status','user-schema-change')
           AND p.status_changed AND jsonb_array_length(p.device_ids)=0 AND jsonb_array_length(p.removed_ids)=0
         ORDER BY p.publication_id`,
       [customerId, after],

@@ -562,6 +562,24 @@ const categoryEtag = z.string().min(1).max(1024);
  */
 export const CATEGORY_PART_ID = 'category';
 
+/**
+ * The last gate of a category write: the worker checks ownership and cancellation here, after the
+ * token mint and immediately before the multipart request. `false` sends nothing (design card K16,
+ * R4).
+ */
+export type CategorySendGate = () => Promise<boolean>;
+
+/**
+ * The send gate refused the request, so the part never left the worker. The caller settles or
+ * answers with its own fence; this error never means a Google condition.
+ */
+export class CategorySendRefused extends Error {
+  constructor() {
+    super('category-send-refused');
+    this.name = 'CategorySendRefused';
+  }
+}
+
 export interface GoogleCategoryWriterOptions {
   batch?: GoogleBatchService;
   /** A reader that serves the `schemas.get` part. */
@@ -594,12 +612,17 @@ export class GoogleCategoryWriter {
     return this.reader.category(credential, customerId, schemaId, signal);
   }
 
-  /** One `schemas.insert` POST part with the write scope and no `If-Match` (C6). */
+  /**
+   * One `schemas.insert` POST part with the write scope and no `If-Match` (C6). The gate runs
+   * after the token mint and immediately before the request; a refusal throws
+   * `CategorySendRefused` and sends no part (R4).
+   */
   async insertCategory(
     credential: DelegatedCredential,
     customerId: string,
     body: CategoryWriteBody,
     signal: AbortSignal,
+    beforeSend?: CategorySendGate,
   ): Promise<BatchResult<UserAttributeCategoryObservation>> {
     googleCustomerIdSchema.parse(customerId);
     return this.call(
@@ -613,12 +636,14 @@ export class GoogleCategoryWriter {
       },
       categoryAnswer,
       signal,
+      beforeSend,
     );
   }
 
   /**
    * One `schemas.update` PUT part with the complete schema and the plan etag
-   * in `If-Match` (B section 6.1, E7).
+   * in `If-Match` (B section 6.1, E7). The gate runs after the token mint and immediately before
+   * the request (R4).
    */
   async updateCategory(
     credential: DelegatedCredential,
@@ -627,6 +652,7 @@ export class GoogleCategoryWriter {
     etag: string,
     body: CategoryWriteBody,
     signal: AbortSignal,
+    beforeSend?: CategorySendGate,
   ): Promise<BatchResult<UserAttributeCategoryObservation>> {
     googleCustomerIdSchema.parse(customerId);
     return this.call(
@@ -641,12 +667,14 @@ export class GoogleCategoryWriter {
       },
       categoryAnswer,
       signal,
+      beforeSend,
     );
   }
 
   /**
    * One `schemas.delete` DELETE part with the plan etag in `If-Match` (E7).
-   * Google answers 204, so a succeeded part holds no value.
+   * Google answers 204, so a succeeded part holds no value. The gate runs after the token mint
+   * and immediately before the request (R4).
    */
   async deleteCategory(
     credential: DelegatedCredential,
@@ -654,6 +682,7 @@ export class GoogleCategoryWriter {
     schemaId: string,
     etag: string,
     signal: AbortSignal,
+    beforeSend?: CategorySendGate,
   ): Promise<BatchResult<null>> {
     googleCustomerIdSchema.parse(customerId);
     return this.call(
@@ -667,6 +696,7 @@ export class GoogleCategoryWriter {
       },
       () => null,
       signal,
+      beforeSend,
     );
   }
 
@@ -674,6 +704,8 @@ export class GoogleCategoryWriter {
    * Send one part with a write-scope token and keep every part answer.
    * A caller classifies `failed`: C6 and C7 settle 409 or 412, and an
    * unanswered insert stays Unknown (B section 7.3).
+   * `beforeSend` runs inside the batch, after it mints the write token and immediately before the
+   * multipart request. A false answer throws `CategorySendRefused`, so no request leaves (R4).
    */
   private async call<T>(
     credential: DelegatedCredential,
@@ -681,6 +713,7 @@ export class GoogleCategoryWriter {
     request: BatchRequest,
     parse: (body: unknown) => T,
     signal: AbortSignal,
+    beforeSend?: CategorySendGate,
   ): Promise<BatchResult<T>> {
     const mint: { failure?: GoogleConnectionError } = {};
     let result: BatchResult<T>;
@@ -703,6 +736,13 @@ export class GoogleCategoryWriter {
           }
         },
         signal,
+        ...(beforeSend === undefined
+          ? {}
+          : {
+              onSend: async () => {
+                if (!(await beforeSend())) throw new CategorySendRefused();
+              },
+            }),
       });
     } catch (error) {
       if (error instanceof BatchServiceError)

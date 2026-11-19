@@ -93,6 +93,15 @@ export function userForward(
         }),
       };
     }
+    // A category job changed the schema list. The event carries no job data (B section 9).
+    if (event.type === 'schema-change')
+      return {
+        event: userStreamEventSchema.parse({
+          type: 'schema-change',
+          entityType: 'user',
+        }),
+        ...(failed ? { end: true } : {}),
+      };
     // No other channel event reaches the users feed.
     return null;
   };

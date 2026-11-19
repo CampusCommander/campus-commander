@@ -41,6 +41,7 @@ export type {
 } from './lib/devices';
 export {
   CATEGORY_PART_ID,
+  CategorySendRefused,
   GoogleCategoryWriter,
   GoogleUserReader,
   categoryObservation,
@@ -49,6 +50,7 @@ export {
   userObservation,
 } from './lib/users';
 export type {
+  CategorySendGate,
   CategoryWriteBody,
   CategoryWriteField,
   GoogleCategoryWriterOptions,

@@ -339,6 +339,13 @@ test('job summaries are strict objects', () => {
     jobSummarySchema.safeParse({ ...summary, failure: 'unknown-code' }).success,
     false,
   );
+  // A category job settles the three codes of document B section 7.3 (K16).
+  for (const failure of ['name-in-use', 'category-changed', 'not-found'])
+    assert.equal(
+      jobSummarySchema.safeParse({ ...summary, failure }).success,
+      true,
+      failure,
+    );
   const missing = { ...summary };
   delete missing.displayId;
   assert.equal(jobSummarySchema.safeParse(missing).success, false);
