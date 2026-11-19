@@ -48,6 +48,8 @@ import {
   COLUMN_VISIBILITY,
   FIELD_CATEGORY_NAME,
   FIELD_DISPLAY_NAME,
+  RANGE_MAXIMUM_LABEL,
+  RANGE_MINIMUM_LABEL,
 } from './user-attribute-messages';
 import {
   ALL_CHANGES_LABEL,
@@ -64,6 +66,7 @@ import {
   CHANGE_COUNT_LABEL,
   CHANGE_REMOVE_LABEL,
   CHANGE_RENAME_LABEL,
+  CHANGE_SET_RANGE_LABEL,
   CHANGES_TABLE_LABEL,
   CLOSING_KEEPS_RUNNING_TEXT,
   COLUMN_ATTRIBUTE,
@@ -130,8 +133,17 @@ import {
   removingValuesText,
   saveChangesLabel,
   usedAfterText,
+  rangeText,
   visibilityLabel,
 } from './user-category-messages';
+import {
+  boundChanged,
+  draftRange,
+  isRangeType,
+  rangeFieldErrors,
+  sameRange,
+  type RangeErrors,
+} from './user-category-range';
 import {
   UserCategoryFlow,
   type CategoryJob,
@@ -151,7 +163,11 @@ interface EditorRow {
   multiValued: boolean;
   indexed: boolean;
   readAccessType: UserAttributeVisibility;
-  numericIndexingSpec: UserAttributeRange | null;
+  /** The raw text of the range line. An empty field means no bound (R2). */
+  rangeMin: string;
+  rangeMax: string;
+  /** The cached range, for the pending surface and the clear rule (C3). */
+  cachedRange: UserAttributeRange | null;
   holders: number;
   nameTouched: boolean;
   removed: boolean;
@@ -167,6 +183,8 @@ interface SubmittedField {
   fieldName: string;
   displayName: string;
   fieldType: UserAttributeFieldType;
+  /** The frozen range of a number attribute (K19). */
+  numericIndexingSpec: UserAttributeRange | null;
 }
 
 /** The frozen request behind a review, so a pending edit cannot change its meaning. */
@@ -329,6 +347,8 @@ export class UserCategoryEditor implements OnInit {
   protected readonly NOT_RUN_COUNT_LABEL = NOT_RUN_COUNT_LABEL;
   protected readonly FIELD_TYPE_OPTIONS = FIELD_TYPE_OPTIONS;
   protected readonly VISIBILITY_OPTIONS = VISIBILITY_OPTIONS;
+  protected readonly RANGE_MINIMUM_LABEL = RANGE_MINIMUM_LABEL;
+  protected readonly RANGE_MAXIMUM_LABEL = RANGE_MAXIMUM_LABEL;
   protected readonly JOB_LABEL = JOB_LABEL;
   protected readonly DISPLAY_NAME_MAX = DISPLAY_NAME_MAX;
 
@@ -512,8 +532,32 @@ export class UserCategoryEditor implements OnInit {
     return errors;
   });
 
+  /**
+   * K19: each range field checks its own rule. The maximum also carries the order
+   * rule, and it names the minimum (state 14). An empty field means no bound.
+   */
+  protected readonly rangeErrorMap = computed<ReadonlyMap<number, RangeErrors>>(
+    () => {
+      const errors = new Map<number, RangeErrors>();
+      if (!this.errorCheck()) return errors;
+      for (const row of this.visibleRows()) {
+        if (!isRangeType(row.fieldType)) continue;
+        const result = rangeFieldErrors(row.fieldType, {
+          min: row.rangeMin,
+          max: row.rangeMax,
+        });
+        if (result.min || result.max) errors.set(row.key, result);
+      }
+      return errors;
+    },
+  );
+
   protected readonly errorCount = computed(() => {
     let count = this.displayErrors().size + this.nameErrors().size;
+    for (const errors of this.rangeErrorMap().values()) {
+      if (errors.min) count += 1;
+      if (errors.max) count += 1;
+    }
     if (this.categoryDisplayError()) count += 1;
     if (this.categoryNameError()) count += 1;
     return count;
@@ -540,7 +584,9 @@ export class UserCategoryEditor implements OnInit {
         row.displayName.trim() !== cached.displayName ||
         row.multiValued !== cached.multiValued ||
         row.indexed !== cached.indexed ||
-        row.readAccessType !== cached.readAccessType
+        row.readAccessType !== cached.readAccessType ||
+        (isRangeType(row.fieldType) &&
+          !sameRange(this.rangeValue(row), row.cachedRange))
       );
     });
   });
@@ -769,7 +815,8 @@ export class UserCategoryEditor implements OnInit {
   protected setType(row: EditorRow, value: UserAttributeFieldType): void {
     this.updateRow(row, {
       fieldType: value,
-      numericIndexingSpec: null,
+      rangeMin: '',
+      rangeMax: '',
     });
   }
 
@@ -835,6 +882,58 @@ export class UserCategoryEditor implements OnInit {
   /** The number of one visible row, for a stable accessible name of its fields. */
   protected rowNumber(row: EditorRow): number {
     return this.visibleRows().findIndex((item) => item.key === row.key) + 1;
+  }
+
+  /** Whether the row draws the range line (composition choice 1). */
+  protected isRangeRow(row: EditorRow): boolean {
+    return isRangeType(row.fieldType);
+  }
+
+  /** The accessible name of one bound: the attribute, then the label. */
+  protected rangeLabel(row: EditorRow, bound: string): string {
+    const name =
+      row.displayName.trim() ||
+      row.fieldName.trim() ||
+      `Attribute ${this.rowNumber(row)}`;
+    return `${name} ${bound.toLowerCase()}`;
+  }
+
+  protected rangeInputMode(row: EditorRow): 'numeric' | 'decimal' {
+    return row.fieldType === 'INT64' ? 'numeric' : 'decimal';
+  }
+
+  protected rangeMinErrorFor(row: EditorRow): string {
+    return this.rangeErrorMap().get(row.key)?.min ?? '';
+  }
+
+  protected rangeMaxErrorFor(row: EditorRow): string {
+    return this.rangeErrorMap().get(row.key)?.max ?? '';
+  }
+
+  /** A cached bound that moves takes the pending surface of state 12. */
+  protected rangeBoundChanged(row: EditorRow, bound: 'min' | 'max'): boolean {
+    if (row.fieldId === null) return false;
+    const cached =
+      bound === 'min'
+        ? (row.cachedRange?.minValue ?? null)
+        : (row.cachedRange?.maxValue ?? null);
+    return boundChanged(
+      row.fieldType,
+      bound === 'min' ? row.rangeMin : row.rangeMax,
+      cached,
+    );
+  }
+
+  protected setRangeMin(row: EditorRow, event: Event): void {
+    this.updateRow(row, {
+      rangeMin: (event.target as HTMLInputElement).value,
+    });
+  }
+
+  protected setRangeMax(row: EditorRow, event: Event): void {
+    this.updateRow(row, {
+      rangeMax: (event.target as HTMLInputElement).value,
+    });
   }
 
   protected removesText(row: EditorRow): string {
@@ -906,6 +1005,7 @@ export class UserCategoryEditor implements OnInit {
         fieldName: field.fieldName,
         displayName: field.displayName,
         fieldType: field.fieldType,
+        numericIndexingSpec: field.numericIndexingSpec,
       })),
     });
     this.busy.set(true);
@@ -1090,7 +1190,7 @@ export class UserCategoryEditor implements OnInit {
       multiValued: row.multiValued,
       indexed: row.indexed,
       readAccessType: row.readAccessType,
-      numericIndexingSpec: row.numericIndexingSpec,
+      numericIndexingSpec: this.rangeValue(row),
     }));
     if (this.mode() === 'create') {
       return {
@@ -1295,6 +1395,29 @@ export class UserCategoryEditor implements OnInit {
     );
   }
 
+  /** The range that the plan request sends for one row (K19, R2). */
+  private rangeValue(row: EditorRow): UserAttributeRange | null {
+    return draftRange(
+      row.fieldType,
+      { min: row.rangeMin, max: row.rangeMax },
+      row.cachedRange,
+    );
+  }
+
+  /** The frozen range of one range change, for its review row. */
+  private rangeOfChange(
+    change: UserAttributeCategoryPlanChange,
+  ): UserAttributeRange | null {
+    const frozen = this.submitted()?.fields;
+    const field =
+      frozen?.find(
+        (item) =>
+          item.fieldId === change.fieldId &&
+          item.fieldName === change.fieldName,
+      ) ?? frozen?.find((item) => item.fieldName === change.fieldName);
+    return field?.numericIndexingSpec ?? null;
+  }
+
   private cachedRow(field: UserAttributeField): EditorRow {
     return {
       key: this.nextKey++,
@@ -1305,7 +1428,17 @@ export class UserCategoryEditor implements OnInit {
       multiValued: field.multiValued,
       indexed: field.indexed,
       readAccessType: field.readAccessType,
-      numericIndexingSpec: field.numericIndexingSpec,
+      rangeMin:
+        field.numericIndexingSpec?.minValue === null ||
+        field.numericIndexingSpec?.minValue === undefined
+          ? ''
+          : String(field.numericIndexingSpec.minValue),
+      rangeMax:
+        field.numericIndexingSpec?.maxValue === null ||
+        field.numericIndexingSpec?.maxValue === undefined
+          ? ''
+          : String(field.numericIndexingSpec.maxValue),
+      cachedRange: field.numericIndexingSpec,
       holders: field.holders,
       nameTouched: true,
       removed: false,
@@ -1324,7 +1457,9 @@ export class UserCategoryEditor implements OnInit {
       multiValued: false,
       indexed: true,
       readAccessType: 'ADMINS_AND_SELF',
-      numericIndexingSpec: null,
+      rangeMin: '',
+      rangeMax: '',
+      cachedRange: null,
       holders: 0,
       nameTouched: false,
       removed: false,
@@ -1377,6 +1512,19 @@ export class UserCategoryEditor implements OnInit {
         tone: 'error',
         attribute,
         effect: deletesAttributeValuesText(change.holders ?? 0),
+      };
+    // Composition choice 8: a range change has its own row and no typed phrase.
+    if (
+      change.properties.length === 1 &&
+      change.properties[0] === 'numericIndexingSpec'
+    )
+      return {
+        key: `change-${index}`,
+        kind: 'changed',
+        label: CHANGE_SET_RANGE_LABEL,
+        tone: 'info',
+        attribute: rangeText(change.displayName, this.rangeOfChange(change)),
+        effect: NO_USER_VALUES_CHANGE,
       };
     return {
       key: `change-${index}`,

@@ -201,6 +201,19 @@
   border-block-start: 0;
 }
 
+/* The read-only range line: plain bounds in the cells of composition choice 1. */
+.attribute-table tr.range-line td {
+  border-block-start: 0;
+}
+
+.range-static {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 40px;
+  min-width: 0;
+}
+
 .attribute-table th:first-child,
 .attribute-table td:first-child {
   padding-inline-start: var(--cc-space-lg);

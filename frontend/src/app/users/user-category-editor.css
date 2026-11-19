@@ -235,6 +235,17 @@
   border-block-start: 0;
 }
 
+/* The range line of a number attribute (K19, composition choice 1). It has no top
+ * rule, so it reads as part of the attribute above it, and its Display name cell is
+ * empty. The two fields fill their cells as every other table field does. */
+.attr-table tr.range-line td {
+  border-block-start: 0;
+}
+
+.attr-table tr.range-line td:empty {
+  padding-block: 0;
+}
+
 .attr-table th:first-child,
 .attr-table td:first-child {
   padding-inline-start: var(--cc-space-lg);

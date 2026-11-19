@@ -4,12 +4,14 @@ import {
   type JobStatus,
   type UserAttributeFieldType,
   type UserAttributeLimits,
+  type UserAttributeRange,
   type UserAttributeVisibility,
 } from '@campus/application-contracts';
 import {
   ATTRIBUTE_TYPE_LABELS,
   ATTRIBUTE_VISIBILITY_LABELS,
   countText,
+  rangeNumberText,
 } from './user-attribute-messages';
 
 /**
@@ -147,6 +149,40 @@ export function propertiesText(
       ? labels.join('')
       : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
   return `Updates ${list}`;
+}
+
+/** The number range of K19: the line under a Whole number or Decimal number row. */
+/** A bound that is not a whole number, in the pattern of CA state 03. */
+export const RANGE_WHOLE_NUMBER_TEXT = 'Enter a whole number.';
+/** A Decimal number bound that is not a finite number. */
+export const RANGE_NUMBER_TEXT = 'Enter a number.';
+/** A Whole number bound outside the JSON safe range of decision E10. */
+export const RANGE_SAFE_INTEGER_TEXT =
+  'Enter a whole number between -9,007,199,254,740,991 and 9,007,199,254,740,991.';
+/** The review row of a range change (composition choice 8). */
+export const CHANGE_SET_RANGE_LABEL = 'Set range';
+
+/** The maximum error of state 14: it names the minimum. */
+export function rangeMinText(minimum: number): string {
+  return `Enter ${rangeNumberText(minimum)} or more.`;
+}
+
+/** The attribute cell of the range review row. A cleared range names no bound. */
+export function rangeText(
+  displayName: string,
+  range: UserAttributeRange | null,
+): string {
+  if (range === null || (range.minValue === null && range.maxValue === null))
+    return `${displayName} with no range`;
+  if (range.minValue === null)
+    return `${displayName} ${rangeNumberText(
+      range.maxValue as number,
+    )} or less`;
+  if (range.maxValue === null)
+    return `${displayName} ${rangeNumberText(range.minValue)} or more`;
+  return `${displayName} ${rangeNumberText(
+    range.minValue,
+  )} to ${rangeNumberText(range.maxValue)}`;
 }
 
 /** The typed phrase gate of CA states 05 and 08 (default 1). */
