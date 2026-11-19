@@ -43,6 +43,17 @@ export const COLUMN_SEARCHABLE = 'Searchable';
 export const FIELD_DISPLAY_NAME = 'Display name';
 export const FIELD_CATEGORY_NAME = 'Category name';
 
+/** The number range line of a Whole number or Decimal number attribute (K19). */
+export const RANGE_MINIMUM_LABEL = 'Minimum';
+export const RANGE_MAXIMUM_LABEL = 'Maximum';
+/** The read-only value of a bound that the range does not set. */
+export const RANGE_NO_LIMIT_TEXT = 'No limit';
+
+/** A bound in its canonical number form. */
+export function rangeNumberText(value: number): string {
+  return String(value);
+}
+
 /** The Close action of the read-only dialog. */
 export const CLOSE_LABEL = 'Close';
 

@@ -54,9 +54,9 @@ describe('the read-only category dialog (CA state 09)', () => {
         .querySelector('#category-dialog-title')
         ?.textContent?.trim(),
     ).toBe('Staff information');
-    const labels = [...element(fixture).querySelectorAll('.static-label')].map(
-      (label) => label.textContent?.trim(),
-    );
+    const labels = [
+      ...element(fixture).querySelectorAll('.category-fields .static-label'),
+    ].map((label) => label.textContent?.trim());
     expect(labels).toEqual(['Display name', 'Category name']);
     expect(
       element(fixture).querySelector('.identifier')?.textContent?.trim(),
@@ -69,7 +69,7 @@ describe('the read-only category dialog (CA state 09)', () => {
   it('draws every attribute with its info type and visibility', () => {
     const fixture = render();
     const rows = [
-      ...element(fixture).querySelectorAll('tbody tr'),
+      ...element(fixture).querySelectorAll('tbody tr:not(.range-line)'),
     ] as HTMLElement[];
     expect(rows.map((row) => row.textContent?.replace(/\s+/g, ''))).toEqual([
       'RoleroleTextAdminsandtheuser',
@@ -86,6 +86,20 @@ describe('the read-only category dialog (CA state 09)', () => {
       ...element(fixture).querySelectorAll('tbody input[type="checkbox"]'),
     ].map((input) => (input as HTMLInputElement).disabled);
     expect(disabled).toEqual([true, true, true, true]);
+  });
+
+  it('shows a saved range as plain text under its number row (K19)', () => {
+    const fixture = render();
+    const line = element(fixture).querySelector('tbody tr.range-line');
+    expect(line).not.toBeNull();
+    const cells = [...(line as HTMLElement).querySelectorAll('td')];
+    expect(
+      cells.map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim()),
+    ).toEqual(['', 'Minimum1', 'Maximum9', '', '', '', '']);
+    // The line sits directly under the Whole number row.
+    const rows = [...element(fixture).querySelectorAll('tbody tr')];
+    const index = rows.indexOf(line as HTMLTableRowElement);
+    expect(rows[index - 1].textContent).toContain('Level');
   });
 
   it('draws no category action and keeps Add attribute disabled (composition choice 12)', () => {

@@ -8,7 +8,10 @@ import {
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import type { UserAttributeField } from '@campus/application-contracts';
+import type {
+  UserAttributeField,
+  UserAttributeRange,
+} from '@campus/application-contracts';
 import { UserAttributeHelp } from './user-attribute-help';
 import {
   ADD_ATTRIBUTE_LABEL,
@@ -26,7 +29,12 @@ import {
   COLUMN_VISIBILITY,
   FIELD_CATEGORY_NAME,
   FIELD_DISPLAY_NAME,
+  RANGE_MAXIMUM_LABEL,
+  RANGE_MINIMUM_LABEL,
+  RANGE_NO_LIMIT_TEXT,
+  rangeNumberText,
 } from './user-attribute-messages';
+import { hasRange, isRangeType } from './user-category-range';
 
 /**
  * The read-only category dialog (CA state 09, U4). Every value is plain text, the
@@ -70,6 +78,8 @@ export class UserCategoryDialog {
   protected readonly COLUMN_VISIBILITY = COLUMN_VISIBILITY;
   protected readonly FIELD_CATEGORY_NAME = FIELD_CATEGORY_NAME;
   protected readonly FIELD_DISPLAY_NAME = FIELD_DISPLAY_NAME;
+  protected readonly RANGE_MINIMUM_LABEL = RANGE_MINIMUM_LABEL;
+  protected readonly RANGE_MAXIMUM_LABEL = RANGE_MAXIMUM_LABEL;
 
   protected typeLabel(attribute: UserAttributeField): string {
     return ATTRIBUTE_TYPE_LABELS[attribute.fieldType];
@@ -77,6 +87,18 @@ export class UserCategoryDialog {
 
   protected visibilityLabel(attribute: UserAttributeField): string {
     return ATTRIBUTE_VISIBILITY_LABELS[attribute.readAccessType];
+  }
+
+  /** The range line of a number attribute with at least one bound (K19). */
+  protected rangeOf(attribute: UserAttributeField): UserAttributeRange | null {
+    return isRangeType(attribute.fieldType) &&
+      hasRange(attribute.numericIndexingSpec)
+      ? attribute.numericIndexingSpec
+      : null;
+  }
+
+  protected rangeBoundText(value: number | null): string {
+    return value === null ? RANGE_NO_LIMIT_TEXT : rangeNumberText(value);
   }
 
   protected keydown(event: KeyboardEvent): void {

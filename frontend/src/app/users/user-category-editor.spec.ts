@@ -111,6 +111,76 @@ const threeFieldCategory: UserAttributeCategory = {
   ],
 };
 
+/** The two number attributes of states 13 and 14. */
+const rangeCategory: UserAttributeCategory = {
+  ...category,
+  fields: [
+    category.fields[0],
+    {
+      fieldId: 'Student.GraduationYear',
+      fieldName: 'GraduationYear',
+      displayName: 'Graduation year',
+      fieldType: 'INT64',
+      multiValued: false,
+      indexed: true,
+      readAccessType: 'ADMINS_AND_SELF',
+      numericIndexingSpec: null,
+      holders: 3,
+    },
+  ],
+};
+
+/** A category whose Grade level already holds the range 0 to 12. */
+const rangedCategory: UserAttributeCategory = {
+  ...category,
+  fields: [
+    {
+      ...category.fields[0],
+      numericIndexingSpec: { minValue: 0, maxValue: 12 },
+    },
+    category.fields[1],
+  ],
+};
+
+/** A category whose Grade level holds only the minimum of 0. */
+const oneBoundCategory: UserAttributeCategory = {
+  ...category,
+  fields: [
+    {
+      ...category.fields[0],
+      numericIndexingSpec: { minValue: 0, maxValue: null },
+    },
+    category.fields[1],
+  ],
+};
+
+/** A category with a Decimal number attribute and no range. */
+const decimalCategory: UserAttributeCategory = {
+  ...category,
+  fields: [
+    {
+      ...category.fields[0],
+      fieldId: 'Student.AttendanceRate',
+      fieldName: 'AttendanceRate',
+      displayName: 'Attendance rate',
+      fieldType: 'DOUBLE',
+    },
+    category.fields[1],
+  ],
+};
+
+/** A Decimal number attribute whose saved range holds only the maximum of 2.5. */
+const decimalOneBoundCategory: UserAttributeCategory = {
+  ...decimalCategory,
+  fields: [
+    {
+      ...decimalCategory.fields[0],
+      numericIndexingSpec: { minValue: null, maxValue: 2.5 },
+    },
+    decimalCategory.fields[1],
+  ],
+};
+
 const plan = {
   planId: '11111111-1111-4111-8111-111111111111',
   kind: 'edit-category' as const,
@@ -142,6 +212,24 @@ const plan = {
   preparedAt: '2026-11-16T12:00:00.000Z',
   expiresAt: '2026-11-16T12:10:00.000Z',
   digest: 'a'.repeat(64),
+};
+
+/** A plan that changes only the number range of Grade level (K19, state 15). */
+const rangePlan = {
+  ...plan,
+  planId: '77777777-7777-4777-8777-777777777777',
+  changes: [
+    {
+      change: 'changed' as const,
+      fieldId: 'Student.GradeLevel',
+      fieldName: 'GradeLevel',
+      displayName: 'Grade level',
+      properties: ['numericIndexingSpec'],
+      holders: null,
+    },
+  ],
+  phrase: null,
+  digest: 'f'.repeat(64),
 };
 
 /** A plan that removes two attributes, in the order of the cached category. */
@@ -1012,5 +1100,264 @@ describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
     ].map((item) => item.textContent?.trim());
     expect(struck).toEqual(['Homeroom', 'Text', 'Admins and the user']);
     expect(text(fixture)).toContain('Removes values from 4 users');
+  });
+
+  it('draws the range line under a number row and sends two bounds (states 13 and 15)', async () => {
+    const flow = setup();
+    flow.prepare.mockResolvedValue({ ok: true, plan: rangePlan });
+    const fixture = render('edit', { category });
+    expect(field(fixture, 'Grade level minimum')).not.toBeNull();
+    expect(field(fixture, 'Grade level maximum')).not.toBeNull();
+    // A Text row carries no range line (composition choice 1).
+    expect(field(fixture, 'Homeroom minimum')).toBeNull();
+    type(fixture, mustField(fixture, 'Grade level minimum'), '0');
+    type(fixture, mustField(fixture, 'Grade level maximum'), '12');
+    // Both changed bounds take the pending surface of state 12.
+    expect(element(fixture).querySelectorAll('.is-changed')).toHaveLength(2);
+
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('1 change to Student information'),
+    );
+    fixture.detectChanges();
+    const request = flow.prepare.mock.calls[0][0] as {
+      draft: {
+        fields: {
+          fieldId: string | null;
+          numericIndexingSpec: unknown;
+        }[];
+      };
+    };
+    const grade = request.draft.fields.find(
+      (item) => item.fieldId === 'Student.GradeLevel',
+    );
+    expect(grade?.numericIndexingSpec).toEqual({
+      minValue: 0,
+      maxValue: 12,
+    });
+    // State 15: the Set range row, its phrase, and the effect.
+    expect(text(fixture)).toContain('Set range');
+    expect(text(fixture)).toContain('Grade level 0 to 12');
+    expect(text(fixture)).toContain('No user values change');
+    // Composition choice 9: a range change has no typed phrase gate.
+    expect(
+      element(fixture).querySelectorAll('input.removal-phrase'),
+    ).toHaveLength(0);
+    expect(button(fixture, 'Save 1 change')?.disabled).toBe(false);
+  });
+
+  it('marks both range errors and counts the fields (state 14)', () => {
+    const flow = setup();
+    const fixture = render('edit', { category: rangeCategory });
+    type(fixture, mustField(fixture, 'Grade level minimum'), '12');
+    type(fixture, mustField(fixture, 'Grade level maximum'), '0');
+    type(fixture, mustField(fixture, 'Graduation year minimum'), '2026.5');
+    button(fixture, 'Review changes')?.click();
+    fixture.detectChanges();
+    expect(text(fixture)).toContain('Enter 12 or more.');
+    expect(text(fixture)).toContain('Enter a whole number.');
+    expect(text(fixture)).toContain('2 fields have errors');
+    expect(
+      mustField(fixture, 'Grade level maximum').getAttribute('aria-invalid'),
+    ).toBe('true');
+    expect(
+      mustField(fixture, 'Grade level minimum').getAttribute('aria-invalid'),
+    ).not.toBe('true');
+    expect(
+      mustField(fixture, 'Graduation year minimum').getAttribute(
+        'aria-invalid',
+      ),
+    ).toBe('true');
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    expect(flow.prepare).not.toHaveBeenCalled();
+  });
+
+  /**
+   * R1: one invalid bound with no other edit still reaches its diagnostic. The
+   * invalid draft enables Review, the attempt shows the field error, and the plan
+   * route stays untouched.
+   */
+  function expectBoundError(
+    categoryFixture: UserAttributeCategory,
+    label: string,
+    raw: string,
+    message: string,
+  ) {
+    const flow = setup();
+    const fixture = render('edit', { category: categoryFixture });
+    type(fixture, mustField(fixture, label), raw);
+    expect(button(fixture, 'Review changes')?.disabled).toBe(false);
+    button(fixture, 'Review changes')?.click();
+    fixture.detectChanges();
+    expect(text(fixture)).toContain(message);
+    const input = mustField(fixture, label);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).not.toBeNull();
+    expect(text(fixture)).toContain('1 field has errors');
+    expect(element(fixture).querySelectorAll('.field-error')).toHaveLength(1);
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    expect(flow.prepare).not.toHaveBeenCalled();
+  }
+
+  it('reaches the minimum error from an invalid whole number alone (R1)', () => {
+    expectBoundError(
+      category,
+      'Grade level minimum',
+      '2026.5',
+      'Enter a whole number.',
+    );
+  });
+
+  it('reaches the maximum error from an invalid whole number alone (R1)', () => {
+    expectBoundError(
+      category,
+      'Grade level maximum',
+      'one',
+      'Enter a whole number.',
+    );
+  });
+
+  it('reaches the maximum error on the empty side of a saved one-bound range (R1)', () => {
+    expectBoundError(
+      oneBoundCategory,
+      'Grade level maximum',
+      'half',
+      'Enter a whole number.',
+    );
+  });
+
+  it('reaches the minimum error from an invalid decimal alone (R1)', () => {
+    expectBoundError(
+      decimalCategory,
+      'Attendance rate minimum',
+      '1,5',
+      'Enter a number.',
+    );
+  });
+
+  it('reaches the maximum error from an invalid decimal alone (R1)', () => {
+    expectBoundError(
+      decimalCategory,
+      'Attendance rate maximum',
+      '1e999',
+      'Enter a number.',
+    );
+  });
+
+  it('reaches the minimum error on the empty side of a decimal one-bound range (R1)', () => {
+    expectBoundError(
+      decimalOneBoundCategory,
+      'Attendance rate minimum',
+      'half',
+      'Enter a number.',
+    );
+  });
+
+  it('clears an invalid bound on correction and keeps an empty range unchanged (R1)', async () => {
+    const flow = setup();
+    const fixture = render('edit', { category });
+    // An untouched empty range stays unchanged.
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    type(fixture, mustField(fixture, 'Grade level minimum'), '2026.5');
+    button(fixture, 'Review changes')?.click();
+    fixture.detectChanges();
+    expect(text(fixture)).toContain('Enter a whole number.');
+    const min = mustField(fixture, 'Grade level minimum');
+    // Clearing the invalid text returns to the unchanged empty range.
+    type(fixture, min, '');
+    expect(text(fixture)).not.toContain('Enter a whole number.');
+    expect(button(fixture, 'Review changes')?.disabled).toBe(true);
+    // A valid correction clears the error and reviews the one bound.
+    type(fixture, min, '12');
+    expect(text(fixture)).not.toContain('Enter a whole number.');
+    expect(button(fixture, 'Review changes')?.disabled).toBe(false);
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() => expect(flow.prepare).toHaveBeenCalledTimes(1));
+    const request = flow.prepare.mock.calls[0][0] as {
+      draft: {
+        fields: { fieldId: string | null; numericIndexingSpec: unknown }[];
+      };
+    };
+    expect(
+      request.draft.fields.find((item) => item.fieldId === 'Student.GradeLevel')
+        ?.numericIndexingSpec,
+    ).toEqual({ minValue: 12, maxValue: null });
+  });
+
+  it('sends one bound and reviews it (R2)', async () => {
+    const flow = setup();
+    flow.prepare.mockResolvedValue({ ok: true, plan: rangePlan });
+    const fixture = render('edit', { category });
+    type(fixture, mustField(fixture, 'Grade level minimum'), '12');
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('1 change to Student information'),
+    );
+    fixture.detectChanges();
+    const request = flow.prepare.mock.calls[0][0] as {
+      draft: {
+        fields: {
+          fieldId: string | null;
+          numericIndexingSpec: unknown;
+        }[];
+      };
+    };
+    expect(
+      request.draft.fields.find((item) => item.fieldId === 'Student.GradeLevel')
+        ?.numericIndexingSpec,
+    ).toEqual({ minValue: 12, maxValue: null });
+    expect(text(fixture)).toContain('Grade level 12 or more');
+  });
+
+  it('clears a saved range and reviews no bound (C3)', async () => {
+    const flow = setup();
+    flow.prepare.mockResolvedValue({ ok: true, plan: rangePlan });
+    const fixture = render('edit', { category: rangedCategory });
+    // A range stays editable after the first save (composition choice 2).
+    const min = mustField(fixture, 'Grade level minimum');
+    expect(min.tagName).toBe('INPUT');
+    expect(min.value).toBe('0');
+    expect(mustField(fixture, 'Grade level maximum').value).toBe('12');
+    type(fixture, min, '');
+    type(fixture, mustField(fixture, 'Grade level maximum'), '');
+
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('1 change to Student information'),
+    );
+    fixture.detectChanges();
+    const request = flow.prepare.mock.calls[0][0] as {
+      draft: {
+        fields: {
+          fieldId: string | null;
+          numericIndexingSpec: unknown;
+        }[];
+      };
+    };
+    // A cleared range sends no bound. The named range replaces the cached one.
+    expect(
+      request.draft.fields.find((item) => item.fieldId === 'Student.GradeLevel')
+        ?.numericIndexingSpec,
+    ).toEqual({ minValue: null, maxValue: null });
+    expect(text(fixture)).toContain('Grade level with no range');
+  });
+
+  it('adds the range line when a new row becomes a number (composition choice 1)', () => {
+    setup();
+    const fixture = render('create');
+    expect(field(fixture, 'Attribute 1 minimum')).toBeNull();
+    const editor = fixture.componentInstance as unknown as {
+      setType(row: unknown, value: string): void;
+      visibleRows(): unknown[];
+    };
+    editor.setType(editor.visibleRows()[0], 'INT64');
+    fixture.detectChanges();
+    expect(field(fixture, 'Attribute 1 minimum')).not.toBeNull();
+    editor.setType(editor.visibleRows()[0], 'DOUBLE');
+    fixture.detectChanges();
+    expect(field(fixture, 'Attribute 1 maximum')).not.toBeNull();
+    editor.setType(editor.visibleRows()[0], 'STRING');
+    fixture.detectChanges();
+    expect(field(fixture, 'Attribute 1 minimum')).toBeNull();
   });
 });

@@ -422,7 +422,97 @@
                     </span>
                   </td>
                 </tr>
-                } }
+                @if (isRangeRow(row)) {
+                <!-- The range line of composition choice 1: Minimum under Attribute name,
+                     Maximum under Info type, and no rule above it. -->
+                <tr class="range-line">
+                  <td></td>
+                  <td>
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="cell-field"
+                      [class.is-changed]="
+                        rangeBoundChanged(row, 'min') && !rangeMinErrorFor(row)
+                      "
+                      [class.field-invalid]="!!rangeMinErrorFor(row)"
+                    >
+                      <mat-label>{{ RANGE_MINIMUM_LABEL }}</mat-label>
+                      <input
+                        matInput
+                        autocomplete="off"
+                        [attr.inputmode]="rangeInputMode(row)"
+                        [value]="row.rangeMin"
+                        [attr.aria-label]="
+                          rangeLabel(row, RANGE_MINIMUM_LABEL)
+                        "
+                        [attr.aria-invalid]="
+                          rangeMinErrorFor(row) ? 'true' : null
+                        "
+                        [attr.aria-describedby]="
+                          rangeMinErrorFor(row)
+                            ? rowId(row, 'range-min-error')
+                            : null
+                        "
+                        (input)="setRangeMin(row, $event)"
+                      />
+                    </mat-form-field>
+                    @if (rangeMinErrorFor(row); as error) {
+                    <p
+                      class="field-error cell-error"
+                      [id]="rowId(row, 'range-min-error')"
+                      role="alert"
+                    >
+                      {{ error }}
+                    </p>
+                    }
+                  </td>
+                  <td>
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="cell-field"
+                      [class.is-changed]="
+                        rangeBoundChanged(row, 'max') && !rangeMaxErrorFor(row)
+                      "
+                      [class.field-invalid]="!!rangeMaxErrorFor(row)"
+                    >
+                      <mat-label>{{ RANGE_MAXIMUM_LABEL }}</mat-label>
+                      <input
+                        matInput
+                        autocomplete="off"
+                        [attr.inputmode]="rangeInputMode(row)"
+                        [value]="row.rangeMax"
+                        [attr.aria-label]="
+                          rangeLabel(row, RANGE_MAXIMUM_LABEL)
+                        "
+                        [attr.aria-invalid]="
+                          rangeMaxErrorFor(row) ? 'true' : null
+                        "
+                        [attr.aria-describedby]="
+                          rangeMaxErrorFor(row)
+                            ? rowId(row, 'range-max-error')
+                            : null
+                        "
+                        (input)="setRangeMax(row, $event)"
+                      />
+                    </mat-form-field>
+                    @if (rangeMaxErrorFor(row); as error) {
+                    <p
+                      class="field-error cell-error"
+                      [id]="rowId(row, 'range-max-error')"
+                      role="alert"
+                    >
+                      {{ error }}
+                    </p>
+                    }
+                  </td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+                } } }
               </tbody>
             </table>
           </div>

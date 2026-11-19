@@ -129,7 +129,33 @@
                 </td>
                 <td class="gutter"></td>
               </tr>
-              }
+              @if (rangeOf(attribute); as range) {
+              <!-- The read-only range line: plain bounds in the cells of composition
+                   choice 1. The line shows when the range sets at least one bound. -->
+              <tr class="range-line">
+                <td></td>
+                <td>
+                  <span class="range-static">
+                    <span class="static-label">{{ RANGE_MINIMUM_LABEL }}</span>
+                    <span class="static-value"
+                      >{{ rangeBoundText(range.minValue) }}</span
+                    >
+                  </span>
+                </td>
+                <td>
+                  <span class="range-static">
+                    <span class="static-label">{{ RANGE_MAXIMUM_LABEL }}</span>
+                    <span class="static-value"
+                      >{{ rangeBoundText(range.maxValue) }}</span
+                    >
+                  </span>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="gutter"></td>
+              </tr>
+              } }
             </tbody>
           </table>
         </div>
