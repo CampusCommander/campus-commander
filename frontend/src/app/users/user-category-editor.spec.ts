@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   UserAttributeCategory,
+  UserAttributeCategoryPlan,
   UserAttributeLimits,
 } from '@campus/application-contracts';
 import { UserCategoryEditor } from './user-category-editor';
@@ -282,6 +283,24 @@ const addedPlan = {
   digest: 'd'.repeat(64),
 };
 
+/** A create plan for two Text attributes, to read the count of 2. */
+const twoChangePlan = {
+  ...addedPlan,
+  planId: '99999999-9999-4999-8999-999999999999',
+  changes: [
+    addedPlan.changes[0],
+    {
+      change: 'added' as const,
+      fieldId: null,
+      fieldName: 'Notes',
+      displayName: 'Notes',
+      properties: [],
+      holders: null,
+    },
+  ],
+  digest: 'e'.repeat(64),
+};
+
 const receipt = {
   jobId: '22222222-2222-4222-8222-222222222222',
   displayId: 'CAT-003',
@@ -308,9 +327,10 @@ function setup(
   jobAnswers: readonly (typeof runningJob | typeof completedJob)[] = [
     completedJob,
   ],
+  preparedPlan: UserAttributeCategoryPlan = plan,
 ) {
   const flow = {
-    prepare: vi.fn().mockResolvedValue({ ok: true, plan }),
+    prepare: vi.fn().mockResolvedValue({ ok: true, plan: preparedPlan }),
     confirm: vi.fn().mockResolvedValue({ ok: true, receipt }),
     readJob: vi.fn(),
   };
@@ -350,6 +370,15 @@ type Fixture = ReturnType<typeof render>;
 const element = (fixture: Fixture) => fixture.nativeElement as HTMLElement;
 const text = (fixture: Fixture) =>
   element(fixture).textContent?.replace(/\s+/g, ' ').trim() ?? '';
+/** Each term of the result counts, as the dialog draws it: the count and its label. */
+const countTerms = (fixture: Fixture) =>
+  [...element(fixture).querySelectorAll('.count-equation .count-term')].map(
+    (term) => {
+      const count = term.querySelector('dd')?.textContent?.trim() ?? '';
+      const label = term.querySelector('dt')?.textContent?.trim() ?? '';
+      return `${count} ${label}`;
+    },
+  );
 const buttons = (fixture: Fixture) =>
   [...element(fixture).querySelectorAll('button')] as HTMLButtonElement[];
 const button = (fixture: Fixture, name: string) =>
@@ -531,6 +560,57 @@ describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
     expect(text(fixture)).toContain('Succeeded');
     expect(text(fixture)).toContain('Finished');
     expect(text(fixture)).toContain('All changes');
+  });
+
+  it('names one change Change in the result counts (CA state 07)', async () => {
+    setup([completedJob], addedPlan);
+    const fixture = render('create');
+    type(fixture, nameField(fixture), 'Transportation');
+    type(
+      fixture,
+      mustField(fixture, 'Display name for attribute 1'),
+      'Counselor',
+    );
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('1 change to Transportation'),
+    );
+    fixture.detectChanges();
+    button(fixture, 'Save 1 change')?.click();
+    await vi.waitFor(() =>
+      expect(countTerms(fixture)).toEqual([
+        '1 Change',
+        '1 Succeeded',
+        '0 Failed',
+      ]),
+    );
+  });
+
+  it('keeps Changes for two changes in the result counts (CA state 07)', async () => {
+    setup([completedJob], twoChangePlan);
+    const fixture = render('create');
+    type(fixture, nameField(fixture), 'Transportation');
+    type(
+      fixture,
+      mustField(fixture, 'Display name for attribute 1'),
+      'Counselor',
+    );
+    button(fixture, 'Add attribute')?.click();
+    fixture.detectChanges();
+    type(fixture, mustField(fixture, 'Display name for attribute 2'), 'Notes');
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('2 changes to Transportation'),
+    );
+    fixture.detectChanges();
+    button(fixture, 'Save 2 changes')?.click();
+    await vi.waitFor(() =>
+      expect(countTerms(fixture)).toEqual([
+        '2 Changes',
+        '2 Succeeded',
+        '0 Failed',
+      ]),
+    );
   });
 
   it('asks the category name before a delete and returns to the editor (CA state 08)', () => {
