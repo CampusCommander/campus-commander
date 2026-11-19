@@ -1,0 +1,859 @@
+<div class="picker-scrim" aria-hidden="true" (click)="dismiss()"></div>
+<div class="picker-wrap">
+  <section
+    class="category-dialog"
+    [class.is-narrow]="!wide()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="category-editor-title"
+    [attr.aria-describedby]="
+      subline() || jobDisplayId() ? 'category-editor-sub' : null
+    "
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown)="keydown($event)"
+  >
+    <header class="dialog-head">
+      <div class="dialog-titles">
+        <h2 id="category-editor-title" tabindex="-1" cdkFocusInitial>
+          {{ title() }}
+        </h2>
+        @if (jobDisplayId(); as displayId) {
+        <p class="dialog-sub" id="category-editor-sub">
+          {{ JOB_LABEL }}
+          <a [routerLink]="['/jobs', displayId]">{{ displayId }}</a> · {{
+          jobSublineTail() }}
+        </p>
+        } @else if (subline(); as sub) {
+        <p class="dialog-sub" id="category-editor-sub">{{ sub }}</p>
+        }
+      </div>
+      <div class="dialog-tools">
+        <button
+          mat-icon-button
+          type="button"
+          [attr.aria-label]="ATTRIBUTE_HELP_LABEL"
+          aria-controls="category-editor-help"
+          [attr.aria-expanded]="helpOpen()"
+          [class.help-on]="helpOpen()"
+          (click)="helpOpen.set(!helpOpen())"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          [attr.aria-label]="CLOSE_LABEL"
+          (click)="dismiss()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
+        </button>
+      </div>
+    </header>
+
+    @if (helpOpen()) {
+    <div class="dialog-help">
+      <app-user-attribute-help id="category-editor-help" />
+    </div>
+    }
+
+    <div class="dialog-body">
+      @switch (step()) { @case ('editor') {
+      <div class="step">
+        <h3 class="visually-hidden" #stepTitle tabindex="-1">{{ title() }}</h3>
+        <div class="cat-fields">
+          <div class="field-cell">
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              [class.field-invalid]="!!categoryDisplayError()"
+            >
+              <mat-label>{{ FIELD_DISPLAY_NAME }}</mat-label>
+              <input
+                matInput
+                [value]="categoryDisplay()"
+                [attr.maxlength]="DISPLAY_NAME_MAX"
+                [attr.aria-invalid]="categoryDisplayError() ? 'true' : null"
+                [attr.aria-describedby]="
+                  categoryDisplayError() ? 'category-display-error' : null
+                "
+                (input)="setCategoryDisplay($event)"
+              />
+            </mat-form-field>
+            @if (categoryDisplayError(); as error) {
+            <p class="field-error" id="category-display-error" role="alert">
+              {{ error }}
+            </p>
+            }
+          </div>
+
+          @if (mode() === 'create') {
+          <div class="field-cell">
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              [class.field-invalid]="!!categoryNameError()"
+            >
+              <mat-label>{{ FIELD_CATEGORY_NAME }}</mat-label>
+              <input
+                matInput
+                class="identifier"
+                [value]="categoryName()"
+                [attr.maxlength]="DISPLAY_NAME_MAX"
+                [attr.aria-invalid]="categoryNameError() ? 'true' : null"
+                [attr.aria-describedby]="
+                  categoryNameError()
+                    ? 'category-name-error'
+                    : 'category-name-hint'
+                "
+                (input)="setCategoryName($event)"
+              />
+              @if (!categoryNameError()) {
+              <mat-hint id="category-name-hint"
+                >{{ CATEGORY_NAME_HINT }}</mat-hint
+              >
+              }
+            </mat-form-field>
+            @if (categoryNameError(); as error) {
+            <p class="field-error" id="category-name-error" role="alert">
+              {{ error }}
+            </p>
+            }
+          </div>
+          } @else {
+          <div class="field-static">
+            <span class="static-label">{{ FIELD_CATEGORY_NAME }}</span>
+            <span class="static-value">
+              <span class="locked">
+                <span class="material-symbols-outlined lock" aria-hidden="true"
+                  >lock</span
+                >
+                <span class="val identifier">{{ categoryName() }}</span>
+                <span class="why">{{ NAME_LOCK_REASON }}</span>
+              </span>
+            </span>
+          </div>
+          }
+        </div>
+
+        <section class="group" aria-labelledby="category-attributes-label">
+          <p class="list-label" id="category-attributes-label">
+            {{ ATTRIBUTES_LABEL }}
+          </p>
+          <div class="attr-panel">
+            <table
+              class="attr-table"
+              aria-labelledby="category-attributes-label"
+            >
+              <colgroup>
+                <col class="a1" />
+                <col class="a2" />
+                <col class="a3" />
+                <col class="a4" />
+                <col class="a5" />
+                <col class="a6" />
+                <col class="a7" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">{{ COLUMN_DISPLAY_NAME }}</th>
+                  <th scope="col">{{ COLUMN_ATTRIBUTE_NAME }}</th>
+                  <th scope="col">{{ COLUMN_INFO_TYPE }}</th>
+                  <th scope="col" class="center">
+                    {{ COLUMN_MULTIPLE_VALUES }}
+                  </th>
+                  <th scope="col">{{ COLUMN_VISIBILITY }}</th>
+                  <th scope="col" class="center">{{ COLUMN_SEARCHABLE }}</th>
+                  <th scope="col">
+                    <span class="visually-hidden">Remove</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of rows(); track row.key) { @if (row.removed) {
+                <tr class="is-removed">
+                  <td>
+                    <div class="rm-cell">
+                      <span class="rm-name">{{ row.displayName }}</span>
+                      <span class="rm-line">{{ removesText(row) }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="cell-text">
+                      <span class="identifier is-struck"
+                        >{{ row.fieldName }}</span
+                      >
+                    </span>
+                  </td>
+                  <td>
+                    <span class="cell-text is-struck"
+                      >{{ typeLabel(row) }}</span
+                    >
+                  </td>
+                  <td class="center">
+                    <span class="cell-box">
+                      <mat-checkbox
+                        [checked]="row.multiValued"
+                        disabled
+                        [aria-label]="'Multiple values for ' + label(row)"
+                      />
+                    </span>
+                  </td>
+                  <td>
+                    <span class="cell-text is-struck"
+                      >{{ visibilityLabel(row) }}</span
+                    >
+                  </td>
+                  <td class="center">
+                    <span class="cell-box">
+                      <mat-checkbox
+                        [checked]="row.indexed"
+                        disabled
+                        [aria-label]="'Searchable ' + label(row)"
+                      />
+                    </span>
+                  </td>
+                  <td class="center">
+                    <span class="cell-action">
+                      <button
+                        mat-icon-button
+                        type="button"
+                        [attr.aria-label]="'Keep attribute ' + label(row)"
+                        (click)="keepAttribute(row)"
+                      >
+                        <span
+                          class="material-symbols-outlined"
+                          aria-hidden="true"
+                          >undo</span
+                        >
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+                } @else {
+                <tr>
+                  <td>
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="cell-field"
+                      [class.field-invalid]="!!displayErrorFor(row)"
+                    >
+                      <input
+                        matInput
+                        [value]="row.displayName"
+                        [attr.maxlength]="DISPLAY_NAME_MAX"
+                        [attr.aria-label]="'Display name for attribute ' + rowNumber(row)"
+                        [attr.aria-invalid]="
+                          displayErrorFor(row) ? 'true' : null
+                        "
+                        [attr.aria-describedby]="
+                          displayErrorFor(row)
+                            ? rowId(row, 'display-error')
+                            : null
+                        "
+                        (input)="setDisplayName(row, $event)"
+                      />
+                    </mat-form-field>
+                    @if (displayErrorFor(row); as error) {
+                    <p
+                      class="field-error cell-error"
+                      [id]="rowId(row, 'display-error')"
+                      role="alert"
+                    >
+                      {{ error }}
+                    </p>
+                    }
+                  </td>
+                  <td>
+                    @if (row.fieldId === null) {
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="cell-field"
+                      [class.field-invalid]="!!nameErrorFor(row)"
+                    >
+                      <input
+                        matInput
+                        class="identifier"
+                        [value]="row.fieldName"
+                        [attr.maxlength]="DISPLAY_NAME_MAX"
+                        [attr.aria-label]="'Attribute name for attribute ' + rowNumber(row)"
+                        [attr.aria-invalid]="nameErrorFor(row) ? 'true' : null"
+                        [attr.aria-describedby]="
+                          nameErrorFor(row) ? rowId(row, 'name-error') : null
+                        "
+                        (input)="setFieldName(row, $event)"
+                      />
+                    </mat-form-field>
+                    @if (nameErrorFor(row); as error) {
+                    <p
+                      class="field-error cell-error"
+                      [id]="rowId(row, 'name-error')"
+                      role="alert"
+                    >
+                      {{ error }}
+                    </p>
+                    } } @else {
+                    <span class="cell-text">
+                      <span class="locked">
+                        <span
+                          class="material-symbols-outlined lock"
+                          aria-hidden="true"
+                          >lock</span
+                        >
+                        <span class="val identifier">{{ row.fieldName }}</span>
+                        <span class="why">{{ NAME_LOCK_REASON }}</span>
+                      </span>
+                    </span>
+                    }
+                  </td>
+                  <td>
+                    @if (row.fieldId === null) {
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="cell-field"
+                    >
+                      <mat-select
+                        [value]="row.fieldType"
+                        [aria-label]="'Info type for attribute ' + rowNumber(row)"
+                        (selectionChange)="setType(row, $event.value)"
+                      >
+                        @for (option of FIELD_TYPE_OPTIONS; track option.value)
+                        {
+                        <mat-option [value]="option.value"
+                          >{{ option.label }}</mat-option
+                        >
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                    } @else {
+                    <span class="cell-text">
+                      <span class="locked">
+                        <span
+                          class="material-symbols-outlined lock"
+                          aria-hidden="true"
+                          >lock</span
+                        >
+                        <span class="val">{{ typeLabel(row) }}</span>
+                        <span class="why">{{ NAME_LOCK_REASON }}</span>
+                      </span>
+                    </span>
+                    }
+                  </td>
+                  <td class="center">
+                    @if (multiLocked(row)) {
+                    <span class="cell-box with-why">
+                      <span class="locked-box">
+                        <span
+                          class="material-symbols-outlined lock"
+                          aria-hidden="true"
+                          >lock</span
+                        >
+                        <mat-checkbox
+                          [checked]="true"
+                          disabled
+                          [aria-label]="'Multiple values for ' + label(row)"
+                        />
+                      </span>
+                      <span class="why">{{ MULTI_LOCK_REASON }}</span>
+                    </span>
+                    } @else {
+                    <span class="cell-box">
+                      <mat-checkbox
+                        [checked]="row.multiValued"
+                        [aria-label]="'Multiple values for ' + label(row)"
+                        (change)="setMulti(row, $event.checked)"
+                      />
+                    </span>
+                    }
+                  </td>
+                  <td>
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="cell-field"
+                      [class.is-changed]="
+                        row.fieldId !== null &&
+                        row.readAccessType !== visibilityOf(row)
+                      "
+                    >
+                      <mat-select
+                        [value]="row.readAccessType"
+                        [aria-label]="'Visibility for attribute ' + rowNumber(row)"
+                        (selectionChange)="setVisibility(row, $event.value)"
+                      >
+                        @for (option of VISIBILITY_OPTIONS; track option.value)
+                        {
+                        <mat-option [value]="option.value"
+                          >{{ option.label }}</mat-option
+                        >
+                        }
+                      </mat-select>
+                    </mat-form-field>
+                  </td>
+                  <td class="center">
+                    <span class="cell-box">
+                      <mat-checkbox
+                        [checked]="row.indexed"
+                        [aria-label]="'Searchable ' + label(row)"
+                        (change)="setIndexed(row, $event.checked)"
+                      />
+                    </span>
+                  </td>
+                  <td class="center">
+                    <span class="cell-action">
+                      <button
+                        mat-icon-button
+                        type="button"
+                        [attr.aria-label]="'Remove attribute ' + label(row)"
+                        [disabled]="!canRemove()"
+                        (click)="removeAttribute(row)"
+                      >
+                        <span
+                          class="material-symbols-outlined"
+                          aria-hidden="true"
+                          >delete</span
+                        >
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+                } }
+              </tbody>
+            </table>
+          </div>
+
+          <div class="add-row">
+            <button
+              mat-button
+              type="button"
+              [disabled]="addDisabled()"
+              (click)="addAttribute()"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >add</span
+              >
+              {{ ADD_ATTRIBUTE_LABEL }}
+            </button>
+            <span class="limit-line" role="status">{{ limitLine() }}</span>
+          </div>
+
+          @if (lastAttributeNote(); as note) {
+          <p class="state-line" role="status">
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >info</span
+            >
+            <span>{{ note }}</span>
+          </p>
+          } @if (visibilityChanged()) {
+          <p class="state-line">
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >schedule</span
+            >
+            <span>{{ VISIBILITY_DELAY_TEXT }}</span>
+          </p>
+          } @if (formError()) {
+          <p class="form-error" role="alert">{{ formError() }}</p>
+          }
+        </section>
+      </div>
+      } @case ('review') {
+      <div class="step report-step">
+        <h3 class="visually-hidden" #stepTitle tabindex="-1">
+          {{ REVIEW_CHANGES_LABEL }}
+        </h3>
+        <div>
+          <p class="change-line">{{ changesLine() }}</p>
+          <p class="state-line">
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >domain</span
+            >
+            <span>{{ domainText() }}</span>
+          </p>
+        </div>
+
+        <div class="report-panel">
+          <table class="report-table" [attr.aria-label]="CHANGES_TABLE_LABEL">
+            <colgroup>
+              <col class="r1" />
+              <col class="r2" />
+              <col />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">{{ COLUMN_CHANGE }}</th>
+                <th scope="col">{{ COLUMN_ATTRIBUTE }}</th>
+                <th scope="col">{{ COLUMN_EFFECT }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of reviewRows(); track row.key) {
+              <tr>
+                <td>
+                  <span
+                    class="change-chip"
+                    [class.tone-success]="row.tone === 'success'"
+                    [class.tone-error]="row.tone === 'error'"
+                    [class.tone-info]="row.tone === 'info'"
+                  >
+                    <span class="dot" aria-hidden="true"></span>
+                    {{ row.label }}
+                  </span>
+                </td>
+                <td>{{ row.attribute }}</td>
+                <td>{{ row.effect }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (removals().length) {
+        <div class="gate">
+          @for (removal of removals(); track removal.key) {
+          <div class="removal-gate">
+            <section
+              class="one-way"
+              [attr.aria-labelledby]="'one-way-' + removal.key"
+            >
+              <div class="one-way-head" [id]="'one-way-' + removal.key">
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >warning</span
+                >
+                <span>Remove attribute</span>
+                <span class="sep" aria-hidden="true">·</span>
+                <span>{{ removal.displayName }}</span>
+              </div>
+              <p>{{ removal.text }}</p>
+            </section>
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              [class.field-invalid]="!!removalError(removal.key)"
+            >
+              <mat-label>{{ removalLabel(removal) }}</mat-label>
+              <input
+                matInput
+                class="removal-phrase"
+                autocomplete="off"
+                [value]="removalPhrase(removal.key)"
+                [attr.aria-label]="removalLabel(removal)"
+                [attr.aria-invalid]="
+                  removalError(removal.key) ? 'true' : null
+                "
+                [attr.aria-describedby]="
+                  removalError(removal.key)
+                    ? removalErrorId(removal.key)
+                    : null
+                "
+                (input)="setRemovalPhrase(removal.key, $event)"
+              />
+            </mat-form-field>
+            @if (removalError(removal.key); as error) {
+            <p
+              class="field-error"
+              [id]="removalErrorId(removal.key)"
+              role="alert"
+            >
+              {{ error }}
+            </p>
+            }
+          </div>
+          }
+        </div>
+        } @if (formError()) {
+        <p class="form-error" role="alert">{{ formError() }}</p>
+        }
+      </div>
+      } @case ('saving') {
+      <div class="step">
+        <h3 class="visually-hidden" #stepTitle tabindex="-1">
+          {{ PROGRESS_LABEL }}
+        </h3>
+        <ol class="phases" [attr.aria-label]="PROGRESS_LABEL">
+          <li class="phase is-current" aria-current="step">
+            <span class="phase-rule" aria-hidden="true"></span>
+            <span class="phase-dot" aria-hidden="true">1</span>
+            <span class="phase-label">{{ SAVE_IN_GOOGLE_LABEL }}</span>
+            <span class="phase-detail">0 of {{ changeCount() }}</span>
+            <mat-progress-bar
+              mode="determinate"
+              [value]="0"
+              [attr.aria-label]="SAVE_IN_GOOGLE_LABEL + ' progress'"
+            />
+          </li>
+          <li class="phase">
+            <span class="phase-dot" aria-hidden="true">2</span>
+            <span class="phase-label">{{ UPDATE_CACHED_USERS_LABEL }}</span>
+            <span class="phase-detail"></span>
+          </li>
+        </ol>
+        @if (formError()) {
+        <p class="form-error" role="alert">{{ formError() }}</p>
+        }
+      </div>
+      } @case ('result') {
+      <div class="step report-step">
+        <h3 class="visually-hidden" #stepTitle tabindex="-1">
+          {{ RESULT_COUNTS_LABEL }}
+        </h3>
+        <section aria-labelledby="category-counts-label">
+          <h4 id="category-counts-label" class="visually-hidden">
+            {{ RESULT_COUNTS_LABEL }}
+          </h4>
+          <dl class="count-equation" [attr.aria-label]="RESULT_COUNTS_LABEL">
+            <div class="count-term tone-info">
+              <dd>{{ changeCount() }}</dd>
+              <dt>{{ CHANGE_COUNT_LABEL }}</dt>
+            </div>
+            <span class="count-sign" aria-hidden="true">=</span>
+            <div class="count-term tone-success">
+              <dd>{{ succeededCount() }}</dd>
+              <dt>{{ SUCCEEDED_COUNT_LABEL }}</dt>
+            </div>
+            <span class="count-sign" aria-hidden="true">+</span>
+            <div class="count-term">
+              <dd>{{ failedCount() }}</dd>
+              <dt>{{ FAILED_COUNT_LABEL }}</dt>
+            </div>
+            @if (unknownCount()) {
+            <span class="count-sign" aria-hidden="true">+</span>
+            <div class="count-term">
+              <dd>{{ unknownCount() }}</dd>
+              <dt>{{ UNKNOWN_COUNT_LABEL }}</dt>
+            </div>
+            } @if (notRunCount()) {
+            <span class="count-sign" aria-hidden="true">+</span>
+            <div class="count-term">
+              <dd>{{ notRunCount() }}</dd>
+              <dt>{{ NOT_RUN_COUNT_LABEL }}</dt>
+            </div>
+            }
+          </dl>
+          <p class="state-line">
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >domain</span
+            >
+            <span>{{ domainText() }}</span>
+          </p>
+        </section>
+
+        @if (resultFailure()) {
+        <p class="form-error" role="alert">{{ resultFailure() }}</p>
+        }
+
+        <div class="report-panel">
+          <div class="report-views">
+            <nav
+              mat-tab-nav-bar
+              class="report-tabs"
+              [tabPanel]="resultPanel"
+              [attr.aria-label]="RESULTS_VIEW_LABEL"
+            >
+              <button
+                mat-tab-link
+                type="button"
+                [active]="resultTab() === 'all'"
+                (click)="setResultTab('all')"
+              >
+                {{ ALL_CHANGES_LABEL }}
+                <span class="tab-count">{{ changeCount() }}</span>
+              </button>
+              <button
+                mat-tab-link
+                type="button"
+                [active]="resultTab() === 'failed'"
+                (click)="setResultTab('failed')"
+              >
+                {{ FAILED_LABEL }}
+                <span class="tab-count" [class.tone-error]="failedCount() > 0"
+                  >{{ failedCount() }}</span
+                >
+              </button>
+            </nav>
+          </div>
+          <mat-tab-nav-panel #resultPanel>
+            @if (!shownRows().length) {
+            <p class="empty-report">{{ NO_FAILED_CHANGES }}</p>
+            } @else {
+            <table class="report-table" [attr.aria-label]="CHANGES_TABLE_LABEL">
+              <colgroup>
+                <col class="r1" />
+                <col class="r2" />
+                <col />
+                <col class="r4" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">{{ COLUMN_CHANGE }}</th>
+                  <th scope="col">{{ COLUMN_ATTRIBUTE }}</th>
+                  <th scope="col">{{ COLUMN_EFFECT }}</th>
+                  <th scope="col">{{ COLUMN_OUTCOME }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of shownRows(); track row.key) {
+                <tr>
+                  <td>
+                    <span
+                      class="change-chip"
+                      [class.tone-success]="row.tone === 'success'"
+                      [class.tone-error]="row.tone === 'error'"
+                      [class.tone-info]="row.tone === 'info'"
+                    >
+                      <span class="dot" aria-hidden="true"></span>
+                      {{ row.label }}
+                    </span>
+                  </td>
+                  <td>{{ row.attribute }}</td>
+                  <td>{{ row.effect }}</td>
+                  <td>
+                    <span
+                      class="status-chip"
+                      [class.tone-success]="outcome() === 'succeeded'"
+                      [class.tone-error]="outcome() === 'failed'"
+                    >
+                      <span class="dot" aria-hidden="true"></span>
+                      {{ outcomeText() }}
+                    </span>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+            }
+          </mat-tab-nav-panel>
+        </div>
+      </div>
+      } @case ('delete') {
+      <div class="step">
+        <h3 class="visually-hidden" #stepTitle tabindex="-1">
+          {{ DELETE_CATEGORY_TITLE }}
+        </h3>
+        <div class="gate">
+          <section class="one-way" aria-labelledby="category-delete-title">
+            <div class="one-way-head" id="category-delete-title">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >warning</span
+              >
+              <span>{{ DELETE_CATEGORY_TITLE }}</span>
+              <span class="sep" aria-hidden="true">·</span>
+              <span>{{ deleteIdentity() }}</span>
+            </div>
+            @for (notice of deleteNotices(); track notice.key) {
+            <p>{{ notice.text }}</p>
+            }
+            <p>{{ DOMAIN_CHANGE_TEXT }}</p>
+          </section>
+          <mat-form-field
+            appearance="outline"
+            subscriptSizing="dynamic"
+            [class.field-invalid]="!!deletePhraseErrorText()"
+          >
+            <mat-label>Type {{ deleteIdentity() }} to confirm</mat-label>
+            <input
+              matInput
+              id="category-delete-phrase"
+              #deletePhrase
+              autocomplete="off"
+              [value]="phrase()"
+              [attr.aria-invalid]="deletePhraseErrorText() ? 'true' : null"
+              [attr.aria-describedby]="
+                deletePhraseErrorText() ? 'category-delete-phrase-error' : null
+              "
+              (input)="setPhrase($event)"
+            />
+          </mat-form-field>
+          @if (deletePhraseErrorText(); as error) {
+          <p class="field-error" id="category-delete-phrase-error" role="alert">
+            {{ error }}
+          </p>
+          }
+        </div>
+        @if (formError()) {
+        <p class="form-error" role="alert">{{ formError() }}</p>
+        }
+      </div>
+      } }
+    </div>
+
+    <div class="dialog-actions">
+      @switch (step()) { @case ('editor') { @if (mode() === 'edit') {
+      <button
+        mat-stroked-button
+        type="button"
+        class="destructive"
+        (click)="askDelete()"
+      >
+        {{ DELETE_CATEGORY_LABEL }}
+      </button>
+      }
+      <span class="dialog-state" [class.error]="errorCount() > 0" role="status"
+        >{{ errorCountText() }}</span
+      >
+      <button mat-button type="button" (click)="dismiss()">
+        {{ CANCEL_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="reviewDisabled()"
+        (click)="review()"
+      >
+        {{ REVIEW_CHANGES_LABEL }}
+      </button>
+      } @case ('review') {
+      <span class="dialog-state" role="status"></span>
+      <button mat-button type="button" (click)="backToEditing()">
+        {{ BACK_TO_EDITING_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="busy() || planDead() || !phraseMatches()"
+        (click)="save()"
+      >
+        {{ saving() ? SAVING_LABEL : saveLabel() }}
+      </button>
+      } @case ('saving') {
+      <span class="dialog-state" role="status">
+        <span class="quiet">
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span>{{ savingState() }}</span>
+        </span>
+      </span>
+      <button mat-flat-button type="button" (click)="close()">
+        {{ CLOSE_LABEL }}
+      </button>
+      } @case ('result') {
+      <span class="dialog-state" role="status">{{ finishedLine() }}</span>
+      @if (canEditAgain()) {
+      <button mat-button type="button" (click)="editAgain()">
+        {{ EDIT_AGAIN_LABEL }}
+      </button>
+      }
+      <button mat-flat-button type="button" (click)="close()">
+        {{ CLOSE_LABEL }}
+      </button>
+      } @case ('delete') {
+      <span class="dialog-state" role="status"></span>
+      <button mat-button type="button" (click)="cancelDelete()">
+        {{ CANCEL_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        class="destructive"
+        [disabled]="busy() || !deletePhraseMatches()"
+        (click)="deleteCategory()"
+      >
+        {{ deleting() ? DELETING_LABEL : DELETE_CATEGORY_LABEL }}
+      </button>
+      } }
+    </div>
+  </section>
+</div>

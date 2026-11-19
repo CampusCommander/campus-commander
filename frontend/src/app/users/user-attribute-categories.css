@@ -75,6 +75,18 @@
   margin-block-start: var(--cc-space-lg);
 }
 
+/* The Create category control carries the add glyph of the approved frame. */
+.toolbar-start .material-symbols-outlined,
+.empty-card .material-symbols-outlined {
+  margin-inline-end: var(--cc-space-xs);
+  font-size: 18px;
+}
+
+.empty-card .mat-mdc-button-base {
+  align-self: flex-start;
+  margin-block-start: var(--cc-space-lg);
+}
+
 /* The table sits in the grid look of the built client: one bordered surface. */
 .grid-region {
   min-width: 0;

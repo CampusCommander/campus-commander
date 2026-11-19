@@ -14,7 +14,7 @@ import { AuthStore } from '../auth.store';
 import { CustomerStore } from '../customer-settings/customer.store';
 import { ConnectionStore } from '../google-connection/connection.store';
 import { LiveFeeds } from '../jobs/live-feeds';
-import { UsersStore } from './users.store';
+import { UsersStore, usersSchemaManageable } from './users.store';
 import type { UserEventSource } from './users.store';
 import type { UserView } from './user-datasource';
 import { userSelectionTab } from './user-selection';
@@ -373,9 +373,29 @@ describe('the users store', () => {
     store.leave();
   });
 
-  it('reloads the held rows when a category job publishes a schema change (R6)', async () => {
-    answers['/api/users/query'] = { page: page() };
-    const store = setup(answer());
+  it('reads the categories again when a category job publishes a schema change (R6)', async () => {
+    const updated: UserAttributeCategories = {
+      ...categories,
+      categories: [
+        ...categories.categories,
+        {
+          ...categories.categories[0],
+          schemaId: 'cat-second',
+          displayName: 'Counselor notes',
+        },
+      ],
+    };
+    let reads = 0;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-categories') {
+        reads++;
+        return Promise.resolve(
+          Response.json(reads === 1 ? categories : updated),
+        );
+      }
+      return Promise.resolve(Response.json(answers[path] ?? {}));
+    });
+    const store = setup(request);
     const opened = streams(store);
     await store.init();
     const revision = store.revision();
@@ -385,8 +405,49 @@ describe('the users store', () => {
       type: 'schema-change',
       entityType: 'user',
     });
+    await vi.waitFor(() =>
+      expect(store.categories()?.categories).toHaveLength(2),
+    );
+    expect(reads).toBe(2);
     expect(store.revision()).toBeGreaterThan(revision);
     store.leave();
+  });
+
+  it('reads the categories again when the feed reopens after a gap (K16)', async () => {
+    let reads = 0;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-categories') reads++;
+      return Promise.resolve(Response.json(answers[path] ?? {}));
+    });
+    const store = setup(request);
+    const opened = streams(store);
+    await store.init();
+    expect(reads).toBe(1);
+    const stream = opened[0];
+    stream.open();
+    // A lost connection closes the stream. The feed opens a new one after the delay.
+    stream.readyState = 2;
+    stream.send('error', {});
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+    opened[1].open();
+    await vi.waitFor(() => expect(reads).toBe(2));
+    store.leave();
+  });
+
+  it('grants the schema manage control to the users:schema-manage permission (U4)', () => {
+    expect(
+      usersSchemaManageable({
+        metadata: () => ({ phase: 3 }),
+        session: () =>
+          sessionFor('actor', ['users:read', 'users:schema-manage']),
+      } as unknown as InstanceType<typeof AuthStore>),
+    ).toBe(true);
+    expect(
+      usersSchemaManageable({
+        metadata: () => ({ phase: 3 }),
+        session: () => sessionFor('actor', ['users:read']),
+      } as unknown as InstanceType<typeof AuthStore>),
+    ).toBe(false);
   });
 
   it('keeps a selection tab per browser tab', () => {
