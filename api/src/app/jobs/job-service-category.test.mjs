@@ -136,7 +136,7 @@ test('an admitted category job starts user_schema_change and records its executi
   ]);
 });
 
-test('an admitted category job header publishes once at once', async () => {
+test('an admitted category job header publishes one row at once', async () => {
   const rows = [
     {
       publication_id: '7',
