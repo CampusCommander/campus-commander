@@ -30,7 +30,9 @@ For a prebuilt review candidate, follow [the fresh installation guide](docs/test
 
 ## Published installer reference
 
-Earlier signed candidates remain available for reference. Use the review command above to run current source changes.
+The installer installs the newest signed review build.
+Each review build is published from `main` on request.
+Use the review command above to run current source changes.
 
 Start in a Linux amd64 shell with internet access and root or sudo access.
 Run the installer first:

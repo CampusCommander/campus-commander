@@ -182,16 +182,20 @@ test('Phase 3 dispatch rejects full mode and gates publication on extracted qual
   execFileSync('bash', ['-e', '-c', branchGuard.run], {
     env: {
       ...process.env,
-      GITHUB_REF: 'refs/heads/codex/cc-60-review-delivery',
+      GITHUB_REF: 'refs/heads/main',
     },
     stdio: 'pipe',
   });
-  assert.throws(() =>
-    execFileSync('bash', ['-e', '-c', branchGuard.run], {
-      env: { ...process.env, GITHUB_REF: 'refs/heads/untrusted-build' },
-      stdio: 'pipe',
-    }),
-  );
+  for (const ref of [
+    ['refs/heads/codex', 'cc-60-review-delivery'].join('/'),
+    'refs/heads/untrusted-build',
+  ])
+    assert.throws(() =>
+      execFileSync('bash', ['-e', '-c', branchGuard.run], {
+        env: { ...process.env, GITHUB_REF: ref },
+        stdio: 'pipe',
+      }),
+    );
   assert.equal(release.jobs.publish.needs, 'validate');
   assert.equal(release.jobs.application.needs, 'publish');
   assert.deepEqual(release.jobs.bundle.needs, ['publish', 'application']);
