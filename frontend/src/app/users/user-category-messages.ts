@@ -119,11 +119,15 @@ export const FAILED_LABEL = 'Failed';
 export const NO_FAILED_CHANGES = 'No failed changes.';
 export const NO_USER_VALUES_CHANGE = 'No user values change';
 export const RESULT_COUNTS_LABEL = 'Result counts';
-export const CHANGE_COUNT_LABEL = 'Changes';
 export const SUCCEEDED_COUNT_LABEL = 'Succeeded';
 export const FAILED_COUNT_LABEL = 'Failed';
 export const UNKNOWN_COUNT_LABEL = 'Unknown';
 export const NOT_RUN_COUNT_LABEL = 'Not run';
+
+/** The noun under the change count of CA state 07: one change is a Change. */
+export function changeCountLabel(count: number): string {
+  return count === 1 ? 'Change' : 'Changes';
+}
 
 /** The change chips of the review table and the result table. */
 export const CHANGE_ADD_LABEL = 'Add attribute';

@@ -63,7 +63,6 @@ import {
   CATEGORY_NAME_IN_USE,
   CHANGE_ADD_LABEL,
   CHANGE_CHANGE_LABEL,
-  CHANGE_COUNT_LABEL,
   CHANGE_REMOVE_LABEL,
   CHANGE_RENAME_LABEL,
   CHANGE_SET_RANGE_LABEL,
@@ -116,6 +115,7 @@ import {
   VISIBILITY_DELAY_TEXT,
   typeLabel,
   categoryFailureText,
+  changeCountLabel,
   changesToText,
   confirmPhraseLabel,
   deletesAttributeValuesText,
@@ -340,7 +340,6 @@ export class UserCategoryEditor implements OnInit {
   protected readonly ALL_CHANGES_LABEL = ALL_CHANGES_LABEL;
   protected readonly FAILED_LABEL = FAILED_LABEL;
   protected readonly NO_FAILED_CHANGES = NO_FAILED_CHANGES;
-  protected readonly CHANGE_COUNT_LABEL = CHANGE_COUNT_LABEL;
   protected readonly SUCCEEDED_COUNT_LABEL = SUCCEEDED_COUNT_LABEL;
   protected readonly FAILED_COUNT_LABEL = FAILED_COUNT_LABEL;
   protected readonly UNKNOWN_COUNT_LABEL = UNKNOWN_COUNT_LABEL;
@@ -666,6 +665,11 @@ export class UserCategoryEditor implements OnInit {
 
   protected readonly saveLabel = computed(() =>
     saveChangesLabel(this.changeCount()),
+  );
+
+  /** The noun of the change count: one change is a Change (CA state 07). */
+  protected readonly changeCountText = computed(() =>
+    changeCountLabel(this.changeCount()),
   );
 
   protected readonly changeCount = computed(() => {
