@@ -219,7 +219,7 @@ test('successful capability checks produce one consistent customer observation w
   assert.equal(JSON.stringify(result).includes('synthetic-private-key'), false);
 });
 
-test('all ten capabilities request one exact scope each and read the smallest page', async (t) => {
+test('all eleven capabilities request one exact scope each and read the smallest page', async (t) => {
   const calls = stub(t);
   const result = await check(capabilities);
   assert.deepEqual(
@@ -230,7 +230,7 @@ test('all ten capabilities request one exact scope each and read the smallest pa
       failure: null,
     })),
   );
-  assert.equal(capabilities.length, 10);
+  assert.equal(capabilities.length, 11);
   assert.equal(result.observation?.customerId, customer.id);
   const tokens = calls.filter((call) => call.operation === 'token');
   assert.equal(tokens.length, capabilities.length);
@@ -243,7 +243,7 @@ test('all ten capabilities request one exact scope each and read the smallest pa
   assert.equal(
     read.length,
     8,
-    'the device write and category write capabilities read nothing',
+    'the device write, category write, and user write capabilities read nothing',
   );
   assert.ok(read.every((call) => call.method === 'GET'));
   const orgUnitsRead = read.find((call) => call.url.endsWith('/orgunits'));
@@ -567,6 +567,11 @@ test('an inconsistent customer/domain observation keeps every other capability r
     },
     {
       capability: 'user-schema-changes',
+      scopeVerified: true,
+      failure: null,
+    },
+    {
+      capability: 'user-changes',
       scopeVerified: true,
       failure: null,
     },

@@ -22,6 +22,8 @@ let quotaCalls = 0;
 const driveToken = 'synthetic-drive-token';
 /** The synthetic token name for the read-only user scope. */
 const userToken = 'synthetic-user-token';
+/** The synthetic token name for the user write scope. */
+const userWriteToken = 'synthetic-user-write-token';
 /** The synthetic token name for the read-only user schema scope. */
 const schemaToken = 'synthetic-user-schema-token';
 /** The synthetic token name for the user schema write scope. */
@@ -193,7 +195,10 @@ prototype.request = async function (options) {
                         ? schemaWriteToken
                         : scope.endsWith('user.readonly')
                           ? userToken
-                          : 'synthetic-domain-token',
+                          : scope ===
+                              'https://www.googleapis.com/auth/admin.directory.user'
+                            ? userWriteToken
+                            : 'synthetic-domain-token',
       expires_in: 3600,
       token_type: 'Bearer',
     };
@@ -222,7 +227,9 @@ prototype.request = async function (options) {
                           ? 'https://www.googleapis.com/auth/admin.directory.userschema.readonly'
                           : authorization === `Bearer ${schemaWriteToken}`
                             ? 'https://www.googleapis.com/auth/admin.directory.userschema'
-                            : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
+                            : authorization === `Bearer ${userWriteToken}`
+                              ? 'https://www.googleapis.com/auth/admin.directory.user'
+                              : 'https://www.googleapis.com/auth/admin.directory.customer.readonly https://www.googleapis.com/auth/admin.directory.domain.readonly',
       expires_in: 3500,
     };
   } else if (url.pathname.endsWith('/my_customer'))

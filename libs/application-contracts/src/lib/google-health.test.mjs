@@ -81,7 +81,7 @@ test('Phase 3 scope instructions exclude optional OUs and every inventory or mut
 });
 
 test('the health state reports every capability once, with no missing result', () => {
-  assert.equal(GOOGLE_HEALTH_CAPABILITY_IDS.length, 10);
+  assert.equal(GOOGLE_HEALTH_CAPABILITY_IDS.length, 11);
   assert.deepEqual(GOOGLE_HEALTH_CAPABILITY_IDS, [
     'customer-identity',
     'domain-observations',
@@ -93,6 +93,7 @@ test('the health state reports every capability once, with no missing result', (
     'user-inventory',
     'user-schemas',
     'user-schema-changes',
+    'user-changes',
   ]);
   const observedAt = new Date().toISOString();
   const capabilities = GOOGLE_HEALTH_CAPABILITY_IDS.map((capability) => ({
