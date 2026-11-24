@@ -81,6 +81,10 @@ const allowedParts = [
   ],
   ['GET', '/admin/directory/v1/users/u1'],
   ['GET', '/admin/directory/v1/users/u%2F1'],
+  ['PATCH', '/admin/directory/v1/users/u1'],
+  ['PATCH', '/admin/directory/v1/users/u%2F1'],
+  ['PUT', '/admin/directory/v1/users/u1'],
+  ['PUT', '/admin/directory/v1/users/u%2F1'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/ab%2Fc%2Bd%3D%3D'],
   ['POST', '/admin/directory/v1/customer/C0123456/schemas'],
@@ -113,8 +117,12 @@ const rejectedParts = [
   ],
   ['GET', '/admin/directory/v1/users'],
   ['GET', '/admin/directory/v1/users/u1/aliases'],
-  ['PATCH', '/admin/directory/v1/users/u1'],
-  ['PUT', '/admin/directory/v1/users/u1'],
+  ['PATCH', '/admin/directory/v1/users'],
+  ['PATCH', '/admin/directory/v1/users/u1/aliases'],
+  ['PATCH', '/admin/directory/v1/users/u1:signOut'],
+  ['PUT', '/admin/directory/v1/users'],
+  ['PUT', '/admin/directory/v1/users/u1/aliases'],
+  ['PUT', '/admin/directory/v1/users/u1:signOut'],
   ['DELETE', '/admin/directory/v1/users/u1'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas'],
   ['GET', '/admin/directory/v1/customer/C0123456/schemas/'],
@@ -186,6 +194,10 @@ const refusedMethods = [
   ['https://admin.googleapis.com/admin/directory/v1/users', 'PUT'],
   ['https://admin.googleapis.com/admin/directory/v1/users', 'PATCH'],
   ['https://admin.googleapis.com/admin/directory/v1/users', 'DELETE'],
+  // A user item is a batch part only, so no direct method reaches it.
+  ['https://admin.googleapis.com/admin/directory/v1/users/u1', 'GET'],
+  ['https://admin.googleapis.com/admin/directory/v1/users/u1', 'PATCH'],
+  ['https://admin.googleapis.com/admin/directory/v1/users/u1', 'PUT'],
   [
     'https://admin.googleapis.com/admin/directory/v1/customer/C0123456/schemas',
     'POST',
@@ -291,6 +303,24 @@ test('validateRequests refuses a part outside the allowlist', () => {
       ]),
     { name: 'BatchServiceError', code: 'invalid-request' },
   );
+  // A user write is one PATCH or PUT part on the item, and nothing else. A
+  // read of the same item keeps its GET shape (design section 4, C9).
+  for (const method of ['GET', 'PATCH', 'PUT'])
+    validateRequests([
+      { id: 'user', method, path: '/admin/directory/v1/users/u1' },
+    ]);
+  for (const [method, path] of [
+    ['PATCH', '/admin/directory/v1/users'],
+    ['PUT', '/admin/directory/v1/users'],
+    ['PUT', '/admin/directory/v1/users/u1/aliases'],
+    ['PATCH', '/admin/directory/v1/users/u1:signOut'],
+    ['POST', '/admin/directory/v1/users/u1'],
+    ['DELETE', '/admin/directory/v1/users/u1'],
+  ])
+    assert.throws(() => validateRequests([{ id: 'user', method, path }]), {
+      name: 'BatchServiceError',
+      code: 'invalid-request',
+    });
   // A write off the collection or the item path never leaves the process.
   for (const [method, path] of [
     ['POST', '/admin/directory/v1/customer/C0123456/schemas/SchemaName'],
@@ -354,14 +384,17 @@ test('a scoped client reaches the transport for batch and per-device URLs only',
     { code: 'request-failed' },
   );
   assert.equal(urls.length, 2);
-  // A user detail is a batch part only, so a direct read never leaves the process.
-  await assert.rejects(
-    async () =>
-      client.request({
-        url: 'https://admin.googleapis.com/admin/directory/v1/users/u1',
-      }),
-    { code: 'request-failed' },
-  );
+  // A user detail is a batch part only, so a direct read or write never leaves
+  // the process (design section 4, C9).
+  for (const method of ['GET', 'PATCH', 'PUT', 'DELETE'])
+    await assert.rejects(
+      async () =>
+        client.request({
+          url: 'https://admin.googleapis.com/admin/directory/v1/users/u1',
+          method,
+        }),
+      { code: 'request-failed' },
+    );
   assert.equal(urls.length, 2);
   // The two new collection reads reach the transport with GET.
   const collections = [

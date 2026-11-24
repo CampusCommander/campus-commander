@@ -126,6 +126,7 @@ export async function qualifyGoogleHealth({
     'domain-observations',
     'drive-files',
     'school-ou-references',
+    'user-changes',
     'user-inventory',
     'user-schema-changes',
     'user-schemas',
@@ -197,6 +198,7 @@ export async function qualifyGoogleHealth({
     'user-inventory',
     'user-schema-changes',
     'user-schemas',
+    'user-changes',
   ];
   const allLease = await claim(all);
   const allHealth = await finish(
@@ -208,7 +210,7 @@ export async function qualifyGoogleHealth({
     })),
     connection.observation,
   );
-  assert.equal(allHealth.capabilities.length, 10);
+  assert.equal(allHealth.capabilities.length, 11);
   assert.ok(
     allHealth.capabilities.every(
       (item) => item.failure === null && item.scopeVerified,

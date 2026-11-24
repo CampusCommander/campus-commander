@@ -252,8 +252,8 @@ function domainObservation(
  * The only Google URLs the application may call, with the methods each shape admits.
  * Token exchange, customer reads, user and category reads, device reads, the Drive health
  * read, and the Drive and Sheets calls of the Drive slice. The user and category collection
- * shapes admit GET only, so a direct insert never leaves the process.
- * A caller that names no method gets the URL shape check alone.
+ * shapes admit GET only, and a user item is a batch part only, so no write leaves as a
+ * direct request. A caller that names no method gets the URL shape check alone.
  */
 export function googleRequestAllowed(url: URL, method?: string): boolean {
   const verb = method?.toUpperCase();
@@ -311,7 +311,9 @@ const partSchemaCollection = `/admin/directory/v1/customer/${partCustomer}/schem
  * The part shapes a batch may carry. Each shape is one call the repository builds.
  * The batch endpoint admits any part syntax, so this list is the only check on a part.
  * A category write is one part: POST on the collection, PUT or DELETE on the item
- * (design section 4). No PATCH shape exists, because no card calls `schemas.patch` (C4).
+ * (design section 4). A user write is one part: PATCH or PUT on the item (design
+ * section 4, C9). No PATCH shape exists for a category, because no card calls
+ * `schemas.patch` (C4).
  */
 const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
   GET: [
@@ -323,7 +325,7 @@ const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
     new RegExp(`^${partUser}$`),
     new RegExp(`^${partSchema}$`),
   ],
-  PATCH: [new RegExp(`^${partDevice}$`)],
+  PATCH: [new RegExp(`^${partDevice}$`), new RegExp(`^${partUser}$`)],
   POST: [
     new RegExp(`^${partDevice}:issueCommand$`),
     new RegExp(
@@ -331,7 +333,7 @@ const PART_PATHS: Readonly<Record<string, readonly RegExp[]>> = {
     ),
     new RegExp(`^${partSchemaCollection}$`),
   ],
-  PUT: [new RegExp(`^${partSchema}$`)],
+  PUT: [new RegExp(`^${partSchema}$`), new RegExp(`^${partUser}$`)],
   DELETE: [new RegExp(`^${partSchema}$`)],
 };
 
@@ -608,6 +610,10 @@ export class GoogleCustomerVerifier {
             // user-schema-changes checks its delegated token only. A health check
             // never writes a category (design section 4).
             case 'user-schema-changes':
+              break;
+            // user-changes checks its delegated token only. A health check never
+            // writes a user (design section 4).
+            case 'user-changes':
               break;
           }
           return { capability, scopeVerified, failure: null };
