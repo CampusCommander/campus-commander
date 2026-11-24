@@ -1031,6 +1031,14 @@ export const userAttributePreviewSchema = z
       preview.selected ===
       preview.eligible + preview.unchanged + preview.conflicts,
     { message: 'The selected count sums its dispositions.' },
+  )
+  .refine(
+    (preview) =>
+      (preview.source === 'selection') === (preview.changes !== null),
+    {
+      message:
+        'A selection preview carries its changes, and an edit list carries none.',
+    },
   );
 export type UserAttributePreview = z.infer<typeof userAttributePreviewSchema>;
 

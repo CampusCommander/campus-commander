@@ -1592,6 +1592,16 @@ test('a value preview answers its counts, its digest, and its expiry', () => {
     }).success,
     true,
   );
+  // A selection names its changes, and an edit list names none.
+  assert.equal(
+    userAttributePreviewSchema.safeParse({ ...preview, source: 'edit-list' })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewSchema.safeParse({ ...preview, changes: null }).success,
+    false,
+  );
   assert.equal(
     userAttributePreviewSchema.safeParse({ ...preview, source: 'bulk' })
       .success,
