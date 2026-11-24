@@ -30,7 +30,10 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
-import { parseTargetsCursor } from './user-attribute-previews';
+import {
+  parseTargetsCursor,
+  USER_ATTRIBUTE_TARGETS_LIMIT,
+} from './user-attribute-previews';
 import { userSelectionRefreshStatus } from './user-selection-refresh';
 import { UsersService } from './users.service';
 
@@ -41,7 +44,12 @@ const previewIdSchema = z.uuid();
 const previewTargetsQuerySchema = z.strictObject({
   disposition: userAttributeDispositionSchema.optional(),
   cursor: z.string().min(1).max(1024).optional(),
-  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(USER_ATTRIBUTE_TARGETS_LIMIT)
+    .optional(),
 });
 /** One preview request: a selection key with changes, or an edit list. The keys do not overlap. */
 const previewRequestSchema = z.union([
