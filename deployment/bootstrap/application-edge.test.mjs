@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { importUploadLimit, proxyApplication } from './application-edge.mjs';
+import {
+  importUploadLimit,
+  proxyApplication,
+  userPreviewBodyLimit,
+} from './application-edge.mjs';
 
 test('application routes require Phase 3 and exact methods and paths', async () => {
   const listen = (server) =>
@@ -483,6 +487,23 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         ).status,
         status,
         `edit-previews ${size} bytes`,
+      );
+    // The value preview POST accepts the published 2,500-edit shape (about 232 KB) and refuses
+    // one byte above its own bounded cap.
+    for (const [size, status] of [
+      [231961, 200],
+      [userPreviewBodyLimit, 200],
+      [userPreviewBodyLimit + 1, 413],
+    ])
+      assert.equal(
+        (
+          await fetch(`${origin(edge)}/api/users/attribute-previews`, {
+            method: 'POST',
+            body: 'x'.repeat(size),
+          })
+        ).status,
+        status,
+        `attribute-previews ${size} bytes`,
       );
     // The selection preview and its confirm keep the 4,096-byte cap.
     for (const path of [
