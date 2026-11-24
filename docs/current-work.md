@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-11-18.
+Updated: 2026-11-24.
 
 ## Authorized now
 
@@ -70,6 +70,8 @@ On 2026-11-18 the owner signed off slice S1, Browse users. The sign-off package 
 
 On 2026-11-18 the owner chose a signed review release from `main` for a real-domain test of the users pages. Question: "Release from `main`: should I have a card built that publishes a signed release from `main` whenever I start it, and updates `install.sh` to trust it?" Owner, in the main chat: "1 Yes". He chose to test slice S1 first, with a fresh installation for each later slice: "2 a".
 
+On 2026-11-24 the owner signed off slice S2, Custom attributes. The sign-off package README asked: "Reply `sign off` to accept slice S2 as built." Owner, in the main chat: "S2 Sign off". In the same message he started slice S3: "S3 go".
+
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -80,6 +82,49 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Google users slice S2 Custom attributes (signed off 2026-11-24)
+
+The [record](workflows/user-management.md) and its documents A and B define the workflow. The [design addendum](superpowers/specs/2026-11-16-user-management-design.md) holds the card plan.
+The approved [custom attributes mockup](ui/designs/2026-11-16-custom-attributes.html) sets states 01 to 12. The approved [range mockup](ui/designs/2026-11-18-custom-attributes-ranges.html) sets states 13 to 15.
+
+PRs #230, #231, #237 to #240, #244, and #245 hold the slice S2 build.
+PR #246 fixed the result count of one change before the sign-off.
+`main` was `1d24673` at the sign-off.
+
+On 2026-11-24 the owner signed off the build. Owner, in the main chat: "S2 Sign off".
+He named no change. Each finding stays as the package recommended:
+
+- Finding 1: the Jobs list and the job page name a category job as a device job. A fix card follows. The title takes the action of the category dialog: Create category, Edit category, or Delete category. The scope line takes the category display name. The operation table takes the result table of state 07.
+- Finding 2: the editor shows the field errors and the range errors after the first press of Review changes. It stays as built.
+- Finding 3: the saving step shows Accepted before Running. It keeps the true job status. A small fix card stops the step back from Running to Accepted.
+- Finding 4: the editor adds the error "Each attribute needs a unique display name." for two rows with one display name (design change C2). It stays as built.
+- Finding 5: the tab shows a Refresh button beside the info icon. It stays as built.
+- Finding 6: not a defect. The struck text of a removal row measures 6.07:1 in the dark theme. Card `t_b7fb1a19` was withdrawn.
+- Finding 7: Close and Escape both close the editor and discard an edited draft without a question. They stay as built.
+- Finding 8: the activity badge keeps "1 job running" for a moment after the result shows. It stays as built.
+- Finding 9: the saving step and the result of a delete keep the title "Edit category". A fix card shows "Delete category" there.
+- Finding 10: the result counts read "1 Changes" for one change. PR #246 fixed it.
+
+The sign-off accepts the drafted wording in the package's `owner-review-wording.md` as built: 75 strings and 18 defaults.
+Two examples are "Each attribute needs a unique display name." in the editor and "The change could not be prepared. Try again." on review.
+
+Two runs support the sign-off:
+
+- Rehearsal K20 (`t_74e0be2d`) ran completion step 2 at `2e749d9` on admin-sdk-mock 0.4.0. All 14 steps passed.
+- The walkthrough dry run `t_a7f6e22c` passed each step at `2e749d9` after four corrections of the guide.
+
+This is the surface that stays unverified:
+
+- Live Google and its real limits. Card K29 runs the live read-only check after slice S3.
+- The Failed view of state 07, and the Jobs page of a failed or a cancelled category job.
+- Two saves at the same time, the 24-hour expiry of the category cache, and quota faults.
+- Screen reader and keyboard-only use beyond the focus return after Close.
+
+Two follow-ups sit in the `swe` board triage. None blocks slice S2:
+
+- `t_1d07d698`: the interim range defaults of card K19.
+- `t_aa0fa4f5`: a race between the attribute columns and the grid start on the Users grid.
 
 ### Google users slice S1 Browse users (signed off 2026-11-18)
 
