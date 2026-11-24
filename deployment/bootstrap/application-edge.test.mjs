@@ -179,6 +179,11 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', `/api/users/attribute-categories/plans/${id}`, 'api'],
       ['POST', '/api/users/attribute-categories/plans', 'api'],
       ['POST', `/api/users/attribute-categories/plans/${id}/confirm`, 'api'],
+      // Card K23 stores one value preview, reads it, pages its rows, and confirms it.
+      ['POST', '/api/users/attribute-previews', 'api'],
+      ['GET', `/api/users/attribute-previews/${id}`, 'api'],
+      ['GET', `/api/users/attribute-previews/${id}/targets`, 'api'],
+      ['POST', `/api/users/attribute-previews/${id}/confirm`, 'api'],
       // A single device segment still reads as a device route, and only a POST to it streams.
       ['GET', '/api/devices/imports', 'api'],
       ['GET', '/devices', 'frontend'],
@@ -293,6 +298,16 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/users/attribute-categories/plans', 405],
       ['POST', `/api/users/attribute-categories/plans/${id}`, 405],
       ['GET', `/api/users/attribute-categories/plans/${id}/confirm`, 405],
+      // The value preview paths take one UUID preview ID, no extra segment, and one method each.
+      ['GET', '/api/users/attribute-previews', 405],
+      ['GET', `/api/users/attribute-previews/${id}/confirm`, 405],
+      ['POST', `/api/users/attribute-previews/${id}`, 405],
+      ['POST', `/api/users/attribute-previews/${id}/targets`, 405],
+      ['GET', '/api/users/attribute-previews/not-a-uuid', 404],
+      ['GET', `/api/users/attribute-previews/${id}/private`, 404],
+      ['GET', `/api/users/attribute-previews/${id}/targets/extra`, 404],
+      ['POST', '/api/users/attribute-previews/not-a-uuid/confirm', 404],
+      ['POST', `/api/users/attribute-previews/${id}/confirm/extra`, 404],
       ['POST', '/api/devices/selection/other', 404],
       ['POST', '/api/devices/by-ids/extra', 404],
       ['GET', '/api/devices/selection/ops', 405],

@@ -330,12 +330,31 @@ export class GoogleConnectionService
     );
   }
 
+  /**
+   * Open the active Google credential for a person who holds `users:write` (design card K23). The
+   * edit-list preview reads each user with the read-only user scope, so the token carries no write
+   * scope. `cc.user_value_credential` checks the action and the connection generation.
+   */
+  async userValueCredential(
+    session: SessionResponse,
+    customerId: string,
+    generation: number,
+  ): Promise<DelegatedCredential> {
+    return this.driveEnvelope(
+      'cc.user_value_credential',
+      session,
+      customerId,
+      generation,
+    );
+  }
+
   /** Open one sealed credential that a credential read answered. */
   private async driveEnvelope(
     read:
       | 'cc.device_write_credential'
       | 'cc.device_export_credential'
-      | 'cc.user_read_credential',
+      | 'cc.user_read_credential'
+      | 'cc.user_value_credential',
     session: SessionResponse,
     customerId: string,
     generation: number,

@@ -76,11 +76,14 @@ const schoolWrite = new RegExp(
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
 // The users read of design card K8: the sync state, the organization unit list, the attribute
 // category cache, and one user. Card K15 adds the plan read, the plan create, and the plan
-// confirm write.
+// confirm write. Card K23 adds the value preview read, its rows, its create, and its confirm.
 const userRead =
-  /^\/api\/users\/(?:sync|org-units|attribute-categories|attribute-categories\/plans\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[A-Za-z0-9_-]{1,128})$/;
+  /^\/api\/users\/(?:sync|org-units|attribute-categories|attribute-categories\/plans\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\/targets)?|(?!(?:attribute-previews)$)[A-Za-z0-9_-]{1,128})$/;
 const userWrite =
-  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
+  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?|attribute-previews|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)$/;
+// A selection preview carries up to 100 changes and an edit list carries up to 2,500 edits, so the
+// preview POST alone takes the larger body cap (as the device preview routes do).
+const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
@@ -282,9 +285,10 @@ export async function proxyApplication(
           phase === 3 &&
           (principalWrite.test(pathname) ||
             deviceWrite.test(pathname) ||
-            deviceUpdateEdit.test(pathname))
+            deviceUpdateEdit.test(pathname) ||
+            userPreviewWrite.test(pathname))
             ? // Device bodies carry ID batches, group routes, and set filters. An edit list
-              // carries up to 2,500 edits.
+              // carries up to 2,500 edits. A value preview carries a change list or an edit list.
               98304
             : phase === 3 &&
                 [

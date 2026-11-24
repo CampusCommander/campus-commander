@@ -401,6 +401,40 @@ export function selectionIdsSql(
   };
 }
 
+/**
+ * The selected users with the cached values that a selection preview freezes. A removed user never
+ * enters the preview: Google refuses a write to it, and the preview counts only the rows that its
+ * confirm writes. An explicit addition of a removed user is therefore left out.
+ */
+export function selectionTargetsSql(
+  customerId: string,
+  selection: UserSelectionState,
+  limit = 100_001,
+): SqlStatement {
+  const values: unknown[] = [customerId];
+  const add = adder(values);
+  const all = (clauses: string[]) =>
+    clauses.length ? `(${clauses.join(' AND ')})` : 'TRUE';
+  const parts = [
+    ...selection.terms.map((term) =>
+      all(['u.removed_at IS NULL', ...predicateClauses(term, add)]),
+    ),
+  ];
+  if (selection.additions.length)
+    parts.push(`u.user_id=ANY(${add(selection.additions)}::text[])`);
+  const chosen = parts.length ? `(${parts.join(' OR ')})` : 'FALSE';
+  const exceptions = selection.exceptions.length
+    ? ` AND NOT u.user_id=ANY(${add(selection.exceptions)}::text[])`
+    : '';
+  values.push(limit);
+  return {
+    text: `SELECT u.user_id,u.primary_email,u.custom_schemas,u.last_entity_sync ${from}
+      WHERE s.customer_id=$1 AND ${chosen}${exceptions} AND u.removed_at IS NULL
+      ORDER BY u.user_id LIMIT $${values.length}`,
+    values,
+  };
+}
+
 /** Which of the given users match a filter. */
 export function matchingAmongSql(
   customerId: string,
