@@ -311,6 +311,7 @@ const receipt = {
 
 const runningJob = {
   displayId: 'CAT-003',
+  revision: 2,
   status: 'running' as const,
   failure: null,
   finishedAt: null,
@@ -318,20 +319,42 @@ const runningJob = {
 
 const completedJob = {
   displayId: 'CAT-003',
+  revision: 4,
   status: 'completed' as const,
   failure: null,
   finishedAt: '2026-11-16T12:04:00.000Z',
 };
 
+/** A delayed read that the dialog received after a newer one. */
+const staleAcceptedJob = {
+  ...runningJob,
+  revision: 1,
+  status: 'accepted' as const,
+};
+
+/** A job read answer, with the stored revision that orders the reads. */
+type JobAnswer = {
+  displayId: string;
+  revision: number;
+  status: 'accepted' | 'running' | 'completed';
+  failure: null;
+  finishedAt: string | null;
+};
+
 function setup(
-  jobAnswers: readonly (typeof runningJob | typeof completedJob)[] = [
-    completedJob,
-  ],
+  jobAnswers: readonly JobAnswer[] = [completedJob],
   preparedPlan: UserAttributeCategoryPlan = plan,
 ) {
   const flow = {
     prepare: vi.fn().mockResolvedValue({ ok: true, plan: preparedPlan }),
-    confirm: vi.fn().mockResolvedValue({ ok: true, receipt }),
+    confirm: vi.fn().mockResolvedValue({
+      ok: true,
+      receipt: {
+        ...receipt,
+        action: preparedPlan.kind,
+        changeCount: preparedPlan.changes.length,
+      },
+    }),
     readJob: vi.fn(),
   };
   let reads = 0;
@@ -410,6 +433,34 @@ const type = (fixture: Fixture, input: HTMLInputElement, value: string) => {
   input.dispatchEvent(new Event('input'));
   fixture.detectChanges();
 };
+/** The dialog title of the open step. */
+const titleText = (fixture: Fixture) =>
+  element(fixture)
+    .querySelector('#category-editor-title')
+    ?.textContent?.trim() ?? '';
+/** The sub line: the job link and the words after it. */
+const sublineText = (fixture: Fixture) =>
+  element(fixture)
+    .querySelector('#category-editor-sub')
+    ?.textContent?.replace(/\s+/g, ' ')
+    .trim() ?? '';
+
+/** Answers the delete question and stops on the saving step. */
+async function saveDelete(
+  fixture: Fixture,
+  flow: ReturnType<typeof setup>,
+  phrase = 'Student information',
+): Promise<void> {
+  button(fixture, 'Delete category')?.click();
+  fixture.detectChanges();
+  const input = element(fixture).querySelector(
+    'input#category-delete-phrase',
+  ) as HTMLInputElement;
+  type(fixture, input, phrase);
+  button(fixture, 'Delete category')?.click();
+  await vi.waitFor(() => expect(flow.confirm).toHaveBeenCalledTimes(1));
+  fixture.detectChanges();
+}
 
 describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
   it('opens the create editor with one empty attribute (CA state 02)', () => {
@@ -552,12 +603,14 @@ describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
     expect(text(fixture)).toContain(
       'Closing this dialog keeps the save running.',
     );
+    expect(titleText(fixture)).toBe('Edit category');
     // The second job read settles the save (state 07).
     await vi.waitFor(() => expect(text(fixture)).toContain('Succeeded'), {
       timeout: 4000,
     });
     fixture.detectChanges();
     expect(text(fixture)).toContain('Succeeded');
+    expect(titleText(fixture)).toBe('Edit category');
     expect(text(fixture)).toContain('Finished');
     expect(text(fixture)).toContain('All changes');
   });
@@ -642,6 +695,89 @@ describe('the category editor dialog (CA states 02 to 08, 10, and 12)', () => {
         ?.textContent?.trim(),
     ).toBe('Edit category');
     expect(field(fixture, 'Display name for attribute 1')).not.toBeNull();
+  });
+
+  it('keeps Delete category on the saving step and the result of a delete (S2 item 9)', async () => {
+    const flow = setup([runningJob, completedJob], deletePlan);
+    const fixture = render('edit', { category });
+    await saveDelete(fixture, flow);
+    // The confirmed delete names its saving step.
+    expect(text(fixture)).toContain('Save changes in Google');
+    expect(titleText(fixture)).toBe('Delete category');
+    // The result keeps the name.
+    await vi.waitFor(() => expect(text(fixture)).toContain('Succeeded'), {
+      timeout: 4000,
+    });
+    fixture.detectChanges();
+    expect(titleText(fixture)).toBe('Delete category');
+  });
+
+  it('keeps Create category on the saving step and the result of a create (S2 item 9)', async () => {
+    setup([completedJob], addedPlan);
+    const fixture = render('create');
+    type(fixture, nameField(fixture), 'Transportation');
+    type(
+      fixture,
+      mustField(fixture, 'Display name for attribute 1'),
+      'Counselor',
+    );
+    button(fixture, 'Review changes')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('1 change to Transportation'),
+    );
+    fixture.detectChanges();
+    button(fixture, 'Save 1 change')?.click();
+    await vi.waitFor(() =>
+      expect(text(fixture)).toContain('Save changes in Google'),
+    );
+    fixture.detectChanges();
+    expect(titleText(fixture)).toBe('Create category');
+    await vi.waitFor(() => expect(text(fixture)).toContain('Succeeded'), {
+      timeout: 4000,
+    });
+    fixture.detectChanges();
+    expect(titleText(fixture)).toBe('Create category');
+  });
+
+  it('shows the confirmed status until the first job read answers (S2 item 3)', async () => {
+    const flow = setup([runningJob], deletePlan);
+    let resolveRead!: (answer: unknown) => void;
+    flow.readJob.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+    const fixture = render('edit', { category });
+    await saveDelete(fixture, flow);
+    // The receipt answers accepted, so the line never starts on Running.
+    expect(sublineText(fixture)).toContain('Accepted');
+    expect(sublineText(fixture)).not.toContain('Running');
+    // The first read is still unanswered, so the line holds the confirmed status.
+    await vi.waitFor(() => expect(flow.readJob).toHaveBeenCalledTimes(1));
+    expect(sublineText(fixture)).toContain('Accepted');
+    resolveRead({ ok: true, job: runningJob });
+    await vi.waitFor(() => expect(sublineText(fixture)).toContain('Running'));
+  });
+
+  it('keeps Running when a delayed read holds an older revision (S2 item 3)', async () => {
+    const flow = setup(
+      [runningJob, staleAcceptedJob, completedJob],
+      deletePlan,
+    );
+    const fixture = render('edit', { category });
+    await saveDelete(fixture, flow);
+    // The first read answers running; the second read carries an older revision.
+    await vi.waitFor(() => expect(flow.readJob).toHaveBeenCalledTimes(2), {
+      timeout: 4000,
+    });
+    expect(sublineText(fixture)).toContain('Running');
+    expect(sublineText(fixture)).not.toContain('Accepted');
+    // The third read is newer and settles the save.
+    await vi.waitFor(() => expect(text(fixture)).toContain('Succeeded'), {
+      timeout: 6000,
+    });
+    expect(titleText(fixture)).toBe('Delete category');
   });
 
   it('clears a corrected field error and re-enables Review changes (R1)', () => {
