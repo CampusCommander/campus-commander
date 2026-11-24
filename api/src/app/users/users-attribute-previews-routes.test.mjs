@@ -164,19 +164,30 @@ let routeRespond;
 let defaultRoute;
 let readUserValues;
 let readCalls;
+let bodyLimit;
 
 before(async () => {
-  const [controllerModule, serviceModule, securityModule, guardModule] =
-    await Promise.all([
-      import('./users.controller.ts'),
-      import('./users.service.ts'),
-      import('../security.ts'),
-      import('../auth/auth.guard.ts'),
-    ]);
+  const [
+    controllerModule,
+    serviceModule,
+    securityModule,
+    guardModule,
+    bodyModule,
+    previewModule,
+  ] = await Promise.all([
+    import('./users.controller.ts'),
+    import('./users.service.ts'),
+    import('../security.ts'),
+    import('../auth/auth.guard.ts'),
+    import('../request-body.ts'),
+    import('./user-attribute-previews.ts'),
+  ]);
   const { UsersController } = controllerModule;
   const { UsersService } = serviceModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
   const { AuthGuard } = guardModule;
+  const { previewBodyParser, previewBodyError } = bodyModule;
+  bodyLimit = previewModule.USER_ATTRIBUTE_PREVIEW_BODY_LIMIT;
   class CacheService {}
   class DatabaseService {}
   class AuthService {}
@@ -201,6 +212,20 @@ before(async () => {
         ],
       };
     if (text.includes('cc.create_user_attribute_preview'))
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              previewId,
+              preview: { ...selectionPreview, manifestDigest: null },
+            },
+          },
+        ],
+      };
+    if (text.includes('cc.append_user_attribute_preview_targets'))
+      return { rows: [{ result: { outcome: 'stored', stored: 1 } }] };
+    if (text.includes('cc.complete_user_attribute_preview'))
       return {
         rows: [{ result: { outcome: 'created', preview: selectionPreview } }],
       };
@@ -353,6 +378,8 @@ before(async () => {
     .compile();
   app = moduleRef.createNestApplication({ logger: false });
   app.use(securityHeaders);
+  app.use(previewBodyParser);
+  app.use(previewBodyError);
   app.useGlobalFilters(new ApplicationExceptionFilter());
   await app.listen(0, '127.0.0.1');
   const address = app.getHttpServer().address();
@@ -445,17 +472,37 @@ test('a selection preview without users:bulk-actions answers 403 and stores noth
 });
 
 test('a selection preview freezes its rows, counts, etag, and digest', async () => {
-  let stored;
+  let header;
+  const batches = [];
+  let seal;
   const fallback = routeRespond;
   routeRespond = async (text, values) => {
     if (text.includes('cc.create_user_attribute_preview')) {
-      stored = values;
+      header = values;
       return {
         rows: [
           {
             result: {
               outcome: 'created',
-              preview: { ...selectionPreview, manifestDigest: values[7] },
+              previewId,
+              preview: { ...selectionPreview, manifestDigest: null },
+            },
+          },
+        ],
+      };
+    }
+    if (text.includes('cc.append_user_attribute_preview_targets')) {
+      batches.push(...JSON.parse(values[3]));
+      return { rows: [{ result: { outcome: 'stored', stored: 1 } }] };
+    }
+    if (text.includes('cc.complete_user_attribute_preview')) {
+      seal = values;
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              preview: { ...selectionPreview, manifestDigest: values[3] },
             },
           },
         ],
@@ -473,18 +520,19 @@ test('a selection preview freezes its rows, counts, etag, and digest', async () 
   assert.equal(answer.body.stale, false);
   assert.deepEqual(answer.body.changes, selectionPreview.changes);
   assert.deepEqual(checks, ['users:write', 'users:bulk-actions']);
-  assert.equal(stored[0], actor);
-  assert.equal(stored[1], 1);
-  assert.equal(stored[2], customer);
-  assert.equal(stored[3], 1);
-  assert.equal(stored[4], 'selection');
-  assert.deepEqual(JSON.parse(stored[5]), { gridId: 'users', tabId });
-  assert.deepEqual(JSON.parse(stored[6]), selectionPreview.changes);
-  assert.match(stored[7], /^[a-f0-9]{64}$/);
-  assert.equal(answer.body.manifestDigest, stored[7]);
-  const targets = JSON.parse(stored[8]);
+  assert.equal(header[0], actor);
+  assert.equal(header[1], 1);
+  assert.equal(header[2], customer);
+  assert.equal(header[3], 1);
+  assert.equal(header[4], 'selection');
+  assert.deepEqual(JSON.parse(header[5]), { gridId: 'users', tabId });
+  assert.deepEqual(JSON.parse(header[6]), selectionPreview.changes);
+  assert.deepEqual(JSON.parse(header[7]), [
+    { schemaName: 'StudentInfo', etag },
+  ]);
+  assert.equal(header[8], 15);
   assert.deepEqual(
-    targets.map((target) => [
+    batches.map((target) => [
       target.userId,
       target.ordinal,
       target.disposition,
@@ -495,7 +543,7 @@ test('a selection preview freezes its rows, counts, etag, and digest', async () 
     ],
   );
   assert.deepEqual(
-    targets[0].rows.map((row) => [
+    batches[0].rows.map((row) => [
       row.fieldName,
       row.currentValue,
       row.newValue,
@@ -503,24 +551,43 @@ test('a selection preview freezes its rows, counts, etag, and digest', async () 
     ]),
     [['Homeroom', 'B11', 'B12', 'eligible']],
   );
-  assert.deepEqual(JSON.parse(stored[9]), [
-    { schemaName: 'StudentInfo', etag },
-  ]);
-  assert.equal(stored[10], 15);
+  assert.equal(seal[2], previewId);
+  assert.match(seal[3], /^[a-f0-9]{64}$/);
+  assert.equal(answer.body.manifestDigest, seal[3]);
 });
 
 test('an edit-list preview reads Google fresh and freezes a Conflict', async () => {
-  let stored;
+  let header;
+  const batches = [];
+  let seal;
   const fallback = routeRespond;
   routeRespond = async (text, values) => {
     if (text.includes('cc.create_user_attribute_preview')) {
-      stored = values;
+      header = values;
       return {
         rows: [
           {
             result: {
               outcome: 'created',
-              preview: { ...editPreview, manifestDigest: values[7] },
+              previewId,
+              preview: { ...editPreview, manifestDigest: null },
+            },
+          },
+        ],
+      };
+    }
+    if (text.includes('cc.append_user_attribute_preview_targets')) {
+      batches.push(...JSON.parse(values[3]));
+      return { rows: [{ result: { outcome: 'stored', stored: 1 } }] };
+    }
+    if (text.includes('cc.complete_user_attribute_preview')) {
+      seal = values;
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              preview: { ...editPreview, manifestDigest: values[3] },
             },
           },
         ],
@@ -556,20 +623,21 @@ test('an edit-list preview reads Google fresh and freezes a Conflict', async () 
   assert.equal(answer.body.changes, null);
   assert.equal(answer.body.conflicts, 1);
   assert.deepEqual(checks, ['users:write']);
-  assert.equal(stored[4], 'edit-list');
-  assert.equal(stored[5], null);
-  assert.equal(stored[6], '[]');
-  const targets = JSON.parse(stored[8]);
+  assert.equal(header[4], 'edit-list');
+  assert.equal(header[5], null);
+  assert.equal(header[6], '[]');
   assert.deepEqual(
-    targets.map((target) => [target.userId, target.disposition]),
+    batches.map((target) => [target.userId, target.disposition]),
     [
       ['u1', 'conflict'],
       ['u2', 'eligible'],
     ],
   );
-  assert.deepEqual(JSON.parse(stored[9]), [
+  assert.deepEqual(JSON.parse(header[7]), [
     { schemaName: 'StudentInfo', etag },
   ]);
+  assert.equal(seal[2], previewId);
+  assert.equal(answer.body.manifestDigest, seal[3]);
   assert.equal(readCalls.length, 2);
   assert.equal(readCalls[0][0].customerId, customer);
   assert.equal(readCalls[0][1], 'u1');
@@ -1011,4 +1079,197 @@ test('a preview body outside the contract answers 400', async () => {
     const answer = await post('/api/users/attribute-previews', body);
     assert.equal(answer.status, 400, JSON.stringify(answer.body));
   }
+});
+
+test('a supported 2,500-edit body parses through the API body cap', async () => {
+  // E17: 2,500 edits on 500 users, five attributes each, one-character values.
+  const wide = {
+    ...base,
+    categories: [
+      {
+        ...base.categories[0],
+        fields: [
+          field({}),
+          ...Array.from({ length: 5 }, (_, index) =>
+            field({
+              fieldId: `fld-${index + 10}`,
+              fieldName: `Field${index}`,
+              displayName: `Field${index}`,
+            }),
+          ),
+        ],
+      },
+    ],
+  };
+  const edits = Array.from({ length: 2500 }, (_, index) => ({
+    userId: `user-${index % 500}`,
+    attribute: `attr:StudentInfo.Field${Math.floor(index / 500)}`,
+    mode: 'set',
+    values: ['x'],
+    baselineValue: 'y',
+  }));
+  const body = JSON.stringify(editBody(edits));
+  assert.ok(body.length > 98304, `body measured ${body.length} bytes`);
+  const fallback = routeRespond;
+  routeRespond = async (text, values) => {
+    if (text.includes('cc.read_user_attribute_preview_base'))
+      return { rows: [{ result: wide }] };
+    if (text.includes('FROM cc.users'))
+      return {
+        rows: Array.from({ length: 500 }, (_, index) => ({
+          user_id: `user-${index}`,
+          primary_email: `user-${index}@example.org`,
+        })),
+      };
+    if (text.includes('cc.complete_user_attribute_preview'))
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              preview: {
+                ...editPreview,
+                selected: 500,
+                eligible: 500,
+                unchanged: 0,
+                conflicts: 0,
+                manifestDigest: values[3],
+              },
+            },
+          },
+        ],
+      };
+    return fallback(text, values);
+  };
+  const response = await fetch(`${origin}/api/users/attribute-previews`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+  assert.equal(response.status, 201, await response.text());
+});
+
+test('a body above the API cap answers 413 before the controller', async () => {
+  let reads = 0;
+  const fallback = routeRespond;
+  routeRespond = async (text, values) => {
+    reads += 1;
+    return fallback(text, values);
+  };
+  const response = await fetch(`${origin}/api/users/attribute-previews`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ edits: [], pad: 'x'.repeat(bodyLimit) }),
+  });
+  assert.equal(response.status, 413);
+  assert.equal(reads, 0);
+});
+
+test('a text value outside the rule answers 422 with its label from either source', async () => {
+  let creates = 0;
+  const fallback = routeRespond;
+  routeRespond = async (text, values) => {
+    if (text.includes('cc.create_user_attribute_preview')) creates += 1;
+    return fallback(text, values);
+  };
+  const values = ['', '   ', 'x'.repeat(501), '\u{1f600}'.repeat(501)];
+  for (const value of values) {
+    const selection = await post(
+      '/api/users/attribute-previews',
+      selectionBody([
+        {
+          schemaName: 'StudentInfo',
+          fieldName: 'Homeroom',
+          mode: 'set',
+          values: [value],
+        },
+      ]),
+    );
+    assert.equal(selection.status, 422, JSON.stringify(selection.body));
+    assert.deepEqual(selection.body, {
+      reason: 'invalid-value',
+      message: 'Homeroom holds 1 to 500 characters.',
+    });
+    const edit = await post(
+      '/api/users/attribute-previews',
+      editBody([
+        {
+          userId: 'u1',
+          attribute: 'attr:StudentInfo.Homeroom',
+          mode: 'set',
+          values: [value],
+          baselineValue: 'B11',
+        },
+      ]),
+    );
+    assert.equal(edit.status, 422, JSON.stringify(edit.body));
+    assert.deepEqual(edit.body, {
+      reason: 'invalid-value',
+      message: 'Homeroom holds 1 to 500 characters.',
+    });
+  }
+  assert.equal(creates, 0);
+});
+
+test('an Add beyond the final list bound answers 422 with its label', async () => {
+  const programs = Array.from({ length: 150 }, (_, index) => ({
+    value: `P${index}`,
+  }));
+  const fallback = routeRespond;
+  let creates = 0;
+  routeRespond = async (text, values) => {
+    if (text.includes('u.custom_schemas'))
+      return {
+        rows: [
+          {
+            user_id: 'u1',
+            primary_email: 'u1@example.org',
+            custom_schemas: { StudentInfo: { Programs: programs } },
+            last_entity_sync: at,
+          },
+        ],
+      };
+    if (text.includes('cc.create_user_attribute_preview')) creates += 1;
+    return fallback(text, values);
+  };
+  const answer = await post(
+    '/api/users/attribute-previews',
+    selectionBody([
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Programs',
+        mode: 'add',
+        values: ['New'],
+      },
+    ]),
+  );
+  assert.equal(answer.status, 422, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, {
+    reason: 'invalid-value',
+    message: 'Programs holds at most 150 values.',
+  });
+  assert.equal(creates, 0);
+});
+
+test('a Replace above the list text size answers 422 with its label', async () => {
+  const values = Array.from(
+    { length: 31 },
+    (_, index) => 'x'.repeat(499) + String.fromCharCode(65 + index),
+  );
+  const answer = await post(
+    '/api/users/attribute-previews',
+    selectionBody([
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Programs',
+        mode: 'replace',
+        values,
+      },
+    ]),
+  );
+  assert.equal(answer.status, 422, JSON.stringify(answer.body));
+  assert.deepEqual(answer.body, {
+    reason: 'invalid-value',
+    message: 'Programs holds values of at most 15,000 characters in total.',
+  });
 });

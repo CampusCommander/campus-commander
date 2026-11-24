@@ -17,18 +17,20 @@ import {
   userAttributePreviewSchema,
   userAttributeRowValueSchema,
   userAttributeTargetsPageSchema,
+  USER_ATTRIBUTE_LIST_TEXT_MAX,
+  USER_ATTRIBUTE_TEXT_MAX,
+  USER_ATTRIBUTE_VALUES_LIMIT,
   type SessionResponse,
   type UserAttributeCategory,
   type UserAttributeChange,
   type UserAttributeDisposition,
-  type UserAttributeEdit,
-  type UserAttributeEditPreviewRequest,
+  type UserAttributeEditPreviewRequestShape,
   type UserAttributeField,
   type UserAttributeFieldType,
   type UserAttributeJobReceipt,
   type UserAttributePreview,
   type UserAttributePreviewConfirmRequest,
-  type UserAttributePreviewRequest,
+  type UserAttributePreviewRequestShape,
   type UserAttributePreviewSource,
   type UserAttributeRowValue,
   type UserAttributeTargetsPage,
@@ -47,6 +49,15 @@ export const USER_ATTRIBUTE_PREVIEW_USERS_LIMIT = 100_000;
 export const USER_ATTRIBUTE_TARGETS_LIMIT = 1000;
 /** The edit-list read carries one deadline over every Google call (B section 8.4). */
 export const USER_ATTRIBUTE_READ_DEADLINE_MILLISECONDS = 25_000;
+/**
+ * The body cap of the preview POST. One edit list carries 2,500 edits on 500 users (E17), so the
+ * ordinary short-value save is about 232 KB; this bound keeps the request domain well above it.
+ */
+export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT = 16 * 1024 * 1024;
+/** One stored target batch stays below this many characters of JSON text. */
+export const USER_ATTRIBUTE_STORE_BATCH_BYTES = 256 * 1024;
+/** One stored target batch carries at most 1,000 targets. */
+export const USER_ATTRIBUTE_STORE_BATCH_TARGETS = 1000;
 /** One Directory batch holds at most 100 parts, so the read walks users in bounded groups. */
 const USER_ATTRIBUTE_READ_CONCURRENCY = 8;
 /** The JSON safe range of a whole number (E10). */
@@ -238,6 +249,37 @@ export function isCalendarDate(value: string): boolean {
   );
 }
 
+/** Whether one text holds 1 to 500 code points and a visible character (B section 8.1, E10). */
+export function isTextValue(value: string): boolean {
+  // A 500-code-point text takes at most 1,000 UTF-16 units, so a longer text refuses without a
+  // walk over every code point.
+  if (value.length > 2 * USER_ATTRIBUTE_TEXT_MAX) return false;
+  const length = [...value].length;
+  return (
+    length >= 1 && length <= USER_ATTRIBUTE_TEXT_MAX && value.trim().length > 0
+  );
+}
+
+/** Refuse one computed final list outside Google's list rule (B section 3, B section 8.2). */
+function checkFinalList(
+  field: UserAttributeField,
+  values: readonly Canonical[],
+): void {
+  if (values.length > USER_ATTRIBUTE_VALUES_LIMIT)
+    refusedValue(
+      field.displayName,
+      `holds at most ${USER_ATTRIBUTE_VALUES_LIMIT} values`,
+    );
+  let characters = 0;
+  for (const value of values)
+    if (typeof value === 'string') characters += [...value].length;
+  if (characters > USER_ATTRIBUTE_LIST_TEXT_MAX)
+    refusedValue(
+      field.displayName,
+      `holds values of at most ${USER_ATTRIBUTE_LIST_TEXT_MAX.toLocaleString('en-US')} characters in total`,
+    );
+}
+
 /** One entered value, checked against the info type and the range of its attribute. */
 export function checkedValue(
   value: UserAttributeValue,
@@ -284,6 +326,7 @@ export function checkedValue(
     if (!isCalendarDate(value)) refusedValue(label, typeRule('DATE'));
     return value;
   }
+  if (!isTextValue(value)) refusedValue(label, typeRule(field.fieldType));
   return value;
 }
 
@@ -500,39 +543,102 @@ export function editAttribute(attribute: string): {
   return { schemaName, fieldName };
 }
 
-/** The digest that the confirm names. It covers the frozen rows and the frozen changes. */
+/** One frozen target as the store and the digest document hold it. */
+function storedTarget(target: PreviewTargetDraft) {
+  return {
+    ordinal: target.ordinal,
+    userId: target.userId,
+    primaryEmail: target.primaryEmail,
+    observedAt: target.observedAt,
+    disposition: target.disposition,
+    rows: target.rows.map((row) => ({
+      schemaName: row.schemaName,
+      fieldName: row.fieldName,
+      currentValue: row.currentValue,
+      newValue: row.newValue,
+      disposition: row.disposition,
+    })),
+  };
+}
+
+/** One frozen target as the digest covers it. */
+function digestTarget(target: PreviewTargetDraft) {
+  return {
+    userId: target.userId,
+    rows: target.rows.map((row) => ({
+      schemaName: row.schemaName,
+      fieldName: row.fieldName,
+      currentValue: row.current,
+      newValue: row.requested,
+      disposition: row.disposition,
+    })),
+  };
+}
+
+/**
+ * The digest that the confirm names. It covers the frozen rows and the frozen changes. The hash
+ * takes one fragment at a time: a complete selection can hold more text than one JavaScript
+ * string allows (B section 10, E17).
+ */
 export function previewDigest(
   source: UserAttributePreviewSource,
   changes: readonly UserAttributeChange[],
   targets: readonly PreviewTargetDraft[],
 ): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        actionVersion: 1,
-        source,
-        changes:
-          source === 'selection'
-            ? changes.map((change) => ({
-                schemaName: change.schemaName,
-                fieldName: change.fieldName,
-                mode: change.mode,
-                values: change.values,
-              }))
-            : null,
-        targets: targets.map((target) => ({
-          userId: target.userId,
-          rows: target.rows.map((row) => ({
-            schemaName: row.schemaName,
-            fieldName: row.fieldName,
-            currentValue: row.current,
-            newValue: row.requested,
-            disposition: row.disposition,
-          })),
-        })),
-      }),
-    )
-    .digest('hex');
+  const hash = createHash('sha256');
+  hash.update('{"actionVersion":1,"source":');
+  hash.update(JSON.stringify(source));
+  hash.update(',"changes":');
+  if (source === 'selection') {
+    hash.update('[');
+    changes.forEach((change, index) => {
+      if (index > 0) hash.update(',');
+      hash.update(
+        JSON.stringify({
+          schemaName: change.schemaName,
+          fieldName: change.fieldName,
+          mode: change.mode,
+          values: change.values,
+        }),
+      );
+    });
+    hash.update(']');
+  } else hash.update('null');
+  hash.update(',"targets":[');
+  targets.forEach((target, index) => {
+    if (index > 0) hash.update(',');
+    hash.update(JSON.stringify(digestTarget(target)));
+  });
+  hash.update(']}');
+  return hash.digest('hex');
+}
+
+/**
+ * The stored targets, in bounded batches. One batch stays below
+ * `USER_ATTRIBUTE_STORE_BATCH_BYTES` characters, except that one target never splits and can
+ * carry more. The caller sends each batch as its own JSON argument, so no single argument holds
+ * the complete selection (B section 10).
+ */
+export function* previewTargetBatches(
+  targets: readonly PreviewTargetDraft[],
+): Generator<string> {
+  let parts: string[] = [];
+  let bytes = 2;
+  for (const target of targets) {
+    const text = JSON.stringify(storedTarget(target));
+    if (
+      parts.length > 0 &&
+      (bytes + text.length + 1 > USER_ATTRIBUTE_STORE_BATCH_BYTES ||
+        parts.length >= USER_ATTRIBUTE_STORE_BATCH_TARGETS)
+    ) {
+      yield `[${parts.join(',')}]`;
+      parts = [];
+      bytes = 2;
+    }
+    parts.push(text);
+    bytes += text.length + 1;
+  }
+  if (parts.length > 0) yield `[${parts.join(',')}]`;
 }
 
 /** The stored Google form of one list of cached entries: a scalar for one value, or entries. */
@@ -564,6 +670,9 @@ function previewRow(
   const current = currentEntries(raw, field);
   const currentCanonical = current.map((entry) => entry.canonical);
   const final = finalValue(mode, entered, current, field);
+  // Add and Replace build a new list, so the final list must fit Google's list rule (B section 8.2).
+  if (field.multiValued && (mode === 'add' || mode === 'replace'))
+    checkFinalList(field, final.canonical);
   const disposition: UserAttributeDisposition = sameValues(
     currentCanonical,
     final.canonical,
@@ -591,10 +700,24 @@ function targetDisposition(
   return 'unchanged';
 }
 
+/** The changes as the store holds them, with each entered value checked (B section 8.1). */
+export function checkedChanges(
+  changes: readonly UserAttributePreviewRequestShape['changes'][number][],
+  base: UserAttributePreviewBase,
+): UserAttributeChange[] {
+  return changes.map((change) => ({
+    ...change,
+    values: checkedValues(
+      change.values,
+      fieldOf(base, change.schemaName, change.fieldName),
+    ),
+  }));
+}
+
 /** One selection preview: every selected user against every change (B section 8.4). */
 export function selectionPreviewTargets(
   users: readonly UserAttributePreviewUser[],
-  changes: readonly UserAttributeChange[],
+  changes: readonly UserAttributePreviewRequestShape['changes'][number][],
   base: UserAttributePreviewBase,
 ): PreviewTargetDraft[] {
   const checked = changes.map((change) => {
@@ -637,13 +760,13 @@ export function selectionPreviewTargets(
 /** One edit list: each edit against the fresh current value and its baseline (B section 8.4). */
 export function editPreviewTargets(
   users: ReadonlyMap<string, UserAttributePreviewUser>,
-  edits: readonly UserAttributeEdit[],
+  edits: readonly UserAttributeEditPreviewRequestShape['edits'][number][],
   base: UserAttributePreviewBase,
 ): PreviewTargetDraft[] {
   const checked = new Map<
     string,
     {
-      edit: UserAttributeEdit;
+      edit: UserAttributeEditPreviewRequestShape['edits'][number];
       schemaName: string;
       fieldName: string;
       field: UserAttributeField;
@@ -896,7 +1019,7 @@ export class UserAttributePreviews {
   private async selectionStore(
     session: SessionResponse,
     base: UserAttributePreviewBase,
-    request: UserAttributePreviewRequest,
+    request: UserAttributePreviewRequestShape,
     correlationId: string,
   ): Promise<UserAttributePreviewStore> {
     await this.port.authorize(session, base.customerId, true, correlationId);
@@ -921,14 +1044,15 @@ export class UserAttributePreviews {
       });
     if (read.users.length === 0)
       throw new UnprocessableEntityException({ reason: 'nothing-selected' });
+    const changes = checkedChanges(request.changes, base);
     const targets = selectionPreviewTargets(read.users, request.changes, base);
-    const digest = previewDigest('selection', request.changes, targets);
+    const digest = previewDigest('selection', changes, targets);
     return {
       customerId: base.customerId,
       generation: base.generation,
       source: 'selection',
       selection: { gridId: request.gridId, tabId: request.tabId },
-      changes: request.changes,
+      changes,
       digest,
       targets,
       etags: previewEtags(
@@ -942,7 +1066,7 @@ export class UserAttributePreviews {
   private async editStore(
     session: SessionResponse,
     base: UserAttributePreviewBase,
-    request: UserAttributeEditPreviewRequest,
+    request: UserAttributeEditPreviewRequestShape,
     correlationId: string,
   ): Promise<UserAttributePreviewStore> {
     await this.port.authorize(session, base.customerId, false, correlationId);
@@ -1017,7 +1141,9 @@ export class UserAttributePreviews {
   /** Freeze one preview from a selection key or an edit list (B section 10). */
   async preview(
     session: SessionResponse,
-    request: UserAttributePreviewRequest | UserAttributeEditPreviewRequest,
+    request:
+      | UserAttributePreviewRequestShape
+      | UserAttributeEditPreviewRequestShape,
     correlationId: string,
   ): Promise<UserAttributePreview> {
     const base = await this.port.base(session);

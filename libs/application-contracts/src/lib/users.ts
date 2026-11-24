@@ -807,6 +807,8 @@ export type UserAttributeCategoryJobReceipt = z.infer<
 export const USER_ATTRIBUTE_TEXT_MAX = 500;
 /** Google's largest list: 150 values of 100 characters (B section 3). */
 export const USER_ATTRIBUTE_VALUES_LIMIT = 150;
+/** Google's total size of one list: 150 values of 100 characters, or 50 of 500 (B section 3). */
+export const USER_ATTRIBUTE_LIST_TEXT_MAX = 15_000;
 /** The edit-list bound of E17: 2,500 edits on at most 500 users. The user bound is
  * `USER_BY_IDS_LIMIT`, because a grid holds the same 500 users per request. */
 export const USER_ATTRIBUTE_EDITS_LIMIT = 2500;
@@ -983,6 +985,96 @@ export const userAttributeEditPreviewRequestSchema = z.strictObject({
 });
 export type UserAttributeEditPreviewRequest = z.infer<
   typeof userAttributeEditPreviewRequestSchema
+>;
+
+/**
+ * One entered value before the category cache names its info type. The route checks each value
+ * against that info type, so a refused value answers 422 with its label and rule (B section 8.1,
+ * B section 13). The contract above stays the wire rule; this shape only defers the value rule.
+ */
+export const userAttributeRequestValueSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+]);
+export type UserAttributeRequestValue = z.infer<
+  typeof userAttributeRequestValueSchema
+>;
+
+/** The entered values of one request, before the field check. Google's largest list holds 150. */
+export const userAttributeRequestValuesSchema = z
+  .array(userAttributeRequestValueSchema)
+  .max(USER_ATTRIBUTE_VALUES_LIMIT);
+
+/** One entered value or list of a request, before the field check. */
+export const userAttributeRequestRowValueSchema = z.union([
+  userAttributeRequestValueSchema,
+  userAttributeRequestValuesSchema.min(1),
+]);
+
+/** One attribute change with the same shape as the wire rule, before the field check. */
+export const userAttributeChangeRequestSchema = z
+  .strictObject({
+    schemaName: attributeText,
+    fieldName: attributeText,
+    mode: userAttributeChangeModeSchema,
+    values: userAttributeRequestValuesSchema,
+  })
+  .superRefine(refuseChangeValues);
+
+/** One edit with the same shape as the wire rule, before the field check. */
+export const userAttributeEditRequestSchema = z
+  .strictObject({
+    userId,
+    attribute: userAttributeKeySchema,
+    mode: userAttributeChangeModeSchema,
+    values: userAttributeRequestValuesSchema,
+    baselineValue: userAttributeRequestRowValueSchema.nullable(),
+  })
+  .superRefine(refuseChangeValues);
+
+/** The selection preview request before the field check of each value. */
+export const userAttributePreviewRequestShapeSchema = z.strictObject({
+  gridId: userSelectionKeySchema.shape.gridId,
+  tabId: userSelectionKeySchema.shape.tabId,
+  changes: z
+    .array(userAttributeChangeRequestSchema)
+    .min(1)
+    .max(USER_ATTRIBUTE_FIELD_LIMIT)
+    .refine(
+      (changes) =>
+        new Set(
+          changes.map(
+            (change) => `${change.schemaName}\u0000${change.fieldName}`,
+          ),
+        ).size === changes.length,
+      { message: 'An attribute occurs once.' },
+    ),
+});
+export type UserAttributePreviewRequestShape = z.infer<
+  typeof userAttributePreviewRequestShapeSchema
+>;
+
+/** The edit-list preview request before the field check of each value. */
+export const userAttributeEditPreviewRequestShapeSchema = z.strictObject({
+  edits: z
+    .array(userAttributeEditRequestSchema)
+    .min(1)
+    .max(USER_ATTRIBUTE_EDITS_LIMIT)
+    .refine(
+      (edits) =>
+        new Set(edits.map((edit) => edit.userId)).size <= USER_BY_IDS_LIMIT,
+      { message: `An edit list holds at most ${USER_BY_IDS_LIMIT} users.` },
+    )
+    .refine(
+      (edits) =>
+        new Set(edits.map((edit) => `${edit.userId}\u0000${edit.attribute}`))
+          .size === edits.length,
+      { message: 'A user and attribute occur once.' },
+    ),
+});
+export type UserAttributeEditPreviewRequestShape = z.infer<
+  typeof userAttributeEditPreviewRequestShapeSchema
 >;
 
 /** The two sources of a value preview (B section 10). A selection reads the cached values, and an

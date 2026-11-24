@@ -17,9 +17,9 @@ import {
   userAttributeCategoryPlanConfirmRequestSchema,
   userAttributeCategoryPlanRequestSchema,
   userAttributeDispositionSchema,
-  userAttributeEditPreviewRequestSchema,
+  userAttributeEditPreviewRequestShapeSchema,
   userAttributePreviewConfirmRequestSchema,
-  userAttributePreviewRequestSchema,
+  userAttributePreviewRequestShapeSchema,
   userByIdsSchema,
   userDomainRefreshSchema,
   userQuerySchema,
@@ -53,8 +53,8 @@ const previewTargetsQuerySchema = z.strictObject({
 });
 /** One preview request: a selection key with changes, or an edit list. The keys do not overlap. */
 const previewRequestSchema = z.union([
-  userAttributePreviewRequestSchema,
-  userAttributeEditPreviewRequestSchema,
+  userAttributePreviewRequestShapeSchema,
+  userAttributeEditPreviewRequestShapeSchema,
 ]);
 
 @Controller('api/users')

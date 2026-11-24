@@ -87,31 +87,29 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
     'preparedAt',p.prepared_at,'expiresAt',p.expires_at,'manifestDigest',p.manifest_digest);
 $$;
 
--- One prepared value preview (B section 10). The caller computes every final value and the digest.
--- This function validates the frozen document, counts its dispositions, and stores the preview, its
--- changes, its targets, its value rows, and the category etags that it read. A selection preview
--- needs `users:bulk-actions` beside `users:write` (B section 11).
+-- One prepared value preview header (B section 10). The caller computes the digest over the
+-- frozen rows and stores it with the seal. This function validates the changes and the category
+-- etags, takes the global access lock, checks the person and the connection, and stores the
+-- preview row with no target. It stores no complete document, so a selection of 100,000 users
+-- never reaches one JSON argument. A selection needs `users:bulk-actions` beside `users:write`
+-- (B section 11).
 CREATE FUNCTION cc.create_user_attribute_preview(p_actor uuid,p_version integer,p_customer text,
-  p_generation integer,p_source text,p_selection jsonb,p_changes jsonb,p_digest text,p_targets jsonb,
-  p_etags jsonb,p_expires_minutes integer) RETURNS jsonb
+  p_generation integer,p_source text,p_selection jsonb,p_changes jsonb,p_etags jsonb,
+  p_expires_minutes integer) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE connection cc.google_connection; preview cc.user_attribute_previews; bad integer; total integer;
-  eligible integer; unchanged integer; conflicts integer; changes integer; oldest timestamptz;
-  now_at timestamptz; target jsonb; row_value jsonb; i integer;
+DECLARE connection cc.google_connection; preview cc.user_attribute_previews; bad integer;
+  now_at timestamptz;
 BEGIN
   -- S2: every input holds a value of its domain, or the call rejects before any lock or write.
   IF p_actor IS NULL OR p_version IS NULL OR p_customer IS NULL OR p_generation IS NULL OR
     p_source IS NULL OR p_source NOT IN ('selection','edit-list') OR
-    p_digest IS NULL OR p_digest !~ '^[a-f0-9]{64}$' OR
     p_expires_minutes IS NULL OR p_expires_minutes NOT BETWEEN 1 AND 1440 OR
-    p_changes IS NULL OR p_targets IS NULL OR p_etags IS NULL OR
+    p_changes IS NULL OR p_etags IS NULL OR
     jsonb_typeof(p_changes) IS DISTINCT FROM 'array' OR
-    jsonb_typeof(p_targets) IS DISTINCT FROM 'array' OR
     jsonb_typeof(p_etags) IS DISTINCT FROM 'array' THEN
     RAISE EXCEPTION 'The value preview request is invalid.' USING ERRCODE='22023';
   END IF;
-  IF jsonb_array_length(p_targets) NOT BETWEEN 1 AND 100000 OR
-    jsonb_array_length(p_etags) NOT BETWEEN 1 AND 100 THEN
+  IF jsonb_array_length(p_changes)>100 OR jsonb_array_length(p_etags) NOT BETWEEN 1 AND 100 THEN
     RAISE EXCEPTION 'The value preview request is invalid.' USING ERRCODE='22023';
   END IF;
   -- A selection names its grid and tab. An edit list names neither, and it freezes no change list.
@@ -135,12 +133,71 @@ BEGIN
   IF bad>0 THEN
     RAISE EXCEPTION 'The value preview changes are invalid.' USING ERRCODE='22023';
   END IF;
-  -- Each frozen target names its user and at least one attribute row. The API sorts the targets by
-  -- user ID and the rows by attribute, so the digest and the page cursor stay stable.
+  -- Each frozen category carries the etag that the route read, once.
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_etags) e
+    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
+      COALESCE(e->>'schemaName','') !~ '^[A-Za-z0-9_-]{1,200}$' OR
+      COALESCE(e->>'etag','')='' OR char_length(e->>'etag')>200;
+  IF bad>0 OR
+    (SELECT count(DISTINCT e->>'schemaName') FROM jsonb_array_elements(p_etags) e)<>jsonb_array_length(p_etags) THEN
+    RAISE EXCEPTION 'The value preview categories are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Rule G: the global access lock comes first, before any row lock or write, as device previews do.
+  PERFORM pg_advisory_xact_lock(7240173008);
+  -- The person check of the route. A caller without the actions receives no preview.
+  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
+      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
+    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
+      g.action='users:write' AND (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) OR
+    (p_source='selection' AND NOT EXISTS(SELECT 1 FROM cc.application_grants g
+      WHERE g.principal_id=p_actor AND g.action='users:bulk-actions' AND
+      (g.scope='{"kind":"platform"}'::jsonb OR
+      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)))) THEN
+    RETURN jsonb_build_object('outcome','forbidden');
+  END IF;
+  -- The connection row locks after the access lock and before the first clock read.
+  SELECT * INTO connection FROM cc.google_connection c WHERE c.singleton FOR KEY SHARE;
+  IF connection.customer_id IS DISTINCT FROM p_customer OR connection.generation<>p_generation THEN
+    RETURN jsonb_build_object('outcome','connection-changed');
+  END IF;
+  now_at:=clock_timestamp();
+  INSERT INTO cc.user_attribute_previews(preview_id,customer_id,created_by,permission_version,generation,
+    source,selection,selected,eligible,unchanged,conflicts,attribute_changes,oldest_observed_at,
+    manifest_digest,prepared_at,expires_at)
+  VALUES(gen_random_uuid(),p_customer,p_actor,p_version,p_generation,p_source,p_selection,0,0,0,0,0,
+    NULL,NULL,now_at,now_at+make_interval(mins=>p_expires_minutes))
+  RETURNING * INTO preview;
+  INSERT INTO cc.user_attribute_preview_changes(preview_id,ordinal,schema_name,field_name,mode,values)
+  SELECT preview.preview_id,(c.ord-1)::integer,c.value->>'schemaName',c.value->>'fieldName',
+    c.value->>'mode',c.value->'values'
+  FROM jsonb_array_elements(p_changes) WITH ORDINALITY c(value,ord);
+  INSERT INTO cc.user_attribute_preview_categories(preview_id,schema_name,etag)
+  SELECT preview.preview_id,e->>'schemaName',e->>'etag' FROM jsonb_array_elements(p_etags) e;
+  RETURN jsonb_build_object('outcome','created','previewId',preview.preview_id,
+    'preview',cc.user_attribute_preview_projection(preview));
+END;
+$$;
+
+-- One bounded batch of frozen targets. The route stores a selection in batches, so no single
+-- JSON argument holds the complete selection. The ordinals continue from the stored rows, and the
+-- preview stays unconfirmable until the seal writes the digest.
+CREATE FUNCTION cc.append_user_attribute_preview_targets(p_actor uuid,p_version integer,
+  p_preview_id uuid,p_targets jsonb) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE connection cc.google_connection; preview cc.user_attribute_previews; bad integer;
+  ordinal integer; target jsonb; row_value jsonb;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_preview_id IS NULL OR p_targets IS NULL OR
+    jsonb_typeof(p_targets) IS DISTINCT FROM 'array' OR
+    jsonb_array_length(p_targets) NOT BETWEEN 1 AND 1000 THEN
+    RAISE EXCEPTION 'The value preview targets are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Each target names its user and at least one attribute row. The API sorts the targets by user
+  -- ID and the rows by attribute, so the digest and the page cursor stay stable.
   SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) WITH ORDINALITY t(value,ord)
     WHERE jsonb_typeof(t.value) IS DISTINCT FROM 'object' OR
       jsonb_typeof(t.value->'ordinal') IS DISTINCT FROM 'number' OR
-      (t.value->>'ordinal')::integer<>t.ord-1 OR
       COALESCE(t.value->>'userId','') !~ '^[A-Za-z0-9_-]{1,128}$' OR
       COALESCE(t.value->>'primaryEmail','') !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' OR
       char_length(t.value->>'primaryEmail') NOT BETWEEN 3 AND 254 OR
@@ -167,8 +224,7 @@ BEGIN
         WHERE jsonb_typeof(v) NOT IN ('string','number','boolean','object'))) OR
       (jsonb_typeof(r->'newValue')='array' AND EXISTS(
         SELECT 1 FROM jsonb_array_elements(r->'newValue') v
-        WHERE jsonb_typeof(v) NOT IN ('string','number','boolean','object'))) OR
-      (p_source='selection' AND r->>'disposition'='conflict');
+        WHERE jsonb_typeof(v) NOT IN ('string','number','boolean','object')));
   IF bad>0 OR (SELECT count(*) FROM jsonb_array_elements(p_targets) t,
       jsonb_array_elements(t->'rows') r) <> (SELECT count(DISTINCT (t->>'ordinal',r->>'schemaName',r->>'fieldName'))
       FROM jsonb_array_elements(p_targets) t, jsonb_array_elements(t->'rows') r) THEN
@@ -184,61 +240,32 @@ BEGIN
   IF bad>0 THEN
     RAISE EXCEPTION 'The value preview dispositions are invalid.' USING ERRCODE='22023';
   END IF;
-  -- Each frozen category carries the etag that the route read, and every named attribute has one.
-  SELECT count(*) INTO bad FROM jsonb_array_elements(p_etags) e
-    WHERE jsonb_typeof(e) IS DISTINCT FROM 'object' OR
-      COALESCE(e->>'schemaName','') !~ '^[A-Za-z0-9_-]{1,200}$' OR
-      COALESCE(e->>'etag','')='' OR char_length(e->>'etag')>200;
-  IF bad>0 OR
-    (SELECT count(DISTINCT e->>'schemaName') FROM jsonb_array_elements(p_etags) e)<>jsonb_array_length(p_etags) OR
-    EXISTS(SELECT DISTINCT t->>'schemaName' FROM jsonb_array_elements(p_targets) t,
-        jsonb_array_elements(t->'rows') r WHERE r->>'schemaName' NOT IN
-        (SELECT e->>'schemaName' FROM jsonb_array_elements(p_etags) e)) OR
-    EXISTS(SELECT e->>'schemaName' FROM jsonb_array_elements(p_etags) e WHERE NOT EXISTS(
-      SELECT 1 FROM jsonb_array_elements(p_targets) t, jsonb_array_elements(t->'rows') r
-      WHERE r->>'schemaName'=e->>'schemaName')) THEN
+  -- The write gate revalidates the person and the action on every batch.
+  connection:=cc.user_attribute_writer(p_actor,p_version);
+  SELECT * INTO preview FROM cc.user_attribute_previews p WHERE p.preview_id=p_preview_id FOR UPDATE;
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR
+    preview.customer_id IS DISTINCT FROM connection.customer_id OR preview.manifest_digest IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  -- A selection preview freezes no conflict row (B section 8.4).
+  IF preview.source='selection' AND EXISTS(SELECT 1 FROM jsonb_array_elements(p_targets) t
+      WHERE t->>'disposition'='conflict' OR EXISTS(SELECT 1 FROM jsonb_array_elements(t->'rows') r
+      WHERE r->>'disposition'='conflict')) THEN
+    RAISE EXCEPTION 'The value preview rows are invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Every row names a category that the preview froze, and the ordinals continue without a gap.
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_targets) t, jsonb_array_elements(t->'rows') r
+      WHERE r->>'schemaName' NOT IN (SELECT c.schema_name FROM cc.user_attribute_preview_categories c
+        WHERE c.preview_id=p_preview_id)) THEN
     RAISE EXCEPTION 'The value preview categories are invalid.' USING ERRCODE='22023';
   END IF;
-  -- Rule G: the global access lock comes first, before any row lock or write, as device previews do.
-  PERFORM pg_advisory_xact_lock(7240173008);
-  -- The person check of the route. A caller without the actions receives no preview.
-  IF NOT EXISTS(SELECT 1 FROM cc.application_principals p
-      WHERE p.id=p_actor AND p.enabled AND p.permission_version=p_version) OR
-    NOT EXISTS(SELECT 1 FROM cc.application_grants g WHERE g.principal_id=p_actor AND
-      g.action='users:write' AND (g.scope='{"kind":"platform"}'::jsonb OR
-      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer))) OR
-    (p_source='selection' AND NOT EXISTS(SELECT 1 FROM cc.application_grants g
-      WHERE g.principal_id=p_actor AND g.action='users:bulk-actions' AND
-      (g.scope='{"kind":"platform"}'::jsonb OR
-      (g.scope->>'kind'='district' AND g.scope->>'customerId'=p_customer)))) THEN
-    RETURN jsonb_build_object('outcome','forbidden');
+  SELECT COALESCE(max(t.ordinal)+1,0) INTO ordinal FROM cc.user_attribute_preview_targets t
+    WHERE t.preview_id=p_preview_id;
+  SELECT count(*) INTO bad FROM jsonb_array_elements(p_targets) WITH ORDINALITY t(value,ord)
+    WHERE (t.value->>'ordinal')::integer<>ordinal+(t.ord-1)::integer;
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The value preview target order is invalid.' USING ERRCODE='22023';
   END IF;
-  -- The connection row locks after the access lock and before the first clock read.
-  SELECT * INTO connection FROM cc.google_connection c WHERE c.singleton FOR KEY SHARE;
-  IF connection.customer_id IS DISTINCT FROM p_customer OR connection.generation<>p_generation THEN
-    RETURN jsonb_build_object('outcome','connection-changed');
-  END IF;
-  SELECT count(*)::integer, count(*) FILTER(WHERE t->>'disposition'='eligible')::integer,
-      count(*) FILTER(WHERE t->>'disposition'='unchanged')::integer,
-      count(*) FILTER(WHERE t->>'disposition'='conflict')::integer,
-      min(NULLIF(t->>'observedAt','null')::timestamptz) FILTER(WHERE t->>'disposition'='eligible')
-    INTO total,eligible,unchanged,conflicts,oldest
-    FROM jsonb_array_elements(p_targets) t;
-  SELECT count(*)::integer INTO changes FROM jsonb_array_elements(p_targets) t,
-    jsonb_array_elements(t->'rows') r WHERE r->>'disposition'='eligible';
-  now_at:=clock_timestamp();
-  INSERT INTO cc.user_attribute_previews(preview_id,customer_id,created_by,permission_version,generation,
-    source,selection,selected,eligible,unchanged,conflicts,attribute_changes,oldest_observed_at,
-    manifest_digest,prepared_at,expires_at)
-  VALUES(gen_random_uuid(),p_customer,p_actor,p_version,p_generation,p_source,p_selection,total,
-    eligible,unchanged,conflicts,changes,oldest,p_digest,now_at,
-    now_at+make_interval(mins=>p_expires_minutes))
-  RETURNING * INTO preview;
-  FOR i IN 0..jsonb_array_length(p_changes)-1 LOOP
-    INSERT INTO cc.user_attribute_preview_changes(preview_id,ordinal,schema_name,field_name,mode,values)
-    VALUES(preview.preview_id,i,p_changes->i->>'schemaName',p_changes->i->>'fieldName',
-      p_changes->i->>'mode',p_changes->i->'values');
-  END LOOP;
   FOR target IN SELECT value FROM jsonb_array_elements(p_targets) LOOP
     INSERT INTO cc.user_attribute_preview_targets(preview_id,ordinal,user_id,primary_email,
       disposition,observed_at)
@@ -252,8 +279,59 @@ BEGIN
         NULLIF(row_value->'newValue','null'::jsonb),row_value->>'disposition');
     END LOOP;
   END LOOP;
-  INSERT INTO cc.user_attribute_preview_categories(preview_id,schema_name,etag)
-  SELECT preview.preview_id,e->>'schemaName',e->>'etag' FROM jsonb_array_elements(p_etags) e;
+  RETURN jsonb_build_object('outcome','stored','stored',jsonb_array_length(p_targets));
+END;
+$$;
+
+-- The seal of one value preview. It recomputes the counts and the oldest eligible observation
+-- from the stored rows and writes the digest. A preview without its seal stays unreadable and
+-- unconfirmable, so a failed store never becomes a job.
+CREATE FUNCTION cc.complete_user_attribute_preview(p_actor uuid,p_version integer,p_preview_id uuid,
+  p_digest text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE connection cc.google_connection; preview cc.user_attribute_previews; bad integer; total integer;
+  eligible_total integer; unchanged_total integer; conflict_total integer; changes integer;
+  oldest timestamptz;
+BEGIN
+  IF p_actor IS NULL OR p_version IS NULL OR p_preview_id IS NULL OR p_digest IS NULL OR
+    p_digest !~ '^[a-f0-9]{64}$' THEN
+    RAISE EXCEPTION 'The value preview seal is invalid.' USING ERRCODE='22023';
+  END IF;
+  connection:=cc.user_attribute_writer(p_actor,p_version);
+  SELECT * INTO preview FROM cc.user_attribute_previews p WHERE p.preview_id=p_preview_id FOR UPDATE;
+  IF preview.preview_id IS NULL OR preview.created_by<>p_actor OR
+    preview.customer_id IS DISTINCT FROM connection.customer_id OR preview.manifest_digest IS NOT NULL THEN
+    RETURN jsonb_build_object('outcome','not-found');
+  END IF;
+  SELECT count(*)::integer, count(*) FILTER(WHERE t.disposition='eligible')::integer,
+      count(*) FILTER(WHERE t.disposition='unchanged')::integer,
+      count(*) FILTER(WHERE t.disposition='conflict')::integer
+    INTO total,eligible_total,unchanged_total,conflict_total
+    FROM cc.user_attribute_preview_targets t WHERE t.preview_id=p_preview_id;
+  IF total NOT BETWEEN 1 AND 100000 THEN
+    RAISE EXCEPTION 'The value preview target count is invalid.' USING ERRCODE='22023';
+  END IF;
+  -- Every target keeps the target rule of B section 8.4 and holds at least one row.
+  SELECT count(*) INTO bad FROM cc.user_attribute_preview_targets t
+    WHERE t.disposition IS DISTINCT FROM (CASE
+      WHEN EXISTS(SELECT 1 FROM cc.user_attribute_target_values v WHERE v.preview_id=t.preview_id
+        AND v.ordinal=t.ordinal AND v.disposition='conflict') THEN 'conflict'
+      WHEN EXISTS(SELECT 1 FROM cc.user_attribute_target_values v WHERE v.preview_id=t.preview_id
+        AND v.ordinal=t.ordinal AND v.disposition='eligible') THEN 'eligible'
+      ELSE 'unchanged' END) OR
+      NOT EXISTS(SELECT 1 FROM cc.user_attribute_target_values v WHERE v.preview_id=t.preview_id
+        AND v.ordinal=t.ordinal);
+  IF bad>0 THEN
+    RAISE EXCEPTION 'The value preview targets are invalid.' USING ERRCODE='22023';
+  END IF;
+  SELECT count(*)::integer INTO changes FROM cc.user_attribute_target_values v
+    WHERE v.preview_id=p_preview_id AND v.disposition='eligible';
+  SELECT min(t.observed_at) INTO oldest FROM cc.user_attribute_preview_targets t
+    WHERE t.preview_id=p_preview_id AND t.disposition='eligible';
+  UPDATE cc.user_attribute_previews p SET selected=total,eligible=eligible_total,
+    unchanged=unchanged_total,conflicts=conflict_total,attribute_changes=changes,
+    oldest_observed_at=oldest,manifest_digest=p_digest
+    WHERE p.preview_id=p_preview_id RETURNING * INTO preview;
   RETURN jsonb_build_object('outcome','created','preview',cc.user_attribute_preview_projection(preview));
 END;
 $$;
@@ -273,7 +351,8 @@ BEGIN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
   SELECT * INTO preview FROM cc.user_attribute_previews p
-    WHERE p.preview_id=p_preview_id AND p.customer_id=connection.customer_id AND p.created_by=p_actor;
+    WHERE p.preview_id=p_preview_id AND p.customer_id=connection.customer_id AND p.created_by=p_actor
+      AND p.manifest_digest IS NOT NULL;
   IF preview.preview_id IS NULL THEN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
@@ -309,7 +388,8 @@ BEGIN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
   SELECT * INTO preview FROM cc.user_attribute_previews p
-    WHERE p.preview_id=p_preview_id AND p.customer_id=connection.customer_id AND p.created_by=p_actor;
+    WHERE p.preview_id=p_preview_id AND p.customer_id=connection.customer_id AND p.created_by=p_actor
+      AND p.manifest_digest IS NOT NULL;
   IF preview.preview_id IS NULL THEN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
@@ -380,7 +460,7 @@ BEGIN
   -- Rule G: the global access lock comes first, before any row lock. The preview row locks after it.
   PERFORM pg_advisory_xact_lock(7240173008);
   SELECT * INTO preview FROM cc.user_attribute_previews p WHERE p.preview_id=p_preview_id FOR UPDATE;
-  IF preview.preview_id IS NULL OR preview.created_by<>p_actor THEN
+  IF preview.preview_id IS NULL OR preview.manifest_digest IS NULL OR preview.created_by<>p_actor THEN
     RETURN jsonb_build_object('outcome','not-found');
   END IF;
   -- Current authority and the frozen permission version come before the existing receipt, so a
@@ -419,16 +499,25 @@ BEGIN
     RETURN jsonb_build_object('outcome','nothing-to-update');
   END IF;
   -- B section 6.2: the preview froze each category etag, and the confirm compares the cache again.
+  -- The customer category-set lock serializes this reread with the whole-set replacement (021,
+  -- 026). Without it, a waiting lookup skips a tuple that the replacement deleted instead of
+  -- observing its replacement. The global access lock came first, as rule G requires.
+  PERFORM pg_advisory_xact_lock(hashtext('cc:user_attribute_categories'),hashtext(preview.customer_id));
+  -- The connection row locks after the preview row and before the job rows.
+  SELECT * INTO connection FROM cc.google_connection c WHERE c.singleton FOR KEY SHARE;
+  -- Every blocking wait is behind us. A preview that reached its deadline during one of those
+  -- waits refuses here, before any job exists.
+  IF preview.expires_at<=clock_timestamp() THEN
+    RETURN jsonb_build_object('outcome','preview-expired','expiresAt',preview.expires_at);
+  END IF;
   -- A category that changed or vanished answers category-changed before any job exists.
   FOR etag_row IN SELECT * FROM cc.user_attribute_preview_categories c WHERE c.preview_id=p_preview_id LOOP
     SELECT * INTO category FROM cc.user_attribute_categories c
-      WHERE c.customer_id=preview.customer_id AND c.schema_name=etag_row.schema_name FOR SHARE;
+      WHERE c.customer_id=preview.customer_id AND c.schema_name=etag_row.schema_name;
     IF category.schema_id IS NULL OR category.etag IS DISTINCT FROM etag_row.etag THEN
       RETURN jsonb_build_object('outcome','category-changed');
     END IF;
   END LOOP;
-  -- The connection row locks after the preview row and before the job rows.
-  SELECT * INTO connection FROM cc.google_connection c WHERE c.singleton FOR KEY SHARE;
   IF connection.customer_id IS DISTINCT FROM preview.customer_id OR
     connection.generation<>preview.generation THEN
     RETURN jsonb_build_object('outcome','connection-changed');
@@ -453,7 +542,9 @@ REVOKE ALL ON FUNCTION cc.user_attribute_writer(uuid,integer),
   cc.read_user_attribute_preview_base(uuid,integer),
   cc.user_value_credential(uuid,integer,text,integer),
   cc.user_attribute_preview_projection(cc.user_attribute_previews),
-  cc.create_user_attribute_preview(uuid,integer,text,integer,text,jsonb,jsonb,text,jsonb,jsonb,integer),
+  cc.create_user_attribute_preview(uuid,integer,text,integer,text,jsonb,jsonb,jsonb,integer),
+  cc.append_user_attribute_preview_targets(uuid,integer,uuid,jsonb),
+  cc.complete_user_attribute_preview(uuid,integer,uuid,text),
   cc.read_user_attribute_preview(uuid,integer,uuid),
   cc.read_user_attribute_preview_targets(uuid,integer,uuid,text,integer,text,text,integer),
   cc.user_attribute_job_receipt(uuid),

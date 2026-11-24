@@ -24,11 +24,11 @@ import {
   type UserAttributeCategoryPlanConfirmRequest,
   type UserAttributeCategoryPlanRequest,
   type UserAttributeDisposition,
-  type UserAttributeEditPreviewRequest,
+  type UserAttributeEditPreviewRequestShape,
   type UserAttributeJobReceipt,
   type UserAttributePreview,
   type UserAttributePreviewConfirmRequest,
-  type UserAttributePreviewRequest,
+  type UserAttributePreviewRequestShape,
   type UserAttributeTargetsPage,
   type UserDetail,
   type UserFreshness,
@@ -52,6 +52,7 @@ import { UserAttributeCategoriesRoute } from './user-attribute-categories';
 import {
   UserAttributePreviews,
   USER_ATTRIBUTE_PREVIEW_USERS_LIMIT,
+  previewTargetBatches,
   userAttributePreviewBaseSchema,
   type UserAttributePreviewBase,
 } from './user-attribute-previews';
@@ -258,11 +259,10 @@ export class UsersService {
         this.connection.userValueCredential(session, customerId, generation),
       userValues: (credential, _customerId, userId, customFieldMask, signal) =>
         this.reader.userValues(credential, userId, customFieldMask, signal),
-      create: (session, preview) =>
-        this.result(
+      create: async (session, preview) => {
+        const header = (await this.result(
           `SELECT cc.create_user_attribute_preview($1::uuid,$2::integer,$3::text,
-            $4::integer,$5::text,$6::jsonb,$7::jsonb,$8::text,$9::jsonb,$10::jsonb,
-            $11::integer) AS result`,
+            $4::integer,$5::text,$6::jsonb,$7::jsonb,$8::jsonb,$9::integer) AS result`,
           [
             session.identity.id,
             session.identity.permissionVersion,
@@ -273,27 +273,42 @@ export class UsersService {
               ? null
               : JSON.stringify(preview.selection),
             JSON.stringify(preview.changes),
-            preview.digest,
-            JSON.stringify(
-              preview.targets.map((target) => ({
-                ordinal: target.ordinal,
-                userId: target.userId,
-                primaryEmail: target.primaryEmail,
-                observedAt: target.observedAt,
-                disposition: target.disposition,
-                rows: target.rows.map((row) => ({
-                  schemaName: row.schemaName,
-                  fieldName: row.fieldName,
-                  currentValue: row.currentValue,
-                  newValue: row.newValue,
-                  disposition: row.disposition,
-                })),
-              })),
-            ),
             JSON.stringify(preview.etags),
             preview.expiresMinutes,
           ],
-        ),
+        )) as Record<string, unknown> | null;
+        // A refused create answers forbidden or connection-changed before any target is stored.
+        if (!header || header['outcome'] !== 'created') return header;
+        const previewId = String(header['previewId']);
+        // One bounded batch at a time, so no single SQL argument holds the complete selection
+        // (B section 10). A preview without its seal stays unconfirmable.
+        for (const batch of previewTargetBatches(preview.targets)) {
+          const stored = (await this.result(
+            `SELECT cc.append_user_attribute_preview_targets($1::uuid,$2::integer,
+              $3::uuid,$4::jsonb) AS result`,
+            [
+              session.identity.id,
+              session.identity.permissionVersion,
+              previewId,
+              batch,
+            ],
+          )) as Record<string, unknown> | null;
+          if (!stored || stored['outcome'] !== 'stored')
+            throw new ServiceUnavailableException({
+              reason: 'user-preview-unavailable',
+            });
+        }
+        return this.result(
+          `SELECT cc.complete_user_attribute_preview($1::uuid,$2::integer,$3::uuid,
+            $4::text) AS result`,
+          [
+            session.identity.id,
+            session.identity.permissionVersion,
+            previewId,
+            preview.digest,
+          ],
+        );
+      },
       read: (session, previewId) =>
         this.result(
           'SELECT cc.read_user_attribute_preview($1::uuid,$2::integer,$3::uuid) AS result',
@@ -893,7 +908,9 @@ export class UsersService {
   /** Freeze one value preview from a selection key with changes or from an edit list. */
   async createUserAttributePreview(
     session: SessionResponse,
-    request: UserAttributePreviewRequest | UserAttributeEditPreviewRequest,
+    request:
+      | UserAttributePreviewRequestShape
+      | UserAttributeEditPreviewRequestShape,
     correlationId: string,
   ): Promise<UserAttributePreview> {
     return this.previews.preview(session, request, correlationId);

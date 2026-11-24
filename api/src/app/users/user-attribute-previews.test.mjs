@@ -43,11 +43,14 @@ const {
   editPreviewTargets,
   finalValue,
   isCalendarDate,
+  isTextValue,
   parseTargetsCursor,
   previewDigest,
+  previewTargetBatches,
   selectionPreviewTargets,
   wireValue,
 } = await import('./user-attribute-previews.ts');
+const { createHash } = await import('node:crypto');
 
 const at = '2026-11-24T18:00:00.000Z';
 const field = (overrides) => ({
@@ -533,4 +536,172 @@ test('the cached value list keeps each entry raw for a kept multi-value entry', 
     ],
   );
   assert.deepEqual(currentEntries(null, programs), []);
+});
+
+test('a text value counts code points and refuses blank or long text with its label', () => {
+  assert.equal(isTextValue('B12'), true);
+  assert.equal(isTextValue('  B12  '), true);
+  assert.equal(isTextValue('\u{1f600}'.repeat(500)), true);
+  assert.equal(isTextValue(''), false);
+  assert.equal(isTextValue('   '), false);
+  assert.equal(isTextValue('x'.repeat(501)), false);
+  assert.equal(isTextValue('\u{1f600}'.repeat(501)), false);
+  for (const value of ['', '   ', 'x'.repeat(501), '\u{1f600}'.repeat(501)]) {
+    const answer = refusal(() => checkedValue(value, homeroom));
+    assert.equal(answer.status, 422);
+    assert.deepEqual(answer.body, {
+      reason: 'invalid-value',
+      message: 'Homeroom holds 1 to 500 characters.',
+    });
+  }
+  assert.equal(
+    checkedValue('\u{1f600}'.repeat(500), homeroom),
+    '\u{1f600}'.repeat(500),
+  );
+});
+
+test('a computed list outside the Google list rule refuses with its label', () => {
+  const full = Array.from({ length: 150 }, (_, index) => ({
+    value: `P${index}`,
+  }));
+  const counted = refusal(() =>
+    selectionPreviewTargets(
+      [user('u1', { StudentInfo: { Programs: full } })],
+      [change('Programs', 'add', ['New'])],
+      base,
+    ),
+  );
+  assert.equal(counted.status, 422);
+  assert.deepEqual(counted.body, {
+    reason: 'invalid-value',
+    message: 'Programs holds at most 150 values.',
+  });
+  const sized = refusal(() =>
+    selectionPreviewTargets(
+      [user('u1', { StudentInfo: {} })],
+      [
+        change(
+          'Programs',
+          'replace',
+          Array.from(
+            { length: 31 },
+            (_, index) => 'x'.repeat(499) + String.fromCharCode(65 + index),
+          ),
+        ),
+      ],
+      base,
+    ),
+  );
+  assert.equal(sized.status, 422);
+  assert.deepEqual(sized.body, {
+    reason: 'invalid-value',
+    message: 'Programs holds values of at most 15,000 characters in total.',
+  });
+  // 30 entries of 500 characters reach the total, and 500 of 30 characters stay under it.
+  const targets = selectionPreviewTargets(
+    [user('u1', { StudentInfo: {} })],
+    [
+      change(
+        'Programs',
+        'replace',
+        Array.from(
+          { length: 30 },
+          (_, index) => 'x'.repeat(499) + String.fromCharCode(65 + index),
+        ),
+      ),
+    ],
+    base,
+  );
+  assert.equal(targets[0].rows[0].disposition, 'eligible');
+});
+
+test('the digest matches the one-document form and never builds that document', () => {
+  const targets = Array.from({ length: 12 }, (_, index) => ({
+    ordinal: index,
+    userId: `u${index}`,
+    primaryEmail: `u${index}@example.org`,
+    observedAt: at,
+    disposition: 'eligible',
+    rows: [
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Homeroom',
+        currentValue: 'B11',
+        newValue: 'B12',
+        current: 'B11',
+        requested: 'B12',
+        disposition: 'eligible',
+      },
+    ],
+  }));
+  const changes = [change('Homeroom', 'set', ['B12'])];
+  const expected = createHash('sha256')
+    .update(
+      JSON.stringify({
+        actionVersion: 1,
+        source: 'selection',
+        changes,
+        targets: targets.map((target) => ({
+          userId: target.userId,
+          rows: target.rows.map((row) => ({
+            schemaName: row.schemaName,
+            fieldName: row.fieldName,
+            currentValue: row.current,
+            newValue: row.requested,
+            disposition: row.disposition,
+          })),
+        })),
+      }),
+    )
+    .digest('hex');
+  assert.equal(previewDigest('selection', changes, targets), expected);
+  // The old form built one string for the complete selection, which can pass the string limit.
+  const original = JSON.stringify;
+  let wholeDocuments = 0;
+  JSON.stringify = function (value, ...rest) {
+    if (value && typeof value === 'object' && Array.isArray(value.targets)) {
+      wholeDocuments += 1;
+      throw new RangeError('Invalid string length');
+    }
+    return original.call(this, value, ...rest);
+  };
+  try {
+    assert.equal(previewDigest('selection', changes, targets), expected);
+  } finally {
+    JSON.stringify = original;
+  }
+  assert.equal(wholeDocuments, 0);
+});
+
+test('the stored targets arrive in bounded batches that keep every row', () => {
+  const targets = Array.from({ length: 40 }, (_, index) => ({
+    ordinal: index,
+    userId: `u${index}`,
+    primaryEmail: `u${index}@example.org`,
+    observedAt: at,
+    disposition: 'eligible',
+    rows: [
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Homeroom',
+        currentValue: 'B11',
+        newValue: 'x'.repeat(8000),
+        current: 'B11',
+        requested: 'x'.repeat(8000),
+        disposition: 'eligible',
+      },
+    ],
+  }));
+  const batches = [...previewTargetBatches(targets)];
+  assert.ok(batches.length > 1, `${batches.length} batches`);
+  for (const batch of batches) {
+    assert.ok(batch.length <= 256 * 1024, `${batch.length} characters`);
+    assert.ok(Array.isArray(JSON.parse(batch)));
+  }
+  const stored = batches.flatMap((batch) => JSON.parse(batch));
+  assert.deepEqual(
+    stored.map((target) => [target.ordinal, target.userId]),
+    targets.map((target) => [target.ordinal, target.userId]),
+  );
+  assert.equal(stored[3].rows[0].newValue, 'x'.repeat(8000));
 });

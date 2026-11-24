@@ -13,6 +13,7 @@ export async function qualifyUserAttributePreviewRoutes({
   runtime,
   migrator,
   issuer,
+  connect,
 }) {
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
@@ -171,10 +172,12 @@ export async function qualifyUserAttributePreviewRoutes({
   ];
   const digest = 'b'.repeat(64);
   const etags = [{ schemaName, etag }];
-  const create = async (actor, version, options = {}) =>
-    call(
+  /** One header, bounded target batches, and the seal. */
+  const create = async (actor, version, options = {}) => {
+    const targets = options.targets ?? selectionTargets;
+    const header = await call(
       `SELECT cc.create_user_attribute_preview($1::uuid,$2::integer,$3::text,$4::integer,
-        $5::text,$6::jsonb,$7::jsonb,$8::text,$9::jsonb,$10::jsonb,$11::integer) AS result`,
+        $5::text,$6::jsonb,$7::jsonb,$8::jsonb,$9::integer) AS result`,
       [
         actor,
         version,
@@ -185,16 +188,32 @@ export async function qualifyUserAttributePreviewRoutes({
           ? JSON.stringify({ gridId: 'users', tabId: randomUUID() })
           : options.selection,
         JSON.stringify(options.changes ?? changes),
-        options.digest ?? digest,
-        JSON.stringify(options.targets ?? selectionTargets),
         JSON.stringify(options.etags ?? etags),
         options.expires ?? 15,
       ],
-    ).then((answer) => {
-      if (answer?.outcome === 'created')
-        previews.push(answer.preview.previewId);
-      return answer;
-    });
+    );
+    if (header?.outcome !== 'created') return header;
+    const previewId = header.previewId;
+    previews.push(previewId);
+    // Two batches prove that the ordinals continue across calls.
+    const middle = Math.ceil(targets.length / 2);
+    for (const batch of [
+      targets.slice(0, middle),
+      targets.slice(middle),
+    ].filter((part) => part.length > 0)) {
+      const stored = await call(
+        `SELECT cc.append_user_attribute_preview_targets($1::uuid,$2::integer,$3::uuid,
+          $4::jsonb) AS result`,
+        [actor, version, previewId, JSON.stringify(batch)],
+      );
+      if (stored?.outcome !== 'stored')
+        throw new Error(`target batch refused: ${JSON.stringify(stored)}`);
+    }
+    return call(
+      `SELECT cc.complete_user_attribute_preview($1::uuid,$2::integer,$3::uuid,$4::text) AS result`,
+      [actor, version, previewId, digest],
+    );
+  };
   const confirm = (actor, version, previewId, input = digest) =>
     call(
       `SELECT cc.confirm_user_attribute_preview($1::uuid,$2::integer,$3::uuid,$4::text,
@@ -218,6 +237,38 @@ export async function qualifyUserAttributePreviewRoutes({
         cursor?.[2] ?? null,
         limit,
       ],
+    );
+  /**
+   * The backend of the blocked confirmation, once its statement waits on the holder. Without
+   * pg_read_all_stats, another role's query, state, and wait_event read NULL, so the probe names
+   * the blocking session by pid.
+   */
+  const waitForConfirmLock = async (holderPid) => {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const blocked = (
+        await migrator.query(
+          `SELECT pid FROM pg_stat_activity WHERE usename='cc-app'
+            AND $1::int = ANY(pg_blocking_pids(pid)) LIMIT 1`,
+          [holderPid],
+        )
+      ).rows[0];
+      if (blocked) return blocked.pid;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const waiting = (
+      await migrator.query(
+        `SELECT pid,usename,pg_blocking_pids(pid) AS blockers FROM pg_stat_activity
+          WHERE usename IN ('cc-app','cc-migrator') ORDER BY pid`,
+      )
+    ).rows;
+    throw new Error(
+      `the confirmation never waited on a lock; holder ${holderPid}: ${JSON.stringify(waiting)}`,
+    );
+  };
+  const pendingAnswer = (promise) =>
+    promise.then(
+      (answer) => ({ answer }),
+      (error) => ({ error }),
     );
 
   try {
@@ -452,6 +503,191 @@ export async function qualifyUserAttributePreviewRoutes({
           outcome: 'category-changed',
         });
         await seed(etag);
+      },
+    );
+
+    await check(
+      'K23 a preview without its seal is unreadable and unconfirmable',
+      async () => {
+        const header = await call(
+          `SELECT cc.create_user_attribute_preview($1::uuid,$2::integer,$3::text,$4::integer,
+            $5::text,$6::jsonb,$7::jsonb,$8::jsonb,$9::integer) AS result`,
+          [
+            author,
+            1,
+            customer,
+            generation,
+            'selection',
+            JSON.stringify({ gridId: 'users', tabId: randomUUID() }),
+            JSON.stringify(changes),
+            JSON.stringify(etags),
+            15,
+          ],
+        );
+        assert.equal(header.outcome, 'created');
+        const previewId = header.previewId;
+        previews.push(previewId);
+        assert.deepEqual(
+          await call(
+            `SELECT cc.append_user_attribute_preview_targets($1::uuid,$2::integer,$3::uuid,
+              $4::jsonb) AS result`,
+            [
+              author,
+              1,
+              previewId,
+              JSON.stringify(selectionTargets.slice(0, 1)),
+            ],
+          ),
+          { outcome: 'stored', stored: 1 },
+        );
+        assert.deepEqual(
+          await call(
+            'SELECT cc.read_user_attribute_preview($1::uuid,$2::integer,$3::uuid) AS result',
+            [author, 1, previewId],
+          ),
+          { outcome: 'not-found' },
+        );
+        assert.deepEqual(await confirm(author, 1, previewId), {
+          outcome: 'not-found',
+        });
+        const counted = await one(
+          'SELECT count(*)::integer AS jobs FROM cc.user_attribute_update_jobs WHERE preview_id=$1',
+          [previewId],
+        );
+        assert.equal(counted.jobs, 0);
+      },
+    );
+
+    await check(
+      'K23 an unchanged category replacement during confirm keeps the preview valid',
+      async () => {
+        const created = await create(author, 1);
+        const previewId = created.preview.previewId;
+        const holder = await connect('cc-migrator', 'cc-app');
+        let pending;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          // The production replacement deletes and reinserts the whole set under its advisory
+          // lock, with identical metadata and etag.
+          await holder.query(
+            `SELECT cc.replace_user_attribute_categories($1::uuid,$2::integer,$3::text,
+              $4::jsonb,$5::timestamptz)`,
+            [
+              reader,
+              1,
+              customer,
+              JSON.stringify([
+                {
+                  schemaId,
+                  schemaName,
+                  displayName: 'K23 info',
+                  etag,
+                  fields,
+                },
+              ]),
+              new Date().toISOString(),
+            ],
+          );
+          pending = pendingAnswer(confirm(author, 1, previewId));
+          const blockedPid = await waitForConfirmLock(holderPid);
+          const blocked = await one(
+            'SELECT $2::integer = ANY(pg_blocking_pids($1::integer)) AS blocked',
+            [blockedPid, holderPid],
+          );
+          assert.equal(blocked.blocked, true);
+          await holder.query('COMMIT');
+          const answer = await pending;
+          assert.equal(
+            answer.answer?.outcome,
+            'created',
+            JSON.stringify(answer.answer ?? answer.error?.message),
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await holder.end().catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'K23 a preview that expires during the category wait creates no job',
+      async () => {
+        const created = await create(author, 1);
+        const previewId = created.preview.previewId;
+        await migrator.query(
+          `UPDATE cc.user_attribute_previews
+           SET prepared_at=clock_timestamp()-interval '1 minute',
+             expires_at=clock_timestamp()+interval '3 seconds'
+           WHERE preview_id=$1`,
+          [previewId],
+        );
+        const holder = await connect('cc-migrator', 'cc-app');
+        let pending;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            `SELECT pg_advisory_xact_lock(hashtext('cc:user_attribute_categories'),
+              hashtext($1::text))`,
+            [customer],
+          );
+          pending = pendingAnswer(confirm(author, 1, previewId));
+          await waitForConfirmLock(holderPid);
+          await new Promise((resolve) => setTimeout(resolve, 4000));
+          await holder.query('COMMIT');
+          const answer = await pending;
+          assert.equal(
+            answer.answer?.outcome,
+            'preview-expired',
+            JSON.stringify(answer.answer ?? answer.error?.message),
+          );
+          const counted = await one(
+            'SELECT count(*)::integer AS jobs FROM cc.user_attribute_update_jobs WHERE preview_id=$1',
+            [previewId],
+          );
+          assert.equal(counted.jobs, 0);
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await holder.end().catch(() => undefined);
+        }
+      },
+    );
+
+    await check(
+      'K23 an unexpired preview behind the same wait still confirms',
+      async () => {
+        const created = await create(author, 1);
+        const previewId = created.preview.previewId;
+        const holder = await connect('cc-migrator', 'cc-app');
+        let pending;
+        try {
+          const holderPid = (
+            await holder.query('SELECT pg_backend_pid() AS pid')
+          ).rows[0].pid;
+          await holder.query('BEGIN');
+          await holder.query(
+            `SELECT pg_advisory_xact_lock(hashtext('cc:user_attribute_categories'),
+              hashtext($1::text))`,
+            [customer],
+          );
+          pending = pendingAnswer(confirm(author, 1, previewId));
+          await waitForConfirmLock(holderPid);
+          await holder.query('COMMIT');
+          const answer = await pending;
+          assert.equal(
+            answer.answer?.outcome,
+            'created',
+            JSON.stringify(answer.answer ?? answer.error?.message),
+          );
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          await holder.end().catch(() => undefined);
+        }
       },
     );
 
