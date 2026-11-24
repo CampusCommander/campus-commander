@@ -191,6 +191,47 @@ test('users:schema-manage takes platform and district scopes, and the platform a
   );
 });
 
+test('the user write actions take platform and district scopes, and the platform administrator holds both', () => {
+  // B section 11 and E14: users:write and users:bulk-actions take the two writable scopes.
+  for (const action of ['users:write', 'users:bulk-actions']) {
+    assert.ok(
+      actionSchema.options.includes(action),
+      `${action} is a declared action`,
+    );
+    assert.deepEqual(actionScopeKinds[action], ['platform', 'district']);
+    for (const scope of [platform, district])
+      assert.equal(grantSchema.safeParse({ action, scope }).success, true);
+    assert.equal(
+      grantSchema.safeParse({ action, scope: school }).success,
+      false,
+    );
+    assert.equal(
+      isAuthorized(
+        grantsForPreset('platform-administrator', platform),
+        action,
+        district,
+      ),
+      true,
+      `The platform administrator preset holds ${action}.`,
+    );
+    assert.equal(
+      isAuthorized(
+        grantsForPreset('district-administrator', district),
+        action,
+        district,
+      ),
+      false,
+      `The district preset holds no ${action}.`,
+    );
+    assert.equal(isAuthorized([], action, district), false);
+  }
+  // Bulk Set attributes needs both actions, and neither action implies the other (B section 11).
+  const bulk = [{ action: 'users:bulk-actions', scope: district }];
+  const writer = [{ action: 'users:write', scope: district }];
+  assert.equal(isAuthorized(bulk, 'users:write', district), false);
+  assert.equal(isAuthorized(writer, 'users:bulk-actions', district), false);
+});
+
 test('a session with a jobs:manage grant parses', () => {
   const session = sessionResponseSchema.parse({
     identity: {

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   USER_ATTRIBUTE_CATEGORY_LIMIT,
+  USER_ATTRIBUTE_EDITS_LIMIT,
   USER_ATTRIBUTE_FIELD_LIMIT,
+  USER_ATTRIBUTE_VALUES_LIMIT,
   USER_BY_IDS_LIMIT,
   userAttributeCategoriesSchema,
   userAttributeCategoryCreateDraftSchema,
@@ -12,10 +14,22 @@ import {
   userAttributeCategoryPlanRequestSchema,
   userAttributeCategoryPlanSchema,
   userAttributeCategorySchema,
+  userAttributeChangeSchema,
+  userAttributeChangesSchema,
+  userAttributeChangeModeSchema,
+  userAttributeEditPreviewRequestSchema,
+  userAttributeEditSchema,
+  userAttributeEditsSchema,
   userAttributeFieldSchema,
   userAttributeKey,
   userAttributeKeySchema,
   userAttributeOperatorSchema,
+  userAttributePreviewConfirmRequestSchema,
+  userAttributePreviewRequestSchema,
+  userAttributePreviewSchema,
+  userAttributeJobReceiptSchema,
+  userAttributeTargetSchema,
+  userAttributeTargetsPageSchema,
   userByIdsSchema,
   userDetailSchema,
   userDomainRefreshSchema,
@@ -1207,6 +1221,514 @@ test('a category job receipt names the CAT job and its change count', () => {
     userAttributeCategoryJobReceiptSchema.safeParse({
       ...receipt,
       displayId: 'UPD-007',
+    }).success,
+    false,
+  );
+});
+
+// K22: the value preview and confirm contracts of document B section 10. Every fixture time is
+// relative to the test clock, so the contract check never depends on the calendar day.
+const previewAt = new Date(Date.now() - 60_000).toISOString();
+const previewExpiry = new Date(Date.now() + 14 * 60_000).toISOString();
+
+test('the five value modes carry their own values', () => {
+  assert.deepEqual(userAttributeChangeModeSchema.options, [
+    'set',
+    'clear',
+    'add',
+    'remove',
+    'replace',
+  ]);
+  for (const change of [
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'set',
+      values: ['B12'],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'clear',
+      values: [],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Programs',
+      mode: 'add',
+      values: ['ELL', 'Band'],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Programs',
+      mode: 'remove',
+      values: ['ELL'],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Programs',
+      mode: 'replace',
+      values: ['Robotics'],
+    },
+  ])
+    assert.equal(
+      userAttributeChangeSchema.safeParse(change).success,
+      true,
+      `${change.mode} parses`,
+    );
+  // A clear carries no value, and every other mode carries at least one. Set carries exactly one.
+  for (const change of [
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'clear',
+      values: ['B12'],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'add',
+      values: [],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'set',
+      values: [],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'set',
+      values: ['B12', 'B13'],
+    },
+  ])
+    assert.equal(
+      userAttributeChangeSchema.safeParse(change).success,
+      false,
+      `${change.mode} refuses ${JSON.stringify(change.values)}`,
+    );
+  assert.equal(
+    userAttributeChangeSchema.safeParse({
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'append',
+      values: ['B12'],
+    }).success,
+    false,
+  );
+  // An attribute name keeps the Google characters, and an unknown key never parses.
+  for (const change of [
+    {
+      schemaName: 'Student Info',
+      fieldName: 'Homeroom',
+      mode: 'set',
+      values: ['B12'],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'set',
+      values: ['B12'],
+      extra: 1,
+    },
+  ])
+    assert.equal(userAttributeChangeSchema.safeParse(change).success, false);
+});
+
+test('one value keeps the text, number, and yes or no forms of the info types', () => {
+  const change = (values) => ({
+    schemaName: 'StudentInfo',
+    fieldName: 'Programs',
+    mode: 'replace',
+    values,
+  });
+  // B section 8.1: text to 500 code points, a finite number, and true or false.
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change(['x'.repeat(500)])).success,
+    true,
+  );
+  assert.equal(userAttributeChangeSchema.safeParse(change([7])).success, true);
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change([1.5])).success,
+    true,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change([true])).success,
+    true,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change(['2026-11-17'])).success,
+    true,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change(['sidney@example.org'])).success,
+    true,
+  );
+  // The limit counts code points, so 500 astral characters pass and 501 fail.
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change(['\u{1f600}'.repeat(500)]))
+      .success,
+    true,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change(['x'.repeat(501)])).success,
+    false,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change([''])).success,
+    false,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change(['   '])).success,
+    false,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change([Number.NaN])).success,
+    false,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change([Number.POSITIVE_INFINITY]))
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(change([{ value: 'B12' }])).success,
+    false,
+  );
+  // Google's largest list holds 150 values (B section 3).
+  assert.equal(USER_ATTRIBUTE_VALUES_LIMIT, 150);
+  assert.equal(
+    userAttributeChangeSchema.safeParse(
+      change(Array.from({ length: 150 }, (_, i) => `v${i}`)),
+    ).success,
+    true,
+  );
+  assert.equal(
+    userAttributeChangeSchema.safeParse(
+      change(Array.from({ length: 151 }, (_, i) => `v${i}`)),
+    ).success,
+    false,
+  );
+});
+
+test('a change set names each attribute once', () => {
+  const changes = [
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Homeroom',
+      mode: 'set',
+      values: ['B12'],
+    },
+    {
+      schemaName: 'StudentInfo',
+      fieldName: 'Programs',
+      mode: 'clear',
+      values: [],
+    },
+  ];
+  assert.equal(userAttributeChangesSchema.safeParse(changes).success, true);
+  assert.equal(userAttributeChangesSchema.safeParse([]).success, false);
+  assert.equal(
+    userAttributeChangesSchema.safeParse([changes[0], changes[0]]).success,
+    false,
+    'An attribute occurs once.',
+  );
+  // The account holds at most 100 attributes over all categories (B section 5).
+  const many = Array.from(
+    { length: USER_ATTRIBUTE_FIELD_LIMIT + 1 },
+    (_, index) => ({
+      schemaName: `Category${index}`,
+      fieldName: 'Value',
+      mode: 'set',
+      values: ['x'],
+    }),
+  );
+  assert.equal(userAttributeChangesSchema.safeParse(many).success, false);
+});
+
+test('a selection preview request copies the device form under the users grid', () => {
+  const request = {
+    gridId: 'users',
+    tabId: '00000000-0000-4000-8000-000000000002',
+    changes: [
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Homeroom',
+        mode: 'set',
+        values: ['B12'],
+      },
+    ],
+  };
+  assert.deepEqual(userAttributePreviewRequestSchema.parse(request), request);
+  assert.equal(
+    userAttributePreviewRequestSchema.safeParse({
+      ...request,
+      gridId: 'devices',
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewRequestSchema.safeParse({
+      ...request,
+      tabId: 'not-a-uuid',
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewRequestSchema.safeParse({ ...request, changes: [] })
+      .success,
+    false,
+  );
+});
+
+test('an edit preview carries the C1 key and the baseline of each edit', () => {
+  const edit = {
+    userId: '107000000000000000001',
+    attribute: 'attr:StudentInfo.Homeroom',
+    mode: 'set',
+    values: ['B13'],
+    baselineValue: 'B12',
+  };
+  assert.deepEqual(userAttributeEditSchema.parse(edit), edit);
+  // The C1 key names the attribute, and a separate schema and field name never parse.
+  assert.equal(
+    userAttributeEditSchema.safeParse({
+      ...edit,
+      attribute: 'StudentInfo.Homeroom',
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeEditSchema.safeParse({
+      ...edit,
+      attribute: 'attribute:StudentInfo.Homeroom',
+    }).success,
+    false,
+  );
+  // A baseline is the value that the person saw, a list or nothing at all.
+  assert.equal(
+    userAttributeEditSchema.safeParse({
+      ...edit,
+      attribute: 'attr:StudentInfo.Programs',
+      mode: 'add',
+      values: ['Band'],
+      baselineValue: ['ELL'],
+    }).success,
+    true,
+  );
+  // A person enters values, so an entry object of the Google body never reaches the wire.
+  assert.equal(
+    userAttributeEditSchema.safeParse({
+      ...edit,
+      attribute: 'attr:StudentInfo.Programs',
+      mode: 'add',
+      values: [{ value: 'Band' }],
+      baselineValue: [{ value: 'ELL' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeEditSchema.safeParse({ ...edit, baselineValue: null }).success,
+    true,
+  );
+  assert.equal(
+    userAttributeEditPreviewRequestSchema.safeParse({ edits: [edit] }).success,
+    true,
+  );
+  assert.equal(
+    userAttributeEditPreviewRequestSchema.safeParse({ edits: [] }).success,
+    false,
+  );
+  // A user and an attribute occur once, and an edit list holds 2,500 edits on 500 users (E17).
+  assert.equal(
+    userAttributeEditsSchema.safeParse([edit, edit]).success,
+    false,
+    'A user and attribute occur once.',
+  );
+  assert.equal(USER_ATTRIBUTE_EDITS_LIMIT, 2500);
+  assert.equal(
+    userAttributeEditsSchema.safeParse(
+      Array.from({ length: USER_BY_IDS_LIMIT + 1 }, (_, index) => ({
+        ...edit,
+        userId: `user-${index}`,
+      })),
+    ).success,
+    false,
+    'An edit list holds at most 500 users.',
+  );
+});
+
+test('a value preview answers its counts, its digest, and its expiry', () => {
+  const preview = {
+    previewId: '00000000-0000-4000-8000-000000000003',
+    source: 'selection',
+    changes: [
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Homeroom',
+        mode: 'set',
+        values: ['B12'],
+      },
+    ],
+    attributeChanges: 3,
+    selected: 10,
+    eligible: 6,
+    unchanged: 3,
+    conflicts: 1,
+    oldestObservedAt: previewAt,
+    stale: false,
+    preparedAt: previewAt,
+    expiresAt: previewExpiry,
+    manifestDigest: 'b'.repeat(64),
+  };
+  assert.deepEqual(userAttributePreviewSchema.parse(preview), preview);
+  // An edit list answers null changes, because each of its rows carries its own request.
+  assert.equal(
+    userAttributePreviewSchema.safeParse({
+      ...preview,
+      source: 'edit-list',
+      changes: null,
+    }).success,
+    true,
+  );
+  // A selection names its changes, and an edit list names none.
+  assert.equal(
+    userAttributePreviewSchema.safeParse({ ...preview, source: 'edit-list' })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewSchema.safeParse({ ...preview, changes: null }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewSchema.safeParse({ ...preview, source: 'bulk' })
+      .success,
+    false,
+  );
+  // The selected count adds up its four dispositions, and the digest keeps its form.
+  assert.equal(
+    userAttributePreviewSchema.safeParse({ ...preview, selected: 11 }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewSchema.safeParse({
+      ...preview,
+      manifestDigest: 'b'.repeat(63),
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewSchema.safeParse({
+      ...preview,
+      previewId: 'not-a-uuid',
+    }).success,
+    false,
+  );
+});
+
+test('a preview target names the C1 attribute, its values, and its disposition', () => {
+  const target = {
+    userId: '107000000000000000001',
+    primaryEmail: 'student@example.org',
+    attribute: 'attr:StudentInfo.Homeroom',
+    currentValue: 'B12',
+    newValue: 'B13',
+    disposition: 'eligible',
+    observedAt: previewAt,
+  };
+  assert.deepEqual(userAttributeTargetSchema.parse(target), target);
+  for (const disposition of ['eligible', 'unchanged', 'conflict'])
+    assert.equal(
+      userAttributeTargetSchema.safeParse({ ...target, disposition }).success,
+      true,
+      `${disposition} parses`,
+    );
+  assert.equal(
+    userAttributeTargetSchema.safeParse({ ...target, disposition: 'excluded' })
+      .success,
+    false,
+  );
+  // A clear row carries no new value, and a list row carries each entry's value.
+  assert.equal(
+    userAttributeTargetSchema.safeParse({ ...target, newValue: null }).success,
+    true,
+  );
+  assert.equal(
+    userAttributeTargetSchema.safeParse({
+      ...target,
+      attribute: 'attr:StudentInfo.Programs',
+      currentValue: ['ELL', 'Band'],
+      newValue: ['Robotics'],
+    }).success,
+    true,
+  );
+  // An empty list is no value, so a row names null instead.
+  assert.equal(
+    userAttributeTargetSchema.safeParse({ ...target, currentValue: [] })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeTargetSchema.safeParse({
+      ...target,
+      attribute: 'attr:StudentInfo',
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeTargetSchema.safeParse({
+      ...target,
+      primaryEmail: 'not-an-email',
+    }).success,
+    false,
+  );
+  const page = { targets: [target], nextCursor: null };
+  assert.deepEqual(userAttributeTargetsPageSchema.parse(page), page);
+});
+
+test('a value preview confirm carries the digest and the acknowledgment', () => {
+  const confirm = { manifestDigest: 'c'.repeat(64), acknowledged: true };
+  assert.deepEqual(
+    userAttributePreviewConfirmRequestSchema.parse(confirm),
+    confirm,
+  );
+  for (const body of [
+    { ...confirm, acknowledged: false },
+    { ...confirm, manifestDigest: 'c'.repeat(63) },
+    { ...confirm, typedPhrase: 'Student information' },
+  ])
+    assert.equal(
+      userAttributePreviewConfirmRequestSchema.safeParse(body).success,
+      false,
+    );
+});
+
+test('a value job receipt names the UAT job and its counts', () => {
+  const receipt = {
+    jobId: '00000000-0000-4000-8000-000000000004',
+    displayId: 'UAT-007',
+    status: 'accepted',
+    userCount: 6,
+    changeCount: 2,
+  };
+  assert.deepEqual(userAttributeJobReceiptSchema.parse(receipt), receipt);
+  assert.equal(
+    userAttributeJobReceiptSchema.safeParse({ ...receipt, status: 'queued' })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeJobReceiptSchema.safeParse({ ...receipt, userCount: -1 })
+      .success,
+    false,
+  );
+  // A value receipt names a UAT job, not another job kind.
+  assert.equal(
+    userAttributeJobReceiptSchema.safeParse({
+      ...receipt,
+      displayId: 'CAT-007',
     }).success,
     false,
   );
