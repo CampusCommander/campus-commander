@@ -190,7 +190,11 @@ test('a body with a null leaves as users.update and clears the value (C9)', asyn
 test('a custom read of a missing category fails instead of an empty value set (C10)', async () => {
   const userId = users[0].userId;
   // A 200 without values is an empty object. Find a category this user lacks.
-  const held = await values(userId, ['StudentInfo', 'StaffInfo', 'DeviceProgram']);
+  const held = await values(userId, [
+    'StudentInfo',
+    'StaffInfo',
+    'DeviceProgram',
+  ]);
   const empty = ['StudentInfo', 'StaffInfo', 'DeviceProgram'].find(
     (schemaName) => held[schemaName] === undefined,
   );
