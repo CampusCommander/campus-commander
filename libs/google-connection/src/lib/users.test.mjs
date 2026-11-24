@@ -8,6 +8,9 @@ import {
   CATEGORY_PART_ID,
   GoogleCategoryWriter,
   GoogleUserReader,
+  GoogleUserWriter,
+  USER_VALUES_PART_ID,
+  userValueWriteBodySchema,
 } from './users.ts';
 import { fakeGoogle } from './batch-fake.mjs';
 
@@ -32,6 +35,9 @@ const schemaScope = GOOGLE_CAPABILITIES.find(
 ).scope;
 const schemaWriteScope = GOOGLE_CAPABILITIES.find(
   (capability) => capability.id === 'user-schema-changes',
+).scope;
+const userWriteScope = GOOGLE_CAPABILITIES.find(
+  (capability) => capability.id === 'user-changes',
 ).scope;
 
 /** Record the token and API requests of a direct read. */
@@ -757,4 +763,236 @@ test('a write body that Google cannot accept never leaves the process', async (t
       { name: 'ZodError' },
     );
   assert.equal(google.sent.length, 0, 'a refused body sends no batch');
+});
+
+/** One value write of the value job, as the worker builds it. */
+const valueWrite = (userId, customSchemas) => ({ userId, customSchemas });
+
+test('a masked custom read leaves as one GET part with the read scope and the mask', async (t) => {
+  const values = { StudentInfo: { Homeroom: 'B12', Programs: null } };
+  const { google, scopes } = stubBatch(t, () => ({
+    status: 200,
+    body: resource('u1', { customSchemas: values }),
+  }));
+  const read = await new GoogleUserWriter({ batch: fastBatch() }).userValues(
+    credential,
+    'u1',
+    ['StudentInfo', 'StudentInfo'],
+    signal(),
+  );
+  assert.deepEqual(scopes, [userScope]);
+  assert.equal(google.sent.length, 1, 'one read is one batch');
+  assert.deepEqual(
+    google.sent[0].map((part) => [part.method, part.path, part.query]),
+    [
+      [
+        'GET',
+        '/admin/directory/v1/users/u1',
+        { projection: 'custom', customFieldMask: 'StudentInfo' },
+      ],
+    ],
+  );
+  assert.deepEqual(read, values);
+});
+
+test('a masked custom read without values answers an empty object on a 200', async (t) => {
+  stubBatch(t, () => ({ status: 200, body: resource('u1') }));
+  assert.deepEqual(
+    await new GoogleUserReader({ batch: fastBatch() }).userValues(
+      credential,
+      'u1',
+      ['DeviceProgram'],
+      signal(),
+    ),
+    {},
+  );
+});
+
+test('a custom read that answers 400 invalid fails instead of an empty value set (C10)', async (t) => {
+  const { google } = stubBatch(t, () => ({
+    status: 400,
+    body: { error: { code: 400, errors: [{ reason: 'invalid' }] } },
+  }));
+  await assert.rejects(
+    new GoogleUserWriter({ batch: fastBatch() }).userValues(
+      credential,
+      'u1',
+      ['NoSuchCategory'],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'request-failed' },
+  );
+  assert.equal(google.sent.length, 1, 'the read left as one part');
+});
+
+test('a masked custom read of a missing user answers null', async (t) => {
+  stubBatch(t, () => ({
+    status: 404,
+    body: { error: { code: 404, errors: [{ reason: 'notFound' }] } },
+  }));
+  assert.equal(
+    await new GoogleUserReader({ batch: fastBatch() }).userValues(
+      credential,
+      'missing',
+      ['StudentInfo'],
+      signal(),
+    ),
+    null,
+  );
+});
+
+test('a body without a null leaves as one PATCH part with the write scope', async (t) => {
+  const values = { StudentInfo: { Homeroom: 'B12' } };
+  const { google, scopes } = stubBatch(t, () => ({
+    status: 200,
+    body: resource('u1', { customSchemas: values }),
+  }));
+  const result = await new GoogleUserWriter({
+    batch: fastBatch(),
+  }).writeValues(credential, [valueWrite('u1', values)], signal());
+  assert.deepEqual(scopes, [userWriteScope]);
+  assert.equal(google.sent.length, 1, 'one operation is one part');
+  const [part] = google.sent[0];
+  assert.equal(part.method, 'PATCH');
+  assert.equal(part.path, '/admin/directory/v1/users/u1');
+  assert.deepEqual(part.query, {}, 'a write names no projection');
+  assert.deepEqual(part.body, { customSchemas: values });
+  assert.equal(part.headers['if-match'], undefined);
+  assert.deepEqual(result.succeeded.get('u1')?.[0].customSchemas, values);
+  assert.deepEqual([...result.failed.keys()], []);
+});
+
+test('a body with a null leaves as users.update with the same body (C9)', async (t) => {
+  const values = { StudentInfo: { Homeroom: null } };
+  const { google } = stubBatch(t, () => ({
+    status: 200,
+    body: resource('u1', { customSchemas: {} }),
+  }));
+  await new GoogleUserWriter({ batch: fastBatch() }).writeValues(
+    credential,
+    [valueWrite('u1', values)],
+    signal(),
+  );
+  const [part] = google.sent[0];
+  assert.equal(part.method, 'PUT');
+  assert.equal(part.path, '/admin/directory/v1/users/u1');
+  assert.deepEqual(part.body, { customSchemas: values });
+});
+
+test('one batch holds a PATCH for a set body and a PUT for a clear body', async (t) => {
+  const { google } = stubBatch(t, (part) => ({
+    status: 200,
+    body: resource(part.key, {
+      customSchemas: part.body.customSchemas,
+    }),
+  }));
+  const result = await new GoogleUserWriter({
+    batch: fastBatch(),
+  }).writeValues(
+    credential,
+    [
+      valueWrite('u1', { StudentInfo: { Homeroom: 'B12' } }),
+      valueWrite('u2', { StudentInfo: { Programs: null } }),
+    ],
+    signal(),
+  );
+  assert.deepEqual(
+    google.sent[0].map((part) => [part.key, part.method]),
+    [
+      ['u1', 'PATCH'],
+      ['u2', 'PUT'],
+    ],
+  );
+  assert.deepEqual([...result.succeeded.keys()].sort(), ['u1', 'u2']);
+});
+
+test('a missing user fails only its part (batch decisions 91-93)', async (t) => {
+  const { google } = stubBatch(t, (part) =>
+    part.key === 'missing'
+      ? {
+          status: 404,
+          body: { error: { code: 404, errors: [{ reason: 'notFound' }] } },
+        }
+      : {
+          status: 200,
+          body: resource(part.key, { customSchemas: part.body.customSchemas }),
+        },
+  );
+  const result = await new GoogleUserWriter({
+    batch: fastBatch(),
+  }).writeValues(
+    credential,
+    [
+      valueWrite('u1', { StudentInfo: { Homeroom: 'B12' } }),
+      valueWrite('missing', { StudentInfo: { Homeroom: 'B13' } }),
+    ],
+    signal(),
+  );
+  assert.deepEqual([...result.succeeded.keys()], ['u1']);
+  const failed = result.failed.get('missing');
+  assert.equal(failed.kind, 'not-found');
+  assert.equal(failed.status, 404);
+  assert.equal(google.sent.length, 1, 'both parts left in one batch');
+});
+
+test('a user ID with / stays one percent-encoded path segment', async (t) => {
+  const { google } = stubBatch(t, () => ({
+    status: 200,
+    body: resource('u1', { id: 'u/1' }),
+  }));
+  await new GoogleUserWriter({ batch: fastBatch() }).writeValues(
+    credential,
+    [valueWrite('u/1', { StudentInfo: { Homeroom: 'B12' } })],
+    signal(),
+  );
+  assert.equal(google.sent[0][0].path, '/admin/directory/v1/users/u%2F1');
+});
+
+test('a value write outside the shape never leaves the process', async (t) => {
+  const { google } = stubBatch(t, () => ({
+    status: 200,
+    body: resource('u1'),
+  }));
+  const writer = new GoogleUserWriter({ batch: fastBatch() });
+  for (const write of [
+    valueWrite('', { StudentInfo: { Homeroom: 'B12' } }),
+    valueWrite('u1', { StudentInfo: null }),
+    { ...valueWrite('u1', {}), extra: true },
+  ])
+    await assert.rejects(writer.writeValues(credential, [write], signal()), {
+      name: 'ZodError',
+    });
+  // One operation for each user: a repeated user never drops a write here.
+  await assert.rejects(
+    writer.writeValues(
+      credential,
+      [
+        valueWrite('u1', { StudentInfo: { Homeroom: 'B12' } }),
+        valueWrite('u1', { StudentInfo: { Homeroom: 'B13' } }),
+      ],
+      signal(),
+    ),
+    { name: 'GoogleConnectionError', code: 'invalid-response' },
+  );
+  assert.equal(google.sent.length, 0, 'a refused write sends no batch');
+});
+
+test('the value write body schema admits a null value and refuses another key', () => {
+  assert.deepEqual(
+    userValueWriteBodySchema.parse({
+      customSchemas: { StudentInfo: { Homeroom: null } },
+    }),
+    { customSchemas: { StudentInfo: { Homeroom: null } } },
+  );
+  assert.equal(
+    userValueWriteBodySchema.safeParse({
+      customSchemas: { StudentInfo: { Homeroom: 'B12' } },
+      fields: 'x',
+    }).success,
+    false,
+  );
+});
+
+test('a user value read keeps its part ID', () => {
+  assert.equal(USER_VALUES_PART_ID, 'values');
 });
