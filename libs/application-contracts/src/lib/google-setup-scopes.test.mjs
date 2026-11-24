@@ -23,6 +23,7 @@ const SCHEMA =
   'https://www.googleapis.com/auth/admin.directory.userschema.readonly';
 const SCHEMA_WRITE =
   'https://www.googleapis.com/auth/admin.directory.userschema';
+const USER_WRITE = 'https://www.googleapis.com/auth/admin.directory.user';
 
 test('the setup scope list holds the connection scopes and the device scopes in order', () => {
   assert.deepEqual(GOOGLE_SETUP_SCOPES, [
@@ -36,6 +37,7 @@ test('the setup scope list holds the connection scopes and the device scopes in 
     USER,
     SCHEMA,
     SCHEMA_WRITE,
+    USER_WRITE,
   ]);
   assert.equal(
     new Set(GOOGLE_SETUP_SCOPES).size,
@@ -161,7 +163,27 @@ test('the user-schema-changes capability names its label, scope, method, flags, 
         'admin-sdk-mock 0.4.0 and live check L2, which called the schema writes directly. No live category job',
     },
   );
-  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), SCHEMA_WRITE);
+  assert.ok(GOOGLE_SETUP_SCOPES.includes(SCHEMA_WRITE));
+});
+
+test('the user-changes capability names its label, scope, method, flags, and evidence', () => {
+  assert.deepEqual(
+    GOOGLE_CAPABILITIES.find((capability) => capability.id === 'user-changes'),
+    {
+      id: 'user-changes',
+      requiredForConnection: false,
+      label: 'User changes',
+      enabled: true,
+      qualified: false,
+      scope: USER_WRITE,
+      method: 'users.patch',
+      source:
+        'https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/patch',
+      evidence:
+        'admin-sdk-mock 0.4.0 and live checks L3 and L4, which sent the value writes directly. No live value job',
+    },
+  );
+  assert.equal(GOOGLE_SETUP_SCOPES.at(-1), USER_WRITE);
 });
 
 test('no capability evidence ends with a period', () => {

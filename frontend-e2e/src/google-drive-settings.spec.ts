@@ -344,7 +344,7 @@ test('the Drive card before setup matches state 14 in both themes', async ({
   ])
     await expect(card).toContainText(step);
   await expect(page.locator('footer')).toContainText(
-    'Google: 1 of 10 capabilities need attention',
+    'Google: 1 of 11 capabilities need attention',
   );
   await capture(page, testInfo, 'state-14-light', {
     selector: 'app-drive-settings',
@@ -385,7 +385,7 @@ test('a save fills the card and shows the ready line of state 15', async ({
   await expect(card).toContainText('Last check passed');
   await expect(save).toBeDisabled();
   await expect(card.locator('details')).not.toHaveAttribute('open', '');
-  await expect(page.locator('footer')).toContainText('10 last checks passed');
+  await expect(page.locator('footer')).toContainText('11 last checks passed');
   await capture(page, testInfo, 'state-15-light', {
     selector: 'app-drive-settings',
     offset: 20,
@@ -559,7 +559,7 @@ test('the Drive card and its states meet automated accessibility checks in both 
   ).toBe(true);
 });
 
-test('Diagnostics matches state 16 and lists the ten setup scopes', async ({
+test('Diagnostics matches state 16 and lists the eleven setup scopes', async ({
   page,
 }, testInfo) => {
   await fixture(page);
@@ -583,7 +583,7 @@ test('Diagnostics matches state 16 and lists the ten setup scopes', async ({
   const details = page.locator('details.authorization');
   await details.locator('summary').click();
   await expect(details).toContainText(
-    'Add these 10 scopes to allow the checks on this page.',
+    'Add these 11 scopes to allow the checks on this page.',
   );
   await expect(details).toContainText(
     'Enable the Admin SDK API, the Google Drive API, the Google Sheets API, and the Google Picker API in the service-account project.',

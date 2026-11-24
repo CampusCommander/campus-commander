@@ -167,9 +167,78 @@ const editPlan = {
   digest: 'a'.repeat(64),
 };
 
+/** The plan of a create: one added attribute. */
+const createPlan = {
+  planId: '44444444-4444-4444-8444-444444444444',
+  kind: 'create-category',
+  method: 'insert',
+  schemaId: null,
+  schemaName: 'Transportation',
+  displayName: 'Transportation',
+  baseEtag: null,
+  changes: [
+    {
+      change: 'added',
+      fieldId: null,
+      fieldName: 'BusRoute',
+      displayName: 'Bus route',
+      properties: [],
+      holders: null,
+    },
+  ],
+  phrase: null,
+  limits: {
+    categories: 3,
+    categoryLimit: 100,
+    attributes: 4,
+    attributeLimit: 100,
+  },
+  preparedAt: at(0),
+  expiresAt: new Date(now + 10 * 60_000).toISOString(),
+  digest: 'c'.repeat(64),
+};
+
+/** The plan of a delete of Device program (CA state 08). */
+const deletePlan = {
+  planId: '55555555-5555-4555-8555-555555555555',
+  kind: 'delete-category',
+  method: 'delete',
+  schemaId: 'Device',
+  schemaName: 'Device',
+  displayName: 'Device program',
+  baseEtag: '"device-etag"',
+  changes: [
+    {
+      change: 'removed',
+      fieldId: 'Device.TakeHome',
+      fieldName: 'TakeHome',
+      displayName: 'Take-home approved',
+      properties: [],
+      holders: 3,
+    },
+  ],
+  phrase: 'Device program',
+  limits: {
+    categories: 3,
+    categoryLimit: 100,
+    attributes: 4,
+    attributeLimit: 100,
+  },
+  preparedAt: at(0),
+  expiresAt: new Date(now + 10 * 60_000).toISOString(),
+  digest: 'b'.repeat(64),
+};
+
 interface MockState {
   /** The status of the category job that the dialog reads. */
   jobStatus: 'running' | 'completed' | 'failed';
+  /** A fixed sequence of job answers, so a stale read can follow a newer one. */
+  jobReads: Array<{
+    status: 'accepted' | 'running' | 'completed';
+    revision: number;
+  }> | null;
+  /** The number of job reads that the mock answered. */
+  jobReadCount: number;
   /** The failure of a failed job. */
   jobFailure: string | null;
   /** A refused job read (R9). */
@@ -177,7 +246,12 @@ interface MockState {
   /** Overrides the category set (state 10 reads a full account). */
   categories: typeof categories;
   /** The plan answer. A 422 answer refuses the save (plan-changed or name-in-use). */
-  plan: typeof editPlan | 'category-changed' | 'name-in-use';
+  plan:
+    | typeof editPlan
+    | typeof createPlan
+    | typeof deletePlan
+    | 'category-changed'
+    | 'name-in-use';
   /** The plan requests, in order. */
   requests: unknown[];
   /** The stored theme preference (UI-10). */
@@ -186,6 +260,8 @@ interface MockState {
 
 const state: MockState = {
   jobStatus: 'running',
+  jobReads: null,
+  jobReadCount: 0,
   jobFailure: null,
   jobReadFailure: false,
   categories,
@@ -229,6 +305,45 @@ function holdCategoryRead(): CategoryHold {
   };
   categoryHold = hold;
   return hold;
+}
+
+/** A held job read, so the test can check the step before the next read answers. */
+interface JobGate {
+  /** Resolves when the held read reaches the mock. */
+  readonly requested: Promise<void>;
+  /** Answers the held read and lets later reads through. */
+  release(): void;
+}
+
+let jobGate: {
+  readonly at: number;
+  readonly promise: Promise<void>;
+  readonly requested: Promise<void>;
+  readonly markRequested: () => void;
+  readonly release: () => void;
+} | null = null;
+
+function holdJobRead(at: number): JobGate {
+  let answer!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  let markRequested!: () => void;
+  const requested = new Promise<void>((resolve) => {
+    markRequested = resolve;
+  });
+  const gate = {
+    at,
+    promise,
+    requested,
+    markRequested,
+    release: () => {
+      jobGate = null;
+      answer();
+    },
+  };
+  jobGate = gate;
+  return gate;
 }
 
 const sync = {
@@ -303,43 +418,61 @@ async function signIn(page: Page) {
         });
       return route.fulfill({ json: state.plan });
     }
-    if (path === `/api/users/attribute-categories/plans/${planId}/confirm`) {
+    if (
+      /^\/api\/users\/attribute-categories\/plans\/[^/]+\/confirm$/.test(path)
+    ) {
       state.requests.push(request.postDataJSON());
+      const plan = state.plan;
       return route.fulfill({
         status: 202,
         json: {
           jobId,
           displayId: 'CAT-003',
           status: 'accepted',
-          action: 'edit-category',
-          changeCount: 2,
+          action: typeof plan === 'string' ? 'edit-category' : plan.kind,
+          changeCount: typeof plan === 'string' ? 2 : plan.changes.length,
         },
       });
     }
     if (path === '/api/jobs/CAT-003') {
       if (state.jobReadFailure) return route.fulfill({ status: 503, json: {} });
+      const index = state.jobReadCount;
+      state.jobReadCount += 1;
+      const gate = jobGate;
+      if (gate && gate.at === index) {
+        gate.markRequested();
+        await gate.promise;
+      }
+      const answer = state.jobReads
+        ? state.jobReads[Math.min(index, state.jobReads.length - 1)]
+        : {
+            status: state.jobStatus,
+            revision: state.jobStatus === 'running' ? 2 : 4,
+          };
+      const finished =
+        answer.status === 'completed' || answer.status === 'failed';
       return route.fulfill({
         json: {
           jobId,
           displayId: 'CAT-003',
-          revision: state.jobStatus === 'running' ? 2 : 4,
+          revision: answer.revision,
           action: 'edit-category',
-          status: state.jobStatus,
+          status: answer.status,
           entityType: 'user',
           scope: { kind: 'rows', deviceCount: 1 },
           requestedBy: person,
           createdAt: at(1),
           startedAt: at(1),
-          finishedAt: state.jobStatus === 'running' ? null : at(0),
+          finishedAt: finished ? at(0) : null,
           progress: {
             total: 1,
-            succeeded: state.jobStatus === 'completed' ? 1 : 0,
-            failed: state.jobStatus === 'failed' ? 1 : 0,
+            succeeded: answer.status === 'completed' ? 1 : 0,
+            failed: answer.status === 'failed' ? 1 : 0,
             unknown: 0,
             skipped: 0,
             expired: 0,
             cancelled: 0,
-            pending: state.jobStatus === 'running' ? 1 : 0,
+            pending: finished ? 0 : 1,
           },
           phase: null,
           exportSummary: null,
@@ -395,8 +528,11 @@ async function signIn(page: Page) {
 
 /** Opens the Custom attributes tab at the approved 1440 x 900 viewport. */
 async function openAttributes(page: Page, options: Partial<MockState> = {}) {
+  jobGate = null;
   Object.assign(state, {
     jobStatus: 'running',
+    jobReads: null,
+    jobReadCount: 0,
     jobFailure: null,
     jobReadFailure: false,
     categories,
@@ -665,6 +801,7 @@ test('CA states 05 to 07: the review, the save, and the result', async ({
     'Closing this dialog keeps the save running.',
   );
   await expect(dialog(page)).toContainText('Job CAT-003');
+  await expect(title(page)).toHaveText('Edit category');
   await shot(page, 'k18-06-saving');
 
   state.jobStatus = 'completed';
@@ -676,6 +813,7 @@ test('CA states 05 to 07: the review, the save, and the result', async ({
   await expect(dialog(page).getByRole('tab', { name: /Failed/ })).toBeVisible();
   await expect(dialog(page)).toContainText('Succeeded');
   await expect(dialog(page)).toContainText('Finished');
+  await expect(title(page)).toHaveText('Edit category');
   await shot(page, 'k18-07-saved');
 
   // The Failed tab names the empty list (state 07).
@@ -737,6 +875,89 @@ test('CA state 08: the delete question with its typed name', async ({
   await expect(
     dialog(page).getByLabel('Display name for attribute 1'),
   ).toBeVisible();
+});
+
+test('S2 item 9: a delete keeps Delete category on the saving step and the result', async ({
+  page,
+}) => {
+  await openAttributes(page, { plan: deletePlan });
+  await openEditor(page, 'Device program');
+  await dialog(page)
+    .getByRole('button', { name: 'Delete category', exact: true })
+    .click();
+  await expect(title(page)).toHaveText('Delete category');
+  await dialog(page)
+    .getByLabel('Type Device program to confirm')
+    .fill('Device program');
+  await dialog(page)
+    .getByRole('button', { name: 'Delete category', exact: true })
+    .click();
+  // The confirmed delete names the saving step.
+  await expect(
+    dialog(page).getByRole('list', { name: 'Progress' }),
+  ).toBeVisible();
+  await expect(title(page)).toHaveText('Delete category');
+  const sub = dialog(page).locator('#category-editor-sub');
+  await expect(sub).toContainText('Running', { timeout: 8000 });
+  await shot(page, 'k18-09-delete-saving');
+
+  // The result keeps the name.
+  state.jobStatus = 'completed';
+  await expect(dialog(page)).toContainText('Succeeded', { timeout: 8000 });
+  await expect(title(page)).toHaveText('Delete category');
+  await expect(dialog(page)).toContainText('Finished');
+  await shot(page, 'k18-09b-delete-result');
+});
+
+test('S2 item 9: a create keeps Create category on the saving step and the result', async ({
+  page,
+}) => {
+  await openAttributes(page, { plan: createPlan });
+  await page
+    .getByRole('button', { name: 'Create category', exact: true })
+    .click();
+  await fill(page, 'Display name', 'Transportation');
+  await fill(page, 'Display name for attribute 1', 'Bus route');
+  await dialog(page).getByRole('button', { name: 'Review changes' }).click();
+  await expect(dialog(page)).toContainText('1 change to Transportation');
+  await dialog(page).getByRole('button', { name: 'Save 1 change' }).click();
+  await expect(
+    dialog(page).getByRole('list', { name: 'Progress' }),
+  ).toBeVisible();
+  await expect(title(page)).toHaveText('Create category');
+  state.jobStatus = 'completed';
+  await expect(dialog(page)).toContainText('Succeeded', { timeout: 8000 });
+  await expect(title(page)).toHaveText('Create category');
+});
+
+test('S2 item 3: an older job read cannot step Running back to Accepted', async ({
+  page,
+}) => {
+  await openAttributes(page, {
+    jobReads: [
+      { status: 'running', revision: 2 },
+      { status: 'accepted', revision: 1 },
+      { status: 'completed', revision: 3 },
+    ],
+  });
+  await openEditor(page, 'Student information');
+  await dialog(page)
+    .getByRole('button', { name: 'Remove attribute Homeroom' })
+    .click();
+  await dialog(page).getByRole('button', { name: 'Review changes' }).click();
+  await dialog(page).getByLabel('Type Homeroom to confirm').fill('Homeroom');
+  // The third read is held, so the stale second read has reached the dialog.
+  const gate = holdJobRead(2);
+  await dialog(page).getByRole('button', { name: 'Save 2 changes' }).click();
+  await expect(
+    dialog(page).getByRole('list', { name: 'Progress' }),
+  ).toBeVisible();
+  await gate.requested;
+  const sub = dialog(page).locator('#category-editor-sub');
+  await expect(sub).toContainText('Running');
+  await expect(sub).not.toContainText('Accepted');
+  gate.release();
+  await expect(dialog(page)).toContainText('Succeeded', { timeout: 8000 });
 });
 
 test('CA state 10: the attribute limit disables Add attribute', async ({

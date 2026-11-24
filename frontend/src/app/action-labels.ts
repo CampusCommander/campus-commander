@@ -22,6 +22,8 @@ export const actionLabels: Record<Action, string> = {
   'devices:export': 'Export and report devices',
   'users:read': 'View users',
   'users:schema-manage': 'Manage user schema',
+  'users:write': 'Set user attribute values',
+  'users:bulk-actions': 'Run user bulk actions',
   'jobs:read': 'View jobs',
   'jobs:manage': 'Manage jobs',
 };

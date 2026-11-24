@@ -13,6 +13,7 @@ import {
   type UserAttributeCategoryObservation,
   type UserAttributeFieldType,
   type UserAttributeVisibility,
+  type UserCustomSchemas,
   type UserObservation,
 } from '@campus/application-contracts';
 import type { DelegatedCredential } from './credential';
@@ -120,8 +121,34 @@ const categoryPage = z.object({
     .optional(),
 });
 
+/** The category names of a `customFieldMask` (B section 5, B section 7.2). */
+const valueMaskSchema = z
+  .array(z.string().regex(/^[A-Za-z0-9_-]{1,200}$/))
+  .min(1)
+  .max(USER_ATTRIBUTE_CATEGORY_LIMIT);
+
+/** A masked `users.get` answer. A user without values omits the key. */
+const userValuesResource = z.object({
+  customSchemas: userCustomSchemasSchema.optional(),
+});
+
+/** The values that a masked `users.get` answer holds (B section 8.4). */
+function userValuesAnswer(body: unknown): UserCustomSchemas {
+  return userValuesResource.parse(body).customSchemas ?? {};
+}
+
+/**
+ * The part ID of every masked user read. One read is one part, so every call
+ * holds this one ID (B section 7.2).
+ */
+export const USER_VALUES_PART_ID = 'values';
+
 function scopeFor(
-  id: 'user-inventory' | 'user-schemas' | 'user-schema-changes',
+  id:
+    | 'user-inventory'
+    | 'user-schemas'
+    | 'user-schema-changes'
+    | 'user-changes',
 ): string {
   return GOOGLE_CAPABILITIES.find((capability) => capability.id === id)!.scope;
 }
@@ -409,6 +436,72 @@ export class GoogleUserReader {
       else if (failed) throw batchFailure(failed);
     }
     return { users, missing };
+  }
+
+  /**
+   * One `users.get` part with `projection=custom` and a `customFieldMask`, with the
+   * read-only user scope (B section 7.2, B section 8.4). The answer holds the values
+   * of the named categories. A 404 returns null. Every other failure throws, so a
+   * mask that Google refuses never reads as an empty value set (C10).
+   */
+  async userValues(
+    credential: DelegatedCredential,
+    userId: string,
+    customFieldMask: readonly string[],
+    signal: AbortSignal,
+  ): Promise<UserCustomSchemas | null> {
+    const id = USER_VALUES_PART_ID;
+    // The mask repeats no name, so one category reads once.
+    const mask = [
+      ...new Set(
+        valueMaskSchema.parse(customFieldMask.map((name) => name.trim())),
+      ),
+    ];
+    const mint: { failure?: GoogleConnectionError } = {};
+    let result: BatchResult<UserCustomSchemas>;
+    try {
+      result = await this.batch.execute({
+        batchUrl: batchEndpoint,
+        requests: [
+          {
+            id,
+            method: 'GET' as const,
+            path: `${directoryPath}/users/${encodeURIComponent(userId)}`,
+            query: { projection: 'custom', customFieldMask: mask.join(',') },
+          },
+        ],
+        parse: userValuesAnswer,
+        getClient: async (runSignal) => {
+          try {
+            return await scopedClient(
+              credential,
+              scopeFor('user-inventory'),
+              runSignal,
+              batchResponseLimit,
+            );
+          } catch (error) {
+            mint.failure = failure(error, 'token');
+            throw mint.failure;
+          }
+        },
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof BatchServiceError)
+        throw new GoogleConnectionError(
+          error.code === 'malformed-response'
+            ? 'invalid-response'
+            : 'request-failed',
+        );
+      throw error;
+    }
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    const pages = result.succeeded.get(id);
+    if (pages) return pages[pages.length - 1];
+    const failed = result.failed.get(id);
+    if (failed?.kind === 'not-found') return null;
+    if (failed) throw batchFailure(failed);
+    throw new GoogleConnectionError('invalid-response');
   }
 
   /**
@@ -753,6 +846,144 @@ export class GoogleCategoryWriter {
         );
       throw error;
     }
+    if (mint.failure && !signal.aborted) throw mint.failure;
+    return result;
+  }
+}
+
+/** One value write part of the value job (B section 7.2, B section 8.3). */
+export interface UserValueWrite {
+  /** The immutable Google user ID. It is the part ID and one encoded path segment. */
+  userId: string;
+  /** The final values of the changed attributes. A `null` value removes the value. */
+  customSchemas: UserCustomSchemas;
+}
+
+/** The body that one value write may hold. No other property leaves the process. */
+export const userValueWriteBodySchema = z.strictObject({
+  customSchemas: userCustomSchemasSchema,
+});
+
+/** One value write, with the user ID that the part names. */
+const userValueWriteSchema = z.strictObject({
+  userId: z.string().min(1).max(128),
+  customSchemas: userCustomSchemasSchema,
+});
+
+/** True when a body names a value to remove, so the part is `users.update` (C9). */
+function clearsValue(customSchemas: UserCustomSchemas): boolean {
+  return Object.values(customSchemas).some((fields) =>
+    Object.values(fields).some((value) => value === null),
+  );
+}
+
+export interface GoogleUserWriterOptions {
+  batch?: GoogleBatchService;
+  /** A reader that serves the masked `users.get` part. */
+  reader?: Pick<GoogleUserReader, 'userValues'>;
+}
+
+/**
+ * Write custom attribute values on users with one exact-scope token per call.
+ * A write carries the write scope of `user-changes`; a masked read carries the
+ * read-only user scope (design section 4, B section 7.2). A body that holds a
+ * `null` leaves as a `users.update` PUT part; every other body leaves as a
+ * `users.patch` PATCH part (C9).
+ */
+export class GoogleUserWriter {
+  private readonly batch: GoogleBatchService;
+  private readonly reader: Pick<GoogleUserReader, 'userValues'>;
+
+  constructor(options: GoogleUserWriterOptions = {}) {
+    this.batch = options.batch ?? new GoogleBatchService();
+    this.reader = options.reader ?? new GoogleUserReader({ batch: this.batch });
+  }
+
+  /** One masked `users.get` part with the read-only user scope (B section 7.2). */
+  userValues(
+    credential: DelegatedCredential,
+    userId: string,
+    customFieldMask: readonly string[],
+    signal: AbortSignal,
+  ): Promise<UserCustomSchemas | null> {
+    return this.reader.userValues(credential, userId, customFieldMask, signal);
+  }
+
+  /**
+   * One write part per user through the batch service, with the write scope of
+   * `user-changes` (B section 7.2). The part ID is the immutable user ID and also
+   * the one encoded path segment. A body that holds a `null` leaves as a
+   * `users.update` PUT part; every other body leaves as a `users.patch` PATCH part
+   * (C9). A part failure stays in the result, so one missing user fails only its
+   * part. A 2xx answer is the user resource with its `customSchemas` (C11).
+   * `onRound` runs after each multipart round, so the caller can extend its claim.
+   */
+  async writeValues(
+    credential: DelegatedCredential,
+    writes: readonly UserValueWrite[],
+    signal: AbortSignal,
+    onRound?: () => Promise<void>,
+  ): Promise<BatchResult<UserObservation>> {
+    if (writes.length === 0)
+      return {
+        succeeded: new Map<string, UserObservation[]>(),
+        failed: new Map<string, BatchFailure>(),
+      };
+    if (writes.length > batchLimit)
+      throw new GoogleConnectionError('invalid-response');
+    const seen = new Set<string>();
+    const requests = writes.map((write) => {
+      const parsed = userValueWriteSchema.parse(write);
+      // One write for each user. Two bodies for one user would need two parts with
+      // one part ID, so the writer refuses the second.
+      if (seen.has(parsed.userId))
+        throw new GoogleConnectionError('invalid-response');
+      seen.add(parsed.userId);
+      return {
+        id: parsed.userId,
+        method: clearsValue(parsed.customSchemas)
+          ? ('PUT' as const)
+          : ('PATCH' as const),
+        path: `${directoryPath}/users/${encodeURIComponent(parsed.userId)}`,
+        body: userValueWriteBodySchema.parse({
+          customSchemas: parsed.customSchemas,
+        }),
+      };
+    });
+    const mint: { failure?: GoogleConnectionError } = {};
+    let result: BatchResult<UserObservation>;
+    try {
+      result = await this.batch.execute<UserObservation>({
+        batchUrl: batchEndpoint,
+        requests,
+        parse: (body) => userObservation(userResource.parse(body)),
+        getClient: async (runSignal) => {
+          try {
+            return await scopedClient(
+              credential,
+              scopeFor('user-changes'),
+              runSignal,
+              batchResponseLimit,
+            );
+          } catch (error) {
+            mint.failure = failure(error, 'token');
+            throw mint.failure;
+          }
+        },
+        signal,
+        ...(onRound ? { onBatch: onRound } : {}),
+      });
+    } catch (error) {
+      if (error instanceof BatchServiceError)
+        throw new GoogleConnectionError(
+          error.code === 'malformed-response'
+            ? 'invalid-response'
+            : 'request-failed',
+        );
+      throw error;
+    }
+    // A mint failure ends every waiting request without an event. The caller keeps
+    // the code as the job failure (B section 7.3).
     if (mint.failure && !signal.aborted) throw mint.failure;
     return result;
   }

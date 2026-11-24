@@ -376,9 +376,14 @@ export class UserCategoryEditor implements OnInit {
     this.rows.set(category.fields.map((field) => this.cachedRow(field)));
   }
 
-  /** The title of the open step. */
+  /** The title of the open step. A confirmed delete names its saving step and result. */
   protected readonly title = computed(() => {
     if (this.step() === 'delete') return DELETE_CATEGORY_TITLE;
+    if (
+      (this.step() === 'saving' || this.step() === 'result') &&
+      this.receipt()?.action === 'delete-category'
+    )
+      return DELETE_CATEGORY_TITLE;
     return this.mode() === 'create'
       ? CREATE_CATEGORY_TITLE
       : EDIT_CATEGORY_TITLE;
@@ -1343,7 +1348,16 @@ export class UserCategoryEditor implements OnInit {
   /** The receipt opens the saving step; polls follow the job to its result. */
   private startSave(receipt: UserAttributeCategoryJobReceipt): void {
     this.receipt.set(receipt);
-    this.job.set(null);
+    // The receipt carries the confirmed status. Seeding the job from it keeps the line on
+    // a true status before the first read answers. A receipt holds no revision, so the
+    // seeding entry holds 0 and every read wins.
+    this.job.set({
+      displayId: receipt.displayId,
+      revision: 0,
+      status: receipt.status,
+      failure: null,
+      finishedAt: null,
+    });
     this.jobUnreadable.set(false);
     this.step.set('saving');
     this.focusStep();
@@ -1356,14 +1370,21 @@ export class UserCategoryEditor implements OnInit {
       const result = await this.flow.readJob(displayId);
       if (!this.alive) return;
       if (result.ok) {
-        this.job.set(result.job);
-        this.jobUnreadable.set(false);
-        if (FINAL_STATUSES.has(result.job.status)) {
-          this.step.set('result');
-          this.stopPolling();
-          this.focusStep();
-          return;
+        // A delayed read can answer after a newer one. Apply only a read that is at least
+        // the shown revision, so a true status never steps back (S2 item 3).
+        const shown = this.job();
+        const stale = shown !== null && result.job.revision < shown.revision;
+        if (!stale) {
+          this.job.set(result.job);
+          if (FINAL_STATUSES.has(result.job.status)) {
+            this.jobUnreadable.set(false);
+            this.step.set('result');
+            this.stopPolling();
+            this.focusStep();
+            return;
+          }
         }
+        this.jobUnreadable.set(false);
       } else {
         // A refused, failed, or unparseable read cannot report progress. Keep the
         // receipt, and point the person at the job page (B section 13).

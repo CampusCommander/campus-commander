@@ -156,20 +156,20 @@ function diagnosticsPage(verified: readonly string[]) {
   return { element, fixture, href, scopes };
 }
 
-it('shows ten capability checks and one pre-filled delegation link', () => {
+it('shows eleven capability checks and one pre-filled delegation link', () => {
   const { element, href, scopes } = diagnosticsPage(
     GOOGLE_CAPABILITIES.map((capability) => capability.id),
   );
   const articles = [...element.querySelectorAll('article.capability')];
-  expect(articles.length).toBe(10);
+  expect(articles.length).toBe(11);
   expect(
     articles.map((article) => article.querySelector('h3')?.textContent?.trim()),
   ).toEqual(GOOGLE_CAPABILITIES.map((capability) => capability.label));
   const text = element.textContent!.replace(/\s+/g, ' ');
-  expect(text).toContain('10 Google checks available.');
+  expect(text).toContain('11 Google checks available.');
   expect(text).not.toContain('read-only Google checks available');
   expect(text).toContain(
-    'Add these 10 scopes to allow the checks on this page.',
+    'Add these 11 scopes to allow the checks on this page.',
   );
   expect(text).toContain(
     'These checks read at most one record of each kind. They never change Google data.',
@@ -203,14 +203,14 @@ it('lists the school OU scope before Google verifies it', () => {
     'https://www.googleapis.com/auth/admin.directory.orgunit.readonly',
   );
   expect(href).toContain('orgunit');
-  expect(element.textContent).toContain('Add these 10 scopes');
+  expect(element.textContent).toContain('Add these 11 scopes');
   expect(
     element.querySelector('pre[aria-label="Required Google capability scopes"]')
       ?.textContent,
   ).toContain('orgunit');
 });
 
-it('names the four Google APIs and lists the ten setup scopes including drive.file', () => {
+it('names the four Google APIs and lists the eleven setup scopes including drive.file', () => {
   const { element } = diagnosticsPage(
     GOOGLE_CAPABILITIES.map((capability) => capability.id),
   );
@@ -224,7 +224,7 @@ it('names the four Google APIs and lists the ten setup scopes including drive.fi
   )
     .trim()
     .split(',\n');
-  expect(scopes).toHaveLength(10);
+  expect(scopes).toHaveLength(11);
   expect(scopes).toContain('https://www.googleapis.com/auth/drive.file');
   expect(scopes).toContain(
     'https://www.googleapis.com/auth/admin.directory.user.readonly',

@@ -242,11 +242,16 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/jobs/EXP-001', 'frontend'],
       ['GET', '/jobs/IMP-001', 'frontend'],
       // A category job of document B section 7.1 reaches its header, its operations, its cancel,
-      // and its page.
+      // and its page. A value job of section 7.2 answers a UAT receipt, so the dialog reads it here.
       ['GET', '/api/jobs/CAT-001', 'api'],
       ['GET', '/api/jobs/CAT-001/operations', 'api'],
       ['POST', '/api/jobs/CAT-001/cancel', 'api'],
       ['GET', '/jobs/CAT-001', 'frontend'],
+      ['GET', '/api/jobs/UAT-001', 'api'],
+      ['GET', '/api/jobs/UAT-001/operations', 'api'],
+      ['POST', '/api/jobs/UAT-001/operations/1/reconcile', 'api'],
+      ['POST', '/api/jobs/UAT-001/cancel', 'api'],
+      ['GET', '/jobs/UAT-001', 'frontend'],
       // The three Drive routes of design section 1 and the Drive import submission. A file ID
       // holds 1 to 128 letters, digits, hyphens, or underscores.
       ['GET', '/api/google/drive', 'api'],
@@ -378,6 +383,12 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       ['GET', '/api/jobs/XYZ-001', 404],
       ['GET', '/jobs/CAT-01', 404],
       ['GET', '/jobs/XYZ-001', 404],
+      // A value display ID keeps three digits and its own prefix.
+      ['GET', '/api/jobs/UAT-01', 404],
+      ['GET', '/api/jobs/UAT-01/operations', 404],
+      ['POST', '/api/jobs/UAT-01/cancel', 404],
+      ['POST', '/api/jobs/UAT-01/operations/1/reconcile', 404],
+      ['GET', '/jobs/UAT-01', 404],
       // A bad Drive file ID answers 404, and each Drive path keeps one method.
       ['GET', `/api/google/drive/files/${'x'.repeat(129)}/tabs`, 404],
       ['GET', '/api/google/drive/files/not.a.file/tabs', 404],
