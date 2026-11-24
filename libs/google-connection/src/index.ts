@@ -44,10 +44,13 @@ export {
   CategorySendRefused,
   GoogleCategoryWriter,
   GoogleUserReader,
+  GoogleUserWriter,
+  USER_VALUES_PART_ID,
   categoryObservation,
   categoryWriteBodySchema,
   lastLoginTime,
   userObservation,
+  userValueWriteBodySchema,
 } from './lib/users';
 export type {
   CategorySendGate,
@@ -55,6 +58,8 @@ export type {
   CategoryWriteField,
   GoogleCategoryWriterOptions,
   GoogleUserReaderOptions,
+  GoogleUserWriterOptions,
+  UserValueWrite,
 } from './lib/users';
 export type {
   GoogleConnectionDatabase,

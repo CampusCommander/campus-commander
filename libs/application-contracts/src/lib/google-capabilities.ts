@@ -6,6 +6,9 @@ export const GOOGLE_SCHEMA_READ_SCOPE =
 /** The write scope of the custom schema resource (B section 6.1). A writer card uses it. */
 export const GOOGLE_SCHEMA_WRITE_SCOPE =
   'https://www.googleapis.com/auth/admin.directory.userschema';
+/** The write scope of the user resource (B section 7.2). The value writer uses it. */
+export const GOOGLE_USER_WRITE_SCOPE =
+  'https://www.googleapis.com/auth/admin.directory.user';
 
 export const GOOGLE_CAPABILITIES = Object.freeze([
   {
@@ -137,6 +140,19 @@ export const GOOGLE_CAPABILITIES = Object.freeze([
     evidence:
       'admin-sdk-mock 0.4.0 and live check L2, which called the schema writes directly. No live category job',
   },
+  {
+    id: 'user-changes',
+    requiredForConnection: false,
+    label: 'User changes',
+    enabled: true,
+    qualified: false,
+    scope: GOOGLE_USER_WRITE_SCOPE,
+    method: 'users.patch',
+    source:
+      'https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/patch',
+    evidence:
+      'admin-sdk-mock 0.4.0 and live checks L3 and L4, which sent the value writes directly. No live value job',
+  },
 ] as const);
 
 /** Capability ids that the Google connection page lists during setup, in page order. */
@@ -151,6 +167,7 @@ const GOOGLE_SETUP_CAPABILITY_IDS = [
   'user-inventory',
   'user-schemas',
   'user-schema-changes',
+  'user-changes',
 ] as const;
 
 /**
