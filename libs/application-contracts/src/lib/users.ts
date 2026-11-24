@@ -802,3 +802,292 @@ export const userAttributeCategoryJobReceiptSchema = z
 export type UserAttributeCategoryJobReceipt = z.infer<
   typeof userAttributeCategoryJobReceiptSchema
 >;
+
+/** Google's text size rule: 500 characters for a single value (B section 8.1, E10). */
+export const USER_ATTRIBUTE_TEXT_MAX = 500;
+/** Google's largest list: 150 values of 100 characters (B section 3). */
+export const USER_ATTRIBUTE_VALUES_LIMIT = 150;
+/** The edit-list bound of E17: 2,500 edits on at most 500 users. The user bound is
+ * `USER_BY_IDS_LIMIT`, because a grid holds the same 500 users per request. */
+export const USER_ATTRIBUTE_EDITS_LIMIT = 2500;
+
+/** One text value: 1 to 500 code points and a visible character (B section 8.1, E10). The value
+ * keeps its spaces, because a text entry never trims. */
+const attributeTextValue = z
+  .string()
+  .refine((value) => value.length <= 2 * USER_ATTRIBUTE_TEXT_MAX, {
+    message: 'An attribute text holds 1 to 500 characters.',
+  })
+  .refine(
+    (value) => {
+      const length = [...value].length;
+      return length >= 1 && length <= USER_ATTRIBUTE_TEXT_MAX;
+    },
+    { message: 'An attribute text holds 1 to 500 characters.' },
+  )
+  .refine((value) => value.trim().length > 0, {
+    message: 'An attribute text needs a visible character.',
+  });
+
+/** One value that a person enters: text, a whole or a decimal number, or a yes or no answer
+ * (B section 8.1). The route refuses a whole number outside the JSON safe range (E10), because
+ * only the category cache names the info type of the attribute. */
+export const userAttributeValueSchema = z.union([
+  attributeTextValue,
+  z.number().finite(),
+  z.boolean(),
+]);
+export type UserAttributeValue = z.infer<typeof userAttributeValueSchema>;
+
+/** The entered values of one change, in order. Google's largest list holds 150 entries. */
+export const userAttributeValuesSchema = z
+  .array(userAttributeValueSchema)
+  .max(USER_ATTRIBUTE_VALUES_LIMIT);
+export type UserAttributeValues = z.infer<typeof userAttributeValuesSchema>;
+
+/** The value of one user and attribute as the preview rows and the edits read it: one value, or a
+ * list of values for a multi-value attribute. A missing value is null at the field, and an empty
+ * list is no value, so a row list holds at least one entry. */
+export const userAttributeRowValueSchema = z.union([
+  userAttributeValueSchema,
+  userAttributeValuesSchema.min(1),
+]);
+export type UserAttributeRowValue = z.infer<typeof userAttributeRowValueSchema>;
+
+/** The five value modes of B section 8.3. Clear names both Clear value and Clear values, because
+ * both send a `null` and both leave no value. Every other mode carries at least one value, and Set
+ * value carries one. */
+export const USER_ATTRIBUTE_CHANGE_MODES = [
+  'set',
+  'clear',
+  'add',
+  'remove',
+  'replace',
+] as const;
+export const userAttributeChangeModeSchema = z.enum(
+  USER_ATTRIBUTE_CHANGE_MODES,
+);
+export type UserAttributeChangeMode = z.infer<
+  typeof userAttributeChangeModeSchema
+>;
+
+/** Refuse the values of one mode. B section 8.3: Clear alone carries none, and Set carries one. */
+function refuseChangeValues(
+  change: { mode: UserAttributeChangeMode; values: readonly unknown[] },
+  context: z.RefinementCtx,
+): void {
+  if (change.mode === 'clear') {
+    if (change.values.length === 0) return;
+    context.addIssue({
+      code: 'custom',
+      message: 'A clear carries no value.',
+      path: ['values'],
+    });
+    return;
+  }
+  if (change.values.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'A mode other than clear carries a value.',
+      path: ['values'],
+    });
+    return;
+  }
+  if (change.mode === 'set' && change.values.length !== 1)
+    context.addIssue({
+      code: 'custom',
+      message: 'Set value carries one value.',
+      path: ['values'],
+    });
+}
+
+/** The keys of one attribute change, before its mode rules run. */
+const changeShape = {
+  schemaName: attributeText,
+  fieldName: attributeText,
+  mode: userAttributeChangeModeSchema,
+  values: userAttributeValuesSchema,
+};
+
+/** One attribute change of a selection preview (B section 10): the attribute, its mode, and its
+ * values. */
+export const userAttributeChangeSchema = z
+  .strictObject(changeShape)
+  .superRefine(refuseChangeValues);
+export type UserAttributeChange = z.infer<typeof userAttributeChangeSchema>;
+
+/** The changes of one preview, with each attribute once. The account holds at most 100 attributes
+ * over all categories (B section 5). */
+export const userAttributeChangesSchema = z
+  .array(userAttributeChangeSchema)
+  .min(1)
+  .max(USER_ATTRIBUTE_FIELD_LIMIT)
+  .refine(
+    (changes) =>
+      new Set(
+        changes.map(
+          (change) => `${change.schemaName}\u0000${change.fieldName}`,
+        ),
+      ).size === changes.length,
+    { message: 'An attribute occurs once.' },
+  );
+export type UserAttributeChanges = z.infer<typeof userAttributeChangesSchema>;
+
+/** The selection preview request of B section 10. It copies the device form: the grid, its tab,
+ * and the changes. */
+export const userAttributePreviewRequestSchema = z.strictObject({
+  gridId: userSelectionKeySchema.shape.gridId,
+  tabId: userSelectionKeySchema.shape.tabId,
+  changes: userAttributeChangesSchema,
+});
+export type UserAttributePreviewRequest = z.infer<
+  typeof userAttributePreviewRequestSchema
+>;
+
+/** One edit of an edit list (B section 10): the user, the C1 attribute ID, the change, and the
+ * value that the person saw when the edit began. */
+export const userAttributeEditSchema = z
+  .strictObject({
+    userId,
+    /** The C1 ID of the attribute (design C1). */
+    attribute: userAttributeKeySchema,
+    mode: userAttributeChangeModeSchema,
+    values: userAttributeValuesSchema,
+    /** The observed value when the edit began, or null when the attribute held none. */
+    baselineValue: userAttributeRowValueSchema.nullable(),
+  })
+  .superRefine(refuseChangeValues);
+export type UserAttributeEdit = z.infer<typeof userAttributeEditSchema>;
+
+/** The edits of one save: 1 to 2,500 edits on at most 500 users, each edit once (E17). */
+export const userAttributeEditsSchema = z
+  .array(userAttributeEditSchema)
+  .min(1)
+  .max(USER_ATTRIBUTE_EDITS_LIMIT)
+  .refine(
+    (edits) =>
+      new Set(edits.map((edit) => edit.userId)).size <= USER_BY_IDS_LIMIT,
+    { message: `An edit list holds at most ${USER_BY_IDS_LIMIT} users.` },
+  )
+  .refine(
+    (edits) =>
+      new Set(edits.map((edit) => `${edit.userId}\u0000${edit.attribute}`))
+        .size === edits.length,
+    { message: 'A user and attribute occur once.' },
+  );
+export type UserAttributeEdits = z.infer<typeof userAttributeEditsSchema>;
+
+/** The edit-list preview request of B section 10. Each edit carries its own baseline. */
+export const userAttributeEditPreviewRequestSchema = z.strictObject({
+  edits: userAttributeEditsSchema,
+});
+export type UserAttributeEditPreviewRequest = z.infer<
+  typeof userAttributeEditPreviewRequestSchema
+>;
+
+/** The two sources of a value preview (B section 10). A selection reads the cached values, and an
+ * edit list carries a baseline for each edit. */
+export const userAttributePreviewSourceSchema = z.enum([
+  'selection',
+  'edit-list',
+]);
+export type UserAttributePreviewSource = z.infer<
+  typeof userAttributePreviewSourceSchema
+>;
+
+/** The three dispositions of one preview row (B section 8.4). C equals R gives Unchanged, C
+ * differs from B gives Conflict, and every other row is Eligible. */
+export const userAttributeDispositionSchema = z.enum([
+  'eligible',
+  'unchanged',
+  'conflict',
+]);
+export type UserAttributeDisposition = z.infer<
+  typeof userAttributeDispositionSchema
+>;
+
+/** The preview summary of B section 10. Its counts cover the frozen users. */
+export const userAttributePreviewSchema = z
+  .strictObject({
+    previewId: z.uuid(),
+    source: userAttributePreviewSourceSchema,
+    /** The frozen changes, in contract order. An edit list answers null, because each of its rows
+     * carries its own request. */
+    changes: userAttributeChangesSchema.nullable(),
+    /** The number of eligible user-attribute rows that the confirm writes. */
+    attributeChanges: count,
+    selected: count,
+    eligible: count,
+    unchanged: count,
+    conflicts: count,
+    oldestObservedAt: timestamp.nullable(),
+    stale: z.boolean(),
+    preparedAt: timestamp,
+    expiresAt: timestamp,
+    manifestDigest,
+  })
+  .refine(
+    (preview) =>
+      preview.selected ===
+      preview.eligible + preview.unchanged + preview.conflicts,
+    { message: 'The selected count sums its dispositions.' },
+  );
+export type UserAttributePreview = z.infer<typeof userAttributePreviewSchema>;
+
+/** One frozen preview row of B section 10: the user, the attribute, its current value, the value
+ * that the confirm writes, and the disposition. */
+export const userAttributeTargetSchema = z.strictObject({
+  userId,
+  primaryEmail: z.email().max(254),
+  /** The C1 ID of the attribute (design C1). */
+  attribute: userAttributeKeySchema,
+  /** The value that the preview read, or null when the attribute holds none. */
+  currentValue: userAttributeRowValueSchema.nullable(),
+  /** The value that the confirm writes, or null for a removal. */
+  newValue: userAttributeRowValueSchema.nullable(),
+  disposition: userAttributeDispositionSchema,
+  /** When Campus Commander last read the user from Google. */
+  observedAt: timestamp.nullable(),
+});
+export type UserAttributeTarget = z.infer<typeof userAttributeTargetSchema>;
+
+/** One targets page. The route caps a page at 1,000 rows. */
+export const userAttributeTargetsSchema = z
+  .array(userAttributeTargetSchema)
+  .max(1000);
+
+/** The answer of `GET /api/users/attribute-previews/{previewId}/targets` (B section 10). */
+export const userAttributeTargetsPageSchema = z.strictObject({
+  targets: userAttributeTargetsSchema,
+  nextCursor: z.string().min(1).max(1024).nullable(),
+});
+export type UserAttributeTargetsPage = z.infer<
+  typeof userAttributeTargetsPageSchema
+>;
+
+/** The confirm body of B section 10: `{ manifestDigest, acknowledged: true }`. */
+export const userAttributePreviewConfirmRequestSchema = z.strictObject({
+  manifestDigest,
+  acknowledged: z.literal(true),
+});
+export type UserAttributePreviewConfirmRequest = z.infer<
+  typeof userAttributePreviewConfirmRequestSchema
+>;
+
+/** The receipt of a value preview confirm. It names the `UAT-` job and its counts. */
+export const userAttributeJobReceiptSchema = z
+  .strictObject({
+    jobId: z.uuid(),
+    displayId: jobDisplayIdSchema,
+    status: z.literal('accepted'),
+    /** The eligible users, one operation each (B section 7.2). */
+    userCount: count,
+    /** The distinct attributes that the job writes. */
+    changeCount: count,
+  })
+  .refine((receipt) => receipt.displayId.startsWith('UAT-'), {
+    message: 'A value job carries a UAT display ID.',
+  });
+export type UserAttributeJobReceipt = z.infer<
+  typeof userAttributeJobReceiptSchema
+>;
