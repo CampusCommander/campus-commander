@@ -123,6 +123,7 @@ export async function loadMigrations() {
       '024-user-attribute-categories',
       '025-user-category-plan-routes',
       '026-user-category-jobs',
+      '027-user-attribute-values',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -402,6 +403,13 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.begin_user_schema_change_write(text,uuid,uuid,uuid),
         cc.settle_user_schema_change(text,uuid,uuid,uuid,text,text,text,jsonb,jsonb,timestamptz),
         cc.recover_user_schema_change_jobs(text) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '027-user-attribute-values')) {
+      await client.query(
+        `GRANT SELECT ON cc.user_attribute_previews, cc.user_attribute_preview_changes,
+          cc.user_attribute_preview_targets, cc.user_attribute_target_values,
+          cc.user_attribute_update_jobs TO ${role}`,
+      );
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);
