@@ -192,6 +192,7 @@ const setupScopes = [
   'https://www.googleapis.com/auth/admin.directory.user.readonly',
   'https://www.googleapis.com/auth/admin.directory.userschema.readonly',
   'https://www.googleapis.com/auth/admin.directory.userschema',
+  'https://www.googleapis.com/auth/admin.directory.user',
 ];
 
 async function setupImportPage() {
@@ -234,7 +235,7 @@ async function setupImportPage() {
   };
 }
 
-it('lists the ten setup scopes in order under the Google scopes name', async () => {
+it('lists the eleven setup scopes in order under the Google scopes name', async () => {
   const { fixture, element } = await setupImportPage();
   const block = element.querySelector<HTMLElement>(
     '[aria-label="Google scopes"]',
@@ -245,14 +246,14 @@ it('lists the ten setup scopes in order under the Google scopes name', async () 
   fixture.destroy();
 });
 
-it('names the ten scopes in step 3 and copies them for the Admin Console', async () => {
+it('names the eleven scopes in step 3 and copies them for the Admin Console', async () => {
   const { fixture, element, writeText } = await setupImportPage();
   const text = element.textContent!.replace(/\s+/g, ' ');
   expect(text).toContain(
-    'Add the service account client ID and the 10 scopes below.',
+    'Add the service account client ID and the 11 scopes below.',
   );
   expect(text).toContain(
-    'Campus Commander connects with the customer and domain scopes. Devices also needs the device, telemetry, device change, and organization unit scopes. Users need the read-only user scope and both user attribute scopes.',
+    'Campus Commander connects with the customer and domain scopes. Devices also needs the device, telemetry, device change, and organization unit scopes. Users need the read-only user scope, the user write scope, and both user attribute scopes.',
   );
   const copy = [...element.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Copy scopes',
