@@ -119,7 +119,7 @@ export async function qualifyUserInventory({
     ]);
 
     await check(
-      'a fresh database runs every migration through 027',
+      'a fresh database runs every migration through 028',
       async () => {
         const ids = (
           await migrator.query(
