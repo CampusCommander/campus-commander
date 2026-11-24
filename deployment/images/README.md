@@ -2,6 +2,7 @@
 
 Nx builds the frontend, API, and worker images for Linux amd64.
 Each Dockerfile uses the root `package-lock.json` and a pinned Node base image digest.
+The runtime stage requires minimum versions of patched Alpine packages, such as `libcrypto3>=3.5.9-r1`. A newer Alpine release of each package satisfies the minimum, and the release scan still refuses an image with a HIGH or CRITICAL finding.
 Each runtime uses the image `node` account.
 
 TLS listeners require `TLS_CERT_FILE` and `TLS_KEY_FILE`.
