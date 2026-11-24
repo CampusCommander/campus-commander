@@ -22,13 +22,16 @@ export interface FlowFailure {
 }
 
 /**
- * The three job facts that the dialog shows: the status of the save, its failure, and
- * the time it finished. The job page owns the full detail, so the dialog reads only these
- * (B section 7). A category job names a category action that the shared job summary does
- * not list yet (K16 and J3 hold the job contract), so the read accepts the raw fields.
+ * The job facts that the dialog shows: the status of the save, its failure, the time it
+ * finished, and the stored revision. The revision orders the reads, so a delayed answer
+ * never replaces a newer one. The job page owns the full detail, so the dialog reads only
+ * these (B section 7). A category job names a category action that the shared job summary
+ * does not list yet (K16 and J3 hold the job contract), so the read accepts the raw fields.
  */
 export interface CategoryJob {
   displayId: string;
+  /** The stored job revision. The contract gives a stored job a revision of at least 1. */
+  revision: number;
   status: JobStatus;
   failure: JobFailure | null;
   finishedAt: string | null;
@@ -50,14 +53,16 @@ function reasonOf(body: unknown): string | null {
 }
 
 /**
- * The four fields of a category job that the dialog shows. A job answer that does not
- * name a display ID or a known status reads as unreadable, and the dialog says so.
+ * The five fields of a category job that the dialog shows. A job answer that does not
+ * name a display ID, a stored revision, or a known status reads as unreadable, and the
+ * dialog says so.
  */
 function categoryJobOf(body: unknown): CategoryJob | null {
   if (typeof body !== 'object' || body === null) return null;
   const raw = body as Record<string, unknown>;
   const status = jobStatusSchema.safeParse(raw['status']);
   const displayId = raw['displayId'];
+  const revision = raw['revision'];
   const failure =
     raw['failure'] === null || raw['failure'] === undefined
       ? null
@@ -65,9 +70,16 @@ function categoryJobOf(body: unknown): CategoryJob | null {
   const finishedAt =
     typeof raw['finishedAt'] === 'string' ? raw['finishedAt'] : null;
   if (!status.success || typeof displayId !== 'string') return null;
+  if (
+    typeof revision !== 'number' ||
+    !Number.isInteger(revision) ||
+    revision < 1
+  )
+    return null;
   if (failure !== null && !failure.success) return null;
   return {
     displayId,
+    revision,
     status: status.data,
     failure: failure === null ? null : failure.data,
     finishedAt,
