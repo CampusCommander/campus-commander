@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { selectionTargetsSql } from '../../api/src/app/users/user-query.ts';
 
 /**
  * K23: the value preview routes of document B section 10. The functions run as the restricted
@@ -221,6 +222,63 @@ export async function qualifyUserAttributePreviewRoutes({
 
   try {
     await seed(etag);
+
+    await check(
+      'K23 the selection read answers the cached users and leaves removed users out',
+      async () => {
+        const ids = ['k23-sel-1', 'k23-sel-2', 'k23-sel-3'];
+        await migrator.query(
+          `INSERT INTO cc.users(customer_id,user_id,primary_email,org_unit_path,suspended,archived,
+                two_step_enrolled,custom_schemas,last_entity_sync,removed_at)
+               VALUES($1,$2,$3,'/Students',false,false,true,$4,clock_timestamp(),
+                 CASE WHEN $2='k23-sel-3' THEN clock_timestamp() ELSE NULL END)`,
+          [
+            customer,
+            ids[0],
+            'k23-sel-1@example.org',
+            JSON.stringify({ StudentInfo: { Homeroom: 'B11' } }),
+          ],
+        );
+        for (const [index, id] of ids.slice(1).entries())
+          await migrator.query(
+            `INSERT INTO cc.users(customer_id,user_id,primary_email,org_unit_path,suspended,archived,
+                  two_step_enrolled,custom_schemas,last_entity_sync,removed_at)
+                 VALUES($1,$2,$3,'/Students',false,false,true,$4,clock_timestamp(),
+                   CASE WHEN $2='k23-sel-3' THEN clock_timestamp() ELSE NULL END)`,
+            [
+              customer,
+              id,
+              `${id}@example.org`,
+              JSON.stringify({
+                StudentInfo: { Homeroom: index === 0 ? 'B12' : 'B13' },
+              }),
+            ],
+          );
+        const state = {
+          terms: [],
+          additions: ids,
+          exceptions: [],
+          changedAt: new Date().toISOString(),
+        };
+        const sql = selectionTargetsSql(customer, state);
+        const rows = (await migrator.query(sql.text, sql.values)).rows;
+        assert.deepEqual(
+          rows.map((row) => row.user_id),
+          ['k23-sel-1', 'k23-sel-2'],
+        );
+        assert.deepEqual(rows[0].custom_schemas, {
+          StudentInfo: { Homeroom: 'B11' },
+        });
+        assert.ok(rows[0].last_entity_sync instanceof Date);
+        const bounded = selectionTargetsSql(customer, state, 1);
+        const one = (await migrator.query(bounded.text, bounded.values)).rows;
+        assert.equal(one.length, 1);
+        await migrator.query(
+          'DELETE FROM cc.users WHERE customer_id=$1 AND user_id=ANY($2::text[])',
+          [customer, ids],
+        );
+      },
+    );
 
     await check(
       'K23 the runtime reads the new table and cannot write it',
