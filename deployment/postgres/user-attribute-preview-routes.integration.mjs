@@ -487,6 +487,20 @@ export async function qualifyUserAttributePreviewRoutes({
           [previewId],
         );
         assert.equal(details.jobs, 1);
+        // A confirmed preview answers its receipt even after the cached etag moved (B section 10).
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag='"etag-k23-2"'
+           WHERE customer_id=$1 AND schema_id=$2`,
+          [customer, schemaId],
+        );
+        const after = await confirm(author, 1, previewId);
+        assert.equal(after.outcome, 'existing');
+        assert.deepEqual(after.receipt, first.receipt);
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag=$3
+           WHERE customer_id=$1 AND schema_id=$2`,
+          [customer, schemaId, etag],
+        );
       },
     );
 
