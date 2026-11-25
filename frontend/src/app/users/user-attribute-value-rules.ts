@@ -137,7 +137,14 @@ export function attributeEditorValue(
   if (field.multiValued) {
     if (baseline === null) return [];
     const list = Array.isArray(baseline) ? baseline : [baseline];
-    return list.map((value) => String(value));
+    // A Yes or No entry keeps the words of its editor, so a chip shows and validates Yes or No.
+    return list.map((value) =>
+      field.fieldType === 'BOOL' && typeof value === 'boolean'
+        ? value
+          ? 'Yes'
+          : 'No'
+        : String(value),
+    );
   }
   if (field.fieldType === 'BOOL')
     return typeof baseline === 'boolean' ? baseline : null;
@@ -355,15 +362,38 @@ export function sameAttributeValue(
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+/** Whether the editor still holds exactly the value that it opened with. */
+export function sameEditorValue(
+  left: AttributeDraft['value'],
+  right: AttributeDraft['value'],
+): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    const a = Array.isArray(left) ? left : [];
+    const b = Array.isArray(right) ? right : [];
+    return (
+      a.length === b.length && a.every((value, index) => value === b[index])
+    );
+  }
+  return left === right;
+}
+
 /** The edit of one editor field, with its baseline (B section 8.3, B section 10). */
 export function attributeDraftResult(
   draft: AttributeDraft,
   userId: string,
 ): AttributeDraftResult {
+  // The raw input runs before canonical equality. An invalid number becomes NaN and drops
+  // out of the canonical list, which once made it look unchanged (R1-C). An untouched
+  // field is the value that the editor opened with, so existing duplicates stay quiet.
+  const pristine = sameEditorValue(
+    draft.value,
+    attributeEditorValue(draft.baseline, draft.field),
+  );
+  const error = attributeValueError(draft);
+  if (error && !pristine) return { changed: true, error, edit: null };
   const wire = attributeWireValue(draft);
   const changed = !sameAttributeValue(draft.field, wire, draft.baseline);
   if (!changed) return { changed: false, error: null, edit: null };
-  const error = attributeValueError(draft);
   if (error) return { changed: true, error, edit: null };
   const values = wire === null ? [] : Array.isArray(wire) ? wire : [wire];
   return {

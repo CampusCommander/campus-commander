@@ -119,6 +119,10 @@
 .saved-line.is-error {
   color: var(--cc-status-error-text);
 }
+/* A job that needs review holds an unknown result, not a confirmed failure (B section 7.3). */
+.saved-line.is-warning {
+  color: var(--cc-status-warning-text);
+}
 .saved-line .material-symbols-outlined {
   width: 18px;
   height: 18px;

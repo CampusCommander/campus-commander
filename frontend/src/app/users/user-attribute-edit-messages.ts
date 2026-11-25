@@ -67,6 +67,11 @@ export function attributeSavedText(attributes: readonly string[]): string {
 export const ATTRIBUTE_PARTIAL_TEXT = 'Some values did not save.';
 export const ATTRIBUTE_FAILED_TEXT = 'The values did not save.';
 export const ATTRIBUTE_UNSETTLED_TEXT = 'The job is still running.';
+/** A job that holds Unknown operations needs review (B section 7.3). */
+export const ATTRIBUTE_REVIEW_TEXT = 'The job needs review.';
+/** The retry of a confirmation whose answer never arrived (R1-D). */
+export const ATTRIBUTE_CONFIRM_UNCERTAIN_HINT =
+  'Retry the confirmation to keep the same preview.';
 export const ATTRIBUTE_JOB_RESULT_SUFFIX = ' for the result.';
 export const ATTRIBUTE_JOB_PROGRESS_SUFFIX = ' for its progress.';
 

@@ -40,6 +40,7 @@ import {
   ATTRIBUTE_COLUMN_NEW,
   ATTRIBUTE_COLUMN_STATUS,
   ATTRIBUTE_CONFIRM_LABEL,
+  ATTRIBUTE_CONFIRM_UNCERTAIN_HINT,
   ATTRIBUTE_CONFLICT_TITLE,
   ATTRIBUTE_CREATING_JOB_TEXT,
   ATTRIBUTE_NO_CHANGE_TEXT,
@@ -63,14 +64,22 @@ import {
 
 /** The outcome of one save, for the saved line of the card (composition 13). */
 export interface UserAttributeSaveResult {
-  outcome: 'saved' | 'partial' | 'failed' | 'unsettled';
+  outcome: 'saved' | 'partial' | 'failed' | 'unknown' | 'unsettled';
+  /** The user whose card opened this save. A result never moves to another user (R1-A). */
+  userId: string;
   displayId: string;
   /** The display names of the attributes that the job writes. */
   attributeNames: string[];
 }
 
 /** The step of the card form. The flow ends where it starts (B section 4.2). */
-type EditorStep = 'edit' | 'preparing' | 'review' | 'confirming' | 'saving';
+type EditorStep =
+  | 'edit'
+  | 'preparing'
+  | 'review'
+  | 'confirming'
+  | 'unconfirmed'
+  | 'saving';
 
 /**
  * The Custom attributes card form of K25. The whole card edits at once. One change
@@ -110,6 +119,13 @@ export class UserAttributeEditor implements OnInit {
   protected readonly targets = signal<UserAttributeTarget[]>([]);
   protected readonly reviewError = signal('');
   protected readonly receiptId = signal<string | null>(null);
+  /** The attribute names of the confirmation in flight, replayed after an uncertain answer. */
+  private readonly pendingNames = signal<string[]>([]);
+  /**
+   * The user whose card opened this form. The inputs can point at a later route while the
+   * form is alive, so every draft, edit, and result uses this identity (R1-A).
+   */
+  private subjectUserId = '';
 
   protected readonly labels = {
     cancel: ATTRIBUTE_CANCEL_LABEL,
@@ -130,12 +146,15 @@ export class UserAttributeEditor implements OnInit {
     columnCurrent: ATTRIBUTE_COLUMN_CURRENT,
     columnNew: ATTRIBUTE_COLUMN_NEW,
     columnStatus: ATTRIBUTE_COLUMN_STATUS,
+    uncertainHint: ATTRIBUTE_CONFIRM_UNCERTAIN_HINT,
   };
 
   private readonly firstField =
     viewChild<ElementRef<HTMLElement>>('firstField');
   private readonly reviewTitle =
     viewChild<ElementRef<HTMLElement>>('reviewTitle');
+  private readonly uncertainAction =
+    viewChild<ElementRef<HTMLElement>>('uncertainAction');
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -153,6 +172,7 @@ export class UserAttributeEditor implements OnInit {
   }
 
   ngOnInit(): void {
+    this.subjectUserId = this.user().userId;
     const drafts = attributeDrafts(
       this.categories(),
       this.user().customSchemas,
@@ -174,7 +194,7 @@ export class UserAttributeEditor implements OnInit {
   /** The changed fields with their value rules (B section 8.1). */
   protected readonly changed = computed(() =>
     this.drafts()
-      .map((draft) => attributeDraftResult(draft, this.user().userId))
+      .map((draft) => attributeDraftResult(draft, this.subjectUserId))
       .filter((result) => result.changed),
   );
 
@@ -235,7 +255,7 @@ export class UserAttributeEditor implements OnInit {
   /** The message under one field, or null. An unchanged field never blocks the save. */
   protected fieldError(key: string): string | null {
     const draft = this.drafts().find((candidate) => candidate.key === key);
-    return draft ? attributeDraftResult(draft, this.user().userId).error : null;
+    return draft ? attributeDraftResult(draft, this.subjectUserId).error : null;
   }
 
   protected setText(key: string, event: Event): void {
@@ -287,7 +307,7 @@ export class UserAttributeEditor implements OnInit {
 
   protected async save(): Promise<void> {
     if (!this.canSave()) return;
-    const edits = attributeEdits(this.drafts(), this.user().userId);
+    const edits = attributeEdits(this.drafts(), this.subjectUserId);
     if (edits.length === 0) return;
     this.message.set('');
     this.reviewError.set('');
@@ -354,6 +374,12 @@ export class UserAttributeEditor implements OnInit {
     this.cancelled.emit();
   }
 
+  /** Replay the confirmation of the preview that the uncertain answer left in place (R1-D). */
+  protected retryConfirm(): void {
+    if (this.step() !== 'unconfirmed') return;
+    void this.submit(this.pendingNames());
+  }
+
   private update(key: string, value: string | boolean | null | string[]): void {
     this.drafts.update((drafts) =>
       drafts.map((draft) => (draft.key === key ? { ...draft, value } : draft)),
@@ -376,6 +402,7 @@ export class UserAttributeEditor implements OnInit {
   private async submit(attributeNames: string[]): Promise<void> {
     const preview = this.preview();
     if (!preview) return;
+    this.pendingNames.set(attributeNames);
     this.message.set('');
     this.step.set('confirming');
     const receipt = await this.flow.confirm(
@@ -384,7 +411,17 @@ export class UserAttributeEditor implements OnInit {
     );
     if (this.destroyed) return;
     if (!receipt.ok) {
-      // A refusal keeps the form and its edits (card scope, B section 13).
+      if (receipt.uncertain) {
+        // The answer may have created the job. Keep the preview and replay this same
+        // confirmation, so the save never gains a second job identity (R1-D).
+        this.message.set(receipt.message);
+        this.step.set('unconfirmed');
+        this.focusUncertain();
+        return;
+      }
+      // A definite refusal keeps the form and its edits, and clears the preview, because
+      // the route has settled the preview identity already (card scope, B section 13).
+      this.preview.set(null);
       this.step.set('edit');
       this.message.set(receipt.message);
       return;
@@ -392,20 +429,39 @@ export class UserAttributeEditor implements OnInit {
     const displayId = receipt.value.displayId;
     this.receiptId.set(displayId);
     this.step.set('saving');
-    const job = await this.flow.waitForJob(displayId);
+    const job = await this.flow.waitForJob(
+      displayId,
+      120,
+      1000,
+      () => this.destroyed,
+    );
     if (this.destroyed) return;
+    // A job that never settled, or a job whose answer never arrived, keeps its receipt.
     const outcome: UserAttributeSaveResult['outcome'] = !job.ok
       ? 'unsettled'
       : job.value.status === 'completed'
         ? 'saved'
         : job.value.status === 'completed-with-errors'
           ? 'partial'
-          : 'failed';
-    this.finished.emit({ outcome, displayId, attributeNames });
+          : job.value.status === 'needs-review'
+            ? 'unknown'
+            : 'failed';
+    this.finished.emit({
+      outcome,
+      userId: this.subjectUserId,
+      displayId,
+      attributeNames,
+    });
   }
 
   private focusReview(): void {
     afterNextRender(() => this.reviewTitle()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  private focusUncertain(): void {
+    afterNextRender(() => this.uncertainAction()?.nativeElement.focus(), {
       injector: this.injector,
     });
   }

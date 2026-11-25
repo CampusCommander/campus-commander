@@ -11,27 +11,7 @@
       [attr.data-attribute]="draft.key"
       [attr.data-type]="draft.field.fieldType"
     >
-      @switch (draft.field.fieldType) { @case ('BOOL') {
-      <div class="bool-field">
-        <span class="bool-label" [id]="draft.key + '-label'"
-          >{{ draft.label }}</span
-        >
-        <mat-button-toggle-group
-          [value]="draft.value"
-          [attr.aria-labelledby]="draft.key + '-label'"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-          (change)="setBool(draft.key, $event.value)"
-        >
-          <mat-button-toggle [value]="true">{{ labels.yes }}</mat-button-toggle>
-          <mat-button-toggle [value]="false">{{ labels.no }}</mat-button-toggle>
-          <mat-button-toggle [value]="null"
-            >{{ labels.unset }}</mat-button-toggle
-          >
-        </mat-button-toggle-group>
-      </div>
-      } @case ('STRING') { @if (draft.field.multiValued) {
+      @if (draft.field.multiValued) {
       <mat-form-field
         appearance="outline"
         subscriptSizing="dynamic"
@@ -68,7 +48,28 @@
           />
         </mat-chip-grid>
       </mat-form-field>
-      } @else {
+      } @else { @switch (draft.field.fieldType) { @case ('BOOL') {
+      <div class="bool-field">
+        <span class="bool-label" [id]="draft.key + '-label'"
+          >{{ draft.label }}</span
+        >
+        <mat-button-toggle-group
+          class="bool-toggle"
+          [value]="draft.value"
+          [attr.aria-labelledby]="draft.key + '-label'"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          (change)="setBool(draft.key, $event.value)"
+        >
+          <mat-button-toggle [value]="true">{{ labels.yes }}</mat-button-toggle>
+          <mat-button-toggle [value]="false">{{ labels.no }}</mat-button-toggle>
+          <mat-button-toggle [value]="null"
+            >{{ labels.unset }}</mat-button-toggle
+          >
+        </mat-button-toggle-group>
+      </div>
+      } @case ('STRING') {
       <mat-form-field
         appearance="outline"
         subscriptSizing="dynamic"
@@ -87,7 +88,7 @@
           "
         />
       </mat-form-field>
-      } } @case ('INT64') {
+      } @case ('INT64') {
       <mat-form-field
         appearance="outline"
         subscriptSizing="dynamic"
@@ -184,7 +185,7 @@
           "
         />
       </mat-form-field>
-      } } @if (fieldError(draft.key); as error) {
+      } } } @if (fieldError(draft.key); as error) {
       <p class="field-error" [id]="draft.key + '-error'">{{ error }}</p>
       }
     </div>
@@ -275,6 +276,26 @@
 } @case ('confirming') {
 <section class="flow-state" aria-live="polite" aria-busy="true">
   <p role="status">{{ labels.creating }}</p>
+</section>
+} @case ('unconfirmed') {
+<section class="flow-state" aria-labelledby="attribute-uncertain-title">
+  <h3 tabindex="-1" id="attribute-uncertain-title" role="alert">
+    {{ message() }}
+  </h3>
+  <p class="flow-note">{{ labels.uncertainHint }}</p>
+  <div class="editor-foot">
+    <button mat-button type="button" (click)="cancel()">
+      {{ labels.cancel }}
+    </button>
+    <button
+      #uncertainAction
+      mat-flat-button
+      type="button"
+      (click)="retryConfirm()"
+    >
+      {{ labels.confirm }}
+    </button>
+  </div>
 </section>
 } @case ('saving') {
 <section class="flow-state" aria-live="polite" aria-busy="true">

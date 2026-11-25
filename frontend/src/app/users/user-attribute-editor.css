@@ -14,17 +14,38 @@
   border-block-start: 1px solid var(--cc-border);
 }
 .attr-section h3 {
-  margin: 0 0 var(--cc-space-md);
+  margin: 0 0 var(--cc-space-sm);
 }
+/* The approved form rhythm: a 16 px gap between sibling fields (composition 5). */
 .field + .field {
-  margin-block-start: var(--cc-space-md);
+  margin-block-start: var(--cc-space-lg);
+}
+.attr-section h3 + .field {
+  margin-block-start: 6px;
 }
 .attribute-field {
   width: 100%;
 }
-/* The typed values follow the outlined boxes of the read card. */
+/* The typed values follow the outlined boxes of the read card. The chip editor keeps the
+   compact outline of the approved form instead of growing with its chips. */
 .chip-field {
-  --mat-form-field-container-height: 52px;
+  --mat-form-field-container-height: 56px;
+}
+.chip-field ::ng-deep .mat-mdc-form-field-infix {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding-block: 8px;
+}
+.chip-field ::ng-deep .mat-mdc-chip-grid {
+  width: 100%;
+}
+.chip-field ::ng-deep .mat-mdc-chip-row {
+  min-height: 28px;
+  font-size: 12px;
+}
+.chip-field ::ng-deep .mat-mdc-chip-row .mat-mdc-chip-focus-overlay {
+  border-radius: var(--cc-radius-chip);
 }
 /* The Material outline follows the host class, because no form directive owns the control. */
 .field-invalid ::ng-deep .mat-mdc-notch-piece {
@@ -33,16 +54,29 @@
 .field-invalid ::ng-deep .mdc-floating-label {
   color: var(--cc-status-error) !important;
 }
+/* The approved Yes and No control hugs its three choices at the control radius. */
 .bool-field {
   display: flex;
   flex-direction: column;
-  gap: var(--cc-space-xs);
+  align-items: flex-start;
+  gap: var(--cc-space-sm);
 }
 .bool-label {
-  color: var(--cc-text-primary);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
 }
+.bool-toggle {
+  --mat-button-toggle-height: 40px;
+  --mat-button-toggle-shape: var(--cc-radius-control);
+}
+.bool-toggle ::ng-deep .mat-button-toggle-label-content {
+  padding: 0 16px;
+}
+/* The error text keeps the 16 px inset of the Material form-field error wrapper. */
 .field-error {
   margin: var(--cc-space-xs) 0 0;
+  padding-inline: 16px;
   color: var(--cc-status-error-text);
   font-size: 12px;
   line-height: 16px;

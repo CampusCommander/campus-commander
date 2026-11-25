@@ -37,6 +37,15 @@ export type AttributeFlowAnswer<T> =
   | { ok: true; value: T }
   | { ok: false; message: string };
 
+/**
+ * The answer of one confirmation. A refusal is a definite answer from Campus Commander.
+ * An uncertain answer may have created the job, so the card keeps the preview identity
+ * and replays the same confirmation (R1-D).
+ */
+export type AttributeConfirmAnswer =
+  | { ok: true; value: UserAttributeJobReceipt }
+  | { ok: false; message: string; uncertain: boolean };
+
 /** The five job statuses that need no more reads (job contracts, section 1.2). */
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'completed',
@@ -164,12 +173,31 @@ export class UserAttributeEditFlow {
   async confirm(
     previewId: string,
     manifestDigest: string,
-  ): Promise<AttributeFlowAnswer<UserAttributeJobReceipt>> {
-    return this.send(
-      `/api/users/attribute-previews/${encodeURIComponent(previewId)}/confirm`,
-      { manifestDigest, acknowledged: true },
-      (body) => userAttributeJobReceiptSchema.safeParse(body),
-    );
+  ): Promise<AttributeConfirmAnswer> {
+    try {
+      const response = await this.auth.request(
+        `/api/users/attribute-previews/${encodeURIComponent(previewId)}/confirm`,
+        { manifestDigest, acknowledged: true },
+      );
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok)
+        return {
+          ok: false,
+          message: attributeAnswerMessage(response.status, body),
+          // A server failure may have committed the job. Only a client refusal is final.
+          uncertain: response.status >= 500,
+        };
+      const parsed = userAttributeJobReceiptSchema.safeParse(body);
+      return parsed.success
+        ? { ok: true, value: parsed.data }
+        : {
+            ok: false,
+            message: ATTRIBUTE_PREVIEW_UNAVAILABLE_TEXT,
+            uncertain: true,
+          };
+    } catch {
+      return { ok: false, message: ATTRIBUTE_OFFLINE_TEXT, uncertain: true };
+    }
   }
 
   /** `GET /api/jobs/{displayId}` for the value job of one receipt. */
@@ -194,23 +222,29 @@ export class UserAttributeEditFlow {
   }
 
   /**
-   * Poll the job of one receipt until it settles. A job that leaves no readable answer
-   * stays unsettled; the caller keeps the receipt and its job link.
+   * Poll the job of one receipt until it settles. A failed read is transient, so the card
+   * keeps observing the accepted receipt instead of closing on the first miss (R1-E). A
+   * terminal answer on the final allowed read settles the job too.
    */
   async waitForJob(
     displayId: string,
     attempts = 120,
     delayMs = 1000,
+    isCancelled?: () => boolean,
   ): Promise<AttributeFlowAnswer<JobDetail>> {
     let answer = await this.readJob(displayId);
     for (let attempt = 1; attempt < attempts; attempt++) {
-      if (!answer.ok || TERMINAL_STATUSES.has(answer.value.status)) {
+      if (answer.ok && TERMINAL_STATUSES.has(answer.value.status))
         return answer;
-      }
+      if (isCancelled?.())
+        return { ok: false, message: ATTRIBUTE_UNSETTLED_TEXT };
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (isCancelled?.())
+        return { ok: false, message: ATTRIBUTE_UNSETTLED_TEXT };
       answer = await this.readJob(displayId);
     }
-    // A job that stays open past the last read leaves the receipt and its link in place.
+    // A terminal final answer settles; an open or unreadable one leaves the receipt in place.
+    if (answer.ok && TERMINAL_STATUSES.has(answer.value.status)) return answer;
     return answer.ok
       ? { ok: false, message: ATTRIBUTE_UNSETTLED_TEXT }
       : answer;

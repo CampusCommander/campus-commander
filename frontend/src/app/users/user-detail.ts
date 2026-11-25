@@ -32,6 +32,7 @@ import {
 import {
   ATTRIBUTE_FAILED_TEXT,
   ATTRIBUTE_PARTIAL_TEXT,
+  ATTRIBUTE_REVIEW_TEXT,
   ATTRIBUTE_UNSETTLED_TEXT,
   attributeSavedText,
 } from './user-attribute-edit-messages';
@@ -122,7 +123,14 @@ export class UserDetailPage {
   private readonly auth = inject(AuthStore);
   /** The card form edits every attribute of this user at once, and one save makes one job. */
   protected readonly editing = signal(false);
+  /** The user whose card opened the form. A route change closes the form (R1-A). */
+  protected readonly editingUserId = signal<string | null>(null);
+  /** The form is open on the card of the current route, not on a card that the route left. */
+  protected readonly editingThisCard = computed(
+    () => this.editing() && this.editingUserId() === this.userId(),
+  );
   protected readonly saved = signal<UserAttributeSaveResult | null>(null);
+  private readonly savedUserId = signal<string | null>(null);
   protected readonly categories = computed(
     () => this.store.categories()?.categories ?? [],
   );
@@ -141,15 +149,17 @@ export class UserDetailPage {
   /** The saved line of composition 13, with the job ID as a secondary link. */
   protected readonly savedLine = computed(() => {
     const result = this.saved();
-    if (!result) return null;
+    if (!result || this.savedUserId() !== this.userId()) return null;
     const text =
       result.outcome === 'saved'
         ? attributeSavedText(result.attributeNames)
         : result.outcome === 'partial'
           ? ATTRIBUTE_PARTIAL_TEXT
-          : result.outcome === 'unsettled'
-            ? ATTRIBUTE_UNSETTLED_TEXT
-            : ATTRIBUTE_FAILED_TEXT;
+          : result.outcome === 'unknown'
+            ? ATTRIBUTE_REVIEW_TEXT
+            : result.outcome === 'unsettled'
+              ? ATTRIBUTE_UNSETTLED_TEXT
+              : ATTRIBUTE_FAILED_TEXT;
     return { outcome: result.outcome, text, displayId: result.displayId };
   });
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
@@ -166,7 +176,16 @@ export class UserDetailPage {
   constructor() {
     effect(() => {
       const id = this.userId();
-      untracked(() => void this.load(id));
+      untracked(() => {
+        // A draft, a result, and a pending callback belong to the user whose card opened
+        // them. A route change closes the form instead of moving its state (R1-A).
+        if (this.editingUserId() !== id) {
+          this.editing.set(false);
+          this.editingUserId.set(null);
+        }
+        if (this.savedUserId() !== id) this.saved.set(null);
+        void this.load(id);
+      });
     });
     // The grid hands over with a link that leaves the page, so focus continues at the
     // heading of the state that replaces the skeleton (UI-09).
@@ -242,21 +261,28 @@ export class UserDetailPage {
 
   protected startEdit(): void {
     this.saved.set(null);
+    this.savedUserId.set(null);
+    this.editingUserId.set(this.userId());
     this.editing.set(true);
   }
 
   /** Cancel and a finished save both return focus to the Edit button (UI-09). */
   protected cancelEdit(): void {
     this.editing.set(false);
+    this.editingUserId.set(null);
     this.focusEdit();
   }
 
   protected finishEdit(result: UserAttributeSaveResult): void {
+    // The save belongs to the card that started it. A later route never shows its result.
+    if (result.userId !== this.userId()) return;
     this.editing.set(false);
+    this.editingUserId.set(null);
+    this.savedUserId.set(result.userId);
     this.saved.set(result);
     this.focusEdit();
     // The job settled, so the card reads the new values from the directory.
-    void this.load(this.userId());
+    void this.load(result.userId);
   }
 
   private focusEdit(): void {

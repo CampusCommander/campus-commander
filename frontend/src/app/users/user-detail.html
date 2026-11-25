@@ -165,7 +165,7 @@
     <section class="card attrs" aria-labelledby="user-attributes-title">
       <div class="card-head">
         <h2 id="user-attributes-title">Custom attributes</h2>
-        @if (canEdit() && !editing()) {
+        @if (canEdit() && !editingThisCard()) {
         <button
           #editButton
           mat-stroked-button
@@ -177,7 +177,7 @@
         </button>
         }
       </div>
-      @if (editing()) {
+      @if (editingThisCard()) {
       <app-user-attribute-editor
         [user]="current"
         [categories]="categories()"
@@ -187,11 +187,15 @@
       } @else { @if (savedLine(); as line) {
       <p
         class="saved-line"
-        [class.is-error]="line.outcome !== 'saved'"
+        [class.is-error]="
+          line.outcome === 'failed' || line.outcome === 'unsettled'
+        "
+        [class.is-warning]="line.outcome === 'unknown'"
         role="status"
       >
         <span class="material-symbols-outlined" aria-hidden="true"
-          >{{ line.outcome === 'saved' ? 'check_circle' : 'error' }}</span
+          >{{ line.outcome === 'saved' ? 'check_circle' : line.outcome ===
+          'unknown' ? 'info' : 'error' }}</span
         >
         <span>{{ line.text }} · Job</span>
         <a [routerLink]="['/jobs', line.displayId]">{{ line.displayId }}</a>
