@@ -805,10 +805,9 @@ export type UserAttributeCategoryJobReceipt = z.infer<
 
 /** Google's text size rule: 500 characters for a single value (B section 8.1, E10). */
 export const USER_ATTRIBUTE_TEXT_MAX = 500;
-/** Google's largest list: 150 values of 100 characters (B section 3). */
+/** Google's largest list: 150 values (B section 3). A list also takes 50 values of 500 characters,
+ * so no single total text bound applies; each entry keeps the 500-character rule. */
 export const USER_ATTRIBUTE_VALUES_LIMIT = 150;
-/** Google's total size of one list: 150 values of 100 characters, or 50 of 500 (B section 3). */
-export const USER_ATTRIBUTE_LIST_TEXT_MAX = 15_000;
 /** The edit-list bound of E17: 2,500 edits on at most 500 users. The user bound is
  * `USER_BY_IDS_LIMIT`, because a grid holds the same 500 users per request. */
 export const USER_ATTRIBUTE_EDITS_LIMIT = 2500;

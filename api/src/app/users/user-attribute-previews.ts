@@ -17,7 +17,7 @@ import {
   userAttributePreviewSchema,
   userAttributeRowValueSchema,
   userAttributeTargetsPageSchema,
-  USER_ATTRIBUTE_LIST_TEXT_MAX,
+  USER_ATTRIBUTE_EDITS_LIMIT,
   USER_ATTRIBUTE_TEXT_MAX,
   USER_ATTRIBUTE_VALUES_LIMIT,
   type SessionResponse,
@@ -50,10 +50,15 @@ export const USER_ATTRIBUTE_TARGETS_LIMIT = 1000;
 /** The edit-list read carries one deadline over every Google call (B section 8.4). */
 export const USER_ATTRIBUTE_READ_DEADLINE_MILLISECONDS = 25_000;
 /**
- * The body cap of the preview POST. One edit list carries 2,500 edits on 500 users (E17), so the
- * ordinary short-value save is about 232 KB; this bound keeps the request domain well above it.
+ * The body cap of the preview POST. An edit list holds at most 2,500 edits (E17), each with a
+ * requested list and a baseline list of at most 150 values of 500 characters (B section 3). Each
+ * value carries its JSON entry and each edit its keys, so the largest supported body is 2,500 x
+ * (two lists of 150 x (500 + 16) bytes + 1,024 bytes) plus the envelope.
  */
-export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT = 16 * 1024 * 1024;
+export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT =
+  USER_ATTRIBUTE_EDITS_LIMIT *
+    (2 * USER_ATTRIBUTE_VALUES_LIMIT * (USER_ATTRIBUTE_TEXT_MAX + 16) + 1024) +
+  4096;
 /** One stored target batch stays below this many characters of JSON text. */
 export const USER_ATTRIBUTE_STORE_BATCH_BYTES = 256 * 1024;
 /** One stored target batch carries at most 1,000 targets. */
@@ -260,7 +265,9 @@ export function isTextValue(value: string): boolean {
   );
 }
 
-/** Refuse one computed final list outside Google's list rule (B section 3, B section 8.2). */
+/** Refuse one computed final list outside Google's list rule (B section 3, B section 8.2). A list
+ * takes 150 values of 100 characters or 50 of 500, so the count rule alone covers both shapes.
+ */
 function checkFinalList(
   field: UserAttributeField,
   values: readonly Canonical[],
@@ -269,14 +276,6 @@ function checkFinalList(
     refusedValue(
       field.displayName,
       `holds at most ${USER_ATTRIBUTE_VALUES_LIMIT} values`,
-    );
-  let characters = 0;
-  for (const value of values)
-    if (typeof value === 'string') characters += [...value].length;
-  if (characters > USER_ATTRIBUTE_LIST_TEXT_MAX)
-    refusedValue(
-      field.displayName,
-      `holds values of at most ${USER_ATTRIBUTE_LIST_TEXT_MAX.toLocaleString('en-US')} characters in total`,
     );
 }
 

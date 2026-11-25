@@ -82,11 +82,12 @@ const userRead =
 const userWrite =
   /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?|attribute-previews|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)$/;
 // A selection preview carries up to 100 changes and an edit list carries up to 2,500 edits on 500
-// users (E17), so the preview POST alone takes the larger body cap. An ordinary short-value edit
-// list measures about 232 KB.
+// users (E17). An edit carries a requested list and a baseline list of at most 150 values of 500
+// characters (B section 3), so the preview POST alone takes a cap from that supported shape. The
+// API computes the same bound in user-attribute-previews.ts.
 const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
-/** The cap of the value preview POST: 16 MiB. */
-export const userPreviewBodyLimit = 16 * 1024 * 1024;
+/** The cap of the value preview POST: 2,500 edits of two 150-value lists of 500 characters. */
+export const userPreviewBodyLimit = 2500 * (2 * 150 * (500 + 16) + 1024) + 4096;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
@@ -279,30 +280,35 @@ export async function proxyApplication(
   const upload = request.method === 'POST' && pathname === importUploadPath;
   let body;
   if (request.method === 'POST' && !upload) {
+    const limit =
+      phase === 3 && userPreviewWrite.test(pathname)
+        ? // One value preview carries up to 2,500 edits on 500 users (E17).
+          userPreviewBodyLimit
+        : phase === 3 &&
+            (principalWrite.test(pathname) ||
+              deviceWrite.test(pathname) ||
+              deviceUpdateEdit.test(pathname))
+          ? // Device bodies carry ID batches, group routes, and set filters. An edit list
+            // carries up to 2,500 edits.
+            98304
+          : phase === 3 &&
+              [
+                '/api/google-connection/candidates',
+                '/api/google-connection/replacements',
+                '/api/schools/reviews',
+              ].includes(pathname)
+            ? 65536
+            : 4096;
+    // A declared size above the cap refuses before any body arrives, so a large upload never
+    // reaches memory. A chunked request has no declared size and the loop below counts its bytes.
+    const declared = Number(request.headers['content-length']);
+    if (Number.isFinite(declared) && declared > limit)
+      return finish(response, 413, 'The request exceeds the size limit.\n');
     const chunks = [];
     let size = 0;
     try {
       for await (const chunk of request) {
         size += chunk.length;
-        const limit =
-          phase === 3 && userPreviewWrite.test(pathname)
-            ? // One value preview carries up to 2,500 edits on 500 users (E17).
-              userPreviewBodyLimit
-            : phase === 3 &&
-                (principalWrite.test(pathname) ||
-                  deviceWrite.test(pathname) ||
-                  deviceUpdateEdit.test(pathname))
-              ? // Device bodies carry ID batches, group routes, and set filters. An edit list
-                // carries up to 2,500 edits.
-                98304
-              : phase === 3 &&
-                  [
-                    '/api/google-connection/candidates',
-                    '/api/google-connection/replacements',
-                    '/api/schools/reviews',
-                  ].includes(pathname)
-                ? 65536
-                : 4096;
         if (size > limit)
           return finish(response, 413, 'The request exceeds the size limit.\n');
         chunks.push(chunk);
