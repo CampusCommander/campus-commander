@@ -495,6 +495,19 @@ test('shows a value job with All and Failed, the totals, and a second page', asy
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
+  // The dark theme keeps the state 10 tokens.
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page.getByRole('menuitem', { name: 'Use dark theme' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('.cdk-overlay-container > *')).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-value-dark.png'),
+    fullPage: true,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
   await page.setViewportSize({ width: 320, height: 800 });
   expect(
     await page.evaluate(
