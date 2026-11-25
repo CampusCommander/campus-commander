@@ -85,6 +85,25 @@
   width: 18%;
 }
 
+/* The pager of composition 11: a 32 px outlined square per arrow (approved state 09). */
+.report-pager .pager-buttons .mat-mdc-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-primary);
+}
+
+.report-pager .pager-buttons .mat-mdc-icon-button:disabled {
+  color: var(--cc-text-disabled);
+}
+
+.report-pager .pager-buttons .material-symbols-outlined {
+  font-size: 20px;
+}
+
 /* The user cell copies the details control of the approved table (state 09). */
 .user-cell {
   display: flex;
