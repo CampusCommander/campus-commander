@@ -10,6 +10,7 @@ import {
 } from './device-edit-template';
 import { entityTypeSchema } from './entity-types';
 import {
+  userAttributeCategoryPlanPropertySchema,
   userAttributeFieldTypeSchema,
   userAttributeKeySchema,
   userAttributeRowValueSchema,
@@ -385,6 +386,12 @@ export const jobCategoryRowSchema = z
     holders: count.nullable(),
     /** The category label before a rename. Another row carries none. */
     previousName: displayName.nullable(),
+    /** The properties that a changed row edits, so the Effect cell reads no plan or cache. A rename,
+     * an added, and a removed row carry none. */
+    properties: z
+      .array(userAttributeCategoryPlanPropertySchema)
+      .max(5)
+      .optional(),
     /** The outcome of the one call that the job makes (document B section 7.1). */
     outcome: jobOutcomeSchema,
   })
@@ -500,8 +507,12 @@ export type JobLatestActivity = z.infer<typeof jobLatestActivitySchema>;
 export const jobCategoryDetailSchema = jobCategorySummarySchema.extend({
   /** The category label that an edit moved from, or null when the label did not change. */
   previousName: displayName.nullable(),
-  /** One row for each change of the plan, in plan order, plus the rename row of a changed label. */
+  /** One page of the result rows, in plan order, with the rename row of a changed label first. */
   rows: z.array(jobCategoryRowSchema).max(200),
+  /** The logical row count of the job, beyond the page. */
+  total: count,
+  /** The cursor of the next page, or null on the last page. */
+  nextCursor: z.string().min(1).max(1024).nullable(),
 });
 export type JobCategoryDetail = z.infer<typeof jobCategoryDetailSchema>;
 

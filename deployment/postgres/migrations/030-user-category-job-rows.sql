@@ -8,12 +8,14 @@
 
 -- 1. The two facts that a plan lacked. `previous_display_name` is the cached label of an edit whose
 -- label moves, and it stays null for a create, a delete, and an edit that keeps its label.
--- `change_field_types` maps each changed attribute name to its info type (B section 8.1).
+-- `change_field_types` holds one entry for each plan change, in the order of `changes`: the info
+-- type of that change (B section 8.1). A same-name replacement keeps the cached type of its Removed
+-- row and the body type of its Added row, so the entry follows the change and not the field name.
 ALTER TABLE cc.user_category_plans
   ADD COLUMN previous_display_name text
     CHECK(previous_display_name IS NULL OR length(previous_display_name) BETWEEN 1 AND 200),
-  ADD COLUMN change_field_types jsonb NOT NULL DEFAULT '{}'::jsonb
-    CHECK(jsonb_typeof(change_field_types)='object');
+  ADD COLUMN change_field_types jsonb NOT NULL DEFAULT '[]'::jsonb
+    CHECK(jsonb_typeof(change_field_types)='array');
 
 CREATE OR REPLACE FUNCTION cc.create_user_category_plan(p_actor uuid,p_version integer,p_customer text,
   p_generation integer,p_kind text,p_schema_id text,p_base_etag text,p_schema_name text,
@@ -193,12 +195,18 @@ BEGIN
   IF p_kind='edit-category' AND category.display_name IS DISTINCT FROM p_display_name THEN
     previous_name:=category.display_name;
   END IF;
-  -- The info type of each change. The body names every kept and added attribute, and the cached
-  -- category names each removed one, because a removal leaves the body (CA state 07).
-  change_types:=COALESCE((SELECT jsonb_object_agg(f->>'fieldName',f->>'fieldType')
-      FROM jsonb_array_elements(COALESCE(p_body->'fields','[]'::jsonb)) f),'{}'::jsonb)
-    || COALESCE((SELECT jsonb_object_agg(f->>'fieldName',f->>'fieldType')
-      FROM jsonb_array_elements(COALESCE(category.fields,'[]'::jsonb)) f),'{}'::jsonb);
+  -- The info type of each change, in the order of the changes. A Removed row reads the cached
+  -- category, because a removal leaves the body, and an Added or Changed row reads the frozen body.
+  -- A same-name replacement therefore keeps two different types (CA state 07).
+  change_types:=COALESCE((SELECT jsonb_agg(jsonb_build_object('fieldName',c->>'fieldName',
+      'fieldType',CASE WHEN c->>'change'='removed' THEN
+        (SELECT f->>'fieldType' FROM jsonb_array_elements(COALESCE(category.fields,'[]'::jsonb)) f
+          WHERE f->>'fieldName'=c->>'fieldName' LIMIT 1)
+      ELSE
+        (SELECT f->>'fieldType' FROM jsonb_array_elements(COALESCE(p_body->'fields','[]'::jsonb)) f
+          WHERE f->>'fieldName'=c->>'fieldName' LIMIT 1)
+      END) ORDER BY o)
+    FROM jsonb_array_elements(p_changes) WITH ORDINALITY AS x(c,o)),'[]'::jsonb);
   now_at:=clock_timestamp();
   INSERT INTO cc.user_category_plans(plan_id,customer_id,created_by,permission_version,generation,
     action,schema_id,schema_name,base_etag,body,changes,limits,phrase,digest,prepared_at,expires_at,

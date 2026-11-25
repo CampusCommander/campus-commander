@@ -1323,11 +1323,11 @@ export async function qualifyUserCategoryPlans({
         );
         const editRow = await stored(edit.result.plan.planId);
         assert.equal(editRow.previous_display_name, 'J4 info');
-        assert.deepEqual(editRow.change_field_types, {
-          Grade: 'INT64',
-          House: 'STRING',
-          Homeroom: 'STRING',
-        });
+        assert.deepEqual(editRow.change_field_types, [
+          { fieldName: 'Grade', fieldType: 'INT64' },
+          { fieldName: 'House', fieldType: 'STRING' },
+          { fieldName: 'Homeroom', fieldType: 'STRING' },
+        ]);
 
         // A create names no earlier label, and its body names each type.
         const created = await createPlan(manager, {
@@ -1356,7 +1356,9 @@ export async function qualifyUserCategoryPlans({
         );
         const createRow = await stored(created.result.plan.planId);
         assert.equal(createRow.previous_display_name, null);
-        assert.deepEqual(createRow.change_field_types, { Club: 'STRING' });
+        assert.deepEqual(createRow.change_field_types, [
+          { fieldName: 'Club', fieldType: 'STRING' },
+        ]);
 
         // A delete keeps the cached label as its scope name, names no earlier label, and stores
         // the type of each removed attribute.
@@ -1399,10 +1401,67 @@ export async function qualifyUserCategoryPlans({
         const deleteRow = await stored(deleted.result.plan.planId);
         assert.equal(deleteRow.previous_display_name, null);
         assert.equal(deleteRow.scope_name, 'J4 info');
-        assert.deepEqual(deleteRow.change_field_types, {
-          Grade: 'INT64',
-          Homeroom: 'STRING',
+        assert.deepEqual(deleteRow.change_field_types, [
+          { fieldName: 'Grade', fieldType: 'INT64' },
+          { fieldName: 'Homeroom', fieldType: 'STRING' },
+        ]);
+
+        // A same-name replacement keeps the cached type of the Removed row and the body type of
+        // the Added row, so a name-keyed map can never answer both rows (card J4, R1-C).
+        await storeCategory(
+          'schem=J4Swap',
+          'J4Swap',
+          'J4 swap',
+          'etag-j4-swap',
+          [field('Example', 'STRING')],
+        );
+        const swapped = await createPlan(manager, {
+          kind: 'edit-category',
+          schemaId: 'schem=J4Swap',
+          baseEtag: 'etag-j4-swap',
+          schemaName: 'J4Swap',
+          displayName: 'J4 swap',
+          body: {
+            schemaName: 'J4Swap',
+            displayName: 'J4 swap',
+            fields: [
+              field('Example', 'BOOL', {
+                fieldId: null,
+                displayName: 'Example',
+              }),
+            ],
+          },
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-j4-example',
+              fieldName: 'Example',
+              displayName: 'Example',
+              properties: [],
+              holders: 2,
+            },
+            {
+              change: 'added',
+              fieldName: 'Example',
+              displayName: 'Example',
+              properties: [],
+              holders: null,
+            },
+          ],
         });
+        assert.equal(
+          swapped.result.outcome,
+          'created',
+          JSON.stringify(swapped.result),
+        );
+        const swapRow = await stored(swapped.result.plan.planId);
+        assert.deepEqual(swapRow.change_field_types, [
+          { fieldName: 'Example', fieldType: 'STRING' },
+          { fieldName: 'Example', fieldType: 'BOOL' },
+        ]);
+        await migrator.query(
+          `DELETE FROM cc.user_attribute_categories WHERE schema_id='schem=J4Swap'`,
+        );
       },
     );
   } finally {

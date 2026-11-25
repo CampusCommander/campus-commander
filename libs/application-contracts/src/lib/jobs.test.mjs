@@ -1413,10 +1413,12 @@ test('a category job summary names its plan action and its scope name', () => {
   );
 });
 
-test('the category rows carry the rename, the range, the holders, and the outcome', () => {
+test('the category rows carry the rename, the range, the holders, the properties, and the outcome', () => {
   const detail = {
     scopeName: 'Student records',
     previousName: 'Student info',
+    total: 4,
+    nextCursor: '2',
     rows: [
       {
         change: 'rename',
@@ -1425,6 +1427,7 @@ test('the category rows carry the rename, the range, the holders, and the outcom
         range: null,
         holders: null,
         previousName: 'Student info',
+        properties: [],
         outcome: 'succeeded',
       },
       {
@@ -1434,6 +1437,7 @@ test('the category rows carry the rename, the range, the holders, and the outcom
         range: null,
         holders: null,
         previousName: null,
+        properties: [],
         outcome: 'succeeded',
       },
       {
@@ -1443,6 +1447,7 @@ test('the category rows carry the rename, the range, the holders, and the outcom
         range: { minValue: 1, maxValue: 12 },
         holders: null,
         previousName: null,
+        properties: ['numericIndexingSpec'],
         outcome: 'succeeded',
       },
       {
@@ -1452,11 +1457,44 @@ test('the category rows carry the rename, the range, the holders, and the outcom
         range: null,
         holders: 0,
         previousName: null,
+        properties: [],
         outcome: 'succeeded',
       },
     ],
   };
   assert.equal(jobCategoryDetailSchema.safeParse(detail).success, true);
+  // The page carries the logical total and its continuation cursor.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({ ...detail, total: undefined }).success,
+    false,
+  );
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({ ...detail, nextCursor: undefined })
+      .success,
+    false,
+  );
+  // The properties tell the Effect cell what a changed row edits, and an unknown one fails.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[2], properties: ['indexed'] }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[2], properties: ['colour'] }],
+    }).success,
+    false,
+  );
+  // A row without the key still parses, so a fixture written before the key parses.
+  const older = { ...detail.rows[2] };
+  delete older.properties;
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({ ...detail, rows: [older] }).success,
+    true,
+  );
   // A rename row names the old label and no info type.
   assert.equal(
     jobCategoryDetailSchema.safeParse({

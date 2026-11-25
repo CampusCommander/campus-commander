@@ -307,16 +307,50 @@ function categoryRowOutcome(status: string): JobOutcome {
   }
 }
 
+/** The page of category result rows that a detail read answers without a query. */
+const DEFAULT_CATEGORY_ROWS = 100;
+/** The largest page of category result rows. A plan holds at most 200 changes and one rename. */
+const MAX_CATEGORY_ROWS = 200;
+
 /**
- * The category result table of a category job (card J4, CA state 07). The plan stores each change
- * and the body of the Google call, and migration 030 adds the label of a rename and the info type of
- * each change. The job status decides the outcome of the one call, because a plan holds no outcome.
+ * The result row cursor of a category job: the zero-based position of the last returned logical row
+ * of the table. The first page carries no cursor. The position stays apart from a value job's stored
+ * target ordinal, so the two routes never share a cursor domain.
+ */
+export function decodeCategoryRowCursor(
+  cursor: string | undefined,
+): number | null {
+  if (!cursor) return null;
+  if (/^\d+$/.test(cursor)) {
+    const position = Number(cursor);
+    if (Number.isSafeInteger(position)) return position;
+  }
+  throw new BadRequestException({ reason: 'invalid-cursor' });
+}
+
+/**
+ * The category result table of a category job (card J4, CA state 07). The plan stores each change,
+ * the body of the Google call, and migration 030 adds the label of a rename, the info type of each
+ * change, and the properties of each change. The job status decides the outcome of the one call,
+ * because a plan holds no outcome. The read answers one page with the logical total, so a client
+ * never holds the whole table.
  */
 function categoryDetailOf(
   row: Record<string, unknown>,
+  cursor: string | undefined,
+  limit: string | undefined,
 ): JobCategoryDetail | undefined {
   const changes = row['plan_changes'];
   if (!Array.isArray(changes)) return undefined;
+  const pageSize = limit === undefined ? DEFAULT_CATEGORY_ROWS : Number(limit);
+  if (
+    !/^\d+$/.test(limit ?? '0') ||
+    !Number.isInteger(pageSize) ||
+    pageSize < 1 ||
+    pageSize > MAX_CATEGORY_ROWS
+  )
+    throw new BadRequestException({ reason: 'invalid-request' });
+  const after = decodeCategoryRowCursor(cursor);
   const scopeName = String(row['plan_scope_name']);
   const outcome = categoryRowOutcome(String(row['status']));
   const body = (row['plan_body'] ?? {}) as { fields?: unknown };
@@ -328,7 +362,11 @@ function categoryDetailOf(
       )
       .map((field) => [String(field['fieldName']), field]),
   );
-  const types = (row['plan_field_types'] ?? {}) as Record<string, unknown>;
+  // Migration 030 stores one info type for each change, in the order of the plan changes. The
+  // type stays apart from the body, because a removed attribute leaves the body (CA state 07).
+  const types = Array.isArray(row['plan_field_types'])
+    ? row['plan_field_types']
+    : [];
   const previousName =
     row['plan_previous_name'] == null
       ? null
@@ -343,21 +381,33 @@ function categoryDetailOf(
       range: null,
       holders: null,
       previousName,
+      properties: [],
       outcome,
     });
-  for (const change of changes) {
+  for (const [index, change] of changes.entries()) {
     if (typeof change !== 'object' || change === null) continue;
     const rowChange = change as Record<string, unknown>;
     const fieldName = String(rowChange['fieldName']);
     const field = fields.get(fieldName);
-    const properties = Array.isArray(rowChange['properties'])
-      ? rowChange['properties'].map(String)
-      : [];
+    const properties = (
+      Array.isArray(rowChange['properties'])
+        ? rowChange['properties'].map(String)
+        : []
+    ) as NonNullable<JobCategoryRow['properties']>;
+    // A same-name replacement keeps the cached type of its Removed row and the body type of its
+    // Added row, so the stored entry must name the same change before it decides the type.
+    const stored = types[index];
+    const storedType =
+      typeof stored === 'object' &&
+      stored !== null &&
+      String((stored as Record<string, unknown>)['fieldName']) === fieldName
+        ? (stored as Record<string, unknown>)['fieldType']
+        : undefined;
     const spec = field?.['numericIndexingSpec'];
     rows.push({
       change: actionChangeOf(String(rowChange['change'])),
       displayName: String(rowChange['displayName']),
-      fieldType: (types[fieldName] ?? field?.['fieldType'] ?? null) as
+      fieldType: (storedType ?? field?.['fieldType'] ?? null) as
         | JobCategoryRow['fieldType']
         | null,
       range:
@@ -377,10 +427,20 @@ function categoryDetailOf(
       holders:
         rowChange['holders'] == null ? null : Number(rowChange['holders']),
       previousName: null,
+      properties,
       outcome,
     });
   }
-  return jobCategoryDetailSchema.parse({ scopeName, previousName, rows });
+  const start = after === null ? 0 : after + 1;
+  const page = rows.slice(start, start + pageSize);
+  const end = start + page.length;
+  return jobCategoryDetailSchema.parse({
+    scopeName,
+    previousName,
+    rows: page,
+    total: rows.length,
+    nextCursor: end < rows.length ? String(end - 1) : null,
+  });
 }
 
 /** The plan change of one row, as the contract names it. */
@@ -536,6 +596,8 @@ export function decodeOperationCursor(
 /**
  * The result row cursor of the value job: the user ordinal and the attribute. The route answers
  * `<ordinal>:<schemaName>.<fieldName>`, so the query schema accepts the cursor that it returned.
+ * A stored target ordinal starts at zero, so the decoder accepts zero. The operation number of a
+ * row starts at one, and it stays apart from this cursor.
  */
 export const attributeRowCursorSchema = z
   .string()
@@ -549,7 +611,7 @@ export function decodeAttributeRowCursor(
     cursor,
   );
   const ordinal = match ? Number(match[1]) : NaN;
-  if (match && Number.isInteger(ordinal) && ordinal >= 1)
+  if (match && Number.isSafeInteger(ordinal) && ordinal >= 0)
     return { ordinal, schemaName: match[2]!, fieldName: match[3]! };
   throw new BadRequestException({ reason: 'invalid-cursor' });
 }
@@ -1010,6 +1072,7 @@ export class Jobs {
     session: SessionResponse,
     customerId: string,
     displayId: string,
+    page: { cursor?: string; limit?: string } = {},
   ): Promise<JobDetail> {
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
@@ -1026,8 +1089,9 @@ export class Jobs {
     ]);
     return jobDetailSchema.parse({
       ...jobSummary(job, now),
-      // The category result table of a category job (card J4). It stays absent for another kind.
-      category: categoryDetailOf(job),
+      // The category result table of a category job (card J4). It stays absent for another kind,
+      // so the page of a caller of another kind changes no answer.
+      category: categoryDetailOf(job, page.cursor, page.limit),
       confirmedBy:
         job['confirmed_by'] == null
           ? null
@@ -1223,7 +1287,7 @@ export class Jobs {
       )
     )[0];
     const rows = await this.rows(
-      `SELECT t.operation, t.user_id, cu.full_name AS user_name, t.primary_email,
+      `SELECT t.ordinal, t.operation, t.user_id, cu.full_name AS user_name, t.primary_email,
         v.schema_name, v.field_name, v.current_value, v.requested_value,
         COALESCE(t.outcome,'pending') AS outcome, t.failure, t.google_reason,
         COALESCE((SELECT a->>'displayName'

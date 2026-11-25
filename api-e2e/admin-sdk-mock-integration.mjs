@@ -827,9 +827,12 @@ async function runAdminSdkMockIntegration({
         range: null,
         holders: null,
         previousName: null,
+        properties: [],
         outcome: 'succeeded',
       },
     ],
+    total: 1,
+    nextCursor: null,
   });
   const filtered = JSON.parse(
     (await call('/api/jobs?action=create-category&limit=50')).text,
@@ -886,9 +889,12 @@ async function runAdminSdkMockIntegration({
       range: null,
       holders: null,
       previousName: 'Club info',
+      properties: [],
       outcome: 'succeeded',
     },
   ]);
+  assert.equal(editDetail.category.total, 1);
+  assert.equal(editDetail.category.nextCursor, null);
   const edited = await categoryOf(schemaName);
   assert.ok(edited, `The category read still lists ${schemaName}.`);
   assert.equal(edited.displayName, 'Club details');
@@ -940,9 +946,12 @@ async function runAdminSdkMockIntegration({
       range: null,
       holders: edited.fields[0].holders,
       previousName: null,
+      properties: [],
       outcome: 'succeeded',
     },
   ]);
+  assert.equal(deleteDetail.category.total, 1);
+  assert.equal(deleteDetail.category.nextCursor, null);
   assert.equal(
     await categoryOf(schemaName),
     undefined,

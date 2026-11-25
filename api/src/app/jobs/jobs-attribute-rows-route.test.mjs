@@ -322,8 +322,15 @@ test('the list names the category and value actions, their labels, and the scope
 test('the action filter narrows each category action to its plan row', async () => {
   const db = arrange([jobRow({ plan_action: 'create-category' })]);
 
-  for (const action of ['create-category', 'edit-category', 'delete-category'])
+  for (const action of [
+    'create-category',
+    'edit-category',
+    'delete-category',
+  ]) {
     assert.equal((await get(`/api/jobs?action=${action}`)).status, 200, action);
+    const [, filterValues] = statements(db, 'AS matching').at(-1);
+    assert.deepEqual(filterValues[4], [action], action);
+  }
   const [counted, values] = statements(db, 'AS matching').at(-1);
   assert.ok(counted.includes('j.kind=ANY($4::text[])'));
   assert.deepEqual(values[3], ['user-schema-change']);
@@ -360,7 +367,7 @@ test('the detail of a category job carries the state 07 row of a create', async 
           properties: [],
         },
       ],
-      plan_field_types: { Homeroom: 'STRING' },
+      plan_field_types: [{ fieldName: 'Homeroom', fieldType: 'STRING' }],
       status: 'completed',
     }),
   ]);
@@ -380,9 +387,12 @@ test('the detail of a category job carries the state 07 row of a create', async 
         range: null,
         holders: null,
         previousName: null,
+        properties: [],
         outcome: 'succeeded',
       },
     ],
+    total: 1,
+    nextCursor: null,
   });
 });
 
@@ -417,7 +427,10 @@ test('the detail carries the rename, the range, the holders, and the outcome', a
           holders: 0,
         },
       ],
-      plan_field_types: { Grade: 'INT64', Homeroom: 'STRING' },
+      plan_field_types: [
+        { fieldName: 'Grade', fieldType: 'INT64' },
+        { fieldName: 'Homeroom', fieldType: 'STRING' },
+      ],
       status: 'failed',
     }),
   ]);
@@ -436,6 +449,7 @@ test('the detail carries the rename, the range, the holders, and the outcome', a
       range: null,
       holders: null,
       previousName: 'Student info',
+      properties: [],
       outcome: 'failed',
     },
     {
@@ -445,6 +459,7 @@ test('the detail carries the rename, the range, the holders, and the outcome', a
       range: { minValue: 1, maxValue: 12 },
       holders: null,
       previousName: null,
+      properties: ['numericIndexingSpec'],
       outcome: 'failed',
     },
     {
@@ -454,9 +469,12 @@ test('the detail carries the rename, the range, the holders, and the outcome', a
       range: null,
       holders: 0,
       previousName: null,
+      properties: [],
       outcome: 'failed',
     },
   ]);
+  assert.equal(answer.body.category.total, 3);
+  assert.equal(answer.body.category.nextCursor, null);
 });
 
 test('the detail of a delete job keeps the cached scope name and reads cancelled', async () => {
@@ -474,7 +492,7 @@ test('the detail of a delete job keeps the cached scope name and reads cancelled
           holders: 12,
         },
       ],
-      plan_field_types: { Grade: 'INT64' },
+      plan_field_types: [{ fieldName: 'Grade', fieldType: 'INT64' }],
       status: 'cancelled',
     }),
   ]);
@@ -493,9 +511,226 @@ test('the detail of a delete job keeps the cached scope name and reads cancelled
       range: null,
       holders: 12,
       previousName: null,
+      properties: [],
       outcome: 'cancelled',
     },
   ]);
+  assert.equal(answer.body.category.total, 1);
+  assert.equal(answer.body.category.nextCursor, null);
+});
+
+test('the category page never changes a device job answer', async () => {
+  arrange([
+    jobRow({
+      display_id: 'UPD-001',
+      kind: 'device-update',
+      entity_type: 'device',
+      plan_action: null,
+      plan_changes: null,
+    }),
+  ]);
+
+  const plain = await get('/api/jobs/UPD-001');
+  const paged = await get('/api/jobs/UPD-001?limit=200&cursor=0');
+
+  assert.equal(plain.status, 200, JSON.stringify(plain.body));
+  assert.equal('category' in plain.body, false);
+  // The page parameters of a category job stay unread for another kind of job (card J4, item 6).
+  assert.deepEqual(paged.body, plain.body);
+});
+
+test('the detail pages the category table with a cursor and the logical total', async () => {
+  arrange([
+    jobRow({
+      display_id: 'CAT-004',
+      plan_action: 'edit-category',
+      plan_scope_name: 'Student records',
+      plan_body: { displayName: 'Student records', fields: [] },
+      plan_changes: [
+        {
+          change: 'changed',
+          fieldName: 'Grade',
+          displayName: 'Grade',
+          properties: ['indexed'],
+        },
+        {
+          change: 'added',
+          fieldName: 'House',
+          displayName: 'House',
+          properties: [],
+        },
+        {
+          change: 'removed',
+          fieldName: 'Homeroom',
+          displayName: 'Homeroom',
+          properties: [],
+          holders: 2,
+        },
+      ],
+      plan_field_types: [
+        { fieldName: 'Grade', fieldType: 'INT64' },
+        { fieldName: 'House', fieldType: 'STRING' },
+        { fieldName: 'Homeroom', fieldType: 'STRING' },
+      ],
+      status: 'completed',
+    }),
+  ]);
+
+  const first = await get('/api/jobs/CAT-004?limit=1');
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.category.total, 3);
+  assert.equal(first.body.category.rows.length, 1);
+  assert.equal(first.body.category.rows[0].displayName, 'Grade');
+  assert.equal(first.body.category.nextCursor, '0');
+
+  const second = await get('/api/jobs/CAT-004?limit=1&cursor=0');
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.category.rows[0].displayName, 'House');
+  assert.equal(second.body.category.nextCursor, '1');
+
+  const third = await get('/api/jobs/CAT-004?limit=1&cursor=1');
+  assert.equal(third.status, 200, JSON.stringify(third.body));
+  assert.equal(third.body.category.rows[0].displayName, 'Homeroom');
+  assert.equal(third.body.category.nextCursor, null);
+  assert.equal(third.body.category.total, 3);
+
+  // A page that no category job can serve is refused before any row read.
+  const tooLarge = await get('/api/jobs/CAT-004?limit=201');
+  assert.equal(tooLarge.status, 400, JSON.stringify(tooLarge.body));
+  const badCursor = await get('/api/jobs/CAT-004?cursor=row-2');
+  assert.equal(badCursor.status, 400, JSON.stringify(badCursor.body));
+  assert.deepEqual(badCursor.body, { reason: 'invalid-cursor' });
+});
+
+test('a same-name replacement keeps the info type of each change', async () => {
+  arrange([
+    jobRow({
+      display_id: 'CAT-005',
+      plan_action: 'edit-category',
+      plan_scope_name: 'Student info',
+      plan_body: {
+        displayName: 'Student info',
+        fields: [{ fieldName: 'Example', fieldType: 'BOOL' }],
+      },
+      plan_changes: [
+        {
+          change: 'removed',
+          fieldId: 'fld-example-old',
+          fieldName: 'Example',
+          displayName: 'Example',
+          properties: [],
+          holders: 4,
+        },
+        {
+          change: 'added',
+          fieldName: 'Example',
+          displayName: 'Example',
+          properties: [],
+        },
+      ],
+      // Migration 030 aligns one type with each change, not one type with each field name.
+      plan_field_types: [
+        { fieldName: 'Example', fieldType: 'STRING' },
+        { fieldName: 'Example', fieldType: 'BOOL' },
+      ],
+      status: 'completed',
+    }),
+  ]);
+
+  const answer = await get('/api/jobs/CAT-005');
+
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.deepEqual(
+    answer.body.category.rows.map((row) => [row.change, row.fieldType]),
+    [
+      ['removed', 'STRING'],
+      ['added', 'BOOL'],
+    ],
+  );
+});
+
+test('the Effect facts distinguish each changed property list', async () => {
+  arrange([
+    jobRow({
+      display_id: 'CAT-006',
+      plan_action: 'edit-category',
+      plan_scope_name: 'Student info',
+      plan_body: { displayName: 'Student info', fields: [] },
+      plan_changes: [
+        {
+          change: 'changed',
+          fieldName: 'Grade',
+          displayName: 'Grade',
+          properties: ['indexed'],
+        },
+        {
+          change: 'changed',
+          fieldName: 'House',
+          displayName: 'House',
+          properties: ['readAccessType'],
+        },
+        {
+          change: 'changed',
+          fieldName: 'Club',
+          displayName: 'Club',
+          properties: ['displayName', 'multiValued'],
+        },
+      ],
+      plan_field_types: [
+        { fieldName: 'Grade', fieldType: 'INT64' },
+        { fieldName: 'House', fieldType: 'STRING' },
+        { fieldName: 'Club', fieldType: 'STRING' },
+      ],
+      status: 'completed',
+    }),
+  ]);
+
+  const answer = await get('/api/jobs/CAT-006');
+
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.deepEqual(
+    answer.body.category.rows.map((row) => row.properties),
+    [['indexed'], ['readAccessType'], ['displayName', 'multiValued']],
+  );
+});
+
+test('a maximum edit with a rename stays retrievable across its two pages', async () => {
+  const changes = Array.from({ length: 200 }, (_, index) => ({
+    change: index < 100 ? 'removed' : 'added',
+    fieldName: `Field${index}`,
+    displayName: `Field ${index}`,
+    properties: [],
+    ...(index < 100 ? { holders: 0 } : {}),
+  }));
+  arrange([
+    jobRow({
+      display_id: 'CAT-007',
+      plan_action: 'edit-category',
+      plan_scope_name: 'Student records',
+      plan_previous_name: 'Student info',
+      plan_body: { displayName: 'Student records', fields: [] },
+      plan_changes: changes,
+      plan_field_types: changes.map((change) => ({
+        fieldName: change.fieldName,
+        fieldType: 'STRING',
+      })),
+      status: 'completed',
+    }),
+  ]);
+
+  const first = await get('/api/jobs/CAT-007?limit=200');
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  // The rename row comes first, so this page holds it and 199 changes.
+  assert.equal(first.body.category.total, 201);
+  assert.equal(first.body.category.rows.length, 200);
+  assert.equal(first.body.category.rows[0].change, 'rename');
+  assert.equal(first.body.category.nextCursor, '199');
+
+  const second = await get('/api/jobs/CAT-007?limit=200&cursor=199');
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.category.rows.length, 1);
+  assert.equal(second.body.category.rows[0].displayName, 'Field 199');
+  assert.equal(second.body.category.nextCursor, null);
 });
 
 test('the value rows page answers both views, their totals, and a cursor', async () => {
@@ -596,6 +831,22 @@ test('the value rows page answers both views, their totals, and a cursor', async
   ).at(-1);
   assert.ok(cursorQuery.includes('(t.ordinal,v.schema_name,v.field_name)>'));
   assert.deepEqual(cursorValues.slice(5, 8), [2, 'StudentInfo', 'Grade']);
+
+  // A stored target ordinal starts at zero, so the first user's cursor continues the page.
+  const firstUser = await get(
+    '/api/jobs/UAT-002/attribute-rows?cursor=0:StudentInfo.Grade',
+  );
+  assert.equal(firstUser.status, 200, JSON.stringify(firstUser.body));
+  const [, firstUserValues] = statements(
+    db,
+    'row_number() OVER (ORDER BY o.ordinal)',
+  ).at(-1);
+  assert.deepEqual(firstUserValues.slice(5, 8), [0, 'StudentInfo', 'Grade']);
+  // The cursor encoder reads the stored ordinal, so the query must project it.
+  assert.ok(
+    paged.includes('SELECT t.ordinal, t.operation'),
+    'The result query projects the cursor ordinal.',
+  );
 });
 
 test('a failed row names the drafted text, or the Google reason', async () => {
