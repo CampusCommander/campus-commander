@@ -50,14 +50,26 @@ export const USER_ATTRIBUTE_TARGETS_LIMIT = 1000;
 /** The edit-list read carries one deadline over every Google call (B section 8.4). */
 export const USER_ATTRIBUTE_READ_DEADLINE_MILLISECONDS = 25_000;
 /**
- * The body cap of the preview POST. An edit list holds at most 2,500 edits (E17), each with a
- * requested list and a baseline list of at most 150 values of 500 characters (B section 3). Each
- * value carries its JSON entry and each edit its keys, so the largest supported body is 2,500 x
- * (two lists of 150 x (500 + 16) bytes + 1,024 bytes) plus the envelope.
+ * B section 3 bounds a list by its total text: 150 values of 100 characters or 50 values of 500.
+ * One list therefore holds at most 25,000 code points, in at most 150 entries.
+ */
+const USER_ATTRIBUTE_LIST_TEXT_LIMIT = 25_000;
+/** One code point takes at most four UTF-8 bytes. */
+const USER_ATTRIBUTE_CODE_POINT_BYTES = 4;
+/**
+ * The body cap of the preview POST. An edit list holds at most 2,500 edits on 500 users (E17),
+ * each with a requested list and a baseline list. One list holds 25,000 code points of four UTF-8
+ * bytes, and each of its at most 150 entries carries its JSON keys, quotes, and comma. Each edit
+ * carries its own keys. The largest supported body is therefore 2,500 x (two lists of (25,000 x 4
+ * + 150 x 16) bytes + 1,024 bytes) plus the envelope. The cap stays below `MAX_STRING_LENGTH`, so
+ * one `JSON.parse` holds every admitted body.
  */
 export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT =
   USER_ATTRIBUTE_EDITS_LIMIT *
-    (2 * USER_ATTRIBUTE_VALUES_LIMIT * (USER_ATTRIBUTE_TEXT_MAX + 16) + 1024) +
+    (2 *
+      (USER_ATTRIBUTE_LIST_TEXT_LIMIT * USER_ATTRIBUTE_CODE_POINT_BYTES +
+        USER_ATTRIBUTE_VALUES_LIMIT * 16) +
+      1024) +
   4096;
 /** One stored target batch stays below this many characters of JSON text, except that one target
  * never splits and can carry more. */

@@ -82,12 +82,18 @@ const userRead =
 const userWrite =
   /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?|attribute-previews|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)$/;
 // A selection preview carries up to 100 changes and an edit list carries up to 2,500 edits on 500
-// users (E17). An edit carries a requested list and a baseline list of at most 150 values of 500
-// characters (B section 3), so the preview POST alone takes a cap from that supported shape. The
+// users (E17). An edit carries a requested list and a baseline list, and B section 3 bounds one
+// list by its text: 25,000 code points. The preview POST alone takes a cap from that shape. The
 // API computes the same bound in user-attribute-previews.ts.
 const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
-/** The cap of the value preview POST: 2,500 edits of two 150-value lists of 500 characters. */
-export const userPreviewBodyLimit = 2500 * (2 * 150 * (500 + 16) + 1024) + 4096;
+/**
+ * The cap of the value preview POST: 2,500 edits (E17), each with a requested list and a baseline
+ * list of 25,000 code points in at most 150 entries (B section 3). A code point takes four UTF-8
+ * bytes, and each entry carries its JSON keys, quotes, and comma. The API computes the same bound
+ * in user-attribute-previews.ts.
+ */
+export const userPreviewBodyLimit =
+  2500 * (2 * (25000 * 4 + 150 * 16) + 1024) + 4096;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
