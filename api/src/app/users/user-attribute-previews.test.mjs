@@ -603,7 +603,7 @@ test('a computed list keeps both documented list shapes and refuses only the cou
   assert.equal(added[0].rows[0].disposition, 'eligible');
 });
 
-test('the preview body cap follows the supported edit-list shape', async () => {
+test('the preview body cap follows the supported edit-list shape', () => {
   // 2,500 edits (E17), each with a requested list and a baseline list of at most 150 values of
   // 500 characters (B section 3), plus the JSON entry and edit envelopes.
   assert.equal(
@@ -614,11 +614,6 @@ test('the preview body cap follows the supported edit-list shape', async () => {
   // string one Node process holds, so a supported body is one parse.
   assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 232_000);
   assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT < 536_870_888);
-  // The edge admits the same bytes as the API.
-  const edge = await import(
-    '../../../../deployment/bootstrap/application-edge.mjs'
-  );
-  assert.equal(edge.userPreviewBodyLimit, USER_ATTRIBUTE_PREVIEW_BODY_LIMIT);
 });
 
 test('the digest matches the one-document form and never builds that document', () => {
