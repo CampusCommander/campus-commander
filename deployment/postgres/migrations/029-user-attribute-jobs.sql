@@ -336,7 +336,15 @@ BEGIN
   -- The targets lock in ordinal order, the order of the claim and the cancel.
   PERFORM 1 FROM cc.user_attribute_preview_targets t WHERE t.preview_id=preview.preview_id AND
     t.disposition='eligible' ORDER BY t.ordinal FOR UPDATE;
-  -- R7: every fence reads again after the target lock wait, and the lease must still be live.
+  -- R7-A: the user rows this batch writes lock before the last ownership read, so the cache write
+  -- and the 404 removal cannot wait past the lease deadline. `cc.upsert_users` and
+  -- `cc.soft_delete_users` use the same user_id order.
+  PERFORM 1 FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id IN (
+      SELECT t.user_id FROM cc.user_attribute_preview_targets t
+      WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND
+        t.ordinal IN (SELECT (e.value->>'ordinal')::integer FROM jsonb_array_elements(p_results) e))
+    ORDER BY u.user_id FOR UPDATE;
+  -- R7: every fence reads again after the last lock wait, and the lease must still be live.
   SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job FOR UPDATE;
   SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
@@ -351,11 +359,14 @@ BEGIN
     WHERE v.preview_id=preview.preview_id AND v.disposition='eligible' ORDER BY v.schema_name);
   FOR result_row IN SELECT value FROM jsonb_array_elements(p_results) LOOP
     ordinal_key:=(result_row->>'ordinal')::integer;
-    -- Only a row that this attempt claimed, for its write or for its read-back, settles (R7).
+    -- Only a row that this attempt claimed, for its write or for a live read-back, settles (R7).
+    -- R7-B: the read-back arm requires its own live verification lease, so the job lease never
+    -- authorizes an expired operation claim.
     SELECT t.user_id INTO user_key FROM cc.user_attribute_preview_targets t
       WHERE t.preview_id=preview.preview_id AND t.ordinal=ordinal_key AND t.disposition='eligible'
         AND ((t.attempt=p_attempt AND t.outcome='dispatched') OR
-          (t.verify_attempt=p_attempt AND t.outcome='unknown'));
+          (t.verify_attempt=p_attempt AND t.outcome='unknown' AND
+            t.verify_lease_expires_at>now_at));
     IF user_key IS NULL THEN
       ignored:=ignored+1;
       CONTINUE;
@@ -373,18 +384,25 @@ BEGIN
       -- category transition wins (R5, R6).
       IF result_row->'observed' IS NOT NULL AND result_row->'observed'<>'null'::jsonb AND
         jsonb_typeof(result_row->'observed')='object' THEN
-        WITH next AS (
-          SELECT (u.custom_schemas-COALESCE(covered,'{}'::text[]))||(result_row->'observed') AS value
-          FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id=user_key
-        )
-        UPDATE cc.users u SET custom_schemas=n.value,custom_schemas_changed_at=p_observed_at
-          FROM next n
+        -- R6-B: the merge reads the locked current row, so a committed inventory answer that arrived
+        -- during the user-row wait keeps its unrelated categories. R6-A: every accepted successful
+        -- observation advances the freshness stamp, even when the value is equal. Only a changed
+        -- value publishes.
+        UPDATE cc.users u SET custom_schemas=(u.custom_schemas-COALESCE(covered,'{}'::text[]))||
+            (result_row->'observed'),custom_schemas_changed_at=p_observed_at
           WHERE u.customer_id=p_customer AND u.user_id=user_key AND
             u.last_entity_sync<=p_observed_at AND
             (u.custom_schemas_changed_at IS NULL OR u.custom_schemas_changed_at<=p_observed_at) AND
-            u.custom_schemas IS DISTINCT FROM n.value;
+            u.custom_schemas IS DISTINCT FROM
+              (u.custom_schemas-COALESCE(covered,'{}'::text[]))||(result_row->'observed');
         GET DIAGNOSTICS accepted=ROW_COUNT;
         IF accepted>0 THEN changed:=changed||jsonb_build_array(user_key); END IF;
+        -- The freshness write of an accepted observation that changed no value, kept apart from the
+        -- data-change publication.
+        UPDATE cc.users u SET custom_schemas_changed_at=p_observed_at
+          WHERE u.customer_id=p_customer AND u.user_id=user_key AND
+            u.last_entity_sync<=p_observed_at AND
+            (u.custom_schemas_changed_at IS NULL OR u.custom_schemas_changed_at<p_observed_at);
       END IF;
     ELSIF result_row->>'outcome'='failed' THEN
       UPDATE cc.user_attribute_preview_targets t SET outcome='failed',
@@ -807,11 +825,17 @@ BEGIN
   SELECT t.* INTO target FROM cc.user_attribute_preview_targets t
     WHERE t.preview_id=preview.preview_id AND t.ordinal=p_ordinal AND t.disposition='eligible'
     FOR UPDATE;
-  now_at:=clock_timestamp();
-  -- R7: only the live read-back owner settles, and the lease must still hold.
+  -- The cheap ownership check rejects a foreign row before it takes a user lock.
   IF target.preview_id IS NULL OR target.outcome<>'unknown' OR
-    target.verify_attempt IS DISTINCT FROM p_attempt OR target.verify_lease_expires_at IS NULL OR
-    target.verify_lease_expires_at<=now_at THEN
+    target.verify_attempt IS DISTINCT FROM p_attempt THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  -- R7-A: the user row locks before the last ownership read, so neither cache path waits past the
+  -- verification lease deadline.
+  PERFORM 1 FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id=target.user_id FOR UPDATE;
+  now_at:=clock_timestamp();
+  -- R7: only the live read-back owner settles, and the lease must still hold after the lock wait.
+  IF target.verify_lease_expires_at IS NULL OR target.verify_lease_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   covered:=ARRAY(SELECT DISTINCT v.schema_name FROM cc.user_attribute_target_values v
@@ -823,20 +847,22 @@ BEGIN
       verify_after=NULL,verify_attempt=NULL,verify_lease_expires_at=NULL,updated_at=now_at
       WHERE t.preview_id=preview.preview_id AND t.ordinal=p_ordinal;
     -- R5 and R6: a covered category that the read does not hold is cleared, and a newer cached
-    -- observation or category transition wins.
+    -- observation or category transition wins. R6-B: the merge reads the locked current row.
+    -- R6-A: every accepted observation advances the freshness stamp; only a changed value publishes.
     IF p_observed IS NOT NULL THEN
-      WITH next AS (
-        SELECT (u.custom_schemas-COALESCE(covered,'{}'::text[]))||p_observed AS value
-        FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id=target.user_id
-      )
-      UPDATE cc.users u SET custom_schemas=n.value,custom_schemas_changed_at=p_observed_at
-        FROM next n
+      UPDATE cc.users u SET custom_schemas=(u.custom_schemas-COALESCE(covered,'{}'::text[]))||p_observed,
+          custom_schemas_changed_at=p_observed_at
         WHERE u.customer_id=p_customer AND u.user_id=target.user_id AND
           u.last_entity_sync<=p_observed_at AND
           (u.custom_schemas_changed_at IS NULL OR u.custom_schemas_changed_at<=p_observed_at) AND
-          u.custom_schemas IS DISTINCT FROM n.value;
+          u.custom_schemas IS DISTINCT FROM
+            (u.custom_schemas-COALESCE(covered,'{}'::text[]))||p_observed;
       GET DIAGNOSTICS accepted=ROW_COUNT;
       IF accepted>0 THEN changed:=jsonb_build_array(target.user_id); END IF;
+      UPDATE cc.users u SET custom_schemas_changed_at=p_observed_at
+        WHERE u.customer_id=p_customer AND u.user_id=target.user_id AND
+          u.last_entity_sync<=p_observed_at AND
+          (u.custom_schemas_changed_at IS NULL OR u.custom_schemas_changed_at<p_observed_at);
     END IF;
   ELSIF p_outcome='failed' THEN
     UPDATE cc.user_attribute_preview_targets t SET outcome='failed',
@@ -992,6 +1018,18 @@ BEGIN
   IF job.job_id IS NULL OR job.kind<>'user-attribute-update' THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
+  SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  IF detail.job_id IS NULL THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  -- R7-A: the rows this gate stamps lock before the last ownership read, so the sent_at write cannot
+  -- wait past the attempt lease. The cancel and the settlement take the same rows in ordinal order.
+  PERFORM 1 FROM cc.user_attribute_preview_targets t
+    WHERE t.preview_id=detail.preview_id AND t.disposition='eligible' AND t.outcome='dispatched' AND
+      t.attempt=p_attempt AND t.sent_at IS NULL
+    ORDER BY t.ordinal FOR UPDATE;
+  -- The header and the detail read again after the target wait, as the cancel takes them.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job FOR UPDATE;
   SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
   IF job.status<>'running' OR job.finished_at IS NOT NULL OR job.cancel_requested_at IS NOT NULL OR
