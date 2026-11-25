@@ -1,4 +1,3 @@
-import { constants as bufferConstants } from 'node:buffer';
 import {
   ConflictException,
   ForbiddenException,
@@ -50,15 +49,12 @@ export const USER_ATTRIBUTE_TARGETS_LIMIT = 1000;
 /** The edit-list read carries one deadline over every Google call (B section 8.4). */
 export const USER_ATTRIBUTE_READ_DEADLINE_MILLISECONDS = 25_000;
 /**
- * The body cap of the preview POST, in wire bytes. One `JSON.parse` holds at most
- * `MAX_STRING_LENGTH` UTF-16 units of the body text. A UTF-8 body yields at most one unit per
- * byte, and no encoding of one unit takes more than three bytes, so a body above three times that
- * ceiling cannot fit one parse. The cap is therefore the exact byte boundary of one parse, and
- * it admits every supported body that one parse holds, whatever JSON escaping it carries. The
- * parser also refuses a body whose decoded text passes the unit ceiling (request-body.ts).
+ * The body cap of the preview POST, in wire bytes: 64 MiB. The owner set the in-grid change cap
+ * on 2026-11-25: "For in grid changes make it 64mb." The cap holds about 2,100 edits that each
+ * carry a list of 150 values of 100 characters and its baseline. A selection preview carries
+ * only the changes, and the largest one takes about 1.5 MB.
  */
-export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT =
-  3 * bufferConstants.MAX_STRING_LENGTH;
+export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT = 67_108_864;
 /** One stored target batch stays below this many characters of JSON text, except that one target
  * never splits and can carry more. */
 export const USER_ATTRIBUTE_STORE_BATCH_BYTES = 256 * 1024;

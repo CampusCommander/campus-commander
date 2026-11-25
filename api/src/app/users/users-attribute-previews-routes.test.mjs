@@ -165,7 +165,8 @@ let routeRespond;
 let defaultRoute;
 let readUserValues;
 let readCalls;
-let bodyLimit;
+/** The value preview body cap of card K23b, in wire bytes: 64 MiB. */
+const PREVIEW_CAP = 67_108_864;
 
 before(async () => {
   const [
@@ -174,21 +175,18 @@ before(async () => {
     securityModule,
     guardModule,
     bodyModule,
-    previewModule,
   ] = await Promise.all([
     import('./users.controller.ts'),
     import('./users.service.ts'),
     import('../security.ts'),
     import('../auth/auth.guard.ts'),
     import('../request-body.ts'),
-    import('./user-attribute-previews.ts'),
   ]);
   const { UsersController } = controllerModule;
   const { UsersService } = serviceModule;
   const { ApplicationExceptionFilter, securityHeaders } = securityModule;
   const { AuthGuard } = guardModule;
   const { previewBodyParser, previewBodyError } = bodyModule;
-  bodyLimit = previewModule.USER_ATTRIBUTE_PREVIEW_BODY_LIMIT;
   class CacheService {}
   class DatabaseService {}
   class AuthService {}
@@ -414,12 +412,13 @@ async function get(path) {
 }
 
 /**
- * Post the preview path with a declared body above the cap and no body. The parser refuses the
- * declared size before it reads a byte, as it does for a supported body of that size.
+ * Post one preview body with its declared length. A body above the cap answers before the read
+ * starts, so the writer can see the connection close under it after the answer.
  */
-function declaredLengthPost(length) {
+function declaredPost(path, body) {
   return new Promise((resolve, reject) => {
-    const target = new URL(`${origin}/api/users/attribute-previews`);
+    const target = new URL(`${origin}${path}`);
+    let answered = false;
     const request = http.request(
       {
         hostname: target.hostname,
@@ -428,21 +427,26 @@ function declaredLengthPost(length) {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'content-length': String(length),
+          'content-length': String(Buffer.byteLength(body)),
         },
       },
       (response) => {
+        answered = true;
         let text = '';
         response.setEncoding('utf8');
         response.on('data', (chunk) => (text += chunk));
-        response.on('end', () => {
-          request.destroy();
-          resolve({ status: response.statusCode, body: JSON.parse(text) });
-        });
+        response.on('end', () =>
+          resolve({ status: response.statusCode, body: text }),
+        );
       },
     );
-    request.on('error', reject);
-    request.flushHeaders();
+    request.on('error', (error) => {
+      if (!answered) reject(error);
+    });
+    const encoded = Buffer.from(body);
+    for (let index = 0; index < encoded.length; index += 1 << 20)
+      request.write(encoded.subarray(index, index + (1 << 20)));
+    request.end();
   });
 }
 
@@ -453,6 +457,7 @@ function declaredLengthPost(length) {
 function chunkedPost(path, body) {
   return new Promise((resolve, reject) => {
     const target = new URL(`${origin}${path}`);
+    let answered = false;
     const request = http.request(
       {
         hostname: target.hostname,
@@ -462,6 +467,7 @@ function chunkedPost(path, body) {
         headers: { 'content-type': 'application/json' },
       },
       (response) => {
+        answered = true;
         let text = '';
         response.setEncoding('utf8');
         response.on('data', (chunk) => (text += chunk));
@@ -470,62 +476,15 @@ function chunkedPost(path, body) {
         );
       },
     );
-    request.on('error', reject);
+    // The parser answers 413 at the cap and then closes the transfer under the writer. The
+    // answer is the result, so a write error after it does not fail the test.
+    request.on('error', (error) => {
+      if (!answered) reject(error);
+    });
     const encoded = Buffer.from(body);
     for (let index = 0; index < encoded.length; index += 1 << 20)
       request.write(encoded.subarray(index, index + (1 << 20)));
     request.end();
-  });
-}
-
-/**
- * Post one JSON body whose one value holds `size` ASCII characters, without building one string
- * above the Node string limit. The request declares its complete length.
- */
-function wideAsciiPost(path, size) {
-  const prefix =
-    '{"edits":[{"userId":"u1","attribute":"attr:StudentInfo.Homeroom","mode":"set","values":["';
-  const suffix = '"],"baselineValue":"B11"}]}';
-  const total = Buffer.byteLength(prefix) + size + Buffer.byteLength(suffix);
-  return new Promise((resolve, reject) => {
-    const target = new URL(`${origin}${path}`);
-    const request = http.request(
-      {
-        hostname: target.hostname,
-        port: target.port,
-        path: target.pathname,
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'content-length': String(total),
-        },
-      },
-      (response) => {
-        let text = '';
-        response.setEncoding('utf8');
-        response.on('data', (chunk) => (text += chunk));
-        response.on('end', () =>
-          resolve({ status: response.statusCode, body: JSON.parse(text) }),
-        );
-      },
-    );
-    request.on('error', reject);
-    request.write(prefix);
-    const block = Buffer.alloc(1 << 20, 0x61);
-    let left = size;
-    const pump = () => {
-      while (left > 0) {
-        const part = left >= block.length ? block : block.subarray(0, left);
-        left -= part.length;
-        if (!request.write(part)) {
-          request.once('drain', pump);
-          return;
-        }
-      }
-      request.write(suffix);
-      request.end();
-    };
-    pump();
   });
 }
 
@@ -554,16 +513,17 @@ const editBody = (edits) => ({
 });
 
 /**
- * The review reproduction: 2,000 edits on 400 users, five multi-value attributes each, with 50
- * values of 500 code points in every requested list and baseline (B section 3, E17). Each value
- * carries a three-character prefix and 497 supplementary code points, so the body is above a cap
- * that counts a code point as one byte.
+ * The largest supported edit list of card K23b: 2,000 edits on 400 users, five multi-value
+ * attributes each, with 150 values of 100 characters in every requested list and baseline
+ * (B section 3, E17). The compact body measures about 59 MiB.
  */
-function nonAsciiEditBody() {
+function largeEditBody() {
   const value = (prefix, index) =>
-    `${prefix}${String(index).padStart(2, '0')}${'\u{1f600}'.repeat(497)}`;
-  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
-  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
+    `${prefix}${String(index).padStart(3, '0')}${'x'.repeat(96)}`;
+  const baseline = Array.from({ length: 150 }, (_, index) => value('B', index));
+  const requested = Array.from({ length: 150 }, (_, index) =>
+    value('R', index),
+  );
   const edits = Array.from({ length: 2000 }, (_, index) => ({
     userId: `user-${index % 400}`,
     attribute: `attr:StudentInfo.Field${Math.floor(index / 400)}`,
@@ -571,41 +531,21 @@ function nonAsciiEditBody() {
     values: requested,
     baselineValue: baseline,
   }));
-  return { body: JSON.stringify({ edits }), baseline, requested };
+  return { body: JSON.stringify({ edits }), baseline };
 }
 
 /**
- * Review reproduction A: 2,500 edits on 500 users, five multi-value attributes each, with 50
- * values of 500 code points in every requested list and baseline. Each value carries a
- * three-character prefix and 497 supplementary code points. Five entries per list spell each
- * character as the six-byte JSON escape `\ud83d\ude00`; the other entries carry the raw
- * four-byte character. The compact body is above 536,870,888 bytes but below the text ceiling.
+ * Pad one compact JSON body with trailing spaces to an exact wire size. JSON.parse accepts
+ * whitespace after the top-level value, so the body stays the same supported edit list.
  */
-function escapedEditBody() {
-  const value = (prefix, index, escaped) =>
-    `"${prefix}${String(index).padStart(2, '0')}${(escaped ? '\\ud83d\\ude00' : '😀').repeat(497)}"`;
-  const list = (prefix) =>
-    `[${Array.from({ length: 50 }, (_, index) =>
-      value(prefix, index, index < 5),
-    ).join(',')}]`;
-  const requested = list('R');
-  const baseline = list('B');
-  const edits = Array.from(
-    { length: 2500 },
-    (_, index) =>
-      `{"userId":"user-${index % 500}","attribute":"attr:StudentInfo.Field${Math.floor(index / 500)}","mode":"replace","values":${requested},"baselineValue":${baseline}}`,
-  );
-  return {
-    body: `{"edits":[${edits.join(',')}]}`,
-    baselineValues: Array.from(
-      { length: 50 },
-      (_, index) => `B${String(index).padStart(2, '0')}${'😀'.repeat(497)}`,
-    ),
-  };
+function paddedPreviewBody(body, size) {
+  const bytes = Buffer.byteLength(body);
+  assert.ok(bytes <= size, `body measured ${bytes} bytes`);
+  return body + ' '.repeat(size - bytes);
 }
 
-/** The categories and SQL answers of one non-ASCII review-shape edit-list preview. */
-function useNonAsciiPreviewMocks(baseline, users = 400) {
+/** The categories and SQL answers of one large edit-list preview. */
+function useLargePreviewMocks(baseline, users = 400) {
   const wide = {
     ...base,
     categories: [
@@ -1685,107 +1625,71 @@ test('a supported multi-value edit list of 600 edits passes the body cap', async
   assert.ok(appends > 1, `stored in ${appends} bounded batches`);
 });
 
-test('a supported non-ASCII edit list of the review shape passes the body cap', async () => {
-  // B section 3: one list holds 25,000 characters, which is 50 values of 500 code points. E17:
-  // 2,000 edits on 400 users, five multi-value attributes each.
-  const { body, baseline } = nonAsciiEditBody();
-  const { appends } = useNonAsciiPreviewMocks(baseline);
+test('an edit list of 2,000 edits with 150 values of 100 characters passes the body cap', async () => {
+  // Acceptance 2 of card K23b: the largest supported edit list measures about 59 MiB.
+  const { body, baseline } = largeEditBody();
+  const { appends } = useLargePreviewMocks(baseline);
   const bytes = Buffer.byteLength(body);
-  assert.ok(bytes > 389_564_096, `body measured ${bytes} bytes`);
-  assert.ok(bytes < bodyLimit, `body measured ${bytes} bytes`);
-  const response = await fetch(`${origin}/api/users/attribute-previews`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body,
-  });
-  assert.equal(response.status, 201, await response.text());
-  assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
-});
-
-test('a supported non-ASCII body sent chunked passes the body cap', async () => {
-  // The review reproduction without a declared length: the parser's bounded read is the only
-  // size check, and it reads the chunks under the same cap.
-  const { body, baseline } = nonAsciiEditBody();
-  const { appends } = useNonAsciiPreviewMocks(baseline);
-  assert.ok(Buffer.byteLength(body) > 389_564_096);
-  const answer = await chunkedPost('/api/users/attribute-previews', body);
+  assert.ok(bytes > 58 * 1024 * 1024, `body measured ${bytes} bytes`);
+  assert.ok(bytes < 60 * 1024 * 1024, `body measured ${bytes} bytes`);
+  const answer = await declaredPost('/api/users/attribute-previews', body);
   assert.equal(answer.status, 201, answer.body);
   assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
-test('a supported escaped edit list of the review shape passes the body cap', async () => {
-  // Review reproduction A: 2,500 edits on 500 users, five multi-value attributes each, with 50
-  // values of 500 code points in every list. Five entries per list carry JSON escapes.
-  const { body, baselineValues } = escapedEditBody();
-  const { appends } = useNonAsciiPreviewMocks(baselineValues, 500);
-  const bytes = Buffer.byteLength(body);
-  assert.ok(bytes > 536_870_888, `body measured ${bytes} bytes`);
-  assert.ok(bytes < bodyLimit, `body measured ${bytes} bytes`);
-  const response = await fetch(`${origin}/api/users/attribute-previews`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body,
-  });
-  assert.equal(response.status, 201, await response.text());
-  assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
-});
-
-test('a supported escaped body sent chunked passes the body cap', async () => {
-  // The same review shape without a declared length: the bounded read is the only size check.
-  const { body, baselineValues } = escapedEditBody();
-  const { appends } = useNonAsciiPreviewMocks(baselineValues, 500);
-  assert.ok(Buffer.byteLength(body) > 536_870_888);
-  const answer = await chunkedPost('/api/users/attribute-previews', body);
+test('a declared body of exactly 64 MiB passes the body cap', async () => {
+  const { body, baseline } = largeEditBody();
+  const { appends } = useLargePreviewMocks(baseline);
+  const exact = paddedPreviewBody(body, PREVIEW_CAP);
+  assert.equal(Buffer.byteLength(exact), PREVIEW_CAP);
+  const answer = await declaredPost('/api/users/attribute-previews', exact);
   assert.equal(answer.status, 201, answer.body);
   assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
-test('a supported serializer-escaped edit list passes the body cap', async () => {
-  // Review reproduction B: the same edit, user, and list counts. Each value carries a
-  // three-character prefix, 400 supplementary characters, and 97 U+0001 characters, which
-  // JSON.stringify writes as six-byte escapes. The body is 547,264,461 bytes and 347,264,461
-  // UTF-16 units, above the old 536,870,888-byte cap.
-  const value = (prefix, index) =>
-    `${prefix}${String(index).padStart(2, '0')}${'😀'.repeat(400)}${'\u0001'.repeat(97)}`;
-  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
-  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
-  const edits = Array.from({ length: 2500 }, (_, index) => ({
-    userId: `user-${index % 500}`,
-    attribute: `attr:StudentInfo.Field${Math.floor(index / 500)}`,
-    mode: 'replace',
-    values: requested,
-    baselineValue: baseline,
-  }));
-  const body = JSON.stringify({ edits });
-  const { appends } = useNonAsciiPreviewMocks(baseline, 500);
-  const bytes = Buffer.byteLength(body);
-  assert.equal(bytes, 547_264_461);
-  assert.ok(bytes > 536_870_888, `body measured ${bytes} bytes`);
-  const response = await fetch(`${origin}/api/users/attribute-previews`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body,
-  });
-  assert.equal(response.status, 201, await response.text());
+test('a chunked body of exactly 64 MiB passes the body cap', async () => {
+  const { body, baseline } = largeEditBody();
+  const { appends } = useLargePreviewMocks(baseline);
+  const exact = paddedPreviewBody(body, PREVIEW_CAP);
+  const answer = await chunkedPost('/api/users/attribute-previews', exact);
+  assert.equal(answer.status, 201, answer.body);
   assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
-test('a body above the one-string text ceiling answers 413 before the controller', async () => {
-  // 537,000,000 ASCII text units pass the byte cap but do not fit one JSON.parse. The decoded
-  // count refuses them before the parser decodes and before any database read.
+test('a declared body of 64 MiB and one byte answers 413 before the controller', async () => {
+  const { body, baseline } = largeEditBody();
+  useLargePreviewMocks(baseline);
+  const over = paddedPreviewBody(body, PREVIEW_CAP + 1);
   let reads = 0;
   const fallback = routeRespond;
   routeRespond = async (text, values) => {
     reads += 1;
     return fallback(text, values);
   };
-  const answer = await wideAsciiPost(
-    '/api/users/attribute-previews',
-    537_000_000,
-  );
+  const answer = await declaredPost('/api/users/attribute-previews', over);
   assert.equal(answer.status, 413);
-  assert.equal(answer.body.code, 'payload-too-large');
-  assert.equal(answer.body.message, 'The request exceeds the size limit.');
+  const refused = JSON.parse(answer.body);
+  assert.equal(refused.code, 'payload-too-large');
+  assert.equal(refused.message, 'The request exceeds the size limit.');
+  assert.equal(typeof refused.correlationId, 'string');
+  assert.equal(reads, 0);
+});
+
+test('a chunked body of 64 MiB and one byte answers 413 before the controller', async () => {
+  const { body, baseline } = largeEditBody();
+  useLargePreviewMocks(baseline);
+  const over = paddedPreviewBody(body, PREVIEW_CAP + 1);
+  let reads = 0;
+  const fallback = routeRespond;
+  routeRespond = async (text, values) => {
+    reads += 1;
+    return fallback(text, values);
+  };
+  const answer = await chunkedPost('/api/users/attribute-previews', over);
+  assert.equal(answer.status, 413);
+  const refused = JSON.parse(answer.body);
+  assert.equal(refused.code, 'payload-too-large');
+  assert.equal(refused.message, 'The request exceeds the size limit.');
   assert.equal(reads, 0);
 });
 
@@ -1810,19 +1714,4 @@ test('an edit list with escaped JSON values passes the body cap', async () => {
     body,
   });
   assert.equal(response.status, 201, await response.text());
-});
-
-test('a declared body above the API cap answers 413 before the controller', async () => {
-  let reads = 0;
-  const fallback = routeRespond;
-  routeRespond = async (text, values) => {
-    reads += 1;
-    return fallback(text, values);
-  };
-  const answer = await declaredLengthPost(bodyLimit + 1);
-  assert.equal(answer.status, 413);
-  assert.equal(answer.body.code, 'payload-too-large');
-  assert.equal(answer.body.message, 'The request exceeds the size limit.');
-  assert.equal(typeof answer.body.correlationId, 'string');
-  assert.equal(reads, 0);
 });
