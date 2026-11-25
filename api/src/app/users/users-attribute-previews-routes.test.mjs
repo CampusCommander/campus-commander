@@ -1632,12 +1632,8 @@ test('an edit list of 2,000 edits with 150 values of 100 characters passes the b
   const bytes = Buffer.byteLength(body);
   assert.ok(bytes > 58 * 1024 * 1024, `body measured ${bytes} bytes`);
   assert.ok(bytes < 60 * 1024 * 1024, `body measured ${bytes} bytes`);
-  const response = await fetch(`${origin}/api/users/attribute-previews`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body,
-  });
-  assert.equal(response.status, 201, await response.text());
+  const answer = await declaredPost('/api/users/attribute-previews', body);
+  assert.equal(answer.status, 201, answer.body);
   assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
@@ -1646,12 +1642,8 @@ test('a declared body of exactly 64 MiB passes the body cap', async () => {
   const { appends } = useLargePreviewMocks(baseline);
   const exact = paddedPreviewBody(body, PREVIEW_CAP);
   assert.equal(Buffer.byteLength(exact), PREVIEW_CAP);
-  const response = await fetch(`${origin}/api/users/attribute-previews`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: exact,
-  });
-  assert.equal(response.status, 201, await response.text());
+  const answer = await declaredPost('/api/users/attribute-previews', exact);
+  assert.equal(answer.status, 201, answer.body);
   assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
