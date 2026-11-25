@@ -1000,6 +1000,60 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
       },
     );
 
+    await check(
+      'K24 R6 an older read-back never overwrites a newer cached row',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-stale-2', current: 'old', requested: 'new' }],
+        });
+        await storeUser('k24-stale-2', {
+          StudentInfo: { Homeroom: 'newer-inventory' },
+        });
+        await migrator.query(
+          `UPDATE cc.users SET last_entity_sync=clock_timestamp()
+           WHERE customer_id=$1 AND user_id='k24-stale-2'`,
+          [customer],
+        );
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 0 }, 'unknown')],
+          new Date().toISOString(),
+        );
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        const settled = await result(
+          'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+          [
+            customer,
+            job.jobId,
+            verify,
+            0,
+            'succeeded',
+            null,
+            null,
+            200,
+            null,
+            JSON.stringify({ StudentInfo: { Homeroom: 'older-response' } }),
+            new Date(Date.now() - 3_600_000).toISOString(),
+          ],
+        );
+        assert.deepEqual(settled.changed, [], JSON.stringify(settled));
+        const cached = await customSchemas('k24-stale-2');
+        assert.equal(
+          cached.custom_schemas.StudentInfo.Homeroom,
+          'newer-inventory',
+        );
+      },
+    );
+
     await check('K24 R7 an expired attempt settles nothing', async () => {
       const job = await admitted({
         users: [{ userId: 'k24-expired-1', requested: 'A' }],

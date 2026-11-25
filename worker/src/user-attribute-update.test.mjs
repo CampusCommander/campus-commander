@@ -742,6 +742,11 @@ test('the reconcile of one Unknown operation settles it from the masked read', a
   });
   assert.equal(db.verifications[0][3], 4);
   assert.equal(db.verifications[0][4], 'succeeded');
+  // R9: the settlement decides the terminal status, so the reconcile never calls the finish.
+  assert.equal(
+    db.calls.some((call) => call.name === 'finish_user_attribute_job'),
+    false,
+  );
 });
 
 test('a reconcile read that differs settles Failed `value-differs`', async () => {
