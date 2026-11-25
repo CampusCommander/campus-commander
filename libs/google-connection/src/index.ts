@@ -46,6 +46,7 @@ export {
   GoogleUserReader,
   GoogleUserWriter,
   USER_VALUES_PART_ID,
+  ValueSendRefused,
   categoryObservation,
   categoryWriteBodySchema,
   lastLoginTime,
@@ -60,6 +61,7 @@ export type {
   GoogleUserReaderOptions,
   GoogleUserWriterOptions,
   UserValueWrite,
+  ValueSendGate,
 } from './lib/users';
 export type {
   GoogleConnectionDatabase,

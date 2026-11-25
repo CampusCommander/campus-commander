@@ -321,6 +321,60 @@ export class OrchestrationService {
     return this.execute('user_schema_change', values);
   }
 
+  /** Start the one run of an admitted value job (design card K24, B section 7.2). */
+  async startUserAttributeUpdate(input: {
+    customerId: string;
+    jobId: string;
+    dispatchToken: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        dispatchToken: z.uuid(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow(
+      'user-attribute-update.yaml',
+      'user_attribute_update',
+    );
+    return this.execute('user_attribute_update', values);
+  }
+
+  /** Start one read-back of an Unknown value operation (B section 7.3). */
+  async startUserAttributeReconcile(input: {
+    customerId: string;
+    jobId: string;
+    operationNumber: number;
+    verifyAttempt?: string;
+    correlationId: string;
+  }): Promise<string> {
+    const values = z
+      .strictObject({
+        customerId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        jobId: z.uuid(),
+        operationNumber: z.number().int().min(1),
+        verifyAttempt: z.uuid().optional(),
+        correlationId: z.uuid(),
+      })
+      .parse(input);
+    await this.deployFlow(
+      'user-attribute-update-reconcile.yaml',
+      'user_attribute_update_reconcile',
+    );
+    return this.execute('user_attribute_update_reconcile', {
+      customerId: values.customerId,
+      jobId: values.jobId,
+      operationNumber: String(values.operationNumber),
+      ...(values.verifyAttempt === undefined
+        ? {}
+        : { verifyAttempt: values.verifyAttempt }),
+      correlationId: values.correlationId,
+    });
+  }
+
   async check(correlationId: string) {
     await this.deployFlow('phase2-connection.yaml', 'phase2_connection');
     const marker = 'campus-commander-phase-2';

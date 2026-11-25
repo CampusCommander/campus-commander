@@ -1190,3 +1190,17 @@ export const userAttributeJobReceiptSchema = z
 export type UserAttributeJobReceipt = z.infer<
   typeof userAttributeJobReceiptSchema
 >;
+
+/**
+ * The drafted text of a failed value operation (UM notes question 7, design card K24). The 404 text
+ * is the one that the value job needs. The other drafted strings arrive with the Jobs page card
+ * that names category and value jobs, and this map grows there.
+ */
+const USER_ATTRIBUTE_FAILURE_TEXT: Readonly<Record<string, string>> = {
+  'not-found': 'Google could not find this user.',
+};
+
+/** The text of one value failure code, or null when the code has no draft. */
+export function userAttributeFailureText(failure: string): string | null {
+  return USER_ATTRIBUTE_FAILURE_TEXT[failure] ?? null;
+}

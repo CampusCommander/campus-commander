@@ -55,6 +55,12 @@ import {
   UserSchemaChangeJobs,
   type UserSchemaChangeRequest,
 } from './user-schema-change';
+import {
+  UserAttributeUpdateJobs,
+  type UserAttributeUpdateAnswer,
+  type UserAttributeUpdateRequest,
+  type UserAttributeReconcileRequest,
+} from './user-attribute-update';
 
 function secret(reference: SecretReference): Buffer {
   const path =
@@ -272,6 +278,43 @@ export class GoogleWorker {
       cache = noEntityCache;
     }
     return new UserSchemaChangeJobs(pool, cipher, { cache }).run(input, signal);
+  }
+
+  /** The one run of a value job (design card K24, document B section 7.2). */
+  async updateUserAttributes(
+    input: UserAttributeUpdateRequest,
+    signal: AbortSignal,
+  ): Promise<UserAttributeUpdateAnswer> {
+    const { pool, cipher } = this.resources();
+    // A missing Redis configuration only skips the users feed event (B section 9).
+    let cache: EntityCache;
+    try {
+      cache = this.cache();
+    } catch {
+      cache = noEntityCache;
+    }
+    return new UserAttributeUpdateJobs(pool, cipher, { cache }).run(
+      input,
+      signal,
+    );
+  }
+
+  /** One read-back of one Unknown value operation (B section 7.3). */
+  async reconcileUserAttributes(
+    input: UserAttributeReconcileRequest,
+    signal: AbortSignal,
+  ): Promise<UserAttributeUpdateAnswer> {
+    const { pool, cipher } = this.resources();
+    let cache: EntityCache;
+    try {
+      cache = this.cache();
+    } catch {
+      cache = noEntityCache;
+    }
+    return new UserAttributeUpdateJobs(pool, cipher, { cache }).reconcile(
+      input,
+      signal,
+    );
   }
 
   /**

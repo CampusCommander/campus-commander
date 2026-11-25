@@ -903,6 +903,164 @@ async function runAdminSdkMockIntegration({
     );
   }
 
+  // K24: one value reaches Google from each entry point of the K23 routes: an edit list of one
+  // user, an edit list of several users, and a selection. Each confirm starts a value job, the
+  // worker writes the value, and the settlement reaches the user read and the job counters.
+  const valueResults = [];
+  const valueField = 'GradeLevel';
+  const valueCategory = 'StudentInfo';
+  const attribute = `attr:${valueCategory}.${valueField}`;
+  const customOf = async (userId) => {
+    const answer = await call(`/api/users/${encodeURIComponent(userId)}`);
+    assert.equal(answer.status, 200, answer.text);
+    return JSON.parse(answer.text).user.customSchemas?.[valueCategory]?.[
+      valueField
+    ];
+  };
+  const valuePreview = async (body) => {
+    const answer = await call('/api/users/attribute-previews', {
+      method: 'POST',
+      headers: headers(),
+      body,
+    });
+    assert.equal(answer.status, 201, answer.text);
+    return JSON.parse(answer.text);
+  };
+  const valueConfirm = async (preview) => {
+    const answer = await call(
+      `/api/users/attribute-previews/${preview.previewId}/confirm`,
+      {
+        method: 'POST',
+        headers: headers(),
+        body: { manifestDigest: preview.manifestDigest, acknowledged: true },
+      },
+    );
+    assert.equal(answer.status, 201, answer.text);
+    const receipt = JSON.parse(answer.text);
+    assert.match(receipt.displayId, /^UAT-\d+$/, answer.text);
+    return receipt;
+  };
+  const settledValueJob = async (receipt, label, expected) => {
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      const listed = await call(
+        `/api/jobs?jobId=${encodeURIComponent(receipt.displayId)}&limit=1`,
+      );
+      assert.equal(listed.status, 200, listed.text);
+      const [job] = JSON.parse(listed.text).jobs;
+      if (job?.status === 'completed') {
+        assert.equal(job.progress.succeeded, expected, JSON.stringify(job));
+        assert.equal(job.progress.failed, 0, JSON.stringify(job));
+        assert.equal(job.progress.unknown, 0, JSON.stringify(job));
+        return job;
+      }
+      if (job?.status === 'failed' || job?.status === 'needs-review')
+        assert.fail(`${label} settled ${job.status}: ${JSON.stringify(job)}`);
+      assert.ok(
+        Date.now() < deadline,
+        `${label} did not settle: ${JSON.stringify(job ?? null)}`,
+      );
+      await delay(500);
+    }
+  };
+  const valueUsers = selectedIds.slice(0, 2);
+  assert.ok(
+    valueUsers.length === 2,
+    'The selection holds two users for the value checks.',
+  );
+
+  // 1. An edit list of one user.
+  const oneUser = valueUsers[0];
+  const oneBaseline = (await customOf(oneUser)) ?? null;
+  const oneValue = 9;
+  const onePreview = await valuePreview({
+    edits: [
+      {
+        userId: oneUser,
+        attribute,
+        mode: 'set',
+        values: [oneValue],
+        baselineValue: oneBaseline,
+      },
+    ],
+  });
+  assert.equal(onePreview.eligible, 1, JSON.stringify(onePreview));
+  await settledValueJob(
+    await valueConfirm(onePreview),
+    'The one-user value job',
+    1,
+  );
+  assert.equal(await customOf(oneUser), oneValue);
+  valueResults.push(
+    'an edit list of one user settles completed and the user read holds the value: pass',
+  );
+
+  // 2. An edit list of several users.
+  const multiValue = 10;
+  const multiBaselines = [];
+  for (const userId of valueUsers) multiBaselines.push(await customOf(userId));
+  const multiPreview = await valuePreview({
+    edits: valueUsers.map((userId, index) => ({
+      userId,
+      attribute,
+      mode: 'set',
+      values: [multiValue],
+      baselineValue: multiBaselines[index] ?? null,
+    })),
+  });
+  assert.equal(multiPreview.eligible, 2, JSON.stringify(multiPreview));
+  const multiJob = await settledValueJob(
+    await valueConfirm(multiPreview),
+    'The multi-user value job',
+    2,
+  );
+  for (const userId of valueUsers)
+    assert.equal(await customOf(userId), multiValue);
+  assert.equal(multiJob.progress.succeeded, valueUsers.length);
+  valueResults.push(
+    'an edit list of two users settles completed and both reads hold the value: pass',
+  );
+
+  // 3. A selection preview of the same users.
+  const selectionTab = randomUUID();
+  const selectionKey = { gridId: 'users', tabId: selectionTab };
+  const selectionCreated = await call('/api/users/selection', {
+    method: 'POST',
+    headers: headers(),
+    body: selectionKey,
+  });
+  assert.equal(selectionCreated.status, 200, selectionCreated.text);
+  const selectionSet = await call('/api/users/selection/ops', {
+    method: 'POST',
+    headers: headers(),
+    body: { ...selectionKey, ops: [{ op: 'select', ids: valueUsers }] },
+  });
+  assert.equal(selectionSet.status, 200, selectionSet.text);
+  const selectionValue = 11;
+  const selectionPreview = await valuePreview({
+    ...selectionKey,
+    changes: [
+      {
+        schemaName: valueCategory,
+        fieldName: valueField,
+        mode: 'set',
+        values: [selectionValue],
+      },
+    ],
+  });
+  assert.equal(selectionPreview.eligible, 2, JSON.stringify(selectionPreview));
+  const selectionJob = await settledValueJob(
+    await valueConfirm(selectionPreview),
+    'The selection value job',
+    2,
+  );
+  for (const userId of valueUsers)
+    assert.equal(await customOf(userId), selectionValue);
+  assert.equal(selectionJob.progress.succeeded, valueUsers.length);
+  valueResults.push(
+    'a selection of two users settles completed and both reads hold the value: pass',
+  );
+
   // B6: the write scope, its check, and the write-access projection.
   // Every Google call in this block goes to the mock. The scope removal, the
   // delegation grant, and the list fault use the mock control API.
@@ -1447,6 +1605,7 @@ async function runAdminSdkMockIntegration({
     'a fully claimed Refresh Selected answers 200 and starts no job: pass',
     'the category read lists StudentInfo with GradeLevel: pass',
     ...categoryResults,
+    ...valueResults,
     'Refresh all lists a device whose Asset tag holds 1,024 characters: pass',
     'the write scope check lists one device for the mock administrator and sends no write: pass',
     'the provider probe mints one write-scope token and sends one GET with maxResults=1 to the mock: pass',
