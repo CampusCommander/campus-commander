@@ -8,7 +8,7 @@ test.use({ timezoneId: 'America/New_York' });
 
 const customerId = 'C0123456';
 // The hand-off screenshots land here. The default keeps the file inside the test output.
-const scratch = process.env['UM_SHOTS'] ?? 'test-results/um-k11-shots';
+const scratch = process.env['UM_SHOTS'] ?? 'dist/um-k25-shots';
 
 test.beforeAll(() => mkdirSync(scratch, { recursive: true }));
 
@@ -20,10 +20,28 @@ const observedAt = at(2);
 const removedAt = at(3);
 /** One test sends a long attribute value to prove that it stays inside its card. */
 let longProgram: string | null = null;
+/** The value of the one save of the card form test, kept until the next test. */
+let savedGrade: number | null = null;
+/** One test keeps the value job running while the card hands observation over (R4-A). */
+let jobStatus: 'completed' | 'running' = 'completed';
+/** The app's job reads, so the R4-A test can show the polling budget and the handoff. */
+let jobReads = 0;
+/** The edit list that the mocked preview route received. */
+let lastPreviewBody: unknown = null;
 
 test.afterEach(() => {
   longProgram = null;
+  savedGrade = null;
+  jobStatus = 'completed';
+  jobReads = 0;
+  lastPreviewBody = null;
+  tooLargeOnce = false;
   extraPeople = [];
+  heldDetails?.release();
+  heldDetails = null;
+  heldConfirm?.release();
+  heldConfirm = null;
+  previewPosts = 0;
 });
 
 /** One time as the page renders it, in the zone that the spec pins. */
@@ -39,6 +57,7 @@ function shownTime(iso: string): string {
 
 const grants = [
   { action: 'users:read', scope: { kind: 'district', customerId } },
+  { action: 'users:write', scope: { kind: 'district', customerId } },
   { action: 'devices:read', scope: { kind: 'district', customerId } },
   { action: 'connection:diagnose', scope: { kind: 'district', customerId } },
 ];
@@ -188,8 +207,32 @@ function detailOf(person: FixtureUser) {
     (candidate) => candidate.userId === person.userId,
   );
   return {
-    user: { ...withLongProgram(row), removedAt: person.removedAt ?? null },
+    user: {
+      ...withSavedGrade(withLongProgram(row), person.userId),
+      removedAt: person.removedAt ?? null,
+    },
   };
+}
+
+/** The record of the one card form save, after its job settles (state 12). */
+function withSavedGrade<T extends Record<string, unknown> | undefined>(
+  row: T,
+  userId: string,
+) {
+  if (savedGrade === null || !row || row['userId'] !== userId) return row;
+  const student = {
+    ...(row['customSchemas'] as Record<string, Record<string, unknown>>)[
+      'Student'
+    ],
+    grade_level: String(savedGrade),
+  };
+  return {
+    ...row,
+    customSchemas: {
+      ...(row['customSchemas'] as Record<string, unknown>),
+      Student: student,
+    },
+  } as T;
 }
 
 /** The record of the first user with the long attribute value of one test. */
@@ -442,6 +485,117 @@ function answerFor(body: any) {
   };
 }
 
+/** The preview that the mocked edit-list route freezes for the card form test. */
+const previewDigest = 'a'.repeat(64);
+const cardPreview = (
+  edits: readonly { baselineValue?: unknown; values?: unknown[] }[],
+) => ({
+  previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+  source: 'edit-list',
+  changes: null,
+  attributeChanges: edits.length,
+  selected: edits.length,
+  eligible: edits.length,
+  unchanged: 0,
+  conflicts: 0,
+  oldestObservedAt: observedAt,
+  stale: false,
+  preparedAt: new Date(now).toISOString(),
+  expiresAt: new Date(now + 600_000).toISOString(),
+  manifestDigest: previewDigest,
+});
+
+/** One frozen row of the card form preview, from the edit that asked for it. */
+const cardTarget = (edit: {
+  attribute: string;
+  baselineValue?: unknown;
+  values?: unknown[];
+}) => ({
+  userId: people[0].userId,
+  primaryEmail: `${people[0].local}@example.org`,
+  attribute: edit.attribute,
+  currentValue: edit.baselineValue ?? null,
+  newValue: edit.values?.[0] ?? null,
+  disposition: 'eligible',
+  observedAt,
+});
+
+/** The value job that the mocked confirm answers, and its detail (design K24). */
+const valueJob = {
+  jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+  displayId: 'UAT-015',
+  revision: 1,
+  action: 'update-device-annotations',
+  status: 'completed',
+  entityType: 'device',
+  scope: { kind: 'devices', deviceCount: 1 },
+  requestedBy: {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    displayName: 'Review administrator',
+  },
+  createdAt: new Date(now - 60_000).toISOString(),
+  startedAt: new Date(now - 50_000).toISOString(),
+  finishedAt: new Date(now - 40_000).toISOString(),
+  progress: {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  cancelRequest: null,
+  failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  confirmedBy: {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    displayName: 'Review administrator',
+  },
+  previewDisplayId: null,
+  changes: null,
+  commandType: null,
+  statusAction: null,
+  deprovisionReason: null,
+  targetOrgUnitPaths: null,
+  correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  latestActivity: {
+    at: new Date(now - 40_000).toISOString(),
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
+};
+
+/** The mocked preview answers 413 once, to prove that the form keeps its edits. */
+let tooLargeOnce = false;
+
+/** One test holds the next user's details answer, to check the card identity (R2-A). */
+let heldDetails: {
+  userId: string;
+  gate: Promise<void>;
+  release: () => void;
+} | null = null;
+
+/** One test holds the card confirmation, to check the one save across navigation (R3-A, R3-B). */
+let heldConfirm: {
+  gate: Promise<void>;
+  release: () => void;
+  answer: 'receipt' | 'lost';
+} | null = null;
+/** The count of edit-list preview requests, so one save prepares one preview. */
+let previewPosts = 0;
+
 async function signIn(page: Page) {
   await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
@@ -520,11 +674,70 @@ async function signIn(page: Page) {
       }
       return route.fulfill({ json: { selection: selectionSpec() } });
     }
+    // The card form: one edit-list preview, its frozen rows, its confirm, and the job (K23, K24).
+    if (
+      path === '/api/users/attribute-previews' &&
+      request.method() === 'POST'
+    ) {
+      previewPosts += 1;
+      const body = request.postDataJSON();
+      lastPreviewBody = body;
+      if (tooLargeOnce) {
+        tooLargeOnce = false;
+        return route.fulfill({
+          status: 413,
+          json: { reason: 'payload-too-large' },
+        });
+      }
+      return route.fulfill({ json: cardPreview(body.edits ?? []) });
+    }
+    if (/^\/api\/users\/attribute-previews\/[^/]+\/targets$/.test(path)) {
+      const edits =
+        (
+          lastPreviewBody as {
+            edits?: Parameters<typeof cardTarget>[0][];
+          } | null
+        )?.edits ?? [];
+      return route.fulfill({
+        json: { targets: edits.map(cardTarget), nextCursor: null },
+      });
+    }
+    if (/^\/api\/users\/attribute-previews\/[^/]+\/confirm$/.test(path)) {
+      const body = request.postDataJSON() ?? {};
+      if (body.manifestDigest !== previewDigest)
+        return route.fulfill({
+          status: 409,
+          json: { reason: 'preview-conflict' },
+        });
+      // One test holds this answer while the person leaves the details page (R3-A, R3-B).
+      const held = heldConfirm;
+      if (held) {
+        await held.gate;
+        if (held.answer === 'lost') return route.abort('failed');
+      }
+      savedGrade = 11;
+      return route.fulfill({
+        json: {
+          jobId: valueJob.jobId,
+          displayId: valueJob.displayId,
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      });
+    }
+    if (path === `/api/jobs/${valueJob.displayId}`) {
+      jobReads += 1;
+      return route.fulfill({ json: { ...valueJob, status: jobStatus } });
+    }
     // One user, read by the details page. Any other path stays a 404.
     const single = /^\/api\/users\/([^/]+)$/.exec(path);
     if (single) {
+      const userId = decodeURIComponent(single[1]);
+      // The held-read test opens the next card only after its record arrives (R2-A).
+      if (heldDetails?.userId === userId) await heldDetails.gate;
       const person = directoryPeople().find(
-        (candidate) => candidate.userId === decodeURIComponent(single[1]),
+        (candidate) => candidate.userId === userId,
       );
       return person
         ? route.fulfill({ json: detailOf(person) })
@@ -542,6 +755,19 @@ async function signIn(page: Page) {
       return route.fulfill({ json: request.postDataJSON() });
     return route.fulfill({ status: 404, json: {} });
   });
+}
+
+/** The theme menu of the shell (UI-10 checks both themes). */
+async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page
+    .getByRole('menuitem', {
+      name: theme === 'dark' ? 'Use dark theme' : 'Use light theme',
+    })
+    .click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+  // The menu animates closed. Wait so a following screenshot shows the page only.
+  await expect(page.locator('.mat-mdc-menu-panel')).toBeHidden();
 }
 
 async function openUsers(page: Page) {
@@ -1015,4 +1241,453 @@ test('keeps the name link in every grid row (GRID-03)', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Open details for Amara Okafor' }),
   ).toBeVisible();
+});
+
+test('reproduces UM state 05 and state 12: the card form and the saved line', async ({
+  page,
+}) => {
+  // The first preview answers 413, to prove that the form keeps its edits (card K25).
+  tooLargeOnce = true;
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+
+  // One outlined Edit button at the right of the card heading (composition 4).
+  const edit = page.getByRole('button', { name: 'Edit', exact: true });
+  await expect(edit).toBeVisible();
+  const card = page.locator('section.attrs');
+  const headingBox = measured(
+    await card
+      .getByRole('heading', { name: 'Custom attributes' })
+      .boundingBox(),
+  );
+  const editBox = measured(await edit.boundingBox());
+  expect(editBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
+  await edit.click();
+
+  // State 05: the whole card edits at once, and each info type has its editor.
+  await expect(card.locator('.attribute-form')).toBeVisible();
+  await expect(
+    card.locator('[data-attribute="attr:Student.student_id"] input'),
+  ).toBeFocused();
+  // The heading keeps the additive 6 px stack padding after its 8 px margin (R2-E).
+  const headingGap = async (name: string) => {
+    const section = card
+      .locator('.attr-section')
+      .filter({ has: page.getByRole('heading', { name, exact: true }) });
+    const title = measured(await section.locator('h3').boundingBox());
+    const first = measured(
+      await section.locator('.field').first().boundingBox(),
+    );
+    return first.y - (title.y + title.height);
+  };
+  expect(
+    Math.abs((await headingGap('Student information')) - 14),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs((await headingGap('Staff information')) - 14),
+  ).toBeLessThanOrEqual(1);
+  // The plain Yes and No label follows its heading directly, as the approved form does.
+  expect(
+    Math.abs((await headingGap('Device program')) - 8),
+  ).toBeLessThanOrEqual(1);
+  const grade = card.locator(
+    '[data-attribute="attr:Student.grade_level"] input',
+  );
+  const homeroom = card.locator(
+    '[data-attribute="attr:Student.homeroom"] input',
+  );
+  await expect(grade).toHaveValue('10');
+  await expect(homeroom).toHaveValue('214');
+  await expect(
+    card.locator('[data-attribute="attr:Staff.hire_date"] input'),
+  ).toHaveAttribute('type', 'date');
+  await expect(
+    card.locator(
+      '[data-attribute="attr:Device.take_home"] mat-button-toggle-group',
+    ),
+  ).toBeVisible();
+  await expect(card.locator('mat-chip-row')).toHaveCount(2);
+  const save = page.getByRole('button', { name: 'Save changes', exact: true });
+  await expect(save).toBeDisabled();
+
+  // The value rules run in the form: a number error and the in-grid count message.
+  await grade.fill('ten');
+  await expect(card.getByText('Enter a whole number.')).toBeVisible();
+  await expect(save).toBeDisabled();
+
+  // The approved control geometry of composition 5 (R1-G): the Yes and No group hugs its
+  // three choices at the control radius, sibling fields keep a 16 px rhythm, the error
+  // keeps the 16 px gutter, and the populated chip field keeps the compact outline.
+  const toggle = card.locator(
+    '[data-attribute="attr:Device.take_home"] mat-button-toggle-group',
+  );
+  const toggleBox = measured(await toggle.boundingBox());
+  const fieldWidth = measured(
+    await card
+      .locator('[data-attribute="attr:Student.student_id"] .attribute-field')
+      .boundingBox(),
+  ).width;
+  expect(toggleBox.height).toBe(42);
+  expect(toggleBox.width).toBeLessThan(fieldWidth / 2);
+  expect(
+    await toggle.evaluate(
+      (element) => getComputedStyle(element).borderTopLeftRadius,
+    ),
+  ).toBe('4px');
+  const studentIdField = measured(
+    await card
+      .locator('[data-attribute="attr:Student.student_id"]')
+      .boundingBox(),
+  );
+  const gradeField = measured(
+    await card
+      .locator('[data-attribute="attr:Student.grade_level"]')
+      .boundingBox(),
+  );
+  expect(
+    gradeField.y - (studentIdField.y + studentIdField.height),
+  ).toBeGreaterThanOrEqual(15.5);
+  expect(
+    await card
+      .locator('[data-attribute="attr:Student.grade_level"] .field-error')
+      .evaluate((element) => getComputedStyle(element).paddingLeft),
+  ).toBe('16px');
+  const programsField = measured(
+    await card
+      .locator('[data-attribute="attr:Student.programs"] .attribute-field')
+      .boundingBox(),
+  );
+  expect(Math.abs(programsField.height - 56)).toBeLessThanOrEqual(2);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: `${scratch}/um-05-user-details-edit.png`,
+    fullPage: false,
+  });
+  await page.screenshot({
+    path: `${scratch}/um-05-user-details-edit-full.png`,
+    fullPage: true,
+  });
+  await setTheme(page, 'dark');
+  await page.screenshot({
+    path: `${scratch}/um-05-user-details-edit-dark.png`,
+    fullPage: true,
+  });
+  await setTheme(page, 'light');
+  await homeroom.fill('216');
+  await expect(save).toBeDisabled();
+  await homeroom.fill('x'.repeat(512));
+  await expect(card.getByText('512 of 500 characters')).toBeVisible();
+  await expect(save).toBeDisabled();
+  await homeroom.fill('216');
+  await grade.fill('11');
+
+  // A 413 keeps the form and its edits, and shows the exact sentence of the card.
+  await save.click();
+  await expect(
+    card.getByText('The request exceeds the size limit.'),
+  ).toBeVisible();
+  await expect(grade).toHaveValue('11');
+  await expect(homeroom).toHaveValue('216');
+
+  // Two changes show the review of the frozen rows (B section 4.2).
+  await save.click();
+  await expect(card.locator('.review-table')).toBeVisible();
+  const rows = card.locator('.review-table tbody tr');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('Grade level');
+  await expect(rows.nth(0)).toContainText('Proposed');
+  await expect(rows.nth(1)).toContainText('Homeroom');
+  const confirm = page.getByRole('button', { name: 'Confirm', exact: true });
+  await expect(confirm).toBeEnabled();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+
+  // One change prepares the preview and confirms it in one step (owner direction).
+  await expect(grade).toHaveValue('11');
+  await expect(homeroom).toHaveValue('216');
+  await homeroom.fill('214');
+  await save.click();
+  await expect(card.getByText('Grade level saved to Google')).toBeVisible();
+  expect(lastPreviewBody).toEqual({
+    edits: [
+      {
+        userId: people[0].userId,
+        attribute: 'attr:Student.grade_level',
+        mode: 'set',
+        values: [11],
+        baselineValue: 10,
+      },
+    ],
+  });
+
+  // State 12: the saved line with the job as a secondary link, and the new value.
+  const job = card.getByRole('link', { name: 'UAT-015', exact: true });
+  await expect(job).toHaveAttribute('href', '/jobs/UAT-015');
+  await expect(
+    card.locator('.annotation', { hasText: 'Grade level' }),
+  ).toContainText('11');
+  await expect(edit).toBeFocused();
+  const savedBox = measured(await card.locator('.saved-line').boundingBox());
+  const firstSection = measured(
+    await card.locator('.attr-section').first().boundingBox(),
+  );
+  expect(savedBox.y + savedBox.height).toBeLessThanOrEqual(firstSection.y + 1);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: `${scratch}/um-12-details-saved.png`,
+    fullPage: false,
+  });
+  await page.screenshot({
+    path: `${scratch}/um-12-details-saved-full.png`,
+    fullPage: true,
+  });
+  await setTheme(page, 'dark');
+  await page.screenshot({
+    path: `${scratch}/um-12-details-saved-dark.png`,
+    fullPage: true,
+  });
+});
+
+test('drops the open draft when Next user opens another card (R1-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const building = page.locator('[data-attribute="attr:Staff.building"] input');
+  await building.fill('Room 230');
+  await expect(building).toHaveValue('Room 230');
+
+  await page.getByRole('button', { name: 'Next user', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Ania Reyes', exact: true }),
+  ).toBeVisible();
+  // The draft of Amara's card does not move into Ania's card.
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(
+    page.locator('[data-attribute="attr:Staff.building"] input'),
+  ).toHaveValue('');
+});
+
+test('keeps the retained card and its save target aligned during a held read (R2-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  heldDetails = { userId: '110000000000000000002', gate, release };
+  const nextRead = page.waitForRequest(/\/api\/users\/110000000000000000002$/);
+  await page.getByRole('button', { name: 'Next user', exact: true }).click();
+  await nextRead;
+  // The retained card still names Amara, and it offers no form for her (R2-A).
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Edit', exact: true }),
+  ).toHaveCount(0);
+
+  release();
+  heldDetails = null;
+  await expect(
+    page.getByRole('heading', { name: 'Ania Reyes', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('12');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.locator('section.attrs')).toContainText(
+    'Grade level saved to Google',
+  );
+  // The visible identity and the outgoing user ID agree.
+  expect(lastPreviewBody).toEqual({
+    edits: [
+      {
+        userId: '110000000000000000002',
+        attribute: 'attr:Student.grade_level',
+        mode: 'set',
+        values: [12],
+        baselineValue: 11,
+      },
+    ],
+  });
+});
+
+test('keeps the in-flight confirmation across a details page round trip (R3-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  previewPosts = 0;
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  heldConfirm = { gate, release, answer: 'lost' };
+  const confirmRequest = page.waitForRequest(
+    /\/api\/users\/attribute-previews\/[^/]+\/confirm$/,
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirmRequest;
+
+  // The person leaves the details page before the first answer arrives.
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  await detailsControl(page, 'Amara Okafor').click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const card = page.locator('section.attrs');
+  // The reopened form honors the one confirmation and offers no editors.
+  await expect(card).toContainText('Creating the job…');
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  expect(previewPosts).toBe(1);
+
+  // The held answer is lost. The reopened form continues the same confirmation.
+  release();
+  heldConfirm = null;
+  await expect(card).toContainText(
+    'Retry the confirmation to keep the same preview.',
+  );
+  await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(card).toContainText('Grade level saved to Google');
+  expect(previewPosts).toBe(1);
+});
+
+test('recovers the accepted receipt across a details page round trip (R3-B)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  previewPosts = 0;
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  heldConfirm = { gate, release, answer: 'receipt' };
+  const confirmRequest = page.waitForRequest(
+    /\/api\/users\/attribute-previews\/[^/]+\/confirm$/,
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirmRequest;
+
+  // The accepted answer lands on the closed form. Its receipt must survive (R3-B).
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  release();
+  heldConfirm = null;
+
+  // Reentry observes the same receipt, refreshes the card, and prepares no second preview.
+  await detailsControl(page, 'Amara Okafor').click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const card = page.locator('section.attrs');
+  await expect(card).toContainText('Grade level saved to Google');
+  await expect(
+    card.getByRole('link', { name: 'UAT-015', exact: true }),
+  ).toHaveAttribute('href', '/jobs/UAT-015');
+  await expect(
+    card.locator('.annotation', { hasText: 'Grade level' }),
+  ).toContainText('11');
+  expect(previewPosts).toBe(1);
+});
+
+test('keeps the accepted receipt through the polling cap and a details page round trip (R4-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  previewPosts = 0;
+  jobStatus = 'running';
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  // The polling schedule is timer driven, so the test owns the clock from the save on.
+  await page.clock.install();
+  const confirmRequest = page.waitForRequest(
+    /\/api\/users\/attribute-previews\/[^/]+\/confirm$/,
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirmRequest;
+  // The job has no provider effect until it runs, so the record keeps Grade level 10.
+  savedGrade = null;
+
+  const card = page.locator('section.attrs');
+  const advanceUntil = async (text: string, seconds: number) => {
+    for (let at = 0; at < seconds; at++) {
+      if ((await card.textContent())?.includes(text)) return;
+      await page.clock.runFor(1000);
+    }
+    await expect(card).toContainText(text);
+  };
+  // The editor spends its 120-read budget while the job stays running.
+  await advanceUntil('The job is still running.', 150);
+  // The 120 editor reads and the card's first continuation read used the same receipt.
+  expect(jobReads).toBeGreaterThanOrEqual(121);
+  expect(previewPosts).toBe(1);
+
+  // The person leaves before the job has any provider effect.
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+
+  // Reentry recovers the same receipt instead of preparing a second preview.
+  await detailsControl(page, 'Amara Okafor').click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(card).toContainText('Saving to Google…');
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  // Reentry read the same UAT-015 receipt; it prepared no second preview.
+  expect(jobReads).toBeGreaterThanOrEqual(122);
+  expect(previewPosts).toBe(1);
+
+  // The job settles, and the recovered card shows the new value.
+  jobStatus = 'completed';
+  savedGrade = 11;
+  await advanceUntil('Grade level saved to Google', 10);
+  await expect(
+    card.getByRole('link', { name: 'UAT-015', exact: true }),
+  ).toHaveAttribute('href', '/jobs/UAT-015');
+  await expect(
+    card.locator('.annotation', { hasText: 'Grade level' }),
+  ).toContainText('11');
+  expect(previewPosts).toBe(1);
 });

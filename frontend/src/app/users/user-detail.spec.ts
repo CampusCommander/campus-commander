@@ -4,12 +4,15 @@ import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   UserAttributeCategories,
+  UserAttributeField,
   UserDetail,
   UserRow,
   UserSyncState,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { UserDetailPage, readAge } from './user-detail';
+import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
 import { UsersStore } from './users.store';
 import type { UserRead } from './users.store';
 
@@ -152,6 +155,56 @@ const nextRow: UserRow = {
   stale: false,
 };
 
+/** The one writable field that the card form tests save. */
+const gradeLevelField: UserAttributeField = {
+  fieldId: 'Student.grade_level',
+  fieldName: 'grade_level',
+  displayName: 'Grade level',
+  fieldType: 'INT64',
+  multiValued: false,
+  indexed: true,
+  readAccessType: 'ALL_DOMAIN_USERS',
+  numericIndexingSpec: null,
+  holders: 1,
+};
+const writableCategories: UserAttributeCategories = {
+  ...categories,
+  categories: categories.categories.map((category) =>
+    category.schemaName === 'Student'
+      ? { ...category, fields: [...category.fields, gradeLevelField] }
+      : category,
+  ),
+};
+
+/** One edit-list preview of the card tests. */
+const cardPreview = {
+  previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+  source: 'edit-list' as const,
+  changes: null,
+  attributeChanges: 1,
+  selected: 1,
+  eligible: 1,
+  unchanged: 0,
+  conflicts: 0,
+  oldestObservedAt: '2026-11-01T13:12:00.000Z',
+  stale: false,
+  preparedAt: '2026-11-01T13:12:00.000Z',
+  expiresAt: '2026-11-01T13:22:00.000Z',
+  manifestDigest: 'a'.repeat(64),
+};
+
+/** The receipt of one accepted card save. */
+const cardReceipt = {
+  ok: true as const,
+  value: {
+    jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+    displayId: 'UAT-015',
+    status: 'accepted' as const,
+    userCount: 1,
+    changeCount: 1,
+  },
+};
+
 /** A promise that the test releases. */
 function held<T>() {
   let release: (value: T) => void = () => undefined;
@@ -159,6 +212,28 @@ function held<T>() {
     release = resolve;
   });
   return { promise, release };
+}
+
+/** Creates the details page on the configured TestBed, as a navigation would (R4-A). */
+async function mountPage(userId: string) {
+  const fixture = TestBed.createComponent(UserDetailPage);
+  fixture.componentRef.setInput('userId', userId);
+  const element: HTMLElement = fixture.nativeElement;
+  await vi.waitFor(() => {
+    fixture.detectChanges();
+    expect(element.textContent).not.toContain('Loading user details');
+  });
+  const button = (name: string) =>
+    [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === name,
+    );
+  const fact = (label: string) =>
+    [...element.querySelectorAll('.facts-list > div')]
+      .find((row) => row.querySelector('dt')?.textContent?.trim() === label)
+      ?.querySelector('dd')
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim();
+  return { element, button, fact, fixture };
 }
 
 async function setup(options: {
@@ -179,6 +254,10 @@ async function setup(options: {
   next?: UserRow | null;
   /** Holds the neighbor answer, so a test can end the page first. */
   neighbor?: () => Promise<UserRow | null>;
+  /** The `users:write` answer of the mocked AuthStore. */
+  canWrite?: boolean;
+  /** The mocked preview flow of the card form. */
+  flow?: Record<string, unknown>;
 }) {
   const detail = options.detail === undefined ? user() : options.detail;
   const position =
@@ -231,6 +310,9 @@ async function setup(options: {
     providers: [
       provideRouter([]),
       { provide: UsersStore, useValue: store },
+      ...(options.flow
+        ? [{ provide: UserAttributeEditFlow, useValue: options.flow }]
+        : []),
       {
         provide: AuthStore,
         useValue: {
@@ -240,6 +322,7 @@ async function setup(options: {
             csrfToken: 'a'.repeat(64),
           }),
           metadata: signal({ phase: 3 }),
+          can: vi.fn().mockReturnValue(options.canWrite ?? false),
           request: vi.fn(async () => Response.json({}, { status: 404 })),
         },
       },
@@ -247,24 +330,8 @@ async function setup(options: {
   });
   const router = TestBed.inject(Router);
   const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-  const fixture = TestBed.createComponent(UserDetailPage);
-  fixture.componentRef.setInput('userId', detail?.userId ?? 'missing-user');
-  const element: HTMLElement = fixture.nativeElement;
-  await vi.waitFor(() => {
-    fixture.detectChanges();
-    expect(element.textContent).not.toContain('Loading user details');
-  });
-  const button = (name: string) =>
-    [...element.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent?.trim() === name,
-    );
-  const fact = (label: string) =>
-    [...element.querySelectorAll('.facts-list > div')]
-      .find((row) => row.querySelector('dt')?.textContent?.trim() === label)
-      ?.querySelector('dd')
-      ?.textContent?.replace(/\s+/g, ' ')
-      .trim();
-  return { store, element, navigate, button, fact, fixture };
+  const mounted = await mountPage(detail?.userId ?? 'missing-user');
+  return { store, navigate, ...mounted };
 }
 
 describe('the user details page', () => {
@@ -539,6 +606,704 @@ describe('the user details page', () => {
       .find((candidate) => candidate.textContent?.trim() === 'Retry')
       ?.click();
     await vi.waitFor(() => expect(store.loadSync).toHaveBeenCalled());
+  });
+
+  it('shows no Edit button without users:write', async () => {
+    const { button } = await setup({});
+    expect(button('Edit')).toBeUndefined();
+  });
+
+  it('returns focus to the Edit button when the form closes (UI-09)', async () => {
+    const { fixture, button } = await setup({ canWrite: true });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(
+      fixture.nativeElement.querySelector('.attribute-form'),
+    ).not.toBeNull();
+    button('Cancel')?.click();
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(document.activeElement?.textContent?.trim()).toBe('Edit');
+    });
+  });
+
+  it('shows the saved line with the job link after one change (composition 13)', async () => {
+    const oneChange = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+          displayId: 'UAT-015',
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      }),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { fixture, element, button, store } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: oneChange,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const input = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!input) throw new Error('No grade level field');
+    input.value = '11';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    expect(element.textContent).toContain('Job');
+    expect(
+      element.querySelector('a[href="/jobs/UAT-015"]')?.textContent?.trim(),
+    ).toBe('UAT-015');
+    expect(oneChange.confirm).toHaveBeenCalledTimes(1);
+    // The card reads the user again after the job settles.
+    expect(store.user).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes the open form when the route moves to the next user (R1-A)', async () => {
+    const { fixture, element, store, button } = await setup({ canWrite: true });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const building = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Staff.building"] input',
+    );
+    if (!building) throw new Error('No Building field');
+    building.value = 'Room 230';
+    building.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    // The next record belongs to Ania. Her card must not inherit the open draft.
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      givenName: 'Ania',
+      familyName: 'Reyes',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    store.user.mockResolvedValue({ kind: 'user', user: next });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    expect(
+      element.querySelector<HTMLInputElement>(
+        '[data-attribute="attr:Staff.building"] input',
+      ),
+    ).toBeNull();
+    expect(button('Edit')).toBeDefined();
+  });
+
+  it('keeps a pending save with its own user across Next user (R1-A)', async () => {
+    const pending = held<{
+      ok: true;
+      value: {
+        jobId: string;
+        displayId: string;
+        status: string;
+        userCount: number;
+        changeCount: number;
+      };
+    }>();
+    const card = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn(() => pending.promise),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { fixture, element, store, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => expect(card.confirm).toHaveBeenCalled());
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    store.user.mockResolvedValue({ kind: 'user', user: next });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    // The answer of the first save lands after the route moved. It changes nothing here.
+    pending.release({
+      ok: true,
+      value: {
+        jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+        displayId: 'UAT-015',
+        status: 'accepted',
+        userCount: 1,
+        changeCount: 1,
+      },
+    });
+    await vi.waitFor(() => expect(card.waitForJob).not.toHaveBeenCalled());
+    expect(element.textContent).not.toContain('saved to Google');
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    expect(store.user).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a saved result off the next user card (R1-A)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+          displayId: 'UAT-015',
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      }),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { fixture, element, store, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Student ID saved to Google');
+    });
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    store.user.mockResolvedValue({ kind: 'user', user: next });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    expect(element.querySelector('.saved-line')).toBeNull();
+    expect(element.textContent).not.toContain('saved to Google');
+  });
+
+  it('keeps the heading and the save target aligned during a held next-user read (R2-A)', async () => {
+    const heldRead = held<UserRead>();
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    // The route moves to Ania while her record read stays open. Amara stays on screen.
+    store.user.mockImplementation(() => heldRead.promise);
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      givenName: 'Ania',
+      familyName: 'Reyes',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(store.user).toHaveBeenCalledTimes(2));
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'Amara Okafor',
+    );
+    // The retained card offers no form, because its record is not the route's user.
+    expect(button('Edit')).toBeUndefined();
+    expect(element.querySelector('.attribute-form')).toBeNull();
+
+    heldRead.release({ kind: 'user', user: next });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Student ID saved to Google');
+    });
+    // The visible identity and the outgoing user ID agree.
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe('Ania Reyes');
+    expect(card.prepare).toHaveBeenCalledWith([
+      {
+        userId: next.userId,
+        attribute: 'attr:Student.student_id',
+        mode: 'set',
+        values: ['204519'],
+        baselineValue: null,
+      },
+    ]);
+  });
+
+  it('refreshes the card when an accepted job settles after the polling cap (R2-C)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      // The editor reached its 120-read budget without a terminal answer.
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: false,
+        message: 'The job is still running.',
+      }),
+      readJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    // The settlement read answers the value that the job wrote.
+    store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const grade = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!grade) throw new Error('No Grade level field');
+    grade.value = '11';
+    grade.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    // The continuation observed the same receipt after the cap and refreshed the card.
+    expect(card.waitForJob).toHaveBeenCalledWith(
+      'UAT-015',
+      120,
+      1000,
+      expect.any(Function),
+    );
+    expect(card.readJob).toHaveBeenCalledWith('UAT-015');
+    expect(store.user).toHaveBeenCalledTimes(2);
+    const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('releases the accepted receipt only after its job settles after the cap (R4-A)', async () => {
+    const settlement = held<{
+      ok: true;
+      value: { displayId: string; status: string };
+    }>();
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      // The editor reached its 120-read budget without a terminal answer.
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: false,
+        message: 'The job is still running.',
+      }),
+      // The card's own continuation reads the receipt until the job answers.
+      readJob: vi.fn(() => settlement.promise),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const grade = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!grade) throw new Error('No Grade level field');
+    grade.value = '11';
+    grade.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('The job is still running.');
+    });
+    // The cap handed observation over, and the receipt stays under recovery.
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(confirmations.pending(user().userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+    });
+    expect(card.readJob).toHaveBeenCalledWith('UAT-015');
+
+    settlement.release({
+      ok: true,
+      value: { displayId: 'UAT-015', status: 'completed' },
+    });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    // Only the settled job released the receipt, and the card shows the new value.
+    expect(confirmations.pending(user().userId)).toBeNull();
+    expect(card.prepare).toHaveBeenCalledTimes(1);
+    expect(store.user).toHaveBeenCalledTimes(2);
+    const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('recovers the accepted receipt on the next page after the cap (R4-A)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      // The editor reaches its cap, and the next form observes the same job to its end.
+      waitForJob: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          message: 'The job is still running.',
+        })
+        .mockResolvedValue({
+          ok: true,
+          value: { displayId: 'UAT-015', status: 'completed' },
+        }),
+      // The departed card's continuation never answers.
+      readJob: vi.fn(() => new Promise(() => undefined)),
+    };
+    const first = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    first.button('Edit')?.click();
+    first.fixture.detectChanges();
+    await first.fixture.whenStable();
+    const grade = first.element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!grade) throw new Error('No Grade level field');
+    grade.value = '11';
+    grade.dispatchEvent(new Event('input'));
+    first.fixture.detectChanges();
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => {
+      first.fixture.detectChanges();
+      expect(first.element.textContent).toContain('The job is still running.');
+    });
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(confirmations.pending(user().userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+    });
+
+    // The person leaves the details page before the job has any provider effect.
+    first.fixture.destroy();
+    first.store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    const second = await mountPage(user().userId);
+    second.button('Edit')?.click();
+    second.fixture.detectChanges();
+    await second.fixture.whenStable();
+    // The reopened form recovers the receipt instead of preparing a second preview.
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    await vi.waitFor(() => {
+      second.fixture.detectChanges();
+      expect(second.element.textContent).toContain(
+        'Grade level saved to Google',
+      );
+    });
+    expect(card.prepare).toHaveBeenCalledTimes(1);
+    expect(card.confirm).toHaveBeenCalledTimes(1);
+    expect(card.waitForJob).toHaveBeenCalledTimes(2);
+    expect(confirmations.pending(user().userId)).toBeNull();
+    const annotation = [...second.element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('recovers an accepted receipt after a closed form and refreshes the card (R3-B)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+      readJob: vi.fn(),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    // The editor that accepted this receipt died before its job settled (R3-B).
+    TestBed.inject(UserAttributeConfirmationStore).accept(
+      user().userId,
+      cardPreview,
+      ['Grade level'],
+      'UAT-015',
+    );
+    store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    // The recovery observed the same receipt, then refreshed the matching card.
+    expect(card.waitForJob).toHaveBeenCalledWith(
+      'UAT-015',
+      120,
+      1000,
+      expect.any(Function),
+    );
+    expect(card.prepare).not.toHaveBeenCalled();
+    expect(store.user).toHaveBeenCalledTimes(2);
+    const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('names a job that needs review without claiming a failure (R1-F)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+          displayId: 'UAT-015',
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      }),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'needs-review' },
+      }),
+    };
+    const { fixture, element, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('The job needs review.');
+    });
+    // The unknown result keeps its job link and does not claim that Google saved nothing.
+    expect(element.textContent).not.toContain('The values did not save.');
+    expect(
+      element.querySelector('a[href="/jobs/UAT-015"]')?.textContent?.trim(),
+    ).toBe('UAT-015');
+    expect(
+      element.querySelector('.saved-line')?.classList.contains('is-warning'),
+    ).toBe(true);
   });
 });
 

@@ -165,8 +165,42 @@
     <section class="card attrs" aria-labelledby="user-attributes-title">
       <div class="card-head">
         <h2 id="user-attributes-title">Custom attributes</h2>
+        @if (canEdit() && !editingThisCard()) {
+        <button
+          #editButton
+          mat-stroked-button
+          type="button"
+          class="edit-button"
+          (click)="startEdit()"
+        >
+          {{ editLabel }}
+        </button>
+        }
       </div>
-      @if (store.categoriesError()) {
+      @if (editingThisCard()) {
+      <app-user-attribute-editor
+        [user]="current"
+        [categories]="categories()"
+        (cancelled)="cancelEdit()"
+        (finished)="finishEdit($event)"
+      />
+      } @else { @if (savedLine(); as line) {
+      <p
+        class="saved-line"
+        [class.is-error]="
+          line.outcome === 'failed' || line.outcome === 'unsettled'
+        "
+        [class.is-warning]="line.outcome === 'unknown'"
+        role="status"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true"
+          >{{ line.outcome === 'saved' ? 'check_circle' : line.outcome ===
+          'unknown' ? 'info' : 'error' }}</span
+        >
+        <span>{{ line.text }}{{ jobSeparator }}</span>
+        <a [routerLink]="['/jobs', line.displayId]">{{ line.displayId }}</a>
+      </p>
+      } @if (store.categoriesError()) {
       <p class="scope-note">
         {{ store.categoriesError() }} @if (store.categoriesRecovery()) {
         <a routerLink="/google-connection">Open Google connection</a>
@@ -199,7 +233,7 @@
         </dl>
         }
       </section>
-      }
+      } }
     </section>
   </div>
   } } }

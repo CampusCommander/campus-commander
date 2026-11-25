@@ -104,6 +104,30 @@
 .card-head h2 {
   margin: 0;
 }
+.edit-button {
+  flex: none;
+}
+/* The saved line of composition 13: a success icon, the attribute, and the job link. */
+.saved-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-block: 0 var(--cc-space-md);
+  color: var(--cc-status-success-text);
+}
+.saved-line.is-error {
+  color: var(--cc-status-error-text);
+}
+/* A job that needs review holds an unknown result, not a confirmed failure (B section 7.3). */
+.saved-line.is-warning {
+  color: var(--cc-status-warning-text);
+}
+.saved-line .material-symbols-outlined {
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+}
 .attr-section + .attr-section {
   margin-block-start: var(--cc-space-lg);
   padding-block-start: var(--cc-space-lg);
