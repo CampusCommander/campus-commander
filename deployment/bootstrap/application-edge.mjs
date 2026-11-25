@@ -1,3 +1,4 @@
+import { constants as bufferConstants } from 'node:buffer';
 import http from 'node:http';
 import https from 'node:https';
 
@@ -88,12 +89,16 @@ const userWrite =
 const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
 /**
  * The cap of the value preview POST: 2,500 edits (E17), each with a requested list and a baseline
- * list of 25,000 code points in at most 150 entries (B section 3). A code point takes four UTF-8
- * bytes, and each entry carries its JSON keys, quotes, and comma. The API computes the same bound
- * in user-attribute-previews.ts.
+ * list of 25,000 code points in at most 150 entries (B section 3). A code point is at most two
+ * UTF-16 units, and JSON escapes one unit into at most six bytes. The shape bound therefore
+ * exceeds one Node string, so the cap is the parse ceiling that the API also enforces.
  */
-export const userPreviewBodyLimit =
-  2500 * (2 * (25000 * 4 + 150 * 16) + 1024) + 4096;
+const userPreviewShapeLimit =
+  2500 * (2 * (25000 * 2 * 6 + 150 * 16) + 1024) + 4096;
+export const userPreviewBodyLimit = Math.min(
+  userPreviewShapeLimit,
+  bufferConstants.MAX_STRING_LENGTH,
+);
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
