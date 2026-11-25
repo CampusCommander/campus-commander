@@ -5,6 +5,7 @@ import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { after, before, test } from 'node:test';
 import esbuild from 'esbuild';
+import { jobOperationSchema } from '@campus/application-contracts';
 
 /**
  * Node's type stripping does not transform the Nest decorators of the API sources. Compile the
@@ -108,6 +109,7 @@ const operationRow = (overrides = {}) => ({
 const valueRow = (overrides = {}) => ({
   user_id: 'user-1',
   primary_email: 'user-1@example.org',
+  org_unit_path: '/Schools/A',
   outcome: 'unknown',
   outcome_reason: null,
   google_status: null,
@@ -539,7 +541,7 @@ test('the reconcile route reads one value operation back with users:write', asyn
     operationId: 'UAT-002-1',
     deviceId: 'user-1',
     serialNumber: 'user-1@example.org',
-    orgUnitPath: '',
+    orgUnitPath: '/Schools/A',
     field: null,
     operation: 'replace',
     baselineValue: null,
@@ -556,6 +558,15 @@ test('the reconcile route reads one value operation back with users:write', asyn
     commandExecutedAt: null,
     updatedAt: '2026-10-21T12:00:00.000Z',
   });
+  // R10: the actual HTTP body satisfies the shared operation contract, so no empty OrgUnit path and
+  // no missing timestamp leaves the route.
+  assert.doesNotThrow(() => jobOperationSchema.parse(answer.body));
+  // The real projection supplies both fields, so the route never invents them.
+  const [text] = db.calls.find(([sql]) =>
+    sql.includes('FROM cc.user_attribute_preview_targets'),
+  );
+  assert.match(text, /COALESCE\(cu\.org_unit_path,'\/'\) AS org_unit_path/);
+  assert.match(text, /t\.updated_at/);
   assert.equal(
     valueClaimCount(db),
     1,

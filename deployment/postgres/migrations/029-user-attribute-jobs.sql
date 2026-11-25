@@ -32,11 +32,17 @@ ALTER TABLE cc.user_attribute_preview_targets
   -- The write attempt that holds the row. A live lease keeps a second runner away (R1).
   ADD COLUMN attempt uuid,
   ADD COLUMN attempt_expires_at timestamptz,
+  -- The moment the send gate released the envelope that names this row. A row that is dispatched
+  -- without `sent_at` never left the worker, so a cancel counts it Cancelled (B section 7.4).
+  ADD COLUMN sent_at timestamptz,
   -- The moment the write answer arrived. The read-back starts 30 seconds later (C11).
   ADD COLUMN answered_at timestamptz,
   ADD COLUMN verify_after timestamptz,
   ADD COLUMN verify_attempt uuid,
   ADD COLUMN verify_lease_expires_at timestamptz,
+  -- The automatic read-back passes of the row. Three passes bound the automatic loop, so an
+  -- unprovable operation stays Unknown for a person (B section 7.3).
+  ADD COLUMN verify_count integer NOT NULL DEFAULT 0 CHECK(verify_count>=0),
   -- The outcome evidence of B section 7.3.
   ADD COLUMN failure text CHECK(failure IS NULL OR length(failure) BETWEEN 1 AND 64),
   ADD COLUMN outcome_reason text CHECK(outcome_reason IS NULL OR length(outcome_reason) BETWEEN 1 AND 256),
@@ -236,15 +242,20 @@ BEGIN
     PERFORM cc.record_job_change(p_job,true);
     RETURN jsonb_build_object('outcome','stopped','failure','key-unavailable');
   END IF;
+  -- The claim proves the start reached the worker, so the startup window of that dispatch ends here. A
+  -- lost runner can then be replaced at once, and the replacement keeps its own window (R4).
   UPDATE cc.jobs SET started_at=COALESCE(started_at,now_at) WHERE job_id=p_job;
   UPDATE cc.user_attribute_update_jobs SET attempt=p_attempt,
-    attempt_expires_at=now_at+interval '10 minutes',first_claimed_at=COALESCE(first_claimed_at,now_at)
+    attempt_expires_at=now_at+interval '10 minutes',first_claimed_at=COALESCE(first_claimed_at,now_at),
+    start_deadline_at=NULL
     WHERE job_id=p_job;
   -- One envelope holds at most 250 pending users, in ordinal order. A row that another live attempt
-  -- dispatched is not pending, and the busy answer above already covers that attempt.
+  -- dispatched is not pending, and the busy answer above already covers that attempt. A fresh claim
+  -- clears the send proof and the read-back count of the rows it owns (B section 7.4).
   WITH claimed AS (
     UPDATE cc.user_attribute_preview_targets t SET outcome='dispatched',attempt=p_attempt,
-      attempt_expires_at=now_at+interval '10 minutes',answered_at=NULL,verify_after=NULL,
+      attempt_expires_at=now_at+interval '10 minutes',sent_at=NULL,answered_at=NULL,verify_after=NULL,
+      verify_attempt=NULL,verify_lease_expires_at=NULL,verify_count=0,
       failure=NULL,outcome_reason=NULL,google_status=NULL,google_reason=NULL,updated_at=now_at
     WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND
       COALESCE(t.outcome,'pending')='pending'
@@ -277,12 +288,15 @@ $$;
 -- and the transaction writes the user rows that a success proves (B section 9). A 2xx answer
 -- without the requested values and a read-back without an answer stay Unknown, and their rows keep
 -- the read-back fence. A 404 settles Failed `not-found` and removes the user (B section 13).
+-- `p_failure` is the evidence of the envelope, never a job stop: the job ends only through
+-- `cc.stop_user_attribute_job` or the claim's stop reason (R2).
 CREATE FUNCTION cc.settle_user_attribute_updates(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
   p_results jsonb,p_observed_at timestamptz,p_failure text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.user_attribute_update_jobs; preview cc.user_attribute_previews;
   bad integer; now_at timestamptz; changed jsonb:='[]'::jsonb; removed jsonb:='[]'::jsonb;
   left_over integer; result_row jsonb; ordinal_key integer; user_key text; status_after text;
+  covered text[]; accepted integer; ignored integer:=0;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR
     p_observed_at IS NULL OR jsonb_typeof(p_results) IS DISTINCT FROM 'array' OR
@@ -315,20 +329,34 @@ BEGIN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
-  now_at:=clock_timestamp();
-  IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.job_id IS NULL OR
-    detail.dispatch_token IS DISTINCT FROM p_token OR detail.attempt IS DISTINCT FROM p_attempt THEN
+  IF detail.job_id IS NULL THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT * INTO preview FROM cc.user_attribute_previews p WHERE p.preview_id=detail.preview_id;
   -- The targets lock in ordinal order, the order of the claim and the cancel.
   PERFORM 1 FROM cc.user_attribute_preview_targets t WHERE t.preview_id=preview.preview_id AND
     t.disposition='eligible' ORDER BY t.ordinal FOR UPDATE;
+  -- R7: every fence reads again after the target lock wait, and the lease must still be live.
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job FOR UPDATE;
+  SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token
+    OR detail.attempt IS DISTINCT FROM p_attempt OR detail.attempt_expires_at IS NULL OR
+    detail.attempt_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  -- The categories that the read or the answer covers. An absent category was cleared, so the cache
+  -- drops it instead of keeping the older value (B section 9, R5).
+  covered:=ARRAY(SELECT DISTINCT v.schema_name FROM cc.user_attribute_target_values v
+    WHERE v.preview_id=preview.preview_id AND v.disposition='eligible' ORDER BY v.schema_name);
   FOR result_row IN SELECT value FROM jsonb_array_elements(p_results) LOOP
     ordinal_key:=(result_row->>'ordinal')::integer;
+    -- Only a row that this attempt claimed and still owns settles (R7).
     SELECT t.user_id INTO user_key FROM cc.user_attribute_preview_targets t
-      WHERE t.preview_id=preview.preview_id AND t.ordinal=ordinal_key AND t.disposition='eligible';
+      WHERE t.preview_id=preview.preview_id AND t.ordinal=ordinal_key AND t.disposition='eligible'
+        AND t.attempt=p_attempt AND t.outcome='dispatched';
     IF user_key IS NULL THEN
+      ignored:=ignored+1;
       CONTINUE;
     END IF;
     IF result_row->>'outcome'='succeeded' THEN
@@ -339,15 +367,24 @@ BEGIN
         observed_value=result_row->'observed',value_observed_at=p_observed_at,answered_at=p_observed_at,
         verify_after=NULL,verify_attempt=NULL,verify_lease_expires_at=NULL,updated_at=now_at
         WHERE t.preview_id=preview.preview_id AND t.ordinal=ordinal_key;
-      -- B section 9: each settled user writes its row. The observed category replaces the cached one
-      -- whole, because the mask covers every category of the change.
+      -- B section 9: each settled user writes its row. A category that the observation covers and
+      -- does not hold is cleared, and an unrelated category stays. A newer cached observation or
+      -- category transition wins (R5, R6).
       IF result_row->'observed' IS NOT NULL AND result_row->'observed'<>'null'::jsonb AND
         jsonb_typeof(result_row->'observed')='object' THEN
-        UPDATE cc.users u SET custom_schemas=u.custom_schemas||(result_row->'observed'),
-          custom_schemas_changed_at=p_observed_at
-          WHERE u.customer_id=p_customer AND u.user_id=user_key;
+        WITH next AS (
+          SELECT (u.custom_schemas-COALESCE(covered,'{}'::text[]))||(result_row->'observed') AS value
+          FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id=user_key
+        )
+        UPDATE cc.users u SET custom_schemas=n.value,custom_schemas_changed_at=p_observed_at
+          FROM next n
+          WHERE u.customer_id=p_customer AND u.user_id=user_key AND
+            u.last_entity_sync<=p_observed_at AND
+            (u.custom_schemas_changed_at IS NULL OR u.custom_schemas_changed_at<=p_observed_at) AND
+            u.custom_schemas IS DISTINCT FROM n.value;
+        GET DIAGNOSTICS accepted=ROW_COUNT;
+        IF accepted>0 THEN changed:=changed||jsonb_build_array(user_key); END IF;
       END IF;
-      changed:=changed||jsonb_build_array(user_key);
     ELSIF result_row->>'outcome'='failed' THEN
       UPDATE cc.user_attribute_preview_targets t SET outcome='failed',
         failure=COALESCE(result_row->>'failure','request-failed'),
@@ -384,9 +421,6 @@ BEGIN
   UPDATE cc.user_attribute_update_jobs SET write_started_at=COALESCE(write_started_at,now_at),
     write_finished_at=COALESCE(write_finished_at,now_at),
     failure_reason=COALESCE(p_failure,failure_reason) WHERE job_id=p_job;
-  IF p_failure IS NOT NULL THEN
-    UPDATE cc.jobs SET failure=COALESCE(failure,p_failure) WHERE job_id=p_job;
-  END IF;
   PERFORM cc.refresh_user_attribute_counters(p_job);
   SELECT count(*) INTO left_over FROM cc.user_attribute_preview_targets t
     WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND
@@ -394,7 +428,7 @@ BEGIN
   status_after:=(SELECT j.status FROM cc.jobs j WHERE j.job_id=p_job);
   PERFORM cc.record_job_change(p_job,false);
   RETURN jsonb_build_object('outcome','settled','status',status_after,'changed',changed,
-    'removed',removed,'remaining',left_over>0);
+    'removed',removed,'remaining',left_over>0,'ignored',ignored);
 END;
 $$;
 
@@ -403,7 +437,7 @@ $$;
 CREATE FUNCTION cc.finish_user_attribute_job(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
   p_failure text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE job cc.jobs; detail cc.user_attribute_update_jobs; status_after text;
+DECLARE job cc.jobs; detail cc.user_attribute_update_jobs; status_after text; now_at timestamptz;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR
     (p_failure IS NOT NULL AND NOT cc.job_failure_known(p_failure)) THEN
@@ -415,8 +449,11 @@ BEGIN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  -- R7: only the live owner finishes the job. An expired attempt waits for its recovery.
   IF detail.job_id IS NULL OR detail.dispatch_token IS DISTINCT FROM p_token OR
-    detail.attempt IS DISTINCT FROM p_attempt THEN
+    detail.attempt IS DISTINCT FROM p_attempt OR detail.attempt_expires_at IS NULL OR
+    detail.attempt_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   IF job.status<>'running' THEN
@@ -484,7 +521,8 @@ BEGIN
     RETURN jsonb_build_object('outcome','busy');
   END IF;
   SELECT min(t.verify_after) INTO due FROM cc.user_attribute_preview_targets t
-    WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND t.outcome='unknown';
+    WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND t.outcome='unknown' AND
+      t.verify_count<3;
   SELECT * INTO connection FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
   IF connection.credential_id IS NOT NULL THEN
     SELECT c.envelope INTO envelope FROM cc.google_credentials c WHERE c.id=connection.credential_id;
@@ -497,18 +535,22 @@ BEGIN
     WHERE job_id=p_job;
   WITH claimed AS (
     UPDATE cc.user_attribute_preview_targets t SET verify_attempt=p_attempt,
-      verify_lease_expires_at=now_at+interval '10 minutes',updated_at=now_at
+      verify_lease_expires_at=now_at+interval '10 minutes',verify_count=verify_count+1,updated_at=now_at
     WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND t.outcome='unknown' AND
+      -- Three automatic passes bound the loop, so an unprovable operation stays for a person.
+      t.verify_count<3 AND
       t.verify_after IS NOT NULL AND t.verify_after<=now_at AND
       (p_ordinals IS NULL OR
         t.ordinal IN (SELECT (e.value)::integer FROM jsonb_array_elements(p_ordinals) e)) AND
       t.ordinal IN (SELECT o.ordinal FROM cc.user_attribute_preview_targets o
         WHERE o.preview_id=preview.preview_id AND o.disposition='eligible' AND o.outcome='unknown' AND
-          o.verify_after IS NOT NULL AND o.verify_after<=now_at ORDER BY o.ordinal LIMIT p_limit)
+          o.verify_count<3 AND o.verify_after IS NOT NULL AND o.verify_after<=now_at
+          ORDER BY o.ordinal LIMIT p_limit)
     RETURNING t.ordinal
   ) SELECT jsonb_agg(k.ordinal ORDER BY k.ordinal) INTO rows_out FROM claimed k;
   SELECT count(*) INTO remaining FROM cc.user_attribute_preview_targets t
-    WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND t.outcome='unknown';
+    WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND t.outcome='unknown' AND
+      t.verify_count<3;
   RETURN jsonb_build_object('outcome','claimed','generation',connection.generation,
     'credentialId',connection.credential_id,'envelope',envelope,'source',preview.source,
     'mask',COALESCE((SELECT jsonb_agg(DISTINCT v.schema_name ORDER BY v.schema_name)
@@ -528,10 +570,12 @@ END;
 $$;
 
 -- 12. Every pending user of a job becomes skipped, or cancelled when the header holds a cancel
--- request. The complete set locks first, in ordinal order, so the update never waits.
+-- request. The complete set locks first, in ordinal order, so the update never waits. A row that the
+-- claim marked dispatched without a released send gate never left the worker, so it settles the same
+-- way as a pending row (B section 7.4, R8).
 CREATE FUNCTION cc.skip_user_attribute_pending(p_job uuid,p_reason text) RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
-DECLARE skipped integer; requested boolean; preview uuid;
+DECLARE skipped integer; requested boolean; preview uuid; unsent integer;
 BEGIN
   IF p_reason NOT IN ('cancelled','interrupted','interrupted-unknown') THEN
     RAISE EXCEPTION 'The value job skip reason is invalid.' USING ERRCODE='22023';
@@ -542,7 +586,8 @@ BEGIN
   END IF;
   SELECT cancel_requested_at IS NOT NULL INTO requested FROM cc.jobs j WHERE j.job_id=p_job;
   PERFORM 1 FROM cc.user_attribute_preview_targets t WHERE t.preview_id=preview AND
-    t.disposition='eligible' AND COALESCE(t.outcome,'pending')='pending'
+    t.disposition='eligible' AND (COALESCE(t.outcome,'pending')='pending' OR
+      (t.outcome='dispatched' AND t.sent_at IS NULL))
     ORDER BY t.ordinal FOR UPDATE;
   WITH changed AS (
     UPDATE cc.user_attribute_preview_targets t SET
@@ -554,15 +599,26 @@ BEGIN
       COALESCE(t.outcome,'pending')='pending'
     RETURNING t.ordinal
   ) SELECT count(*) INTO skipped FROM changed;
+  -- A claimed row without a released send gate is proven unsent, so it stops like a pending row.
+  WITH changed AS (
+    UPDATE cc.user_attribute_preview_targets t SET
+      outcome=CASE WHEN requested OR p_reason='cancelled' THEN 'cancelled' ELSE 'skipped' END,
+      failure=CASE WHEN requested OR p_reason='cancelled' THEN NULL ELSE
+        CASE p_reason WHEN 'interrupted' THEN 'interrupted' ELSE 'network-failure' END END,
+      outcome_reason=NULL,updated_at=clock_timestamp()
+    WHERE t.preview_id=preview AND t.disposition='eligible' AND t.outcome='dispatched' AND
+      t.sent_at IS NULL
+    RETURNING t.ordinal
+  ) SELECT count(*) INTO unsent FROM changed;
+  skipped:=skipped+unsent;
   -- B section 7.4: a user whose envelope may have reached Google stays Unknown, so the read-back
-  -- decides. A cancel that lands after the first envelope therefore never leaves a dispatched row.
-  IF requested OR p_reason='cancelled' THEN
-    UPDATE cc.user_attribute_preview_targets t SET outcome='unknown',
-      failure=COALESCE(t.failure,'interrupted'),outcome_reason='interrupted',
-      verify_after=clock_timestamp()+interval '30 seconds',verify_attempt=NULL,
-      verify_lease_expires_at=NULL,updated_at=clock_timestamp()
-      WHERE t.preview_id=preview AND t.disposition='eligible' AND t.outcome='dispatched';
-  END IF;
+  -- decides. Only a row that the send gate released can have reached Google.
+  UPDATE cc.user_attribute_preview_targets t SET outcome='unknown',
+    failure=COALESCE(t.failure,'interrupted'),outcome_reason='interrupted',
+    verify_after=clock_timestamp()+interval '30 seconds',verify_attempt=NULL,
+    verify_lease_expires_at=NULL,updated_at=clock_timestamp()
+    WHERE t.preview_id=preview AND t.disposition='eligible' AND t.outcome='dispatched' AND
+      t.sent_at IS NOT NULL;
   RETURN skipped;
 END;
 $$;
@@ -613,8 +669,8 @@ BEGIN
           'dispatchToken',token,'correlationId',job.correlation_id,'targetCount',job.target_count,
           'kind',job.kind);
         PERFORM cc.record_job_change(job.job_id,true);
-      ELSIF detail.dispatch_count>=3 AND detail.start_deadline_at IS NOT NULL AND
-        detail.start_deadline_at<=now_at THEN
+      ELSIF detail.dispatch_count>=3 AND (detail.start_deadline_at IS NULL OR
+        detail.start_deadline_at<=now_at) THEN
         PERFORM cc.skip_user_attribute_pending(job.job_id,'interrupted');
         PERFORM cc.refresh_user_attribute_counters(job.job_id);
         UPDATE cc.jobs SET status='failed',failure='orchestration-unavailable',finished_at=now_at
@@ -623,14 +679,29 @@ BEGIN
       END IF;
       CONTINUE;
     END IF;
-    -- A lost runner after its first claim: its dispatched users become Unknown and the next attempt
-    -- reads them back (B section 7.3). The read-back starts 30 seconds after the lost answer.
+    -- A lost runner after its first claim no longer owns the job (R7).
+    UPDATE cc.user_attribute_update_jobs SET attempt=NULL,attempt_expires_at=NULL
+      WHERE job_id=job.job_id;
+    -- A row that the send gate released may have reached Google, so it becomes Unknown and the next
+    -- attempt reads it back (B section 7.3). A row without that proof never left the worker, so it
+    -- goes back to pending for the replacement envelope (R8).
     UPDATE cc.user_attribute_preview_targets t SET outcome='unknown',
-      failure=COALESCE(t.failure,'network-failure'),outcome_reason='interrupted',
+      failure=COALESCE(t.failure,'interrupted'),outcome_reason='interrupted',
       verify_after=now_at+interval '30 seconds',verify_attempt=NULL,verify_lease_expires_at=NULL,
-      updated_at=now_at
-      WHERE t.preview_id=detail.preview_id AND t.disposition='eligible' AND t.outcome='dispatched';
+      attempt=NULL,attempt_expires_at=NULL,updated_at=now_at
+      WHERE t.preview_id=detail.preview_id AND t.disposition='eligible' AND t.outcome='dispatched'
+        AND t.sent_at IS NOT NULL;
+    UPDATE cc.user_attribute_preview_targets t SET outcome='pending',attempt=NULL,
+      attempt_expires_at=NULL,updated_at=now_at
+      WHERE t.preview_id=detail.preview_id AND t.disposition='eligible' AND t.outcome='dispatched'
+        AND t.sent_at IS NULL;
     PERFORM cc.refresh_user_attribute_counters(job.job_id);
+    -- R4: a replacement start keeps its own startup window, so a recovery run before it expires
+    -- consumes no further start (design sections 5.3 and 6.5).
+    IF detail.start_deadline_at IS NOT NULL AND detail.start_deadline_at>now_at THEN
+      PERFORM cc.record_job_change(job.job_id,true);
+      CONTINUE;
+    END IF;
     IF detail.dispatch_count<3 THEN
       UPDATE cc.user_attribute_update_jobs SET dispatch_token=gen_random_uuid(),dispatch_count=dispatch_count+1,
         start_deadline_at=now_at+interval '120 seconds' WHERE job_id=job.job_id
@@ -691,7 +762,7 @@ BEGIN
     RETURN jsonb_build_object('outcome','busy');
   END IF;
   UPDATE cc.user_attribute_preview_targets t SET verify_attempt=p_attempt,
-    verify_lease_expires_at=now_at+interval '120 seconds',updated_at=now_at
+    verify_lease_expires_at=now_at+interval '120 seconds',verify_count=verify_count+1,updated_at=now_at
     WHERE t.preview_id=preview.preview_id AND t.ordinal=target.ordinal;
   RETURN jsonb_build_object('outcome','claimed','ordinal',target.ordinal,
     'mask',COALESCE((SELECT jsonb_agg(DISTINCT v.schema_name ORDER BY v.schema_name)
@@ -704,14 +775,15 @@ $$;
 
 -- 15. The settlement of one reconcile read (B section 7.3). A read-back that proves the value, or
 -- proves a 404, settles the operation. A read that proves nothing keeps it Unknown with its fence
--- cleared, so a person can read again later.
+-- cleared, so a person can read again later. The settlement recomputes the terminal status when no
+-- work is left, so a reconciled job leaves Needs review (R9).
 CREATE FUNCTION cc.settle_user_attribute_verification(p_customer text,p_job uuid,p_attempt uuid,
   p_ordinal integer,p_outcome text,p_failure text,p_reason text,p_google_status integer,
   p_google_reason text,p_observed jsonb,p_observed_at timestamptz) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.user_attribute_update_jobs; preview cc.user_attribute_previews;
   target cc.user_attribute_preview_targets; now_at timestamptz; removed jsonb:='[]'::jsonb;
-  status_after text;
+  changed jsonb:='[]'::jsonb; status_after text; covered text[]; accepted integer; left_over integer;
 BEGIN
   IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL OR p_ordinal IS NULL OR
     p_observed_at IS NULL OR p_outcome NOT IN ('succeeded','failed','unknown') OR
@@ -735,20 +807,35 @@ BEGIN
     WHERE t.preview_id=preview.preview_id AND t.ordinal=p_ordinal AND t.disposition='eligible'
     FOR UPDATE;
   now_at:=clock_timestamp();
+  -- R7: only the live read-back owner settles, and the lease must still hold.
   IF target.preview_id IS NULL OR target.outcome<>'unknown' OR
-    target.verify_attempt IS DISTINCT FROM p_attempt THEN
+    target.verify_attempt IS DISTINCT FROM p_attempt OR target.verify_lease_expires_at IS NULL OR
+    target.verify_lease_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
+  covered:=ARRAY(SELECT DISTINCT v.schema_name FROM cc.user_attribute_target_values v
+    WHERE v.preview_id=preview.preview_id AND v.disposition='eligible' ORDER BY v.schema_name);
   IF p_outcome='succeeded' THEN
     UPDATE cc.user_attribute_preview_targets t SET outcome='succeeded',failure=NULL,
       outcome_reason=NULL,verified_by='read-back',google_status=p_google_status,
       google_reason=p_google_reason,observed_value=p_observed,value_observed_at=p_observed_at,
       verify_after=NULL,verify_attempt=NULL,verify_lease_expires_at=NULL,updated_at=now_at
       WHERE t.preview_id=preview.preview_id AND t.ordinal=p_ordinal;
+    -- R5 and R6: a covered category that the read does not hold is cleared, and a newer cached
+    -- observation or category transition wins.
     IF p_observed IS NOT NULL THEN
-      UPDATE cc.users u SET custom_schemas=u.custom_schemas||p_observed,
-        custom_schemas_changed_at=p_observed_at
-        WHERE u.customer_id=p_customer AND u.user_id=target.user_id;
+      WITH next AS (
+        SELECT (u.custom_schemas-COALESCE(covered,'{}'::text[]))||p_observed AS value
+        FROM cc.users u WHERE u.customer_id=p_customer AND u.user_id=target.user_id
+      )
+      UPDATE cc.users u SET custom_schemas=n.value,custom_schemas_changed_at=p_observed_at
+        FROM next n
+        WHERE u.customer_id=p_customer AND u.user_id=target.user_id AND
+          u.last_entity_sync<=p_observed_at AND
+          (u.custom_schemas_changed_at IS NULL OR u.custom_schemas_changed_at<=p_observed_at) AND
+          u.custom_schemas IS DISTINCT FROM n.value;
+      GET DIAGNOSTICS accepted=ROW_COUNT;
+      IF accepted>0 THEN changed:=jsonb_build_array(target.user_id); END IF;
     END IF;
   ELSIF p_outcome='failed' THEN
     UPDATE cc.user_attribute_preview_targets t SET outcome='failed',
@@ -769,10 +856,20 @@ BEGIN
       WHERE t.preview_id=preview.preview_id AND t.ordinal=p_ordinal;
   END IF;
   PERFORM cc.refresh_user_attribute_counters(p_job);
+  -- R9: the reconciliation decides the terminal status when no operation is left. A job that still
+  -- holds pending or dispatched work keeps its running state, and a cancelled or failed job keeps
+  -- its status.
+  SELECT count(*) INTO left_over FROM cc.user_attribute_preview_targets t
+    WHERE t.preview_id=preview.preview_id AND t.disposition='eligible' AND
+      COALESCE(t.outcome,'pending') IN ('pending','dispatched','unknown');
+  IF left_over=0 AND (SELECT j.status FROM cc.jobs j WHERE j.job_id=p_job) IN ('running','needs-review') THEN
+    UPDATE cc.jobs SET status=cc.user_attribute_terminal_status(p_job),finished_at=COALESCE(finished_at,now_at)
+      WHERE job_id=p_job;
+  END IF;
   status_after:=(SELECT j.status FROM cc.jobs j WHERE j.job_id=p_job);
-  PERFORM cc.record_job_change(p_job,false);
+  PERFORM cc.record_job_change(p_job,true);
   RETURN jsonb_build_object('outcome','settled','status',status_after,'removed',removed,
-    'outcomeOf',(SELECT t.outcome FROM cc.user_attribute_preview_targets t WHERE
+    'changed',changed,'outcomeOf',(SELECT t.outcome FROM cc.user_attribute_preview_targets t WHERE
       t.preview_id=preview.preview_id AND t.ordinal=p_ordinal));
 END;
 $$;
@@ -794,7 +891,9 @@ BEGIN
   IF job.job_id IS NULL OR job.kind<>'user-attribute-update' THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
-  UPDATE cc.user_attribute_update_jobs SET kestra_execution_id=p_execution,start_deadline_at=NULL
+  -- R4: the startup window stays. A recovery run before it expires consumes no further start, and
+  -- the third start still reaches its exhaustion closure.
+  UPDATE cc.user_attribute_update_jobs SET kestra_execution_id=p_execution
     WHERE job_id=p_job AND dispatch_token=p_token;
   GET DIAGNOSTICS changed=ROW_COUNT;
   IF changed=0 THEN
@@ -856,7 +955,8 @@ BEGIN
       FROM cc.user_attribute_preview_targets o WHERE o.preview_id=preview.preview_id AND
       o.disposition='eligible') t WHERE t.number=p_operation_number;
   IF target.preview_id IS NULL OR target.outcome<>'unknown' OR
-    target.verify_attempt IS DISTINCT FROM p_attempt THEN
+    target.verify_attempt IS DISTINCT FROM p_attempt OR target.verify_lease_expires_at IS NULL OR
+    target.verify_lease_expires_at<=clock_timestamp() THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   SELECT * INTO connection FROM cc.google_connection c WHERE c.customer_id=p_customer FOR KEY SHARE;
@@ -901,17 +1001,23 @@ BEGIN
   END IF;
   UPDATE cc.user_attribute_update_jobs SET write_started_at=COALESCE(write_started_at,now_at)
     WHERE job_id=p_job;
+  -- The envelope leaves the worker after this answer, so every row it carries is proven sent. A
+  -- cancel or a recovery can no longer treat those rows as unsent (B section 7.4, R8).
+  UPDATE cc.user_attribute_preview_targets t SET sent_at=now_at,updated_at=now_at
+    WHERE t.preview_id=detail.preview_id AND t.disposition='eligible' AND t.outcome='dispatched' AND
+      t.attempt=p_attempt AND t.sent_at IS NULL;
   RETURN jsonb_build_object('outcome','writing');
 END;
 $$;
 
--- 16c. The lease extension of one multipart round. A long envelope never loses its attempt.
-CREATE FUNCTION cc.extend_user_attribute_attempt(p_customer text,p_job uuid,p_attempt uuid)
+-- 16c. The lease extension of one multipart round. A long envelope never loses its attempt. Only the
+-- live owner extends, so an obsolete runner never renews across a replacement dispatch (R7).
+CREATE FUNCTION cc.extend_user_attribute_attempt(p_customer text,p_job uuid,p_token uuid,p_attempt uuid)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
 DECLARE job cc.jobs; detail cc.user_attribute_update_jobs; now_at timestamptz;
 BEGIN
-  IF p_customer IS NULL OR p_job IS NULL OR p_attempt IS NULL THEN
+  IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL THEN
     RAISE EXCEPTION 'The value job attempt is invalid.' USING ERRCODE='22023';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
@@ -919,7 +1025,9 @@ BEGIN
   SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
   now_at:=clock_timestamp();
   IF job.job_id IS NULL OR job.kind<>'user-attribute-update' OR job.status<>'running' OR
-    detail.attempt IS DISTINCT FROM p_attempt THEN
+    job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token OR
+    detail.attempt IS DISTINCT FROM p_attempt OR detail.attempt_expires_at IS NULL OR
+    detail.attempt_expires_at<=now_at THEN
     RETURN jsonb_build_object('outcome','fenced');
   END IF;
   UPDATE cc.user_attribute_update_jobs SET attempt_expires_at=now_at+interval '10 minutes'
@@ -928,9 +1036,72 @@ BEGIN
 END;
 $$;
 
+-- 16d. The stop of one value job (B sections 7.3 and 7.4). The worker calls it when a fatal auth
+-- answer, a missing credential, or a refused send gate ends the run. A proven-unsent user settles
+-- Skipped, or Cancelled for a cancel. A user whose envelope left stays Unknown for the read-back.
+-- Only the live owner stops the job (R7).
+CREATE FUNCTION cc.stop_user_attribute_job(p_customer text,p_job uuid,p_token uuid,p_attempt uuid,
+  p_failure text,p_cancel boolean) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,cc AS $$
+DECLARE job cc.jobs; detail cc.user_attribute_update_jobs; preview uuid; now_at timestamptz;
+  status_after text; stopped integer; in_flight integer;
+BEGIN
+  IF p_customer IS NULL OR p_job IS NULL OR p_token IS NULL OR p_attempt IS NULL OR
+    p_cancel IS NULL OR (p_failure IS NOT NULL AND NOT cc.job_failure_known(p_failure)) OR
+    (p_cancel AND p_failure IS NOT NULL) THEN
+    RAISE EXCEPTION 'The value job stop is invalid.' USING ERRCODE='22023';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('cc.job-admission:'||p_customer)::bigint);
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job AND j.customer_id=p_customer FOR UPDATE;
+  IF job.job_id IS NULL OR job.kind<>'user-attribute-update' THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  SELECT u.preview_id INTO preview FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job;
+  PERFORM 1 FROM cc.user_attribute_preview_targets t WHERE t.preview_id=preview AND
+    t.disposition='eligible' ORDER BY t.ordinal FOR UPDATE;
+  SELECT * INTO job FROM cc.jobs j WHERE j.job_id=p_job FOR UPDATE;
+  SELECT * INTO detail FROM cc.user_attribute_update_jobs u WHERE u.job_id=p_job FOR UPDATE;
+  now_at:=clock_timestamp();
+  IF job.status<>'running' OR job.finished_at IS NOT NULL OR detail.dispatch_token IS DISTINCT FROM p_token
+    OR detail.attempt IS DISTINCT FROM p_attempt OR detail.attempt_expires_at IS NULL OR
+    detail.attempt_expires_at<=now_at THEN
+    RETURN jsonb_build_object('outcome','fenced');
+  END IF;
+  -- Every row this attempt has not released through its send gate never left the worker.
+  WITH changed AS (
+    UPDATE cc.user_attribute_preview_targets t SET
+      outcome=CASE WHEN p_cancel THEN 'cancelled' ELSE 'skipped' END,
+      failure=CASE WHEN p_cancel THEN NULL ELSE COALESCE(p_failure,'interrupted') END,
+      outcome_reason=NULL,answered_at=now_at,updated_at=now_at
+    WHERE t.preview_id=preview AND t.disposition='eligible' AND
+      COALESCE(t.outcome,'pending') IN ('pending','dispatched') AND t.sent_at IS NULL
+    RETURNING t.ordinal
+  ) SELECT count(*) INTO stopped FROM changed;
+  WITH changed AS (
+    UPDATE cc.user_attribute_preview_targets t SET outcome='unknown',
+      failure=COALESCE(t.failure,'interrupted'),outcome_reason='interrupted',
+      verify_after=now_at+interval '30 seconds',verify_attempt=NULL,verify_lease_expires_at=NULL,
+      updated_at=now_at
+    WHERE t.preview_id=preview AND t.disposition='eligible' AND t.outcome='dispatched' AND
+      t.sent_at IS NOT NULL
+    RETURNING t.ordinal
+  ) SELECT count(*) INTO in_flight FROM changed;
+  PERFORM cc.refresh_user_attribute_counters(p_job);
+  status_after:=cc.user_attribute_terminal_status(p_job);
+  UPDATE cc.jobs SET status=status_after,finished_at=now_at,
+    failure=CASE WHEN p_cancel THEN failure ELSE COALESCE(failure,p_failure) END
+    WHERE job_id=p_job;
+  PERFORM cc.record_job_change(p_job,true);
+  RETURN jsonb_build_object('outcome','stopped','status',status_after,'stopped',stopped,
+    'inFlight',in_flight);
+END;
+$$;
+
 REVOKE ALL ON FUNCTION
   cc.begin_user_attribute_write(text,uuid,uuid,uuid),
-  cc.extend_user_attribute_attempt(text,uuid,uuid),
+  cc.extend_user_attribute_attempt(text,uuid,uuid,uuid),
+  cc.stop_user_attribute_job(text,uuid,uuid,uuid,text,boolean),
   cc.user_attribute_terminal_status(uuid),
   cc.refresh_user_attribute_counters(uuid),
   cc.user_attribute_stop_reason(text,uuid,integer,integer,boolean),

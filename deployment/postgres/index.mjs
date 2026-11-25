@@ -434,7 +434,8 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
       await client.query(`GRANT SELECT ON cc.user_attribute_preview_targets TO ${role};
         GRANT EXECUTE ON FUNCTION
         cc.begin_user_attribute_write(text,uuid,uuid,uuid),
-        cc.extend_user_attribute_attempt(text,uuid,uuid),
+        cc.extend_user_attribute_attempt(text,uuid,uuid,uuid),
+        cc.stop_user_attribute_job(text,uuid,uuid,uuid,text,boolean),
         cc.user_attribute_terminal_status(uuid),
         cc.refresh_user_attribute_counters(uuid),
         cc.user_attribute_stop_reason(text,uuid,integer,integer,boolean),

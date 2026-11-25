@@ -60,17 +60,21 @@ function database(options = {}) {
   const settlements = [];
   const verifications = [];
   const observations = [];
+  const stops = [];
   const claims = [...(options.claims ?? [])];
   const readBacks = [...(options.readBacks ?? [])];
   const finished = [...(options.finished ?? [])];
   const users = new Map();
   for (const claim of options.claims ?? [])
     for (const one of claim.users ?? []) users.set(one.ordinal, one.userId);
+  if (options.read?.user !== undefined)
+    users.set(options.read.user.ordinal, options.read.user.userId);
   return {
     calls,
     settlements,
     verifications,
     observations,
+    stops,
     get pending() {
       return claims.length;
     },
@@ -147,7 +151,25 @@ function database(options = {}) {
                   status:
                     values[4] === 'unknown' ? 'needs-review' : 'completed',
                   removed,
+                  changed:
+                    values[4] === 'succeeded' ? [users.get(values[3])] : [],
                   outcomeOf: values[4],
+                },
+              },
+            ],
+          };
+        }
+        case 'stop_user_attribute_job': {
+          stops.push(values);
+          return {
+            rows: [
+              {
+                result: {
+                  outcome: 'stopped',
+                  status:
+                    values[5] === true
+                      ? 'cancelled'
+                      : (options.stopStatus ?? 'failed'),
                 },
               },
             ],
@@ -471,7 +493,7 @@ test('a 404 settles Failed `not-found`, removes the user, and names the drafted 
   );
 });
 
-test('a definitive envelope failure settles every part Failed with that code', async () => {
+test('a fatal auth envelope failure stops the job and skips every unsent part', async () => {
   const db = database({
     claims: [
       claimed([person(0, 'u1', 'A'), person(1, 'u2', 'B')]),
@@ -482,14 +504,61 @@ test('a definitive envelope failure settles every part Failed with that code', a
     throw Object.assign(new Error('forbidden'), { code: 'permission-denied' });
   });
   const { instance } = jobs({ db, writer: source });
-  await instance.run(request, AbortSignal.timeout(5_000));
-  assert.deepEqual(
-    db.settlements[0].map((result) => [result.outcome, result.failure]),
-    [
-      ['failed', 'permission-denied'],
-      ['failed', 'permission-denied'],
-    ],
-  );
+  const answer = await instance.run(request, AbortSignal.timeout(5_000));
+  assert.deepEqual(answer, { outcome: 'settled', status: 'failed' });
+  // A fatal auth failure stops the job before another envelope, and the claimed users never leave.
+  assert.equal(source.calls.length, 1);
+  assert.equal(db.settlements.length, 0);
+  assert.equal(db.stops.length, 1);
+  assert.deepEqual(db.stops[0].slice(0, 3), [customerId, jobId, dispatchToken]);
+  assert.equal(db.stops[0][4], 'permission-denied');
+  assert.equal(db.stops[0][5], false);
+});
+
+test('a returned auth part stops the job after its envelope settles', async () => {
+  const db = database({
+    claims: [claimed([person(0, 'u1', 'A')]), claimed([])],
+  });
+  const source = writer(() => ({
+    succeeded: new Map(),
+    failed: new Map([
+      [
+        'u1',
+        {
+          status: 403,
+          reason: 'forbidden',
+          kind: 'auth',
+          attempts: { quota: 0, transient: 0 },
+          body: null,
+        },
+      ],
+    ]),
+  }));
+  const { instance } = jobs({ db, writer: source });
+  const answer = await instance.run(request, AbortSignal.timeout(5_000));
+  assert.deepEqual(answer, { outcome: 'settled', status: 'failed' });
+  // The part settles Failed with its Google code, and the job stops with the same code.
+  assert.equal(db.settlements[0][0].outcome, 'failed');
+  assert.equal(db.settlements[0][0].failure, 'permission-denied');
+  assert.equal(db.stops[0][4], 'permission-denied');
+  assert.equal(db.stops[0][5], false);
+});
+
+test('a credential that cannot open stops the job instead of leaving the claim dispatched', async () => {
+  const db = database({ claims: [claimed([person(0, 'u1', 'A')])] });
+  const { instance } = jobs({
+    db,
+    cipher: {
+      open: () => {
+        throw new Error('sealed');
+      },
+    },
+  });
+  const answer = await instance.run(request, AbortSignal.timeout(5_000));
+  assert.deepEqual(answer, { outcome: 'settled', status: 'failed' });
+  assert.equal(db.stops.length, 1);
+  assert.equal(db.stops[0][4], 'key-unavailable');
+  assert.equal(db.stops[0][5], false);
 });
 
 test('an envelope that may have left stays Unknown for the read-back', async () => {
@@ -506,9 +575,11 @@ test('an envelope that may have left stays Unknown for the read-back', async () 
   assert.deepEqual(answer, { outcome: 'settled', status: 'needs-review' });
   assert.equal(db.settlements[0][0].outcome, 'unknown');
   assert.equal(db.settlements[0][0].failure, 'network-failure');
+  // The operation evidence never becomes a job stop (R2).
+  assert.equal(db.stops.length, 0);
 });
 
-test('the send gate fences the envelope after a cancel', async () => {
+test('a refused send gate ends the job as a cancel with no settlement', async () => {
   const db = database({
     claims: [claimed([person(0, 'u1', 'A')]), claimed([])],
     fenced: true,
@@ -519,9 +590,108 @@ test('the send gate fences the envelope after a cancel', async () => {
   }));
   const { instance } = jobs({ db, writer: source });
   const answer = await instance.run(request, AbortSignal.timeout(5_000));
-  assert.deepEqual(answer, { outcome: 'fenced' });
-  // The refused gate sends nothing and settles nothing.
+  assert.deepEqual(answer, { outcome: 'settled', status: 'cancelled' });
+  // The refused gate sends nothing, settles nothing, and ends the job as a cancel (B section 7.4).
+  assert.equal(source.calls.length, 1);
   assert.equal(db.settlements.length, 0);
+  assert.equal(db.stops.length, 1);
+  assert.equal(db.stops[0][4], null);
+  assert.equal(db.stops[0][5], true);
+});
+
+test('a transient retry makes every later answer ambiguous (B section 7.3)', async () => {
+  const failure = (overrides) => ({
+    status: 400,
+    reason: 'invalid',
+    kind: 'rejected',
+    attempts: { quota: 0, transient: 0 },
+    body: null,
+    ...overrides,
+  });
+  const run = async (failed) => {
+    const db = database({
+      claims: [claimed([person(0, 'u1', 'A')]), claimed([])],
+      readBacks: [{ outcome: 'done', status: 'needs-review' }],
+      doneStatus: 'needs-review',
+    });
+    const source = writer(() => ({
+      succeeded: new Map(),
+      failed: new Map([['u1', failed]]),
+    }));
+    const { instance } = jobs({ db, writer: source });
+    await instance.run(request, AbortSignal.timeout(5_000));
+    return db.settlements[0][0];
+  };
+  // A first-attempt refusal is definitive.
+  const refused = await run(failure({}));
+  assert.equal(refused.outcome, 'failed');
+  assert.equal(refused.failure, 'request-failed');
+  assert.equal(refused.googleReason, 'invalid');
+  // The same answer after a transient retry may follow an applied request.
+  const retried = await run(failure({ attempts: { quota: 0, transient: 1 } }));
+  assert.equal(retried.outcome, 'unknown');
+  // A retried 404 keeps the user in the cache for the read-back.
+  const retriedMissing = await run(
+    failure({
+      kind: 'not-found',
+      status: 404,
+      attempts: { quota: 0, transient: 2 },
+    }),
+  );
+  assert.equal(retriedMissing.outcome, 'unknown');
+  assert.notEqual(retriedMissing.reason, 'Google could not find this user.');
+  assert.equal(retriedMissing.googleStatus, 404);
+  // A first-attempt 404 settles Failed `not-found`.
+  const missing = await run(failure({ kind: 'not-found', status: 404 }));
+  assert.equal(missing.outcome, 'failed');
+  assert.equal(missing.failure, 'not-found');
+  // The exhausted quota names its budget.
+  const quota = await run(
+    failure({ kind: 'quota', status: 429, reason: 'rateLimitExceeded' }),
+  );
+  assert.equal(quota.outcome, 'failed');
+  assert.equal(quota.failure, 'quota');
+  // An unreadable or aborted answer proves nothing.
+  assert.equal(
+    (await run(failure({ kind: 'invalid-response', status: 0 }))).outcome,
+    'unknown',
+  );
+  assert.equal(
+    (await run(failure({ kind: 'aborted', status: 0 }))).outcome,
+    'unknown',
+  );
+  // A 409 and a 412 carry their Google reason.
+  for (const status of [409, 412]) {
+    const answer = await run(failure({ status, reason: 'conditionNotMet' }));
+    assert.equal(answer.outcome, 'failed');
+    assert.equal(answer.googleStatus, status);
+    assert.equal(answer.googleReason, 'conditionNotMet');
+  }
+});
+
+test('a thrown read settles Unknown and clears the read-back claim', async () => {
+  const db = database({
+    claims: [claimed([person(0, 'u1', 'A')]), claimed([])],
+    readBacks: [
+      verified([person(0, 'u1', 'A')]),
+      { outcome: 'done', status: 'needs-review' },
+    ],
+    doneStatus: 'needs-review',
+  });
+  const source = writer((writes) => ({
+    succeeded: new Map(),
+    failed: new Map(),
+  }));
+  const read = reader(() => {
+    throw new Error('read failed');
+  });
+  const { instance } = jobs({ db, writer: source, reader: read });
+  const answer = await instance.run(request, AbortSignal.timeout(5_000));
+  assert.deepEqual(answer, { outcome: 'settled', status: 'needs-review' });
+  const settled = db.settlements.at(-1)[0];
+  assert.equal(settled.outcome, 'unknown');
+  assert.equal(settled.reason, 'verification-failed');
+  assert.equal(settled.verifiedBy, 'read-back');
 });
 
 test('a claim that answers done ends the job without a settlement', async () => {

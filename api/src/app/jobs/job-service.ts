@@ -539,6 +539,7 @@ export class JobService {
     return (
       starts.length > 0 ||
       schemaStarts.length > 0 ||
+      valueStarts.length > 0 ||
       reconciles.length > 0 ||
       failedFiles.length > 0
     );

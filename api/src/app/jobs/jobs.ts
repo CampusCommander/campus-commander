@@ -408,7 +408,8 @@ export function valueOperation(
     operationId: `${displayId}-${operationNumber}`,
     deviceId: String(row['user_id']),
     serialNumber: String(row['primary_email'] ?? ''),
-    orgUnitPath: '',
+    // A user operation carries the organization unit of the cached user, or the root unit.
+    orgUnitPath: String(row['org_unit_path'] ?? '/'),
     field: null,
     operation: 'replace',
     baselineValue: null,
@@ -1089,13 +1090,14 @@ export class Jobs {
   ): Promise<JobOperation> {
     const row = (
       await this.rows(
-        `SELECT t.user_id,t.primary_email,t.outcome,t.outcome_reason,t.google_status,
-          t.google_reason,t.verified_by
+        `SELECT t.user_id,t.primary_email,COALESCE(cu.org_unit_path,'/') AS org_unit_path,
+          t.outcome,t.outcome_reason,t.google_status,t.google_reason,t.verified_by,t.updated_at
           FROM (SELECT o.*,row_number() OVER (ORDER BY o.ordinal) AS number
             FROM cc.user_attribute_preview_targets o
             JOIN cc.user_attribute_update_jobs u ON u.preview_id=o.preview_id
             WHERE u.job_id=$4 AND o.disposition='eligible') t
           JOIN cc.jobs j ON j.job_id=$4
+          LEFT JOIN cc.users cu ON cu.customer_id=j.customer_id AND cu.user_id=t.user_id
           WHERE j.customer_id=$3 AND j.display_id=$5
             AND cc.job_visible($1,$2,$3,j.requested_by) AND t.number=$6
           LIMIT 1`,

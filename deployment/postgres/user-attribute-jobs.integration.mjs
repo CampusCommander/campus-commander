@@ -284,6 +284,38 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
     };
     return answer;
   };
+  /** Every eligible target of one preview, in ordinal order. */
+  const targets = async (previewId) =>
+    (
+      await migrator.query(
+        'SELECT * FROM cc.user_attribute_preview_targets WHERE preview_id=$1 ORDER BY ordinal',
+        [previewId],
+      )
+    ).rows;
+  /** One recovery run of the customer (B section 7.4). */
+  const recover = () =>
+    result('SELECT cc.recover_user_attribute_jobs($1) AS result', [customer]);
+  /** Move the startup window of a job into the past, so its next recovery may dispatch. */
+  const expireStart = (jobId) =>
+    migrator.query(
+      `UPDATE cc.user_attribute_update_jobs SET start_deadline_at=clock_timestamp()-interval '1 second'
+       WHERE job_id=$1`,
+      [jobId],
+    );
+  /** Move the attempt lease of a job into the past, so its recovery may take over. */
+  const expireAttempt = (jobId) =>
+    migrator.query(
+      `UPDATE cc.user_attribute_update_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second'
+       WHERE job_id=$1`,
+      [jobId],
+    );
+  /** Move the read-back fence of one target into the past, so the next claim reads it. */
+  const expireReadBack = (previewId, ordinal = 0) =>
+    migrator.query(
+      `UPDATE cc.user_attribute_preview_targets SET verify_after=clock_timestamp()-interval '1 second'
+       WHERE preview_id=$1 AND ordinal=$2`,
+      [previewId, ordinal],
+    );
 
   try {
     await check(
@@ -732,9 +764,15 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
       assert.equal(recovered.starts[0].kind, 'user-attribute-update');
       assert.notEqual(recovered.starts[0].dispatchToken, job.token);
       assert.equal((await header(job.jobId)).dispatch_count, 2);
-      // A lost runner after its first claim becomes Unknown and the read-back owns the user.
+      // A lost runner after its first claim: the envelope left through the send gate, so the user
+      // becomes Unknown and the read-back owns it (B section 7.3, R8).
       const attempt = randomUUID();
       await claim(job.jobId, recovered.starts[0].dispatchToken, attempt);
+      const gate = await result(
+        'SELECT cc.begin_user_attribute_write($1,$2,$3,$4) AS result',
+        [customer, job.jobId, recovered.starts[0].dispatchToken, attempt],
+      );
+      assert.equal(gate.outcome, 'writing', JSON.stringify(gate));
       await migrator.query(
         `UPDATE cc.user_attribute_update_jobs SET attempt_expires_at=clock_timestamp()-interval '1 second'
            WHERE job_id=$1`,
@@ -753,6 +791,420 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
         [job.jobId],
       );
     });
+
+    await check(
+      'K24 R4 a recorded start keeps its 120-second window',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-window-1', requested: 'A' }],
+        });
+        const recorded = await result(
+          'SELECT cc.record_user_attribute_start($1,$2,$3,$4) AS result',
+          [customer, job.jobId, job.token, 'k24-execution-1'],
+        );
+        assert.equal(recorded.outcome, 'recorded', JSON.stringify(recorded));
+        // The window survives the receipt, so a recovery run before it expires consumes no start.
+        assert.notEqual((await header(job.jobId)).start_deadline_at, null);
+        assert.deepEqual((await recover()).starts, []);
+        assert.deepEqual((await recover()).starts, []);
+        assert.equal((await header(job.jobId)).dispatch_count, 1);
+        // The second start runs after the window, and its own window holds the third.
+        await expireStart(job.jobId);
+        const second = await recover();
+        assert.equal(second.starts.length, 1, JSON.stringify(second));
+        assert.equal((await header(job.jobId)).dispatch_count, 2);
+        assert.deepEqual((await recover()).starts, []);
+        await expireStart(job.jobId);
+        const third = await recover();
+        assert.equal(third.starts.length, 1, JSON.stringify(third));
+        assert.equal((await header(job.jobId)).dispatch_count, 3);
+        await result(
+          'SELECT cc.record_user_attribute_start($1,$2,$3,$4) AS result',
+          [
+            customer,
+            job.jobId,
+            third.starts[0].dispatchToken,
+            'k24-execution-3',
+          ],
+        );
+        assert.deepEqual((await recover()).starts, []);
+        // Genuine exhaustion ends the job instead of leaving it running with no start left.
+        await expireStart(job.jobId);
+        assert.deepEqual((await recover()).starts, []);
+        const ended = await header(job.jobId);
+        assert.equal(ended.status, 'failed', JSON.stringify(ended));
+        assert.equal(ended.failure, 'orchestration-unavailable');
+        assert.equal((await targets(job.previewId))[0].outcome, 'skipped');
+      },
+    );
+
+    await check(
+      'K24 R4 a replacement start after a claim keeps its window',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-replacement-1', requested: 'A' }],
+        });
+        await claim(job.jobId, job.token, randomUUID());
+        await expireAttempt(job.jobId);
+        const second = await recover();
+        assert.equal(second.starts.length, 1, JSON.stringify(second));
+        assert.equal((await header(job.jobId)).dispatch_count, 2);
+        // Two immediate runs before the replacement window expires start nothing and keep the job.
+        assert.deepEqual((await recover()).starts, []);
+        assert.deepEqual((await recover()).starts, []);
+        assert.equal((await header(job.jobId)).dispatch_count, 2);
+        assert.equal((await header(job.jobId)).status, 'running');
+        await expireStart(job.jobId);
+        const third = await recover();
+        assert.equal(third.starts.length, 1, JSON.stringify(third));
+        assert.equal((await header(job.jobId)).dispatch_count, 3);
+        await expireStart(job.jobId);
+        assert.deepEqual((await recover()).starts, []);
+        assert.equal((await header(job.jobId)).status, 'failed');
+      },
+    );
+
+    await check(
+      'K24 R5 a clear drops the covered category and keeps an unrelated one',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-clear-1', current: 'old', requested: null }],
+        });
+        await storeUser('k24-clear-1', {
+          StudentInfo: { Homeroom: 'old' },
+          StaffInfo: { Title: 'keep' },
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        const settled = await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [
+            {
+              ordinal: 0,
+              outcome: 'succeeded',
+              failure: null,
+              reason: null,
+              googleStatus: 200,
+              googleReason: null,
+              verifiedBy: 'write-response',
+              // Google omits a category after its last value clears.
+              observed: {},
+            },
+          ],
+          new Date().toISOString(),
+        );
+        assert.deepEqual(
+          settled.changed,
+          ['k24-clear-1'],
+          JSON.stringify(settled),
+        );
+        const cached = await customSchemas('k24-clear-1');
+        assert.equal(cached.custom_schemas.StudentInfo, undefined);
+        assert.equal(cached.custom_schemas.StaffInfo.Title, 'keep');
+      },
+    );
+
+    await check(
+      'K24 R5 the reconcile read-back drops the covered category too',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-clear-2', current: 'old', requested: null }],
+        });
+        await storeUser('k24-clear-2', {
+          StudentInfo: { Homeroom: 'old' },
+          StaffInfo: { Title: 'keep' },
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 0 }, 'unknown')],
+          new Date().toISOString(),
+        );
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        const settled = await result(
+          'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+          [
+            customer,
+            job.jobId,
+            verify,
+            0,
+            'succeeded',
+            null,
+            null,
+            200,
+            null,
+            JSON.stringify({}),
+            new Date().toISOString(),
+          ],
+        );
+        assert.equal(settled.outcomeOf, 'succeeded', JSON.stringify(settled));
+        assert.deepEqual(settled.changed, ['k24-clear-2']);
+        const cached = await customSchemas('k24-clear-2');
+        assert.equal(cached.custom_schemas.StudentInfo, undefined);
+        assert.equal(cached.custom_schemas.StaffInfo.Title, 'keep');
+      },
+    );
+
+    await check(
+      'K24 R6 an older settlement never overwrites a newer cached row',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-stale-1', current: 'old', requested: 'new' }],
+        });
+        await storeUser('k24-stale-1', {
+          StudentInfo: { Homeroom: 'newer-inventory' },
+        });
+        await migrator.query(
+          `UPDATE cc.users SET last_entity_sync=clock_timestamp()
+           WHERE customer_id=$1 AND user_id='k24-stale-1'`,
+          [customer],
+        );
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        const settled = await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [
+            {
+              ordinal: 0,
+              outcome: 'succeeded',
+              failure: null,
+              reason: null,
+              googleStatus: 200,
+              googleReason: null,
+              verifiedBy: 'write-response',
+              observed: { StudentInfo: { Homeroom: 'older-response' } },
+            },
+          ],
+          new Date(Date.now() - 3_600_000).toISOString(),
+        );
+        // The observation is older than the cached row, so it settles the user but changes no cache
+        // row and publishes nothing (R6).
+        assert.deepEqual(settled.changed, [], JSON.stringify(settled));
+        const cached = await customSchemas('k24-stale-1');
+        assert.equal(
+          cached.custom_schemas.StudentInfo.Homeroom,
+          'newer-inventory',
+        );
+      },
+    );
+
+    await check('K24 R7 an expired attempt settles nothing', async () => {
+      const job = await admitted({
+        users: [{ userId: 'k24-expired-1', requested: 'A' }],
+      });
+      const attempt = randomUUID();
+      await claim(job.jobId, job.token, attempt);
+      await expireAttempt(job.jobId);
+      const settled = await settle(
+        job.jobId,
+        job.token,
+        attempt,
+        [won({ ordinal: 0 }, 'succeeded')],
+        new Date().toISOString(),
+      );
+      assert.equal(settled.outcome, 'fenced', JSON.stringify(settled));
+      assert.equal((await target(job.previewId)).outcome, 'dispatched');
+    });
+
+    await check(
+      'K24 R7 a target the attempt never claimed settles nothing',
+      async () => {
+        const job = await admitted({
+          users: [
+            { userId: 'k24-unowned-1', requested: 'A' },
+            { userId: 'k24-unowned-2', requested: 'A' },
+          ],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt, 1);
+        const settled = await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 1 }, 'succeeded')],
+          new Date().toISOString(),
+        );
+        assert.equal(settled.ignored, 1, JSON.stringify(settled));
+        assert.equal((await target(job.previewId, 1)).outcome, null);
+        assert.equal((await target(job.previewId, 0)).outcome, 'dispatched');
+      },
+    );
+
+    await check(
+      'K24 R7 an obsolete attempt cannot renew across a replacement dispatch',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-obsolete-1', requested: 'A' }],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await expireAttempt(job.jobId);
+        const recovered = await recover();
+        assert.equal(recovered.starts.length, 1, JSON.stringify(recovered));
+        const extended = await result(
+          'SELECT cc.extend_user_attribute_attempt($1,$2,$3,$4) AS result',
+          [customer, job.jobId, job.token, attempt],
+        );
+        assert.equal(extended.outcome, 'fenced', JSON.stringify(extended));
+        const replacement = randomUUID();
+        const claimed = await claim(
+          job.jobId,
+          recovered.starts[0].dispatchToken,
+          replacement,
+        );
+        assert.equal(claimed.outcome, 'claimed', JSON.stringify(claimed));
+        assert.equal(claimed.users.length, 1);
+      },
+    );
+
+    await check(
+      'K24 R8 a cancel before the send gate cancels the unsent claim',
+      async () => {
+        const job = await admitted({
+          users: [
+            { userId: 'k24-unsent-1', requested: 'A' },
+            { userId: 'k24-unsent-2', requested: 'A' },
+          ],
+        });
+        await claim(job.jobId, job.token, randomUUID());
+        const cancelled = await result(
+          'SELECT cc.request_job_cancel($1,$2,$3,$4,$5) AS result',
+          [manager, 1, customer, job.displayId, randomUUID()],
+        );
+        assert.equal(cancelled.outcome, 'requested', JSON.stringify(cancelled));
+        // No envelope left the worker, so the request ends the job at once with no Unknown row.
+        const ended = await header(job.jobId);
+        assert.equal(ended.status, 'cancelled', JSON.stringify(ended));
+        const rows = await targets(job.previewId);
+        assert.deepEqual(
+          rows.map((row) => row.outcome),
+          ['cancelled', 'cancelled'],
+        );
+        assert.equal(ended.unknown, 0);
+      },
+    );
+
+    await check(
+      'K24 R9 a reconcile decides the terminal status of the job',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-reconcile-1', current: 'A', requested: 'B' }],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 0 }, 'unknown')],
+          new Date().toISOString(),
+        );
+        const done = await finish(job.jobId, job.token, attempt);
+        assert.equal(done.status, 'needs-review', JSON.stringify(done));
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        const settled = await result(
+          'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+          [
+            customer,
+            job.jobId,
+            verify,
+            0,
+            'succeeded',
+            null,
+            null,
+            200,
+            null,
+            JSON.stringify({ StudentInfo: { Homeroom: 'B' } }),
+            new Date().toISOString(),
+          ],
+        );
+        // The settlement itself leaves Needs review, so the caller needs no second finish (R9).
+        assert.equal(settled.status, 'completed', JSON.stringify(settled));
+        const ended = await header(job.jobId);
+        assert.equal(ended.status, 'completed', JSON.stringify(ended));
+        assert.equal(ended.unknown, 0);
+        assert.equal(ended.succeeded, 1);
+      },
+    );
+
+    await check(
+      'K24 every new function denies PUBLIC and allows the runtime role',
+      async () => {
+        const names = [
+          'user_attribute_terminal_status',
+          'refresh_user_attribute_counters',
+          'user_attribute_stop_reason',
+          'user_attribute_work_fields',
+          'user_attribute_work_row',
+          'claim_user_attribute_updates',
+          'settle_user_attribute_updates',
+          'finish_user_attribute_job',
+          'claim_user_attribute_verification',
+          'skip_user_attribute_pending',
+          'recover_user_attribute_jobs',
+          'claim_user_attribute_verification_one',
+          'settle_user_attribute_verification',
+          'record_user_attribute_start',
+          'abandon_user_attribute_start',
+          'read_user_attribute_verification',
+          'begin_user_attribute_write',
+          'extend_user_attribute_attempt',
+          'stop_user_attribute_job',
+        ];
+        const rows = (
+          await migrator.query(
+            `SELECT p.oid::regprocedure::text AS signature,
+              has_function_privilege($1, p.oid, 'EXECUTE') AS runtime,
+              EXISTS(SELECT 1 FROM aclexplode(p.proacl) a WHERE a.grantee=0 AND
+                a.privilege_type='EXECUTE') AS public
+            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname='cc' AND p.proname=ANY($2::text[])
+            ORDER BY p.proname`,
+            [runtime.user, names],
+          )
+        ).rows;
+        assert.equal(rows.length, names.length, JSON.stringify(rows));
+        for (const row of rows) {
+          assert.equal(row.public, false, `${row.signature} grants PUBLIC`);
+          assert.equal(
+            row.runtime,
+            true,
+            `${row.signature} denies the runtime role`,
+          );
+        }
+        // A role that is not the owner and not the runtime role holds no EXECUTE on any of them.
+        const others = (
+          await migrator.query(
+            `SELECT p.oid::regprocedure::text AS signature, r.rolname,
+              has_function_privilege(r.oid, p.oid, 'EXECUTE') AS allowed
+            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            CROSS JOIN pg_roles r
+            WHERE n.nspname='cc' AND p.proname=ANY($2::text[]) AND NOT r.rolsuper AND
+              r.rolname<>current_user AND r.rolname<>$1 AND
+              has_function_privilege(r.oid, p.oid, 'EXECUTE')`,
+            [runtime.user, names],
+          )
+        ).rows;
+        assert.deepEqual(others, [], JSON.stringify(others));
+      },
+    );
   } finally {
     // End every job this suite left open, so the suites after it see a free write slot.
     await migrator

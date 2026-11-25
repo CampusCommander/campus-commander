@@ -86,17 +86,17 @@ function jobFailure(code: string | null | undefined): string {
 }
 
 /**
- * The failure codes that prove no request applied. Every other thrown call may have left the worker,
- * so its parts stay Unknown and the read-back decides (B section 7.3).
+ * The failure codes that stop the job (B sections 7.3 and 7.4). A fatal auth answer repeats for every
+ * later part, so no further envelope leaves the worker and the unsent users settle Skipped. Every
+ * other thrown failure is ambiguous and leaves its parts Unknown for the read-back.
  */
-const definitiveErrors = new Set([
+const stopErrors = new Set([
   'credential-rejected',
   'delegation-not-authorized',
   'api-not-enabled',
   'policy-restricted',
   'permission-denied',
   'scope-mismatch',
-  'quota',
   'key-unavailable',
 ]);
 
@@ -196,9 +196,17 @@ const verificationReadSchema = z.discriminatedUnion('outcome', [
 const verificationSettlementSchema = z.object({
   outcome: z.enum(['settled', 'fenced']),
   status: z.string().optional(),
+  changed: z.array(z.string()).optional(),
   removed: z.array(z.string()).optional(),
   outcomeOf: z.string().optional(),
 });
+
+/** What one envelope answers its runner (B sections 7.3 and 7.4). */
+type EnvelopeAnswer =
+  | { outcome: 'sent' }
+  | { outcome: 'fenced' }
+  | { outcome: 'stop'; failure: string }
+  | { outcome: 'cancel' };
 
 /** One part answer of one envelope. */
 interface PartAnswer {
@@ -399,7 +407,8 @@ export class UserAttributeUpdateJobs {
             claim.generation,
           );
         } catch {
-          return this.stopFor(input, attempt, 'key-unavailable');
+          // No part left the worker. The claimed users settle Skipped and the job ends (B section 7.3).
+          return this.stopJob(input, attempt, 'key-unavailable');
         }
       }
       fields = claim.fields;
@@ -414,9 +423,16 @@ export class UserAttributeUpdateJobs {
         signal,
       );
       batch += 1;
-      if (sent === 'fenced') return { outcome: 'fenced' };
+      if (sent.outcome === 'fenced') return { outcome: 'fenced' };
+      // A fatal auth answer stops the job after its envelope settles (B sections 7.3 and 7.4).
+      if (sent.outcome === 'stop')
+        return this.stopJob(input, attempt, sent.failure);
+      // A cancel that refused the send gate ends the job with its proven-unsent users Cancelled.
+      if (sent.outcome === 'cancel')
+        return this.stopJob(input, attempt, null, true);
     }
-    // 2. The read-back of every Unknown user, no earlier than 30 seconds after its write answer.
+    // 2. The read-back of every Unknown user, no earlier than 30 seconds after its write answer. The
+    // claim bound of three passes ends the automatic loop, and a person reconciles the rest.
     for (;;) {
       if (signal.aborted) return { outcome: 'busy' };
       const verified = verificationSchema.parse(
@@ -463,7 +479,11 @@ export class UserAttributeUpdateJobs {
     return this.finish(input, attempt);
   }
 
-  /** One envelope: one call, and one settlement of its parts (B section 7.3). */
+  /**
+   * One envelope: one call, and one settlement of its parts (B section 7.3). It answers `sent` when
+   * the job continues, `fenced` when this attempt no longer owns the job, and a failure code when a
+   * fatal auth answer stops the job.
+   */
   private async writeEnvelope(
     input: UserAttributeUpdateRequest,
     claim: Claimed,
@@ -472,7 +492,7 @@ export class UserAttributeUpdateJobs {
     batch: number,
     fields: WorkField[],
     signal: AbortSignal,
-  ): Promise<'sent' | 'fenced'> {
+  ): Promise<EnvelopeAnswer> {
     const writes: UserValueWrite[] = claim.users.map((user) => ({
       userId: user.userId,
       customSchemas: user.customSchemas,
@@ -502,56 +522,43 @@ export class UserAttributeUpdateJobs {
         if (failed !== undefined) parts.set(write.userId, { failed });
       }
     } catch (error) {
-      // The gate refused the envelope, so nothing left the worker and the SQL fence already holds.
-      if (error instanceof ValueSendRefused) return 'fenced';
+      // The gate refused the envelope, so nothing left the worker. A cancel ends the job here.
+      if (error instanceof ValueSendRefused) return { outcome: 'cancel' };
       const code =
         error instanceof Error && 'code' in error
           ? jobFailure(String((error as { code: unknown }).code))
           : 'request-failed';
-      if (definitiveErrors.has(code)) {
-        // No part of this envelope reached Google. Each part settles the same failure.
-        await this.settleAndPublish(
-          input,
-          attempt,
-          claim.users.map((user) => ({
-            ordinal: user.ordinal,
-            outcome: 'failed' as const,
-            failure: code,
-            reason: null,
-            googleStatus: null,
-            googleReason: null,
-            verifiedBy: null,
-            observed: null,
-          })),
-          code,
-          batch,
-        );
-        return 'sent';
-      }
+      // A fatal auth failure repeats for every later part, so the job stops (B sections 7.3 and 7.4).
+      if (stopErrors.has(code)) return { outcome: 'stop', failure: code };
       // The envelope may have left the worker. Every part stays Unknown and the read-back decides.
-      await this.settleAndPublish(
+      const settled = await this.settleAndPublish(
         input,
         attempt,
-        claim.users.map((user) => ({
-          ordinal: user.ordinal,
-          outcome: 'unknown' as const,
-          failure: code,
-          reason: null,
-          googleStatus: null,
-          googleReason: null,
-          verifiedBy: null,
-          observed: null,
-        })),
+        claim.users.map((user) => unknownOf(user, code, null, null, null)),
         code,
         batch,
       );
-      return 'sent';
+      return settled === 'fenced' ? { outcome: 'fenced' } : { outcome: 'sent' };
     }
     const results = claim.users.map((user) =>
       classifyPart(user, parts.get(user.userId), fields),
     );
-    await this.settleAndPublish(input, attempt, results, null, batch);
-    return 'sent';
+    // A part answer of kind `auth` stops the job after its batch settles (B section 7.3).
+    const auth = [...parts.values()].find(
+      (part) => part.failed !== undefined && part.failed.kind === 'auth',
+    )?.failed;
+    const stop = auth === undefined ? null : jobFailure(partFailureCode(auth));
+    const settled = await this.settleAndPublish(
+      input,
+      attempt,
+      results,
+      null,
+      batch,
+    );
+    if (settled === 'fenced') return { outcome: 'fenced' };
+    return stop === null
+      ? { outcome: 'sent' }
+      : { outcome: 'stop', failure: stop };
   }
 
   /** One read-back envelope: the masked read of each Unknown user (B section 7.3). */
@@ -578,42 +585,50 @@ export class UserAttributeUpdateJobs {
         this.deadline(signal, this.readTimeoutMilliseconds),
       );
     } catch {
-      // A read that proves nothing leaves every user Unknown (C10). The next pass reads again.
-      return 'sent';
+      // A read that proves nothing leaves every user Unknown (C10), and the claim must not stay
+      // live: the settlement clears it so the next pass reads again.
+      const settled = await this.settleAndPublish(
+        input,
+        attempt,
+        users.map((user) =>
+          unknownOf(
+            user,
+            'network-failure',
+            'verification-failed',
+            null,
+            'read-back',
+          ),
+        ),
+        null,
+        0,
+      );
+      return settled === 'fenced' ? 'fenced' : 'sent';
     }
     const results: UserValueResult[] = users.map((user) => {
-      if (read.missing.includes(user.userId)) return notFound(user);
+      if (read.missing.includes(user.userId))
+        return notFound(user, 'read-back');
       const failed = read.failed.get(user.userId);
-      if (failed !== undefined) {
-        // A 400 `invalid` of the mask and every other refusal prove no value (C10).
-        return {
-          ordinal: user.ordinal,
-          outcome: 'unknown' as const,
-          failure: jobFailure(partFailureCode(failed)),
-          reason: failed.reason,
-          googleStatus: failed.status === 0 ? null : failed.status,
-          googleReason: failed.reason,
-          verifiedBy: 'read-back',
-          observed: null,
-        };
-      }
+      if (failed !== undefined)
+        return classifyFailure(user, failed, 'read-back');
       const observed = read.values.get(user.userId);
-      if (observed === undefined) {
-        return {
-          ordinal: user.ordinal,
-          outcome: 'unknown' as const,
-          failure: 'invalid-response',
-          reason: null,
-          googleStatus: null,
-          googleReason: null,
-          verifiedBy: 'read-back',
-          observed: null,
-        };
-      }
+      if (observed === undefined)
+        return unknownOf(
+          user,
+          'invalid-response',
+          'verification-failed',
+          null,
+          'read-back',
+        );
       return compareUser(user, observed, claim.fields, 'read-back');
     });
-    await this.settleAndPublish(input, attempt, results, null, 0);
-    return 'sent';
+    const settled = await this.settleAndPublish(
+      input,
+      attempt,
+      results,
+      null,
+      0,
+    );
+    return settled === 'fenced' ? 'fenced' : 'sent';
   }
 
   /** Settle one batch and publish what it changed (B section 9). */
@@ -623,9 +638,9 @@ export class UserAttributeUpdateJobs {
     results: UserValueResult[],
     failure: string | null,
     batch: number,
-  ): Promise<void> {
+  ): Promise<'settled' | 'fenced'> {
     const settled = await this.settlement(input, attempt, results, failure);
-    if (settled.outcome !== 'settled') return;
+    if (settled.outcome !== 'settled') return 'fenced';
     await this.publish(
       input.customerId,
       input.jobId,
@@ -633,6 +648,7 @@ export class UserAttributeUpdateJobs {
       settled.changed ?? [],
       settled.removed ?? [],
     );
+    return 'settled';
   }
 
   /** The send gate of one envelope. True only while this attempt owns the job and no cancel landed. */
@@ -657,20 +673,41 @@ export class UserAttributeUpdateJobs {
     attempt: string,
   ): Promise<void> {
     await this.call(
-      'SELECT cc.extend_user_attribute_attempt($1,$2,$3) AS result',
-      [input.customerId, input.jobId, attempt],
+      'SELECT cc.extend_user_attribute_attempt($1,$2,$3,$4) AS result',
+      [input.customerId, input.jobId, input.dispatchToken, attempt],
     );
   }
 
-  private async stopFor(
+  /**
+   * End the job from the worker (B sections 7.3 and 7.4). A cancel settles the proven-unsent users
+   * Cancelled, a fatal failure settles them Skipped, and a user whose envelope left stays Unknown.
+   */
+  private async stopJob(
     input: UserAttributeUpdateRequest,
     attempt: string,
-    failure: string,
+    failure: string | null,
+    cancel = false,
   ): Promise<UserAttributeUpdateAnswer> {
-    const results = await this.settlement(input, attempt, [], failure);
-    if (results.outcome === 'fenced') return { outcome: 'fenced' };
-    const finished = await this.finish(input, attempt, failure);
-    return finished;
+    const answer = z
+      .object({
+        outcome: z.enum(['stopped', 'fenced']),
+        status: z.string().optional(),
+      })
+      .parse(
+        await this.call(
+          'SELECT cc.stop_user_attribute_job($1,$2,$3,$4,$5,$6) AS result',
+          [
+            input.customerId,
+            input.jobId,
+            input.dispatchToken,
+            attempt,
+            failure,
+            cancel,
+          ],
+        ),
+      );
+    if (answer.outcome === 'fenced') return { outcome: 'fenced' };
+    return { outcome: 'settled', status: String(answer.status ?? '') };
   }
 
   private async finish(
@@ -740,29 +777,17 @@ export class UserAttributeUpdateJobs {
       // A read that proves nothing keeps the operation Unknown.
     }
     const result: UserValueResult = missing
-      ? notFound(read.user)
+      ? notFound(read.user, 'read-back')
       : failed !== undefined
-        ? {
-            ordinal: read.user.ordinal,
-            outcome: 'unknown',
-            failure: jobFailure(partFailureCode(failed)),
-            reason: failed.reason,
-            googleStatus: failed.status === 0 ? null : failed.status,
-            googleReason: failed.reason,
-            verifiedBy: 'read-back',
-            observed: null,
-          }
+        ? classifyFailure(read.user, failed, 'read-back')
         : observed === null
-          ? {
-              ordinal: read.user.ordinal,
-              outcome: 'unknown',
-              failure: 'invalid-response',
-              reason: null,
-              googleStatus: null,
-              googleReason: null,
-              verifiedBy: 'read-back',
-              observed: null,
-            }
+          ? unknownOf(
+              read.user,
+              'invalid-response',
+              'verification-failed',
+              null,
+              'read-back',
+            )
           : compareUser(read.user, observed, read.fields, 'read-back');
     const observedAt = await this.clock();
     const settled = verificationSettlementSchema.parse(
@@ -784,20 +809,16 @@ export class UserAttributeUpdateJobs {
       ),
     );
     if (settled.outcome !== 'settled') return { outcome: 'fenced' };
-    if (result.outcome === 'succeeded')
+    // B section 9: publish only what the cache accepted (R6).
+    if (
+      (settled.changed ?? []).length > 0 ||
+      (settled.removed ?? []).length > 0
+    )
       await this.publish(
         input.customerId,
         input.jobId,
         0,
-        [read.user.userId],
-        [],
-      );
-    if ((settled.removed ?? []).length > 0)
-      await this.publish(
-        input.customerId,
-        input.jobId,
-        0,
-        [],
+        settled.changed ?? [],
         settled.removed ?? [],
       );
     return { outcome: 'settled', status: String(settled.status ?? '') };
@@ -857,17 +878,85 @@ function answerOf(claim: Claim | Verification): UserAttributeUpdateAnswer {
   return claim.outcome === 'busy' ? { outcome: 'busy' } : { outcome: 'fenced' };
 }
 
-/** A 404 of a write or a read settles Failed `not-found` and removes the user (B section 13). */
-function notFound(user: WorkUser): UserValueResult {
+/**
+ * A 404 of a write or a read settles Failed `not-found` and removes the user (B section 13). The
+ * drafted text of UM notes question 7 belongs beside the code (design card K24).
+ */
+export function notFound(
+  user: WorkUser,
+  verifiedBy: 'write-response' | 'read-back' | null,
+): UserValueResult {
   return {
     ordinal: user.ordinal,
     outcome: 'failed',
     failure: 'not-found',
-    // The drafted text of UM notes question 7 belongs beside the code (design card K24).
     reason: userAttributeFailureText('not-found'),
     googleStatus: 404,
     googleReason: 'notFound',
-    verifiedBy: 'read-back',
+    verifiedBy,
+    observed: null,
+  };
+}
+
+/** One Unknown result, with the evidence of the answer that proved nothing (B section 7.3). */
+export function unknownOf(
+  user: WorkUser,
+  failure: string,
+  reason: string | null,
+  googleStatus: number | null,
+  verifiedBy: 'write-response' | 'read-back' | null,
+): UserValueResult {
+  return {
+    ordinal: user.ordinal,
+    outcome: 'unknown',
+    failure,
+    reason,
+    googleStatus,
+    googleReason: null,
+    verifiedBy,
+    observed: null,
+  };
+}
+
+/**
+ * One part failure of a write answer or a read-back (B section 7.3). Any failure after a transient
+ * retry may follow an applied request, and an unreadable or aborted answer proves nothing, so those
+ * outcomes stay Unknown for the read-back. A first-attempt refusal is definitive: 404 names a
+ * missing user, `quota` names the exhausted budget, and every other status carries its Google
+ * reason. A read-back failure always proves nothing (C10).
+ */
+export function classifyFailure(
+  user: WorkUser,
+  failed: BatchFailure,
+  verifiedBy: 'write-response' | 'read-back',
+): UserValueResult {
+  const reason = verifiedBy === 'read-back' ? 'verification-failed' : null;
+  const ambiguous =
+    verifiedBy === 'read-back' ||
+    failed.kind === 'invalid-response' ||
+    failed.kind === 'transient' ||
+    failed.kind === 'aborted' ||
+    failed.attempts.transient > 0;
+  if (ambiguous)
+    return {
+      ordinal: user.ordinal,
+      outcome: 'unknown',
+      failure: jobFailure(partFailureCode(failed)),
+      reason,
+      googleStatus: failed.status === 0 ? null : failed.status,
+      googleReason: failed.reason,
+      verifiedBy,
+      observed: null,
+    };
+  if (failed.kind === 'not-found') return notFound(user, verifiedBy);
+  return {
+    ordinal: user.ordinal,
+    outcome: 'failed',
+    failure: jobFailure(partFailureCode(failed)),
+    reason: failed.reason,
+    googleStatus: failed.status === 0 ? null : failed.status,
+    googleReason: failed.reason,
+    verifiedBy,
     observed: null,
   };
 }
@@ -879,43 +968,14 @@ export function classifyPart(
   fields: readonly WorkField[],
 ): UserValueResult {
   if (part === undefined)
-    return {
-      ordinal: user.ordinal,
-      outcome: 'unknown',
-      failure: 'invalid-response',
-      reason: null,
-      googleStatus: null,
-      googleReason: null,
-      verifiedBy: null,
-      observed: null,
-    };
+    return unknownOf(user, 'invalid-response', null, null, null);
   const failed = part.failed;
-  if (failed !== undefined) {
-    // A 404 part is a missing user, and it settles Failed `not-found` (B section 13).
-    if (failed.kind === 'not-found') return notFound(user);
-    return {
-      ordinal: user.ordinal,
-      outcome: 'failed',
-      failure: jobFailure(partFailureCode(failed)),
-      reason: failed.reason,
-      googleStatus: failed.status === 0 ? null : failed.status,
-      googleReason: failed.reason,
-      verifiedBy: null,
-      observed: null,
-    };
-  }
+  if (failed !== undefined)
+    return classifyFailure(user, failed, 'write-response');
   const observation = part.observation;
+  // A 2xx answer that carries no user resource proves no value (C11).
   if (observation === undefined)
-    return {
-      ordinal: user.ordinal,
-      outcome: 'unknown',
-      failure: 'invalid-response',
-      reason: null,
-      googleStatus: 200,
-      googleReason: null,
-      verifiedBy: null,
-      observed: null,
-    };
+    return unknownOf(user, 'invalid-response', null, 200, null);
   const observed = observation.customSchemas ?? {};
   return compareUser(user, observed, fields, 'write-response');
 }
