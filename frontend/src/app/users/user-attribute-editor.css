@@ -16,13 +16,15 @@
 .attr-section h3 {
   margin: 0 0 var(--cc-space-sm);
 }
-/* The approved form rhythm: a 16 px gap between sibling fields, and a 6 px stack padding
-   after the heading's 8 px margin. The flex column keeps the heading gap additive at
-   14 px (composition 5, R2-E). */
+/* The approved form rhythm: a 16 px gap between sibling fields, and a 6 px inset above
+   an outlined control. The plain Yes and No label follows its heading without the inset,
+   so Device program keeps its approved 8 px gap (composition 5, R2-E, R3-C). */
 .field-stack {
   display: flex;
   flex-direction: column;
   gap: var(--cc-space-lg);
+}
+.field-stack-inset {
   padding-block-start: 6px;
 }
 .attribute-field {

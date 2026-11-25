@@ -3,7 +3,7 @@
   @for (section of sections(); track section.schemaName) {
   <section class="attr-section">
     <h3>{{ section.displayName }}</h3>
-    <div class="field-stack">
+    <div class="field-stack" [class.field-stack-inset]="section.inset">
       @for (draft of section.fields; track draft.key) {
       <div
         #firstField
