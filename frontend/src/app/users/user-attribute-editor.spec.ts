@@ -5,6 +5,7 @@ import { vi } from 'vitest';
 import type {
   JobDetail,
   UserAttributeCategory,
+  UserAttributeEdit,
   UserAttributeField,
   UserAttributePreview,
   UserAttributeTarget,
@@ -129,6 +130,79 @@ const user: UserDetail = {
 
 const previewId = '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910';
 
+/** One multi-value field of each info type (B section 12, R1-B). */
+const multiCategories: UserAttributeCategory[] = [
+  {
+    schemaId: 'schema-multi',
+    schemaName: 'Multi',
+    displayName: 'Multi information',
+    etag: '"multi-etag"',
+    fields: [
+      field({
+        fieldId: 'Multi.numbers',
+        fieldName: 'numbers',
+        displayName: 'Numbers',
+        fieldType: 'INT64',
+        multiValued: true,
+      }),
+      field({
+        fieldId: 'Multi.decimals',
+        fieldName: 'decimals',
+        displayName: 'Decimals',
+        fieldType: 'DOUBLE',
+        multiValued: true,
+      }),
+      field({
+        fieldId: 'Multi.answers',
+        fieldName: 'answers',
+        displayName: 'Answers',
+        fieldType: 'BOOL',
+        multiValued: true,
+      }),
+      field({
+        fieldId: 'Multi.dates',
+        fieldName: 'dates',
+        displayName: 'Dates',
+        fieldType: 'DATE',
+        multiValued: true,
+      }),
+      field({
+        fieldId: 'Multi.emails',
+        fieldName: 'emails',
+        displayName: 'Emails',
+        fieldType: 'EMAIL',
+        multiValued: true,
+      }),
+      field({
+        fieldId: 'Multi.phones',
+        fieldName: 'phones',
+        displayName: 'Phones',
+        fieldType: 'PHONE',
+        multiValued: true,
+      }),
+    ],
+    holders: 1,
+    readAt: '2026-11-01T13:12:00.000Z',
+  },
+];
+
+const multiUser: UserDetail = {
+  ...user,
+  userId: '110000000000000000009',
+  primaryEmail: 'multi@example.org',
+  fullName: 'Multi Values',
+  customSchemas: {
+    Multi: {
+      numbers: [{ value: 1 }, { value: 2 }],
+      decimals: [{ value: 1.5 }, { value: 2.5 }],
+      answers: [{ value: true }],
+      dates: [{ value: '2026-11-01' }, { value: '2026-11-02' }],
+      emails: [{ value: 'one@example.org' }],
+      phones: [{ value: '+1 555 0100' }],
+    },
+  },
+};
+
 function preview(
   extra: Partial<UserAttributePreview> = {},
 ): UserAttributePreview {
@@ -187,7 +261,15 @@ function flow(extra: Record<string, unknown> = {}) {
   };
 }
 
-async function setup(options: { flow?: ReturnType<typeof flow> } = {}) {
+async function setup(
+  options: {
+    flow?: ReturnType<typeof flow>;
+    user?: UserDetail;
+    categories?: UserAttributeCategory[];
+  } = {},
+) {
+  const subject = options.user ?? user;
+  const categoryList = options.categories ?? categories;
   const mocked = options.flow ?? flow();
   TestBed.configureTestingModule({
     providers: [
@@ -196,8 +278,8 @@ async function setup(options: { flow?: ReturnType<typeof flow> } = {}) {
     ],
   });
   const fixture = TestBed.createComponent(UserAttributeEditor);
-  fixture.componentRef.setInput('user', user);
-  fixture.componentRef.setInput('categories', categories);
+  fixture.componentRef.setInput('user', subject);
+  fixture.componentRef.setInput('categories', categoryList);
   const finished = signal<UserAttributeSaveResult | null>(null);
   let cancels = 0;
   fixture.componentInstance.finished.subscribe((result) =>
@@ -225,12 +307,22 @@ async function setup(options: { flow?: ReturnType<typeof flow> } = {}) {
     target.dispatchEvent(new Event('input'));
     fixture.detectChanges();
   };
+  /** Adds one chip through the editor input, as a person pressing Enter or leaving it. */
+  const addChip = (attribute: string, value: string) => {
+    const target = input(attribute);
+    if (!target) throw new Error(`No chip input for ${attribute}`);
+    target.value = value;
+    target.dispatchEvent(new Event('input'));
+    target.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+  };
   return {
     fixture,
     element,
     button,
     input,
     type,
+    addChip,
     finished,
     cancels: () => cancels,
     mocked,
@@ -296,6 +388,7 @@ describe('the Custom attributes card form', () => {
     expect(mocked.readTargets).not.toHaveBeenCalled();
     expect(finished()).toEqual({
       outcome: 'saved',
+      userId: user.userId,
       displayId: 'UAT-015',
       attributeNames: ['Grade level'],
     });
@@ -418,6 +511,160 @@ describe('the Custom attributes card form', () => {
         '[data-attribute="attr:Student.grade_level"] input',
       )?.value,
     ).toBe('11');
+  });
+
+  it('renders and saves the list of every multi-value type (R1-B)', async () => {
+    const six = flow({
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: preview({ attributeChanges: 6, eligible: 6 }),
+      }),
+    });
+    const { element, addChip, button, mocked } = await setup({
+      flow: six,
+      user: multiUser,
+      categories: multiCategories,
+    });
+    const chipText = (attribute: string) =>
+      [
+        ...element.querySelectorAll(
+          `[data-attribute="${attribute}"] mat-chip-row`,
+        ),
+      ].map((chip) => chip.textContent?.replace('cancel', '').trim());
+    expect(chipText('attr:Multi.numbers')).toEqual(['1', '2']);
+    expect(chipText('attr:Multi.decimals')).toEqual(['1.5', '2.5']);
+    // A multi-value Yes or No list renders in the words of its editor.
+    expect(chipText('attr:Multi.answers')).toEqual(['Yes']);
+    expect(chipText('attr:Multi.dates')).toEqual(['2026-11-01', '2026-11-02']);
+    expect(chipText('attr:Multi.emails')).toEqual(['one@example.org']);
+    expect(chipText('attr:Multi.phones')).toEqual(['+1 555 0100']);
+
+    addChip('attr:Multi.numbers', '3');
+    addChip('attr:Multi.decimals', '3.5');
+    addChip('attr:Multi.answers', 'No');
+    addChip('attr:Multi.dates', '2026-11-03');
+    addChip('attr:Multi.emails', 'two@example.org');
+    addChip('attr:Multi.phones', '+1 555 0101');
+    button('Save changes')?.click();
+    await vi.waitFor(() => expect(mocked.prepare).toHaveBeenCalled());
+    const edits = new Map(
+      (mocked.prepare.mock.calls[0]?.[0] as UserAttributeEdit[]).map((edit) => [
+        edit.attribute,
+        edit,
+      ]),
+    );
+    expect(edits.size).toBe(6);
+    expect(edits.get('attr:Multi.numbers')).toEqual({
+      userId: multiUser.userId,
+      attribute: 'attr:Multi.numbers',
+      mode: 'replace',
+      values: [1, 2, 3],
+      baselineValue: [1, 2],
+    });
+    expect(edits.get('attr:Multi.decimals')?.values).toEqual([1.5, 2.5, 3.5]);
+    expect(edits.get('attr:Multi.answers')?.values).toEqual([true, false]);
+    expect(edits.get('attr:Multi.dates')?.values).toEqual([
+      '2026-11-01',
+      '2026-11-02',
+      '2026-11-03',
+    ]);
+    expect(edits.get('attr:Multi.emails')?.values).toEqual([
+      'one@example.org',
+      'two@example.org',
+    ]);
+    expect(edits.get('attr:Multi.phones')?.values).toEqual([
+      '+1 555 0100',
+      '+1 555 0101',
+    ]);
+    for (const edit of edits.values()) expect(edit.mode).toBe('replace');
+  });
+
+  it('replays the same confirmation after an uncertain answer (R1-D)', async () => {
+    let confirmCalls = 0;
+    const uncertain = flow({
+      confirm: vi.fn().mockImplementation(() => {
+        confirmCalls++;
+        return Promise.resolve(
+          confirmCalls === 1
+            ? {
+                ok: false,
+                message:
+                  'Cannot reach Campus Commander. Your changes are still here.',
+                uncertain: true,
+              }
+            : {
+                ok: true,
+                value: {
+                  jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+                  displayId: 'UAT-015',
+                  status: 'accepted',
+                  userCount: 1,
+                  changeCount: 1,
+                },
+              },
+        );
+      }),
+    });
+    const { element, type, button, finished, mocked } = await setup({
+      flow: uncertain,
+    });
+    type('attr:Student.grade_level', '11');
+    button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(
+        'Retry the confirmation to keep the same preview.',
+      ),
+    );
+    // The preview identity survives, and no second preview is prepared.
+    expect(mocked.prepare).toHaveBeenCalledTimes(1);
+    expect(element.textContent).toContain(
+      'Cannot reach Campus Commander. Your changes are still here.',
+    );
+    button('Confirm')?.click();
+    await vi.waitFor(() => expect(finished()?.displayId).toBe('UAT-015'));
+    expect(mocked.confirm).toHaveBeenCalledTimes(2);
+    expect(mocked.confirm.mock.calls[1]).toEqual(mocked.confirm.mock.calls[0]);
+    expect(mocked.prepare).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a job that needs review as unknown (R1-F)', async () => {
+    const needsReview = flow({
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { ...job, status: 'needs-review' } as unknown as JobDetail,
+      }),
+    });
+    const { type, button, finished } = await setup({ flow: needsReview });
+    type('attr:Student.grade_level', '11');
+    button('Save changes')?.click();
+    await vi.waitFor(() => expect(finished()?.outcome).toBe('unknown'));
+    expect(finished()?.displayId).toBe('UAT-015');
+  });
+
+  it('keeps the edits of the card that opened the form (R1-A)', async () => {
+    const otherUser: UserDetail = {
+      ...user,
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      fullName: 'Ania Reyes',
+    };
+    const { fixture, type, button, finished, mocked } = await setup();
+    type('attr:Student.grade_level', '11');
+    // The route hands a later record to the live input. The draft stays with its user.
+    fixture.componentRef.setInput('user', otherUser);
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => expect(finished()?.displayId).toBe('UAT-015'));
+    expect(mocked.prepare).toHaveBeenCalledWith([
+      {
+        userId: user.userId,
+        attribute: 'attr:Student.grade_level',
+        mode: 'set',
+        values: [11],
+        baselineValue: 10,
+      },
+    ]);
+    expect(finished()?.userId).toBe(user.userId);
   });
 
   it('cancels the form', async () => {

@@ -1257,6 +1257,50 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
   await grade.fill('ten');
   await expect(card.getByText('Enter a whole number.')).toBeVisible();
   await expect(save).toBeDisabled();
+
+  // The approved control geometry of composition 5 (R1-G): the Yes and No group hugs its
+  // three choices at the control radius, sibling fields keep a 16 px rhythm, the error
+  // keeps the 16 px gutter, and the populated chip field keeps the compact outline.
+  const toggle = card.locator(
+    '[data-attribute="attr:Device.take_home"] mat-button-toggle-group',
+  );
+  const toggleBox = measured(await toggle.boundingBox());
+  const fieldWidth = measured(
+    await card
+      .locator('[data-attribute="attr:Student.student_id"] .attribute-field')
+      .boundingBox(),
+  ).width;
+  expect(toggleBox.height).toBe(42);
+  expect(toggleBox.width).toBeLessThan(fieldWidth / 2);
+  expect(
+    await toggle.evaluate(
+      (element) => getComputedStyle(element).borderTopLeftRadius,
+    ),
+  ).toBe('4px');
+  const studentIdField = measured(
+    await card
+      .locator('[data-attribute="attr:Student.student_id"]')
+      .boundingBox(),
+  );
+  const gradeField = measured(
+    await card
+      .locator('[data-attribute="attr:Student.grade_level"]')
+      .boundingBox(),
+  );
+  expect(
+    gradeField.y - (studentIdField.y + studentIdField.height),
+  ).toBeGreaterThanOrEqual(15.5);
+  expect(
+    await card
+      .locator('[data-attribute="attr:Student.grade_level"] .field-error')
+      .evaluate((element) => getComputedStyle(element).paddingLeft),
+  ).toBe('16px');
+  const programsField = measured(
+    await card
+      .locator('[data-attribute="attr:Student.programs"] .attribute-field')
+      .boundingBox(),
+  );
+  expect(Math.abs(programsField.height - 56)).toBeLessThanOrEqual(2);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
@@ -1346,4 +1390,29 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
     path: `${scratch}/um-12-details-saved-dark.png`,
     fullPage: true,
   });
+});
+
+test('drops the open draft when Next user opens another card (R1-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const building = page.locator('[data-attribute="attr:Staff.building"] input');
+  await building.fill('Room 230');
+  await expect(building).toHaveValue('Room 230');
+
+  await page.getByRole('button', { name: 'Next user', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Ania Reyes', exact: true }),
+  ).toBeVisible();
+  // The draft of Amara's card does not move into Ania's card.
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(
+    page.locator('[data-attribute="attr:Staff.building"] input'),
+  ).toHaveValue('');
 });

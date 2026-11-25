@@ -655,6 +655,263 @@ describe('the user details page', () => {
     // The card reads the user again after the job settles.
     expect(store.user).toHaveBeenCalledTimes(2);
   });
+
+  it('closes the open form when the route moves to the next user (R1-A)', async () => {
+    const { fixture, element, store, button } = await setup({ canWrite: true });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const building = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Staff.building"] input',
+    );
+    if (!building) throw new Error('No Building field');
+    building.value = 'Room 230';
+    building.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    // The next record belongs to Ania. Her card must not inherit the open draft.
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      givenName: 'Ania',
+      familyName: 'Reyes',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    store.user.mockResolvedValue({ kind: 'user', user: next });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    expect(
+      element.querySelector<HTMLInputElement>(
+        '[data-attribute="attr:Staff.building"] input',
+      ),
+    ).toBeNull();
+    expect(button('Edit')).toBeDefined();
+  });
+
+  it('keeps a pending save with its own user across Next user (R1-A)', async () => {
+    const pending = held<{
+      ok: true;
+      value: {
+        jobId: string;
+        displayId: string;
+        status: string;
+        userCount: number;
+        changeCount: number;
+      };
+    }>();
+    const card = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn(() => pending.promise),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { fixture, element, store, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => expect(card.confirm).toHaveBeenCalled());
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    store.user.mockResolvedValue({ kind: 'user', user: next });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    // The answer of the first save lands after the route moved. It changes nothing here.
+    pending.release({
+      ok: true,
+      value: {
+        jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+        displayId: 'UAT-015',
+        status: 'accepted',
+        userCount: 1,
+        changeCount: 1,
+      },
+    });
+    await vi.waitFor(() => expect(card.waitForJob).not.toHaveBeenCalled());
+    expect(element.textContent).not.toContain('saved to Google');
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    expect(store.user).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a saved result off the next user card (R1-A)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+          displayId: 'UAT-015',
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      }),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { fixture, element, store, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Student ID saved to Google');
+    });
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    store.user.mockResolvedValue({ kind: 'user', user: next });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    expect(element.querySelector('.saved-line')).toBeNull();
+    expect(element.textContent).not.toContain('saved to Google');
+  });
+
+  it('names a job that needs review without claiming a failure (R1-F)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+          displayId: 'UAT-015',
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      }),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'needs-review' },
+      }),
+    };
+    const { fixture, element, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('The job needs review.');
+    });
+    // The unknown result keeps its job link and does not claim that Google saved nothing.
+    expect(element.textContent).not.toContain('The values did not save.');
+    expect(
+      element.querySelector('a[href="/jobs/UAT-015"]')?.textContent?.trim(),
+    ).toBe('UAT-015');
+    expect(
+      element.querySelector('.saved-line')?.classList.contains('is-warning'),
+    ).toBe(true);
+  });
 });
 
 describe('the read age', () => {
