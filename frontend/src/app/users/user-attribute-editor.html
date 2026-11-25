@@ -3,193 +3,199 @@
   @for (section of sections(); track section.schemaName) {
   <section class="attr-section">
     <h3>{{ section.displayName }}</h3>
-    @for (draft of section.fields; track draft.key) {
-    <div
-      #firstField
-      class="field"
-      [class.field-invalid]="!!fieldError(draft.key)"
-      [attr.data-attribute]="draft.key"
-      [attr.data-type]="draft.field.fieldType"
-    >
-      @if (draft.field.multiValued) {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field chip-field"
+    <div class="field-stack">
+      @for (draft of section.fields; track draft.key) {
+      <div
+        #firstField
+        class="field"
+        [class.field-invalid]="!!fieldError(draft.key)"
+        [attr.data-attribute]="draft.key"
+        [attr.data-type]="draft.field.fieldType"
       >
-        <mat-label>{{ draft.label }}</mat-label>
-        <mat-chip-grid
-          #chipGrid
-          [attr.aria-label]="draft.label"
-          [attr.aria-describedby]="
+        @if (draft.field.multiValued) {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field chip-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <mat-chip-grid
+            #chipGrid
+            [attr.aria-label]="draft.label"
+            [attr.aria-describedby]="
             fieldError(draft.key) ? draft.key + '-error' : null
           "
-        >
-          @for (value of chipValues(draft.key); track $index) {
-          <mat-chip-row (removed)="removeChip(draft.key, $index)">
-            {{ value }}
-            <button
-              matChipRemove
-              type="button"
-              [attr.aria-label]="'Remove ' + value"
-            >
-              <mat-icon>cancel</mat-icon>
-            </button>
-          </mat-chip-row>
-          }
-          <input
-            [matChipInputFor]="chipGrid"
-            [matChipInputAddOnBlur]="true"
-            (matChipInputTokenEnd)="addChip(draft.key, $event)"
-            [attr.aria-label]="'Add a ' + draft.label + ' value'"
-            [attr.aria-describedby]="
+          >
+            @for (value of chipValues(draft.key); track $index) {
+            <mat-chip-row (removed)="removeChip(draft.key, $index)">
+              {{ value }}
+              <button
+                matChipRemove
+                type="button"
+                [attr.aria-label]="'Remove ' + value"
+              >
+                <mat-icon>cancel</mat-icon>
+              </button>
+            </mat-chip-row>
+            }
+            <input
+              [matChipInputFor]="chipGrid"
+              [matChipInputAddOnBlur]="true"
+              (matChipInputTokenEnd)="addChip(draft.key, $event)"
+              [attr.aria-label]="'Add a ' + draft.label + ' value'"
+              [attr.aria-describedby]="
               fieldError(draft.key) ? draft.key + '-error' : null
             "
-          />
-        </mat-chip-grid>
-      </mat-form-field>
-      } @else { @switch (draft.field.fieldType) { @case ('BOOL') {
-      <div class="bool-field">
-        <span class="bool-label" [id]="draft.key + '-label'"
-          >{{ draft.label }}</span
-        >
-        <mat-button-toggle-group
-          class="bool-toggle"
-          [value]="draft.value"
-          [attr.aria-labelledby]="draft.key + '-label'"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-          (change)="setBool(draft.key, $event.value)"
-        >
-          <mat-button-toggle [value]="true">{{ labels.yes }}</mat-button-toggle>
-          <mat-button-toggle [value]="false">{{ labels.no }}</mat-button-toggle>
-          <mat-button-toggle [value]="null"
-            >{{ labels.unset }}</mat-button-toggle
+            />
+          </mat-chip-grid>
+        </mat-form-field>
+        } @else { @switch (draft.field.fieldType) { @case ('BOOL') {
+        <div class="bool-field">
+          <span class="bool-label" [id]="draft.key + '-label'"
+            >{{ draft.label }}</span
           >
-        </mat-button-toggle-group>
+          <mat-button-toggle-group
+            class="bool-toggle"
+            [value]="draft.value"
+            [attr.aria-labelledby]="draft.key + '-label'"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+            (change)="setBool(draft.key, $event.value)"
+          >
+            <mat-button-toggle [value]="true"
+              >{{ labels.yes }}</mat-button-toggle
+            >
+            <mat-button-toggle [value]="false"
+              >{{ labels.no }}</mat-button-toggle
+            >
+            <mat-button-toggle [value]="null"
+              >{{ labels.unset }}</mat-button-toggle
+            >
+          </mat-button-toggle-group>
+        </div>
+        } @case ('STRING') {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <input
+            matInput
+            type="text"
+            autocomplete="off"
+            [value]="textValue(draft.key)"
+            (input)="setText(draft.key, $event)"
+            [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          />
+        </mat-form-field>
+        } @case ('INT64') {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <input
+            matInput
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            [value]="textValue(draft.key)"
+            (input)="setText(draft.key, $event)"
+            [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          />
+        </mat-form-field>
+        } @case ('DOUBLE') {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <input
+            matInput
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            [value]="textValue(draft.key)"
+            (input)="setText(draft.key, $event)"
+            [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          />
+        </mat-form-field>
+        } @case ('DATE') {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <input
+            matInput
+            type="date"
+            autocomplete="off"
+            [value]="textValue(draft.key)"
+            (input)="setText(draft.key, $event)"
+            [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          />
+        </mat-form-field>
+        } @case ('EMAIL') {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <input
+            matInput
+            type="email"
+            autocomplete="off"
+            [value]="textValue(draft.key)"
+            (input)="setText(draft.key, $event)"
+            [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          />
+        </mat-form-field>
+        } @case ('PHONE') {
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="attribute-field"
+        >
+          <mat-label>{{ draft.label }}</mat-label>
+          <input
+            matInput
+            type="tel"
+            autocomplete="off"
+            [value]="textValue(draft.key)"
+            (input)="setText(draft.key, $event)"
+            [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+            [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          />
+        </mat-form-field>
+        } } } @if (fieldError(draft.key); as error) {
+        <p class="field-error" [id]="draft.key + '-error'">{{ error }}</p>
+        }
       </div>
-      } @case ('STRING') {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field"
-      >
-        <mat-label>{{ draft.label }}</mat-label>
-        <input
-          matInput
-          type="text"
-          autocomplete="off"
-          [value]="textValue(draft.key)"
-          (input)="setText(draft.key, $event)"
-          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-        />
-      </mat-form-field>
-      } @case ('INT64') {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field"
-      >
-        <mat-label>{{ draft.label }}</mat-label>
-        <input
-          matInput
-          type="text"
-          inputmode="numeric"
-          autocomplete="off"
-          [value]="textValue(draft.key)"
-          (input)="setText(draft.key, $event)"
-          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-        />
-      </mat-form-field>
-      } @case ('DOUBLE') {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field"
-      >
-        <mat-label>{{ draft.label }}</mat-label>
-        <input
-          matInput
-          type="text"
-          inputmode="decimal"
-          autocomplete="off"
-          [value]="textValue(draft.key)"
-          (input)="setText(draft.key, $event)"
-          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-        />
-      </mat-form-field>
-      } @case ('DATE') {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field"
-      >
-        <mat-label>{{ draft.label }}</mat-label>
-        <input
-          matInput
-          type="date"
-          autocomplete="off"
-          [value]="textValue(draft.key)"
-          (input)="setText(draft.key, $event)"
-          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-        />
-      </mat-form-field>
-      } @case ('EMAIL') {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field"
-      >
-        <mat-label>{{ draft.label }}</mat-label>
-        <input
-          matInput
-          type="email"
-          autocomplete="off"
-          [value]="textValue(draft.key)"
-          (input)="setText(draft.key, $event)"
-          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-        />
-      </mat-form-field>
-      } @case ('PHONE') {
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="attribute-field"
-      >
-        <mat-label>{{ draft.label }}</mat-label>
-        <input
-          matInput
-          type="tel"
-          autocomplete="off"
-          [value]="textValue(draft.key)"
-          (input)="setText(draft.key, $event)"
-          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
-          [attr.aria-describedby]="
-            fieldError(draft.key) ? draft.key + '-error' : null
-          "
-        />
-      </mat-form-field>
-      } } } @if (fieldError(draft.key); as error) {
-      <p class="field-error" [id]="draft.key + '-error'">{{ error }}</p>
       }
     </div>
-    }
   </section>
   } @if (message()) {
   <p class="flow-message error" role="alert">{{ message() }}</p>
