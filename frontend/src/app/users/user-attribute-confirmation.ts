@@ -137,6 +137,22 @@ export class UserAttributeConfirmationStore {
     if (changed) this.entries.set(entries);
   }
 
+  /**
+   * The accepted receipt settled, so its preview may create a new save. A receipt that
+   * outlived the editor stays here until its job answers, through any polling handoff
+   * (R4-A). A different phase keeps its own rule.
+   */
+  resolveReceipt(displayId: string): void {
+    const entries = new Map(this.entries());
+    let changed = false;
+    for (const [userId, entry] of entries) {
+      if (entry.displayId !== displayId || entry.phase !== 'accepted') continue;
+      entries.delete(userId);
+      changed = true;
+    }
+    if (changed) this.entries.set(entries);
+  }
+
   private write(entry: PendingAttributeConfirmation): void {
     const entries = new Map(this.entries());
     entries.set(entry.userId, entry);

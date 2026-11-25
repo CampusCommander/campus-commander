@@ -502,10 +502,11 @@ export class UserAttributeEditor implements OnInit {
     // A destroyed editor leaves the accepted entry for its next owner (R3-B).
     if (this.destroyed) return;
     // A job that never settled, or a job whose answer never arrived, keeps its receipt.
+    // One save stays under recovery until its job answers, through the next owner (R4-A).
     const outcome: AttributeSaveOutcome = !job.ok
       ? 'unsettled'
       : attributeJobOutcome(job.value.status);
-    this.confirmations.resolve(preview.previewId);
+    if (outcome !== 'unsettled') this.confirmations.resolve(preview.previewId);
     this.finished.emit({
       outcome,
       userId: this.subjectUserId,
@@ -583,7 +584,9 @@ export class UserAttributeEditor implements OnInit {
     const outcome: AttributeSaveOutcome = !job.ok
       ? 'unsettled'
       : attributeJobOutcome(job.value.status);
-    this.confirmations.resolve(entry.preview.previewId);
+    // The receipt keeps its recovery owner until the job answers (R4-A).
+    if (outcome !== 'unsettled')
+      this.confirmations.resolve(entry.preview.previewId);
     this.finished.emit({
       outcome,
       userId: entry.userId,

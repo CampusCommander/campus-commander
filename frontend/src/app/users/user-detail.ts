@@ -42,6 +42,7 @@ import {
   UserAttributeEditor,
   type UserAttributeSaveResult,
 } from './user-attribute-editor';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
 import {
   UserAttributeEditFlow,
   attributeJobOutcome,
@@ -154,8 +155,16 @@ export class UserDetailPage {
   protected readonly saved = signal<UserAttributeSaveResult | null>(null);
   private readonly savedUserId = signal<string | null>(null);
   private readonly editFlow = inject(UserAttributeEditFlow);
-  /** The accepted receipts whose job reads continue after the editor closed (R2-C). */
-  private readonly following = new Map<string, UserAttributeSaveResult>();
+  private readonly confirmations = inject(UserAttributeConfirmationStore);
+  /**
+   * The accepted receipts whose job reads continue after the editor closed (R2-C, R4-A).
+   * A token lets one owner take observation over from another without two readers.
+   */
+  private readonly following = new Map<
+    string,
+    { result: UserAttributeSaveResult; token: number }
+  >();
+  private followSequence = 0;
   protected readonly categories = computed(
     () => this.store.categories()?.categories ?? [],
   );
@@ -316,6 +325,9 @@ export class UserDetailPage {
     // A held replacement read can show another record, so the heading and the write target
     // never separate (R2-A).
     if (!displayed || displayed.userId !== this.userId()) return;
+    // The form takes over observation of this card's accepted receipt, so one job has one
+    // reader. The store keeps the receipt if the form closes again (R4-A).
+    this.stopFollowing(displayed.userId);
     this.saved.set(null);
     this.savedUserId.set(null);
     this.editingUserId.set(displayed.userId);
@@ -324,8 +336,12 @@ export class UserDetailPage {
 
   /** Cancel and a finished save both return focus to the Edit button (UI-09). */
   protected cancelEdit(): void {
+    const userId = this.editingUserId();
     this.editing.set(false);
     this.editingUserId.set(null);
+    // The form may have closed while it observed an accepted receipt. The card resumes the
+    // same observation, and the store keeps the receipt for the next Edit (R4-A).
+    if (userId) this.resumeRetained(userId);
     this.focusEdit();
   }
 
@@ -350,16 +366,42 @@ export class UserDetailPage {
   /** Keep reading the accepted receipt after the editor closed, and refresh on settlement. */
   private followJob(result: UserAttributeSaveResult): void {
     if (this.following.has(result.displayId)) return;
-    this.following.set(result.displayId, result);
-    void this.observeJob(result);
+    const token = ++this.followSequence;
+    this.following.set(result.displayId, { result, token });
+    void this.observeJob(result, token);
   }
 
-  private async observeJob(result: UserAttributeSaveResult): Promise<void> {
-    while (!this.leaving && this.following.has(result.displayId)) {
+  /** The form of this card now observes the receipt, so the card stops its own reads. */
+  private stopFollowing(userId: string): void {
+    for (const [displayId, entry] of this.following)
+      if (entry.result.userId === userId) this.following.delete(displayId);
+  }
+
+  /** Resume observation of a receipt that a closed form left in the store (R4-A). */
+  private resumeRetained(userId: string): void {
+    const entry = this.confirmations.pending(userId);
+    if (!entry || entry.phase !== 'accepted' || !entry.displayId) return;
+    this.followJob({
+      outcome: 'unsettled',
+      userId: entry.userId,
+      displayId: entry.displayId,
+      attributeNames: [...entry.attributeNames],
+    });
+  }
+
+  private async observeJob(
+    result: UserAttributeSaveResult,
+    token: number,
+  ): Promise<void> {
+    const active = () =>
+      !this.leaving && this.following.get(result.displayId)?.token === token;
+    while (active()) {
       const job = await this.editFlow.readJob(result.displayId);
-      if (this.leaving || !this.following.has(result.displayId)) return;
+      if (!active()) return;
       if (job.ok && isTerminalJobStatus(job.value.status)) {
         this.following.delete(result.displayId);
+        // The save settled, so its retained identity may release (R4-A).
+        this.confirmations.resolveReceipt(result.displayId);
         this.settleJob(result, attributeJobOutcome(job.value.status));
         return;
       }
