@@ -604,15 +604,17 @@ test('a computed list keeps both documented list shapes and refuses only the cou
 });
 
 test('the preview body cap follows the supported edit-list shape', () => {
-  // 2,500 edits (E17), each with a requested list and a baseline list of at most 150 values of
-  // 500 characters (B section 3), plus the JSON entry and edit envelopes.
+  // B section 3 bounds one list by its text: 25,000 code points (50 values of 500 characters or
+  // 150 of 100). E17: 2,500 edits, each with a requested list and a baseline. A code point takes
+  // four UTF-8 bytes, and each of the at most 150 entries carries its JSON keys, quotes, and comma.
   assert.equal(
     USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
-    2500 * (2 * 150 * (500 + 16) + 1024) + 4096,
+    2500 * (2 * (25_000 * 4 + 150 * 16) + 1_024) + 4_096,
   );
-  // The ordinary 2,500-edit short-value body is about 232 KB, and the cap stays under the largest
-  // string one Node process holds, so a supported body is one parse.
-  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 232_000);
+  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 514_564_096);
+  // The review reproduction holds 2,000 edits of 50 x 500 supplementary code points per list and
+  // measured 399,009,461 bytes. The cap admits it and stays under one Node string.
+  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 399_009_461);
   assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT < 536_870_888);
 });
 

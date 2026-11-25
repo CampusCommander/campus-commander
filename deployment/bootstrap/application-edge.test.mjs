@@ -931,3 +931,71 @@ test('the two file routes pass the attachment header and every other route drops
       }
   }
 });
+
+test('the value preview POST admits a supported non-ASCII edit list byte for byte', async () => {
+  // B section 3: one list holds 25,000 characters, which is 50 values of 500 code points. E17:
+  // 2,000 edits on 400 users, five multi-value attributes each. Each value is a three-character
+  // prefix and 497 supplementary code points, so a cap that counts a code point as one byte
+  // refuses it before the upstream request starts.
+  const value = (prefix, index) =>
+    `${prefix}${String(index).padStart(2, '0')}${'\u{1f600}'.repeat(497)}`;
+  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
+  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
+  const body = JSON.stringify({
+    edits: Array.from({ length: 2000 }, (_, index) => ({
+      userId: `user-${index % 400}`,
+      attribute: `attr:StudentInfo.Field${Math.floor(index / 400)}`,
+      mode: 'replace',
+      values: requested,
+      baselineValue: baseline,
+    })),
+  });
+  const bytes = Buffer.byteLength(body);
+  assert.ok(bytes > 389_564_096, `body measured ${bytes} bytes`);
+  assert.ok(bytes < userPreviewBodyLimit, `body measured ${bytes} bytes`);
+  const listen = (server) =>
+    new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = (server) => `http://127.0.0.1:${server.address().port}`;
+  let received = 0;
+  const frontend = http.createServer((request, response) =>
+    response.end('frontend'),
+  );
+  const api = http.createServer((request, response) => {
+    request.on('data', (chunk) => (received += chunk.length));
+    request.on('end', () => response.end('api'));
+  });
+  let edge;
+  try {
+    await listen(frontend);
+    await listen(api);
+    edge = http.createServer((request, response) =>
+      proxyApplication(
+        request,
+        response,
+        {
+          frontend: { url: new URL(origin(frontend)) },
+          api: { url: new URL(origin(api)) },
+        },
+        origin(edge),
+        3,
+      ),
+    );
+    await listen(edge);
+    const response = await fetch(
+      `${origin(edge)}/api/users/attribute-previews`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      },
+    );
+    assert.equal(response.status, 200, await response.text());
+    assert.equal(received, bytes);
+  } finally {
+    for (const server of [edge, api, frontend])
+      if (server) {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
+  }
+});
