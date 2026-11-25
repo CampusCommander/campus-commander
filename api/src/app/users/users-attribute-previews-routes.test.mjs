@@ -1740,6 +1740,36 @@ test('a supported escaped body sent chunked passes the body cap', async () => {
   assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
+test('a supported serializer-escaped edit list passes the body cap', async () => {
+  // Review reproduction B: the same edit, user, and list counts. Each value carries a
+  // three-character prefix, 400 supplementary characters, and 97 U+0001 characters, which
+  // JSON.stringify writes as six-byte escapes. The body is 547,264,461 bytes and 347,264,461
+  // UTF-16 units, above the old 536,870,888-byte cap.
+  const value = (prefix, index) =>
+    `${prefix}${String(index).padStart(2, '0')}${'😀'.repeat(400)}${'\u0001'.repeat(97)}`;
+  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
+  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
+  const edits = Array.from({ length: 2500 }, (_, index) => ({
+    userId: `user-${index % 500}`,
+    attribute: `attr:StudentInfo.Field${Math.floor(index / 500)}`,
+    mode: 'replace',
+    values: requested,
+    baselineValue: baseline,
+  }));
+  const body = JSON.stringify({ edits });
+  const { appends } = useNonAsciiPreviewMocks(baseline, 500);
+  const bytes = Buffer.byteLength(body);
+  assert.equal(bytes, 547_264_461);
+  assert.ok(bytes > 536_870_888, `body measured ${bytes} bytes`);
+  const response = await fetch(`${origin}/api/users/attribute-previews`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+  assert.equal(response.status, 201, await response.text());
+  assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
+});
+
 test('a body above the one-string text ceiling answers 413 before the controller', async () => {
   // 537,000,000 ASCII text units pass the byte cap but do not fit one JSON.parse. The decoded
   // count refuses them before the parser decodes and before any database read.
