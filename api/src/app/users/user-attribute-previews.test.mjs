@@ -51,9 +51,7 @@ const {
   wireValue,
   USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
 } = await import('./user-attribute-previews.ts');
-const { previewTextUnits } = await import('../request-body.ts');
 const { createHash } = await import('node:crypto');
-const { constants: bufferConstants } = await import('node:buffer');
 
 const at = '2026-11-24T18:00:00.000Z';
 const field = (overrides) => ({
@@ -605,37 +603,10 @@ test('a computed list keeps both documented list shapes and refuses only the cou
   assert.equal(added[0].rows[0].disposition, 'eligible');
 });
 
-test('the preview body cap follows the encoded text boundary of one parse', () => {
-  // A UTF-8 body yields at most one UTF-16 unit per byte, and one unit takes at most three
-  // bytes, so a body above three times MAX_STRING_LENGTH cannot fit one JSON.parse.
-  assert.equal(
-    USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
-    3 * bufferConstants.MAX_STRING_LENGTH,
-  );
-  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 1_610_612_664);
-  // The review reproductions of 598,164,461 and 547,264,461 bytes are admitted.
-  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 598_164_461);
-  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 547_264_461);
-});
-
-test('the decoded text count follows UTF-8 and streaming chunk boundaries', () => {
-  const units = (text) => previewTextUnits(Buffer.from(text, 'utf8'));
-  assert.equal(units('abc'), 3);
-  assert.equal(units('é'), 1);
-  assert.equal(units('€'), 1);
-  assert.equal(units('😀'), 2);
-  assert.equal(units('a€😀'), 4);
-  // A JSON escape is six text units, not one.
-  assert.equal(units('"\\ud83d\\ude00"'), 14);
-  assert.equal(units(''), 0);
-  assert.equal(previewTextUnits(Buffer.from([0xff])), 1);
-  // A three-byte code point split by the chunk boundary keeps its one unit.
-  const boundary = Buffer.concat([
-    Buffer.alloc(4 * 1024 * 1024 - 1, 0x61),
-    Buffer.from('€', 'utf8'),
-    Buffer.from('a'),
-  ]);
-  assert.equal(previewTextUnits(boundary), 4 * 1024 * 1024 + 1);
+test('the preview body cap is the 64 MiB of the owner answer', () => {
+  // The owner set the in-grid change cap on 2026-11-25: "For in grid changes make it 64mb."
+  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 64 * 1024 * 1024);
+  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 67_108_864);
 });
 
 test('the digest matches the one-document form and never builds that document', () => {
