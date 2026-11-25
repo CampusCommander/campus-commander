@@ -1244,6 +1244,167 @@ export async function qualifyUserCategoryPlans({
         );
       },
     );
+
+    await check(
+      'J4 a plan stores the rename label and the info type of every change, and a create or delete stores none',
+      async () => {
+        const field = (fieldName, fieldType, extra = {}) => ({
+          fieldId: `fld-j4-${fieldName.toLowerCase()}`,
+          fieldName,
+          displayName: fieldName,
+          fieldType,
+          multiValued: false,
+          indexed: true,
+          readAccessType: 'ADMINS_AND_SELF',
+          numericIndexingSpec: null,
+          holders: 0,
+          ...extra,
+        });
+        await storeCategory('schem=J4Info', 'J4Info', 'J4 info', 'etag-j4-1', [
+          field('Grade', 'INT64'),
+          field('Homeroom', 'STRING'),
+        ]);
+        const stored = (planId) =>
+          one(
+            `SELECT previous_display_name, change_field_types,
+              COALESCE(body->>'displayName',phrase) AS scope_name
+              FROM cc.user_category_plans WHERE plan_id=$1`,
+            [planId],
+          );
+        // An edit that renames the category, adds one attribute, changes the range of one, and
+        // removes one stores the old label and the info type of all three changes.
+        const edit = await createPlan(manager, {
+          kind: 'edit-category',
+          schemaId: 'schem=J4Info',
+          baseEtag: 'etag-j4-1',
+          schemaName: 'J4Info',
+          displayName: 'J4 records',
+          body: {
+            schemaName: 'J4Info',
+            displayName: 'J4 records',
+            fields: [
+              field('Grade', 'INT64', {
+                numericIndexingSpec: { minValue: 1, maxValue: 12 },
+              }),
+              field('House', 'STRING', { fieldId: null }),
+            ],
+          },
+          changes: [
+            {
+              change: 'changed',
+              fieldId: 'fld-j4-grade',
+              fieldName: 'Grade',
+              displayName: 'Grade',
+              properties: ['numericIndexingSpec'],
+              holders: null,
+            },
+            {
+              change: 'added',
+              fieldName: 'House',
+              displayName: 'House',
+              properties: [],
+              holders: null,
+            },
+            {
+              change: 'removed',
+              fieldId: 'fld-j4-homeroom',
+              fieldName: 'Homeroom',
+              displayName: 'Homeroom',
+              properties: [],
+              holders: 3,
+            },
+          ],
+          phrase: 'Homeroom',
+        });
+        assert.equal(
+          edit.result.outcome,
+          'created',
+          JSON.stringify(edit.result),
+        );
+        const editRow = await stored(edit.result.plan.planId);
+        assert.equal(editRow.previous_display_name, 'J4 info');
+        assert.deepEqual(editRow.change_field_types, {
+          Grade: 'INT64',
+          House: 'STRING',
+          Homeroom: 'STRING',
+        });
+
+        // A create names no earlier label, and its body names each type.
+        const created = await createPlan(manager, {
+          kind: 'create-category',
+          schemaName: 'J4New',
+          displayName: 'J4 new',
+          body: {
+            schemaName: 'J4New',
+            displayName: 'J4 new',
+            fields: [field('Club', 'STRING', { fieldId: null })],
+          },
+          changes: [
+            {
+              change: 'added',
+              fieldName: 'Club',
+              displayName: 'Club',
+              properties: [],
+              holders: null,
+            },
+          ],
+        });
+        assert.equal(
+          created.result.outcome,
+          'created',
+          JSON.stringify(created.result),
+        );
+        const createRow = await stored(created.result.plan.planId);
+        assert.equal(createRow.previous_display_name, null);
+        assert.deepEqual(createRow.change_field_types, { Club: 'STRING' });
+
+        // A delete keeps the cached label as its scope name, names no earlier label, and stores
+        // the type of each removed attribute.
+        await migrator.query(
+          `UPDATE cc.user_attribute_categories SET etag='etag-j4-2'
+            WHERE schema_id='schem=J4Info'`,
+        );
+        const deleted = await createPlan(manager, {
+          kind: 'delete-category',
+          schemaId: 'schem=J4Info',
+          baseEtag: 'etag-j4-2',
+          schemaName: 'J4Info',
+          displayName: 'J4 info',
+          body: null,
+          changes: [
+            {
+              change: 'removed',
+              fieldId: 'fld-j4-grade',
+              fieldName: 'Grade',
+              displayName: 'Grade',
+              properties: [],
+              holders: 0,
+            },
+            {
+              change: 'removed',
+              fieldId: 'fld-j4-homeroom',
+              fieldName: 'Homeroom',
+              displayName: 'Homeroom',
+              properties: [],
+              holders: 0,
+            },
+          ],
+          phrase: 'J4 info',
+        });
+        assert.equal(
+          deleted.result.outcome,
+          'created',
+          JSON.stringify(deleted.result),
+        );
+        const deleteRow = await stored(deleted.result.plan.planId);
+        assert.equal(deleteRow.previous_display_name, null);
+        assert.equal(deleteRow.scope_name, 'J4 info');
+        assert.deepEqual(deleteRow.change_field_types, {
+          Grade: 'INT64',
+          Homeroom: 'STRING',
+        });
+      },
+    );
   } finally {
     await migrator.query(
       `DELETE FROM cc.jobs WHERE job_id IN (SELECT job_id FROM cc.user_schema_change_jobs

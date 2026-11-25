@@ -126,7 +126,7 @@ export const importUploadLimit = 1073741824;
  */
 export const requestDeadlines = { request: 10000, importUpload: 1800000 };
 const jobRead = new RegExp(
-  `^/api/jobs(?:/(?:activity|requesters|${jobDisplayIdPath}(?:/operations)?))?$`,
+  `^/api/jobs(?:/(?:activity|requesters|${jobDisplayIdPath}(?:/operations|/attribute-rows)?))?$`,
 );
 // An operation number is a whole number from 1. The route rejects the rest. The cancel route
 // takes no part of the path after the display ID.

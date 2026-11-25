@@ -27,6 +27,7 @@ import {
   userAttributeOperatorSchema,
   userAttributePreviewConfirmRequestSchema,
   userAttributePreviewRequestSchema,
+  userAttributeFailureText,
   userAttributePreviewRequestShapeSchema,
   userAttributePreviewSchema,
   userAttributeJobReceiptSchema,
@@ -1876,5 +1877,43 @@ test('the edit request shape carries 2,500 edits on 500 users and the list bound
   assert.equal(
     userAttributeEditPreviewRequestShapeSchema.safeParse({ edits: [] }).success,
     false,
+  );
+});
+
+test('every value failure code has a drafted text, and a Google reason fills a gap', () => {
+  // The codes that the value job stores on a user (worker/src/user-attribute-update.ts).
+  for (const code of [
+    'not-found',
+    'credential-rejected',
+    'delegation-not-authorized',
+    'api-not-enabled',
+    'policy-restricted',
+    'scope-mismatch',
+    'permission-denied',
+    'quota',
+    'provider-unavailable',
+    'network-failure',
+    'invalid-response',
+    'wrong-customer',
+    'request-failed',
+    'key-unavailable',
+    'interrupted',
+    'permission-changed',
+    'connection-changed',
+  ])
+    assert.equal(
+      typeof userAttributeFailureText(code),
+      'string',
+      `${code} has no drafted text`,
+    );
+  // A code without a draft falls back to the Google reason, and an empty answer stays null.
+  assert.equal(
+    userAttributeFailureText('unmapped-code', 'someGoogleReason'),
+    'someGoogleReason',
+  );
+  assert.equal(userAttributeFailureText('unmapped-code'), null);
+  assert.equal(
+    userAttributeFailureText('not-found', 'notFound'),
+    'Google could not find this user.',
   );
 });

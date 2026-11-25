@@ -465,6 +465,32 @@ export async function qualifyUserAttributePreviewRoutes({
         );
         assert.equal(unchanged.targets.length, 2);
         assert.ok(unchanged.targets.every((target) => target.ordinal === 1));
+        // J4 item 5: a row carries the user name of the cache, and null when the cache lost it.
+        assert.ok(
+          first.targets.every((target) => 'userName' in target),
+          JSON.stringify(first.targets),
+        );
+        await migrator.query(
+          `INSERT INTO cc.users(customer_id,user_id,primary_email,full_name,org_unit_path,
+              suspended,archived,two_step_enrolled,custom_schemas,last_entity_sync)
+            VALUES($1,'k23-user-1',$2,'K23 User One','/Students',false,false,true,
+              '{"K23Info":{"Homeroom":"B11"}}'::jsonb,clock_timestamp())`,
+          [customer, 'k23-user-1@example.org'],
+        );
+        const named = await page(author, 1, previewId, null, null, 10);
+        const namedRow = named.targets.find(
+          (target) => target.userId === 'k23-user-1',
+        );
+        assert.equal(namedRow.userName, 'K23 User One');
+        assert.equal(
+          named.targets.find((target) => target.userId === 'k23-user-2')
+            .userName,
+          null,
+        );
+        await migrator.query(
+          `DELETE FROM cc.users WHERE customer_id=$1 AND user_id='k23-user-1'`,
+          [customer],
+        );
       },
     );
 

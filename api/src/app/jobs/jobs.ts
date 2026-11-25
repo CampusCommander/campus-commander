@@ -11,17 +11,27 @@ import { z } from 'zod';
 import {
   isAuthorized,
   jobActivitySchema,
+  jobAttributeRowsPageSchema,
   jobCancelRefusalSchema,
+  jobCategoryDetailSchema,
   jobDetailSchema,
   jobListSchema,
   jobOperationsPageSchema,
   jobRequestersSchema,
   jobSeenSchema,
   jobSummarySchema,
+  userAttributeKey,
+  userAttributeFailureText,
   type EntityType,
   type JobAction,
   type JobActivity,
+  type JobAttributeRow,
+  type JobAttributeRowView,
+  type JobAttributeRowsPage,
   type JobCancelRefusal,
+  type JobCategoryDetail,
+  type JobCategoryRow,
+  type JobCategorySummary,
   type JobDetail,
   type JobFailedActivityOperation,
   type JobImportSummary,
@@ -29,6 +39,7 @@ import {
   type JobList,
   type JobOperation,
   type JobOperationsPage,
+  type JobOutcome,
   type JobRequesters,
   type JobSeen,
   type JobStatus,
@@ -38,6 +49,7 @@ import {
 } from '@campus/application-contracts';
 import type { JobServiceOrchestration } from './job-service';
 import type { ReconcileCheck } from '../devices/device-updates-actions';
+import { wireValue } from '../users/user-attribute-previews';
 
 /** One query result, as the API uses it. */
 interface QueryResult {
@@ -177,6 +189,21 @@ const actionKinds: Readonly<Record<JobAction, string>> = {
   'deprovision-devices': 'device-status',
   'export-devices': 'device-export',
   'validate-device-import': 'device-import',
+  // The category job and the value job (document B sections 7.1 and 7.2).
+  'create-category': 'user-schema-change',
+  'edit-category': 'user-schema-change',
+  'delete-category': 'user-schema-change',
+  'set-attributes': 'user-attribute-update',
+};
+
+/**
+ * The plan action of each category job action. All three share the `user-schema-change` kind, so the
+ * plan row decides which job of the kind matches an action filter.
+ */
+const categoryActions: Readonly<Record<string, JobAction>> = {
+  'create-category': 'create-category',
+  'edit-category': 'edit-category',
+  'delete-category': 'delete-category',
 };
 
 /** The job action of one write row. A missing action reads as the annotated-location update. */
@@ -231,6 +258,143 @@ function planStateOf(
     : 'open';
 }
 
+/**
+ * The job action of one header row. The kind decides first, then the write action, the category plan
+ * action, or the value job. A category job stores `action=null` in `cc.jobs`, so its plan row names
+ * the action (card J4).
+ */
+function actionOf(row: Record<string, unknown>): JobAction {
+  const kind = String(row['kind']);
+  if (kind === 'inventory-refresh') return 'refresh-inventory';
+  if (kind === 'device-export') return 'export-devices';
+  if (kind === 'device-import') return 'validate-device-import';
+  if (kind === 'user-attribute-update') return 'set-attributes';
+  if (kind === 'user-schema-change')
+    return (
+      categoryActions[String(row['plan_action'])] ?? 'update-device-annotations'
+    );
+  return writeActions[String(row['action'])] ?? 'update-device-annotations';
+}
+
+/**
+ * The category block of a category job header (card J4): the display name that the plan writes, or
+ * the cached name of a delete. Another kind of job carries none.
+ */
+function categorySummaryOf(
+  row: Record<string, unknown>,
+): JobCategorySummary | undefined {
+  const scopeName = row['plan_scope_name'];
+  return typeof scopeName === 'string' ? { scopeName } : undefined;
+}
+
+/**
+ * The outcome word of one category job row, from the status of its one call (CA state 07, document B
+ * section 7.3). A queued or running job reads pending.
+ */
+function categoryRowOutcome(status: string): JobOutcome {
+  switch (status) {
+    case 'completed':
+      return 'succeeded';
+    case 'failed':
+    case 'completed-with-errors':
+      return 'failed';
+    case 'needs-review':
+      return 'unknown';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return 'pending';
+  }
+}
+
+/**
+ * The category result table of a category job (card J4, CA state 07). The plan stores each change
+ * and the body of the Google call, and migration 030 adds the label of a rename and the info type of
+ * each change. The job status decides the outcome of the one call, because a plan holds no outcome.
+ */
+function categoryDetailOf(
+  row: Record<string, unknown>,
+): JobCategoryDetail | undefined {
+  const changes = row['plan_changes'];
+  if (!Array.isArray(changes)) return undefined;
+  const scopeName = String(row['plan_scope_name']);
+  const outcome = categoryRowOutcome(String(row['status']));
+  const body = (row['plan_body'] ?? {}) as { fields?: unknown };
+  const fields = new Map(
+    (Array.isArray(body.fields) ? body.fields : [])
+      .filter(
+        (field): field is Record<string, unknown> =>
+          typeof field === 'object' && field !== null,
+      )
+      .map((field) => [String(field['fieldName']), field]),
+  );
+  const types = (row['plan_field_types'] ?? {}) as Record<string, unknown>;
+  const previousName =
+    row['plan_previous_name'] == null
+      ? null
+      : String(row['plan_previous_name']);
+  const rows: JobCategoryRow[] = [];
+  // A label that the edit moves reads as a rename row above the attribute changes.
+  if (previousName !== null && previousName !== scopeName)
+    rows.push({
+      change: 'rename',
+      displayName: scopeName,
+      fieldType: null,
+      range: null,
+      holders: null,
+      previousName,
+      outcome,
+    });
+  for (const change of changes) {
+    if (typeof change !== 'object' || change === null) continue;
+    const rowChange = change as Record<string, unknown>;
+    const fieldName = String(rowChange['fieldName']);
+    const field = fields.get(fieldName);
+    const properties = Array.isArray(rowChange['properties'])
+      ? rowChange['properties'].map(String)
+      : [];
+    const spec = field?.['numericIndexingSpec'];
+    rows.push({
+      change: actionChangeOf(String(rowChange['change'])),
+      displayName: String(rowChange['displayName']),
+      fieldType: (types[fieldName] ?? field?.['fieldType'] ?? null) as
+        | JobCategoryRow['fieldType']
+        | null,
+      range:
+        rowChange['change'] === 'changed' &&
+        properties.includes('numericIndexingSpec') &&
+        typeof spec === 'object' &&
+        spec !== null
+          ? {
+              minValue: numberOrNull(
+                (spec as Record<string, unknown>)['minValue'],
+              ),
+              maxValue: numberOrNull(
+                (spec as Record<string, unknown>)['maxValue'],
+              ),
+            }
+          : null,
+      holders:
+        rowChange['holders'] == null ? null : Number(rowChange['holders']),
+      previousName: null,
+      outcome,
+    });
+  }
+  return jobCategoryDetailSchema.parse({ scopeName, previousName, rows });
+}
+
+/** The plan change of one row, as the contract names it. */
+function actionChangeOf(change: string): JobCategoryRow['change'] {
+  return change === 'added' || change === 'removed' || change === 'changed'
+    ? change
+    : 'changed';
+}
+
+/** A stored range bound, or null when the bound is open or absent. */
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 /** One job header row as a summary of section 2.5. */
 export function jobSummary(
   row: Record<string, unknown>,
@@ -268,22 +432,16 @@ export function jobSummary(
           rejected: counted(row['rejected']),
           refusal: (row['refusal'] as string | null) ?? null,
         };
+  const category = categorySummaryOf(row);
   return jobSummarySchema.parse({
     jobId: row['job_id'],
     displayId: row['display_id'],
     revision: Number(row['revision']),
-    action:
-      row['kind'] === 'inventory-refresh'
-        ? 'refresh-inventory'
-        : row['kind'] === 'device-export'
-          ? 'export-devices'
-          : row['kind'] === 'device-import'
-            ? 'validate-device-import'
-            : (writeActions[String(row['action'])] ??
-              'update-device-annotations'),
+    action: actionOf(row),
     status: row['status'],
     entityType: row['entity_type'],
     scope: { kind: row['scope_kind'], deviceCount: total },
+    ...(category === undefined ? {} : { category }),
     requestedBy: {
       id: row['requested_by'],
       displayName: row['requested_by_name'],
@@ -373,6 +531,62 @@ export function decodeOperationCursor(
   )
     return { number: parsedNumber, position: parsedPosition };
   throw new NotFoundException({ reason: 'job-not-found' });
+}
+
+/**
+ * The result row cursor of the value job: the user ordinal and the attribute. The route answers
+ * `<ordinal>:<schemaName>.<fieldName>`, so the query schema accepts the cursor that it returned.
+ */
+export const attributeRowCursorSchema = z
+  .string()
+  .regex(/^\d+:[A-Za-z0-9_-]{1,200}\.[A-Za-z0-9_-]{1,200}$/);
+
+export function decodeAttributeRowCursor(
+  cursor: string | undefined,
+): { ordinal: number; schemaName: string; fieldName: string } | null {
+  if (!cursor) return null;
+  const match = /^(\d+):([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{1,200})$/.exec(
+    cursor,
+  );
+  const ordinal = match ? Number(match[1]) : NaN;
+  if (match && Number.isInteger(ordinal) && ordinal >= 1)
+    return { ordinal, schemaName: match[2]!, fieldName: match[3]! };
+  throw new BadRequestException({ reason: 'invalid-cursor' });
+}
+
+/** One value result row of card J4, from one frozen user row and one stored value. */
+function attributeRow(row: Record<string, unknown>): JobAttributeRow {
+  const failure = row['failure'] == null ? null : String(row['failure']);
+  const reason =
+    row['google_reason'] == null ? null : String(row['google_reason']);
+  const outcome = String(row['outcome']);
+  return {
+    operation: Number(row['operation']),
+    userId: String(row['user_id']),
+    userName: row['user_name'] == null ? null : String(row['user_name']),
+    primaryEmail: String(row['primary_email']),
+    attribute: userAttributeKey(
+      String(row['schema_name']),
+      String(row['field_name']),
+    ),
+    displayName: String(row['display_name']),
+    currentValue: wireValue(row['current_value']),
+    newValue: wireValue(row['requested_value']),
+    // A row that the worker has not reached yet reads pending, as the job progress does.
+    outcome:
+      outcome === 'pending' || outcome === 'dispatched'
+        ? 'pending'
+        : (outcome as JobOutcome),
+    failureText:
+      failure === null ? null : userAttributeFailureText(failure, reason),
+  };
+}
+
+/** The cursor of one value result row: the user ordinal and the attribute. */
+export function attributeRowCursor(row: Record<string, unknown>): string {
+  return `${String(row['ordinal'])}:${String(row['schema_name'])}.${String(
+    row['field_name'],
+  )}`;
 }
 
 /** The operation word of one row: the write action, the Move of a path, or the field mode. */
@@ -606,6 +820,14 @@ export class Jobs {
           where.push(
             `(j.kind NOT IN ('device-command','device-status') OR u.action=ANY(${add(stored)}::text[]))`,
           );
+        // The three category actions share one kind. The plan row narrows each single action.
+        const categoryPlan = filters.action
+          .map((action) => categoryActions[action])
+          .filter((action): action is JobAction => action !== undefined);
+        if (categoryPlan.length > 0)
+          where.push(
+            `(j.kind<>'user-schema-change' OR catp.action=ANY(${add(categoryPlan)}::text[]))`,
+          );
       }
       // The entity type of the job names what the count counts (document A section 5).
       if (filters.entityType?.length)
@@ -631,6 +853,8 @@ export class Jobs {
       await this.rows(
         `SELECT count(*)::int AS matching, clock_timestamp() AS observed_at
           FROM cc.jobs j LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+          LEFT JOIN cc.user_schema_change_jobs sj ON sj.job_id=j.job_id
+          LEFT JOIN cc.user_category_plans catp ON catp.plan_id=sj.plan_id
           WHERE ${countedQuery.where}`,
         countedQuery.values,
       )
@@ -639,12 +863,16 @@ export class Jobs {
     const rows = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
         cb.display_name AS cancel_requested_by_name,
+        catp.action AS plan_action,
+        COALESCE(catp.body->>'displayName', catp.phrase) AS plan_scope_name,
         e.purpose AS export_purpose,
         i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal,
         to_char(j.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
         FROM cc.jobs j JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.user_schema_change_jobs sj ON sj.job_id=j.job_id
+        LEFT JOIN cc.user_category_plans catp ON catp.plan_id=sj.plan_id
         LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
         LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${pageQuery.where}
@@ -677,6 +905,11 @@ export class Jobs {
         `SELECT j.*, p.display_name AS requested_by_name,
           cb.display_name AS cancel_requested_by_name,
           u.confirmed_by, u.action, c.changes, pr.deprovision_reason,
+          catp.action AS plan_action,
+          COALESCE(catp.body->>'displayName', catp.phrase) AS plan_scope_name,
+          catp.body AS plan_body,
+          catp.changes AS plan_changes, catp.previous_display_name AS plan_previous_name,
+          catp.change_field_types AS plan_field_types,
           cp.display_name AS confirmed_by_name, pr.display_id AS preview_display_id,
           e.purpose AS export_purpose,
           e.format AS export_format, e.spreadsheet_id,
@@ -694,6 +927,8 @@ export class Jobs {
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.user_schema_change_jobs sj ON sj.job_id=j.job_id
+        LEFT JOIN cc.user_category_plans catp ON catp.plan_id=sj.plan_id
         LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
         LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         LEFT JOIN cc.application_principals pc ON pc.id=i.plan_changed_by
@@ -791,6 +1026,8 @@ export class Jobs {
     ]);
     return jobDetailSchema.parse({
       ...jobSummary(job, now),
+      // The category result table of a category job (card J4). It stays absent for another kind.
+      category: categoryDetailOf(job),
       confirmedBy:
         job['confirmed_by'] == null
           ? null
@@ -948,6 +1185,88 @@ export class Jobs {
       nextCursor:
         rows.length > pageSize && page.length > 0
           ? operationCursor(page[page.length - 1]!)
+          : null,
+    });
+  }
+
+  /**
+   * The value result rows of a value job (card J4, UM state 10). One row for each user and
+   * attribute, with the totals of both views on every page. The read applies the job visibility of
+   * the list, so a caller outside it learns nothing.
+   */
+  async attributeRows(
+    session: SessionResponse,
+    customerId: string,
+    displayId: string,
+    view: JobAttributeRowView,
+    cursor: string | undefined,
+    limit: number | undefined,
+  ): Promise<JobAttributeRowsPage> {
+    // The job read comes first, so a caller outside the job visibility learns nothing.
+    const job = await this.header(session, customerId, displayId);
+    if (!job) throw new NotFoundException({ reason: 'job-not-found' });
+    const pageSize = Math.min(Math.max(limit ?? 100, 1), 1000);
+    const after = decodeAttributeRowCursor(cursor);
+    const values = [...this.actor(session), customerId, displayId];
+    const totals = (
+      await this.rows(
+        `SELECT count(*)::int AS all_rows,
+          count(*) FILTER (WHERE COALESCE(t.outcome,'pending')='failed')::int AS failed_rows
+        FROM cc.user_attribute_preview_targets t
+        JOIN cc.user_attribute_update_jobs u ON u.preview_id=t.preview_id
+        JOIN cc.jobs j ON j.job_id=u.job_id
+        JOIN cc.user_attribute_target_values v
+          ON v.preview_id=t.preview_id AND v.ordinal=t.ordinal AND v.disposition='eligible'
+        WHERE j.customer_id=$3 AND j.display_id=$4
+          AND cc.job_visible($1,$2,$3,j.requested_by) AND t.disposition='eligible'`,
+        values,
+      )
+    )[0];
+    const rows = await this.rows(
+      `SELECT t.operation, t.user_id, cu.full_name AS user_name, t.primary_email,
+        v.schema_name, v.field_name, v.current_value, v.requested_value,
+        COALESCE(t.outcome,'pending') AS outcome, t.failure, t.google_reason,
+        COALESCE((SELECT a->>'displayName'
+          FROM cc.user_attribute_categories c, LATERAL jsonb_array_elements(c.fields) a
+          WHERE c.customer_id=$3 AND c.schema_name=v.schema_name
+            AND a->>'fieldName'=v.field_name
+          LIMIT 1), v.field_name) AS display_name
+      FROM (
+        SELECT o.preview_id, o.ordinal, o.user_id, o.primary_email, o.outcome, o.failure,
+          o.google_reason, row_number() OVER (ORDER BY o.ordinal)::int AS operation
+        FROM cc.user_attribute_preview_targets o
+        JOIN cc.user_attribute_update_jobs u ON u.preview_id=o.preview_id
+        JOIN cc.jobs j ON j.job_id=u.job_id
+        WHERE j.customer_id=$3 AND j.display_id=$4
+          AND cc.job_visible($1,$2,$3,j.requested_by) AND o.disposition='eligible'
+      ) t
+      JOIN cc.user_attribute_target_values v
+        ON v.preview_id=t.preview_id AND v.ordinal=t.ordinal AND v.disposition='eligible'
+      LEFT JOIN cc.users cu ON cu.customer_id=$3 AND cu.user_id=t.user_id
+      WHERE ($5::boolean IS NOT TRUE OR COALESCE(t.outcome,'pending')='failed')
+        AND ($6::integer IS NULL OR (t.ordinal,v.schema_name,v.field_name)>
+          ($6::integer,$7::text,$8::text))
+      ORDER BY t.ordinal, v.schema_name, v.field_name
+      LIMIT $9`,
+      [
+        ...values,
+        view === 'failed',
+        after?.ordinal ?? null,
+        after?.schemaName ?? null,
+        after?.fieldName ?? null,
+        pageSize + 1,
+      ],
+    );
+    const page = rows.slice(0, pageSize);
+    return jobAttributeRowsPageSchema.parse({
+      rows: page.map((row) => attributeRow(row)),
+      totals: {
+        all: counted(totals?.['all_rows']),
+        failed: counted(totals?.['failed_rows']),
+      },
+      nextCursor:
+        rows.length > pageSize && page.length > 0
+          ? attributeRowCursor(page[page.length - 1]!)
           : null,
     });
   }
@@ -1203,12 +1522,16 @@ export class Jobs {
     const running = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
         cb.display_name AS cancel_requested_by_name,
+        catp.action AS plan_action,
+        COALESCE(catp.body->>'displayName', catp.phrase) AS plan_scope_name,
         e.purpose AS export_purpose,
         i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.user_schema_change_jobs sj ON sj.job_id=j.job_id
+        LEFT JOIN cc.user_category_plans catp ON catp.plan_id=sj.plan_id
         LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
         LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('running','awaiting-devices')
@@ -1225,12 +1548,16 @@ export class Jobs {
     const waiting = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
         cb.display_name AS cancel_requested_by_name,
+        catp.action AS plan_action,
+        COALESCE(catp.body->>'displayName', catp.phrase) AS plan_scope_name,
         e.purpose AS export_purpose,
         i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.user_schema_change_jobs sj ON sj.job_id=j.job_id
+        LEFT JOIN cc.user_category_plans catp ON catp.plan_id=sj.plan_id
         LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
         LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${visible} AND j.status IN ('accepted','queued','held')
@@ -1251,12 +1578,16 @@ export class Jobs {
     const recent = await this.rows(
       `SELECT j.*, u.action, p.display_name AS requested_by_name,
         cb.display_name AS cancel_requested_by_name,
+        catp.action AS plan_action,
+        COALESCE(catp.body->>'displayName', catp.phrase) AS plan_scope_name,
         e.purpose AS export_purpose,
         i.mode AS import_mode, i.plan_state, i.plan_expires_at, i.proposed, i.rejected, i.refusal
         FROM cc.jobs j
         JOIN cc.application_principals p ON p.id=j.requested_by
         LEFT JOIN cc.application_principals cb ON cb.id=j.cancel_requested_by
         LEFT JOIN cc.device_update_jobs u ON u.job_id=j.job_id
+        LEFT JOIN cc.user_schema_change_jobs sj ON sj.job_id=j.job_id
+        LEFT JOIN cc.user_category_plans catp ON catp.plan_id=sj.plan_id
         LEFT JOIN cc.device_export_jobs e ON e.job_id=j.job_id
         LEFT JOIN cc.device_import_jobs i ON i.job_id=j.job_id
         WHERE ${visible} AND j.finished_at IS NOT NULL

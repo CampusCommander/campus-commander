@@ -9,26 +9,26 @@ import {
   deviceImportModeSchema,
 } from './device-edit-template';
 import { entityTypeSchema } from './entity-types';
+import {
+  userAttributeFieldTypeSchema,
+  userAttributeKeySchema,
+  userAttributeRowValueSchema,
+} from './users';
+import { jobDisplayIdSchema, previewDisplayIdSchema } from './job-identifiers';
+
+export { jobDisplayIdSchema, previewDisplayIdSchema };
+export type { JobDisplayId, PreviewDisplayId } from './job-identifiers';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
 const revision = z.number().int().min(1);
 const deviceId = z.string().min(1).max(128);
+const userId = z.string().min(1).max(128);
 const serialNumber = z.string().max(256);
 const orgUnitPath = z.string().min(1).max(4096).startsWith('/');
 const displayName = z.string().min(1).max(200);
 /** Product codes of operations. The vocabulary stays open (section 1.4). */
 const productCode = z.string().min(1).max(64);
-
-/** The display IDs of sections 1.4 and 1.6, and of the export and import kinds (design section 1).
- * The category job adds `CAT` (document B section 7.1), and the value job adds `UAT`
- * (document B section 7.2). The number carries at least three digits. */
-export const jobDisplayIdSchema = z
-  .string()
-  .regex(/^(UPD|REF|CMD|STS|EXP|IMP|CAT|UAT)-\d{3,}$/);
-export type JobDisplayId = z.infer<typeof jobDisplayIdSchema>;
-export const previewDisplayIdSchema = z.string().regex(/^PV-\d{3,}$/);
-export type PreviewDisplayId = z.infer<typeof previewDisplayIdSchema>;
 
 /** One operation ID. Its prefix and number repeat the display ID of its job (section 1.4). An
  * update row adds the field ID, because an update job answers one row per device and field. A
@@ -65,9 +65,10 @@ export const jobStatusSchema = z.enum([
 ]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 
-/** The ten job actions of section 1 and design section 1. A status job holds disable, re-enable, or
- * deprovision. An export job holds `export-devices`, and a validation job holds
- * `validate-device-import`. */
+/** The job actions of section 1, design section 1, and the two user job kinds. A status job holds
+ * disable, re-enable, or deprovision. An export job holds `export-devices`, and a validation job
+ * holds `validate-device-import`. A category job holds one of the three category actions (document B
+ * section 7.1), and a value job holds `set-attributes` (document B section 7.2). */
 export const jobActionSchema = z.enum([
   'update-device-annotations',
   'refresh-inventory',
@@ -79,6 +80,10 @@ export const jobActionSchema = z.enum([
   'deprovision-devices',
   'export-devices',
   'validate-device-import',
+  'create-category',
+  'edit-category',
+  'delete-category',
+  'set-attributes',
 ]);
 export type JobAction = z.infer<typeof jobActionSchema>;
 export const JOB_ACTION_LABELS: Readonly<Record<JobAction, string>> = {
@@ -92,6 +97,12 @@ export const JOB_ACTION_LABELS: Readonly<Record<JobAction, string>> = {
   'deprovision-devices': 'Deprovision devices',
   'export-devices': 'Export devices',
   'validate-device-import': 'Validate device import',
+  // The three titles of the category dialog (S2 sign-off item 1, CA notes).
+  'create-category': 'Create category',
+  'edit-category': 'Edit category',
+  'delete-category': 'Delete category',
+  // The action name of the approved results screen (UM state 10).
+  'set-attributes': 'Set attributes',
 };
 
 /** A running full sync knows no total. Its pending count stays unknown. */
@@ -262,6 +273,15 @@ export const jobExecutionCountsSchema = z.strictObject({
 });
 export type JobExecutionCounts = z.infer<typeof jobExecutionCountsSchema>;
 
+/** The category of a category job in a summary (card J4). The scope line of the Jobs grid and the
+ * dialog takes the category display name (S2 sign-off item 1). The key stays absent for another
+ * kind of job, so a device job answer keeps its shape. */
+export const jobCategorySummarySchema = z.strictObject({
+  /** The category display name that the plan writes, or the cached name of a delete. */
+  scopeName: displayName,
+});
+export type JobCategorySummary = z.infer<typeof jobCategorySummarySchema>;
+
 /** One job row of the Jobs grid (section 2.5). */
 export const jobSummarySchema = z
   .strictObject({
@@ -273,6 +293,8 @@ export const jobSummarySchema = z
     /** The entity type of the job. It names what `scope.deviceCount` counts (document A section 5). */
     entityType: entityTypeSchema,
     scope: jobScopeSchema,
+    /** The category of a category job (card J4). It stays absent for another kind of job. */
+    category: jobCategorySummarySchema.optional(),
     requestedBy: jobPersonSchema,
     createdAt: timestamp,
     startedAt: timestamp.nullable(),
@@ -330,6 +352,57 @@ export const jobOutcomeSchema = z.enum([
   'cancelled',
 ]);
 export type JobOutcome = z.infer<typeof jobOutcomeSchema>;
+
+/** The change of one category result row (CA state 07). `rename` moves the category label, and the
+ * other three are the plan changes of document B section 6.1. */
+export const jobCategoryRowChangeSchema = z.enum([
+  'rename',
+  'added',
+  'changed',
+  'removed',
+]);
+export type JobCategoryRowChange = z.infer<typeof jobCategoryRowChangeSchema>;
+
+/** The new range of a range change (document B section 5). A bound may stay open. */
+export const jobCategoryRangeSchema = z.strictObject({
+  minValue: z.number().nullable(),
+  maxValue: z.number().nullable(),
+});
+export type JobCategoryRange = z.infer<typeof jobCategoryRangeSchema>;
+
+/** One row of the category result table (CA state 07): the change, the attribute, the facts of its
+ * effect, and the outcome of the job. A rename row names the two category labels and no attribute. */
+export const jobCategoryRowSchema = z
+  .strictObject({
+    change: jobCategoryRowChangeSchema,
+    /** The attribute display name, or the category label that the plan writes on a rename. */
+    displayName,
+    /** The info type of the attribute (document B section 8.1). A rename row carries none. */
+    fieldType: userAttributeFieldTypeSchema.nullable(),
+    /** The new range of a range change. Another row carries none. */
+    range: jobCategoryRangeSchema.nullable(),
+    /** The holder count of a removal. Another row carries none. */
+    holders: count.nullable(),
+    /** The category label before a rename. Another row carries none. */
+    previousName: displayName.nullable(),
+    /** The outcome of the one call that the job makes (document B section 7.1). */
+    outcome: jobOutcomeSchema,
+  })
+  .refine(
+    (row) =>
+      (row.change === 'rename') ===
+      (row.previousName !== null && row.fieldType === null),
+    {
+      message: 'A rename row names the old category label and no info type.',
+    },
+  )
+  .refine((row) => (row.change === 'removed') === (row.holders !== null), {
+    message: 'A removed attribute carries its holder count.',
+  })
+  .refine((row) => row.range === null || row.change === 'changed', {
+    message: 'Only a changed attribute carries a range.',
+  });
+export type JobCategoryRow = z.infer<typeof jobCategoryRowSchema>;
 
 export const jobVerifiedBySchema = z.enum(['write-response', 'read-back']);
 export type JobVerifiedBy = z.infer<typeof jobVerifiedBySchema>;
@@ -421,9 +494,22 @@ export const jobLatestActivitySchema = z.strictObject({
 });
 export type JobLatestActivity = z.infer<typeof jobLatestActivitySchema>;
 
+/** The category result table of one category job (card J4, CA state 07). It carries every fact that
+ * a row of the approved table needs, so the client reads no category cache. The key stays absent
+ * for another kind of job. */
+export const jobCategoryDetailSchema = jobCategorySummarySchema.extend({
+  /** The category label that an edit moved from, or null when the label did not change. */
+  previousName: displayName.nullable(),
+  /** One row for each change of the plan, in plan order, plus the rename row of a changed label. */
+  rows: z.array(jobCategoryRowSchema).max(200),
+});
+export type JobCategoryDetail = z.infer<typeof jobCategoryDetailSchema>;
+
 /** One job detail row. Refresh jobs hold null in every write field. */
 export const jobDetailSchema = jobSummarySchema
-  .extend({
+  .safeExtend({
+    /** The category result table of a category job (card J4). It stays absent for another job. */
+    category: jobCategoryDetailSchema.optional(),
     confirmedBy: jobPersonSchema.nullable(),
     previewDisplayId: previewDisplayIdSchema.nullable(),
     /** The frozen changes of a selection job, in contract order. Null for an edit-list job and
@@ -584,6 +670,43 @@ export const jobOperationsPageSchema = z.strictObject({
   nextCursor: z.string().min(1).max(1024).nullable(),
 });
 export type JobOperationsPage = z.infer<typeof jobOperationsPageSchema>;
+
+/** The two views of the value result table (UM notes composition 11): every row, or the failed
+ * rows. */
+export const JOB_ATTRIBUTE_ROW_VIEWS = ['all', 'failed'] as const;
+export const jobAttributeRowViewSchema = z.enum(JOB_ATTRIBUTE_ROW_VIEWS);
+export type JobAttributeRowView = z.infer<typeof jobAttributeRowViewSchema>;
+
+/** One row of the value job results (card J4, UM state 10): the user, the attribute, its current
+ * and new value, and the outcome of the user's one operation. */
+export const jobAttributeRowSchema = z.strictObject({
+  /** The operation number of the user, as the operations route and Reconcile name it. */
+  operation: z.number().int().min(1),
+  userId,
+  /** The user name of the cache, or null when the cache no longer holds the user. */
+  userName: z.string().max(4096).nullable(),
+  primaryEmail: z.email().max(254),
+  /** The C1 ID of the attribute (design C1). */
+  attribute: userAttributeKeySchema,
+  displayName,
+  /** The value that the preview read, or null when the attribute holds none. */
+  currentValue: userAttributeRowValueSchema.nullable(),
+  /** The value that the confirm writes, or null for a removal. */
+  newValue: userAttributeRowValueSchema.nullable(),
+  outcome: jobOutcomeSchema,
+  /** The drafted failure text, or the Google reason when no draft exists, or null. */
+  failureText: z.string().min(1).max(1024).nullable(),
+});
+export type JobAttributeRow = z.infer<typeof jobAttributeRowSchema>;
+
+/** One page of the value job results (card J4). Each page carries the server totals of both
+ * views, so the client never counts the rows that it holds. */
+export const jobAttributeRowsPageSchema = z.strictObject({
+  rows: z.array(jobAttributeRowSchema).max(1000),
+  totals: z.strictObject({ all: count, failed: count }),
+  nextCursor: z.string().min(1).max(1024).nullable(),
+});
+export type JobAttributeRowsPage = z.infer<typeof jobAttributeRowsPageSchema>;
 
 /** The requesters answer of section 2.5. */
 export const jobRequestersSchema = z.strictObject({

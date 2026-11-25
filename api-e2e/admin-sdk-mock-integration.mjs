@@ -809,6 +809,37 @@ async function runAdminSdkMockIntegration({
     await categoryJob(creation),
     'The category create',
   );
+  // J4: the title takes the action, and the scope line takes the category display name.
+  assert.equal(createJob.action, 'create-category', JSON.stringify(createJob));
+  assert.deepEqual(createJob.category, { scopeName: 'Club info' });
+  const createDetail = JSON.parse(
+    (await call(`/api/jobs/${createJob.displayId}`)).text,
+  );
+  assert.equal(createDetail.action, 'create-category');
+  assert.deepEqual(createDetail.category, {
+    scopeName: 'Club info',
+    previousName: null,
+    rows: [
+      {
+        change: 'added',
+        displayName: 'ClubName',
+        fieldType: 'STRING',
+        range: null,
+        holders: null,
+        previousName: null,
+        outcome: 'succeeded',
+      },
+    ],
+  });
+  const filtered = JSON.parse(
+    (await call('/api/jobs?action=create-category&limit=50')).text,
+  );
+  assert.ok(
+    filtered.jobs.some((job) => job.displayId === createJob.displayId),
+    `The action filter lists ${createJob.displayId}: ${filtered.jobs
+      .map((job) => job.displayId)
+      .join(',')}`,
+  );
   const created = await categoryOf(schemaName);
   assert.ok(created, `The category read lists ${schemaName}.`);
   assert.equal(created.displayName, 'Club info');
@@ -838,6 +869,26 @@ async function runAdminSdkMockIntegration({
     await categoryJob(editPlan),
     'The category edit',
   );
+  // J4: the edit reads the new label, the rename row, and the kept attribute of CA state 07.
+  assert.equal(editJob.action, 'edit-category', JSON.stringify(editJob));
+  assert.deepEqual(editJob.category, { scopeName: 'Club details' });
+  const editDetail = JSON.parse(
+    (await call(`/api/jobs/${editJob.displayId}`)).text,
+  );
+  assert.equal(editDetail.category.scopeName, 'Club details');
+  assert.equal(editDetail.category.previousName, 'Club info');
+  // The edit moves the category label alone, so the table holds the rename row.
+  assert.deepEqual(editDetail.category.rows, [
+    {
+      change: 'rename',
+      displayName: 'Club details',
+      fieldType: null,
+      range: null,
+      holders: null,
+      previousName: 'Club info',
+      outcome: 'succeeded',
+    },
+  ]);
   const edited = await categoryOf(schemaName);
   assert.ok(edited, `The category read still lists ${schemaName}.`);
   assert.equal(edited.displayName, 'Club details');
@@ -872,6 +923,26 @@ async function runAdminSdkMockIntegration({
     await categoryJob(deletion),
     'The category delete',
   );
+  // J4: a delete keeps the cached category label as its scope, and its rows carry the removed
+  // attribute, its info type, and the holder count of the plan.
+  assert.equal(deleteJob.action, 'delete-category', JSON.stringify(deleteJob));
+  assert.deepEqual(deleteJob.category, { scopeName: 'Club details' });
+  const deleteDetail = JSON.parse(
+    (await call(`/api/jobs/${deleteJob.displayId}`)).text,
+  );
+  assert.equal(deleteDetail.category.scopeName, 'Club details');
+  assert.equal(deleteDetail.category.previousName, null);
+  assert.deepEqual(deleteDetail.category.rows, [
+    {
+      change: 'removed',
+      displayName: 'ClubName',
+      fieldType: 'STRING',
+      range: null,
+      holders: edited.fields[0].holders,
+      previousName: null,
+      outcome: 'succeeded',
+    },
+  ]);
   assert.equal(
     await categoryOf(schemaName),
     undefined,
@@ -985,12 +1056,44 @@ async function runAdminSdkMockIntegration({
     ],
   });
   assert.equal(onePreview.eligible, 1, JSON.stringify(onePreview));
-  await settledValueJob(
+  const oneJob = await settledValueJob(
     await valueConfirm(onePreview),
     'The one-user value job',
     1,
   );
   assert.equal(await customOf(oneUser), oneValue);
+  // J4: the value job reads set-attributes, counts the eligible users in its scope, and answers one
+  // result row for the user and attribute.
+  assert.equal(oneJob.action, 'set-attributes', JSON.stringify(oneJob));
+  assert.deepEqual(oneJob.scope, { kind: 'devices', deviceCount: 1 });
+  const oneRows = JSON.parse(
+    (await call(`/api/jobs/${oneJob.displayId}/attribute-rows`)).text,
+  );
+  const oneUserRead = JSON.parse(
+    (await call(`/api/users/${encodeURIComponent(oneUser)}`)).text,
+  ).user;
+  const valueDisplayName = JSON.parse(
+    (await call('/api/users/attribute-categories')).text,
+  )
+    .categories.find((category) => category.schemaName === valueCategory)
+    ?.fields.find((field) => field.fieldName === valueField)?.displayName;
+  assert.ok(valueDisplayName, `The cache names ${valueField}.`);
+  assert.deepEqual(oneRows.totals, { all: 1, failed: 0 });
+  assert.equal(oneRows.nextCursor, null);
+  assert.deepEqual(oneRows.rows, [
+    {
+      operation: 1,
+      userId: oneUser,
+      userName: oneUserRead.fullName ?? null,
+      primaryEmail: oneUserRead.primaryEmail,
+      attribute,
+      displayName: valueDisplayName,
+      currentValue: oneBaseline,
+      newValue: oneValue,
+      outcome: 'succeeded',
+      failureText: null,
+    },
+  ]);
   valueResults.push(
     'an edit list of one user settles completed and the user read holds the value: pass',
   );
@@ -1017,6 +1120,26 @@ async function runAdminSdkMockIntegration({
   for (const userId of valueUsers)
     assert.equal(await customOf(userId), multiValue);
   assert.equal(multiJob.progress.succeeded, valueUsers.length);
+  // J4: the All view lists both users, and the Failed view lists none of them.
+  const multiRows = JSON.parse(
+    (await call(`/api/jobs/${multiJob.displayId}/attribute-rows?limit=100`))
+      .text,
+  );
+  assert.deepEqual(multiRows.totals, { all: 2, failed: 0 });
+  assert.deepEqual(
+    multiRows.rows.map((row) => [row.operation, row.userId, row.outcome]),
+    valueUsers.map((userId, index) => [index + 1, userId, 'succeeded']),
+  );
+  assert.deepEqual(
+    multiRows.rows.map((row) => row.newValue),
+    [multiValue, multiValue],
+  );
+  const multiFailed = JSON.parse(
+    (await call(`/api/jobs/${multiJob.displayId}/attribute-rows?view=failed`))
+      .text,
+  );
+  assert.deepEqual(multiFailed.totals, { all: 2, failed: 0 });
+  assert.deepEqual(multiFailed.rows, []);
   valueResults.push(
     'an edit list of two users settles completed and both reads hold the value: pass',
   );

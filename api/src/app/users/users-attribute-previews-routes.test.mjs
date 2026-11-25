@@ -146,6 +146,7 @@ const selectionRow = (id, homeroom) => ({
 const pageRow = (overrides) => ({
   ordinal: 0,
   userId: 'u1',
+  userName: 'Alex Rivera',
   primaryEmail: 'u1@example.org',
   schemaName: 'StudentInfo',
   fieldName: 'Homeroom',
@@ -1062,6 +1063,7 @@ test('the targets page answers wire rows, parses the cursor, and filters', async
   assert.deepEqual(answer.body.targets, [
     {
       userId: 'u1',
+      userName: 'Alex Rivera',
       primaryEmail: 'u1@example.org',
       attribute: 'attr:StudentInfo.Homeroom',
       currentValue: 'B11',
@@ -1071,6 +1073,7 @@ test('the targets page answers wire rows, parses the cursor, and filters', async
     },
     {
       userId: 'u1',
+      userName: 'Alex Rivera',
       primaryEmail: 'u1@example.org',
       attribute: 'attr:StudentInfo.Programs',
       currentValue: ['ELL', 'Band'],
