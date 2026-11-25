@@ -87,6 +87,17 @@ The S3 cards apply the two answers in this way:
 - Bulk Actions, Set attributes, sends the server-side selection key of the Users grid, never a list of users. The review reads its rows from the server one page at a time.
 - The in-grid editors and the details card keep only the edits of the open save and the rows on screen in the browser.
 
+On 2026-11-25 the owner answered two composition questions of slice S3 in the main chat. No approved screen draws either composition.
+
+The first question was: "Should value jobs (UAT-) on the Jobs page follow the same rule you approved for category jobs? Title: "Set attributes", the action name in the approved results screen (state 10). Scope: the number of users, for example "18 users". Operation table: the Set attributes results table — User, Primary email, Current value, New value, Outcome — with the All and Failed views." Owner: "1 yes".
+
+The second question was: "When someone saves two or more in-grid changes, should the Set attributes dialog open at its Review step (approved state 09), then Confirm, then results (state 10)? This is how the Devices grid already works. A single change still saves at once." Owner: "yes".
+
+The S3 cards apply the two answers in this way:
+
+- The Jobs list and the job page name a value job `Set attributes` and count its users. The job page shows the results table of UM state 10, with the views All and Failed.
+- Save changes in the Users grid with two or more pending changes opens the Set attributes dialog at Review. Confirm starts the job, and the dialog then shows its results. One pending change saves at once.
+
 ## Defaults
 
 The screen approval accepted four named defaults:
