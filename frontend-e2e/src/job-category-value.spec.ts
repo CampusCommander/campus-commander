@@ -286,6 +286,9 @@ test('lists a category job and a value job with their own titles and scopes', as
     path: testInfo.outputPath('jobs-category-value.png'),
     fullPage: true,
   });
+  await page.screenshot({
+    path: testInfo.outputPath('jobs-category-value-1440x900.png'),
+  });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
@@ -336,6 +339,9 @@ test('shows a category job with its title, its category, and the state 07 table'
   await page.screenshot({
     path: testInfo.outputPath('job-category.png'),
     fullPage: true,
+  });
+  await page.screenshot({
+    path: testInfo.outputPath('job-category-1440x900.png'),
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
@@ -435,6 +441,9 @@ test('shows a value job with All and Failed, the totals, and a second page', asy
   await page.screenshot({
     path: testInfo.outputPath('job-value.png'),
     fullPage: true,
+  });
+  await page.screenshot({
+    path: testInfo.outputPath('job-value-1440x900.png'),
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
