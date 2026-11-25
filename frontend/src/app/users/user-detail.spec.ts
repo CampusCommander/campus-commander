@@ -214,6 +214,28 @@ function held<T>() {
   return { promise, release };
 }
 
+/** Creates the details page on the configured TestBed, as a navigation would (R4-A). */
+async function mountPage(userId: string) {
+  const fixture = TestBed.createComponent(UserDetailPage);
+  fixture.componentRef.setInput('userId', userId);
+  const element: HTMLElement = fixture.nativeElement;
+  await vi.waitFor(() => {
+    fixture.detectChanges();
+    expect(element.textContent).not.toContain('Loading user details');
+  });
+  const button = (name: string) =>
+    [...element.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === name,
+    );
+  const fact = (label: string) =>
+    [...element.querySelectorAll('.facts-list > div')]
+      .find((row) => row.querySelector('dt')?.textContent?.trim() === label)
+      ?.querySelector('dd')
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim();
+  return { element, button, fact, fixture };
+}
+
 async function setup(options: {
   detail?: UserDetail | null;
   /** The answer of the read, when the test needs a failure or a stale answer. */
@@ -308,24 +330,8 @@ async function setup(options: {
   });
   const router = TestBed.inject(Router);
   const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-  const fixture = TestBed.createComponent(UserDetailPage);
-  fixture.componentRef.setInput('userId', detail?.userId ?? 'missing-user');
-  const element: HTMLElement = fixture.nativeElement;
-  await vi.waitFor(() => {
-    fixture.detectChanges();
-    expect(element.textContent).not.toContain('Loading user details');
-  });
-  const button = (name: string) =>
-    [...element.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent?.trim() === name,
-    );
-  const fact = (label: string) =>
-    [...element.querySelectorAll('.facts-list > div')]
-      .find((row) => row.querySelector('dt')?.textContent?.trim() === label)
-      ?.querySelector('dd')
-      ?.textContent?.replace(/\s+/g, ' ')
-      .trim();
-  return { store, element, navigate, button, fact, fixture };
+  const mounted = await mountPage(detail?.userId ?? 'missing-user');
+  return { store, navigate, ...mounted };
 }
 
 describe('the user details page', () => {
@@ -1009,6 +1015,168 @@ describe('the user details page', () => {
     expect(card.readJob).toHaveBeenCalledWith('UAT-015');
     expect(store.user).toHaveBeenCalledTimes(2);
     const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('releases the accepted receipt only after its job settles after the cap (R4-A)', async () => {
+    const settlement = held<{
+      ok: true;
+      value: { displayId: string; status: string };
+    }>();
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      // The editor reached its 120-read budget without a terminal answer.
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: false,
+        message: 'The job is still running.',
+      }),
+      // The card's own continuation reads the receipt until the job answers.
+      readJob: vi.fn(() => settlement.promise),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const grade = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!grade) throw new Error('No Grade level field');
+    grade.value = '11';
+    grade.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('The job is still running.');
+    });
+    // The cap handed observation over, and the receipt stays under recovery.
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(confirmations.pending(user().userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+    });
+    expect(card.readJob).toHaveBeenCalledWith('UAT-015');
+
+    settlement.release({
+      ok: true,
+      value: { displayId: 'UAT-015', status: 'completed' },
+    });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    // Only the settled job released the receipt, and the card shows the new value.
+    expect(confirmations.pending(user().userId)).toBeNull();
+    expect(card.prepare).toHaveBeenCalledTimes(1);
+    expect(store.user).toHaveBeenCalledTimes(2);
+    const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('recovers the accepted receipt on the next page after the cap (R4-A)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      // The editor reaches its cap, and the next form observes the same job to its end.
+      waitForJob: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          message: 'The job is still running.',
+        })
+        .mockResolvedValue({
+          ok: true,
+          value: { displayId: 'UAT-015', status: 'completed' },
+        }),
+      // The departed card's continuation never answers.
+      readJob: vi.fn(() => new Promise(() => undefined)),
+    };
+    const first = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    first.button('Edit')?.click();
+    first.fixture.detectChanges();
+    await first.fixture.whenStable();
+    const grade = first.element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!grade) throw new Error('No Grade level field');
+    grade.value = '11';
+    grade.dispatchEvent(new Event('input'));
+    first.fixture.detectChanges();
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => {
+      first.fixture.detectChanges();
+      expect(first.element.textContent).toContain('The job is still running.');
+    });
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(confirmations.pending(user().userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+    });
+
+    // The person leaves the details page before the job has any provider effect.
+    first.fixture.destroy();
+    first.store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    const second = await mountPage(user().userId);
+    second.button('Edit')?.click();
+    second.fixture.detectChanges();
+    await second.fixture.whenStable();
+    // The reopened form recovers the receipt instead of preparing a second preview.
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    await vi.waitFor(() => {
+      second.fixture.detectChanges();
+      expect(second.element.textContent).toContain(
+        'Grade level saved to Google',
+      );
+    });
+    expect(card.prepare).toHaveBeenCalledTimes(1);
+    expect(card.confirm).toHaveBeenCalledTimes(1);
+    expect(card.waitForJob).toHaveBeenCalledTimes(2);
+    expect(confirmations.pending(user().userId)).toBeNull();
+    const annotation = [...second.element.querySelectorAll('.annotation')].find(
       (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
     );
     expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');

@@ -12,6 +12,7 @@ import type {
   UserDetail,
 } from '@campus/application-contracts';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
 import {
   UserAttributeEditor,
   type UserAttributeSaveResult,
@@ -1298,5 +1299,130 @@ describe('the Custom attributes card form', () => {
     expect(inFlight.confirm.mock.calls[1]).toEqual(
       inFlight.confirm.mock.calls[0],
     );
+  });
+
+  it('keeps the accepted receipt when the one-change save reaches the polling cap (R4-A)', async () => {
+    const capped = flow({
+      waitForJob: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          message: 'The job is still running.',
+        })
+        .mockResolvedValue({ ok: true, value: job }),
+    });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: capped },
+      ],
+    });
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => expect(first.finished()?.outcome).toBe('unsettled'));
+    // The 120-read cap transfers observation. It does not release the receipt.
+    expect(confirmations.pending(user.userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+    });
+    first.fixture.destroy();
+
+    // The next form recovers the same receipt and prepares no second preview.
+    const second = await mount();
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    expect(second.element.textContent).toContain('Saving to Google…');
+    await vi.waitFor(() => expect(second.finished()?.outcome).toBe('saved'));
+    expect(second.finished()?.displayId).toBe('UAT-015');
+    expect(capped.prepare).toHaveBeenCalledTimes(1);
+    expect(capped.confirm).toHaveBeenCalledTimes(1);
+    expect(capped.waitForJob).toHaveBeenCalledTimes(2);
+    // Only the settled job releases the retained identity.
+    expect(confirmations.pending(user.userId)).toBeNull();
+  });
+
+  it('keeps the accepted receipt of a review save when it reaches the polling cap (R4-A)', async () => {
+    const capped = reviewFlow(vi.fn().mockResolvedValue(acceptedReceipt(2)));
+    capped.waitForJob = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        message: 'The job is still running.',
+      })
+      .mockResolvedValue({ ok: true, value: job });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: capped },
+      ],
+    });
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.type('attr:Student.homeroom', '216');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain('Current value'),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() => expect(first.finished()?.outcome).toBe('unsettled'));
+    expect(confirmations.pending(user.userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+      attributeNames: ['Grade level', 'Homeroom'],
+    });
+    first.fixture.destroy();
+
+    const second = await mount();
+    await vi.waitFor(() => expect(second.finished()?.outcome).toBe('saved'));
+    expect(second.finished()?.attributeNames).toEqual([
+      'Grade level',
+      'Homeroom',
+    ]);
+    expect(capped.prepare).toHaveBeenCalledTimes(1);
+    expect(capped.confirm).toHaveBeenCalledTimes(1);
+    expect(capped.waitForJob).toHaveBeenCalledTimes(2);
+    expect(confirmations.pending(user.userId)).toBeNull();
+  });
+
+  it('keeps a recovered receipt through a second polling cap (R4-A)', async () => {
+    const capped = flow({
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: false,
+        message: 'The job is still running.',
+      }),
+    });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: capped },
+      ],
+    });
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => expect(first.finished()?.outcome).toBe('unsettled'));
+    first.fixture.destroy();
+
+    // The resumed observer also reaches its cap. The same receipt stays recoverable.
+    const second = await mount();
+    await vi.waitFor(() =>
+      expect(second.finished()?.outcome).toBe('unsettled'),
+    );
+    expect(confirmations.pending(user.userId)).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-015',
+    });
+    second.fixture.destroy();
+
+    capped.waitForJob.mockResolvedValue({ ok: true, value: job });
+    const third = await mount();
+    await vi.waitFor(() => expect(third.finished()?.outcome).toBe('saved'));
+    expect(capped.prepare).toHaveBeenCalledTimes(1);
+    expect(capped.confirm).toHaveBeenCalledTimes(1);
+    expect(capped.waitForJob).toHaveBeenCalledTimes(3);
+    expect(confirmations.pending(user.userId)).toBeNull();
   });
 });
