@@ -8,6 +8,7 @@ import {
   computed,
   inject,
   signal,
+  viewChild,
   viewChildren,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -18,9 +19,17 @@ import type {
   Action,
   UserPredicate,
   UserRow,
+  UserSelectionKey,
 } from '@campus/application-contracts';
 import type { GridState } from 'ag-grid-community';
 import { AuthStore } from '../auth.store';
+import {
+  BULK_ACTIONS_LABEL,
+  BULK_SELECT_NOTE,
+  BULK_SET_ATTRIBUTES_LABEL,
+} from './user-attribute-bulk-messages';
+import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
+import { USER_GRID_ID } from './user-selection';
 import { CUSTOM_ATTRIBUTES_LABEL } from './user-attribute-messages';
 import { UserAttributeCategories } from './user-attribute-categories';
 import { UserFilter } from './user-filter';
@@ -46,6 +55,7 @@ import { UsersStore } from './users.store';
     MatMenuModule,
     MatTabsModule,
     RouterLink,
+    UserAttributeBulkDialog,
     UserAttributeCategories,
     UserFilter,
     UserGrid,
@@ -125,6 +135,25 @@ export class UsersPage implements OnInit, OnDestroy {
     tabId: this.store.selectionTab,
   };
   protected readonly selectedCount = this.store.selectedCount;
+  /** Bulk Actions needs both the selection and the value write (B section 11). */
+  protected readonly canSetAttributes = computed(
+    () =>
+      this.authorized('users:write') && this.authorized('users:bulk-actions'),
+  );
+  protected readonly bulkOpen = signal(false);
+  protected readonly bulkMenuOpen = signal(false);
+  protected readonly bulkCategories = computed(
+    () => this.store.categories()?.categories ?? [],
+  );
+  protected readonly bulkSelection = computed<UserSelectionKey>(() => ({
+    gridId: USER_GRID_ID,
+    tabId: this.store.selectionTab,
+  }));
+  protected readonly BULK_ACTIONS_LABEL = BULK_ACTIONS_LABEL;
+  protected readonly BULK_SELECT_NOTE = BULK_SELECT_NOTE;
+  protected readonly BULK_SET_ATTRIBUTES_LABEL = BULK_SET_ATTRIBUTES_LABEL;
+  private readonly bulkButton =
+    viewChild<ElementRef<HTMLButtonElement>>('bulkButton');
   /** Refresh Domain needs the Google connection check (design section 5). */
   protected readonly canDiagnose = computed(() =>
     this.authorized('connection:diagnose'),
@@ -206,6 +235,20 @@ export class UsersPage implements OnInit, OnDestroy {
     this.editingIndex.set(null);
     if (index === null) return;
     afterNextRender(() => this.chips()[index]?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  /** Open the Set attributes dialog for the selection of this tab (state 08). */
+  protected openSetAttributes(): void {
+    if (!this.canSetAttributes() || this.selectedCount() === 0) return;
+    this.bulkOpen.set(true);
+  }
+
+  /** The dialog closed. Focus returns to the Bulk Actions control (UI-09). */
+  protected closeBulk(): void {
+    this.bulkOpen.set(false);
+    afterNextRender(() => this.bulkButton()?.nativeElement.focus(), {
       injector: this.injector,
     });
   }

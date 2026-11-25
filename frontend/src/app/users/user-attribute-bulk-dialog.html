@@ -1,0 +1,747 @@
+<div class="picker-scrim" aria-hidden="true" (click)="close()"></div>
+<div class="picker-wrap">
+  <section
+    class="export-dialog"
+    [class.is-wide]="wide()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="bulk-title"
+    aria-describedby="bulk-sub"
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown.escape)="close()"
+  >
+    <header class="export-head">
+      <div class="export-titles">
+        <h2 id="bulk-title" #dialogTitle tabindex="-1" cdkFocusInitial>
+          {{ BULK_SET_ATTRIBUTES_LABEL }}
+        </h2>
+        <p id="bulk-sub" class="export-sub">{{ subtitle() }}</p>
+      </div>
+      <div class="export-tools">
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Help for Set attributes"
+          aria-controls="bulk-help"
+          [attr.aria-expanded]="helpOpen()"
+          [class.is-on]="helpOpen()"
+          (click)="toggleHelp()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Close"
+          (click)="close()"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true"
+            >close</span
+          >
+        </button>
+      </div>
+    </header>
+
+    <div class="export-main">
+      <div class="export-body">
+        @if (helpOpen()) {
+        <app-user-attribute-help id="bulk-help" />
+        } @switch (step()) { @case ('setup') {
+        <div class="step">
+          @if (error(); as message) {
+          <div class="action-note error" role="alert">
+            <p>{{ message }}</p>
+          </div>
+          } @if (!categories().length) { @if (categoriesError(); as message) {
+          <div class="action-note error" role="alert">
+            <p>{{ message }}</p>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="categoriesRetry.emit()"
+            >
+              {{ ATTRIBUTE_RETRY_ROWS_LABEL }}
+            </button>
+          </div>
+          } @else if (categoriesLoading()) {
+          <p role="status">{{ BULK_CATEGORIES_LOADING_TEXT }}</p>
+          } @else {
+          <p role="status">{{ BULK_NO_CATEGORIES_TEXT }}</p>
+          } } @else {
+          <section class="group">
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="bulk-field"
+            >
+              <mat-label>{{ BULK_CATEGORY_LABEL }}</mat-label>
+              <mat-select
+                [value]="chosenCategory()?.schemaName ?? null"
+                (selectionChange)="chooseCategory($event.value)"
+              >
+                @for (category of categories(); track category.schemaName) {
+                <mat-option [value]="category.schemaName"
+                  >{{ category.displayName }}</mat-option
+                >
+                }
+              </mat-select>
+            </mat-form-field>
+
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="bulk-field"
+            >
+              <mat-label>{{ BULK_ATTRIBUTE_LABEL }}</mat-label>
+              <mat-select
+                [value]="chosenField()?.fieldName ?? null"
+                [disabled]="!chosenCategory()?.fields.length"
+                (selectionChange)="chooseField($event.value)"
+              >
+                @for ( field of chosenCategory()?.fields ?? []; track
+                field.fieldName ) {
+                <mat-option [value]="field.fieldName"
+                  >{{ field.displayName }}</mat-option
+                >
+                }
+              </mat-select>
+              @if (hint()) {
+              <mat-hint>{{ hint() }}</mat-hint>
+              }
+            </mat-form-field>
+            @if (!chosenField()) {
+            <p class="field-error" role="status">{{ BULK_NO_FIELDS_TEXT }}</p>
+            }
+          </section>
+
+          @if (chosenField(); as field) {
+          <section class="group">
+            <p class="list-label" id="bulk-mode-label">{{ BULK_MODE_LABEL }}</p>
+            <mat-radio-group
+              class="option-cards two"
+              aria-labelledby="bulk-mode-label"
+              [value]="activeMode()"
+              (change)="chooseMode($event.value)"
+            >
+              @for (option of modeOptions(); track option.mode) {
+              <mat-radio-button class="option-card" [value]="option.mode"
+                >{{ option.label }}</mat-radio-button
+              >
+              }
+            </mat-radio-group>
+          </section>
+
+          @if (activeMode() !== 'clear') {
+          <section class="group">
+            @if (field.multiValued) {
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="bulk-field chip-field"
+            >
+              <mat-label>{{ valueLabel() }}</mat-label>
+              <mat-chip-grid
+                #chipGrid
+                [attr.aria-label]="valueLabel()"
+                [attr.aria-describedby]="
+                  valueError() ? 'bulk-value-error' : null
+                "
+              >
+                @for (value of chipValues(); track $index) {
+                <mat-chip-row (removed)="removeChip($index)">
+                  {{ value }}
+                  <button
+                    matChipRemove
+                    type="button"
+                    [attr.aria-label]="'Remove ' + value"
+                  >
+                    <mat-icon>cancel</mat-icon>
+                  </button>
+                </mat-chip-row>
+                }
+                <input
+                  [matChipInputFor]="chipGrid"
+                  [matChipInputAddOnBlur]="true"
+                  (matChipInputTokenEnd)="addChip($event)"
+                  [attr.aria-label]="'Add a ' + field.displayName + ' value'"
+                  [attr.aria-describedby]="
+                    valueError() ? 'bulk-value-error' : null
+                  "
+                />
+              </mat-chip-grid>
+            </mat-form-field>
+            } @else if (field.fieldType === 'BOOL') {
+            <div class="bool-field">
+              <span class="bool-label" id="bulk-value-label"
+                >{{ valueLabel() }}</span
+              >
+              <mat-button-toggle-group
+                class="bool-toggle"
+                aria-labelledby="bulk-value-label"
+                [value]="boolValue()"
+                [attr.aria-describedby]="
+                  valueError() ? 'bulk-value-error' : null
+                "
+                (change)="setBool($event.value)"
+              >
+                <mat-button-toggle [value]="true"
+                  >{{ ATTRIBUTE_BOOL_LABELS.yes }}</mat-button-toggle
+                >
+                <mat-button-toggle [value]="false"
+                  >{{ ATTRIBUTE_BOOL_LABELS.no }}</mat-button-toggle
+                >
+              </mat-button-toggle-group>
+            </div>
+            } @else {
+            <mat-form-field
+              appearance="outline"
+              subscriptSizing="dynamic"
+              class="bulk-field"
+            >
+              <mat-label>{{ valueLabel() }}</mat-label>
+              <input
+                matInput
+                autocomplete="off"
+                [type]="inputType()"
+                [attr.inputmode]="inputMode()"
+                [value]="textValue()"
+                (input)="setText($event)"
+                [attr.aria-invalid]="valueError() ? 'true' : null"
+                [attr.aria-describedby]="
+                  valueError() ? 'bulk-value-error' : null
+                "
+              />
+            </mat-form-field>
+            } @if (valueError(); as message) {
+            <p class="field-error" id="bulk-value-error">{{ message }}</p>
+            }
+          </section>
+          } } }
+        </div>
+        } @case ('preparing') {
+        <div class="step">
+          <h3 class="visually-hidden" tabindex="-1">
+            {{ BULK_SET_ATTRIBUTES_LABEL }}
+          </h3>
+          <p role="status" aria-live="polite">{{ ATTRIBUTE_PREPARING_TEXT }}</p>
+          <mat-progress-bar
+            mode="indeterminate"
+            aria-label="Preparing the preview"
+          ></mat-progress-bar>
+        </div>
+        } @case ('review') {
+        <div class="step report" [attr.aria-busy]="confirming()">
+          <section class="report-counts" aria-labelledby="bulk-review-title">
+            <h3 id="bulk-review-title" class="visually-hidden" tabindex="-1">
+              {{ BULK_REVIEW_LABEL }}
+            </h3>
+            @if (error(); as message) {
+            <div class="action-note error" role="alert">
+              <p>{{ message }}</p>
+            </div>
+            }
+            <dl class="count-equation">
+              <div class="count-term">
+                <dd>{{ preview()?.selected ?? 0 }}</dd>
+                <dt>{{ BULK_USERS_TERM }}</dt>
+              </div>
+              <span class="count-sign" aria-hidden="true">=</span>
+              <div class="count-term">
+                <dd>{{ preview()?.unchanged ?? 0 }}</dd>
+                <dt>{{ ATTRIBUTE_STATUS_NO_CHANGE }}</dt>
+              </div>
+              <span class="count-sign" aria-hidden="true">+</span>
+              <div class="count-term">
+                <dd>{{ preview()?.eligible ?? 0 }}</dd>
+                <dt>{{ ATTRIBUTE_STATUS_READY }}</dt>
+              </div>
+              @if (preview()?.conflicts) {
+              <span class="count-sign" aria-hidden="true">+</span>
+              <div class="count-term tone-error">
+                <dd>{{ preview()?.conflicts }}</dd>
+                <dt>{{ ATTRIBUTE_STATUS_CONFLICT }}</dt>
+              </div>
+              }
+            </dl>
+            @if (changeLine(); as line) {
+            <p class="change-line">{{ line }}</p>
+            } @if (preview()?.stale) {
+            <p class="meta-line stale">
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >warning</span
+              >
+              {{ BULK_STALE_TEXT }}
+            </p>
+            } @if (preview()?.conflicts) {
+            <div class="action-note error" role="alert">
+              <p>
+                <strong>{{ ATTRIBUTE_CONFLICT_TITLE }}</strong>
+                {{ BULK_CONFLICT_TEXT }}
+              </p>
+            </div>
+            }
+          </section>
+
+          <section class="report-panel" aria-label="Preview rows">
+            <div class="report-views">
+              <nav
+                mat-tab-nav-bar
+                class="report-tabs"
+                [tabPanel]="reviewPanel"
+                aria-label="Review view"
+              >
+                @for (tab of reviewTabs(); track tab.view) {
+                <button
+                  mat-tab-link
+                  type="button"
+                  [active]="tab.view === reviewView()"
+                  (click)="setReviewView(tab.view)"
+                >
+                  {{ tab.label }}
+                  <span class="tab-count">{{ tab.count }}</span>
+                </button>
+                }
+              </nav>
+            </div>
+            <mat-tab-nav-panel #reviewPanel>
+              @if (reviewError(); as message) {
+              <div class="report-error" role="alert">
+                <p>{{ message }}</p>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="retryReview()"
+                >
+                  {{ ATTRIBUTE_RETRY_ROWS_LABEL }}
+                </button>
+              </div>
+              } @else {
+              <div
+                class="report-table-wrap"
+                role="region"
+                aria-label="Preview rows table"
+                tabindex="0"
+              >
+                <table class="report-table bulk">
+                  <caption class="visually-hidden">
+                    Preview of the proposed changes
+                  </caption>
+                  <colgroup>
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ BULK_USER_COLUMN }}</th>
+                      <th scope="col">{{ BULK_EMAIL_COLUMN }}</th>
+                      <th scope="col">{{ ATTRIBUTE_COLUMN_CURRENT }}</th>
+                      <th scope="col">{{ ATTRIBUTE_COLUMN_NEW }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @if (reviewRows().length === 0) {
+                    <tr class="message-row">
+                      <td colspan="4">
+                        <div role="status">
+                          <p>
+                            {{ reviewLoading() ? ATTRIBUTE_PREPARING_TEXT :
+                            BULK_NO_REVIEW_ROWS }}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                    } @for (row of reviewRows(); track row.userId +
+                    row.attribute) {
+                    <tr>
+                      <td>
+                        <span class="user-cell">
+                          <a
+                            class="user-link"
+                            [routerLink]="['/users', row.userId]"
+                            [attr.aria-label]="'Open details for ' + userText(row)"
+                          >
+                            <span
+                              class="material-symbols-outlined"
+                              aria-hidden="true"
+                              >visibility</span
+                            >
+                          </a>
+                          <span class="nw">{{ userText(row) }}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span class="cut" [title]="row.primaryEmail"
+                          >{{ row.primaryEmail }}</span
+                        >
+                      </td>
+                      <td>
+                        <span
+                          class="cut"
+                          [class.not-set]="row.currentValue === null"
+                          [title]="valueText(row.currentValue)"
+                          >{{ valueText(row.currentValue) }}</span
+                        >
+                      </td>
+                      <td>
+                        <span class="val-new">
+                          <span
+                            class="material-symbols-outlined"
+                            aria-hidden="true"
+                            >arrow_forward</span
+                          >
+                          <span class="cut" [title]="valueText(row.newValue)"
+                            >{{ valueText(row.newValue) }}</span
+                          >
+                        </span>
+                      </td>
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              }
+            </mat-tab-nav-panel>
+            @if (!reviewError()) {
+            <div class="report-pager">
+              <span class="pager-text" role="status"
+                >{{ reviewPagerText() }}</span
+              >
+              <span class="pager-buttons">
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Previous review page"
+                  [disabled]="!canReviewBack() || reviewLoading()"
+                  (click)="reviewPrevPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_left</span
+                  >
+                </button>
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Next review page"
+                  [disabled]="!canReviewNext() || reviewLoading()"
+                  (click)="reviewNextPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_right</span
+                  >
+                </button>
+              </span>
+            </div>
+            }
+          </section>
+        </div>
+        } @case ('progress') {
+        <div class="step">
+          <h3 class="visually-hidden" tabindex="-1">
+            {{ ATTRIBUTE_SAVING_TEXT }}
+          </h3>
+          <p role="status" aria-live="polite">{{ ATTRIBUTE_SAVING_TEXT }}</p>
+          <p class="meta-line">
+            {{ BULK_JOB_PREFIX }}<a [routerLink]="['/jobs', displayId()]"
+              >{{ displayId() }}</a
+            >
+            · {{ statusLabel() || ATTRIBUTE_SAVING_TEXT }}
+          </p>
+          <mat-progress-bar
+            mode="indeterminate"
+            aria-label="Set attributes progress"
+          ></mat-progress-bar>
+        </div>
+        } @case ('unreadable') {
+        <div class="step">
+          <h3 class="visually-hidden" tabindex="-1">
+            {{ BULK_SET_ATTRIBUTES_LABEL }}
+          </h3>
+          <div class="action-note error" role="alert">
+            <p>{{ jobError() || BULK_JOB_UNREADABLE_TEXT }}</p>
+          </div>
+          <p class="meta-line">
+            {{ BULK_JOB_PREFIX }}<a [routerLink]="['/jobs', displayId()]"
+              >{{ displayId() }}</a
+            >
+          </p>
+        </div>
+        } @case ('result') {
+        <div class="step report" [attr.aria-busy]="resultLoading()">
+          <div class="rs-sum">
+            <dl class="count-equation">
+              @for (term of resultCounts(); track term.label) {
+              <div
+                [class]="term.tone ? 'count-term tone-' + term.tone : 'count-term'"
+              >
+                <dd>{{ term.count }}</dd>
+                <dt>{{ term.label }}</dt>
+              </div>
+              @if (!$last) {
+              <span class="count-sign" aria-hidden="true"
+                >{{ term.label === BULK_CHANGES_TERM ? '=' : '+' }}</span
+              >
+              } }
+            </dl>
+            @if (finishedLine()) {
+            <p class="rs-ended">{{ finishedLine() }}</p>
+            }
+          </div>
+
+          <section class="jobs-band" aria-label="Job of this change">
+            <ul class="job-items">
+              <li class="job-item">
+                <a
+                  class="job-link"
+                  [routerLink]="['/jobs', displayId()]"
+                  [attr.aria-label]="'Open details for job ' + displayId()"
+                  >{{ displayId() }}</a
+                >
+                <span class="job-action">{{ BULK_SET_ATTRIBUTES_LABEL }}</span>
+                <span [class]="statusChipClass()">
+                  <span class="dot" aria-hidden="true"></span>
+                  {{ statusLabel() }}
+                </span>
+                <span class="job-counts">
+                  {{ job()?.progress?.succeeded ?? 0 }} succeeded · {{
+                  job()?.progress?.failed ?? 0 }} failed
+                </span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="report-panel" aria-label="Results">
+            <div class="report-views">
+              <nav
+                mat-tab-nav-bar
+                class="report-tabs"
+                [tabPanel]="resultsPanel"
+                aria-label="Results view"
+              >
+                @for (tab of resultTabs(); track tab.view) {
+                <button
+                  mat-tab-link
+                  type="button"
+                  [active]="tab.view === resultView()"
+                  (click)="setResultView(tab.view)"
+                >
+                  {{ tab.label }}
+                  <span [class]="reviewTabClass(tab.tone)"
+                    >{{ tab.count }}</span
+                  >
+                </button>
+                }
+              </nav>
+            </div>
+            <mat-tab-nav-panel #resultsPanel>
+              @if (resultError(); as message) {
+              <div class="report-error" role="alert">
+                <p>{{ message }}</p>
+                <button
+                  mat-stroked-button
+                  type="button"
+                  (click)="retryResults()"
+                >
+                  {{ ATTRIBUTE_RETRY_ROWS_LABEL }}
+                </button>
+              </div>
+              } @else {
+              <div
+                class="report-table-wrap"
+                role="region"
+                aria-label="Results table"
+                tabindex="0"
+              >
+                <table class="report-table bulk rs">
+                  <caption class="visually-hidden">
+                    Results of job {{ displayId() }}
+                  </caption>
+                  <colgroup>
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ BULK_USER_COLUMN }}</th>
+                      <th scope="col">{{ BULK_EMAIL_COLUMN }}</th>
+                      <th scope="col">{{ ATTRIBUTE_COLUMN_CURRENT }}</th>
+                      <th scope="col">{{ ATTRIBUTE_COLUMN_NEW }}</th>
+                      <th scope="col">{{ BULK_OUTCOME_COLUMN }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @if (resultRows().length === 0) {
+                    <tr class="message-row">
+                      <td colspan="5">
+                        <div role="status">
+                          <p>
+                            {{ resultLoading() ? BULK_LOADING_RESULTS_TEXT :
+                            resultView() === 'failed' ? BULK_NO_FAILED_CHANGES :
+                            BULK_NO_RESULTS }}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                    } @for (row of resultRows(); track row.operation) {
+                    <tr>
+                      <td>
+                        <span class="user-cell">
+                          <a
+                            class="user-link"
+                            [routerLink]="['/users', row.userId]"
+                            [attr.aria-label]="'Open details for ' + userText(row)"
+                          >
+                            <span
+                              class="material-symbols-outlined"
+                              aria-hidden="true"
+                              >visibility</span
+                            >
+                          </a>
+                          <span class="nw">{{ userText(row) }}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span class="cut" [title]="row.primaryEmail"
+                          >{{ row.primaryEmail }}</span
+                        >
+                      </td>
+                      <td>
+                        <span
+                          class="cut"
+                          [class.not-set]="row.currentValue === null"
+                          [title]="valueText(row.currentValue)"
+                          >{{ valueText(row.currentValue) }}</span
+                        >
+                      </td>
+                      <td>
+                        <span class="val-new">
+                          <span
+                            class="material-symbols-outlined"
+                            aria-hidden="true"
+                            >arrow_forward</span
+                          >
+                          <span class="cut" [title]="valueText(row.newValue)"
+                            >{{ valueText(row.newValue) }}</span
+                          >
+                        </span>
+                      </td>
+                      <td>
+                        <span [class]="outcomeChipClass(row)">
+                          <span class="dot" aria-hidden="true"></span>
+                          {{ outcomeLabel(row) }}
+                        </span>
+                        @if (row.failureText) {
+                        <span class="outcome-reason"
+                          >{{ row.failureText }}</span
+                        >
+                        }
+                      </td>
+                    </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              }
+            </mat-tab-nav-panel>
+            @if (!resultError()) {
+            <div class="report-pager">
+              <span class="pager-text" role="status"
+                >{{ resultPagerText() }}</span
+              >
+              <span class="pager-buttons">
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Previous results page"
+                  [disabled]="!canResultBack() || resultLoading()"
+                  (click)="resultPrevPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_left</span
+                  >
+                </button>
+                <button
+                  mat-icon-button
+                  type="button"
+                  aria-label="Next results page"
+                  [disabled]="!canResultNext() || resultLoading()"
+                  (click)="resultNextPage()"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >chevron_right</span
+                  >
+                </button>
+              </span>
+            </div>
+            }
+          </section>
+        </div>
+        } }
+      </div>
+    </div>
+
+    <div class="export-actions">
+      @switch (step()) { @case ('setup') {
+      <span class="export-state"></span>
+      <button mat-button type="button" (click)="close()">
+        {{ BULK_CANCEL_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!draft() || !categories().length"
+        (click)="review()"
+      >
+        {{ BULK_REVIEW_LABEL }}
+      </button>
+      } @case ('preparing') {
+      <p class="export-state" role="status">{{ ATTRIBUTE_PREPARING_TEXT }}</p>
+      <button mat-button type="button" (click)="close()">
+        {{ BULK_CANCEL_LABEL }}
+      </button>
+      } @case ('review') { @if (confirming()) {
+      <p class="export-state" role="status">
+        {{ ATTRIBUTE_CREATING_JOB_TEXT }}
+      </p>
+      } @else {
+      <span class="export-state"></span>
+      }
+      <button
+        mat-stroked-button
+        type="button"
+        [disabled]="confirming()"
+        (click)="back()"
+      >
+        {{ BULK_BACK_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!canConfirm()"
+        (click)="confirm()"
+      >
+        {{ confirmLabel() }}
+      </button>
+      } @case ('progress') {
+      <p class="export-state" role="status">{{ ATTRIBUTE_SAVING_TEXT }}</p>
+      <button mat-button type="button" (click)="close()">Close</button>
+      } @case ('unreadable') {
+      <span class="export-state"></span>
+      <a mat-stroked-button [routerLink]="['/jobs', displayId()]">View job</a>
+      <button mat-flat-button type="button" (click)="close()">
+        {{ BULK_DONE_LABEL }}
+      </button>
+      } @case ('result') {
+      <span class="export-state">{{ executedLine() }}</span>
+      <button mat-flat-button type="button" (click)="close()">
+        {{ BULK_DONE_LABEL }}
+      </button>
+      } }
+    </div>
+  </section>
+</div>

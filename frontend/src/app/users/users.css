@@ -131,3 +131,21 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* The Bulk Actions hint of the toolbar (UM states 01 to 03). */
+.action-note {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  margin-block-start: var(--cc-space-md);
+  padding: var(--cc-space-xs) var(--cc-space-lg);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+.action-note p {
+  margin: 0;
+  max-width: none;
+}

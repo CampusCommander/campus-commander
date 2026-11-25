@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
+  UserAttributeCategory,
   UserPredicate,
   UserSelectionSpec,
   UserSyncState,
@@ -67,6 +68,8 @@ function setup(options: {
   offline?: boolean;
   freshness?: { stale: number; refreshing: boolean } | null;
   actions?: string[];
+  selectedCount?: number;
+  categories?: UserAttributeCategory[] | null;
 }) {
   const sync = signal(options.sync);
   const predicates = signal<UserPredicate[]>(options.predicates ?? []);
@@ -95,7 +98,7 @@ function setup(options: {
     attributes: signal([]),
     categoriesError: signal(''),
     categoriesRecovery: signal(false),
-    categories: signal(null),
+    categories: signal(options.categories ?? null),
     categoriesLoading: signal(false),
     categoriesRefreshing: signal(false),
     categoriesFailure: signal(null),
@@ -115,7 +118,7 @@ function setup(options: {
     refreshing: computed(() => sync()?.status === 'running'),
     refreshStatus: signal(''),
     refreshPending: signal(false),
-    selectedCount: computed(() => 0),
+    selectedCount: computed(() => options.selectedCount ?? 0),
     init: vi.fn().mockResolvedValue(undefined),
     leave: vi.fn(),
     rowRefresh: {},
@@ -433,5 +436,62 @@ describe('the Users page', () => {
     const element = fixture.nativeElement as HTMLElement;
     expect(element.querySelector('app-user-grid')).not.toBeNull();
     expect(text(fixture)).toContain('User directory status is unavailable.');
+  });
+
+  it('shows Bulk Actions and its hint for an operator with both grants (K27)', () => {
+    setup({
+      sync: ready(),
+      page: { matching: 25, total: 25, observedAt: null },
+      actions: ['users:read', 'users:write', 'users:bulk-actions'],
+    });
+    const fixture = render();
+    const bulk = button(fixture, 'Bulk Actions') as HTMLButtonElement;
+    expect(bulk).toBeTruthy();
+    expect(bulk.disabled).toBe(true);
+    expect(bulk.getAttribute('aria-describedby')).toBe('bulk-note');
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('#bulk-note')
+        ?.textContent,
+    ).toContain('Select one or more users to set attributes.');
+  });
+
+  it('enables Bulk Actions with a selection and drops the hint (K27)', () => {
+    setup({
+      sync: ready(),
+      page: { matching: 25, total: 25, observedAt: null },
+      actions: ['users:read', 'users:write', 'users:bulk-actions'],
+      selectedCount: 25,
+    });
+    const fixture = render();
+    const bulk = button(fixture, 'Bulk Actions') as HTMLButtonElement;
+    expect(bulk.disabled).toBe(false);
+    expect(bulk.getAttribute('aria-describedby')).toBeNull();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('#bulk-note'),
+    ).toBeNull();
+  });
+
+  it('hides Bulk Actions without users:bulk-actions (B section 11)', () => {
+    setup({
+      sync: ready(),
+      page: { matching: 25, total: 25, observedAt: null },
+      actions: ['users:read', 'users:write'],
+      selectedCount: 25,
+    });
+    const fixture = render();
+    expect(button(fixture, 'Bulk Actions')).toBeUndefined();
+    expect(text(fixture)).not.toContain('Set attributes');
+  });
+
+  it('hides Bulk Actions without users:write (B section 11)', () => {
+    setup({
+      sync: ready(),
+      page: { matching: 25, total: 25, observedAt: null },
+      actions: ['users:read', 'users:bulk-actions'],
+      selectedCount: 25,
+    });
+    const fixture = render();
+    expect(button(fixture, 'Bulk Actions')).toBeUndefined();
+    expect(text(fixture)).not.toContain('Set attributes');
   });
 });

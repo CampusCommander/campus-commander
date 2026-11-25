@@ -1,0 +1,183 @@
+/*
+ * The Set attributes dialog of the Users Bulk Actions (design card K27, UM states 08
+ * to 11). The surface, header, action bar, form groups, option cards, report panel,
+ * tabs, table, pager, and jobs band come from the built device stylesheets. This file
+ * adds the top gap of the body, the width of the setup fields, the Yes or No control,
+ * the table columns, and the users cells.
+ * Every value is a token of `theme/tokens.css` or of the Material theme.
+ */
+/* The device body carries no top padding; the dialog keeps a gap under its header. */
+.export-body {
+  padding-block-start: var(--cc-space-lg);
+}
+
+.bulk-field {
+  width: 100%;
+}
+
+/* The value field sits under the mode cards, so the first form field keeps its gap. */
+.group + .group .bulk-field:first-child {
+  margin-block-start: 0;
+}
+
+/* The Yes or No control of composition 5: the label over a two-choice toggle. */
+.bool-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-sm);
+}
+
+.bool-label {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.bool-toggle {
+  align-self: flex-start;
+}
+
+/* The value message under the field, in the words and tone of the edit form. */
+.field-error {
+  margin: var(--cc-space-xs) 0 0;
+  max-width: none;
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The review and the results share the table of composition 11. The five columns of the
+   results fill the 1,055 px panel, so the Outcome column stays in view at 1440 px. */
+.report-table.bulk col:nth-child(1) {
+  width: 22%;
+}
+
+.report-table.bulk col:nth-child(2) {
+  width: 26%;
+}
+
+.report-table.bulk col:nth-child(3) {
+  width: 18%;
+}
+
+.report-table.bulk col:nth-child(4) {
+  width: 34%;
+}
+
+.report-table.bulk.rs col:nth-child(1) {
+  width: 19%;
+}
+
+.report-table.bulk.rs col:nth-child(2) {
+  width: 24%;
+}
+
+.report-table.bulk.rs col:nth-child(3) {
+  width: 16%;
+}
+
+.report-table.bulk.rs col:nth-child(4) {
+  width: 23%;
+}
+
+.report-table.bulk.rs col:nth-child(5) {
+  width: 18%;
+}
+
+/* The user cell copies the details control of the approved table (state 09). */
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+}
+
+.user-cell .nw {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--cc-radius-chip);
+  color: var(--cc-text-link);
+}
+
+.user-link .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.user-link:hover {
+  background: var(--cc-surface-hover);
+}
+
+.user-link:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 1px;
+}
+
+/* The new value reads after the arrow that the approved table draws. */
+.val-new {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+}
+
+.val-new .material-symbols-outlined {
+  flex: none;
+  color: var(--cc-text-secondary);
+  font-size: 16px;
+}
+
+.not-set {
+  color: var(--cc-text-secondary);
+  font-style: italic;
+}
+
+/* A stale preview keeps the device note: a warning glyph before the sentence. */
+.meta-line.stale {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-xs);
+}
+
+.meta-line.stale .material-symbols-outlined {
+  flex: none;
+  color: var(--cc-status-warning-text);
+  font-size: 16px;
+}
+
+/* A page read that failed: the sentence and its Retry stay inside the panel. */
+.report-error {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cc-space-md);
+  min-height: 0;
+  padding: var(--cc-space-xl);
+}
+
+.report-error p {
+  margin: 0;
+  max-width: none;
+  color: var(--cc-status-error-text);
+}
+
+/* The counts of the one job in the jobs band (composition 12). */
+.job-counts {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
