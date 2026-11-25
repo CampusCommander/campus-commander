@@ -8,6 +8,9 @@ import {
   userPreviewBodyLimit,
 } from './application-edge.mjs';
 
+/** The value preview body cap of card K23b, in wire bytes: 64 MiB. */
+const PREVIEW_CAP = 67_108_864;
+
 test('application routes require Phase 3 and exact methods and paths', async () => {
   const listen = (server) =>
     new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -932,114 +935,74 @@ test('the two file routes pass the attachment header and every other route drops
   }
 });
 
-test('the value preview POST admits a supported non-ASCII edit list byte for byte', async () => {
-  // B section 3: one list holds 25,000 characters, which is 50 values of 500 code points. E17:
-  // 2,000 edits on 400 users, five multi-value attributes each. Each value is a three-character
-  // prefix and 497 supplementary code points, so a cap that counts a code point as one byte
-  // refuses it before the upstream request starts.
-  const value = (prefix, index) =>
-    `${prefix}${String(index).padStart(2, '0')}${'\u{1f600}'.repeat(497)}`;
-  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
-  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
-  const body = JSON.stringify({
-    edits: Array.from({ length: 2000 }, (_, index) => ({
-      userId: `user-${index % 400}`,
-      attribute: `attr:StudentInfo.Field${Math.floor(index / 400)}`,
-      mode: 'replace',
-      values: requested,
-      baselineValue: baseline,
-    })),
+/** One supported preview body padded with trailing spaces to an exact wire size. */
+function previewBodyOfSize(size) {
+  const base = JSON.stringify({
+    edits: [
+      {
+        userId: 'user-1',
+        attribute: 'attr:StudentInfo.Homeroom',
+        mode: 'set',
+        values: ['B12'],
+        baselineValue: 'B11',
+      },
+    ],
   });
-  const bytes = Buffer.byteLength(body);
-  assert.ok(bytes > 389_564_096, `body measured ${bytes} bytes`);
-  assert.ok(bytes < userPreviewBodyLimit, `body measured ${bytes} bytes`);
-  const listen = (server) =>
-    new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const origin = (server) => `http://127.0.0.1:${server.address().port}`;
-  let received = 0;
-  const frontend = http.createServer((request, response) =>
-    response.end('frontend'),
-  );
-  const api = http.createServer((request, response) => {
-    request.on('data', (chunk) => (received += chunk.length));
-    request.on('end', () => response.end('api'));
-  });
-  let edge;
-  try {
-    await listen(frontend);
-    await listen(api);
-    edge = http.createServer((request, response) =>
-      proxyApplication(
-        request,
-        response,
-        {
-          frontend: { url: new URL(origin(frontend)) },
-          api: { url: new URL(origin(api)) },
-        },
-        origin(edge),
-        3,
-      ),
-    );
-    await listen(edge);
-    const response = await fetch(
-      `${origin(edge)}/api/users/attribute-previews`,
+  assert.ok(Buffer.byteLength(base) <= size);
+  return base + ' '.repeat(size - Buffer.byteLength(base));
+}
+
+/** Post a preview body without a declared length, so the edge counts the chunks itself. */
+function chunkedPreviewPost(origin, body) {
+  return new Promise((resolve, reject) => {
+    let answered = false;
+    const request = http.request(
+      `${origin}/api/users/attribute-previews`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body,
+        agent: false,
+      },
+      (response) => {
+        answered = true;
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => (text += chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode, text }),
+        );
       },
     );
-    assert.equal(response.status, 200, await response.text());
-    assert.equal(received, bytes);
-  } finally {
-    for (const server of [edge, api, frontend])
-      if (server) {
-        server.closeAllConnections();
-        await new Promise((resolve) => server.close(resolve));
-      }
-  }
-});
-
-/**
- * Review reproduction A: 2,500 edits on 500 users, five multi-value attributes each, with 50
- * values of 500 code points in every list. Five entries per list carry the six-byte JSON escape
- * `\ud83d\ude00`, and the rest carry the raw four-byte character. The compact body measures
- * 598,164,461 bytes and 374,514,461 UTF-16 units.
- */
-function escapedEditBody() {
-  const value = (prefix, index, escaped) =>
-    `"${prefix}${String(index).padStart(2, '0')}${(escaped ? '\\ud83d\\ude00' : '😀').repeat(497)}"`;
-  const list = (prefix) =>
-    `[${Array.from({ length: 50 }, (_, index) =>
-      value(prefix, index, index < 5),
-    ).join(',')}]`;
-  const requested = list('R');
-  const baseline = list('B');
-  const edits = Array.from(
-    { length: 2500 },
-    (_, index) =>
-      `{"userId":"user-${index % 500}","attribute":"attr:StudentInfo.Field${Math.floor(index / 500)}","mode":"replace","values":${requested},"baselineValue":${baseline}}`,
-  );
-  return { body: `{"edits":[${edits.join(',')}]}` };
+    // The edge answers 413 at the cap and then closes the transfer under the writer.
+    request.on('error', (error) => {
+      if (!answered) reject(error);
+    });
+    const encoded = Buffer.from(body);
+    for (let index = 0; index < encoded.length; index += 1 << 20)
+      request.write(encoded.subarray(index, index + (1 << 20)));
+    request.end();
+  });
 }
 
+test('the value preview body cap is 64 MiB at the edge', () => {
+  // The owner set the in-grid change cap on 2026-11-25: "For in grid changes make it 64mb."
+  assert.equal(userPreviewBodyLimit, PREVIEW_CAP);
+});
+
 test(
-  'the value preview POST admits a supported escaped edit list byte for byte',
+  'the value preview POST passes a body of exactly 64 MiB and refuses one byte more',
   { timeout: 300000 },
   async () => {
-    const { body } = escapedEditBody();
-    const bytes = Buffer.byteLength(body);
-    assert.equal(bytes, 598_164_461);
-    assert.ok(bytes > 536_870_888, `body measured ${bytes} bytes`);
-    assert.ok(bytes < userPreviewBodyLimit, `body measured ${bytes} bytes`);
     const listen = (server) =>
       new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const origin = (server) => `http://127.0.0.1:${server.address().port}`;
+    let requests = 0;
     let received = 0;
     const frontend = http.createServer((request, response) =>
       response.end('frontend'),
     );
     const api = http.createServer((request, response) => {
+      requests += 1;
       request.on('data', (chunk) => (received += chunk.length));
       request.on('end', () => response.end('api'));
     });
@@ -1060,130 +1023,47 @@ test(
         ),
       );
       await listen(edge);
-      const declared = await fetch(
-        `${origin(edge)}/api/users/attribute-previews`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body,
-        },
-      );
-      assert.equal(declared.status, 200, await declared.text());
-      assert.equal(received, bytes);
-      received = 0;
-      const chunked = await new Promise((resolve, reject) => {
-        const request = http.request(
+      const declared = async (body) => {
+        requests = 0;
+        received = 0;
+        const response = await fetch(
           `${origin(edge)}/api/users/attribute-previews`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-          },
-          (response) => {
-            let text = '';
-            response.setEncoding('utf8');
-            response.on('data', (chunk) => (text += chunk));
-            response.on('end', () =>
-              resolve({ status: response.statusCode, text }),
-            );
+            body,
           },
         );
-        request.on('error', reject);
-        const encoded = Buffer.from(body);
-        for (let index = 0; index < encoded.length; index += 1 << 20)
-          request.write(encoded.subarray(index, index + (1 << 20)));
-        request.end();
-      });
-      assert.equal(chunked.status, 200, chunked.text);
-      assert.equal(received, bytes);
-    } finally {
-      for (const server of [edge, api, frontend])
-        if (server) {
-          server.closeAllConnections();
-          await new Promise((resolve) => server.close(resolve));
-        }
-    }
-  },
-);
-
-test(
-  'the value preview POST refuses a body above the one-string text ceiling',
-  { timeout: 300000 },
-  async () => {
-    // 537,000,000 ASCII text units pass the byte cap but do not fit one JSON.parse. The edge
-    // answers 413 and sends nothing upstream.
-    const prefix =
-      '{"edits":[{"userId":"u1","attribute":"attr:StudentInfo.Homeroom","mode":"set","values":["';
-    const suffix = '"],"baselineValue":"B11"}]}';
-    const size = 537_000_000;
-    const total = Buffer.byteLength(prefix) + size + Buffer.byteLength(suffix);
-    assert.ok(total < userPreviewBodyLimit);
-    const listen = (server) =>
-      new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const origin = (server) => `http://127.0.0.1:${server.address().port}`;
-    let received = 0;
-    const frontend = http.createServer((request, response) =>
-      response.end('frontend'),
-    );
-    const api = http.createServer((request, response) => {
-      request.on('data', (chunk) => (received += chunk.length));
-      request.on('end', () => response.end('api'));
-    });
-    let edge;
-    try {
-      await listen(frontend);
-      await listen(api);
-      edge = http.createServer((request, response) =>
-        proxyApplication(
-          request,
-          response,
-          {
-            frontend: { url: new URL(origin(frontend)) },
-            api: { url: new URL(origin(api)) },
-          },
-          origin(edge),
-          3,
-        ),
+        return { status: response.status, text: await response.text() };
+      };
+      const exact = previewBodyOfSize(PREVIEW_CAP);
+      // A declared body at the cap passes, and every byte reaches the API.
+      const atCap = await declared(exact);
+      assert.equal(atCap.status, 200, atCap.text);
+      assert.equal(requests, 1);
+      assert.equal(received, PREVIEW_CAP);
+      // A declared body one byte above the cap answers 413 before any upstream request.
+      const aboveCap = await declared(previewBodyOfSize(PREVIEW_CAP + 1));
+      assert.equal(aboveCap.status, 413);
+      assert.equal(aboveCap.text, 'The request exceeds the size limit.\n');
+      assert.equal(requests, 0);
+      assert.equal(received, 0);
+      // The same two answers hold without a declared length, where the read counts the bytes.
+      requests = 0;
+      received = 0;
+      const chunkedAtCap = await chunkedPreviewPost(origin(edge), exact);
+      assert.equal(chunkedAtCap.status, 200, chunkedAtCap.text);
+      assert.equal(requests, 1);
+      assert.equal(received, PREVIEW_CAP);
+      requests = 0;
+      received = 0;
+      const chunkedAbove = await chunkedPreviewPost(
+        origin(edge),
+        previewBodyOfSize(PREVIEW_CAP + 1),
       );
-      await listen(edge);
-      const answer = await new Promise((resolve, reject) => {
-        const request = http.request(
-          `${origin(edge)}/api/users/attribute-previews`,
-          {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'content-length': String(total),
-            },
-          },
-          (response) => {
-            let text = '';
-            response.setEncoding('utf8');
-            response.on('data', (chunk) => (text += chunk));
-            response.on('end', () =>
-              resolve({ status: response.statusCode, text }),
-            );
-          },
-        );
-        request.on('error', reject);
-        request.write(prefix);
-        const block = Buffer.alloc(1 << 20, 0x61);
-        let left = size;
-        const pump = () => {
-          while (left > 0) {
-            const part = left >= block.length ? block : block.subarray(0, left);
-            left -= part.length;
-            if (!request.write(part)) {
-              request.once('drain', pump);
-              return;
-            }
-          }
-          request.write(suffix);
-          request.end();
-        };
-        pump();
-      });
-      assert.equal(answer.status, 413);
-      assert.equal(answer.text, 'The request exceeds the size limit.\n');
+      assert.equal(chunkedAbove.status, 413);
+      assert.equal(chunkedAbove.text, 'The request exceeds the size limit.\n');
+      assert.equal(requests, 0);
       assert.equal(received, 0);
     } finally {
       for (const server of [edge, api, frontend])

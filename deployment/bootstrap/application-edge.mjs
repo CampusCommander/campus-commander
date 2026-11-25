@@ -1,4 +1,3 @@
-import { constants as bufferConstants } from 'node:buffer';
 import http from 'node:http';
 import https from 'node:https';
 
@@ -87,28 +86,11 @@ const userWrite =
 // alone takes its own cap. The API computes the same bound in user-attribute-previews.ts.
 const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
 /**
- * The cap of the value preview POST, in wire bytes. One `JSON.parse` holds at most
- * `MAX_STRING_LENGTH` UTF-16 units of the body text. A UTF-8 body yields at most one unit per
- * byte, and no encoding of one unit takes more than three bytes, so the cap is the exact byte
- * boundary of one parse. The edge also counts the decoded text under the same ceiling, as the
- * API parser does.
+ * The cap of the value preview POST, in wire bytes: 64 MiB. The owner set the in-grid change
+ * cap on 2026-11-25: "For in grid changes make it 64mb." The API computes the same cap in
+ * user-attribute-previews.ts.
  */
-const userPreviewTextLimit = bufferConstants.MAX_STRING_LENGTH;
-export const userPreviewBodyLimit = 3 * userPreviewTextLimit;
-/** The chunk of one streaming count of the decoded text. */
-const previewTextChunk = 4 * 1024 * 1024;
-/** The UTF-16 units of the JSON text that one body decodes to, streamed in bounded chunks. */
-function previewTextUnits(body) {
-  const decoder = new TextDecoder('utf-8');
-  let units = 0;
-  for (let offset = 0; offset < body.length; offset += previewTextChunk) {
-    units += decoder.decode(body.subarray(offset, offset + previewTextChunk), {
-      stream: true,
-    }).length;
-    if (units > userPreviewTextLimit) return units;
-  }
-  return units + decoder.decode().length;
-}
+export const userPreviewBodyLimit = 67108864;
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
@@ -339,15 +321,6 @@ export async function proxyApplication(
       return finish(response, 400, 'The request body is invalid.\n');
     }
   }
-  // The decoded half of admission: a body above the text ceiling would not survive one
-  // JSON.parse, so the edge refuses it with the same 413 as the byte cap.
-  if (
-    body &&
-    userPreviewWrite.test(pathname) &&
-    body.length > userPreviewTextLimit &&
-    previewTextUnits(body) > userPreviewTextLimit
-  )
-    return finish(response, 413, 'The request exceeds the size limit.\n');
   // The request deadline answered this request and closed its stream. Send nothing upstream.
   if (response.headersSent) return;
   const target = upstreams[api ? 'api' : 'frontend'];
