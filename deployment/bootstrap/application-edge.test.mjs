@@ -488,23 +488,67 @@ test('application routes require Phase 3 and exact methods and paths', async () 
         status,
         `edit-previews ${size} bytes`,
       );
-    // The value preview POST accepts the published 2,500-edit shape (about 232 KB) and refuses
-    // one byte above its own bounded cap.
-    for (const [size, status] of [
-      [231961, 200],
-      [userPreviewBodyLimit, 200],
-      [userPreviewBodyLimit + 1, 413],
+    // The value preview POST accepts the published 2,500-edit shape (about 232 KB) and a supported
+    // multi-value edit list of 600 edits with 30 values of 500 characters in each requested list
+    // and baseline (about 18 MB). A declared body above its own bounded cap answers 413 before
+    // any byte arrives.
+    const wideBody = JSON.stringify({
+      edits: Array.from({ length: 600 }, (_, index) => ({
+        userId: `user-${Math.floor(index / 2)}`,
+        attribute: `attr:StudentInfo.${index % 2 === 0 ? 'Programs' : 'Activities'}`,
+        mode: 'replace',
+        values: Array.from(
+          { length: 30 },
+          (_, value) => `${'x'.repeat(497)}${String(value).padStart(2, '0')}`,
+        ),
+        baselineValue: Array.from(
+          { length: 30 },
+          (_, value) => `${'y'.repeat(497)}${String(value).padStart(2, '0')}`,
+        ),
+      })),
+    });
+    assert.ok(Buffer.byteLength(wideBody) > 16 * 1024 * 1024);
+    for (const [body, status] of [
+      ['x'.repeat(231961), 200],
+      [wideBody, 200],
     ])
       assert.equal(
         (
           await fetch(`${origin(edge)}/api/users/attribute-previews`, {
             method: 'POST',
-            body: 'x'.repeat(size),
+            body,
           })
         ).status,
         status,
-        `attribute-previews ${size} bytes`,
+        `attribute-previews ${Buffer.byteLength(body)} bytes`,
       );
+    {
+      const answer = await new Promise((resolve, reject) => {
+        const request = http.request(
+          `${origin(edge)}/api/users/attribute-previews`,
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'content-length': String(userPreviewBodyLimit + 1),
+            },
+          },
+          (response) => {
+            let text = '';
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => (text += chunk));
+            response.on('end', () => {
+              request.destroy();
+              resolve({ status: response.statusCode, text });
+            });
+          },
+        );
+        request.on('error', reject);
+        request.flushHeaders();
+      });
+      assert.equal(answer.status, 413);
+      assert.equal(answer.text, 'The request exceeds the size limit.\n');
+    }
     // The selection preview and its confirm keep the 4,096-byte cap.
     for (const path of [
       '/api/devices/updates/previews',

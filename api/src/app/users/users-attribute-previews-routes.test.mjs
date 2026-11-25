@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import http from 'node:http';
 import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
@@ -410,6 +411,39 @@ async function post(path, payload) {
 async function get(path) {
   const response = await fetch(`${origin}${path}`);
   return { status: response.status, body: await response.json() };
+}
+
+/**
+ * Post the preview path with a declared body above the cap and no body. The parser refuses the
+ * declared size before it reads a byte, as it does for a supported body of that size.
+ */
+function declaredLengthPost(length) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(`${origin}/api/users/attribute-previews`);
+    const request = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': String(length),
+        },
+      },
+      (response) => {
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => (text += chunk));
+        response.on('end', () => {
+          request.destroy();
+          resolve({ status: response.statusCode, body: JSON.parse(text) });
+        });
+      },
+    );
+    request.on('error', reject);
+    request.flushHeaders();
+  });
 }
 
 const selectionBody = (changes) => ({
@@ -1149,22 +1183,6 @@ test('a supported 2,500-edit body parses through the API body cap', async () => 
   assert.equal(response.status, 201, await response.text());
 });
 
-test('a body above the API cap answers 413 before the controller', async () => {
-  let reads = 0;
-  const fallback = routeRespond;
-  routeRespond = async (text, values) => {
-    reads += 1;
-    return fallback(text, values);
-  };
-  const response = await fetch(`${origin}/api/users/attribute-previews`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ edits: [], pad: 'x'.repeat(bodyLimit) }),
-  });
-  assert.equal(response.status, 413);
-  assert.equal(reads, 0);
-});
-
 test('a text value outside the rule answers 422 with its label from either source', async () => {
   let creates = 0;
   const fallback = routeRespond;
@@ -1251,25 +1269,210 @@ test('an Add beyond the final list bound answers 422 with its label', async () =
   assert.equal(creates, 0);
 });
 
-test('a Replace above the list text size answers 422 with its label', async () => {
-  const values = Array.from(
-    { length: 31 },
-    (_, index) => 'x'.repeat(499) + String.fromCharCode(65 + index),
+test('both documented list shapes are accepted from either source', async () => {
+  // B section 3: 150 values of 100 characters, or 50 values of 500 characters (25,000 characters).
+  const wide = Array.from(
+    { length: 50 },
+    (_, index) => `${String(index).padStart(4, '0')}${'x'.repeat(496)}`,
   );
-  const answer = await post(
+  const selection = await post(
     '/api/users/attribute-previews',
     selectionBody([
       {
         schemaName: 'StudentInfo',
         fieldName: 'Programs',
         mode: 'replace',
-        values,
+        values: wide,
       },
     ]),
   );
-  assert.equal(answer.status, 422, JSON.stringify(answer.body));
-  assert.deepEqual(answer.body, {
-    reason: 'invalid-value',
-    message: 'Programs holds values of at most 15,000 characters in total.',
+  assert.equal(selection.status, 201, JSON.stringify(selection.body));
+  readUserValues = async () => ({ StudentInfo: { Programs: wide } });
+  const edit = await post(
+    '/api/users/attribute-previews',
+    editBody([
+      {
+        userId: 'u1',
+        attribute: 'attr:StudentInfo.Programs',
+        mode: 'replace',
+        values: wide,
+        baselineValue: wide,
+      },
+    ]),
+  );
+  assert.equal(edit.status, 201, JSON.stringify(edit.body));
+});
+
+test('an Add that reaches the supported final list is accepted from either source', async () => {
+  const many = Array.from({ length: 149 }, (_, index) => ({
+    value: `P${index}`,
+  }));
+  const fallback = routeRespond;
+  routeRespond = async (text, values) => {
+    if (text.includes('u.custom_schemas'))
+      return {
+        rows: ['u1', 'u2'].map((id) => ({
+          user_id: id,
+          primary_email: `${id}@example.org`,
+          custom_schemas: { StudentInfo: { Programs: many } },
+          last_entity_sync: at,
+        })),
+      };
+    return fallback(text, values);
+  };
+  const selection = await post(
+    '/api/users/attribute-previews',
+    selectionBody([
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Programs',
+        mode: 'add',
+        values: ['New'],
+      },
+    ]),
+  );
+  assert.equal(selection.status, 201, JSON.stringify(selection.body));
+  readUserValues = async () => ({ StudentInfo: { Programs: many } });
+  const edit = await post(
+    '/api/users/attribute-previews',
+    editBody([
+      {
+        userId: 'u1',
+        attribute: 'attr:StudentInfo.Programs',
+        mode: 'add',
+        values: ['New'],
+        baselineValue: many.map((entry) => entry.value),
+      },
+    ]),
+  );
+  assert.equal(edit.status, 201, JSON.stringify(edit.body));
+});
+
+test('a supported multi-value edit list of 600 edits passes the body cap', async () => {
+  // The review reproduction: 600 edits on 300 users, two multi-value attributes each, with a
+  // requested list and a baseline of 30 distinct 500-character values.
+  const list = (seed) =>
+    Array.from(
+      { length: 30 },
+      (_, index) =>
+        `${seed}${String(index).padStart(2, '0')}${'x'.repeat(497)}`,
+    );
+  const baseline = list('B');
+  const requested = list('R');
+  const wide = {
+    ...base,
+    categories: [
+      {
+        ...base.categories[0],
+        fields: [
+          field({}),
+          field({
+            fieldId: 'fld-2',
+            fieldName: 'Programs',
+            displayName: 'Programs',
+            multiValued: true,
+          }),
+          field({
+            fieldId: 'fld-4',
+            fieldName: 'Activities',
+            displayName: 'Activities',
+            multiValued: true,
+          }),
+        ],
+      },
+    ],
+    limits: { ...base.limits, attributes: 3 },
+  };
+  const edits = Array.from({ length: 600 }, (_, index) => ({
+    userId: `user-${Math.floor(index / 2)}`,
+    attribute: `attr:StudentInfo.${index % 2 === 0 ? 'Programs' : 'Activities'}`,
+    mode: 'replace',
+    values: requested,
+    baselineValue: baseline,
+  }));
+  const body = JSON.stringify({ edits });
+  assert.ok(
+    Buffer.byteLength(body) >= 18_000_000,
+    `body measured ${Buffer.byteLength(body)} bytes`,
+  );
+  const fallback = routeRespond;
+  let appends = 0;
+  routeRespond = async (text, values) => {
+    if (text.includes('cc.read_user_attribute_preview_base'))
+      return { rows: [{ result: wide }] };
+    if (text.includes('FROM cc.users'))
+      return {
+        rows: values[1].map((userId) => ({
+          user_id: userId,
+          primary_email: `${userId}@example.org`,
+        })),
+      };
+    if (text.includes('cc.create_user_attribute_preview'))
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              previewId,
+              preview: {
+                ...editPreview,
+                selected: 300,
+                eligible: 300,
+                unchanged: 0,
+                conflicts: 0,
+                manifestDigest: null,
+              },
+            },
+          },
+        ],
+      };
+    if (text.includes('cc.append_user_attribute_preview_targets')) {
+      appends += 1;
+      return { rows: [{ result: { outcome: 'stored', stored: 1 } }] };
+    }
+    if (text.includes('cc.complete_user_attribute_preview'))
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              preview: {
+                ...editPreview,
+                selected: 300,
+                eligible: 300,
+                unchanged: 0,
+                conflicts: 0,
+                manifestDigest: values[3],
+              },
+            },
+          },
+        ],
+      };
+    return fallback(text, values);
+  };
+  readUserValues = async () => ({
+    StudentInfo: { Programs: baseline, Activities: baseline },
   });
+  const response = await fetch(`${origin}/api/users/attribute-previews`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+  assert.equal(response.status, 201, await response.text());
+  assert.ok(appends > 1, `stored in ${appends} bounded batches`);
+});
+
+test('a declared body above the API cap answers 413 before the controller', async () => {
+  let reads = 0;
+  const fallback = routeRespond;
+  routeRespond = async (text, values) => {
+    reads += 1;
+    return fallback(text, values);
+  };
+  const answer = await declaredLengthPost(bodyLimit + 1);
+  assert.equal(answer.status, 413);
+  assert.equal(answer.body.code, 'payload-too-large');
+  assert.equal(answer.body.message, 'The request exceeds the size limit.');
+  assert.equal(typeof answer.body.correlationId, 'string');
+  assert.equal(reads, 0);
 });

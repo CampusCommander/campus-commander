@@ -4,7 +4,6 @@ import {
   USER_ATTRIBUTE_CATEGORY_LIMIT,
   USER_ATTRIBUTE_EDITS_LIMIT,
   USER_ATTRIBUTE_FIELD_LIMIT,
-  USER_ATTRIBUTE_LIST_TEXT_MAX,
   USER_ATTRIBUTE_VALUES_LIMIT,
   USER_BY_IDS_LIMIT,
   userAttributeCategoriesSchema,
@@ -1830,7 +1829,20 @@ test('the edit request shape carries 2,500 edits on 500 users and the list bound
     Buffer.byteLength(JSON.stringify(request)) > 98304,
     'The published short-value shape exceeds the ordinary 98,304-byte cap.',
   );
-  assert.equal(USER_ATTRIBUTE_LIST_TEXT_MAX, 15_000);
+  // The wire rule accepts both documented list shapes: 150 values of 100 characters and 50 of 500.
+  const shaped = {
+    ...edits[0],
+    mode: 'replace',
+    values: Array.from(
+      { length: 50 },
+      (_, index) => `${String(index).padStart(3, '0')}${'x'.repeat(497)}`,
+    ),
+  };
+  assert.equal(
+    userAttributeEditPreviewRequestSchema.safeParse({ edits: [shaped] })
+      .success,
+    true,
+  );
   // A 501-character value reaches the route, and the wire rule still refuses it.
   const long = {
     ...edits[0],

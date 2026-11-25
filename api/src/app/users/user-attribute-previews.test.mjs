@@ -49,6 +49,7 @@ const {
   previewTargetBatches,
   selectionPreviewTargets,
   wireValue,
+  USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
 } = await import('./user-attribute-previews.ts');
 const { createHash } = await import('node:crypto');
 
@@ -560,7 +561,7 @@ test('a text value counts code points and refuses blank or long text with its la
   );
 });
 
-test('a computed list outside the Google list rule refuses with its label', () => {
+test('a computed list keeps both documented list shapes and refuses only the count bound', () => {
   const full = Array.from({ length: 150 }, (_, index) => ({
     value: `P${index}`,
   }));
@@ -576,43 +577,48 @@ test('a computed list outside the Google list rule refuses with its label', () =
     reason: 'invalid-value',
     message: 'Programs holds at most 150 values.',
   });
-  const sized = refusal(() =>
-    selectionPreviewTargets(
-      [user('u1', { StudentInfo: {} })],
-      [
-        change(
-          'Programs',
-          'replace',
-          Array.from(
-            { length: 31 },
-            (_, index) => 'x'.repeat(499) + String.fromCharCode(65 + index),
-          ),
-        ),
-      ],
-      base,
-    ),
+  // B section 3 names 150 values of 100 characters and 50 values of 500 characters. The second
+  // shape carries 25,000 characters, so no total text bound refuses it.
+  const wide = Array.from(
+    { length: 50 },
+    (_, index) => `${String(index).padStart(4, '0')}${'x'.repeat(496)}`,
   );
-  assert.equal(sized.status, 422);
-  assert.deepEqual(sized.body, {
-    reason: 'invalid-value',
-    message: 'Programs holds values of at most 15,000 characters in total.',
-  });
-  // 30 entries of 500 characters reach the total, and 500 of 30 characters stay under it.
-  const targets = selectionPreviewTargets(
+  const sized = selectionPreviewTargets(
     [user('u1', { StudentInfo: {} })],
-    [
-      change(
-        'Programs',
-        'replace',
-        Array.from(
-          { length: 30 },
-          (_, index) => 'x'.repeat(499) + String.fromCharCode(65 + index),
-        ),
-      ),
-    ],
+    [change('Programs', 'replace', wide)],
     base,
   );
-  assert.equal(targets[0].rows[0].disposition, 'eligible');
+  assert.equal(sized[0].rows[0].disposition, 'eligible');
+  assert.deepEqual(sized[0].rows[0].requested, wide);
+  // An Add that reaches 150 values keeps its supported final list.
+  const many = Array.from({ length: 149 }, (_, index) => ({
+    value: `P${index}`,
+  }));
+  const added = selectionPreviewTargets(
+    [user('u1', { StudentInfo: { Programs: many } })],
+    [change('Programs', 'add', ['New'])],
+    base,
+  );
+  assert.equal(added[0].rows[0].requested.length, 150);
+  assert.equal(added[0].rows[0].disposition, 'eligible');
+});
+
+test('the preview body cap follows the supported edit-list shape', async () => {
+  // 2,500 edits (E17), each with a requested list and a baseline list of at most 150 values of
+  // 500 characters (B section 3), plus the JSON entry and edit envelopes.
+  assert.equal(
+    USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
+    2500 * (2 * 150 * (500 + 16) + 1024) + 4096,
+  );
+  // The ordinary 2,500-edit short-value body is about 232 KB, and the cap stays under the largest
+  // string one Node process holds, so a supported body is one parse.
+  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 232_000);
+  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT < 536_870_888);
+  // The edge admits the same bytes as the API.
+  const edge = await import(
+    '../../../../deployment/bootstrap/application-edge.mjs'
+  );
+  assert.equal(edge.userPreviewBodyLimit, USER_ATTRIBUTE_PREVIEW_BODY_LIMIT);
 });
 
 test('the digest matches the one-document form and never builds that document', () => {
