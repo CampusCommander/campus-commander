@@ -8,7 +8,7 @@ test.use({ timezoneId: 'America/New_York' });
 
 const customerId = 'C0123456';
 // The hand-off screenshots land here. The default keeps the file inside the test output.
-const scratch = process.env['UM_SHOTS'] ?? 'test-results/um-k11-shots';
+const scratch = process.env['UM_SHOTS'] ?? 'dist/um-k25-shots';
 
 test.beforeAll(() => mkdirSync(scratch, { recursive: true }));
 
