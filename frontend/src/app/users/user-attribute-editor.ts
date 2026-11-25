@@ -6,10 +6,12 @@ import {
   type OnInit,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -35,7 +37,10 @@ import {
   attributeJobOutcome,
   type AttributeSaveOutcome,
 } from './user-attribute-edit-flow';
-import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import {
+  UserAttributeConfirmationStore,
+  type PendingAttributeConfirmation,
+} from './user-attribute-confirmation';
 import {
   ATTRIBUTE_BACK_TO_FORM_LABEL,
   ATTRIBUTE_BOOL_LABELS,
@@ -132,6 +137,13 @@ export class UserAttributeEditor implements OnInit {
    * form is alive, so every draft, edit, and result uses this identity (R1-A).
    */
   private subjectUserId = '';
+  /**
+   * This editor restored a confirmation that another editor left behind. Its store entry
+   * drives the step until that one save settles (R3-A, R3-B).
+   */
+  private restored = false;
+  /** The accepted receipt that this editor already observes, so one job has one reader. */
+  private resumedDisplayId: string | null = null;
 
   protected readonly labels = {
     cancel: ATTRIBUTE_CANCEL_LABEL,
@@ -176,6 +188,14 @@ export class UserAttributeEditor implements OnInit {
       },
       { injector: this.injector },
     );
+    // A confirmation that another editor retained changes phase while this form is open:
+    // it may leave the creating step, lose its answer, or hand over an accepted receipt.
+    effect(() => {
+      const entry = this.confirmations.pending(this.subjectUserId);
+      untracked(() => {
+        if (this.restored) this.applyEntry(entry);
+      });
+    });
   }
 
   ngOnInit(): void {
@@ -185,27 +205,33 @@ export class UserAttributeEditor implements OnInit {
       this.user().customSchemas,
     );
     this.drafts.set(drafts);
-    // An uncertain confirmation outlives the editor. Reopening the same card continues the
-    // one confirmation instead of preparing another preview (R2-B).
+    // A retained confirmation outlives the editor. Reopening the same card continues the
+    // one save instead of preparing another preview (R2-B, R3-A, R3-B).
     const pending = this.confirmations.pending(this.subjectUserId);
     if (pending) {
-      this.preview.set(pending.preview);
-      this.pendingNames.set(pending.attributeNames);
-      this.message.set(pending.message);
-      this.step.set('unconfirmed');
-      this.focusUncertain();
+      this.restored = true;
+      this.applyEntry(pending);
     }
   }
 
   /** The category sections of the form, in the order of the category read. */
   protected readonly sections = computed(() =>
-    this.categories().map((category) => ({
-      schemaName: category.schemaName,
-      displayName: category.displayName,
-      fields: this.drafts().filter(
+    this.categories().map((category) => {
+      const fields = this.drafts().filter(
         (draft) => draft.schemaName === category.schemaName,
-      ),
-    })),
+      );
+      const first = fields[0];
+      return {
+        schemaName: category.schemaName,
+        displayName: category.displayName,
+        fields,
+        // The approved form gives the outlined controls a 6 px inset after the heading.
+        // The plain Yes and No label follows its heading directly (R3-C).
+        inset: first
+          ? first.field.multiValued || first.field.fieldType !== 'BOOL'
+          : false,
+      };
+    }),
   );
 
   /** The changed fields with their value rules (B section 8.1). */
@@ -376,15 +402,7 @@ export class UserAttributeEditor implements OnInit {
     this.reviewError.set('');
     this.message.set('');
     this.step.set('edit');
-    afterNextRender(
-      () => {
-        const host = this.firstField()?.nativeElement;
-        (
-          host?.querySelector('input') ?? host?.querySelector('button')
-        )?.focus();
-      },
-      { injector: this.injector },
-    );
+    this.focusFirstField();
   }
 
   protected cancel(): void {
@@ -423,6 +441,9 @@ export class UserAttributeEditor implements OnInit {
     const unresolved = this.confirmations.isPending(preview.previewId);
     this.pendingNames.set(attributeNames);
     this.message.set('');
+    // Record the frozen identity before the first send. A form that opens while this answer
+    // is in flight waits for the one save instead of preparing a second preview (R3-A).
+    this.confirmations.begin(this.subjectUserId, preview, attributeNames);
     this.step.set('confirming');
     const receipt = await this.flow.confirm(
       preview.previewId,
@@ -431,29 +452,45 @@ export class UserAttributeEditor implements OnInit {
     if (!receipt.ok && (receipt.uncertain || unresolved)) {
       // The answer may have created the job. Keep the preview, its digest, and the submitted
       // names until a receipt answers this same confirmation (R2-B).
-      this.confirmations.remember({
-        userId: this.subjectUserId,
+      this.confirmations.uncertain(
+        this.subjectUserId,
         preview,
-        attributeNames: [...attributeNames],
-        message: receipt.message,
-      });
+        attributeNames,
+        receipt.message,
+      );
       if (this.destroyed) return;
       this.message.set(receipt.message);
       this.step.set('unconfirmed');
       this.focusUncertain();
       return;
     }
-    if (receipt.ok) this.confirmations.resolve(preview.previewId);
-    if (this.destroyed) return;
     if (!receipt.ok) {
-      // A definite refusal keeps the form and its edits, and clears the preview, because
-      // the route has settled the preview identity already (card scope, B section 13).
+      // A definite refusal releases the preview identity. A form that reopens after this
+      // answer shows the sentence and its editors again (R3-A).
+      this.confirmations.refuse(
+        this.subjectUserId,
+        preview,
+        attributeNames,
+        receipt.message,
+      );
+      if (this.destroyed) return;
+      this.confirmations.resolve(preview.previewId);
       this.preview.set(null);
       this.step.set('edit');
       this.message.set(receipt.message);
       return;
     }
+    // Hand the accepted receipt and its submission context to the store before any state
+    // clears, so a destroyed editor loses neither the job nor the card that owns it (R3-B).
     const displayId = receipt.value.displayId;
+    this.confirmations.accept(
+      this.subjectUserId,
+      preview,
+      attributeNames,
+      displayId,
+    );
+    this.resumedDisplayId = displayId;
+    if (this.destroyed) return;
     this.receiptId.set(displayId);
     this.step.set('saving');
     const job = await this.flow.waitForJob(
@@ -462,17 +499,109 @@ export class UserAttributeEditor implements OnInit {
       1000,
       () => this.destroyed,
     );
+    // A destroyed editor leaves the accepted entry for its next owner (R3-B).
     if (this.destroyed) return;
     // A job that never settled, or a job whose answer never arrived, keeps its receipt.
     const outcome: AttributeSaveOutcome = !job.ok
       ? 'unsettled'
       : attributeJobOutcome(job.value.status);
+    this.confirmations.resolve(preview.previewId);
     this.finished.emit({
       outcome,
       userId: this.subjectUserId,
       displayId,
       attributeNames,
     });
+  }
+
+  /**
+   * Bring the step in line with a retained confirmation. A reopened form honors the answer
+   * that is still in flight, keeps the recovery screen after an unknown answer, observes
+   * an accepted receipt, and returns to its editors after a definite refusal (R3-A, R3-B).
+   */
+  private applyEntry(entry: PendingAttributeConfirmation | null): void {
+    if (!entry) {
+      if (this.step() === 'confirming') {
+        this.restored = false;
+        this.preview.set(null);
+        this.step.set('edit');
+        this.focusFirstField();
+      }
+      return;
+    }
+    if (entry.phase === 'confirming') {
+      this.preview.set(entry.preview);
+      this.pendingNames.set(entry.attributeNames);
+      this.message.set(entry.message);
+      if (this.step() !== 'confirming') this.step.set('confirming');
+      return;
+    }
+    if (entry.phase === 'uncertain') {
+      this.preview.set(entry.preview);
+      this.pendingNames.set(entry.attributeNames);
+      this.message.set(entry.message);
+      if (this.step() !== 'unconfirmed') {
+        this.step.set('unconfirmed');
+        this.focusUncertain();
+      }
+      return;
+    }
+    if (entry.phase === 'refused') {
+      // The refusal released the one identity, so the form may edit and save again.
+      this.restored = false;
+      this.confirmations.resolve(entry.preview.previewId);
+      this.preview.set(null);
+      this.pendingNames.set([]);
+      this.step.set('edit');
+      this.message.set(entry.message);
+      this.focusFirstField();
+      return;
+    }
+    this.preview.set(entry.preview);
+    this.pendingNames.set(entry.attributeNames);
+    if (entry.displayId) this.receiptId.set(entry.displayId);
+    this.step.set('saving');
+    if (entry.displayId === null || this.resumedDisplayId === entry.displayId)
+      return;
+    this.resumedDisplayId = entry.displayId;
+    void this.resumeAccepted(entry);
+  }
+
+  /** Observe the accepted receipt of a closed form, then report it to the card (R3-B). */
+  private async resumeAccepted(
+    entry: PendingAttributeConfirmation,
+  ): Promise<void> {
+    const displayId = entry.displayId;
+    if (!displayId) return;
+    const job = await this.flow.waitForJob(
+      displayId,
+      120,
+      1000,
+      () => this.destroyed,
+    );
+    if (this.destroyed) return;
+    const outcome: AttributeSaveOutcome = !job.ok
+      ? 'unsettled'
+      : attributeJobOutcome(job.value.status);
+    this.confirmations.resolve(entry.preview.previewId);
+    this.finished.emit({
+      outcome,
+      userId: entry.userId,
+      displayId,
+      attributeNames: entry.attributeNames,
+    });
+  }
+
+  private focusFirstField(): void {
+    afterNextRender(
+      () => {
+        const host = this.firstField()?.nativeElement;
+        (
+          host?.querySelector('input') ?? host?.querySelector('button')
+        )?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   private focusReview(): void {
