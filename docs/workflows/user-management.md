@@ -79,6 +79,14 @@ On 2026-11-16 the owner answered "All recommended". Each question takes option 1
 
 U4 answers the definition read of the open item at `docs/workflows/platform-access.md:701` for the Custom attributes tab.
 
+On 2026-11-25 the owner set the request limit of an in-grid value save and the selection rule of slice S3. The question was: "Cap the preview request at a practical size. I recommend 32 MB, which is many times more than any realistic grid edit." Owner, in the main chat: "For in grid changes make it 64mb. Rememver to use server side selection an much as possible to minimize how much data is held in client memory."
+
+The S3 cards apply the two answers in this way:
+
+- A value preview request takes at most 64 MiB (67,108,864 bytes). A larger request answers "The request exceeds the size limit." The person then splits the change into smaller saves.
+- Bulk Actions, Set attributes, sends the server-side selection key of the Users grid, never a list of users. The review reads its rows from the server one page at a time.
+- The in-grid editors and the details card keep only the edits of the open save and the rows on screen in the browser.
+
 ## Defaults
 
 The screen approval accepted four named defaults:
