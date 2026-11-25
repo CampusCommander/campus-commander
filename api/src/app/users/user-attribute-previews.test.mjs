@@ -50,8 +50,8 @@ const {
   selectionPreviewTargets,
   wireValue,
   USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
-  USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT,
 } = await import('./user-attribute-previews.ts');
+const { previewTextUnits } = await import('../request-body.ts');
 const { createHash } = await import('node:crypto');
 const { constants: bufferConstants } = await import('node:buffer');
 
@@ -605,24 +605,37 @@ test('a computed list keeps both documented list shapes and refuses only the cou
   assert.equal(added[0].rows[0].disposition, 'eligible');
 });
 
-test('the preview body cap follows the supported edit-list shape', () => {
-  // B section 3 bounds one list by its text: 25,000 code points (50 values of 500 characters or
-  // 150 of 100). A code point is at most two UTF-16 units, and JSON escapes one unit into at most
-  // six bytes. E17: 2,500 edits, each with a requested list and a baseline.
-  assert.equal(
-    USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT,
-    2500 * (2 * (25_000 * 2 * 6 + 150 * 16) + 1_024) + 4_096,
-  );
-  assert.equal(USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT, 1_514_564_096);
-  // One JSON.parse holds MAX_STRING_LENGTH UTF-16 units, and a UTF-8 body never needs more units
-  // than bytes, so the cap stops at that parse ceiling. It admits the review reproduction of
-  // 399,009,461 bytes and the full 2,500-edit shape.
+test('the preview body cap follows the encoded text boundary of one parse', () => {
+  // A UTF-8 body yields at most one UTF-16 unit per byte, and one unit takes at most three
+  // bytes, so a body above three times MAX_STRING_LENGTH cannot fit one JSON.parse.
   assert.equal(
     USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
-    bufferConstants.MAX_STRING_LENGTH,
+    3 * bufferConstants.MAX_STRING_LENGTH,
   );
-  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 536_870_888);
-  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 399_009_461);
+  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 1_610_612_664);
+  // The review reproductions of 598,164,461 and 547,264,461 bytes are admitted.
+  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 598_164_461);
+  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 547_264_461);
+});
+
+test('the decoded text count follows UTF-8 and streaming chunk boundaries', () => {
+  const units = (text) => previewTextUnits(Buffer.from(text, 'utf8'));
+  assert.equal(units('abc'), 3);
+  assert.equal(units('é'), 1);
+  assert.equal(units('€'), 1);
+  assert.equal(units('😀'), 2);
+  assert.equal(units('a€😀'), 4);
+  // A JSON escape is six text units, not one.
+  assert.equal(units('"\\ud83d\\ude00"'), 14);
+  assert.equal(units(''), 0);
+  assert.equal(previewTextUnits(Buffer.from([0xff])), 1);
+  // A three-byte code point split by the chunk boundary keeps its one unit.
+  const boundary = Buffer.concat([
+    Buffer.alloc(4 * 1024 * 1024 - 1, 0x61),
+    Buffer.from('€', 'utf8'),
+    Buffer.from('a'),
+  ]);
+  assert.equal(previewTextUnits(boundary), 4 * 1024 * 1024 + 1);
 });
 
 test('the digest matches the one-document form and never builds that document', () => {
