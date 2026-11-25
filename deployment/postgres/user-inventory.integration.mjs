@@ -119,16 +119,16 @@ export async function qualifyUserInventory({
     ]);
 
     await check(
-      'a fresh database runs every migration through 027',
+      'a fresh database runs every migration through 028',
       async () => {
         const ids = (
           await migrator.query(
             'SELECT id FROM cc.schema_migrations ORDER BY id',
           )
         ).rows.map((row) => row.id);
-        assert.equal(ids.at(-2), '026-user-category-jobs');
-        assert.equal(ids.at(-1), '027-user-attribute-values');
-        assert.equal(ids.length, 27);
+        assert.equal(ids.at(-2), '027-user-attribute-values');
+        assert.equal(ids.at(-1), '028-user-attribute-preview-routes');
+        assert.equal(ids.length, 28);
       },
     );
 

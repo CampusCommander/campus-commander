@@ -18,6 +18,7 @@ import {
   userAttributeChangesSchema,
   userAttributeChangeModeSchema,
   userAttributeEditPreviewRequestSchema,
+  userAttributeEditPreviewRequestShapeSchema,
   userAttributeEditSchema,
   userAttributeEditsSchema,
   userAttributeFieldSchema,
@@ -26,6 +27,7 @@ import {
   userAttributeOperatorSchema,
   userAttributePreviewConfirmRequestSchema,
   userAttributePreviewRequestSchema,
+  userAttributePreviewRequestShapeSchema,
   userAttributePreviewSchema,
   userAttributeJobReceiptSchema,
   userAttributeTargetSchema,
@@ -1730,6 +1732,149 @@ test('a value job receipt names the UAT job and its counts', () => {
       ...receipt,
       displayId: 'CAT-007',
     }).success,
+    false,
+  );
+});
+
+test('the preview request shape defers each value rule to the route', () => {
+  const tabId = '00000000-0000-4000-8000-000000000002';
+  const request = (value) => ({
+    gridId: 'users',
+    tabId,
+    changes: [
+      {
+        schemaName: 'StudentInfo',
+        fieldName: 'Homeroom',
+        mode: 'set',
+        values: [value],
+      },
+    ],
+  });
+  // The wire rule refuses a blank or a long text, and the route must answer 422 with the
+  // attribute label instead, so the request shape carries the value to the route.
+  for (const value of ['', '   ', 'x'.repeat(501), '\u{1f600}'.repeat(501)]) {
+    assert.equal(
+      userAttributePreviewRequestSchema.safeParse(request(value)).success,
+      false,
+    );
+    assert.deepEqual(
+      userAttributePreviewRequestShapeSchema.parse(request(value)),
+      request(value),
+    );
+  }
+  assert.equal(
+    userAttributePreviewRequestShapeSchema.safeParse(request('B12')).success,
+    true,
+  );
+  // The structural rules of the wire rule stay.
+  assert.equal(
+    userAttributePreviewRequestShapeSchema.safeParse({
+      ...request('B12'),
+      changes: [],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewRequestShapeSchema.safeParse({
+      ...request('B12'),
+      gridId: 'devices',
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewRequestShapeSchema.safeParse({
+      ...request('B12'),
+      extra: true,
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributePreviewRequestShapeSchema.safeParse({
+      ...request('B12'),
+      changes: [request('B12').changes[0], request('B13').changes[0]],
+    }).success,
+    false,
+    'An attribute occurs once.',
+  );
+  assert.equal(
+    userAttributePreviewRequestShapeSchema.safeParse({
+      ...request('B12'),
+      changes: [
+        {
+          schemaName: 'StudentInfo',
+          fieldName: 'Homeroom',
+          mode: 'set',
+          values: Array.from({ length: 151 }, (_, index) => `B${index}`),
+        },
+      ],
+    }).success,
+    false,
+  );
+});
+
+test('the edit request shape carries 2,500 edits on 500 users and the list bound', () => {
+  const edits = Array.from({ length: 2500 }, (_, index) => ({
+    userId: `10700000000${String(index % 500).padStart(13, '0')}`,
+    attribute: `attr:StudentInfo.Field${Math.floor(index / 500)}`,
+    mode: 'set',
+    values: ['x'],
+    baselineValue: 'y',
+  }));
+  const request = { edits };
+  assert.equal(
+    userAttributeEditPreviewRequestShapeSchema.safeParse(request).success,
+    true,
+  );
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(request)) > 98304,
+    'The published short-value shape exceeds the ordinary 98,304-byte cap.',
+  );
+  // The wire rule accepts both documented list shapes: 150 values of 100 characters and 50 of 500.
+  const shaped = {
+    ...edits[0],
+    mode: 'replace',
+    values: Array.from(
+      { length: 50 },
+      (_, index) => `${String(index).padStart(3, '0')}${'x'.repeat(497)}`,
+    ),
+  };
+  assert.equal(
+    userAttributeEditPreviewRequestSchema.safeParse({ edits: [shaped] })
+      .success,
+    true,
+  );
+  // A 501-character value reaches the route, and the wire rule still refuses it.
+  const long = {
+    ...edits[0],
+    values: ['x'.repeat(501)],
+  };
+  assert.equal(
+    userAttributeEditPreviewRequestShapeSchema.safeParse({ edits: [long] })
+      .success,
+    true,
+  );
+  assert.equal(
+    userAttributeEditPreviewRequestSchema.safeParse({ edits: [long] }).success,
+    false,
+  );
+  // 501 users, a repeated user and attribute, and an empty list stay structural refusals.
+  const users = Array.from({ length: 501 }, (_, index) => ({
+    ...edits[0],
+    userId: `10700000001${String(index).padStart(13, '0')}`,
+  }));
+  assert.equal(
+    userAttributeEditPreviewRequestShapeSchema.safeParse({ edits: users })
+      .success,
+    false,
+  );
+  assert.equal(
+    userAttributeEditPreviewRequestShapeSchema.safeParse({
+      edits: [edits[0], edits[0]],
+    }).success,
+    false,
+  );
+  assert.equal(
+    userAttributeEditPreviewRequestShapeSchema.safeParse({ edits: [] }).success,
     false,
   );
 });
