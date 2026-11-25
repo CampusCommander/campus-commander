@@ -78,9 +78,18 @@ function attributeText(
     : `${displayName} (${typeLabel(fieldType)})`;
 }
 
-/** A range change reads the line of the editor's range row (composition choice 8). */
+/**
+ * A range change edits the number range alone (composition choice 8). The category
+ * dialog classifies the row by its property list, so the job page reads the same
+ * list. A mixed edit keeps the change chip and reports every changed property.
+ */
 function isRangeChange(row: JobCategoryRow): boolean {
-  return row.change === 'changed' && row.range !== null;
+  const properties = row.properties ?? [];
+  return (
+    row.change === 'changed' &&
+    properties.length === 1 &&
+    properties[0] === 'numericIndexingSpec'
+  );
 }
 
 /** One row of the category result table (CA state 07). */
@@ -113,7 +122,7 @@ function categoryEffect(row: JobCategoryRow): string {
   if (row.change === 'removed')
     return deletesAttributeValuesText(row.holders ?? 0);
   if (row.change === 'changed') {
-    if (row.range !== null) return NO_USER_VALUES_CHANGE;
+    if (isRangeChange(row)) return NO_USER_VALUES_CHANGE;
     const properties = row.properties ?? [];
     return properties.length
       ? propertiesText(properties)
@@ -125,11 +134,15 @@ function categoryEffect(row: JobCategoryRow): string {
 /** One rendered row of the state 10 table. */
 export interface ValueResultRow {
   key: string;
-  /** The stored row, for the Reconcile action. */
+  /** The stored row, for the Reconcile action and the user link. */
   row: JobAttributeRow;
   user: string;
   current: string;
+  /** The current value is absent, so the cell reads its muted italic form. */
+  currentUnset: boolean;
   next: string;
+  /** The new value is absent, so the cell reads its muted italic form. */
+  nextUnset: boolean;
   label: string;
   tone: OutcomeTone;
   failureText: string | null;
@@ -146,7 +159,9 @@ export function valueResultRow(
     row,
     user: row.userName ?? row.primaryEmail,
     current: attributeWireText(row.currentValue),
+    currentUnset: row.currentValue === null,
     next: attributeWireText(row.newValue),
+    nextUnset: row.newValue === null,
     label: reconciling ? 'Reconciling' : OUTCOME_LABELS[row.outcome],
     tone: reconciling ? 'info' : outcomeTone(row.outcome),
     failureText: row.outcome === 'failed' ? row.failureText : null,

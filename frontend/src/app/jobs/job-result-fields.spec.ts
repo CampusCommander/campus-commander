@@ -131,6 +131,7 @@ describe('categoryResultRow', () => {
         displayName: 'Score',
         fieldType: 'INT64',
         previousName: null,
+        properties: ['numericIndexingSpec'],
         range: { minValue: 1, maxValue: 5 },
         outcome: 'unknown',
       }),
@@ -142,6 +143,57 @@ describe('categoryResultRow', () => {
     expect(row.outcome).toBe('Unknown');
     expect(row.outcomeTone).toBe('warning');
   });
+
+  it('keeps every property of a mixed range edit (R1-A)', () => {
+    const row = categoryResultRow(
+      categoryRow({
+        change: 'changed',
+        displayName: 'Score',
+        fieldType: 'INT64',
+        previousName: null,
+        properties: ['readAccessType', 'numericIndexingSpec'],
+        range: { minValue: 1, maxValue: 5 },
+      }),
+      4,
+    );
+    expect(row.label).toBe('Change attribute');
+    expect(row.attribute).toBe('Score (Whole number)');
+    expect(row.effect).toBe('Updates visibility and number range');
+  });
+
+  it('keeps a display name change beside a range change (R1-A)', () => {
+    const row = categoryResultRow(
+      categoryRow({
+        change: 'changed',
+        displayName: 'Score',
+        fieldType: 'INT64',
+        previousName: null,
+        properties: ['displayName', 'numericIndexingSpec'],
+        range: { minValue: 1, maxValue: 5 },
+      }),
+      5,
+    );
+    expect(row.label).toBe('Change attribute');
+    expect(row.attribute).toBe('Score (Whole number)');
+    expect(row.effect).toBe('Updates display name and number range');
+  });
+
+  it('reads a cleared range as a range change with no bound (R1-A)', () => {
+    const row = categoryResultRow(
+      categoryRow({
+        change: 'changed',
+        displayName: 'Score',
+        fieldType: 'INT64',
+        previousName: null,
+        properties: ['numericIndexingSpec'],
+        range: null,
+      }),
+      6,
+    );
+    expect(row.label).toBe('Set range');
+    expect(row.attribute).toBe('Score with no range');
+    expect(row.effect).toBe('No user values change');
+  });
 });
 
 describe('valueResultRow', () => {
@@ -150,10 +202,26 @@ describe('valueResultRow', () => {
     expect(row.key).toBe('value:7');
     expect(row.user).toBe('Avery Chen');
     expect(row.current).toBe('Not set');
+    expect(row.currentUnset).toBe(true);
     expect(row.next).toBe('Seven');
+    expect(row.nextUnset).toBe(false);
     expect(row.label).toBe('Succeeded');
     expect(row.tone).toBe('success');
     expect(row.failureText).toBeNull();
+  });
+
+  it('marks a populated current value and a removal new value', () => {
+    const row = valueResultRow(
+      valueRow({
+        currentValue: 'Six',
+        newValue: null,
+      }),
+      false,
+    );
+    expect(row.current).toBe('Six');
+    expect(row.currentUnset).toBe(false);
+    expect(row.next).toBe('Not set');
+    expect(row.nextUnset).toBe(true);
   });
 
   it('reads a Yes or No value and falls back to the email', () => {
