@@ -1145,6 +1145,121 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
     );
 
     await check(
+      'K24 R3 the automatic read-back settles through the bulk functions',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-auto-1', current: 'A', requested: 'B' }],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 0 }, 'unknown')],
+          new Date().toISOString(),
+        );
+        await expireReadBack(job.previewId);
+        const verified = await result(
+          'SELECT cc.claim_user_attribute_verification($1,$2,$3,$4,$5) AS result',
+          [customer, job.jobId, attempt, null, 250],
+        );
+        assert.equal(verified.outcome, 'claimed', JSON.stringify(verified));
+        assert.deepEqual(
+          verified.users.map((user) => user.userId),
+          ['k24-auto-1'],
+        );
+        // The read-back result settles through the same settlement, because the attempt owns the
+        // verification claim of that row (R7).
+        const settled = await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [
+            {
+              ordinal: 0,
+              outcome: 'succeeded',
+              failure: null,
+              reason: null,
+              googleStatus: 200,
+              googleReason: null,
+              verifiedBy: 'read-back',
+              observed: { StudentInfo: { Homeroom: 'B' } },
+            },
+          ],
+          new Date().toISOString(),
+        );
+        assert.equal(settled.ignored, 0, JSON.stringify(settled));
+        assert.deepEqual(settled.changed, ['k24-auto-1']);
+        const row = await target(job.previewId);
+        assert.equal(row.outcome, 'succeeded');
+        assert.equal(row.verified_by, 'read-back');
+        assert.equal(row.verify_attempt, null);
+        assert.equal(
+          (await customSchemas('k24-auto-1')).custom_schemas.StudentInfo
+            .Homeroom,
+          'B',
+        );
+      },
+    );
+
+    await check(
+      'K24 R3 three automatic passes leave the operation for a person',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-bound-1', current: 'A', requested: 'B' }],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 0 }, 'unknown')],
+          new Date().toISOString(),
+        );
+        for (let pass = 1; pass <= 3; pass += 1) {
+          await expireReadBack(job.previewId);
+          const claimed = await result(
+            'SELECT cc.claim_user_attribute_verification($1,$2,$3,$4,$5) AS result',
+            [customer, job.jobId, attempt, null, 250],
+          );
+          assert.equal(claimed.users.length, 1, `pass ${pass}`);
+          await settle(
+            job.jobId,
+            job.token,
+            attempt,
+            [
+              {
+                ordinal: 0,
+                outcome: 'unknown',
+                failure: 'invalid-response',
+                reason: 'verification-failed',
+                googleStatus: 400,
+                googleReason: 'invalid',
+                verifiedBy: 'read-back',
+                observed: null,
+              },
+            ],
+            new Date().toISOString(),
+          );
+        }
+        // The fourth pass claims nothing and leaves no work, so the job finishes Needs review.
+        await expireReadBack(job.previewId);
+        const exhausted = await result(
+          'SELECT cc.claim_user_attribute_verification($1,$2,$3,$4,$5) AS result',
+          [customer, job.jobId, attempt, null, 250],
+        );
+        assert.equal(exhausted.outcome, 'claimed', JSON.stringify(exhausted));
+        assert.equal(exhausted.users.length, 0);
+        assert.equal(exhausted.remaining, 0);
+        assert.equal((await target(job.previewId)).verify_count, 3);
+        const done = await finish(job.jobId, job.token, attempt);
+        assert.equal(done.status, 'needs-review', JSON.stringify(done));
+      },
+    );
+
+    await check(
       'K24 every new function denies PUBLIC and allows the runtime role',
       async () => {
         const names = [

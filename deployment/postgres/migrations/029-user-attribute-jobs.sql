@@ -351,10 +351,11 @@ BEGIN
     WHERE v.preview_id=preview.preview_id AND v.disposition='eligible' ORDER BY v.schema_name);
   FOR result_row IN SELECT value FROM jsonb_array_elements(p_results) LOOP
     ordinal_key:=(result_row->>'ordinal')::integer;
-    -- Only a row that this attempt claimed and still owns settles (R7).
+    -- Only a row that this attempt claimed, for its write or for its read-back, settles (R7).
     SELECT t.user_id INTO user_key FROM cc.user_attribute_preview_targets t
       WHERE t.preview_id=preview.preview_id AND t.ordinal=ordinal_key AND t.disposition='eligible'
-        AND t.attempt=p_attempt AND t.outcome='dispatched';
+        AND ((t.attempt=p_attempt AND t.outcome='dispatched') OR
+          (t.verify_attempt=p_attempt AND t.outcome='unknown'));
     IF user_key IS NULL THEN
       ignored:=ignored+1;
       CONTINUE;
