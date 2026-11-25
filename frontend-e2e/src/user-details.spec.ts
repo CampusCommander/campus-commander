@@ -718,6 +718,19 @@ async function signIn(page: Page) {
   });
 }
 
+/** The theme menu of the shell (UI-10 checks both themes). */
+async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+  await page.getByRole('button', { name: 'Choose theme' }).click();
+  await page
+    .getByRole('menuitem', {
+      name: theme === 'dark' ? 'Use dark theme' : 'Use light theme',
+    })
+    .click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+  // The menu animates closed. Wait so a following screenshot shows the page only.
+  await expect(page.locator('.mat-mdc-menu-panel')).toBeHidden();
+}
+
 async function openUsers(page: Page) {
   selectionState.ids = new Set();
   selectionState.terms = [];
@@ -1254,6 +1267,12 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
     path: `${scratch}/um-05-user-details-edit-full.png`,
     fullPage: true,
   });
+  await setTheme(page, 'dark');
+  await page.screenshot({
+    path: `${scratch}/um-05-user-details-edit-dark.png`,
+    fullPage: true,
+  });
+  await setTheme(page, 'light');
   await homeroom.fill('216');
   await expect(save).toBeDisabled();
   await homeroom.fill('x'.repeat(512));
@@ -1320,6 +1339,11 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
   });
   await page.screenshot({
     path: `${scratch}/um-12-details-saved-full.png`,
+    fullPage: true,
+  });
+  await setTheme(page, 'dark');
+  await page.screenshot({
+    path: `${scratch}/um-12-details-saved-dark.png`,
     fullPage: true,
   });
 });
