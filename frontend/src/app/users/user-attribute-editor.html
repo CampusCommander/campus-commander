@@ -1,0 +1,287 @@
+@switch (step()) { @case ('edit') {
+<form class="attribute-form" (submit)="onSubmit($event)" novalidate>
+  @for (section of sections(); track section.schemaName) {
+  <section class="attr-section">
+    <h3>{{ section.displayName }}</h3>
+    @for (draft of section.fields; track draft.key) {
+    <div
+      #firstField
+      class="field"
+      [class.field-invalid]="!!fieldError(draft.key)"
+      [attr.data-attribute]="draft.key"
+      [attr.data-type]="draft.field.fieldType"
+    >
+      @switch (draft.field.fieldType) { @case ('BOOL') {
+      <div class="bool-field">
+        <span class="bool-label" [id]="draft.key + '-label'"
+          >{{ draft.label }}</span
+        >
+        <mat-button-toggle-group
+          [value]="draft.value"
+          [attr.aria-labelledby]="draft.key + '-label'"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+          (change)="setBool(draft.key, $event.value)"
+        >
+          <mat-button-toggle [value]="true">{{ labels.yes }}</mat-button-toggle>
+          <mat-button-toggle [value]="false">{{ labels.no }}</mat-button-toggle>
+          <mat-button-toggle [value]="null"
+            >{{ labels.unset }}</mat-button-toggle
+          >
+        </mat-button-toggle-group>
+      </div>
+      } @case ('STRING') { @if (draft.field.multiValued) {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field chip-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <mat-chip-grid
+          #chipGrid
+          [attr.aria-label]="draft.label"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        >
+          @for (value of chipValues(draft.key); track $index) {
+          <mat-chip-row (removed)="removeChip(draft.key, $index)">
+            {{ value }}
+            <button
+              matChipRemove
+              type="button"
+              [attr.aria-label]="'Remove ' + value"
+            >
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </mat-chip-row>
+          }
+          <input
+            [matChipInputFor]="chipGrid"
+            [matChipInputAddOnBlur]="true"
+            (matChipInputTokenEnd)="addChip(draft.key, $event)"
+            [attr.aria-label]="'Add a ' + draft.label + ' value'"
+            [attr.aria-describedby]="
+              fieldError(draft.key) ? draft.key + '-error' : null
+            "
+          />
+        </mat-chip-grid>
+      </mat-form-field>
+      } @else {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <input
+          matInput
+          type="text"
+          autocomplete="off"
+          [value]="textValue(draft.key)"
+          (input)="setText(draft.key, $event)"
+          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        />
+      </mat-form-field>
+      } } @case ('INT64') {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <input
+          matInput
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          [value]="textValue(draft.key)"
+          (input)="setText(draft.key, $event)"
+          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        />
+      </mat-form-field>
+      } @case ('DOUBLE') {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <input
+          matInput
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          [value]="textValue(draft.key)"
+          (input)="setText(draft.key, $event)"
+          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        />
+      </mat-form-field>
+      } @case ('DATE') {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <input
+          matInput
+          type="date"
+          autocomplete="off"
+          [value]="textValue(draft.key)"
+          (input)="setText(draft.key, $event)"
+          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        />
+      </mat-form-field>
+      } @case ('EMAIL') {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <input
+          matInput
+          type="email"
+          autocomplete="off"
+          [value]="textValue(draft.key)"
+          (input)="setText(draft.key, $event)"
+          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        />
+      </mat-form-field>
+      } @case ('PHONE') {
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="attribute-field"
+      >
+        <mat-label>{{ draft.label }}</mat-label>
+        <input
+          matInput
+          type="tel"
+          autocomplete="off"
+          [value]="textValue(draft.key)"
+          (input)="setText(draft.key, $event)"
+          [attr.aria-invalid]="fieldError(draft.key) ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError(draft.key) ? draft.key + '-error' : null
+          "
+        />
+      </mat-form-field>
+      } } @if (fieldError(draft.key); as error) {
+      <p class="field-error" [id]="draft.key + '-error'">{{ error }}</p>
+      }
+    </div>
+    }
+  </section>
+  } @if (message()) {
+  <p class="flow-message error" role="alert">{{ message() }}</p>
+  }
+
+  <div class="editor-foot">
+    <button mat-button type="button" (click)="cancel()">
+      {{ labels.cancel }}
+    </button>
+    <button mat-flat-button type="submit" [disabled]="!canSave()">
+      {{ labels.save }}
+    </button>
+  </div>
+</form>
+} @case ('preparing') {
+<section class="flow-state" aria-live="polite" aria-busy="true">
+  <p role="status">{{ labels.preparing }}</p>
+</section>
+} @case ('review') {
+<section class="review" aria-labelledby="attribute-review-title">
+  <h3 #reviewTitle tabindex="-1" id="attribute-review-title">
+    {{ labels.reviewTitle }}
+  </h3>
+  @if (reviewError()) {
+  <p class="flow-message error" role="alert">{{ reviewError() }}</p>
+  <div class="review-retry">
+    <button mat-stroked-button type="button" (click)="retryRows()">
+      {{ labels.retryRows }}
+    </button>
+  </div>
+  } @else { @if (conflictLabels().length) {
+  <p class="flow-message error" role="status">
+    <span class="conflict-title">{{ labels.conflictTitle }}</span>
+    {{ conflictText() }}
+  </p>
+  }
+  <table class="review-table">
+    <caption class="visually-hidden">
+      {{ labels.reviewTitle }}
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">{{ labels.columnAttribute }}</th>
+        <th scope="col">{{ labels.columnCurrent }}</th>
+        <th scope="col">{{ labels.columnNew }}</th>
+        <th scope="col">{{ labels.columnStatus }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (target of targets(); track target.attribute) {
+      <tr [attr.data-disposition]="target.disposition">
+        <th scope="row">{{ labelOf(target.attribute) }}</th>
+        <td class="review-value">{{ valueText(target.currentValue) }}</td>
+        <td class="review-value">{{ valueText(target.newValue) }}</td>
+        <td
+          class="review-status"
+          [class.is-conflict]="target.disposition === 'conflict'"
+          [class.is-unchanged]="target.disposition === 'unchanged'"
+        >
+          {{ statusText(target.disposition) }}
+        </td>
+      </tr>
+      }
+    </tbody>
+  </table>
+  @if (noChange()) {
+  <p class="flow-note" role="status">{{ labels.noChange }}</p>
+  } }
+
+  <div class="editor-foot">
+    <button mat-button type="button" (click)="backToForm()">
+      {{ labels.backToForm }}
+    </button>
+    <button
+      mat-flat-button
+      type="button"
+      [disabled]="!canConfirm()"
+      (click)="confirmReview()"
+    >
+      {{ labels.confirm }}
+    </button>
+  </div>
+</section>
+} @case ('confirming') {
+<section class="flow-state" aria-live="polite" aria-busy="true">
+  <p role="status">{{ labels.creating }}</p>
+</section>
+} @case ('saving') {
+<section class="flow-state" aria-live="polite" aria-busy="true">
+  <p role="status">
+    {{ labels.saving }} @if (receiptId(); as displayId) {
+    <a [routerLink]="['/jobs', displayId]">{{ displayId }}</a>
+    }
+  </p>
+</section>
+} }

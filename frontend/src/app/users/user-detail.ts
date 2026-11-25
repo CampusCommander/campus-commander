@@ -16,6 +16,7 @@ import { DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import type { UserDetail } from '@campus/application-contracts';
+import { AuthStore } from '../auth.store';
 import { UsersStore } from './users.store';
 import {
   STATUS_LABELS,
@@ -28,6 +29,16 @@ import {
   rawAttributeSections,
   userAttributeSections,
 } from './user-attribute-sections';
+import {
+  ATTRIBUTE_FAILED_TEXT,
+  ATTRIBUTE_PARTIAL_TEXT,
+  ATTRIBUTE_UNSETTLED_TEXT,
+  attributeSavedText,
+} from './user-attribute-edit-messages';
+import {
+  UserAttributeEditor,
+  type UserAttributeSaveResult,
+} from './user-attribute-editor';
 
 /** What the page shows, from the directory status and the record read (A section 11). */
 type DetailView =
@@ -67,7 +78,7 @@ export function readAge(iso: string, now = Date.now()): string {
  */
 @Component({
   selector: 'app-user-detail',
-  imports: [DatePipe, RouterLink, MatButtonModule],
+  imports: [DatePipe, RouterLink, MatButtonModule, UserAttributeEditor],
   templateUrl: './user-detail.html',
   styleUrl: './user-detail.css',
 })
@@ -108,7 +119,41 @@ export class UserDetailPage {
       : rawAttributeSections(current.customSchemas);
   });
   protected readonly relative = readAge;
+  private readonly auth = inject(AuthStore);
+  /** The card form edits every attribute of this user at once, and one save makes one job. */
+  protected readonly editing = signal(false);
+  protected readonly saved = signal<UserAttributeSaveResult | null>(null);
+  protected readonly categories = computed(
+    () => this.store.categories()?.categories ?? [],
+  );
+  /** A person without `users:write` sees no Edit button (card scope, design K25). */
+  protected readonly canEdit = computed(() => {
+    const sync = this.store.sync();
+    return (
+      sync !== null &&
+      this.store.categories() !== null &&
+      this.auth.can('users:write', {
+        kind: 'district',
+        customerId: sync.customerId,
+      })
+    );
+  });
+  /** The saved line of composition 13, with the job ID as a secondary link. */
+  protected readonly savedLine = computed(() => {
+    const result = this.saved();
+    if (!result) return null;
+    const text =
+      result.outcome === 'saved'
+        ? attributeSavedText(result.attributeNames)
+        : result.outcome === 'partial'
+          ? ATTRIBUTE_PARTIAL_TEXT
+          : result.outcome === 'unsettled'
+            ? ATTRIBUTE_UNSETTLED_TEXT
+            : ATTRIBUTE_FAILED_TEXT;
+    return { outcome: result.outcome, text, displayId: result.displayId };
+  });
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
+  private readonly editButton = viewChild('editButton', { read: ElementRef });
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   /** The page starts focus at its heading once, when the first state replaces the skeleton. */
@@ -193,6 +238,31 @@ export class UserDetailPage {
     if (!row) return;
     this.store.cursor.set({ index: cursor.index + 1, userId: row.userId });
     await this.router.navigate(['/users', row.userId]);
+  }
+
+  protected startEdit(): void {
+    this.saved.set(null);
+    this.editing.set(true);
+  }
+
+  /** Cancel and a finished save both return focus to the Edit button (UI-09). */
+  protected cancelEdit(): void {
+    this.editing.set(false);
+    this.focusEdit();
+  }
+
+  protected finishEdit(result: UserAttributeSaveResult): void {
+    this.editing.set(false);
+    this.saved.set(result);
+    this.focusEdit();
+    // The job settled, so the card reads the new values from the directory.
+    void this.load(this.userId());
+  }
+
+  private focusEdit(): void {
+    afterNextRender(() => this.editButton()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
   }
 
   protected title(current: UserDetail): string {
