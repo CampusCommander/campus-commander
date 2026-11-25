@@ -242,6 +242,24 @@ const job = {
   status: 'completed',
 } as unknown as JobDetail;
 
+const UNCERTAIN_TEXT =
+  'Cannot reach Campus Commander. Your changes are still here.';
+const UNCERTAIN_HINT = 'Retry the confirmation to keep the same preview.';
+
+/** The answer of one accepted confirmation. */
+function acceptedReceipt(changeCount: number) {
+  return {
+    ok: true as const,
+    value: {
+      jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+      displayId: 'UAT-015',
+      status: 'accepted' as const,
+      userCount: 1,
+      changeCount,
+    },
+  };
+}
+
 function flow(extra: Record<string, unknown> = {}) {
   return {
     prepare: vi.fn().mockResolvedValue({ ok: true, value: preview() }),
@@ -261,22 +279,33 @@ function flow(extra: Record<string, unknown> = {}) {
   };
 }
 
-async function setup(
-  options: {
-    flow?: ReturnType<typeof flow>;
-    user?: UserDetail;
-    categories?: UserAttributeCategory[];
-  } = {},
-) {
-  const subject = options.user ?? user;
-  const categoryList = options.categories ?? categories;
-  const mocked = options.flow ?? flow();
-  TestBed.configureTestingModule({
-    providers: [
-      provideRouter([]),
-      { provide: UserAttributeEditFlow, useValue: mocked },
-    ],
+/** Two changes, so the save shows the review rows before its confirmation. */
+function reviewFlow(confirm: ReturnType<typeof vi.fn>) {
+  return flow({
+    prepare: vi.fn().mockResolvedValue({
+      ok: true,
+      value: preview({ attributeChanges: 2, selected: 2, eligible: 2 }),
+    }),
+    readTargets: vi.fn().mockResolvedValue({
+      ok: true,
+      value: [
+        target(),
+        target({
+          attribute: 'attr:Student.homeroom',
+          currentValue: '214',
+          newValue: '216',
+        }),
+      ],
+    }),
+    confirm,
   });
+}
+
+/** Creates one editor on the configured TestBed. A root store persists across mounts. */
+async function mount(
+  subject: UserDetail = user,
+  categoryList: UserAttributeCategory[] = categories,
+) {
   const fixture = TestBed.createComponent(UserAttributeEditor);
   fixture.componentRef.setInput('user', subject);
   fixture.componentRef.setInput('categories', categoryList);
@@ -325,8 +354,28 @@ async function setup(
     addChip,
     finished,
     cancels: () => cancels,
-    mocked,
   };
+}
+
+async function setup(
+  options: {
+    flow?: ReturnType<typeof flow>;
+    user?: UserDetail;
+    categories?: UserAttributeCategory[];
+  } = {},
+) {
+  const mocked = options.flow ?? flow();
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([]),
+      { provide: UserAttributeEditFlow, useValue: mocked },
+    ],
+  });
+  const mounted = await mount(
+    options.user ?? user,
+    options.categories ?? categories,
+  );
+  return { ...mounted, mocked };
 }
 
 describe('the Custom attributes card form', () => {
@@ -687,6 +736,198 @@ describe('the Custom attributes card form', () => {
     expect(mocked.confirm).toHaveBeenCalledTimes(2);
     expect(mocked.confirm.mock.calls[1]).toEqual(mocked.confirm.mock.calls[0]);
     expect(mocked.prepare).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an uncertain confirmation across Cancel and reopening (R2-B)', async () => {
+    let confirmCalls = 0;
+    const uncertain = flow({
+      confirm: vi.fn(() => {
+        confirmCalls++;
+        return Promise.resolve(
+          confirmCalls === 1
+            ? { ok: false, message: UNCERTAIN_TEXT, uncertain: true }
+            : acceptedReceipt(1),
+        );
+      }),
+    });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: uncertain },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain(UNCERTAIN_HINT),
+    );
+    // The recovery continuation holds focus, and its render throws nothing (R2-D).
+    await vi.waitFor(() => {
+      first.fixture.detectChanges();
+      expect(document.activeElement).toBe(first.button('Confirm'));
+    });
+    first.button('Cancel')?.click();
+    expect(first.cancels()).toBe(1);
+    first.fixture.destroy();
+
+    const second = await mount();
+    // The reopened form continues the one confirmation and prepares no second preview.
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    expect(second.element.textContent).toContain(UNCERTAIN_HINT);
+    expect(second.element.textContent).toContain(UNCERTAIN_TEXT);
+    second.button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(uncertain.prepare).toHaveBeenCalledTimes(1);
+    expect(uncertain.confirm).toHaveBeenCalledTimes(2);
+    expect(uncertain.confirm.mock.calls[1]).toEqual(
+      uncertain.confirm.mock.calls[0],
+    );
+  });
+
+  it('keeps a review confirmation across Cancel and reopening (R2-B)', async () => {
+    let confirmCalls = 0;
+    const uncertain = reviewFlow(
+      vi.fn(() => {
+        confirmCalls++;
+        return Promise.resolve(
+          confirmCalls === 1
+            ? { ok: false, message: UNCERTAIN_TEXT, uncertain: true }
+            : acceptedReceipt(2),
+        );
+      }),
+    );
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: uncertain },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.type('attr:Student.homeroom', '216');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain('Current value'),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain(UNCERTAIN_HINT),
+    );
+    first.button('Cancel')?.click();
+    first.fixture.destroy();
+
+    const second = await mount();
+    expect(second.element.querySelector('.review')).toBeNull();
+    expect(second.element.textContent).toContain(UNCERTAIN_HINT);
+    second.button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(second.finished()?.attributeNames).toEqual([
+        'Grade level',
+        'Homeroom',
+      ]),
+    );
+    expect(uncertain.prepare).toHaveBeenCalledTimes(1);
+    expect(uncertain.confirm).toHaveBeenCalledTimes(2);
+    expect(uncertain.confirm.mock.calls[1]).toEqual(
+      uncertain.confirm.mock.calls[0],
+    );
+  });
+
+  it('keeps the confirmation identity through a later refusal (R2-B)', async () => {
+    let confirmCalls = 0;
+    const refused = flow({
+      confirm: vi.fn(() => {
+        confirmCalls++;
+        return Promise.resolve(
+          confirmCalls === 1
+            ? { ok: false, message: UNCERTAIN_TEXT, uncertain: true }
+            : confirmCalls === 2
+              ? {
+                  ok: false,
+                  message:
+                    'You do not have permission to set user attribute values.',
+                  uncertain: false,
+                }
+              : acceptedReceipt(1),
+        );
+      }),
+    });
+    const { element, type, button, finished, mocked } = await setup({
+      flow: refused,
+    });
+    type('attr:Student.grade_level', '11');
+    button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(UNCERTAIN_HINT),
+    );
+    button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(
+        'You do not have permission to set user attribute values.',
+      ),
+    );
+    // The 403 is not proof that the first attempt created no job. The form stays on the
+    // one confirmation instead of opening a replacement save.
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    expect(element.textContent).toContain(UNCERTAIN_HINT);
+    button('Confirm')?.click();
+    await vi.waitFor(() => expect(finished()?.displayId).toBe('UAT-015'));
+    expect(mocked.prepare).toHaveBeenCalledTimes(1);
+    expect(mocked.confirm).toHaveBeenCalledTimes(3);
+    for (const call of mocked.confirm.mock.calls)
+      expect(call).toEqual(mocked.confirm.mock.calls[0]);
+  });
+
+  it('keeps a review confirmation through a later refusal (R2-B)', async () => {
+    let confirmCalls = 0;
+    const refused = reviewFlow(
+      vi.fn(() => {
+        confirmCalls++;
+        return Promise.resolve(
+          confirmCalls === 1
+            ? { ok: false, message: UNCERTAIN_TEXT, uncertain: true }
+            : confirmCalls === 2
+              ? {
+                  ok: false,
+                  message:
+                    'You do not have permission to set user attribute values.',
+                  uncertain: false,
+                }
+              : acceptedReceipt(2),
+        );
+      }),
+    );
+    const { element, type, button, finished, mocked } = await setup({
+      flow: refused,
+    });
+    type('attr:Student.grade_level', '11');
+    type('attr:Student.homeroom', '216');
+    button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain('Current value'),
+    );
+    button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(UNCERTAIN_HINT),
+    );
+    button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(
+        'You do not have permission to set user attribute values.',
+      ),
+    );
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(finished()?.attributeNames).toEqual(['Grade level', 'Homeroom']),
+    );
+    expect(mocked.prepare).toHaveBeenCalledTimes(1);
+    expect(mocked.confirm).toHaveBeenCalledTimes(3);
+    for (const call of mocked.confirm.mock.calls)
+      expect(call).toEqual(mocked.confirm.mock.calls[0]);
   });
 
   it('reports a job that needs review as unknown (R1-F)', async () => {

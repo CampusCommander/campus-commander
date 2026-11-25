@@ -154,6 +154,56 @@ const nextRow: UserRow = {
   stale: false,
 };
 
+/** The one writable field that the card form tests save. */
+const gradeLevelField: UserAttributeField = {
+  fieldId: 'Student.grade_level',
+  fieldName: 'grade_level',
+  displayName: 'Grade level',
+  fieldType: 'INT64',
+  multiValued: false,
+  indexed: true,
+  readAccessType: 'ALL_DOMAIN_USERS',
+  numericIndexingSpec: null,
+  holders: 1,
+};
+const writableCategories: UserAttributeCategories = {
+  ...categories,
+  categories: categories.categories.map((category) =>
+    category.schemaName === 'Student'
+      ? { ...category, fields: [...category.fields, gradeLevelField] }
+      : category,
+  ),
+};
+
+/** One edit-list preview of the card tests. */
+const cardPreview = {
+  previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+  source: 'edit-list' as const,
+  changes: null,
+  attributeChanges: 1,
+  selected: 1,
+  eligible: 1,
+  unchanged: 0,
+  conflicts: 0,
+  oldestObservedAt: '2026-11-01T13:12:00.000Z',
+  stale: false,
+  preparedAt: '2026-11-01T13:12:00.000Z',
+  expiresAt: '2026-11-01T13:22:00.000Z',
+  manifestDigest: 'a'.repeat(64),
+};
+
+/** The receipt of one accepted card save. */
+const cardReceipt = {
+  ok: true as const,
+  value: {
+    jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+    displayId: 'UAT-015',
+    status: 'accepted' as const,
+    userCount: 1,
+    changeCount: 1,
+  },
+};
+
 /** A promise that the test releases. */
 function held<T>() {
   let release: (value: T) => void = () => undefined;
@@ -573,25 +623,6 @@ describe('the user details page', () => {
   });
 
   it('shows the saved line with the job link after one change (composition 13)', async () => {
-    const gradeLevel: UserAttributeField = {
-      fieldId: 'Student.grade_level',
-      fieldName: 'grade_level',
-      displayName: 'Grade level',
-      fieldType: 'INT64',
-      multiValued: false,
-      indexed: true,
-      readAccessType: 'ALL_DOMAIN_USERS',
-      numericIndexingSpec: null,
-      holders: 1,
-    };
-    const writableCategories: UserAttributeCategories = {
-      ...categories,
-      categories: categories.categories.map((category) =>
-        category.schemaName === 'Student'
-          ? { ...category, fields: [...category.fields, gradeLevel] }
-          : category,
-      ),
-    };
     const oneChange = {
       prepare: vi.fn().mockResolvedValue({
         ok: true,
@@ -846,6 +877,140 @@ describe('the user details page', () => {
     });
     expect(element.querySelector('.saved-line')).toBeNull();
     expect(element.textContent).not.toContain('saved to Google');
+  });
+
+  it('keeps the heading and the save target aligned during a held next-user read (R2-A)', async () => {
+    const heldRead = held<UserRead>();
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      flow: card,
+    });
+    // The route moves to Ania while her record read stays open. Amara stays on screen.
+    store.user.mockImplementation(() => heldRead.promise);
+    const next = user({
+      userId: '110000000000000000002',
+      primaryEmail: 'ania.reyes@example.org',
+      givenName: 'Ania',
+      familyName: 'Reyes',
+      fullName: 'Ania Reyes',
+      customSchemas: { Student: {}, Device: {} },
+    });
+    fixture.componentRef.setInput('userId', next.userId);
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(store.user).toHaveBeenCalledTimes(2));
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+      'Amara Okafor',
+    );
+    // The retained card offers no form, because its record is not the route's user.
+    expect(button('Edit')).toBeUndefined();
+    expect(element.querySelector('.attribute-form')).toBeNull();
+
+    heldRead.release({ kind: 'user', user: next });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Ania Reyes');
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const studentId = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.student_id"] input',
+    );
+    if (!studentId) throw new Error('No Student ID field');
+    studentId.value = '204519';
+    studentId.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Student ID saved to Google');
+    });
+    // The visible identity and the outgoing user ID agree.
+    expect(element.querySelector('h1')?.textContent?.trim()).toBe('Ania Reyes');
+    expect(card.prepare).toHaveBeenCalledWith([
+      {
+        userId: next.userId,
+        attribute: 'attr:Student.student_id',
+        mode: 'set',
+        values: ['204519'],
+        baselineValue: null,
+      },
+    ]);
+  });
+
+  it('refreshes the card when an accepted job settles after the polling cap (R2-C)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      // The editor reached its 120-read budget without a terminal answer.
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: false,
+        message: 'The job is still running.',
+      }),
+      readJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    // The settlement read answers the value that the job wrote.
+    store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const grade = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!grade) throw new Error('No Grade level field');
+    grade.value = '11';
+    grade.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    // The continuation observed the same receipt after the cap and refreshed the card.
+    expect(card.waitForJob).toHaveBeenCalledWith(
+      'UAT-015',
+      120,
+      1000,
+      expect.any(Function),
+    );
+    expect(card.readJob).toHaveBeenCalledWith('UAT-015');
+    expect(store.user).toHaveBeenCalledTimes(2);
+    const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
   });
 
   it('names a job that needs review without claiming a failure (R1-F)', async () => {

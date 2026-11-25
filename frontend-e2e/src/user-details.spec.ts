@@ -31,6 +31,8 @@ test.afterEach(() => {
   lastPreviewBody = null;
   tooLargeOnce = false;
   extraPeople = [];
+  heldDetails?.release();
+  heldDetails = null;
 });
 
 /** One time as the page renders it, in the zone that the spec pins. */
@@ -569,6 +571,13 @@ const valueJob = {
 /** The mocked preview answers 413 once, to prove that the form keeps its edits. */
 let tooLargeOnce = false;
 
+/** One test holds the next user's details answer, to check the card identity (R2-A). */
+let heldDetails: {
+  userId: string;
+  gate: Promise<void>;
+  release: () => void;
+} | null = null;
+
 async function signIn(page: Page) {
   await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
@@ -697,8 +706,11 @@ async function signIn(page: Page) {
     // One user, read by the details page. Any other path stays a 404.
     const single = /^\/api\/users\/([^/]+)$/.exec(path);
     if (single) {
+      const userId = decodeURIComponent(single[1]);
+      // The held-read test opens the next card only after its record arrives (R2-A).
+      if (heldDetails?.userId === userId) await heldDetails.gate;
       const person = directoryPeople().find(
-        (candidate) => candidate.userId === decodeURIComponent(single[1]),
+        (candidate) => candidate.userId === userId,
       );
       return person
         ? route.fulfill({ json: detailOf(person) })
@@ -1233,6 +1245,23 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
   await expect(
     card.locator('[data-attribute="attr:Student.student_id"] input'),
   ).toBeFocused();
+  // The heading keeps the additive 6 px stack padding after its 8 px margin (R2-E).
+  const headingGap = async (name: string) => {
+    const section = card
+      .locator('.attr-section')
+      .filter({ has: page.getByRole('heading', { name, exact: true }) });
+    const title = measured(await section.locator('h3').boundingBox());
+    const first = measured(
+      await section.locator('.field').first().boundingBox(),
+    );
+    return first.y - (title.y + title.height);
+  };
+  expect(
+    Math.abs((await headingGap('Student information')) - 14),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs((await headingGap('Staff information')) - 14),
+  ).toBeLessThanOrEqual(1);
   const grade = card.locator(
     '[data-attribute="attr:Student.grade_level"] input',
   );
@@ -1415,4 +1444,56 @@ test('drops the open draft when Next user opens another card (R1-A)', async ({
   await expect(
     page.locator('[data-attribute="attr:Staff.building"] input'),
   ).toHaveValue('');
+});
+
+test('keeps the retained card and its save target aligned during a held read (R2-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  heldDetails = { userId: '110000000000000000002', gate, release };
+  const nextRead = page.waitForRequest(/\/api\/users\/110000000000000000002$/);
+  await page.getByRole('button', { name: 'Next user', exact: true }).click();
+  await nextRead;
+  // The retained card still names Amara, and it offers no form for her (R2-A).
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Edit', exact: true }),
+  ).toHaveCount(0);
+
+  release();
+  heldDetails = null;
+  await expect(
+    page.getByRole('heading', { name: 'Ania Reyes', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('12');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.locator('section.attrs')).toContainText(
+    'Grade level saved to Google',
+  );
+  // The visible identity and the outgoing user ID agree.
+  expect(lastPreviewBody).toEqual({
+    edits: [
+      {
+        userId: '110000000000000000002',
+        attribute: 'attr:Student.grade_level',
+        mode: 'set',
+        values: [12],
+        baselineValue: 11,
+      },
+    ],
+  });
 });
