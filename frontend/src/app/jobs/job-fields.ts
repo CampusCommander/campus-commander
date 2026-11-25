@@ -72,6 +72,7 @@ export const JOB_STATUSES: readonly JobStatus[] = Object.keys(
 /**
  * The Actions filter lists every job action (record D1, D3).
  * Wipe user data and Powerwash follow Reboot. Deprovision follows Re-enable.
+ * The three category actions follow the two user jobs, and Set attributes closes the list.
  */
 export const JOB_ACTIONS: readonly JobAction[] = [
   'update-device-annotations',
@@ -84,6 +85,10 @@ export const JOB_ACTIONS: readonly JobAction[] = [
   'deprovision-devices',
   'export-devices',
   'validate-device-import',
+  'create-category',
+  'edit-category',
+  'delete-category',
+  'set-attributes',
 ];
 
 /** One tone per status for the chip dot and label (UI-04). */
@@ -116,11 +121,17 @@ export function actionLabel(action: JobAction): string {
   return JOB_ACTION_LABELS[action];
 }
 
-/** The scope of a job: an entity count, every entity, or the rows of an export or an import. */
+/**
+ * The scope of a job: the category display name of a category job, an entity count,
+ * every entity, or the rows of an export or an import. The S2 sign-off names the
+ * category, and the owner names the user count of a value job (UM state 10).
+ */
 export function scopeLabel(
-  job: Pick<JobSummary, 'scope' | 'entityType'>,
+  job: Pick<JobSummary, 'scope' | 'entityType' | 'category'>,
 ): string {
   const { scope, entityType } = job;
+  // A category job covers every user, and its scope line names the category.
+  if (job.category) return job.category.scopeName;
   if (scope.kind === 'rows')
     return scope.deviceCount === null
       ? 'Rows'

@@ -185,8 +185,10 @@ export function identityLine(job: JobDetail, now = new Date()): string {
   )} · ${duration}`;
 }
 
-/** The card heading of frame 104:209: "UPD-006 · 6 devices". */
+/** The card heading of frame 104:209: "UPD-006 · 6 devices". A category job names its category. */
 export function scopeHeading(job: JobDetail): string {
+  const scopeName = job.category?.scopeName;
+  if (scopeName) return `${job.displayId} · ${scopeName}`;
   const count = job.scope.deviceCount;
   return count === null
     ? job.displayId
@@ -338,7 +340,9 @@ export function operationNumber(operationId: string): string | null {
  * (2026-10-16-device-write-jobs-design.md:469, OQ6). Reconcile of a status
  * operation needs jobs:read and devices:status (2026-10-21-device-command-jobs-design.md:241).
  * A Deprovision operation needs jobs:read and devices:deprovision (record ruling 1).
- * A command row offers none, because the operations grid excludes it (record default 4, D13).
+ * A value row writes user attributes, so its Reconcile needs jobs:read and users:write
+ * (B section 11). A command row offers none, because the operations grid excludes it
+ * (record default 4, D13).
  */
 export function canReconcile(
   auth: InstanceType<typeof AuthStore>,
@@ -348,11 +352,13 @@ export function canReconcile(
   if (isCommandJob(job)) return false;
   const grants = auth.session()?.identity.grants ?? [];
   const action =
-    job.statusAction === 'deprovision'
-      ? 'devices:deprovision'
-      : job.statusAction
-        ? 'devices:status'
-        : 'devices:write';
+    job.action === 'set-attributes'
+      ? 'users:write'
+      : job.statusAction === 'deprovision'
+        ? 'devices:deprovision'
+        : job.statusAction
+          ? 'devices:status'
+          : 'devices:write';
   return (
     grants.some(
       (grant) => grant.action === 'jobs:read' || grant.action === 'jobs:manage',

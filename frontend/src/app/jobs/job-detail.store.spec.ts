@@ -1,6 +1,8 @@
 import { signal, type WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type {
+  JobAttributeRow,
+  JobCategoryRow,
   JobDetail,
   JobOperation,
   JobOperationsPage,
@@ -1158,5 +1160,232 @@ describe('Cancel', () => {
     refuse = false;
     expect(await store.cancel()).toBe(true);
     expect(store.cancelError()).toBe('');
+  });
+});
+
+/** One stored category row of the state 07 table. */
+const categoryRow = (
+  overrides: Partial<JobCategoryRow> = {},
+): JobCategoryRow => ({
+  change: 'rename',
+  displayName: 'Grade',
+  fieldType: null,
+  range: null,
+  holders: null,
+  previousName: 'Year',
+  outcome: 'succeeded',
+  ...overrides,
+});
+
+/** The category detail of an edit with a rename and a removal (card J5). */
+const categoryDetail = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  detail({
+    displayId: 'CAT-014',
+    action: 'edit-category',
+    entityType: 'user',
+    scope: { kind: 'devices', deviceCount: 1 },
+    changes: null,
+    category: {
+      scopeName: 'School Devices',
+      previousName: 'Year',
+      rows: [
+        categoryRow(),
+        categoryRow({
+          change: 'removed',
+          displayName: 'Asset tag',
+          fieldType: 'STRING',
+          holders: 3,
+          previousName: null,
+          outcome: 'pending',
+        }),
+      ],
+      total: 9,
+      nextCursor: null,
+    },
+    ...overrides,
+  });
+
+/** One user row of the value result table. */
+const attributeRow = (
+  overrides: Partial<JobAttributeRow> = {},
+): JobAttributeRow => ({
+  operation: 7,
+  userId: 'synthetic-user-1',
+  userName: 'Avery Chen',
+  primaryEmail: 'avery@example.org',
+  attribute: 'attr:grade.name',
+  displayName: 'Grade',
+  currentValue: null,
+  newValue: 'Seven',
+  outcome: 'succeeded',
+  failureText: null,
+  ...overrides,
+});
+
+/** The value detail of a Set attributes job with 18 users (UM state 10). */
+const valueDetail = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  detail({
+    displayId: 'UAT-003',
+    action: 'set-attributes',
+    entityType: 'user',
+    scope: { kind: 'devices', deviceCount: 18 },
+    changes: null,
+    ...overrides,
+  });
+
+describe('category jobs', () => {
+  it('reads the category page from the detail request and pages it by cursor', async () => {
+    const { store, requestMock } = setup(async (path) => {
+      if (path.includes('/operations'))
+        throw new Error('a category job reads no operations page');
+      if (path.includes('cursor=1'))
+        return Response.json(
+          categoryDetail({
+            category: {
+              scopeName: 'School Devices',
+              previousName: 'Year',
+              rows: [
+                categoryRow({
+                  displayName: 'Room',
+                  change: 'added',
+                  fieldType: 'STRING',
+                  previousName: null,
+                }),
+              ],
+              total: 9,
+              nextCursor: null,
+            },
+          }),
+        );
+      return Response.json(
+        categoryDetail({
+          category: {
+            scopeName: 'School Devices',
+            previousName: 'Year',
+            rows: [categoryRow()],
+            total: 9,
+            nextCursor: '1',
+          },
+        }),
+      );
+    });
+    await store.init('CAT-014');
+    expect(requestMock.mock.calls[0][0]).toBe('/api/jobs/CAT-014?limit=6');
+    expect(store.resultKind()).toBe('category');
+    expect(store.categoryRows()).toHaveLength(1);
+    expect(store.categoryTotal()).toBe(9);
+    expect(store.hasNext()).toBe(true);
+    expect(store.operations()).toHaveLength(0);
+
+    store.next();
+    await vi.waitFor(() => expect(store.shownIndex()).toBe(1));
+    expect(
+      requestMock.mock.calls.some(
+        ([path]) => path === '/api/jobs/CAT-014?cursor=1&limit=6',
+      ),
+    ).toBe(true);
+    expect(store.categoryRows()[0].displayName).toBe('Room');
+    expect(store.hasNext()).toBe(false);
+  });
+});
+
+describe('value jobs', () => {
+  it('reads the All view of attribute rows with the server totals', async () => {
+    const { store, requestMock } = setup(async (path) => {
+      if (path.includes('/attribute-rows'))
+        return Response.json({
+          rows: [
+            attributeRow(),
+            attributeRow({
+              operation: 8,
+              outcome: 'failed',
+              failureText: 'Grade is not a number.',
+            }),
+          ],
+          totals: { all: 18, failed: 1 },
+          nextCursor: '8:attr:grade.name',
+        });
+      return Response.json(valueDetail());
+    });
+    await store.init('UAT-003');
+    expect(requestMock.mock.calls[0][0]).toBe('/api/jobs/UAT-003');
+    expect(requestMock.mock.calls[1][0]).toBe(
+      '/api/jobs/UAT-003/attribute-rows?view=all&limit=10',
+    );
+    expect(store.resultKind()).toBe('value');
+    expect(store.attributeRows()).toHaveLength(2);
+    expect(store.attributeTotals()).toEqual({ all: 18, failed: 1 });
+    expect(store.hasNext()).toBe(true);
+
+    store.next();
+    await vi.waitFor(() => expect(store.shownIndex()).toBe(1));
+    expect(
+      requestMock.mock.calls.some(
+        ([path]) =>
+          path ===
+          '/api/jobs/UAT-003/attribute-rows?view=all&cursor=8%3Aattr%3Agrade.name&limit=10',
+      ),
+    ).toBe(true);
+  });
+
+  it('reads the Failed view from its first page', async () => {
+    const { store, requestMock } = setup(async (path) => {
+      if (path.includes('/attribute-rows'))
+        return Response.json({
+          rows: [
+            attributeRow({
+              outcome: 'failed',
+              failureText: 'Grade is not a number.',
+            }),
+          ],
+          totals: { all: 18, failed: 1 },
+          nextCursor: null,
+        });
+      return Response.json(valueDetail());
+    });
+    await store.init('UAT-003');
+    requestMock.mockClear();
+    store.setAttributeView('failed');
+    await vi.waitFor(() => expect(store.reading()).toBe(false));
+    expect(requestMock.mock.calls[1][0]).toBe(
+      '/api/jobs/UAT-003/attribute-rows?view=failed&limit=10',
+    );
+    expect(store.attributeView()).toBe('failed');
+    expect(store.shownIndex()).toBe(0);
+  });
+
+  it('reconciles a value row through its operation number', async () => {
+    let accept: (response: Response) => void = () => undefined;
+    const { store } = setup(async (path) => {
+      if (path === '/api/jobs/UAT-003/operations/7/reconcile')
+        return new Promise<Response>((resolve) => (accept = resolve));
+      if (path.includes('/attribute-rows'))
+        return Response.json({
+          rows: [attributeRow({ outcome: 'unknown' })],
+          totals: { all: 18, failed: 0 },
+          nextCursor: null,
+        });
+      return Response.json(valueDetail());
+    });
+    await store.init('UAT-003');
+    const pending = store.reconcileValue(attributeRow({ outcome: 'unknown' }));
+    await flush();
+    expect(store.reconciling().has('value:7')).toBe(true);
+    accept(Response.json({}, { status: 202 }));
+    await pending;
+    expect(store.notice()).toBe('Reconcile started for Avery Chen.');
+    expect(store.reconciling().has('value:7')).toBe(true);
+  });
+
+  it('keeps the value rows when the attribute read fails', async () => {
+    const { store } = setup(async (path) => {
+      if (path.includes('/attribute-rows'))
+        return Response.json({ reason: 'internal' }, { status: 500 });
+      return Response.json(valueDetail());
+    });
+    await store.init('UAT-003');
+    expect(store.job()?.displayId).toBe('UAT-003');
+    expect(store.operationsError()).toBe('Result rows are unavailable.');
+    expect(store.error()).toBe('');
   });
 });

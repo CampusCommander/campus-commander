@@ -15,10 +15,16 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import type { JobOperation } from '@campus/application-contracts';
+import { MatTabsModule } from '@angular/material/tabs';
+import type {
+  JobAttributeRow,
+  JobAttributeRowView,
+  JobOperation,
+} from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { expiryClock } from '../expiry-clock';
 import { devicesReadable } from '../devices/devices.store';
+import { usersReadable } from '../users/users.store';
 import {
   SHEET_OPEN_LABEL,
   SHEET_SAVED_LINE,
@@ -62,6 +68,22 @@ import {
   type JobCounter,
 } from './job-detail-fields';
 import { JobDetailStore, OPERATIONS_PAGE_SIZE } from './job-detail.store';
+import {
+  ALL_ROWS_LABEL,
+  CATEGORY_PAGE_SIZE,
+  FAILED_ROWS_LABEL,
+  NO_CATEGORY_CHANGES,
+  RESULTS_VIEW_LABEL,
+  VALUE_PAGE_SIZE,
+  categoryResultRow,
+  categoryRowsFooter,
+  valueEmptyText,
+  valueResultRow,
+  valueRowsFooter,
+  valueReconcileKey,
+  type CategoryResultRow,
+  type ValueResultRow,
+} from './job-result-fields';
 import { JobCancelDialog } from './job-cancel-dialog';
 
 /**
@@ -70,9 +92,9 @@ import { JobCancelDialog } from './job-cancel-dialog';
  */
 @Component({
   selector: 'app-job-detail',
-  imports: [RouterLink, MatButtonModule, JobCancelDialog],
+  imports: [RouterLink, MatButtonModule, MatTabsModule, JobCancelDialog],
   templateUrl: './job-detail.html',
-  styleUrl: './job-detail.css',
+  styleUrls: ['./job-detail.css', './job-result.css'],
 })
 export class JobDetailPage implements OnChanges, OnDestroy {
   readonly displayId = input.required<string>();
@@ -112,6 +134,8 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly canOpenDevices = computed(() =>
     devicesReadable(this.auth),
   );
+  /** The eye of a value row opens the user details page, as the users grid eye does. */
+  protected readonly canOpenUsers = computed(() => usersReadable(this.auth));
   protected readonly statusLabel = (status: keyof typeof JOB_STATUS_LABELS) =>
     JOB_STATUS_LABELS[status];
   protected readonly statusTone = statusTone;
@@ -247,6 +271,64 @@ export class JobDetailPage implements OnChanges, OnDestroy {
     });
   });
 
+  /** The table that the job page shows in place of the device operation table. */
+  protected readonly resultKind = computed(() => this.store.resultKind());
+  /** The noun of the paging labels: operations, changes, or results. */
+  protected readonly pagingNoun = computed(() =>
+    this.resultKind() === 'category'
+      ? 'changes'
+      : this.resultKind() === 'value'
+        ? 'results'
+        : 'operations',
+  );
+  protected readonly isCategory = computed(
+    () => this.resultKind() === 'category',
+  );
+  protected readonly isValue = computed(() => this.resultKind() === 'value');
+  /** The category result table of CA state 07, with the built change chips. */
+  protected readonly categoryRows = computed<readonly CategoryResultRow[]>(() =>
+    this.store
+      .categoryRows()
+      .map((row, index) => categoryResultRow(row, index)),
+  );
+  protected readonly categoryEmpty = NO_CATEGORY_CHANGES;
+  protected readonly categoryFooter = computed(() =>
+    categoryRowsFooter({
+      pageIndex: this.store.shownIndex(),
+      pageSize: CATEGORY_PAGE_SIZE,
+      shown: this.store.categoryRows().length,
+      total: this.store.categoryTotal(),
+    }),
+  );
+  /** The two value views (UM state 10). */
+  protected readonly views = [
+    { value: 'all' as const, label: ALL_ROWS_LABEL },
+    { value: 'failed' as const, label: FAILED_ROWS_LABEL },
+  ];
+  protected readonly resultsViewLabel = RESULTS_VIEW_LABEL;
+  protected readonly attributeView = computed(() => this.store.attributeView());
+  /** The value result table of UM state 10, with the built Reconcile action. */
+  protected readonly valueRows = computed<readonly ValueResultRow[]>(() => {
+    const marks = this.store.reconciling();
+    return this.store
+      .attributeRows()
+      .map((row) =>
+        valueResultRow(row, marks.has(valueReconcileKey(row.operation))),
+      );
+  });
+  protected readonly valueTotals = computed(() => this.store.attributeTotals());
+  protected readonly valueEmpty = computed(() =>
+    valueEmptyText(this.store.attributeView()),
+  );
+  protected readonly valueFooter = computed(() =>
+    valueRowsFooter({
+      pageIndex: this.store.shownIndex(),
+      pageSize: VALUE_PAGE_SIZE,
+      shown: this.store.attributeRows().length,
+      total: this.valueTotals()[this.store.attributeView()],
+    }),
+  );
+
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['displayId']) void this.store.init(this.displayId());
   }
@@ -273,6 +355,16 @@ export class JobDetailPage implements OnChanges, OnDestroy {
 
   protected reconcile(operation: JobOperation): void {
     void this.store.reconcile(operation);
+  }
+
+  /** Read the chosen view of the value results from its first page. */
+  protected setAttributeView(view: JobAttributeRowView): void {
+    this.store.setAttributeView(view);
+  }
+
+  /** Reconcile one unknown value row, as the device operation table reconciles a device. */
+  protected reconcileValue(row: JobAttributeRow): void {
+    void this.store.reconcileValue(row);
   }
 
   /** Open the question. A stored request, a held request, or a hidden control opens nothing. */

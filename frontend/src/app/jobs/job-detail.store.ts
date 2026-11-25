@@ -7,14 +7,25 @@ import {
   untracked,
 } from '@angular/core';
 import {
+  jobAttributeRowsPageSchema,
   jobDetailSchema,
   jobEventSchema,
   jobOperationsPageSchema,
+  type JobAttributeRow,
+  type JobAttributeRowView,
+  type JobCategoryRow,
   type JobDetail,
   type JobOperation,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { operationNumber } from './job-detail-fields';
+import {
+  CATEGORY_PAGE_SIZE,
+  VALUE_PAGE_SIZE,
+  jobResultKind,
+  valueReconcileKey,
+  type JobResultKind,
+} from './job-result-fields';
 import { JobReader, type JobRevisions } from './job-reader';
 import { LiveFeeds, type LiveFeedSubscription } from './live-feeds';
 import { type JobEventSource } from './job-stream';
@@ -37,6 +48,33 @@ export class JobDetailStore {
   readonly displayId = signal<string | null>(null);
   readonly job = signal<JobDetail | null>(null);
   readonly operations = signal<readonly JobOperation[]>([]);
+  /** The page of the category result table (CA state 07), or empty for another job. */
+  readonly categoryRows = signal<readonly JobCategoryRow[]>([]);
+  /** The logical row count of the category result table, beyond the page. */
+  readonly categoryTotal = signal(0);
+  /** The page of the value result table (UM state 10), or empty for another job. */
+  readonly attributeRows = signal<readonly JobAttributeRow[]>([]);
+  /** The server totals of both value views. The client never counts its rows. */
+  readonly attributeTotals = signal<{ all: number; failed: number }>({
+    all: 0,
+    failed: 0,
+  });
+  /** The value view that the next read asks for (composition 11 of the UM notes). */
+  readonly attributeView = signal<JobAttributeRowView>('all');
+  /** The table that replaces the device operation table. */
+  readonly resultKind = computed<JobResultKind>(() => {
+    const action = this.job()?.action;
+    if (
+      action === 'create-category' ||
+      action === 'edit-category' ||
+      action === 'delete-category'
+    )
+      return 'category';
+    if (action === 'set-attributes') return 'value';
+    if (action) return 'device';
+    // The display ID names the table before the first answer arrives.
+    return jobResultKind(this.displayId() ?? '');
+  });
   readonly nextCursor = signal<string | null>(null);
   /** The first read has no answer yet. */
   readonly loading = signal(true);
@@ -189,6 +227,21 @@ export class JobDetailStore {
     this.go(index);
   }
 
+  /** All or Failed reads that view from its first page (composition 11 of the UM notes). */
+  setAttributeView(view: JobAttributeRowView): void {
+    if (view === this.attributeView()) return;
+    this.attributeView.set(view);
+    this.queryRevision++;
+    this.attributeRows.set([]);
+    this.nextCursor.set(null);
+    this.operationsError.set('');
+    this.pageIndex.set(0);
+    this.shownIndex.set(0);
+    this.navigating.set(false);
+    this.cursors.set([null]);
+    void this.reader.request();
+  }
+
   previous(): void {
     if (this.reading() || this.navigating()) return;
     const index = this.shownIndex() - 1;
@@ -202,9 +255,38 @@ export class JobDetailStore {
    * show a message and leave the row unchanged.
    */
   async reconcile(operation: JobOperation): Promise<void> {
-    const displayId = this.displayId();
-    if (!displayId || this.reconciling().has(operation.operationId)) return;
     const number = operationNumber(operation.operationId);
+    if (!number) {
+      this.reconcileError.set('Reconcile could not start. Try again.');
+      return;
+    }
+    await this.reconcileNumber(
+      number,
+      operation.operationId,
+      operation.serialNumber || operation.deviceId,
+    );
+  }
+
+  /**
+   * Reconcile one unknown user row of a value job (B section 7.3). The route names
+   * the operation number that the row carries.
+   */
+  async reconcileValue(row: JobAttributeRow): Promise<void> {
+    await this.reconcileNumber(
+      String(row.operation),
+      valueReconcileKey(row.operation),
+      row.userName ?? row.primaryEmail,
+    );
+  }
+
+  /** One fenced Reconcile request. The key marks one row; the label names one person. */
+  private async reconcileNumber(
+    number: string,
+    key: string,
+    label: string,
+  ): Promise<void> {
+    const displayId = this.displayId();
+    if (!displayId || this.reconciling().has(key)) return;
     const epoch = this.epoch;
     const mount = this.mountGeneration;
     const identity = this.auth.session()?.identity.id ?? null;
@@ -218,13 +300,9 @@ export class JobDetailStore {
     this.reconcileError.set('');
     this.notice.set('');
     this.startedNoticeFor = null;
-    if (!number) {
-      this.reconcileError.set('Reconcile could not start. Try again.');
-      return;
-    }
-    const token = Symbol(operation.operationId);
-    this.pendingReconciles.set(operation.operationId, token);
-    this.setReconciling(operation.operationId, true);
+    const token = Symbol(key);
+    this.pendingReconciles.set(key, token);
+    this.setReconciling(key, true);
     try {
       const response = await this.auth.request(
         `/api/jobs/${encodeURIComponent(displayId)}/operations/${number}/reconcile`,
@@ -233,12 +311,10 @@ export class JobDetailStore {
       if (!current()) return;
       if (response.status === 202) {
         // A read that started before this answer does not clear the mark.
-        this.acceptedMarks.set(operation.operationId, this.readGeneration);
-        const text = `Reconcile started for ${
-          operation.serialNumber || operation.deviceId
-        }.`;
+        this.acceptedMarks.set(key, this.readGeneration);
+        const text = `Reconcile started for ${label}.`;
         this.notice.set(text);
-        this.startedNoticeFor = operation.operationId;
+        this.startedNoticeFor = key;
         return;
       }
       if (response.status === 409) {
@@ -274,7 +350,7 @@ export class JobDetailStore {
     } finally {
       // The request has terminated. Release its mark unless a 202 accepted it for a
       // later read, and leave a newer request's mark alone (R2-F1).
-      this.releaseReconcile(operation.operationId, token);
+      this.releaseReconcile(key, token);
     }
   }
 
@@ -370,6 +446,11 @@ export class JobDetailStore {
     if (displayId !== null) this.displayId.set(displayId);
     this.job.set(null);
     this.operations.set([]);
+    this.categoryRows.set([]);
+    this.categoryTotal.set(0);
+    this.attributeRows.set([]);
+    this.attributeTotals.set({ all: 0, failed: 0 });
+    this.attributeView.set('all');
     this.nextCursor.set(null);
     this.loading.set(true);
     this.loaded.set(false);
@@ -446,6 +527,17 @@ export class JobDetailStore {
     const cursor = this.cursors()[index] ?? null;
     const attention = this.attention();
     const path = `/api/jobs/${encodeURIComponent(displayId)}`;
+    // The category page travels in the detail request (card J4). Another table reads
+    // its page from its own route.
+    const kind = this.resultKind();
+    const detailParams = new URLSearchParams();
+    if (kind === 'category') {
+      if (cursor) detailParams.set('cursor', cursor);
+      detailParams.set('limit', String(CATEGORY_PAGE_SIZE));
+    }
+    const detailPath = detailParams.size
+      ? `${path}?${detailParams.toString()}`
+      : path;
     // Another job, person, filter, or page makes this answer obsolete.
     const current = () =>
       epoch === this.epoch &&
@@ -455,7 +547,7 @@ export class JobDetailStore {
     try {
       let response: Response;
       try {
-        response = await this.auth.request(path);
+        response = await this.auth.request(detailPath);
       } catch {
         if (!current()) return [];
         this.failed(true);
@@ -483,6 +575,30 @@ export class JobDetailStore {
       this.loaded.set(true);
       this.loading.set(false);
       this.missing.set(false);
+
+      const kind = this.resultKind();
+      if (kind === 'category') {
+        // The detail answer carries one category page (card J4). It makes no second request.
+        this.categoryRows.set(detail.data.category?.rows ?? []);
+        this.categoryTotal.set(detail.data.category?.total ?? 0);
+        this.nextCursor.set(detail.data.category?.nextCursor ?? null);
+        this.operations.set([]);
+        this.attributeRows.set([]);
+        this.shownIndex.set(index);
+        this.settled(generation);
+        return [{ jobId: detail.data.jobId, revision: detail.data.revision }];
+      }
+      if (kind === 'value') {
+        const loaded = await this.readValuePage(
+          path,
+          cursor,
+          generation,
+          current,
+        );
+        if (!current()) return [];
+        if (!loaded) return null;
+        return [{ jobId: detail.data.jobId, revision: detail.data.revision }];
+      }
 
       const params = new URLSearchParams();
       if (attention) params.set('attention', 'true');
@@ -512,23 +628,11 @@ export class JobDetailStore {
         return null;
       }
       this.operations.set(parsed.data.operations);
+      this.categoryRows.set([]);
+      this.attributeRows.set([]);
       this.nextCursor.set(parsed.data.nextCursor);
       this.shownIndex.set(index);
-      this.operationsError.set('');
-      this.offline.set(false);
-      this.stale.set(false);
-      this.error.set('');
-      // A completed read after the 202 answer clears the accepted marks of this
-      // operation only (design 2.6). A read started before the answer does not.
-      for (const [operationId, accepted] of [...this.acceptedMarks]) {
-        if (generation <= accepted) continue;
-        this.acceptedMarks.delete(operationId);
-        this.setReconciling(operationId, false);
-        if (this.startedNoticeFor === operationId) {
-          this.startedNoticeFor = null;
-          this.notice.set('');
-        }
-      }
+      this.settled(generation);
       return [{ jobId: detail.data.jobId, revision: detail.data.revision }];
     } finally {
       this.reading.set(false);
@@ -536,9 +640,75 @@ export class JobDetailStore {
     }
   }
 
+  /** Read one page of the value result table (UM state 10) with its server totals. */
+  private async readValuePage(
+    path: string,
+    cursor: string | null,
+    generation: number,
+    current: () => boolean,
+  ): Promise<boolean> {
+    const params = new URLSearchParams();
+    params.set('view', this.attributeView());
+    if (cursor) params.set('cursor', cursor);
+    params.set('limit', String(VALUE_PAGE_SIZE));
+    let page: Response;
+    try {
+      page = await this.auth.request(
+        `${path}/attribute-rows?${params.toString()}`,
+      );
+    } catch {
+      if (!current()) return false;
+      this.operationsFailed(true);
+      return false;
+    }
+    if (!current()) return false;
+    if (!page.ok) {
+      this.operationsFailed(false);
+      return false;
+    }
+    const parsed = jobAttributeRowsPageSchema.safeParse(
+      await page.json().catch(() => null),
+    );
+    if (!current()) return false;
+    if (!parsed.success) {
+      this.operationsFailed(false);
+      return false;
+    }
+    this.attributeRows.set(parsed.data.rows);
+    this.attributeTotals.set(parsed.data.totals);
+    this.operations.set([]);
+    this.categoryRows.set([]);
+    this.nextCursor.set(parsed.data.nextCursor);
+    this.shownIndex.set(this.pageIndex());
+    this.settled(generation);
+    return true;
+  }
+
+  /** A complete read of the job and its rows. */
+  private settled(generation: number): void {
+    this.operationsError.set('');
+    this.offline.set(false);
+    this.stale.set(false);
+    this.error.set('');
+    // A completed read after the 202 answer clears the accepted marks of this
+    // operation only (design 2.6). A read started before the answer does not.
+    for (const [operationId, accepted] of [...this.acceptedMarks]) {
+      if (generation <= accepted) continue;
+      this.acceptedMarks.delete(operationId);
+      this.setReconciling(operationId, false);
+      if (this.startedNoticeFor === operationId) {
+        this.startedNoticeFor = null;
+        this.notice.set('');
+      }
+    }
+  }
+
   private missingJob(): void {
     this.job.set(null);
     this.operations.set([]);
+    this.categoryRows.set([]);
+    this.categoryTotal.set(0);
+    this.attributeRows.set([]);
     this.nextCursor.set(null);
     this.loading.set(false);
     this.loaded.set(false);
@@ -567,10 +737,12 @@ export class JobDetailStore {
     this.offline.set(offline);
     // The job read succeeded; only the rows are unavailable.
     this.stale.set(false);
+    const noun =
+      this.resultKind() === 'device' ? 'Operation results' : 'Result rows';
     this.operationsError.set(
       offline
-        ? 'Cannot reach Campus Commander. Operation results may be out of date.'
-        : 'Operation results are unavailable.',
+        ? `Cannot reach Campus Commander. ${noun} may be out of date.`
+        : `${noun} are unavailable.`,
     );
   }
 
