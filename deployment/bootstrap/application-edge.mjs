@@ -1,3 +1,4 @@
+import { constants as bufferConstants } from 'node:buffer';
 import http from 'node:http';
 import https from 'node:https';
 
@@ -76,11 +77,38 @@ const schoolWrite = new RegExp(
 const deviceRead = /^\/api\/devices\/[A-Za-z0-9_-]{1,128}$/;
 // The users read of design card K8: the sync state, the organization unit list, the attribute
 // category cache, and one user. Card K15 adds the plan read, the plan create, and the plan
-// confirm write.
+// confirm write. Card K23 adds the value preview read, its rows, its create, and its confirm.
 const userRead =
-  /^\/api\/users\/(?:sync|org-units|attribute-categories|attribute-categories\/plans\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|[A-Za-z0-9_-]{1,128})$/;
+  /^\/api\/users\/(?:sync|org-units|attribute-categories|attribute-categories\/plans\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\/targets)?|(?!(?:attribute-previews)$)[A-Za-z0-9_-]{1,128})$/;
 const userWrite =
-  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?)$/;
+  /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?|attribute-previews|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)$/;
+// A selection preview carries up to 100 changes, and an edit list carries up to 2,500 edits on 500
+// users (E17), each with a requested list and a baseline list (B section 3). The preview POST
+// alone takes its own cap. The API computes the same bound in user-attribute-previews.ts.
+const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
+/**
+ * The cap of the value preview POST, in wire bytes. One `JSON.parse` holds at most
+ * `MAX_STRING_LENGTH` UTF-16 units of the body text. A UTF-8 body yields at most one unit per
+ * byte, and no encoding of one unit takes more than three bytes, so the cap is the exact byte
+ * boundary of one parse. The edge also counts the decoded text under the same ceiling, as the
+ * API parser does.
+ */
+const userPreviewTextLimit = bufferConstants.MAX_STRING_LENGTH;
+export const userPreviewBodyLimit = 3 * userPreviewTextLimit;
+/** The chunk of one streaming count of the decoded text. */
+const previewTextChunk = 4 * 1024 * 1024;
+/** The UTF-16 units of the JSON text that one body decodes to, streamed in bounded chunks. */
+function previewTextUnits(body) {
+  const decoder = new TextDecoder('utf-8');
+  let units = 0;
+  for (let offset = 0; offset < body.length; offset += previewTextChunk) {
+    units += decoder.decode(body.subarray(offset, offset + previewTextChunk), {
+      stream: true,
+    }).length;
+    if (units > userPreviewTextLimit) return units;
+  }
+  return units + decoder.decode().length;
+}
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
@@ -273,27 +301,35 @@ export async function proxyApplication(
   const upload = request.method === 'POST' && pathname === importUploadPath;
   let body;
   if (request.method === 'POST' && !upload) {
+    const limit =
+      phase === 3 && userPreviewWrite.test(pathname)
+        ? // One value preview carries up to 2,500 edits on 500 users (E17).
+          userPreviewBodyLimit
+        : phase === 3 &&
+            (principalWrite.test(pathname) ||
+              deviceWrite.test(pathname) ||
+              deviceUpdateEdit.test(pathname))
+          ? // Device bodies carry ID batches, group routes, and set filters. An edit list
+            // carries up to 2,500 edits.
+            98304
+          : phase === 3 &&
+              [
+                '/api/google-connection/candidates',
+                '/api/google-connection/replacements',
+                '/api/schools/reviews',
+              ].includes(pathname)
+            ? 65536
+            : 4096;
+    // A declared size above the cap refuses before any body arrives, so a large upload never
+    // reaches memory. A chunked request has no declared size and the loop below counts its bytes.
+    const declared = Number(request.headers['content-length']);
+    if (Number.isFinite(declared) && declared > limit)
+      return finish(response, 413, 'The request exceeds the size limit.\n');
     const chunks = [];
     let size = 0;
     try {
       for await (const chunk of request) {
         size += chunk.length;
-        const limit =
-          phase === 3 &&
-          (principalWrite.test(pathname) ||
-            deviceWrite.test(pathname) ||
-            deviceUpdateEdit.test(pathname))
-            ? // Device bodies carry ID batches, group routes, and set filters. An edit list
-              // carries up to 2,500 edits.
-              98304
-            : phase === 3 &&
-                [
-                  '/api/google-connection/candidates',
-                  '/api/google-connection/replacements',
-                  '/api/schools/reviews',
-                ].includes(pathname)
-              ? 65536
-              : 4096;
         if (size > limit)
           return finish(response, 413, 'The request exceeds the size limit.\n');
         chunks.push(chunk);
@@ -303,6 +339,15 @@ export async function proxyApplication(
       return finish(response, 400, 'The request body is invalid.\n');
     }
   }
+  // The decoded half of admission: a body above the text ceiling would not survive one
+  // JSON.parse, so the edge refuses it with the same 413 as the byte cap.
+  if (
+    body &&
+    userPreviewWrite.test(pathname) &&
+    body.length > userPreviewTextLimit &&
+    previewTextUnits(body) > userPreviewTextLimit
+  )
+    return finish(response, 413, 'The request exceeds the size limit.\n');
   // The request deadline answered this request and closed its stream. Send nothing upstream.
   if (response.headersSent) return;
   const target = upstreams[api ? 'api' : 'frontend'];

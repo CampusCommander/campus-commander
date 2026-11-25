@@ -124,6 +124,7 @@ export async function loadMigrations() {
       '025-user-category-plan-routes',
       '026-user-category-jobs',
       '027-user-attribute-values',
+      '028-user-attribute-preview-routes',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -410,6 +411,23 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
           cc.user_attribute_preview_targets, cc.user_attribute_target_values,
           cc.user_attribute_update_jobs TO ${role}`,
       );
+    }
+    if (
+      migrations.some(({ id }) => id === '028-user-attribute-preview-routes')
+    ) {
+      await client.query(`GRANT SELECT ON cc.user_attribute_preview_categories TO ${role};
+        GRANT EXECUTE ON FUNCTION
+        cc.user_attribute_writer(uuid,integer),
+        cc.read_user_attribute_preview_base(uuid,integer),
+        cc.user_value_credential(uuid,integer,text,integer),
+        cc.user_attribute_preview_projection(cc.user_attribute_previews),
+        cc.create_user_attribute_preview(uuid,integer,text,integer,text,jsonb,jsonb,jsonb,integer),
+        cc.append_user_attribute_preview_targets(uuid,integer,uuid,jsonb),
+        cc.complete_user_attribute_preview(uuid,integer,uuid,text),
+        cc.read_user_attribute_preview(uuid,integer,uuid),
+        cc.read_user_attribute_preview_targets(uuid,integer,uuid,text,integer,text,text,integer),
+        cc.user_attribute_job_receipt(uuid),
+        cc.confirm_user_attribute_preview(uuid,integer,uuid,text,uuid) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

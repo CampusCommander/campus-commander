@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -15,6 +16,10 @@ import { z } from 'zod';
 import {
   userAttributeCategoryPlanConfirmRequestSchema,
   userAttributeCategoryPlanRequestSchema,
+  userAttributeDispositionSchema,
+  userAttributeEditPreviewRequestShapeSchema,
+  userAttributePreviewConfirmRequestSchema,
+  userAttributePreviewRequestShapeSchema,
   userByIdsSchema,
   userDomainRefreshSchema,
   userQuerySchema,
@@ -25,11 +30,32 @@ import {
 } from '@campus/application-contracts';
 import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
+import {
+  parseTargetsCursor,
+  USER_ATTRIBUTE_TARGETS_LIMIT,
+} from './user-attribute-previews';
 import { userSelectionRefreshStatus } from './user-selection-refresh';
 import { UsersService } from './users.service';
 
 const userIdSchema = z.string().min(1).max(128);
 const planIdSchema = z.uuid();
+const previewIdSchema = z.uuid();
+/** The rows page of B section 10: a disposition filter, a cursor, and 1 to 1,000 rows. */
+const previewTargetsQuerySchema = z.strictObject({
+  disposition: userAttributeDispositionSchema.optional(),
+  cursor: z.string().min(1).max(1024).optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(USER_ATTRIBUTE_TARGETS_LIMIT)
+    .optional(),
+});
+/** One preview request: a selection key with changes, or an edit list. The keys do not overlap. */
+const previewRequestSchema = z.union([
+  userAttributePreviewRequestShapeSchema,
+  userAttributeEditPreviewRequestShapeSchema,
+]);
 
 @Controller('api/users')
 @UseGuards(AuthGuard)
@@ -257,6 +283,80 @@ export class UsersController {
     const id = planIdSchema.parse(planId);
     const input = userAttributeCategoryPlanConfirmRequestSchema.parse(body);
     const result = await this.users.confirmUserCategoryPlan(
+      request.session,
+      id,
+      input,
+      request.correlationId,
+    );
+    if (result.existing) response.status(200);
+    return result.receipt;
+  }
+
+  /**
+   * B section 10: freeze one value preview from a selection key with changes, or from an edit
+   * list. The selection needs `users:write` and `users:bulk-actions`; the edit list needs
+   * `users:write`.
+   */
+  @Post('attribute-previews')
+  async createAttributePreview(
+    @Req() request: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const input = previewRequestSchema.parse(body);
+    return this.users.createUserAttributePreview(
+      request.session,
+      input,
+      request.correlationId,
+    );
+  }
+
+  /** B section 10: the summary of one value preview, to its creator only. */
+  @Get('attribute-previews/:previewId')
+  async attributePreview(
+    @Req() request: AuthenticatedRequest,
+    @Param('previewId') previewId: string,
+  ) {
+    const id = previewIdSchema.parse(previewId);
+    return this.users.userAttributePreview(
+      request.session,
+      id,
+      request.correlationId,
+    );
+  }
+
+  /** B section 10: one page of the frozen rows, to its creator only. */
+  @Get('attribute-previews/:previewId/targets')
+  async attributePreviewTargets(
+    @Req() request: AuthenticatedRequest,
+    @Param('previewId') previewId: string,
+    @Query() query: unknown,
+  ) {
+    const id = previewIdSchema.parse(previewId);
+    const page = previewTargetsQuerySchema.parse(query);
+    return this.users.userAttributePreviewTargets(
+      request.session,
+      id,
+      page.disposition ?? null,
+      page.cursor === undefined ? null : parseTargetsCursor(page.cursor),
+      page.limit ?? 100,
+      request.correlationId,
+    );
+  }
+
+  /**
+   * B section 10: confirm one value preview. A first confirm answers 201 with the `UAT-` receipt,
+   * and a repeated confirm answers the same receipt with 200.
+   */
+  @Post('attribute-previews/:previewId/confirm')
+  async confirmAttributePreview(
+    @Req() request: AuthenticatedRequest,
+    @Param('previewId') previewId: string,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const id = previewIdSchema.parse(previewId);
+    const input = userAttributePreviewConfirmRequestSchema.parse(body);
+    const result = await this.users.confirmUserAttributePreview(
       request.session,
       id,
       input,

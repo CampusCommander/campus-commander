@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   freshnessCutoff,
   userAttributeCategoriesSchema,
+  userCustomSchemasSchema,
   userFreshnessSchema,
   userOrgUnitsSchema,
   userPageSchema,
@@ -22,6 +23,13 @@ import {
   type UserAttributeCategoryPlan,
   type UserAttributeCategoryPlanConfirmRequest,
   type UserAttributeCategoryPlanRequest,
+  type UserAttributeDisposition,
+  type UserAttributeEditPreviewRequestShape,
+  type UserAttributeJobReceipt,
+  type UserAttributePreview,
+  type UserAttributePreviewConfirmRequest,
+  type UserAttributePreviewRequestShape,
+  type UserAttributeTargetsPage,
   type UserDetail,
   type UserFreshness,
   type UserOrgUnit,
@@ -42,6 +50,13 @@ import { DatabaseService } from '../database/database.service';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { UserAttributeCategoriesRoute } from './user-attribute-categories';
 import {
+  UserAttributePreviews,
+  USER_ATTRIBUTE_PREVIEW_USERS_LIMIT,
+  previewTargetBatches,
+  userAttributePreviewBaseSchema,
+  type UserAttributePreviewBase,
+} from './user-attribute-previews';
+import {
   UserCategoryPlans,
   userCategoryPlanBaseSchema,
   type UserCategoryPlanBase,
@@ -52,6 +67,7 @@ import {
   matchingAmongSql,
   selectedAmongSql,
   selectionCountSql,
+  selectionTargetsSql,
   staleCountSql,
   userDetail,
   userDetailSql,
@@ -104,6 +120,14 @@ const rowsOf =
   async (statement) =>
     (await client.query(statement.text, statement.values)).rows;
 
+/** One stored timestamp, as the preview contract reads it. */
+const previewMeasuredAt = (value: unknown): string | null =>
+  value instanceof Date
+    ? value.toISOString()
+    : typeof value === 'string'
+      ? value
+      : null;
+
 @Injectable()
 export class UsersService {
   private readonly reader = new GoogleUserReader();
@@ -111,6 +135,7 @@ export class UsersService {
   private readonly selectionRefresh: UserSelectionRefresh;
   private readonly categoriesRoute: UserAttributeCategoriesRoute;
   private readonly categoryPlans: UserCategoryPlans;
+  private readonly previews: UserAttributePreviews;
   readonly pager: UserPager;
   readonly domainRefresh: UserDomainRefresh;
 
@@ -221,6 +246,95 @@ export class UsersService {
           ],
         ),
     });
+    this.previews = new UserAttributePreviews({
+      base: (session) => this.previewBase(session),
+      authorize: (session, customerId, bulk, correlationId) =>
+        this.authorizePreview(session, customerId, bulk, correlationId),
+      selection: (session, key) => this.parsedSelection(session, key),
+      selectionUsers: (session, state) =>
+        this.previewSelectionUsers(session, state),
+      usersByIds: (session, userIds) =>
+        this.previewUsersByIds(session, userIds),
+      credential: (session, customerId, generation) =>
+        this.connection.userValueCredential(session, customerId, generation),
+      userValues: (credential, _customerId, userId, customFieldMask, signal) =>
+        this.reader.userValues(credential, userId, customFieldMask, signal),
+      create: async (session, preview) => {
+        const header = (await this.result(
+          `SELECT cc.create_user_attribute_preview($1::uuid,$2::integer,$3::text,
+            $4::integer,$5::text,$6::jsonb,$7::jsonb,$8::jsonb,$9::integer) AS result`,
+          [
+            session.identity.id,
+            session.identity.permissionVersion,
+            preview.customerId,
+            preview.generation,
+            preview.source,
+            preview.selection === null
+              ? null
+              : JSON.stringify(preview.selection),
+            JSON.stringify(preview.changes),
+            JSON.stringify(preview.etags),
+            preview.expiresMinutes,
+          ],
+        )) as Record<string, unknown> | null;
+        // A refused create answers forbidden or connection-changed before any target is stored.
+        if (!header || header['outcome'] !== 'created') return header;
+        const previewId = String(header['previewId']);
+        // One bounded batch at a time, so no single SQL argument holds the complete selection
+        // (B section 10). A preview without its seal stays unconfirmable.
+        for (const batch of previewTargetBatches(preview.targets)) {
+          const stored = (await this.result(
+            `SELECT cc.append_user_attribute_preview_targets($1::uuid,$2::integer,
+              $3::uuid,$4::jsonb) AS result`,
+            [
+              session.identity.id,
+              session.identity.permissionVersion,
+              previewId,
+              batch,
+            ],
+          )) as Record<string, unknown> | null;
+          if (!stored || stored['outcome'] !== 'stored')
+            throw new ServiceUnavailableException({
+              reason: 'user-preview-unavailable',
+            });
+        }
+        return this.result(
+          `SELECT cc.complete_user_attribute_preview($1::uuid,$2::integer,$3::uuid,
+            $4::text) AS result`,
+          [
+            session.identity.id,
+            session.identity.permissionVersion,
+            previewId,
+            preview.digest,
+          ],
+        );
+      },
+      read: (session, previewId) =>
+        this.result(
+          'SELECT cc.read_user_attribute_preview($1::uuid,$2::integer,$3::uuid) AS result',
+          [...this.actor(session), previewId],
+        ),
+      targets: (session, previewId, disposition, cursor, limit) =>
+        this.result(
+          `SELECT cc.read_user_attribute_preview_targets($1::uuid,$2::integer,
+            $3::uuid,$4::text,$5::integer,$6::text,$7::text,$8::integer) AS result`,
+          [
+            ...this.actor(session),
+            previewId,
+            disposition,
+            cursor?.ordinal ?? null,
+            cursor?.schemaName ?? null,
+            cursor?.fieldName ?? null,
+            limit,
+          ],
+        ),
+      confirm: (session, previewId, digest, correlationId) =>
+        this.result(
+          `SELECT cc.confirm_user_attribute_preview($1::uuid,$2::integer,$3::uuid,
+            $4::text,$5::uuid) AS result`,
+          [...this.actor(session), previewId, digest, correlationId],
+        ),
+    });
   }
 
   private actor(session: SessionResponse): [string, number] {
@@ -235,6 +349,126 @@ export class UsersService {
     } catch (error) {
       translate(error);
     }
+  }
+
+  /** Require `users:write` and, for a selection preview, `users:bulk-actions` (B section 11). */
+  private async authorizePreview(
+    session: SessionResponse,
+    customerId: string,
+    bulk: boolean,
+    correlationId: string,
+  ): Promise<void> {
+    await this.auth.authorize(
+      session,
+      'users:write',
+      { kind: 'district', customerId },
+      correlationId,
+    );
+    if (bulk)
+      await this.auth.authorize(
+        session,
+        'users:bulk-actions',
+        { kind: 'district', customerId },
+        correlationId,
+      );
+  }
+
+  /** The cached set under the write gate, with the customer and generation of a preview. */
+  private async previewBase(
+    session: SessionResponse,
+  ): Promise<UserAttributePreviewBase | null> {
+    return userAttributePreviewBaseSchema
+      .nullable()
+      .parse(
+        await this.result(
+          'SELECT cc.read_user_attribute_preview_base($1,$2) AS result',
+          this.actor(session),
+        ),
+      );
+  }
+
+  /** Run one read under the write gate. The gate names the customer of the read. */
+  private async writeGate<T>(
+    session: SessionResponse,
+    run: (
+      client: PoolClient,
+      customerId: string,
+      generation: number,
+    ) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.database.transaction(async (client) => {
+        const writer = (
+          await client.query(
+            'SELECT w.customer_id,w.generation FROM cc.user_attribute_writer($1,$2) w',
+            this.actor(session),
+          )
+        ).rows[0];
+        const customerId = writer?.['customer_id'];
+        if (typeof customerId !== 'string')
+          throw new ConflictException({ reason: 'connection-required' });
+        return run(client, customerId, Number(writer['generation']));
+      });
+    } catch (error) {
+      translate(error);
+    }
+  }
+
+  /** The selected users with the cached values that a selection preview freezes. */
+  private async previewSelectionUsers(
+    session: SessionResponse,
+    state: UserSelectionState,
+  ): Promise<{
+    customerId: string;
+    generation: number;
+    users: {
+      userId: string;
+      primaryEmail: string;
+      customSchemas: z.infer<typeof userCustomSchemasSchema>;
+      observedAt: string | null;
+    }[];
+  }> {
+    return this.writeGate(session, async (client, customerId, generation) => {
+      // One extra row tells the route that the selection exceeds the 100,000-user bound (E17).
+      const sql = selectionTargetsSql(
+        customerId,
+        state,
+        USER_ATTRIBUTE_PREVIEW_USERS_LIMIT + 1,
+      );
+      const rows = (await client.query(sql.text, sql.values)).rows;
+      return {
+        customerId,
+        generation,
+        users: rows.map((row) => ({
+          userId: String(row['user_id']),
+          primaryEmail: String(row['primary_email']),
+          customSchemas: userCustomSchemasSchema.parse(
+            row['custom_schemas'] ?? {},
+          ),
+          observedAt: previewMeasuredAt(row['last_entity_sync']),
+        })),
+      };
+    });
+  }
+
+  /** The cached email of each named user, under the write gate. Unknown IDs are left out. */
+  private async previewUsersByIds(
+    session: SessionResponse,
+    userIds: readonly string[],
+  ): Promise<{ userId: string; primaryEmail: string }[]> {
+    return this.writeGate(session, async (client, customerId) => {
+      const rows = (
+        await client.query(
+          `SELECT user_id,primary_email FROM cc.users
+            WHERE customer_id=$1 AND user_id=ANY($2::text[]) ORDER BY user_id`,
+          [customerId, userIds],
+        )
+      ).rows;
+      return rows.map((row) => ({
+        userId: String(row['user_id']),
+        primaryEmail: String(row['primary_email']),
+      }));
+    });
   }
 
   async sync(session: SessionResponse): Promise<UserSyncState | null> {
@@ -669,5 +903,54 @@ export class UsersService {
     existing: boolean;
   }> {
     return this.categoryPlans.confirm(session, planId, input, correlationId);
+  }
+
+  /** Freeze one value preview from a selection key with changes or from an edit list. */
+  async createUserAttributePreview(
+    session: SessionResponse,
+    request:
+      | UserAttributePreviewRequestShape
+      | UserAttributeEditPreviewRequestShape,
+    correlationId: string,
+  ): Promise<UserAttributePreview> {
+    return this.previews.preview(session, request, correlationId);
+  }
+
+  /** One value preview, to its creator only. */
+  async userAttributePreview(
+    session: SessionResponse,
+    previewId: string,
+    correlationId: string,
+  ): Promise<UserAttributePreview> {
+    return this.previews.byId(session, previewId, correlationId);
+  }
+
+  /** One page of the frozen rows of a value preview, to its creator only. */
+  async userAttributePreviewTargets(
+    session: SessionResponse,
+    previewId: string,
+    disposition: UserAttributeDisposition | null,
+    cursor: { ordinal: number; schemaName: string; fieldName: string } | null,
+    limit: number,
+    correlationId: string,
+  ): Promise<UserAttributeTargetsPage> {
+    return this.previews.targets(
+      session,
+      previewId,
+      disposition,
+      cursor,
+      limit,
+      correlationId,
+    );
+  }
+
+  /** Confirm one value preview: one `user-attribute-update` job or the first receipt. */
+  async confirmUserAttributePreview(
+    session: SessionResponse,
+    previewId: string,
+    input: UserAttributePreviewConfirmRequest,
+    correlationId: string,
+  ): Promise<{ receipt: UserAttributeJobReceipt; existing: boolean }> {
+    return this.previews.confirm(session, previewId, input, correlationId);
   }
 }
