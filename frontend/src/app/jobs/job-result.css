@@ -1,0 +1,100 @@
+/* The result tables that replace the device operation table, and their two views. */
+
+.result-table th:nth-child(1) {
+  width: 18%;
+}
+.result-table th:nth-child(2) {
+  width: 26%;
+}
+.result-table th:nth-child(3) {
+  width: 32%;
+}
+.result-table th:nth-child(4) {
+  width: 16%;
+}
+.result-table.value-table th:nth-child(1) {
+  width: 17%;
+}
+.result-table.value-table th:nth-child(2) {
+  width: 23%;
+}
+.result-table.value-table th:nth-child(3),
+.result-table.value-table th:nth-child(4) {
+  width: 18%;
+}
+.result-table.value-table th:nth-child(5) {
+  width: 16%;
+}
+.result-table.value-table th:nth-child(6) {
+  width: 8%;
+}
+
+/* One change chip of CA state 07. The tone colors come from the shared dot rules. */
+.change-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cc-space-sm);
+  min-height: 24px;
+  padding-inline: var(--cc-space-md);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-card);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.tone-error.change-chip {
+  color: var(--cc-status-error-text);
+}
+.tone-success.change-chip {
+  color: var(--cc-status-success-text);
+}
+
+/* A long value wraps inside its cell instead of widening the table. */
+.wrap-value {
+  overflow-wrap: anywhere;
+}
+
+/* The All and Failed views of UM state 10, in the tab style of the category dialog. */
+.result-views {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline-end: var(--cc-space-sm);
+  border-block-end: 1px solid var(--cc-border);
+}
+.result-tabs {
+  display: flex;
+  flex: none;
+  align-items: center;
+  --mat-tab-container-height: 44px;
+  --mat-tab-divider-height: 0;
+}
+.result-tabs .mat-mdc-tab-links {
+  justify-content: flex-start;
+}
+.result-tabs .mat-mdc-tab-links .mat-mdc-tab-link {
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-inline: var(--cc-space-lg);
+}
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  margin-inline-start: var(--cc-space-sm);
+  padding: 0 6px;
+  border-radius: var(--cc-radius-chip);
+  background: var(--cc-surface-hover);
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.tab-count.tone-error {
+  color: var(--cc-status-error-text);
+}

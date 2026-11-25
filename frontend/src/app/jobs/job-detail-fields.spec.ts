@@ -1098,6 +1098,26 @@ describe('job detail fields', () => {
     ).toBe('REF-012');
   });
 
+  it('names the category in the heading of a category job', () => {
+    expect(
+      scopeHeading(
+        job({
+          displayId: 'CAT-014',
+          action: 'edit-category',
+          entityType: 'user',
+          scope: { kind: 'devices', deviceCount: 1 },
+          category: {
+            scopeName: 'School Devices',
+            previousName: 'Year',
+            rows: [],
+            total: 0,
+            nextCursor: null,
+          },
+        }),
+      ),
+    ).toBe('CAT-014 · School Devices');
+  });
+
   it('renders operation values and tones', () => {
     expect(fieldLabel('annotatedLocation')).toBe('Annotated location');
     expect(fieldLabel(null)).toBe('—');
@@ -1617,6 +1637,39 @@ describe('job detail fields', () => {
           ]),
           { action, statusAction: null },
         ),
+      ).toBe(false);
+  });
+
+  it('requires users:write for Reconcile of a Set attributes row', () => {
+    const auth = (actions: string[]) =>
+      ({
+        metadata: () => ({ phase: 3 }),
+        session: () => ({
+          identity: {
+            grants: actions.map((action) => ({
+              action,
+              scope: { kind: 'district', customerId: 'C0123456' },
+            })),
+          },
+        }),
+      }) as unknown as Parameters<typeof canReconcile>[0];
+    const value = { action: 'set-attributes' as const, statusAction: null };
+    expect(canReconcile(auth(['jobs:read', 'users:write']), value)).toBe(true);
+    expect(canReconcile(auth(['jobs:manage', 'users:write']), value)).toBe(
+      true,
+    );
+    expect(canReconcile(auth(['jobs:read', 'devices:write']), value)).toBe(
+      false,
+    );
+    expect(canReconcile(auth(['jobs:read', 'users:read']), value)).toBe(false);
+    expect(canReconcile(auth(['users:write']), value)).toBe(false);
+    // A category job writes a schema, so it offers no row Reconcile.
+    for (const action of ['create-category', 'delete-category'] as const)
+      expect(
+        canReconcile(auth(['jobs:read', 'users:write']), {
+          action,
+          statusAction: null,
+        }),
       ).toBe(false);
   });
 

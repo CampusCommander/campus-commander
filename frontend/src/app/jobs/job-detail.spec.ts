@@ -1,7 +1,12 @@
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, type Routes } from '@angular/router';
-import type { JobDetail, JobOperation } from '@campus/application-contracts';
+import type {
+  JobAttributeRow,
+  JobCategoryRow,
+  JobDetail,
+  JobOperation,
+} from '@campus/application-contracts';
 import { afterEach, vi } from 'vitest';
 import { routes } from '../app.routes';
 import { AuthStore } from '../auth.store';
@@ -537,6 +542,11 @@ interface SetupOptions {
   notice?: string;
   grants?: string[];
   phase?: number;
+  categoryRows?: JobCategoryRow[];
+  categoryTotal?: number;
+  attributeRows?: JobAttributeRow[];
+  attributeTotals?: { all: number; failed: number };
+  attributeView?: 'all' | 'failed';
 }
 
 function setup(options: SetupOptions = {}) {
@@ -550,6 +560,24 @@ function setup(options: SetupOptions = {}) {
   const store = {
     job: currentJob,
     operations,
+    resultKind: computed(() => {
+      const action = currentJob()?.action;
+      if (
+        action === 'create-category' ||
+        action === 'edit-category' ||
+        action === 'delete-category'
+      )
+        return 'category' as const;
+      if (action === 'set-attributes') return 'value' as const;
+      return 'device' as const;
+    }),
+    categoryRows: signal<readonly JobCategoryRow[]>(options.categoryRows ?? []),
+    categoryTotal: signal(options.categoryTotal ?? 0),
+    attributeRows: signal<readonly JobAttributeRow[]>(
+      options.attributeRows ?? [],
+    ),
+    attributeTotals: signal(options.attributeTotals ?? { all: 0, failed: 0 }),
+    attributeView: signal<'all' | 'failed'>(options.attributeView ?? 'all'),
     nextCursor: signal(options.nextCursor ?? null),
     loading: signal(options.loading ?? false),
     loaded: signal(!options.loading),
@@ -575,9 +603,11 @@ function setup(options: SetupOptions = {}) {
     leave: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
     setAttention: vi.fn(),
+    setAttributeView: vi.fn(),
     next: vi.fn(),
     previous: vi.fn(),
     reconcile: vi.fn().mockResolvedValue(undefined),
+    reconcileValue: vi.fn().mockResolvedValue(undefined),
     cancel: vi.fn().mockResolvedValue(true),
   };
   const grants = (
@@ -2086,4 +2116,203 @@ it('shows the cancel refusal beside the toolbar', () => {
   expect(alert?.textContent?.trim()).toBe(
     'You do not have permission to cancel this job.',
   );
+});
+
+/** One stored row of the category result table (card J5). */
+const categoryRow = (
+  overrides: Partial<JobCategoryRow> = {},
+): JobCategoryRow => ({
+  change: 'rename',
+  displayName: 'Grade',
+  fieldType: null,
+  range: null,
+  holders: null,
+  previousName: 'Year',
+  outcome: 'succeeded',
+  ...overrides,
+});
+
+/** The category job of an edit with a rename and a removal (CA state 07). */
+const categoryJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'CAT-014',
+    action: 'edit-category',
+    status: 'completed',
+    entityType: 'user',
+    scope: { kind: 'devices', deviceCount: 1 },
+    changes: null,
+    category: {
+      scopeName: 'School Devices',
+      previousName: 'Year',
+      rows: [],
+      total: 9,
+      nextCursor: '1',
+    },
+    ...overrides,
+  });
+
+const categoryRows = (): JobCategoryRow[] => [
+  categoryRow(),
+  categoryRow({
+    change: 'removed',
+    displayName: 'Asset tag',
+    fieldType: 'STRING',
+    holders: 3,
+    previousName: null,
+  }),
+];
+
+/** One user row of the value result table (UM state 10). */
+const attributeRow = (
+  overrides: Partial<JobAttributeRow> = {},
+): JobAttributeRow => ({
+  operation: 7,
+  userId: 'synthetic-user-1',
+  userName: 'Avery Chen',
+  primaryEmail: 'avery@example.org',
+  attribute: 'attr:grade.name',
+  displayName: 'Grade',
+  currentValue: null,
+  newValue: 'Seven',
+  outcome: 'succeeded',
+  failureText: null,
+  ...overrides,
+});
+
+/** The value job of 18 users (UM state 10). */
+const valueJob = (overrides: Partial<JobDetail> = {}): JobDetail =>
+  job({
+    displayId: 'UAT-003',
+    action: 'set-attributes',
+    status: 'completed-with-errors',
+    entityType: 'user',
+    scope: { kind: 'devices', deviceCount: 18 },
+    changes: null,
+    ...overrides,
+  });
+
+const headerTexts = (element: HTMLElement): string[] =>
+  [...element.querySelectorAll('table thead th')].map(
+    (th) => th.textContent?.trim() ?? '',
+  );
+
+it('shows a category job with its action title, its category, and the change table', () => {
+  const { element } = setup({
+    job: categoryJob(),
+    categoryRows: categoryRows(),
+    categoryTotal: 9,
+    nextCursor: '1',
+  });
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Edit category',
+  );
+  expect(
+    element.querySelector('#job-identity-title')?.textContent?.trim(),
+  ).toBe('CAT-014 · School Devices');
+  expect(headerTexts(element)).toEqual([
+    'Change',
+    'Attribute',
+    'Effect',
+    'Outcome',
+  ]);
+  expect(text(element)).toContain('Rename category');
+  expect(text(element)).toContain('Year → Grade');
+  expect(text(element)).toContain('No user values change');
+  expect(text(element)).toContain('Remove attribute');
+  expect(text(element)).toContain('Asset tag (Text)');
+  expect(text(element)).toContain('Deletes its values on 3 users');
+  expect(text(element)).toContain('Rows 1–2 of 9 changes');
+});
+
+it('shows a category job with no rows as an empty change table', () => {
+  const { element } = setup({ job: categoryJob(), categoryRows: [] });
+  expect(text(element)).toContain('No changes recorded for this job.');
+});
+
+it('shows a value job with its title, its user count, and the results table', () => {
+  const { element, store } = setup({
+    job: valueJob(),
+    grants: ['jobs:read', 'users:write'],
+    attributeRows: [
+      attributeRow(),
+      attributeRow({
+        operation: 8,
+        userId: 'synthetic-user-2',
+        userName: 'Blake Ortiz',
+        primaryEmail: 'blake@example.org',
+        currentValue: false,
+        newValue: true,
+        outcome: 'failed',
+        failureText: 'The value must be a whole number.',
+      }),
+      attributeRow({
+        operation: 9,
+        userId: 'synthetic-user-3',
+        userName: null,
+        primaryEmail: 'casey@example.org',
+        outcome: 'unknown',
+      }),
+    ],
+    attributeTotals: { all: 18, failed: 2 },
+  });
+
+  expect(element.querySelector('h1')?.textContent?.trim()).toBe(
+    'Set attributes',
+  );
+  expect(
+    element.querySelector('#job-identity-title')?.textContent?.trim(),
+  ).toBe('UAT-003 · 18 users');
+  expect(headerTexts(element)).toEqual([
+    'User',
+    'Primary email',
+    'Current value',
+    'New value',
+    'Outcome',
+    'Actions',
+  ]);
+  expect(text(element)).toEqual(expect.stringContaining('All'));
+  expect(text(element)).toEqual(expect.stringContaining('18'));
+  expect(text(element)).toContain('Avery Chen');
+  expect(text(element)).toContain('avery@example.org');
+  expect(text(element)).toContain('Not set');
+  expect(text(element)).toContain('Seven');
+  expect(text(element)).toContain('No');
+  expect(text(element)).toContain('Yes');
+  expect(text(element)).toContain('The value must be a whole number.');
+  expect(text(element)).toContain('casey@example.org');
+  expect(text(element)).toContain('1–3 of 18 changes');
+  // The unknown row keeps the Reconcile action of the device table.
+  expect(button(element, 'Reconcile')).toBeDefined();
+  const failedTab = [...element.querySelectorAll('button')].find((candidate) =>
+    candidate.textContent?.includes('Failed'),
+  );
+  failedTab?.click();
+  expect(store.setAttributeView).toHaveBeenCalledWith('failed');
+});
+
+it('shows the Failed view of a value job with its own total', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeView: 'failed',
+    attributeRows: [
+      attributeRow({
+        outcome: 'failed',
+        failureText: 'Grade is not a number.',
+      }),
+    ],
+    attributeTotals: { all: 18, failed: 1 },
+  });
+  expect(text(element)).toContain('1–1 of 1 change');
+  expect(text(element)).toContain('Grade is not a number.');
+});
+
+it('shows the empty Failed view of a value job', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeView: 'failed',
+    attributeRows: [],
+    attributeTotals: { all: 18, failed: 0 },
+  });
+  expect(text(element)).toContain('No failed changes.');
 });
