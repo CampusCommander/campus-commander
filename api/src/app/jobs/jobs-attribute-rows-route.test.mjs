@@ -539,6 +539,74 @@ test('the category page never changes a device job answer', async () => {
   assert.deepEqual(paged.body, plain.body);
 });
 
+test('a repeated category page key never changes a non-category job answer', async () => {
+  // Express answers a repeated query key as an array. The predecessor ignores these parameters for
+  // a job that is not a category job, so the read validates the page only after it identifies one
+  // (card J4, item 6; review R2-A).
+  arrange([
+    jobRow({
+      display_id: 'UPD-001',
+      kind: 'device-update',
+      entity_type: 'device',
+      plan_action: null,
+      plan_changes: null,
+    }),
+  ]);
+
+  const devicePlain = await get('/api/jobs/UPD-001');
+  const deviceLimit = await get('/api/jobs/UPD-001?limit=1&limit=2');
+  const deviceCursor = await get('/api/jobs/UPD-001?cursor=0&cursor=1');
+
+  assert.equal(devicePlain.status, 200, JSON.stringify(devicePlain.body));
+  assert.equal(deviceLimit.status, 200, JSON.stringify(deviceLimit.body));
+  assert.equal(deviceCursor.status, 200, JSON.stringify(deviceCursor.body));
+  assert.deepEqual(deviceLimit.body, devicePlain.body);
+  assert.deepEqual(deviceCursor.body, devicePlain.body);
+
+  arrange([
+    jobRow({
+      display_id: 'UAT-009',
+      kind: 'user-attribute-update',
+      entity_type: 'user',
+      plan_action: null,
+      plan_changes: null,
+    }),
+  ]);
+
+  const valuePlain = await get('/api/jobs/UAT-009');
+  const valueLimit = await get('/api/jobs/UAT-009?limit=1&limit=2');
+  const valueCursor = await get('/api/jobs/UAT-009?cursor=0&cursor=1');
+
+  assert.equal(valuePlain.status, 200, JSON.stringify(valuePlain.body));
+  assert.equal(valueLimit.status, 200, JSON.stringify(valueLimit.body));
+  assert.equal(valueCursor.status, 200, JSON.stringify(valueCursor.body));
+  assert.deepEqual(valueLimit.body, valuePlain.body);
+  assert.deepEqual(valueCursor.body, valuePlain.body);
+});
+
+test('a repeated category page key of a category job is refused', async () => {
+  arrange([
+    jobRow({
+      display_id: 'CAT-008',
+      plan_action: 'edit-category',
+      plan_scope_name: 'Student records',
+      plan_body: { displayName: 'Student records', fields: [] },
+      plan_changes: [
+        { change: 'added', fieldName: 'House', displayName: 'House' },
+      ],
+      plan_field_types: [{ fieldName: 'House', fieldType: 'STRING' }],
+    }),
+  ]);
+
+  const repeatedLimit = await get('/api/jobs/CAT-008?limit=1&limit=2');
+  const repeatedCursor = await get('/api/jobs/CAT-008?cursor=0&cursor=1');
+
+  assert.equal(repeatedLimit.status, 400, JSON.stringify(repeatedLimit.body));
+  assert.deepEqual(repeatedLimit.body, { reason: 'invalid-request' });
+  assert.equal(repeatedCursor.status, 400, JSON.stringify(repeatedCursor.body));
+  assert.deepEqual(repeatedCursor.body, { reason: 'invalid-cursor' });
+});
+
 test('the detail pages the category table with a cursor and the logical total', async () => {
   arrange([
     jobRow({

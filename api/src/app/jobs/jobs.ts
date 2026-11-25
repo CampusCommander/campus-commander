@@ -329,6 +329,25 @@ export function decodeCategoryRowCursor(
 }
 
 /**
+ * The page parameters of a category result read (card J4). Express answers a repeated query key as
+ * an array, so the read accepts one string per key. A read validates these parameters only after it
+ * identifies a category job, because every other kind of job ignores them (card J4, item 6).
+ */
+function categoryPageOf(query: unknown): { cursor?: string; limit?: string } {
+  const page =
+    typeof query === 'object' && query !== null
+      ? (query as Record<string, unknown>)
+      : {};
+  const cursor = page['cursor'];
+  const limit = page['limit'];
+  if (cursor !== undefined && typeof cursor !== 'string')
+    throw new BadRequestException({ reason: 'invalid-cursor' });
+  if (limit !== undefined && typeof limit !== 'string')
+    throw new BadRequestException({ reason: 'invalid-request' });
+  return { cursor, limit };
+}
+
+/**
  * The category result table of a category job (card J4, CA state 07). The plan stores each change,
  * the body of the Google call, and migration 030 adds the label of a rename, the info type of each
  * change, and the properties of each change. The job status decides the outcome of the one call,
@@ -337,11 +356,11 @@ export function decodeCategoryRowCursor(
  */
 function categoryDetailOf(
   row: Record<string, unknown>,
-  cursor: string | undefined,
-  limit: string | undefined,
+  query: unknown,
 ): JobCategoryDetail | undefined {
   const changes = row['plan_changes'];
   if (!Array.isArray(changes)) return undefined;
+  const { cursor, limit } = categoryPageOf(query);
   const pageSize = limit === undefined ? DEFAULT_CATEGORY_ROWS : Number(limit);
   if (
     !/^\d+$/.test(limit ?? '0') ||
@@ -1072,7 +1091,7 @@ export class Jobs {
     session: SessionResponse,
     customerId: string,
     displayId: string,
-    page: { cursor?: string; limit?: string } = {},
+    query: unknown = {},
   ): Promise<JobDetail> {
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
@@ -1091,7 +1110,7 @@ export class Jobs {
       ...jobSummary(job, now),
       // The category result table of a category job (card J4). It stays absent for another kind,
       // so the page of a caller of another kind changes no answer.
-      category: categoryDetailOf(job, page.cursor, page.limit),
+      category: categoryDetailOf(job, query),
       confirmedBy:
         job['confirmed_by'] == null
           ? null

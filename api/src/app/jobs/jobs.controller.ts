@@ -86,13 +86,6 @@ const attributeRowsQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
-/** The page of a category result table (card J4). The route validates the page for a category job
- * only, so a query of another job kind changes no answer. */
-const detailQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.string().optional(),
-});
-
 /** The cancel request carries no revision, so its body is an empty strict object (design section 1). */
 const cancelBodySchema = z.strictObject({});
 
@@ -165,10 +158,11 @@ export class JobsController {
     @Param('displayId') displayId: string,
     @Query() query: unknown,
   ) {
-    const page = detailQuerySchema.parse(query);
     const id = jobDisplayIdSchema.parse(displayId);
     const customerId = await this.jobs.customer(request.session);
-    return this.jobs.detail(request.session, customerId, id, page);
+    // The read validates the page parameters only after it identifies a category job, because
+    // every other kind of job ignores them (card J4, item 6).
+    return this.jobs.detail(request.session, customerId, id, query);
   }
 
   @Get(':displayId/operations')
