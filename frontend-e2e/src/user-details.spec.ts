@@ -23,7 +23,8 @@ let longProgram: string | null = null;
 /** The value of the one save of the card form test, kept until the next test. */
 let savedGrade: number | null = null;
 /** One test keeps the value job running while the card hands observation over (R4-A). */
-let jobStatus: 'completed' | 'running' = 'completed';
+let jobStatus: 'completed' | 'running' | 'needs-review' | 'failed' =
+  'completed';
 /** The app's job reads, so the R4-A test can show the polling budget and the handoff. */
 let jobReads = 0;
 /** The edit list that the mocked preview route received. */
@@ -832,6 +833,40 @@ function measured(
   return box;
 }
 
+/** The computed color of one design token on the page, in the theme that is active. */
+async function tokenColor(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
+}
+
+/**
+ * The tones of the saved line (UM state 12): a settled line draws its text in the
+ * secondary tone and its icon in the success tone. An unsettled or a needs-review
+ * line keeps one tone for its text and its icon.
+ */
+async function expectSavedLineTone(
+  page: Page,
+  card: Locator,
+  tone: 'success' | 'warning' | 'error',
+): Promise<void> {
+  const line = card.locator('.saved-line');
+  const text = line.locator('span:not(.material-symbols-outlined)');
+  const icon = line.locator('.material-symbols-outlined');
+  const textToken =
+    tone === 'success' ? '--cc-text-secondary' : `--cc-status-${tone}-text`;
+  await expect(text).toHaveCSS('color', await tokenColor(page, textToken));
+  await expect(icon).toHaveCSS(
+    'color',
+    await tokenColor(page, `--cc-status-${tone}-text`),
+  );
+}
+
 test('reproduces UM state 04: the user details page', async ({ page }) => {
   await openUsers(page);
   await detailsControl(page, 'Amara Okafor').click();
@@ -1435,6 +1470,8 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
     await card.locator('.attr-section').first().boundingBox(),
   );
   expect(savedBox.y + savedBox.height).toBeLessThanOrEqual(firstSection.y + 1);
+  // The approved tone: the text in the secondary tone and only the icon in success.
+  await expectSavedLineTone(page, card, 'success');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({
@@ -1446,10 +1483,48 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
     fullPage: true,
   });
   await setTheme(page, 'dark');
+  // The dark theme keeps the same tones (UI-09).
+  await expectSavedLineTone(page, card, 'success');
   await page.screenshot({
     path: `${scratch}/um-12-details-saved-dark.png`,
     fullPage: true,
   });
+});
+
+test('keeps the warning and error tones of a needs-review or a failed job', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  const card = page.locator('section.attrs');
+  const saveGrade = async (value: string) => {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await card
+      .locator('[data-attribute="attr:Student.grade_level"] input')
+      .fill(value);
+    await page
+      .getByRole('button', { name: 'Save changes', exact: true })
+      .click();
+  };
+
+  // A job that needs review keeps the warning tone, text and icon included.
+  jobStatus = 'needs-review';
+  await saveGrade('11');
+  await expect(card.locator('.saved-line.is-warning')).toContainText(
+    'The job needs review.',
+  );
+  await expectSavedLineTone(page, card, 'warning');
+
+  // A failed job keeps the error tone, text and icon included.
+  jobStatus = 'failed';
+  await saveGrade('12');
+  await expect(card.locator('.saved-line.is-error')).toContainText(
+    'The values did not save.',
+  );
+  await expectSavedLineTone(page, card, 'error');
 });
 
 test('drops the open draft when Next user opens another card (R1-A)', async ({
