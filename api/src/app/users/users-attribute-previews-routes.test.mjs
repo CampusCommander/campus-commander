@@ -446,6 +446,38 @@ function declaredLengthPost(length) {
   });
 }
 
+/**
+ * Post a preview body without a declared length, so the request streams in chunks. The parser's
+ * own bounded read is the only size check.
+ */
+function chunkedPost(path, body) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(`${origin}${path}`);
+    const request = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      },
+      (response) => {
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => (text += chunk));
+        response.on('end', () =>
+          resolve({ status: response.statusCode, body: text }),
+        );
+      },
+    );
+    request.on('error', reject);
+    const encoded = Buffer.from(body);
+    for (let index = 0; index < encoded.length; index += 1 << 20)
+      request.write(encoded.subarray(index, index + (1 << 20)));
+    request.end();
+  });
+}
+
 const selectionBody = (changes) => ({
   gridId: 'users',
   tabId,
@@ -469,6 +501,116 @@ const editBody = (edits) => ({
     },
   ],
 });
+
+/**
+ * The review reproduction: 2,000 edits on 400 users, five multi-value attributes each, with 50
+ * values of 500 code points in every requested list and baseline (B section 3, E17). Each value
+ * carries a three-character prefix and 497 supplementary code points, so the body is above a cap
+ * that counts a code point as one byte.
+ */
+function nonAsciiEditBody() {
+  const value = (prefix, index) =>
+    `${prefix}${String(index).padStart(2, '0')}${'\u{1f600}'.repeat(497)}`;
+  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
+  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
+  const edits = Array.from({ length: 2000 }, (_, index) => ({
+    userId: `user-${index % 400}`,
+    attribute: `attr:StudentInfo.Field${Math.floor(index / 400)}`,
+    mode: 'replace',
+    values: requested,
+    baselineValue: baseline,
+  }));
+  return { body: JSON.stringify({ edits }), baseline, requested };
+}
+
+/** The categories and SQL answers of one non-ASCII review-shape edit-list preview. */
+function useNonAsciiPreviewMocks(baseline) {
+  const wide = {
+    ...base,
+    categories: [
+      {
+        ...base.categories[0],
+        fields: [
+          field({}),
+          ...Array.from({ length: 5 }, (_, index) =>
+            field({
+              fieldId: `fld-${index + 10}`,
+              fieldName: `Field${index}`,
+              displayName: `Field${index}`,
+              multiValued: true,
+            }),
+          ),
+        ],
+      },
+    ],
+    limits: { ...base.limits, attributes: 6 },
+  };
+  const fallback = routeRespond;
+  let appends = 0;
+  routeRespond = async (text, values) => {
+    if (text.includes('cc.read_user_attribute_preview_base'))
+      return { rows: [{ result: wide }] };
+    if (text.includes('FROM cc.users'))
+      return {
+        rows: values[1].map((userId) => ({
+          user_id: userId,
+          primary_email: `${userId}@example.org`,
+        })),
+      };
+    if (text.includes('cc.create_user_attribute_preview'))
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              previewId,
+              preview: {
+                ...editPreview,
+                selected: 400,
+                eligible: 400,
+                unchanged: 0,
+                conflicts: 0,
+                manifestDigest: null,
+              },
+            },
+          },
+        ],
+      };
+    if (text.includes('cc.append_user_attribute_preview_targets')) {
+      appends += 1;
+      return { rows: [{ result: { outcome: 'stored', stored: 1 } }] };
+    }
+    if (text.includes('cc.complete_user_attribute_preview'))
+      return {
+        rows: [
+          {
+            result: {
+              outcome: 'created',
+              preview: {
+                ...editPreview,
+                selected: 400,
+                eligible: 400,
+                unchanged: 0,
+                conflicts: 0,
+                manifestDigest: values[3],
+              },
+            },
+          },
+        ],
+      };
+    return fallback(text, values);
+  };
+  readUserValues = async () => ({
+    StudentInfo: {
+      Field0: baseline,
+      Field1: baseline,
+      Field2: baseline,
+      Field3: baseline,
+      Field4: baseline,
+    },
+  });
+  return { appends: () => appends };
+}
 
 test('a session without users:write answers 403 from each value preview route', async () => {
   allowed = new Set();
@@ -1464,115 +1606,30 @@ test('a supported multi-value edit list of 600 edits passes the body cap', async
 
 test('a supported non-ASCII edit list of the review shape passes the body cap', async () => {
   // B section 3: one list holds 25,000 characters, which is 50 values of 500 code points. E17:
-  // 2,000 edits on 400 users, five multi-value attributes each. Each value is a three-character
-  // prefix and 497 supplementary code points, so the body exceeds a cap that counts a code point
-  // as one byte.
-  const value = (prefix, index) =>
-    `${prefix}${String(index).padStart(2, '0')}${'\u{1f600}'.repeat(497)}`;
-  const baseline = Array.from({ length: 50 }, (_, index) => value('B', index));
-  const requested = Array.from({ length: 50 }, (_, index) => value('R', index));
-  const wide = {
-    ...base,
-    categories: [
-      {
-        ...base.categories[0],
-        fields: [
-          field({}),
-          ...Array.from({ length: 5 }, (_, index) =>
-            field({
-              fieldId: `fld-${index + 10}`,
-              fieldName: `Field${index}`,
-              displayName: `Field${index}`,
-              multiValued: true,
-            }),
-          ),
-        ],
-      },
-    ],
-    limits: { ...base.limits, attributes: 6 },
-  };
-  const edits = Array.from({ length: 2000 }, (_, index) => ({
-    userId: `user-${index % 400}`,
-    attribute: `attr:StudentInfo.Field${Math.floor(index / 400)}`,
-    mode: 'replace',
-    values: requested,
-    baselineValue: baseline,
-  }));
-  const body = JSON.stringify({ edits });
+  // 2,000 edits on 400 users, five multi-value attributes each.
+  const { body, baseline } = nonAsciiEditBody();
+  const { appends } = useNonAsciiPreviewMocks(baseline);
   const bytes = Buffer.byteLength(body);
   assert.ok(bytes > 389_564_096, `body measured ${bytes} bytes`);
   assert.ok(bytes < bodyLimit, `body measured ${bytes} bytes`);
-  const fallback = routeRespond;
-  let appends = 0;
-  routeRespond = async (text, values) => {
-    if (text.includes('cc.read_user_attribute_preview_base'))
-      return { rows: [{ result: wide }] };
-    if (text.includes('FROM cc.users'))
-      return {
-        rows: values[1].map((userId) => ({
-          user_id: userId,
-          primary_email: `${userId}@example.org`,
-        })),
-      };
-    if (text.includes('cc.create_user_attribute_preview'))
-      return {
-        rows: [
-          {
-            result: {
-              outcome: 'created',
-              previewId,
-              preview: {
-                ...editPreview,
-                selected: 400,
-                eligible: 400,
-                unchanged: 0,
-                conflicts: 0,
-                manifestDigest: null,
-              },
-            },
-          },
-        ],
-      };
-    if (text.includes('cc.append_user_attribute_preview_targets')) {
-      appends += 1;
-      return { rows: [{ result: { outcome: 'stored', stored: 1 } }] };
-    }
-    if (text.includes('cc.complete_user_attribute_preview'))
-      return {
-        rows: [
-          {
-            result: {
-              outcome: 'created',
-              preview: {
-                ...editPreview,
-                selected: 400,
-                eligible: 400,
-                unchanged: 0,
-                conflicts: 0,
-                manifestDigest: values[3],
-              },
-            },
-          },
-        ],
-      };
-    return fallback(text, values);
-  };
-  readUserValues = async () => ({
-    StudentInfo: {
-      Field0: baseline,
-      Field1: baseline,
-      Field2: baseline,
-      Field3: baseline,
-      Field4: baseline,
-    },
-  });
   const response = await fetch(`${origin}/api/users/attribute-previews`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body,
   });
   assert.equal(response.status, 201, await response.text());
-  assert.ok(appends > 1, `stored in ${appends} bounded batches`);
+  assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
+});
+
+test('a supported non-ASCII body sent chunked passes the body cap', async () => {
+  // The review reproduction without a declared length: the parser's bounded read is the only
+  // size check, and it reads the chunks under the same cap.
+  const { body, baseline } = nonAsciiEditBody();
+  const { appends } = useNonAsciiPreviewMocks(baseline);
+  assert.ok(Buffer.byteLength(body) > 389_564_096);
+  const answer = await chunkedPost('/api/users/attribute-previews', body);
+  assert.equal(answer.status, 201, answer.body);
+  assert.ok(appends() > 1, `stored in ${appends()} bounded batches`);
 });
 
 test('an edit list with escaped JSON values passes the body cap', async () => {
