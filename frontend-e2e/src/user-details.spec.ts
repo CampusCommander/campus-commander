@@ -33,6 +33,9 @@ test.afterEach(() => {
   extraPeople = [];
   heldDetails?.release();
   heldDetails = null;
+  heldConfirm?.release();
+  heldConfirm = null;
+  previewPosts = 0;
 });
 
 /** One time as the page renders it, in the zone that the spec pins. */
@@ -578,6 +581,15 @@ let heldDetails: {
   release: () => void;
 } | null = null;
 
+/** One test holds the card confirmation, to check the one save across navigation (R3-A, R3-B). */
+let heldConfirm: {
+  gate: Promise<void>;
+  release: () => void;
+  answer: 'receipt' | 'lost';
+} | null = null;
+/** The count of edit-list preview requests, so one save prepares one preview. */
+let previewPosts = 0;
+
 async function signIn(page: Page) {
   await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
@@ -661,6 +673,7 @@ async function signIn(page: Page) {
       path === '/api/users/attribute-previews' &&
       request.method() === 'POST'
     ) {
+      previewPosts += 1;
       const body = request.postDataJSON();
       lastPreviewBody = body;
       if (tooLargeOnce) {
@@ -690,6 +703,12 @@ async function signIn(page: Page) {
           status: 409,
           json: { reason: 'preview-conflict' },
         });
+      // One test holds this answer while the person leaves the details page (R3-A, R3-B).
+      const held = heldConfirm;
+      if (held) {
+        await held.gate;
+        if (held.answer === 'lost') return route.abort('failed');
+      }
       savedGrade = 11;
       return route.fulfill({
         json: {
@@ -1262,6 +1281,10 @@ test('reproduces UM state 05 and state 12: the card form and the saved line', as
   expect(
     Math.abs((await headingGap('Staff information')) - 14),
   ).toBeLessThanOrEqual(1);
+  // The plain Yes and No label follows its heading directly, as the approved form does.
+  expect(
+    Math.abs((await headingGap('Device program')) - 8),
+  ).toBeLessThanOrEqual(1);
   const grade = card.locator(
     '[data-attribute="attr:Student.grade_level"] input',
   );
@@ -1496,4 +1519,100 @@ test('keeps the retained card and its save target aligned during a held read (R2
       },
     ],
   });
+});
+
+test('keeps the in-flight confirmation across a details page round trip (R3-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  previewPosts = 0;
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  heldConfirm = { gate, release, answer: 'lost' };
+  const confirmRequest = page.waitForRequest(
+    /\/api\/users\/attribute-previews\/[^/]+\/confirm$/,
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirmRequest;
+
+  // The person leaves the details page before the first answer arrives.
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  await detailsControl(page, 'Amara Okafor').click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const card = page.locator('section.attrs');
+  // The reopened form honors the one confirmation and offers no editors.
+  await expect(card).toContainText('Creating the job…');
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  expect(previewPosts).toBe(1);
+
+  // The held answer is lost. The reopened form continues the same confirmation.
+  release();
+  heldConfirm = null;
+  await expect(card).toContainText(
+    'Retry the confirmation to keep the same preview.',
+  );
+  await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(card).toContainText('Grade level saved to Google');
+  expect(previewPosts).toBe(1);
+});
+
+test('recovers the accepted receipt across a details page round trip (R3-B)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  previewPosts = 0;
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  heldConfirm = { gate, release, answer: 'receipt' };
+  const confirmRequest = page.waitForRequest(
+    /\/api\/users\/attribute-previews\/[^/]+\/confirm$/,
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirmRequest;
+
+  // The accepted answer lands on the closed form. Its receipt must survive (R3-B).
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  release();
+  heldConfirm = null;
+
+  // Reentry observes the same receipt, refreshes the card, and prepares no second preview.
+  await detailsControl(page, 'Amara Okafor').click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const card = page.locator('section.attrs');
+  await expect(card).toContainText('Grade level saved to Google');
+  await expect(
+    card.getByRole('link', { name: 'UAT-015', exact: true }),
+  ).toHaveAttribute('href', '/jobs/UAT-015');
+  await expect(
+    card.locator('.annotation', { hasText: 'Grade level' }),
+  ).toContainText('11');
+  expect(previewPosts).toBe(1);
 });

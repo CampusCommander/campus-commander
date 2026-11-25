@@ -12,6 +12,7 @@ import type {
 import { AuthStore } from '../auth.store';
 import { UserDetailPage, readAge } from './user-detail';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
 import { UsersStore } from './users.store';
 import type { UserRead } from './users.store';
 
@@ -1006,6 +1007,65 @@ describe('the user details page', () => {
       expect.any(Function),
     );
     expect(card.readJob).toHaveBeenCalledWith('UAT-015');
+    expect(store.user).toHaveBeenCalledTimes(2);
+    const annotation = [...element.querySelectorAll('.annotation')].find(
+      (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',
+    );
+    expect(annotation?.querySelector('dd')?.textContent?.trim()).toBe('11');
+  });
+
+  it('recovers an accepted receipt after a closed form and refreshes the card (R3-B)', async () => {
+    const card = {
+      prepare: vi.fn().mockResolvedValue({ ok: true, value: cardPreview }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue(cardReceipt),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+      readJob: vi.fn(),
+    };
+    const { store, fixture, element, button } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: card,
+    });
+    // The editor that accepted this receipt died before its job settled (R3-B).
+    TestBed.inject(UserAttributeConfirmationStore).accept(
+      user().userId,
+      cardPreview,
+      ['Grade level'],
+      'UAT-015',
+    );
+    store.user.mockResolvedValue({
+      kind: 'user',
+      user: user({
+        customSchemas: {
+          Student: {
+            student_id: '204518',
+            grade_level: '11',
+            graduation_year: '2029',
+            homeroom: '214',
+            programs: [{ value: 'Gifted' }, { value: 'Band' }],
+          },
+          Device: { take_home: true },
+        },
+      }),
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    // The recovery observed the same receipt, then refreshed the matching card.
+    expect(card.waitForJob).toHaveBeenCalledWith(
+      'UAT-015',
+      120,
+      1000,
+      expect.any(Function),
+    );
+    expect(card.prepare).not.toHaveBeenCalled();
     expect(store.user).toHaveBeenCalledTimes(2);
     const annotation = [...element.querySelectorAll('.annotation')].find(
       (box) => box.querySelector('dt')?.textContent?.trim() === 'Grade level',

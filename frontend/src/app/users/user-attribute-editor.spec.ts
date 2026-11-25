@@ -260,6 +260,20 @@ function acceptedReceipt(changeCount: number) {
   };
 }
 
+/** The answer of one confirmation, for the held-answer lifetime tests (R3-A, R3-B). */
+type TestConfirmAnswer =
+  | ReturnType<typeof acceptedReceipt>
+  | { ok: false; message: string; uncertain: boolean };
+
+/** A promise that the test releases. */
+function deferred<T>() {
+  let release: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
 function flow(extra: Record<string, unknown> = {}) {
   return {
     prepare: vi.fn().mockResolvedValue({ ok: true, value: preview() }),
@@ -974,5 +988,315 @@ describe('the Custom attributes card form', () => {
     const { button, cancels } = await setup();
     button('Cancel')?.click();
     expect(cancels()).toBe(1);
+  });
+
+  it('keeps a one-change confirmation that is in flight when the form reopens (R3-A)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    let confirmCalls = 0;
+    const inFlight = flow({
+      confirm: vi.fn(() => {
+        confirmCalls++;
+        return confirmCalls === 1
+          ? held.promise
+          : Promise.resolve(acceptedReceipt(1));
+      }),
+    });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(1));
+    // The person leaves the page before the first answer arrives.
+    first.fixture.destroy();
+
+    const second = await mount();
+    // The reopened form honors the one confirmation and offers no editors (R3-A).
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    expect(second.element.textContent).toContain('Creating the job…');
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+
+    // The held answer is lost. The reopened form becomes the recovery continuation.
+    held.release({ ok: false, message: UNCERTAIN_TEXT, uncertain: true });
+    await vi.waitFor(() => {
+      second.fixture.detectChanges();
+      expect(second.element.textContent).toContain(UNCERTAIN_HINT);
+    });
+    second.button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(2);
+    expect(inFlight.confirm.mock.calls[1]).toEqual(
+      inFlight.confirm.mock.calls[0],
+    );
+  });
+
+  it('keeps a review confirmation that is in flight when the form reopens (R3-A)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    let confirmCalls = 0;
+    const inFlight = reviewFlow(
+      vi.fn(() => {
+        confirmCalls++;
+        return confirmCalls === 1
+          ? held.promise
+          : Promise.resolve(acceptedReceipt(2));
+      }),
+    );
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.type('attr:Student.homeroom', '216');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain('Current value'),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(1));
+    first.fixture.destroy();
+
+    const second = await mount();
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    expect(second.element.querySelector('.review')).toBeNull();
+    expect(second.element.textContent).toContain('Creating the job…');
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+
+    held.release({ ok: false, message: UNCERTAIN_TEXT, uncertain: true });
+    await vi.waitFor(() => {
+      second.fixture.detectChanges();
+      expect(second.element.textContent).toContain(UNCERTAIN_HINT);
+    });
+    second.button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(second.finished()?.attributeNames).toEqual([
+        'Grade level',
+        'Homeroom',
+      ]),
+    );
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(2);
+    expect(inFlight.confirm.mock.calls[1]).toEqual(
+      inFlight.confirm.mock.calls[0],
+    );
+  });
+
+  it('observes an accepted answer that lands on the reopened form (R3-B)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    const inFlight = flow({ confirm: vi.fn(() => held.promise) });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(1));
+    first.fixture.destroy();
+
+    // The reopened form waits on the same confirmation while its answer is in flight.
+    const second = await mount();
+    expect(second.element.textContent).toContain('Creating the job…');
+    held.release(acceptedReceipt(1));
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(1);
+    expect(inFlight.waitForJob).toHaveBeenCalledWith(
+      'UAT-015',
+      120,
+      1000,
+      expect.any(Function),
+    );
+  });
+
+  it('recovers the first accepted receipt after its editor closed (R3-B)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    const inFlight = flow({ confirm: vi.fn(() => held.promise) });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(1));
+    first.fixture.destroy();
+
+    // The accepted answer lands on the closed form. Its receipt must survive (R3-B).
+    held.release(acceptedReceipt(1));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await mount();
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    expect(second.element.textContent).toContain('Saving to Google…');
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(second.finished()?.attributeNames).toEqual(['Grade level']);
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(1);
+    expect(inFlight.waitForJob).toHaveBeenCalledWith(
+      'UAT-015',
+      120,
+      1000,
+      expect.any(Function),
+    );
+  });
+
+  it('recovers a review receipt that its editor never observed (R3-B)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    const inFlight = reviewFlow(vi.fn(() => held.promise));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.type('attr:Student.homeroom', '216');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain('Current value'),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(1));
+    first.fixture.destroy();
+
+    held.release(acceptedReceipt(2));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await mount();
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(second.finished()?.attributeNames).toEqual([
+      'Grade level',
+      'Homeroom',
+    ]);
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers the receipt of a successful replay after its editor closed (R3-B)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    let confirmCalls = 0;
+    const inFlight = flow({
+      confirm: vi.fn(() => {
+        confirmCalls++;
+        return confirmCalls === 1
+          ? Promise.resolve({
+              ok: false,
+              message: UNCERTAIN_TEXT,
+              uncertain: true,
+            })
+          : held.promise;
+      }),
+    });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain(UNCERTAIN_HINT),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(2));
+    first.fixture.destroy();
+
+    held.release(acceptedReceipt(1));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await mount();
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(2);
+    expect(inFlight.confirm.mock.calls[1]).toEqual(
+      inFlight.confirm.mock.calls[0],
+    );
+  });
+
+  it('recovers a successful review replay after its editor closed (R3-B)', async () => {
+    const held = deferred<TestConfirmAnswer>();
+    let confirmCalls = 0;
+    const inFlight = reviewFlow(
+      vi.fn(() => {
+        confirmCalls++;
+        return confirmCalls === 1
+          ? Promise.resolve({
+              ok: false,
+              message: UNCERTAIN_TEXT,
+              uncertain: true,
+            })
+          : held.promise;
+      }),
+    );
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserAttributeEditFlow, useValue: inFlight },
+      ],
+    });
+    const first = await mount();
+    first.type('attr:Student.grade_level', '11');
+    first.type('attr:Student.homeroom', '216');
+    first.button('Save changes')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain('Current value'),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(first.element.textContent).toContain(UNCERTAIN_HINT),
+    );
+    first.button('Confirm')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(2));
+    first.fixture.destroy();
+
+    held.release(acceptedReceipt(2));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await mount();
+    expect(second.element.querySelector('.attribute-form')).toBeNull();
+    await vi.waitFor(() =>
+      expect(second.finished()?.displayId).toBe('UAT-015'),
+    );
+    expect(second.finished()?.attributeNames).toEqual([
+      'Grade level',
+      'Homeroom',
+    ]);
+    expect(inFlight.prepare).toHaveBeenCalledTimes(1);
+    expect(inFlight.confirm).toHaveBeenCalledTimes(2);
+    expect(inFlight.confirm.mock.calls[1]).toEqual(
+      inFlight.confirm.mock.calls[0],
+    );
   });
 });
