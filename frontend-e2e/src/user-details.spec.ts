@@ -24,6 +24,8 @@ let longProgram: string | null = null;
 let savedGrade: number | null = null;
 /** One test keeps the value job running while the card hands observation over (R4-A). */
 let jobStatus: 'completed' | 'running' = 'completed';
+/** The app's job reads, so the R4-A test can show the polling budget and the handoff. */
+let jobReads = 0;
 /** The edit list that the mocked preview route received. */
 let lastPreviewBody: unknown = null;
 
@@ -31,6 +33,7 @@ test.afterEach(() => {
   longProgram = null;
   savedGrade = null;
   jobStatus = 'completed';
+  jobReads = 0;
   lastPreviewBody = null;
   tooLargeOnce = false;
   extraPeople = [];
@@ -723,8 +726,10 @@ async function signIn(page: Page) {
         },
       });
     }
-    if (path === `/api/jobs/${valueJob.displayId}`)
+    if (path === `/api/jobs/${valueJob.displayId}`) {
+      jobReads += 1;
       return route.fulfill({ json: { ...valueJob, status: jobStatus } });
+    }
     // One user, read by the details page. Any other path stays a 404.
     const single = /^\/api\/users\/([^/]+)$/.exec(path);
     if (single) {
@@ -1655,6 +1660,8 @@ test('keeps the accepted receipt through the polling cap and a details page roun
   };
   // The editor spends its 120-read budget while the job stays running.
   await advanceUntil('The job is still running.', 150);
+  // The 120 editor reads and the card's first continuation read used the same receipt.
+  expect(jobReads).toBeGreaterThanOrEqual(121);
   expect(previewPosts).toBe(1);
 
   // The person leaves before the job has any provider effect.
@@ -1668,6 +1675,8 @@ test('keeps the accepted receipt through the polling cap and a details page roun
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await expect(card).toContainText('Saving to Google…');
   await expect(page.locator('.attribute-form')).toHaveCount(0);
+  // Reentry read the same UAT-015 receipt; it prepared no second preview.
+  expect(jobReads).toBeGreaterThanOrEqual(122);
   expect(previewPosts).toBe(1);
 
   // The job settles, and the recovered card shows the new value.
