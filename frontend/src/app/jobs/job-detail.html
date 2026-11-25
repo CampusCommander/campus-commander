@@ -338,33 +338,33 @@
       </footer>
     </div>
     } @else if (isValue()) {
-    <div class="result-views">
-      <nav
-        mat-tab-nav-bar
-        class="result-tabs"
-        [tabPanel]="resultPanel"
-        [attr.aria-label]="resultsViewLabel"
-      >
-        @for (view of views; track view.value) {
-        <button
-          mat-tab-link
-          type="button"
-          [active]="attributeView() === view.value"
-          (click)="setAttributeView(view.value)"
+    <div class="result-region">
+      <div class="result-views">
+        <nav
+          mat-tab-nav-bar
+          class="result-tabs"
+          [tabPanel]="resultPanel"
+          [attr.aria-label]="resultsViewLabel"
         >
-          {{ view.label }}
-          <span
-            class="tab-count"
-            [class.tone-error]="view.value === 'failed' && valueTotals().failed > 0"
-            >{{ view.value === 'all' ? valueTotals().all : valueTotals().failed
-            }}</span
+          @for (view of views; track view.value) {
+          <button
+            mat-tab-link
+            type="button"
+            [active]="attributeView() === view.value"
+            (click)="setAttributeView(view.value)"
           >
-        </button>
-        }
-      </nav>
-    </div>
-    <mat-tab-nav-panel #resultPanel>
-      <div class="grid-region">
+            {{ view.label }}
+            <span
+              class="tab-count"
+              [class.tone-error]="view.value === 'failed' && valueTotals().failed > 0"
+              >{{ view.value === 'all' ? valueTotals().all :
+              valueTotals().failed }}</span
+            >
+          </button>
+          }
+        </nav>
+      </div>
+      <mat-tab-nav-panel #resultPanel class="result-panel">
         <div
           class="table-scroll"
           tabindex="0"
@@ -415,10 +415,37 @@
               </tr>
               } @for (row of valueRows(); track row.key) {
               <tr>
-                <td class="wrap-value">{{ row.user }}</td>
+                <td class="wrap-value">
+                  <span class="user-cell">
+                    @if (canOpenUsers()) {
+                    <a
+                      class="details"
+                      [routerLink]="['/users', row.row.userId]"
+                      [attr.aria-label]="'Open details for ' + row.user"
+                    >
+                      <span class="material-symbols-outlined" aria-hidden="true"
+                        >visibility</span
+                      >
+                    </a>
+                    }
+                    <span>{{ row.user }}</span>
+                  </span>
+                </td>
                 <td class="wrap-value">{{ row.row.primaryEmail }}</td>
-                <td class="wrap-value">{{ row.current }}</td>
-                <td class="wrap-value">{{ row.next }}</td>
+                <td
+                  class="wrap-value val-current"
+                  [class.not-set]="row.currentUnset"
+                >
+                  {{ row.current }}
+                </td>
+                <td class="wrap-value">
+                  <span class="val-new">
+                    <span class="material-symbols-outlined" aria-hidden="true"
+                      >arrow_forward</span
+                    >
+                    <span [class.not-set]="row.nextUnset">{{ row.next }}</span>
+                  </span>
+                </td>
                 <td class="outcome-cell">
                   <span [class]="'status-chip small tone-' + row.tone">
                     <span class="dot" aria-hidden="true"></span>
@@ -472,8 +499,8 @@
             </button>
           </div>
         </footer>
-      </div>
-    </mat-tab-nav-panel>
+      </mat-tab-nav-panel>
+    </div>
     } @else {
     <div class="grid-region">
       <div

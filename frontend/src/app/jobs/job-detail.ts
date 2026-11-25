@@ -24,6 +24,7 @@ import type {
 import { AuthStore } from '../auth.store';
 import { expiryClock } from '../expiry-clock';
 import { devicesReadable } from '../devices/devices.store';
+import { usersReadable } from '../users/users.store';
 import {
   SHEET_OPEN_LABEL,
   SHEET_SAVED_LINE,
@@ -133,6 +134,8 @@ export class JobDetailPage implements OnChanges, OnDestroy {
   protected readonly canOpenDevices = computed(() =>
     devicesReadable(this.auth),
   );
+  /** The eye of a value row opens the user details page, as the users grid eye does. */
+  protected readonly canOpenUsers = computed(() => usersReadable(this.auth));
   protected readonly statusLabel = (status: keyof typeof JOB_STATUS_LABELS) =>
     JOB_STATUS_LABELS[status];
   protected readonly statusTone = statusTone;

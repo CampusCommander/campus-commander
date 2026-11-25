@@ -55,13 +55,26 @@
   overflow-wrap: anywhere;
 }
 
-/* The All and Failed views of UM state 10, in the tab style of the category dialog. */
+/* The All and Failed views join the table's bordered region (UM state 10). */
+.result-region {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+}
 .result-views {
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: space-between;
-  padding-inline-end: var(--cc-space-sm);
+  gap: var(--cc-space-sm);
   border-block-end: 1px solid var(--cc-border);
+}
+.result-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .result-tabs {
   display: flex;
@@ -97,4 +110,45 @@
 }
 .tab-count.tone-error {
   color: var(--cc-status-error-text);
+}
+
+/* The approved state 10 user cell: the eye link and the name. */
+.value-table .user-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+  margin-block: -4px;
+}
+.value-table .user-cell .details {
+  width: 28px;
+  height: 28px;
+}
+.value-table .user-cell .details .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* The approved comparison treatment: a muted current value, an arrow, a weighted new value. */
+.value-table .val-current {
+  color: var(--cc-text-secondary);
+}
+.value-table .val-new {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-xs);
+}
+.value-table .val-new .material-symbols-outlined {
+  flex: none;
+  margin-block-start: 2px;
+  color: var(--cc-text-secondary);
+  font-size: 16px;
+}
+.value-table .val-new > span:last-child {
+  min-width: 0;
+  font-weight: 500;
+}
+.value-table .not-set {
+  color: var(--cc-text-secondary);
+  font-style: italic;
+  font-weight: 400;
 }

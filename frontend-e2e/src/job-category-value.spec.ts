@@ -405,6 +405,43 @@ test('shows a value job with All and Failed, the totals, and a second page', asy
   await expect(first).toContainText('Not set');
   await expect(first).toContainText('Seven');
 
+  // The approved state 10 user cell: the eye link opens the user details page.
+  await expect(
+    first.getByRole('link', { name: 'Open details for Person 1' }),
+  ).toHaveAttribute('href', '/users/synthetic-user-1');
+
+  // The approved comparison treatment: a muted italic Not set and an arrow before the new value.
+  await expect(first.locator('td.val-current')).toHaveClass(/not-set/);
+  const currentColor = await first
+    .locator('td.val-current')
+    .evaluate((cell) => getComputedStyle(cell).color);
+  const secondaryColor = await page
+    .locator('.footer-count')
+    .evaluate((count) => getComputedStyle(count).color);
+  expect(currentColor).toBe(secondaryColor);
+  expect(
+    await first
+      .locator('td.val-current')
+      .evaluate((cell) => getComputedStyle(cell).fontStyle),
+  ).toBe('italic');
+  await expect(first.locator('.val-new .material-symbols-outlined')).toHaveText(
+    'arrow_forward',
+  );
+  expect(
+    await first
+      .locator('.val-new .material-symbols-outlined')
+      .evaluate((arrow) => getComputedStyle(arrow).fontSize),
+  ).toBe('16px');
+
+  // The views join the table's bordered region.
+  await expect(
+    page.locator('.result-region .result-views .result-tabs'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('.result-region .result-table.value-table'),
+  ).toHaveCount(1);
+  await expect(page.locator('.result-region .grid-footer')).toHaveCount(1);
+
   await page.getByRole('button', { name: 'Next results page' }).click();
   await expect(page.getByText('11–18 of 18 changes')).toBeVisible();
   await expect(page.locator('.result-table tbody tr')).toHaveCount(8);
@@ -422,9 +459,20 @@ test('shows a value job with All and Failed, the totals, and a second page', asy
   await page.getByRole('tab', { name: /Failed/ }).click();
   await expect(page.getByText('1–2 of 2 changes')).toBeVisible();
   await expect(page.locator('.result-table tbody tr')).toHaveCount(2);
-  await expect(page.locator('.result-table tbody tr').first()).toContainText(
-    'Grade is not a number.',
+  const failedFirst = page.locator('.result-table tbody tr').first();
+  await expect(failedFirst).toContainText('Grade is not a number.');
+  await expect(
+    failedFirst.getByRole('link', { name: 'Open details for Person 17' }),
+  ).toHaveAttribute('href', '/users/synthetic-user-17');
+  await expect(
+    failedFirst.locator('.val-new .material-symbols-outlined'),
+  ).toHaveText('arrow_forward');
+  await expect(failedFirst.locator('td.val-current')).not.toHaveClass(
+    /not-set/,
   );
+  await expect(
+    page.locator('.result-region .result-table.value-table'),
+  ).toHaveCount(1);
 
   // The tab switch moves no page scroll and adds no horizontal overflow.
   expect(await page.evaluate(() => window.scrollX)).toBe(0);

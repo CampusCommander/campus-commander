@@ -2316,3 +2316,81 @@ it('shows the empty Failed view of a value job', () => {
   });
   expect(text(element)).toContain('No failed changes.');
 });
+
+it('links a value user to the user details page with users:read (UM state 10)', () => {
+  const { element } = setup({
+    job: valueJob(),
+    grants: ['jobs:read', 'users:read'],
+    attributeRows: [attributeRow()],
+    attributeTotals: { all: 1, failed: 0 },
+  });
+  const eye = link(element, 'Open details for Avery Chen');
+  expect(eye).toBeDefined();
+  expect(eye?.getAttribute('href')).toBe('/users/synthetic-user-1');
+});
+
+it('hides the value user link without users:read', () => {
+  const { element } = setup({
+    job: valueJob(),
+    grants: ['jobs:read', 'users:write'],
+    attributeRows: [attributeRow()],
+    attributeTotals: { all: 1, failed: 0 },
+  });
+  expect(link(element, 'Open details for Avery Chen')).toBeUndefined();
+});
+
+it('mutes the current value and marks Not set (UM state 10)', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeRows: [
+      attributeRow(),
+      attributeRow({
+        operation: 8,
+        userId: 'synthetic-user-2',
+        userName: 'Blake Ortiz',
+        primaryEmail: 'blake@example.org',
+        currentValue: 'Six',
+      }),
+    ],
+    attributeTotals: { all: 2, failed: 0 },
+  });
+  const cells = [
+    ...element.querySelectorAll<HTMLElement>(
+      '.value-table tbody tr td.val-current',
+    ),
+  ];
+  expect(cells[0].classList.contains('not-set')).toBe(true);
+  expect(cells[1].classList.contains('not-set')).toBe(false);
+  const arrows = [
+    ...element.querySelectorAll<HTMLElement>(
+      '.value-table .val-new .material-symbols-outlined',
+    ),
+  ];
+  expect(arrows).toHaveLength(2);
+  expect(arrows[0].textContent?.trim()).toBe('arrow_forward');
+});
+
+it('marks a removal new value as Not set', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeRows: [attributeRow({ newValue: null })],
+    attributeTotals: { all: 1, failed: 0 },
+  });
+  const fresh = element.querySelector<HTMLElement>(
+    '.value-table .val-new > span:last-child',
+  );
+  expect(fresh?.classList.contains('not-set')).toBe(true);
+  expect(fresh?.textContent?.trim()).toBe('Not set');
+});
+
+it('joins the value views to the table region (UM state 10)', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeRows: [attributeRow()],
+    attributeTotals: { all: 1, failed: 0 },
+  });
+  const region = element.querySelector('.result-region');
+  expect(region?.querySelector('.result-views .result-tabs')).not.toBeNull();
+  expect(region?.querySelector('.result-table.value-table')).not.toBeNull();
+  expect(region?.querySelector('.grid-footer')).not.toBeNull();
+});
