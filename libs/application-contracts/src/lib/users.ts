@@ -2,7 +2,7 @@ import * as z from 'zod';
 import { googleCustomerIdSchema } from './google-connection';
 import { deviceSyncFailureSchema } from './devices';
 import { googleHealthFailureSchema } from './google-health';
-import { jobDisplayIdSchema } from './jobs';
+import { jobDisplayIdSchema } from './job-identifiers';
 
 const timestamp = z.iso.datetime({ offset: true });
 const count = z.number().int().min(0);
@@ -1137,6 +1137,8 @@ export type UserAttributePreview = z.infer<typeof userAttributePreviewSchema>;
  * that the confirm writes, and the disposition. */
 export const userAttributeTargetSchema = z.strictObject({
   userId,
+  /** The user name of the cache (UM state 09). A row whose user left the cache carries null. */
+  userName: z.string().max(4096).nullable().optional(),
   primaryEmail: z.email().max(254),
   /** The C1 ID of the attribute (design C1). */
   attribute: userAttributeKeySchema,
@@ -1192,15 +1194,37 @@ export type UserAttributeJobReceipt = z.infer<
 >;
 
 /**
- * The drafted text of a failed value operation (UM notes question 7, design card K24). The 404 text
- * is the one that the value job needs. The other drafted strings arrive with the Jobs page card
- * that names category and value jobs, and this map grows there.
+ * The drafted text of a failed value operation (UM notes question 7, design cards K24 and J4). Each
+ * failure code that a value job stores on a user has a sentence here. A code without a draft, or a
+ * code that the job names in its Google answer alone, falls back to the Google reason.
  */
 const USER_ATTRIBUTE_FAILURE_TEXT: Readonly<Record<string, string>> = {
   'not-found': 'Google could not find this user.',
+  'credential-rejected': 'Google rejected the connection credential.',
+  'delegation-not-authorized':
+    'Google did not authorize the delegated account.',
+  'api-not-enabled': 'The Google Admin SDK is not enabled for this domain.',
+  'policy-restricted': 'Google policy restricts this change.',
+  'scope-mismatch': 'The Google connection does not hold the required scopes.',
+  'permission-denied': 'Google denied this change for the user.',
+  quota: 'Google refused the change after repeated quota retries.',
+  'provider-unavailable': 'Google was unavailable.',
+  'network-failure': 'The network failed before Google answered.',
+  'invalid-response': 'Google answered without the requested values.',
+  'wrong-customer': 'The Google connection belongs to another customer.',
+  'request-failed': 'Google refused the change.',
+  'key-unavailable': 'The stored connection credential is unavailable.',
+  interrupted: 'The job stopped before it wrote this user.',
+  'permission-changed':
+    'The permission to set attributes changed before this user was written.',
+  'connection-changed':
+    'The Google connection changed before this user was written.',
 };
 
-/** The text of one value failure code, or null when the code has no draft. */
-export function userAttributeFailureText(failure: string): string | null {
-  return USER_ATTRIBUTE_FAILURE_TEXT[failure] ?? null;
+/** The text of one value failure code, or the Google reason when the code has no draft. */
+export function userAttributeFailureText(
+  failure: string,
+  googleReason: string | null = null,
+): string | null {
+  return USER_ATTRIBUTE_FAILURE_TEXT[failure] ?? googleReason;
 }

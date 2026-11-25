@@ -13,6 +13,7 @@ import { z } from 'zod';
 import {
   entityTypeSchema,
   jobActionSchema,
+  jobAttributeRowViewSchema,
   jobDisplayIdSchema,
   jobEventSchema,
   jobEventsChannel,
@@ -24,7 +25,7 @@ import { AuthService } from '../auth/auth.service';
 import { requireReconcileActions } from '../devices/device-updates-actions';
 import { OrchestrationService } from '../orchestration/orchestration.service';
 import { JobsService } from './jobs.service';
-import { operationCursorSchema } from './jobs';
+import { attributeRowCursorSchema, operationCursorSchema } from './jobs';
 
 /** A repeated query key or a comma-separated value. */
 const many = <Schema extends z.ZodTypeAny>(schema: Schema, max = 100) =>
@@ -73,6 +74,16 @@ const operationsQuerySchema = z.strictObject({
 const requestersQuerySchema = z.strictObject({
   query: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(20).optional(),
+});
+
+/**
+ * The value result rows of one value job (card J4). The route answers
+ * `<ordinal>:<schemaName>.<fieldName>`, so the cursor schema accepts the cursor that it returned.
+ */
+const attributeRowsQuerySchema = z.strictObject({
+  view: jobAttributeRowViewSchema.optional(),
+  cursor: attributeRowCursorSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
 /** The cancel request carries no revision, so its body is an empty strict object (design section 1). */
@@ -145,10 +156,13 @@ export class JobsController {
   async detail(
     @Req() request: AuthenticatedRequest,
     @Param('displayId') displayId: string,
+    @Query() query: unknown,
   ) {
     const id = jobDisplayIdSchema.parse(displayId);
     const customerId = await this.jobs.customer(request.session);
-    return this.jobs.detail(request.session, customerId, id);
+    // The read validates the page parameters only after it identifies a category job, because
+    // every other kind of job ignores them (card J4, item 6).
+    return this.jobs.detail(request.session, customerId, id, query);
   }
 
   @Get(':displayId/operations')
@@ -168,6 +182,26 @@ export class JobsController {
       input.cursor,
       input.limit,
       input.number,
+    );
+  }
+
+  /** The value result rows of one value job (card J4, UM state 10). */
+  @Get(':displayId/attribute-rows')
+  async attributeRows(
+    @Req() request: AuthenticatedRequest,
+    @Param('displayId') displayId: string,
+    @Query() query: unknown,
+  ) {
+    const input = attributeRowsQuerySchema.parse(query);
+    const id = jobDisplayIdSchema.parse(displayId);
+    const customerId = await this.jobs.customer(request.session);
+    return this.jobs.attributeRows(
+      request.session,
+      customerId,
+      id,
+      input.view ?? 'all',
+      input.cursor,
+      input.limit,
     );
   }
 

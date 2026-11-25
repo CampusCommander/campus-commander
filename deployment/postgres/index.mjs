@@ -126,6 +126,7 @@ export async function loadMigrations() {
       '027-user-attribute-values',
       '028-user-attribute-preview-routes',
       '029-user-attribute-jobs',
+      '030-user-category-job-rows',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),

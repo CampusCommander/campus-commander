@@ -10,7 +10,9 @@ import {
   JOB_ACTION_LABELS,
   jobActionSchema,
   jobActivitySchema,
+  jobAttributeRowsPageSchema,
   jobCancelRefusalSchema,
+  jobCategoryDetailSchema,
   jobCommandStateSchema,
   jobDetailSchema,
   jobDisplayIdSchema,
@@ -153,6 +155,10 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'deprovision-devices',
     'export-devices',
     'validate-device-import',
+    'create-category',
+    'edit-category',
+    'delete-category',
+    'set-attributes',
   ]);
   assert.deepEqual(JOB_ACTION_LABELS, {
     'update-device-annotations': 'Update device annotations',
@@ -165,6 +171,10 @@ test('display IDs and statuses carry the job vocabulary', () => {
     'deprovision-devices': 'Deprovision devices',
     'export-devices': 'Export devices',
     'validate-device-import': 'Validate device import',
+    'create-category': 'Create category',
+    'edit-category': 'Edit category',
+    'delete-category': 'Delete category',
+    'set-attributes': 'Set attributes',
   });
 });
 
@@ -1354,5 +1364,218 @@ test('each detail block belongs to its kind of job', () => {
       waitingDisplayIds: ['STS-001', 'STS-002'],
     }).success,
     true,
+  );
+});
+
+test('a category job summary names its plan action and its scope name', () => {
+  for (const action of [
+    'create-category',
+    'edit-category',
+    'delete-category',
+  ]) {
+    assert.equal(
+      jobSummarySchema.safeParse({
+        ...summary,
+        action,
+        category: { scopeName: 'Student info' },
+      }).success,
+      true,
+      action,
+    );
+  }
+  // A value job reads set-attributes, and its scope counts the eligible users.
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      displayId: 'UAT-002',
+      action: 'set-attributes',
+      entityType: 'user',
+      scope: { kind: 'devices', deviceCount: 18 },
+    }).success,
+    true,
+  );
+  // A device job carries no category key, and an unknown one fails.
+  assert.equal(
+    jobSummarySchema.safeParse({
+      ...summary,
+      category: { scopeName: 'Student info' },
+    }).success,
+    true,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, category: { name: 'x' } }).success,
+    false,
+  );
+  assert.equal(
+    jobSummarySchema.safeParse({ ...summary, category: { scopeName: '' } })
+      .success,
+    false,
+  );
+});
+
+test('the category rows carry the rename, the range, the holders, the properties, and the outcome', () => {
+  const detail = {
+    scopeName: 'Student records',
+    previousName: 'Student info',
+    total: 4,
+    nextCursor: '2',
+    rows: [
+      {
+        change: 'rename',
+        displayName: 'Student records',
+        fieldType: null,
+        range: null,
+        holders: null,
+        previousName: 'Student info',
+        properties: [],
+        outcome: 'succeeded',
+      },
+      {
+        change: 'added',
+        displayName: 'House',
+        fieldType: 'STRING',
+        range: null,
+        holders: null,
+        previousName: null,
+        properties: [],
+        outcome: 'succeeded',
+      },
+      {
+        change: 'changed',
+        displayName: 'Grade',
+        fieldType: 'INT64',
+        range: { minValue: 1, maxValue: 12 },
+        holders: null,
+        previousName: null,
+        properties: ['numericIndexingSpec'],
+        outcome: 'succeeded',
+      },
+      {
+        change: 'removed',
+        displayName: 'Homeroom',
+        fieldType: 'STRING',
+        range: null,
+        holders: 0,
+        previousName: null,
+        properties: [],
+        outcome: 'succeeded',
+      },
+    ],
+  };
+  assert.equal(jobCategoryDetailSchema.safeParse(detail).success, true);
+  // The page carries the logical total and its continuation cursor.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({ ...detail, total: undefined }).success,
+    false,
+  );
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({ ...detail, nextCursor: undefined })
+      .success,
+    false,
+  );
+  // The properties tell the Effect cell what a changed row edits, and an unknown one fails.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[2], properties: ['indexed'] }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[2], properties: ['colour'] }],
+    }).success,
+    false,
+  );
+  // A row without the key still parses, so a fixture written before the key parses.
+  const older = { ...detail.rows[2] };
+  delete older.properties;
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({ ...detail, rows: [older] }).success,
+    true,
+  );
+  // A rename row names the old label and no info type.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[0], fieldType: 'STRING' }],
+    }).success,
+    false,
+  );
+  // A removed attribute carries its holder count, and another row carries none.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[3], holders: null }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [{ ...detail.rows[1], holders: 3 }],
+    }).success,
+    false,
+  );
+  // Only a changed attribute carries a range.
+  assert.equal(
+    jobCategoryDetailSchema.safeParse({
+      ...detail,
+      rows: [
+        {
+          ...detail.rows[1],
+          range: { minValue: 1, maxValue: 12 },
+        },
+      ],
+    }).success,
+    false,
+  );
+});
+
+test('a value job page carries its rows, both totals, and a cursor', () => {
+  const page = {
+    rows: [
+      {
+        operation: 1,
+        userId: 'user-1',
+        userName: 'Alex Rivera',
+        primaryEmail: 'alex@example.com',
+        attribute: 'attr:SCHOOL_INFO.Grade',
+        displayName: 'Grade',
+        currentValue: 5,
+        newValue: 6,
+        outcome: 'succeeded',
+        failureText: null,
+      },
+      {
+        operation: 2,
+        userId: 'user-2',
+        userName: null,
+        primaryEmail: 'sam@example.com',
+        attribute: 'attr:SCHOOL_INFO.Grade',
+        displayName: 'Grade',
+        currentValue: null,
+        newValue: 6,
+        outcome: 'failed',
+        failureText: 'Google could not find this user.',
+      },
+    ],
+    totals: { all: 4, failed: 1 },
+    nextCursor: '2:SCHOOL_INFO.Grade',
+  };
+  assert.equal(jobAttributeRowsPageSchema.safeParse(page).success, true);
+  // The attribute ID needs a schema and a field, and the totals need both counts.
+  assert.equal(
+    jobAttributeRowsPageSchema.safeParse({
+      ...page,
+      rows: [{ ...page.rows[0], attribute: 'Grade' }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    jobAttributeRowsPageSchema.safeParse({ ...page, totals: { all: 4 } })
+      .success,
+    false,
   );
 });

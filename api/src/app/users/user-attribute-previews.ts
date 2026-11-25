@@ -901,6 +901,8 @@ function summaryOf(value: unknown): UserAttributePreview {
 function targetOf(row: Record<string, unknown>) {
   return {
     userId: String(row['userId']),
+    // The review table of UM state 09 shows the user name of the cache (card J4 item 5).
+    userName: row['userName'] == null ? null : String(row['userName']),
     primaryEmail: String(row['primaryEmail']),
     attribute: userAttributeKey(
       String(row['schemaName']),

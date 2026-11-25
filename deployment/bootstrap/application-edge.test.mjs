@@ -257,10 +257,12 @@ test('application routes require Phase 3 and exact methods and paths', async () 
       // and its page. A value job of section 7.2 answers a UAT receipt, so the dialog reads it here.
       ['GET', '/api/jobs/CAT-001', 'api'],
       ['GET', '/api/jobs/CAT-001/operations', 'api'],
+      ['GET', '/api/jobs/CAT-001/attribute-rows', 'api'],
       ['POST', '/api/jobs/CAT-001/cancel', 'api'],
       ['GET', '/jobs/CAT-001', 'frontend'],
       ['GET', '/api/jobs/UAT-001', 'api'],
       ['GET', '/api/jobs/UAT-001/operations', 'api'],
+      ['GET', '/api/jobs/UAT-001/attribute-rows?view=failed&limit=100', 'api'],
       ['POST', '/api/jobs/UAT-001/operations/1/reconcile', 'api'],
       ['POST', '/api/jobs/UAT-001/cancel', 'api'],
       ['GET', '/jobs/UAT-001', 'frontend'],

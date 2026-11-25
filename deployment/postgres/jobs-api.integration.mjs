@@ -1781,6 +1781,418 @@ export async function qualifyJobsApi({ runtime, migrator, issuer }) {
     );
 
     await check(
+      'J4 the value result route pages both views from ordinal zero with stable totals',
+      async () => {
+        await reset();
+        const previewId = randomUUID();
+        await admin(
+          `INSERT INTO cc.user_attribute_previews(preview_id,customer_id,created_by,permission_version,
+            generation,source,selection,selected,eligible,unchanged,conflicts,attribute_changes,
+            prepared_at,expires_at)
+           VALUES($1,$2,$3,1,$4,'selection','{"grid":"users","tab":"custom"}'::jsonb,2,2,0,0,4,
+             clock_timestamp(),clock_timestamp()+interval '15 minutes')`,
+          [previewId, customer, auditor, generation],
+        );
+        const valueUsers = ['j4-value-a', 'j4-value-b'];
+        for (const [ordinal, userId] of valueUsers.entries()) {
+          await admin(
+            `INSERT INTO cc.users(customer_id,user_id,primary_email,org_unit_path,suspended,archived,
+              two_step_enrolled,custom_schemas,last_entity_sync,full_name)
+             VALUES($1,$2,$3,'/Students',false,false,false,'{}'::jsonb,
+               clock_timestamp()-interval '1 hour',$4)
+             ON CONFLICT(customer_id,user_id) DO UPDATE SET full_name=EXCLUDED.full_name,removed_at=NULL`,
+            [
+              customer,
+              userId,
+              `${userId}@example.org`,
+              ordinal === 0 ? 'Ada Value' : 'Sam Value',
+            ],
+          );
+          await admin(
+            `INSERT INTO cc.user_attribute_preview_targets(preview_id,ordinal,user_id,primary_email,
+              disposition,observed_at,outcome,failure,google_reason)
+             VALUES($1,$2,$3,$4,'eligible',clock_timestamp(),$5,$6,$7)`,
+            [
+              previewId,
+              ordinal,
+              userId,
+              `${userId}@example.org`,
+              ordinal === 1 ? 'failed' : 'succeeded',
+              ordinal === 1 ? 'not-found' : null,
+              ordinal === 1 ? 'notFound' : null,
+            ],
+          );
+          for (const [fieldName, current, requested] of [
+            ['Grade', 5, 6],
+            ['Homeroom', 'B11', 'B12'],
+          ])
+            await admin(
+              `INSERT INTO cc.user_attribute_target_values(preview_id,ordinal,schema_name,field_name,
+                current_value,requested_value,disposition)
+               VALUES($1,$2,'ReviewInfo',$3,$4::jsonb,$5::jsonb,'eligible')`,
+              [
+                previewId,
+                ordinal,
+                fieldName,
+                JSON.stringify(current),
+                JSON.stringify(requested),
+              ],
+            );
+        }
+        const jobId = randomUUID();
+        const displayId = (
+          await adminRow(
+            `SELECT cc.job_display_id('UAT',nextval('cc.job_number_uat')) AS display_id`,
+          )
+        ).display_id;
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,entity_type,status,
+            requested_by,generation,target_count,correlation_id,succeeded,failed,finished_at)
+           VALUES($1,$2,$3,'user-attribute-update','devices','user','completed',$4,$5,2,$6,1,1,
+             clock_timestamp())`,
+          [jobId, displayId, customer, auditor, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.user_attribute_update_jobs(job_id,preview_id,confirmed_by,
+            confirmer_permission_version) VALUES($1,$2,$3,1)`,
+          [jobId, previewId, auditor],
+        );
+
+        const routes = await startJobRoutes();
+        try {
+          // The All view follows its own cursor from the first page to the last. The first two
+          // cursors end inside the first user's ordinal zero, and every page repeats both totals.
+          const seen = [];
+          const cursors = [];
+          let path = `/api/jobs/${displayId}/attribute-rows?limit=1`;
+          for (let page = 0; page < 5; page += 1) {
+            const answer = await routes.get(path);
+            const payload = await answer.text();
+            assert.equal(answer.status, 200, payload);
+            const body = JSON.parse(payload);
+            assert.deepEqual(body.totals, { all: 4, failed: 2 }, path);
+            for (const row of body.rows)
+              seen.push([
+                row.operation,
+                row.userId,
+                row.attribute,
+                row.outcome,
+                row.failureText,
+              ]);
+            if (body.nextCursor === null) break;
+            cursors.push(body.nextCursor);
+            path = `/api/jobs/${displayId}/attribute-rows?limit=1&cursor=${encodeURIComponent(body.nextCursor)}`;
+          }
+          assert.deepEqual(seen, [
+            [1, 'j4-value-a', 'attr:ReviewInfo.Grade', 'succeeded', null],
+            [1, 'j4-value-a', 'attr:ReviewInfo.Homeroom', 'succeeded', null],
+            [
+              2,
+              'j4-value-b',
+              'attr:ReviewInfo.Grade',
+              'failed',
+              'Google could not find this user.',
+            ],
+            [
+              2,
+              'j4-value-b',
+              'attr:ReviewInfo.Homeroom',
+              'failed',
+              'Google could not find this user.',
+            ],
+          ]);
+          assert.deepEqual(cursors, [
+            '0:ReviewInfo.Grade',
+            '0:ReviewInfo.Homeroom',
+            '1:ReviewInfo.Grade',
+          ]);
+
+          // The Failed view keeps the same totals and pages its two rows.
+          const failedSeen = [];
+          let failedPath = `/api/jobs/${displayId}/attribute-rows?view=failed&limit=1`;
+          for (let page = 0; page < 3; page += 1) {
+            const answer = await routes.get(failedPath);
+            const payload = await answer.text();
+            assert.equal(answer.status, 200, payload);
+            const body = JSON.parse(payload);
+            assert.deepEqual(body.totals, { all: 4, failed: 2 });
+            failedSeen.push(
+              ...body.rows.map((row) => [
+                row.userId,
+                row.attribute,
+                row.outcome,
+              ]),
+            );
+            if (body.nextCursor === null) break;
+            failedPath = `/api/jobs/${displayId}/attribute-rows?view=failed&limit=1&cursor=${encodeURIComponent(body.nextCursor)}`;
+          }
+          assert.deepEqual(failedSeen, [
+            ['j4-value-b', 'attr:ReviewInfo.Grade', 'failed'],
+            ['j4-value-b', 'attr:ReviewInfo.Homeroom', 'failed'],
+          ]);
+
+          // An ordinal-zero cursor is a valid continuation, not an operation number.
+          const zero = await routes.get(
+            `/api/jobs/${displayId}/attribute-rows?limit=1&cursor=0%3AReviewInfo.Grade`,
+          );
+          const zeroPayload = await zero.text();
+          assert.equal(zero.status, 200, zeroPayload);
+          assert.deepEqual(
+            JSON.parse(zeroPayload).rows.map((row) => row.attribute),
+            ['attr:ReviewInfo.Homeroom'],
+          );
+        } finally {
+          await routes.close();
+        }
+      },
+    );
+
+    await check(
+      'J4 a maximum category edit with a rename pages through the detail route',
+      async () => {
+        await reset();
+        const changes = Array.from({ length: 200 }, (_, index) =>
+          index < 100
+            ? {
+                change: 'removed',
+                fieldId: `fld-j4-bulk-${index}`,
+                fieldName: `Field${index}`,
+                displayName: `Field ${index}`,
+                properties: [],
+                holders: 0,
+              }
+            : {
+                change: 'added',
+                fieldName: `Field${index}`,
+                displayName: `Field ${index}`,
+                properties: [],
+              },
+        );
+        const planId = randomUUID();
+        await admin(
+          `INSERT INTO cc.user_category_plans(plan_id,customer_id,created_by,permission_version,
+            generation,action,schema_id,schema_name,base_etag,body,changes,limits,phrase,digest,
+            expires_at,previous_display_name,change_field_types)
+           VALUES($1,$2,$3,1,$4,'edit-category','schema-j4-bulk','J4Bulk','etag-j4-bulk',
+             $5::jsonb,$6::jsonb,'{}','Field0',$7,clock_timestamp()+interval '15 minutes',
+             'J4 bulk old',$8::jsonb)`,
+          [
+            planId,
+            customer,
+            auditor,
+            generation,
+            JSON.stringify({
+              schemaName: 'J4Bulk',
+              displayName: 'J4 bulk new',
+              fields: [],
+            }),
+            JSON.stringify(changes),
+            'd'.repeat(64),
+            JSON.stringify(
+              changes.map((change) => ({
+                fieldName: change.fieldName,
+                fieldType: 'STRING',
+              })),
+            ),
+          ],
+        );
+        const jobId = randomUUID();
+        const displayId = (
+          await adminRow(
+            `SELECT cc.job_display_id('CAT',nextval('cc.job_number_cat')) AS display_id`,
+          )
+        ).display_id;
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,entity_type,status,
+            requested_by,generation,target_count,correlation_id,succeeded,finished_at)
+           VALUES($1,$2,$3,'user-schema-change','devices','user','completed',$4,$5,1,$6,1,
+             clock_timestamp())`,
+          [jobId, displayId, customer, auditor, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.user_schema_change_jobs(job_id,plan_id,confirmed_by,
+            confirmer_permission_version) VALUES($1,$2,$3,1)`,
+          [jobId, planId, auditor],
+        );
+
+        const routes = await startJobRoutes();
+        try {
+          const first = await routes.get(`/api/jobs/${displayId}`);
+          const firstPayload = await first.text();
+          assert.equal(first.status, 200, firstPayload);
+          const one = JSON.parse(firstPayload);
+          assert.equal(one.action, 'edit-category');
+          assert.deepEqual(one.category.scopeName, 'J4 bulk new');
+          assert.equal(one.category.previousName, 'J4 bulk old');
+          assert.equal(one.category.total, 201);
+          assert.equal(one.category.rows.length, 100);
+          assert.equal(one.category.rows[0].change, 'rename');
+          assert.equal(one.category.nextCursor, '99');
+
+          const big = await routes.get(`/api/jobs/${displayId}?limit=200`);
+          const bigPayload = await big.text();
+          assert.equal(big.status, 200, bigPayload);
+          const two = JSON.parse(bigPayload);
+          assert.equal(two.category.rows.length, 200);
+          assert.equal(two.category.total, 201);
+          assert.equal(two.category.nextCursor, '199');
+
+          const last = await routes.get(
+            `/api/jobs/${displayId}?limit=200&cursor=199`,
+          );
+          const lastPayload = await last.text();
+          assert.equal(last.status, 200, lastPayload);
+          const three = JSON.parse(lastPayload);
+          assert.equal(three.category.rows.length, 1);
+          assert.equal(three.category.rows[0].displayName, 'Field 199');
+          assert.equal(three.category.nextCursor, null);
+
+          const filtered = await routes.get(
+            '/api/jobs?action=edit-category&limit=50',
+          );
+          const filteredPayload = await filtered.text();
+          assert.equal(filtered.status, 200, filteredPayload);
+          assert.ok(
+            JSON.parse(filteredPayload).jobs.some(
+              (job) => job.displayId === displayId,
+            ),
+          );
+        } finally {
+          await routes.close();
+        }
+      },
+    );
+
+    await check(
+      'J4 a stored same-name replacement reads each info type in the detail',
+      async () => {
+        await reset();
+        const planManager = await principal(`j4-schema-${randomUUID()}`, [
+          ['users:schema-manage', district()],
+        ]);
+        const schemaId = `j4-swap-${randomUUID()}`;
+        const schemaName = `J4Swap${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+        await admin(
+          `INSERT INTO cc.user_attribute_categories(customer_id,schema_id,schema_name,display_name,
+            etag,fields,read_at)
+           VALUES($1,$2,$3,'J4 swap','etag-j4-swap',$4,clock_timestamp())`,
+          [
+            customer,
+            schemaId,
+            schemaName,
+            JSON.stringify([
+              {
+                fieldId: 'fld-j4-swap',
+                fieldName: 'Example',
+                displayName: 'Example',
+                fieldType: 'STRING',
+                multiValued: false,
+                indexed: true,
+                readAccessType: 'ADMINS_AND_SELF',
+                numericIndexingSpec: null,
+              },
+            ]),
+          ],
+        );
+        // The real plan store computes the types, so the read proves the stored shape.
+        const [planned] = await statement(
+          `SELECT cc.create_user_category_plan($1,1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) AS result`,
+          [
+            planManager,
+            customer,
+            generation,
+            'edit-category',
+            schemaId,
+            'etag-j4-swap',
+            schemaName,
+            'J4 swap',
+            JSON.stringify({
+              schemaName,
+              displayName: 'J4 swap',
+              fields: [
+                {
+                  fieldId: null,
+                  fieldName: 'Example',
+                  displayName: 'Example',
+                  fieldType: 'BOOL',
+                  multiValued: false,
+                  indexed: true,
+                  readAccessType: 'ADMINS_AND_SELF',
+                  numericIndexingSpec: null,
+                },
+              ],
+            }),
+            JSON.stringify([
+              {
+                change: 'removed',
+                fieldId: 'fld-j4-swap',
+                fieldName: 'Example',
+                displayName: 'Example',
+                properties: [],
+                holders: 2,
+              },
+              {
+                change: 'added',
+                fieldName: 'Example',
+                displayName: 'Example',
+                properties: [],
+                holders: null,
+              },
+            ]),
+            'Example',
+            'e'.repeat(64),
+            15,
+          ],
+        );
+        const plan = planned.result;
+        assert.equal(plan.outcome, 'created', JSON.stringify(plan));
+        const jobId = randomUUID();
+        const displayId = (
+          await adminRow(
+            `SELECT cc.job_display_id('CAT',nextval('cc.job_number_cat')) AS display_id`,
+          )
+        ).display_id;
+        await admin(
+          `INSERT INTO cc.jobs(job_id,display_id,customer_id,kind,scope_kind,entity_type,status,
+            requested_by,generation,target_count,correlation_id,succeeded,finished_at)
+           VALUES($1,$2,$3,'user-schema-change','devices','user','completed',$4,$5,1,$6,1,
+             clock_timestamp())`,
+          [jobId, displayId, customer, auditor, generation, randomUUID()],
+        );
+        await admin(
+          `INSERT INTO cc.user_schema_change_jobs(job_id,plan_id,confirmed_by,
+            confirmer_permission_version) VALUES($1,$2,$3,1)`,
+          [jobId, plan.plan.planId, auditor],
+        );
+
+        const routes = await startJobRoutes();
+        try {
+          const answer = await routes.get(`/api/jobs/${displayId}`);
+          const payload = await answer.text();
+          assert.equal(answer.status, 200, payload);
+          const detail = JSON.parse(payload);
+          assert.deepEqual(
+            detail.category.rows.map((row) => [
+              row.change,
+              row.fieldType,
+              row.holders,
+            ]),
+            [
+              ['removed', 'STRING', 2],
+              ['added', 'BOOL', null],
+            ],
+          );
+        } finally {
+          await routes.close();
+        }
+        await admin(
+          'DELETE FROM cc.user_attribute_categories WHERE customer_id=$1 AND schema_id=$2',
+          [customer, schemaId],
+        );
+      },
+    );
+
+    await check(
       'the attention page selects failed, unknown, and expired operations in number order',
       async () => {
         await reset();
