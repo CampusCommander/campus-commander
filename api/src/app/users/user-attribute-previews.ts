@@ -18,7 +18,6 @@ import {
   userAttributePreviewSchema,
   userAttributeRowValueSchema,
   userAttributeTargetsPageSchema,
-  USER_ATTRIBUTE_EDITS_LIMIT,
   USER_ATTRIBUTE_TEXT_MAX,
   USER_ATTRIBUTE_VALUES_LIMIT,
   type SessionResponse,
@@ -51,40 +50,15 @@ export const USER_ATTRIBUTE_TARGETS_LIMIT = 1000;
 /** The edit-list read carries one deadline over every Google call (B section 8.4). */
 export const USER_ATTRIBUTE_READ_DEADLINE_MILLISECONDS = 25_000;
 /**
- * B section 3 bounds a list by its total text: 150 values of 100 characters or 50 values of 500.
- * One list therefore holds at most 25,000 code points, in at most 150 entries.
+ * The body cap of the preview POST, in wire bytes. One `JSON.parse` holds at most
+ * `MAX_STRING_LENGTH` UTF-16 units of the body text. A UTF-8 body yields at most one unit per
+ * byte, and no encoding of one unit takes more than three bytes, so a body above three times that
+ * ceiling cannot fit one parse. The cap is therefore the exact byte boundary of one parse, and
+ * it admits every supported body that one parse holds, whatever JSON escaping it carries. The
+ * parser also refuses a body whose decoded text passes the unit ceiling (request-body.ts).
  */
-const USER_ATTRIBUTE_LIST_TEXT_LIMIT = 25_000;
-/** One code point is at most two UTF-16 units, and JSON escapes one unit into at most six bytes. */
-const USER_ATTRIBUTE_CODE_POINT_UNITS = 2;
-const USER_ATTRIBUTE_JSON_BYTES_PER_UNIT = 6;
-/**
- * The largest supported body in wire bytes. An edit list holds at most 2,500 edits on 500 users
- * (E17), each with a requested list and a baseline list. One list holds 25,000 code points, which
- * are at most 50,000 UTF-16 units and at most six JSON bytes per unit. Each of its at most 150
- * entries carries its keys, quotes, and comma, and each edit carries its own keys. The bound is
- * therefore 2,500 x (two lists of (25,000 x 2 x 6 + 150 x 16) bytes + 1,024 bytes) plus the
- * envelope.
- */
-export const USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT =
-  USER_ATTRIBUTE_EDITS_LIMIT *
-    (2 *
-      (USER_ATTRIBUTE_LIST_TEXT_LIMIT *
-        USER_ATTRIBUTE_CODE_POINT_UNITS *
-        USER_ATTRIBUTE_JSON_BYTES_PER_UNIT +
-        USER_ATTRIBUTE_VALUES_LIMIT * 16) +
-      1024) +
-  4096;
-/**
- * The body cap of the preview POST. One `JSON.parse` holds at most `MAX_STRING_LENGTH` UTF-16
- * units, and a UTF-8 body never needs more units than bytes, so the cap stops at that parse
- * ceiling. The supported shape bound is above it, so every admitted body parses and no supported
- * body that one parse holds is refused.
- */
-export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT = Math.min(
-  USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT,
-  bufferConstants.MAX_STRING_LENGTH,
-);
+export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT =
+  3 * bufferConstants.MAX_STRING_LENGTH;
 /** One stored target batch stays below this many characters of JSON text, except that one target
  * never splits and can carry more. */
 export const USER_ATTRIBUTE_STORE_BATCH_BYTES = 256 * 1024;

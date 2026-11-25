@@ -82,23 +82,33 @@ const userRead =
   /^\/api\/users\/(?:sync|org-units|attribute-categories|attribute-categories\/plans\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\/targets)?|(?!(?:attribute-previews)$)[A-Za-z0-9_-]{1,128})$/;
 const userWrite =
   /^\/api\/users\/(?:sync|query|by-ids|freshness|selection(?:\/(?:ops|refresh|resolve))?|domain\/refresh|attribute-categories\/refresh|attribute-categories\/plans(?:\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)?|attribute-previews|attribute-previews\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/confirm)$/;
-// A selection preview carries up to 100 changes and an edit list carries up to 2,500 edits on 500
-// users (E17). An edit carries a requested list and a baseline list, and B section 3 bounds one
-// list by its text: 25,000 code points. The preview POST alone takes a cap from that shape. The
-// API computes the same bound in user-attribute-previews.ts.
+// A selection preview carries up to 100 changes, and an edit list carries up to 2,500 edits on 500
+// users (E17), each with a requested list and a baseline list (B section 3). The preview POST
+// alone takes its own cap. The API computes the same bound in user-attribute-previews.ts.
 const userPreviewWrite = /^\/api\/users\/attribute-previews$/;
 /**
- * The cap of the value preview POST: 2,500 edits (E17), each with a requested list and a baseline
- * list of 25,000 code points in at most 150 entries (B section 3). A code point is at most two
- * UTF-16 units, and JSON escapes one unit into at most six bytes. The shape bound therefore
- * exceeds one Node string, so the cap is the parse ceiling that the API also enforces.
+ * The cap of the value preview POST, in wire bytes. One `JSON.parse` holds at most
+ * `MAX_STRING_LENGTH` UTF-16 units of the body text. A UTF-8 body yields at most one unit per
+ * byte, and no encoding of one unit takes more than three bytes, so the cap is the exact byte
+ * boundary of one parse. The edge also counts the decoded text under the same ceiling, as the
+ * API parser does.
  */
-const userPreviewShapeLimit =
-  2500 * (2 * (25000 * 2 * 6 + 150 * 16) + 1024) + 4096;
-export const userPreviewBodyLimit = Math.min(
-  userPreviewShapeLimit,
-  bufferConstants.MAX_STRING_LENGTH,
-);
+const userPreviewTextLimit = bufferConstants.MAX_STRING_LENGTH;
+export const userPreviewBodyLimit = 3 * userPreviewTextLimit;
+/** The chunk of one streaming count of the decoded text. */
+const previewTextChunk = 4 * 1024 * 1024;
+/** The UTF-16 units of the JSON text that one body decodes to, streamed in bounded chunks. */
+function previewTextUnits(body) {
+  const decoder = new TextDecoder('utf-8');
+  let units = 0;
+  for (let offset = 0; offset < body.length; offset += previewTextChunk) {
+    units += decoder.decode(body.subarray(offset, offset + previewTextChunk), {
+      stream: true,
+    }).length;
+    if (units > userPreviewTextLimit) return units;
+  }
+  return units + decoder.decode().length;
+}
 const devicePage = /^\/devices\/(?!update$)[A-Za-z0-9_-]{1,128}$/;
 const userPage = /^\/users\/[A-Za-z0-9_-]{1,128}$/;
 const deviceWrite =
@@ -329,6 +339,15 @@ export async function proxyApplication(
       return finish(response, 400, 'The request body is invalid.\n');
     }
   }
+  // The decoded half of admission: a body above the text ceiling would not survive one
+  // JSON.parse, so the edge refuses it with the same 413 as the byte cap.
+  if (
+    body &&
+    userPreviewWrite.test(pathname) &&
+    body.length > userPreviewTextLimit &&
+    previewTextUnits(body) > userPreviewTextLimit
+  )
+    return finish(response, 413, 'The request exceeds the size limit.\n');
   // The request deadline answered this request and closed its stream. Send nothing upstream.
   if (response.headersSent) return;
   const target = upstreams[api ? 'api' : 'frontend'];
