@@ -50,8 +50,10 @@ const {
   selectionPreviewTargets,
   wireValue,
   USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
+  USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT,
 } = await import('./user-attribute-previews.ts');
 const { createHash } = await import('node:crypto');
+const { constants: bufferConstants } = await import('node:buffer');
 
 const at = '2026-11-24T18:00:00.000Z';
 const field = (overrides) => ({
@@ -605,17 +607,22 @@ test('a computed list keeps both documented list shapes and refuses only the cou
 
 test('the preview body cap follows the supported edit-list shape', () => {
   // B section 3 bounds one list by its text: 25,000 code points (50 values of 500 characters or
-  // 150 of 100). E17: 2,500 edits, each with a requested list and a baseline. A code point takes
-  // four UTF-8 bytes, and each of the at most 150 entries carries its JSON keys, quotes, and comma.
+  // 150 of 100). A code point is at most two UTF-16 units, and JSON escapes one unit into at most
+  // six bytes. E17: 2,500 edits, each with a requested list and a baseline.
+  assert.equal(
+    USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT,
+    2500 * (2 * (25_000 * 2 * 6 + 150 * 16) + 1_024) + 4_096,
+  );
+  assert.equal(USER_ATTRIBUTE_PREVIEW_SHAPE_LIMIT, 1_514_564_096);
+  // One JSON.parse holds MAX_STRING_LENGTH UTF-16 units, and a UTF-8 body never needs more units
+  // than bytes, so the cap stops at that parse ceiling. It admits the review reproduction of
+  // 399,009,461 bytes and the full 2,500-edit shape.
   assert.equal(
     USER_ATTRIBUTE_PREVIEW_BODY_LIMIT,
-    2500 * (2 * (25_000 * 4 + 150 * 16) + 1_024) + 4_096,
+    bufferConstants.MAX_STRING_LENGTH,
   );
-  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 514_564_096);
-  // The review reproduction holds 2,000 edits of 50 x 500 supplementary code points per list and
-  // measured 399,009,461 bytes. The cap admits it and stays under one Node string.
+  assert.equal(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT, 536_870_888);
   assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT > 399_009_461);
-  assert.ok(USER_ATTRIBUTE_PREVIEW_BODY_LIMIT < 536_870_888);
 });
 
 test('the digest matches the one-document form and never builds that document', () => {
