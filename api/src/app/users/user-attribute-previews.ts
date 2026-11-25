@@ -59,7 +59,8 @@ export const USER_ATTRIBUTE_PREVIEW_BODY_LIMIT =
   USER_ATTRIBUTE_EDITS_LIMIT *
     (2 * USER_ATTRIBUTE_VALUES_LIMIT * (USER_ATTRIBUTE_TEXT_MAX + 16) + 1024) +
   4096;
-/** One stored target batch stays below this many characters of JSON text. */
+/** One stored target batch stays below this many characters of JSON text, except that one target
+ * never splits and can carry more. */
 export const USER_ATTRIBUTE_STORE_BATCH_BYTES = 256 * 1024;
 /** One stored target batch carries at most 1,000 targets. */
 export const USER_ATTRIBUTE_STORE_BATCH_TARGETS = 1000;
