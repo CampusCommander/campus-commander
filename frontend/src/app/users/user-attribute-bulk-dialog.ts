@@ -7,10 +7,12 @@ import {
   OnInit,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   output,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
@@ -33,6 +35,7 @@ import type {
   JobAttributeRowView,
   JobAttributeRowsPage,
   JobDetail,
+  JobOutcome,
   UserAttributeCategory,
   UserAttributeChange,
   UserAttributeChangeMode,
@@ -71,7 +74,14 @@ import {
   attributeWireValue,
   type AttributeDraft,
 } from './user-attribute-value-rules';
-import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import {
+  UserAttributeEditFlow,
+  isTerminalJobStatus,
+} from './user-attribute-edit-flow';
+import {
+  UserAttributeConfirmationStore,
+  type PendingAttributeConfirmation,
+} from './user-attribute-confirmation';
 import { UserAttributeHelp } from './user-attribute-help';
 import { NO_FAILED_CHANGES } from './user-category-messages';
 import {
@@ -131,6 +141,22 @@ type ReviewView = 'eligible' | 'unchanged';
 type ResultView = JobAttributeRowView;
 
 /**
+ * The outcome buckets of a value job that the results equation names after Succeeded and
+ * Failed. Each count is a user operation (B section 7.2), never an attribute row.
+ */
+const RESULT_BUCKETS: readonly {
+  field: 'unknown' | 'skipped' | 'expired' | 'cancelled' | 'pending';
+  outcome: JobOutcome;
+  tone: string;
+}[] = [
+  { field: 'unknown', outcome: 'unknown', tone: 'warning' },
+  { field: 'skipped', outcome: 'skipped', tone: 'neutral' },
+  { field: 'expired', outcome: 'expired', tone: 'warning' },
+  { field: 'cancelled', outcome: 'cancelled', tone: 'neutral' },
+  { field: 'pending', outcome: 'pending', tone: 'neutral' },
+];
+
+/**
  * The Set attributes dialog of the Users Bulk Actions (design cards K23, K24, J4, and
  * K27; UM states 08 to 11). It collects one attribute change, shows the server preview
  * one page at a time, then confirms the job and shows its result rows. The selection
@@ -187,10 +213,17 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   private readonly flow = inject(UserAttributeBulkFlow);
   private readonly editFlow = inject(UserAttributeEditFlow);
+  private readonly confirmations = inject(UserAttributeConfirmationStore);
   private readonly injector = inject(Injector);
 
   private readonly dialogTitle =
     viewChild<ElementRef<HTMLElement>>('dialogTitle');
+  private readonly preparingStatus =
+    viewChild<ElementRef<HTMLElement>>('preparingStatus');
+  private readonly reviewTitle =
+    viewChild<ElementRef<HTMLElement>>('reviewTitleAnchor');
+  private readonly confirmingStatus =
+    viewChild<ElementRef<HTMLElement>>('confirmingStatus');
 
   protected readonly step = signal<BulkStep>('setup');
   protected readonly helpOpen = signal(false);
@@ -344,34 +377,41 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   protected readonly canReviewNext = computed(() => !!this.reviewNext());
   protected readonly reviewTabs = computed(() => {
     const preview = this.preview();
+    // The rows are user-attribute rows. Proposed counts the eligible rows that the
+    // confirmation writes; No change needed counts the server's user count.
     return [
       {
         view: 'eligible' as const,
         label: ATTRIBUTE_STATUS_READY,
-        count: preview?.eligible ?? 0,
+        count: preview?.attributeChanges ?? 0,
+        unit: 'changes',
       },
       {
         view: 'unchanged' as const,
         label: ATTRIBUTE_STATUS_NO_CHANGE,
         count: preview?.unchanged ?? 0,
+        unit: 'users',
       },
     ];
   });
-  protected readonly reviewNoun = computed(() =>
-    this.reviewView() === 'eligible' ? 'proposed changes' : 'changes',
-  );
-  protected readonly reviewPagerText = computed(() => {
+  /** The server row total of the current review view, for the pager. */
+  protected readonly reviewTotal = computed(() => {
     const preview = this.preview();
-    const total =
-      this.reviewView() === 'eligible'
-        ? (preview?.eligible ?? 0)
-        : (preview?.unchanged ?? 0);
-    return bulkPagerText(
-      this.reviewPage() * BULK_PAGE_SIZE + 1,
-      this.reviewRows().length,
-      total,
-      this.reviewNoun(),
-    );
+    if (!preview) return 0;
+    return this.reviewView() === 'eligible'
+      ? preview.attributeChanges
+      : preview.unchanged;
+  });
+  protected readonly reviewPagerText = computed(() => {
+    const total = this.reviewTotal();
+    const start = this.reviewPage() * BULK_PAGE_SIZE + 1;
+    const count = this.reviewRows().length;
+    if (this.reviewView() === 'eligible')
+      return bulkPagerText(start, count, total, 'proposed changes');
+    // The no-change view lists users, and an edit-list preview can hold several rows for
+    // one user. Name both units instead of counting rows as changes.
+    if (count === 0) return `0 rows · ${total} users need no change`;
+    return `${start}–${start + count - 1} rows · ${total} users need no change`;
   });
 
   /** The review subtitle and change line (state 09). */
@@ -419,6 +459,9 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   protected readonly resultError = signal<string | null>(null);
   protected readonly resultNext = signal<string | null>(null);
   protected readonly jobError = signal<string | null>(null);
+  /** The preview's eligible row and user counts, so the results equation names its unit. */
+  protected readonly resultRowCount = signal<number | null>(null);
+  protected readonly resultUserCount = signal<number | null>(null);
   private readonly resultStack = signal<readonly (string | null)[]>([null]);
 
   protected readonly resultPage = computed(() => this.resultStack().length - 1);
@@ -454,10 +497,10 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   protected readonly resultCounts = computed(() => {
     const progress = this.job()?.progress;
-    return [
+    const terms = [
       {
-        label: BULK_CHANGES_TERM,
-        count: progress?.total ?? this.resultTotals().all,
+        label: this.resultCountTerm().label,
+        count: this.resultCountTerm().count,
         tone: '',
       },
       {
@@ -470,16 +513,44 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
         count: progress?.failed ?? 0,
         tone: 'error',
       },
-      ...(progress?.unknown
-        ? [
-            {
-              label: OUTCOME_LABELS.unknown,
-              count: progress.unknown,
-              tone: 'warning',
-            },
-          ]
-        : []),
     ];
+    // Every terminal bucket keeps its own term. Skipped and Cancelled work must never
+    // read as Succeeded (R1-D).
+    for (const bucket of RESULT_BUCKETS) {
+      const count = progress?.[bucket.field] ?? 0;
+      if (count > 0)
+        terms.push({
+          label: OUTCOME_LABELS[bucket.outcome],
+          count,
+          tone: bucket.tone,
+        });
+    }
+    return terms;
+  });
+
+  /**
+   * The first term of the results equation. The job counts one operation for each user
+   * (B section 7.2), while the table counts user-attribute rows (card J4). Name the unit
+   * that the count actually uses, so a prepared edit-list job never reads `1 changes`
+   * beside a two-row table (R1-C).
+   */
+  protected readonly resultCountTerm = computed<{
+    label: string;
+    count: number;
+  }>(() => {
+    const progress = this.job()?.progress;
+    const rows = this.resultRowCount();
+    const users = this.resultUserCount();
+    const oneRowPerUser = rows === null || users === null || rows === users;
+    return oneRowPerUser
+      ? {
+          label: BULK_CHANGES_TERM,
+          count: progress?.total ?? this.resultTotals().all,
+        }
+      : {
+          label: BULK_USERS_TERM,
+          count: progress?.total ?? users,
+        };
   });
 
   protected readonly statusLabel = computed(() => {
@@ -524,14 +595,43 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   });
 
   private done = false;
+  /** The confirmation entry of this dialog, stable across dismissal and reopening. */
+  private confirmationScope = '';
+  /** This dialog restored a confirmation that an earlier dialog left behind. */
+  private restored = false;
+  /** The accepted receipt that this dialog already observes, so one job has one reader. */
+  private resumedDisplayId: string | null = null;
+  /** The receipt that this dialog already reported, so one acceptance reports once. */
+  private reportedDisplayId: string | null = null;
+  /** The owning request of each paged reader; a stale answer publishes nothing (R1-A). */
+  private reviewRequest = 0;
+  private resultRequest = 0;
+
+  constructor() {
+    // A retained confirmation changes phase while this dialog is open: it may lose its
+    // answer, hand over an accepted receipt, or refuse. Only a restored dialog applies it.
+    effect(() => {
+      const entry = this.confirmations.pending(this.confirmationScope);
+      untracked(() => {
+        if (this.restored) this.applyEntry(entry);
+      });
+    });
+  }
 
   ngOnInit(): void {
     const prepared = this.prepared();
-    if (!prepared) return;
-    this.preview.set(prepared);
-    this.step.set('review');
-    this.resetReviewStack();
-    void this.loadReviewPage('eligible', null);
+    // The scope outlives the dialog, so a reopened dialog continues the one save. A
+    // selection key is stable for the browser tab; a prepared preview names its own id.
+    this.confirmationScope = prepared
+      ? `bulk-preview:${prepared.previewId}`
+      : `bulk-selection:${this.selection().gridId}:${this.selection().tabId}`;
+    const entry = this.confirmations.pending(this.confirmationScope);
+    if (entry) {
+      this.restored = true;
+      this.applyEntry(entry);
+      return;
+    }
+    if (prepared) this.showPrepared(prepared);
   }
 
   ngOnDestroy(): void {
@@ -542,6 +642,117 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     if (this.done) return;
     this.done = true;
     this.closed.emit();
+  }
+
+  /** Bring the step in line with a confirmation that outlives the dialog (R1-B). */
+  private applyEntry(entry: PendingAttributeConfirmation | null): void {
+    if (!entry) return;
+    // Ignore this dialog's own write of the same phase; the click handler already
+    // moved the view and started the one reader.
+    if (entry.phase === 'confirming' && this.confirming()) return;
+    if (entry.phase === 'accepted' && this.displayId() === entry.displayId)
+      return;
+    if (
+      entry.phase === 'uncertain' &&
+      !this.confirming() &&
+      this.error() === `${entry.message} ${ATTRIBUTE_CONFIRM_UNCERTAIN_HINT}`
+    )
+      return;
+    if (entry.phase === 'refused' && this.step() === 'setup') return;
+    this.preview.set(entry.preview);
+    this.resultRowCount.set(entry.preview.attributeChanges);
+    this.resultUserCount.set(entry.preview.eligible);
+    if (entry.phase === 'confirming') {
+      this.confirming.set(true);
+      this.step.set('review');
+      this.reviewView.set('eligible');
+      this.resetReviewStack();
+      this.focusReviewTitle();
+      void this.loadReviewPage('eligible', null);
+      return;
+    }
+    if (entry.phase === 'uncertain') {
+      // The save may have created the job. Keep the preview and replay the same
+      // confirmation; Back cannot release it (R1-B).
+      this.confirming.set(false);
+      this.step.set('review');
+      this.reviewView.set('eligible');
+      this.error.set(`${entry.message} ${ATTRIBUTE_CONFIRM_UNCERTAIN_HINT}`);
+      this.resetReviewStack();
+      this.focusStep();
+      void this.loadReviewPage('eligible', null);
+      return;
+    }
+    if (entry.phase === 'refused') {
+      // A definite refusal released the identity, so this dialog may edit again.
+      this.restored = false;
+      this.confirmations.resolve(entry.preview.previewId);
+      this.preview.set(null);
+      this.step.set('setup');
+      this.error.set(entry.message);
+      this.resetReviewStack();
+      this.focusStep();
+      return;
+    }
+    // The receipt survived the dialog. Continue its job instead of a blank setup.
+    this.confirming.set(false);
+    this.displayId.set(entry.displayId);
+    this.receiptStatus.set('accepted');
+    this.step.set('progress');
+    if (entry.displayId) this.reportAccepted(entry.displayId);
+    this.focusStep();
+    if (entry.displayId && this.resumedDisplayId !== entry.displayId) {
+      this.resumedDisplayId = entry.displayId;
+      void this.resumeAccepted(entry);
+    }
+  }
+
+  /** Observe the accepted receipt of a dismissed dialog (R1-B). */
+  private async resumeAccepted(
+    entry: PendingAttributeConfirmation,
+  ): Promise<void> {
+    const displayId = entry.displayId;
+    if (!displayId) return;
+    const settled = await this.editFlow.waitForJob(
+      displayId,
+      120,
+      1000,
+      () => this.done,
+    );
+    if (this.done) return;
+    if (!settled.ok) {
+      this.jobError.set(settled.message);
+      this.step.set('unreadable');
+      this.focusStep();
+      return;
+    }
+    // The receipt keeps its recovery owner until its job answers (UI-07).
+    if (isTerminalJobStatus(settled.value.status))
+      this.confirmations.resolve(entry.preview.previewId);
+    this.job.set(settled.value);
+    this.step.set('result');
+    this.resultView.set('all');
+    this.resetResultStack();
+    this.resultRows.set([]);
+    this.resultNext.set(null);
+    this.resultError.set(null);
+    this.focusStep();
+    void this.loadResults('all', null);
+  }
+
+  private reportAccepted(displayId: string): void {
+    if (this.reportedDisplayId === displayId) return;
+    this.reportedDisplayId = displayId;
+    this.accepted.emit(displayId);
+  }
+
+  private showPrepared(prepared: UserAttributePreview): void {
+    this.preview.set(prepared);
+    this.resultRowCount.set(prepared.attributeChanges);
+    this.resultUserCount.set(prepared.eligible);
+    this.step.set('review');
+    this.resetReviewStack();
+    void this.loadReviewPage('eligible', null);
   }
 
   protected toggleHelp(): void {
@@ -606,6 +817,14 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     this.error.set(null);
     if (!draft) return;
     if (this.valueError()) return;
+    // An unresolved confirmation keeps its preview. This dialog must not prepare a
+    // replacement save while the first acceptance is unknown (R1-B).
+    const pending = this.confirmations.pending(this.confirmationScope);
+    if (pending && pending.phase !== 'refused') {
+      this.restored = true;
+      this.applyEntry(pending);
+      return;
+    }
     const wire = mode === 'clear' ? null : attributeWireValue(draft);
     const values = wire === null ? [] : Array.isArray(wire) ? wire : [wire];
     const change: UserAttributeChange = {
@@ -615,6 +834,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       values,
     };
     this.step.set('preparing');
+    this.focusPreparing();
     const answer = await this.flow.prepare(this.selection(), [change]);
     if (this.done) return;
     if (!answer.ok) {
@@ -623,7 +843,10 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       this.focusStep();
       return;
     }
+    this.reviewRequest += 1;
     this.preview.set(answer.value);
+    this.resultRowCount.set(answer.value.attributeChanges);
+    this.resultUserCount.set(answer.value.eligible);
     this.step.set('review');
     this.reviewView.set('eligible');
     this.resetReviewStack();
@@ -636,7 +859,11 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   /** Back from the review. A prepared edit-list preview returns to its caller. */
   protected back(): void {
-    if (this.step() !== 'review') return;
+    if (this.step() !== 'review' || this.confirming()) return;
+    // An unresolved save keeps its preview. Back cannot release a confirmation that
+    // may have created the job (R1-B).
+    if (this.confirmationPending()) return;
+    this.reviewRequest += 1;
     if (this.prepared()) {
       this.close();
       return;
@@ -648,6 +875,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   protected setReviewView(view: ReviewView): void {
     if (view === this.reviewView()) return;
+    this.reviewRequest += 1;
     this.reviewView.set(view);
     this.resetReviewStack();
     this.reviewRows.set([]);
@@ -660,22 +888,24 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     this.reviewStack.set([null]);
   }
 
+  /**
+   * Read one page of the preview rows. Only the request that still owns the selected
+   * preview, view, and cursor may publish a row, an error, or a continuation (R1-A).
+   */
   private async loadReviewPage(
     view: ReviewView,
     cursor: string | null,
   ): Promise<void> {
     const preview = this.preview();
     if (!preview) return;
+    const request = ++this.reviewRequest;
+    const previewId = preview.previewId;
     this.reviewLoading.set(true);
     this.reviewError.set(null);
     this.reviewRows.set([]);
     this.reviewNext.set(null);
-    const answer = await this.flow.readTargetsPage(
-      preview.previewId,
-      view,
-      cursor,
-    );
-    if (this.done) return;
+    const answer = await this.flow.readTargetsPage(previewId, view, cursor);
+    if (this.done || request !== this.reviewRequest) return;
     this.reviewLoading.set(false);
     if (!answer.ok) {
       this.reviewError.set(answer.message);
@@ -708,6 +938,12 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     void this.loadReviewPage(this.reviewView(), this.reviewCursor());
   }
 
+  /** A confirmation that still owns this preview blocks a replacement save (R1-B). */
+  protected readonly confirmationPending = computed(() => {
+    const preview = this.preview();
+    return preview ? this.confirmations.isPending(preview.previewId) : false;
+  });
+
   protected readonly canConfirm = computed(
     () =>
       this.step() === 'review' &&
@@ -718,35 +954,84 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       (this.preview()?.eligible ?? 0) > 0,
   );
 
+  /** The display names of the attributes that this confirmation writes. */
+  private confirmationNames(): string[] {
+    const preview = this.preview();
+    if (!preview) return [];
+    if (preview.changes) {
+      return preview.changes.map((change) => {
+        const field = this.fieldOf(change.schemaName, change.fieldName);
+        return field?.displayName ?? change.fieldName;
+      });
+    }
+    const names = new Set<string>();
+    for (const row of this.reviewRows())
+      names.add(this.attributeLabel(row.attribute));
+    return [...names];
+  }
+
   /** Confirm the preview, then follow the job to its result (state 10). */
   protected async confirm(): Promise<void> {
     const preview = this.preview();
     if (!preview || !this.canConfirm()) return;
+    const names = this.confirmationNames();
+    // A preview that already lost one answer stays unresolved through a later refusal.
+    const unresolved = this.confirmations.isPending(preview.previewId);
     this.error.set(null);
     this.confirming.set(true);
+    // The Confirm control disables itself. Move focus before the answer, so the wait
+    // never leaves focus on the document body (R1-G).
+    this.focusConfirmAnchor();
+    this.confirmations.begin(this.confirmationScope, preview, names);
     const answer = await this.editFlow.confirm(
       preview.previewId,
       preview.manifestDigest,
     );
-    if (this.done) return;
-    this.confirming.set(false);
-    if (!answer.ok) {
-      this.error.set(
-        answer.uncertain
-          ? `${answer.message} ${ATTRIBUTE_CONFIRM_UNCERTAIN_HINT}`
-          : answer.message,
+    if (!answer.ok && (answer.uncertain || unresolved)) {
+      // The answer may have created the job. Keep the preview, its digest, and the
+      // submitted names until a receipt answers this same confirmation (R1-B).
+      this.confirmations.uncertain(
+        this.confirmationScope,
+        preview,
+        names,
+        answer.message,
       );
-      if (!answer.uncertain) {
-        // The refusal keeps the setup so the person can correct the change.
-        this.preview.set(null);
-        this.step.set('setup');
-      }
+      if (this.done) return;
+      this.confirming.set(false);
+      this.error.set(`${answer.message} ${ATTRIBUTE_CONFIRM_UNCERTAIN_HINT}`);
       this.focusStep();
       return;
     }
+    if (!answer.ok) {
+      // A definite refusal releases the identity and keeps the setup.
+      this.confirmations.refuse(
+        this.confirmationScope,
+        preview,
+        names,
+        answer.message,
+      );
+      this.confirmations.resolve(preview.previewId);
+      if (this.done) return;
+      this.confirming.set(false);
+      this.preview.set(null);
+      this.step.set('setup');
+      this.error.set(answer.message);
+      this.focusStep();
+      return;
+    }
+    // Hand the accepted receipt to the store before any dialog state clears, so a
+    // dismissed dialog loses neither the job nor its follow-up (R1-B).
+    this.confirmations.accept(
+      this.confirmationScope,
+      preview,
+      names,
+      answer.value.displayId,
+    );
+    this.reportAccepted(answer.value.displayId);
+    if (this.done) return;
+    this.confirming.set(false);
     this.displayId.set(answer.value.displayId);
     this.receiptStatus.set(answer.value.status);
-    this.accepted.emit(answer.value.displayId);
     this.step.set('progress');
     this.focusStep();
     const settled = await this.editFlow.waitForJob(
@@ -762,6 +1047,9 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       this.focusStep();
       return;
     }
+    // The receipt keeps its recovery owner until its job answers (UI-07).
+    if (isTerminalJobStatus(settled.value.status))
+      this.confirmations.resolve(preview.previewId);
     this.job.set(settled.value);
     this.step.set('result');
     this.resultView.set('all');
@@ -775,6 +1063,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   protected setResultView(view: ResultView): void {
     if (view === this.resultView()) return;
+    this.resultRequest += 1;
     this.resultView.set(view);
     this.resetResultStack();
     this.resultRows.set([]);
@@ -787,18 +1076,23 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     this.resultStack.set([null]);
   }
 
+  /**
+   * Read one page of the value rows. Only the request that still owns the selected job,
+   * view, and cursor may publish rows, totals, an error, or a continuation (R1-A).
+   */
   private async loadResults(
     view: ResultView,
     cursor: string | null,
   ): Promise<void> {
     const displayId = this.displayId();
     if (!displayId) return;
+    const request = ++this.resultRequest;
     this.resultLoading.set(true);
     this.resultError.set(null);
     this.resultRows.set([]);
     this.resultNext.set(null);
     const answer = await this.flow.readRowsPage(displayId, view, cursor);
-    if (this.done) return;
+    if (this.done || request !== this.resultRequest) return;
     this.resultLoading.set(false);
     if (!answer.ok) {
       this.resultError.set(answer.message);
@@ -843,6 +1137,45 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     );
   }
 
+  /** The category and display name of one C1 attribute key. */
+  protected attributeLabel(attribute: string): string {
+    const key = attribute.startsWith('attr:')
+      ? attribute.slice('attr:'.length)
+      : attribute;
+    const dot = key.lastIndexOf('.');
+    if (dot < 0) return key;
+    const schemaName = key.slice(0, dot);
+    const fieldName = key.slice(dot + 1);
+    const category = this.categories().find(
+      (item) => item.schemaName === schemaName,
+    );
+    const field = category?.fields.find((item) => item.fieldName === fieldName);
+    const attributeName = field?.displayName ?? fieldName;
+    return category
+      ? `${category.displayName} · ${attributeName}`
+      : attributeName;
+  }
+
+  /**
+   * A prepared edit-list preview names no single change. Each row then shows its own
+   * attribute under the user, within the approved shared table (R1-C).
+   */
+  protected readonly reviewShowsAttribute = computed(
+    () => this.preview()?.source === 'edit-list',
+  );
+
+  /** A result page that holds more than one attribute shows each row's attribute. */
+  protected readonly resultShowsAttribute = computed(() => {
+    if (this.prepared()?.source === 'edit-list') return true;
+    const attributes = new Set(this.resultRows().map((row) => row.attribute));
+    return attributes.size > 1;
+  });
+
+  /** One logical result row: two attributes of one user share the operation number. */
+  protected resultRowKey(row: JobAttributeRow): string {
+    return `${row.operation}:${row.attribute}`;
+  }
+
   protected userText(row: {
     userName?: string | null;
     primaryEmail: string;
@@ -873,6 +1206,27 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   /** The step heading takes focus after a step change (UI-09). */
   protected focusStep(): void {
     afterNextRender(() => this.dialogTitle()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  /** The Preparing wait text takes focus before its answer arrives (R1-G). */
+  private focusPreparing(): void {
+    afterNextRender(() => this.preparingStatus()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  /** The Review heading takes focus when the review renders (UI-09). */
+  private focusReviewTitle(): void {
+    afterNextRender(() => this.reviewTitle()?.nativeElement.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  /** The creating-job status holds focus while a confirmation is in flight (R1-G). */
+  private focusConfirmAnchor(): void {
+    afterNextRender(() => this.confirmingStatus()?.nativeElement.focus(), {
       injector: this.injector,
     });
   }

@@ -16,7 +16,15 @@
         <h2 id="bulk-title" #dialogTitle tabindex="-1" cdkFocusInitial>
           {{ BULK_SET_ATTRIBUTES_LABEL }}
         </h2>
-        <p id="bulk-sub" class="export-sub">{{ subtitle() }}</p>
+        <p id="bulk-sub" class="export-sub">
+          @if (step() === 'result' || step() === 'progress' || step() ===
+          'unreadable') { {{ BULK_JOB_PREFIX }}<a
+            [routerLink]="['/jobs', displayId()]"
+            >{{ displayId() }}</a
+          >
+          · {{ statusLabel() || ATTRIBUTE_SAVING_TEXT }} } @else { {{ subtitle()
+          }} }
+        </p>
       </div>
       <div class="export-tools">
         <button
@@ -70,46 +78,48 @@
           <p role="status">{{ BULK_NO_CATEGORIES_TEXT }}</p>
           } } @else {
           <section class="group">
-            <mat-form-field
-              appearance="outline"
-              subscriptSizing="dynamic"
-              class="bulk-field"
-            >
-              <mat-label>{{ BULK_CATEGORY_LABEL }}</mat-label>
-              <mat-select
-                [value]="chosenCategory()?.schemaName ?? null"
-                (selectionChange)="chooseCategory($event.value)"
+            <div class="bulk-fields">
+              <mat-form-field
+                appearance="outline"
+                subscriptSizing="dynamic"
+                class="bulk-field"
               >
-                @for (category of categories(); track category.schemaName) {
-                <mat-option [value]="category.schemaName"
-                  >{{ category.displayName }}</mat-option
+                <mat-label>{{ BULK_CATEGORY_LABEL }}</mat-label>
+                <mat-select
+                  [value]="chosenCategory()?.schemaName ?? null"
+                  (selectionChange)="chooseCategory($event.value)"
                 >
-                }
-              </mat-select>
-            </mat-form-field>
+                  @for (category of categories(); track category.schemaName) {
+                  <mat-option [value]="category.schemaName"
+                    >{{ category.displayName }}</mat-option
+                  >
+                  }
+                </mat-select>
+              </mat-form-field>
 
-            <mat-form-field
-              appearance="outline"
-              subscriptSizing="dynamic"
-              class="bulk-field"
-            >
-              <mat-label>{{ BULK_ATTRIBUTE_LABEL }}</mat-label>
-              <mat-select
-                [value]="chosenField()?.fieldName ?? null"
-                [disabled]="!chosenCategory()?.fields.length"
-                (selectionChange)="chooseField($event.value)"
+              <mat-form-field
+                appearance="outline"
+                subscriptSizing="dynamic"
+                class="bulk-field"
               >
-                @for ( field of chosenCategory()?.fields ?? []; track
-                field.fieldName ) {
-                <mat-option [value]="field.fieldName"
-                  >{{ field.displayName }}</mat-option
+                <mat-label>{{ BULK_ATTRIBUTE_LABEL }}</mat-label>
+                <mat-select
+                  [value]="chosenField()?.fieldName ?? null"
+                  [disabled]="!chosenCategory()?.fields.length"
+                  (selectionChange)="chooseField($event.value)"
                 >
+                  @for ( field of chosenCategory()?.fields ?? []; track
+                  field.fieldName ) {
+                  <mat-option [value]="field.fieldName"
+                    >{{ field.displayName }}</mat-option
+                  >
+                  }
+                </mat-select>
+                @if (hint()) {
+                <mat-hint>{{ hint() }}</mat-hint>
                 }
-              </mat-select>
-              @if (hint()) {
-              <mat-hint>{{ hint() }}</mat-hint>
-              }
-            </mat-form-field>
+              </mat-form-field>
+            </div>
             @if (!chosenField()) {
             <p class="field-error" role="status">{{ BULK_NO_FIELDS_TEXT }}</p>
             }
@@ -221,10 +231,9 @@
         </div>
         } @case ('preparing') {
         <div class="step">
-          <h3 class="visually-hidden" tabindex="-1">
-            {{ BULK_SET_ATTRIBUTES_LABEL }}
-          </h3>
-          <p role="status" aria-live="polite">{{ ATTRIBUTE_PREPARING_TEXT }}</p>
+          <p #preparingStatus class="export-state" role="status" tabindex="-1">
+            {{ ATTRIBUTE_PREPARING_TEXT }}
+          </p>
           <mat-progress-bar
             mode="indeterminate"
             aria-label="Preparing the preview"
@@ -233,7 +242,12 @@
         } @case ('review') {
         <div class="step report" [attr.aria-busy]="confirming()">
           <section class="report-counts" aria-labelledby="bulk-review-title">
-            <h3 id="bulk-review-title" class="visually-hidden" tabindex="-1">
+            <h3
+              #reviewTitleAnchor
+              id="bulk-review-title"
+              class="visually-hidden"
+              tabindex="-1"
+            >
               {{ BULK_REVIEW_LABEL }}
             </h3>
             @if (error(); as message) {
@@ -299,7 +313,11 @@
                   (click)="setReviewView(tab.view)"
                 >
                   {{ tab.label }}
-                  <span class="tab-count">{{ tab.count }}</span>
+                  <span class="tab-count"
+                    >{{ tab.count }}<span class="visually-hidden">
+                      {{ tab.unit }}</span
+                    ></span
+                  >
                 </button>
                 }
               </nav>
@@ -369,7 +387,14 @@
                               >visibility</span
                             >
                           </a>
-                          <span class="nw">{{ userText(row) }}</span>
+                          <span class="user-text">
+                            <span class="nw">{{ userText(row) }}</span>
+                            @if (reviewShowsAttribute()) {
+                            <span class="row-attribute"
+                              >{{ attributeLabel(row.attribute) }}</span
+                            >
+                            }
+                          </span>
                         </span>
                       </td>
                       <td>
@@ -379,7 +404,7 @@
                       </td>
                       <td>
                         <span
-                          class="cut"
+                          class="cut current-value"
                           [class.not-set]="row.currentValue === null"
                           [title]="valueText(row.currentValue)"
                           >{{ valueText(row.currentValue) }}</span
@@ -392,7 +417,9 @@
                             aria-hidden="true"
                             >arrow_forward</span
                           >
-                          <span class="cut" [title]="valueText(row.newValue)"
+                          <span
+                            class="cut new-value"
+                            [title]="valueText(row.newValue)"
                             >{{ valueText(row.newValue) }}</span
                           >
                         </span>
@@ -587,7 +614,7 @@
                         </div>
                       </td>
                     </tr>
-                    } @for (row of resultRows(); track row.operation) {
+                    } @for (row of resultRows(); track resultRowKey(row)) {
                     <tr>
                       <td>
                         <span class="user-cell">
@@ -602,7 +629,14 @@
                               >visibility</span
                             >
                           </a>
-                          <span class="nw">{{ userText(row) }}</span>
+                          <span class="user-text">
+                            <span class="nw">{{ userText(row) }}</span>
+                            @if (resultShowsAttribute()) {
+                            <span class="row-attribute"
+                              >{{ attributeLabel(row.attribute) }}</span
+                            >
+                            }
+                          </span>
                         </span>
                       </td>
                       <td>
@@ -612,7 +646,7 @@
                       </td>
                       <td>
                         <span
-                          class="cut"
+                          class="cut current-value"
                           [class.not-set]="row.currentValue === null"
                           [title]="valueText(row.currentValue)"
                           >{{ valueText(row.currentValue) }}</span
@@ -625,7 +659,9 @@
                             aria-hidden="true"
                             >arrow_forward</span
                           >
-                          <span class="cut" [title]="valueText(row.newValue)"
+                          <span
+                            class="cut new-value"
+                            [title]="valueText(row.newValue)"
                             >{{ valueText(row.newValue) }}</span
                           >
                         </span>
@@ -700,12 +736,12 @@
         {{ BULK_REVIEW_LABEL }}
       </button>
       } @case ('preparing') {
-      <p class="export-state" role="status">{{ ATTRIBUTE_PREPARING_TEXT }}</p>
+      <span class="export-state"></span>
       <button mat-button type="button" (click)="close()">
         {{ BULK_CANCEL_LABEL }}
       </button>
       } @case ('review') { @if (confirming()) {
-      <p class="export-state" role="status">
+      <p #confirmingStatus class="export-state" role="status" tabindex="-1">
         {{ ATTRIBUTE_CREATING_JOB_TEXT }}
       </p>
       } @else {
@@ -714,7 +750,7 @@
       <button
         mat-stroked-button
         type="button"
-        [disabled]="confirming()"
+        [disabled]="confirming() || confirmationPending()"
         (click)="back()"
       >
         {{ BULK_BACK_LABEL }}

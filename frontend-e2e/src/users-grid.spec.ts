@@ -407,8 +407,8 @@ const bulkJob = {
   startedAt: new Date(now - 50_000).toISOString(),
   finishedAt: new Date(now - 40_000).toISOString(),
   progress: {
-    total: 4,
-    succeeded: 3,
+    total: 18,
+    succeeded: 17,
     failed: 1,
     unknown: 0,
     skipped: 0,
@@ -451,8 +451,8 @@ const bulkReceipt = {
   jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
   displayId: bulkJob.displayId,
   status: 'accepted',
-  userCount: 4,
-  changeCount: 4,
+  userCount: 18,
+  changeCount: 18,
 };
 
 interface SignInOptions {
@@ -474,6 +474,10 @@ interface SignInOptions {
   previewFails?: boolean;
   /** The preview holds 18 proposed rows, so the review has a second page. */
   manyTargets?: boolean;
+  /** Holds the preview answer until the test releases it (R1-G). */
+  holdPreview?: HeldAnswer;
+  /** Holds the confirmation answer until the test releases it (R1-G). */
+  holdConfirm?: HeldAnswer;
 }
 
 /** The part of a query body that a held answer test reads. */
@@ -490,6 +494,24 @@ interface HeldQuery {
   gate: Promise<void>;
   begin: () => void;
   release: () => void;
+}
+
+/** One answer that the test holds and releases. */
+interface HeldAnswer {
+  /** Resolves when the held request starts. */
+  started: Promise<void>;
+  /** Resolves when the test releases the answer. */
+  gate: Promise<void>;
+  begin: () => void;
+  release: () => void;
+}
+
+function heldAnswer(): HeldAnswer {
+  let begin: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => (begin = resolve));
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  return { started, gate, begin, release };
 }
 
 function heldQuery(matches: (body: QueryAnswerBody) => boolean): HeldQuery {
@@ -638,6 +660,10 @@ async function signIn(page: Page, options: SignInOptions = {}) {
           status: 413,
           json: { reason: 'payload-too-large' },
         });
+      if (options.holdPreview) {
+        options.holdPreview.begin();
+        await options.holdPreview.gate;
+      }
       return route.fulfill({
         status: 201,
         json: bulkPreview(!!options.manyTargets),
@@ -657,8 +683,13 @@ async function signIn(page: Page, options: SignInOptions = {}) {
           json: bulkTargets(disposition, cursor, !!options.manyTargets),
         });
       }
-      if (action === 'confirm')
+      if (action === 'confirm') {
+        if (options.holdConfirm) {
+          options.holdConfirm.begin();
+          await options.holdConfirm.gate;
+        }
         return route.fulfill({ status: 201, json: bulkReceipt });
+      }
       return route.fulfill({ json: bulkPreview(!!options.manyTargets) });
     }
     if (path === `/api/jobs/${bulkJob.displayId}`)
@@ -670,9 +701,9 @@ async function signIn(page: Page, options: SignInOptions = {}) {
           rows:
             view === 'failed'
               ? [bulkResultRow(3)]
-              : [0, 1, 2, 3].map(bulkResultRow),
-          totals: { all: 4, failed: 1 },
-          nextCursor: null,
+              : Array.from({ length: 10 }, (_, index) => bulkResultRow(index)),
+          totals: { all: 18, failed: 1 },
+          nextCursor: view === 'failed' ? null : 'r2',
         },
       });
     }
@@ -1704,7 +1735,7 @@ async function choosePrograms(page: Page, dialog: Locator) {
 test('reproduces UM states 07 to 09: the Bulk Actions menu, setup, and review', async ({
   page,
 }) => {
-  await openUsers(page);
+  await openUsers(page, { manyTargets: true });
   await selectEveryUser(page);
   await page.getByRole('button', { name: 'Bulk Actions' }).click();
   await expect(
@@ -1726,16 +1757,33 @@ test('reproduces UM states 07 to 09: the Bulk Actions menu, setup, and review', 
   await expect(
     dialog.getByRole('radio', { name: 'Replace all values' }),
   ).toBeVisible();
+  // The approved state 08 shows the entered value, so the capture holds ESL.
+  const input = dialog.getByRole('textbox', { name: 'Add a Programs value' });
+  await input.fill('ESL');
+  await input.press('Enter');
+  await page.evaluate(() => document.fonts.ready);
+  const setupDialog = measured(await dialog.boundingBox());
+  const fields = dialog.locator('mat-form-field');
+  const categoryBox = measured(await fields.nth(0).boundingBox());
+  const attributeBox = measured(await fields.nth(1).boundingBox());
+  const valueBox = measured(await fields.nth(2).boundingBox());
+  const modeCard = measured(
+    await dialog.locator('.option-card').first().boundingBox(),
+  );
+  // The approved state 08 geometry (R1-E).
+  expect(setupDialog.width).toBe(480);
+  expect(setupDialog.height).toBeGreaterThanOrEqual(556);
+  expect(setupDialog.height).toBeLessThanOrEqual(558);
+  expect(attributeBox.y - (categoryBox.y + categoryBox.height)).toBe(16);
+  expect(modeCard.height).toBe(48);
+  expect(valueBox.height).toBe(56);
   await page.screenshot({
     path: `${scratch}/um-08-set-attributes-dialog.png`,
     fullPage: false,
   });
 
-  const input = dialog.getByRole('textbox', { name: 'Add a Programs value' });
-  await input.fill('ESL');
-  await input.press('Enter');
   await dialog.getByRole('button', { name: 'Review', exact: true }).click();
-  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+  await expect(dialog.locator('tbody tr')).toHaveCount(10);
   await expect(
     dialog.locator('.count-equation').getByText('No change needed'),
   ).toBeVisible();
@@ -1744,8 +1792,46 @@ test('reproduces UM states 07 to 09: the Bulk Actions menu, setup, and review', 
   ).toBeVisible();
   await expect(dialog.getByText('Programs · Add values · ESL')).toBeVisible();
   await expect(
-    dialog.getByRole('button', { name: 'Set attributes on 4 users' }),
+    dialog.getByRole('button', { name: 'Set attributes on 18 users' }),
   ).toBeEnabled();
+  await expect(dialog.getByText('1–10 of 18 proposed changes')).toBeVisible();
+  const reviewBox = measured(await dialog.boundingBox());
+  const reviewTable = dialog.locator('.report-table');
+  const userHeader = measured(
+    await reviewTable.locator('th').nth(0).boundingBox(),
+  );
+  const emailHeader = measured(
+    await reviewTable.locator('th').nth(1).boundingBox(),
+  );
+  const firstRow = measured(
+    await reviewTable.locator('tbody tr').first().boundingBox(),
+  );
+  const reviewPagerButtons = dialog.locator(
+    '.report-pager .pager-buttons button',
+  );
+  const reviewPagerFirst = measured(
+    await reviewPagerButtons.nth(0).boundingBox(),
+  );
+  const reviewPagerSecond = measured(
+    await reviewPagerButtons.nth(1).boundingBox(),
+  );
+  // The approved state 09 composition (R1-F): 1,120 px wide, 240/260 leading
+  // columns, 35 px rows, an app-surface header, and an 8 px pager gap.
+  expect(reviewBox.width).toBe(1120);
+  expect(reviewBox.height).toBeGreaterThanOrEqual(733);
+  expect(reviewBox.height).toBeLessThanOrEqual(736);
+  expect(userHeader.width).toBe(240);
+  expect(emailHeader.width).toBe(260);
+  expect(firstRow.height).toBe(35);
+  expect(
+    await reviewTable
+      .locator('th')
+      .first()
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+  ).toBe('rgb(248, 250, 252)');
+  expect(
+    reviewPagerSecond.x - (reviewPagerFirst.x + reviewPagerFirst.width),
+  ).toBe(8);
   await page.screenshot({
     path: `${scratch}/um-09-set-attributes-review.png`,
     fullPage: false,
@@ -1773,13 +1859,13 @@ test('reproduces UM states 07 to 09: the Bulk Actions menu, setup, and review', 
 test('reproduces UM state 10: the confirmed job and its result rows', async ({
   page,
 }) => {
-  await openUsers(page);
+  await openUsers(page, { manyTargets: true });
   const dialog = await openSetAttributes(page);
   await choosePrograms(page, dialog);
   await dialog.getByRole('button', { name: 'Review', exact: true }).click();
-  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+  await expect(dialog.locator('tbody tr')).toHaveCount(10);
   await dialog
-    .getByRole('button', { name: 'Set attributes on 4 users' })
+    .getByRole('button', { name: 'Set attributes on 18 users' })
     .click();
 
   await expect(
@@ -1789,14 +1875,75 @@ test('reproduces UM state 10: the confirmed job and its result rows', async ({
   await expect(
     dialog.getByText('Executed by Review administrator'),
   ).toBeVisible();
-  await expect(dialog.getByRole('link', { name: 'UAT-014' })).toBeVisible();
+  await expect(
+    dialog.getByRole('link', { name: 'UAT-014', exact: true }),
+  ).toBeVisible();
   await expect(
     dialog.getByRole('columnheader', { name: 'Outcome' }),
   ).toBeVisible();
-  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+  await expect(dialog.locator('tbody tr')).toHaveCount(10);
   await expect(
     dialog.getByText('Google could not find this user.'),
   ).toBeVisible();
+  await expect(dialog.getByText('1–10 of 18 changes')).toBeVisible();
+  const resultsTable = dialog.locator('.report-table');
+  const userHeader = measured(
+    await resultsTable.locator('th').nth(0).boundingBox(),
+  );
+  const emailHeader = measured(
+    await resultsTable.locator('th').nth(1).boundingBox(),
+  );
+  const normalRow = measured(
+    await resultsTable.locator('tbody tr').first().boundingBox(),
+  );
+  const pagerButtons = dialog.locator('.report-pager .pager-buttons button');
+  const firstPager = measured(await pagerButtons.nth(0).boundingBox());
+  const secondPager = measured(await pagerButtons.nth(1).boundingBox());
+  const failedRow = measured(
+    await resultsTable
+      .locator('tbody tr', {
+        hasText: 'Google could not find this user.',
+      })
+      .boundingBox(),
+  );
+  // The approved state 10 composition (R1-F): shared 240/260 leading columns,
+  // 36 px rows, a 58 px failed row, a full-width job band, and an 8 px pager gap.
+  expect(measured(await dialog.boundingBox()).width).toBe(1120);
+  expect(measured(await dialog.boundingBox()).height).toBeGreaterThanOrEqual(
+    790,
+  );
+  expect(measured(await dialog.boundingBox()).height).toBeLessThanOrEqual(810);
+  expect(userHeader.width).toBe(240);
+  expect(emailHeader.width).toBe(260);
+  expect(normalRow.height).toBe(36);
+  expect(failedRow.height).toBe(58);
+  expect(secondPager.x - (firstPager.x + firstPager.width)).toBe(8);
+  expect(
+    measured(await dialog.locator('.job-item').first().boundingBox()).width,
+  ).toBe(1070);
+  expect(
+    await dialog
+      .getByRole('link', { name: 'Open details for Aaliyah Brooks' })
+      .evaluate((element) => getComputedStyle(element).textDecorationLine),
+  ).toBe('none');
+  expect(
+    await resultsTable
+      .locator('.current-value')
+      .first()
+      .evaluate((element) => getComputedStyle(element).color),
+  ).toBe('rgb(95, 99, 104)');
+  expect(
+    await resultsTable
+      .locator('.new-value')
+      .first()
+      .evaluate((element) => getComputedStyle(element).color),
+  ).toBe('rgb(32, 33, 36)');
+  expect(
+    await resultsTable
+      .locator('.new-value')
+      .first()
+      .evaluate((element) => getComputedStyle(element).fontWeight),
+  ).toBe('500');
   await page.screenshot({
     path: `${scratch}/um-10-set-attributes-results.png`,
     fullPage: false,
@@ -1822,10 +1969,104 @@ test('reproduces UM state 11: a single-value attribute offers Set value and Clea
   await expect(dialog.getByRole('radio', { name: 'Add values' })).toHaveCount(
     0,
   );
+  // The approved state 11 shows the entered value.
+  await dialog.getByRole('textbox', { name: 'Value' }).fill('216');
+  // The floating label transition settles before the capture.
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.fonts.ready);
+  const valueField = measured(
+    await dialog.locator('mat-form-field').nth(2).boundingBox(),
+  );
+  // The approved state 11 geometry (R1-E).
+  expect(measured(await dialog.boundingBox()).width).toBe(480);
+  expect(measured(await dialog.boundingBox()).height).toBeGreaterThanOrEqual(
+    500,
+  );
+  expect(measured(await dialog.boundingBox()).height).toBeLessThanOrEqual(502);
+  expect(valueField.height).toBe(56);
   await page.screenshot({
     path: `${scratch}/um-11-set-attributes-single-value.png`,
     fullPage: false,
   });
+});
+
+test('keeps focus on the preparing status while the preview is held (R1-G)', async ({
+  page,
+}) => {
+  const hold = heldAnswer();
+  await openUsers(page, { holdPreview: hold });
+  const dialog = await openSetAttributes(page);
+  await choosePrograms(page, dialog);
+
+  const review = dialog.getByRole('button', { name: 'Review', exact: true });
+  await review.focus();
+  await page.keyboard.press('Enter');
+  await hold.started;
+
+  const status = dialog
+    .getByRole('status')
+    .filter({ hasText: 'Preparing the preview…' });
+  await expect(status).toBeFocused();
+  await expect(page.locator('body')).not.toBeFocused();
+
+  hold.release();
+  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+});
+
+test('keeps the receipt when Escape dismisses a held confirmation (R1-B)', async ({
+  page,
+}) => {
+  const hold = heldAnswer();
+  await openUsers(page, { holdConfirm: hold });
+  const dialog = await openSetAttributes(page);
+  await choosePrograms(page, dialog);
+  await dialog.getByRole('button', { name: 'Review', exact: true }).click();
+  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+  await dialog
+    .getByRole('button', { name: 'Set attributes on 4 users' })
+    .click();
+  await hold.started;
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  hold.release();
+
+  // Reopening resumes the accepted receipt instead of a blank setup.
+  await page.getByRole('button', { name: 'Bulk Actions' }).click();
+  await page.getByRole('menuitem', { name: 'Set attributes' }).click();
+  const reopened = page.getByRole('dialog');
+  await expect(
+    reopened.getByText('Job UAT-014 · Completed with errors'),
+  ).toBeVisible();
+  await expect(reopened.locator('tbody tr')).toHaveCount(10);
+});
+
+test('keeps focus in the dialog while the confirmation is held (R1-G)', async ({
+  page,
+}) => {
+  const hold = heldAnswer();
+  await openUsers(page, { holdConfirm: hold });
+  const dialog = await openSetAttributes(page);
+  await choosePrograms(page, dialog);
+  await dialog.getByRole('button', { name: 'Review', exact: true }).click();
+  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+
+  const confirm = dialog.getByRole('button', {
+    name: 'Set attributes on 4 users',
+  });
+  await confirm.focus();
+  await page.keyboard.press('Enter');
+  await hold.started;
+
+  const status = dialog
+    .getByRole('status')
+    .filter({ hasText: 'Creating the job…' });
+  await expect(status).toBeFocused();
+
+  hold.release();
+  await expect(
+    dialog.getByText('Job UAT-014 · Completed with errors'),
+  ).toBeVisible();
 });
 
 test('keeps the setup and names a 413 answer (K27 acceptance 6)', async ({

@@ -6,13 +6,57 @@
  * the table columns, and the users cells.
  * Every value is a token of `theme/tokens.css` or of the Material theme.
  */
-/* The device body carries no top padding; the dialog keeps a gap under its header. */
+/* The approved setup keeps 8 px above the floating Category label and 8 px below
+   the last field. The review and results keep the report bottom gap of 24 px. */
 .export-body {
-  padding-block-start: var(--cc-space-lg);
+  padding-block: var(--cc-space-sm);
+}
+
+.export-body:has(.step.report) {
+  padding-block-start: 0;
+  padding-block-end: var(--cc-space-xl);
 }
 
 .bulk-field {
   width: 100%;
+}
+
+/* State 08: the Category and Attribute fields keep the approved 16 px gap. */
+.bulk-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-lg);
+}
+
+/* The approved option cards are 48 px high, not the 56 px device card. */
+.option-card {
+  min-height: 48px;
+  padding-block: 0;
+  align-items: center;
+}
+
+.option-card ::ng-deep .mdc-form-field {
+  align-items: center;
+}
+
+.option-card ::ng-deep .mdc-label {
+  padding-block: 0;
+}
+
+/* The approved chip field takes one 56 px row, also after a chip is entered. */
+.chip-field ::ng-deep .mat-mdc-form-field-infix {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding-block: 0;
+}
+
+.chip-field ::ng-deep .mat-mdc-chip-grid {
+  min-height: 0;
+}
+
+.chip-field ::ng-deep .mat-mdc-chip-row {
+  min-height: 32px;
 }
 
 /* The value field sits under the mode cards, so the first form field keeps its gap. */
@@ -47,45 +91,96 @@
   line-height: 16px;
 }
 
-/* The review and the results share the table of composition 11. The five columns of the
-   results fill the 1,055 px panel, so the Outcome column stays in view at 1440 px. */
+/* The review and the results share the leading columns of composition 11: User 240 px
+   and Primary email 260 px in both tables. The panel is 1,070 px wide. */
 .report-table.bulk col:nth-child(1) {
-  width: 22%;
+  width: 240px;
 }
 
 .report-table.bulk col:nth-child(2) {
-  width: 26%;
+  width: 260px;
 }
 
-.report-table.bulk col:nth-child(3) {
-  width: 18%;
+.report-table.bulk:not(.rs) col:nth-child(3) {
+  width: 265px;
 }
 
-.report-table.bulk col:nth-child(4) {
-  width: 34%;
-}
-
-.report-table.bulk.rs col:nth-child(1) {
-  width: 19%;
-}
-
-.report-table.bulk.rs col:nth-child(2) {
-  width: 24%;
+.report-table.bulk:not(.rs) col:nth-child(4) {
+  width: auto;
 }
 
 .report-table.bulk.rs col:nth-child(3) {
-  width: 16%;
+  width: 170px;
 }
 
 .report-table.bulk.rs col:nth-child(4) {
-  width: 23%;
+  width: 175px;
 }
 
 .report-table.bulk.rs col:nth-child(5) {
-  width: 18%;
+  width: auto;
+}
+
+/* The approved table header sits on the app surface, not the card surface. */
+.report-table.bulk th {
+  background: var(--cc-surface-app);
+}
+
+/* The approved review row is 35 px with the 24 px details control. */
+.report-table.bulk:not(.rs) tbody tr:not(.message-row) td {
+  height: 35px;
+  padding-block: 0;
+}
+
+/* The approved results row is 36 px, also after the device results density. */
+.report-table.bulk.rs tbody tr:not(.message-row) td {
+  height: 36px;
+  padding-block: 0;
+}
+
+/* The failed results row grows to hold its reason, as the approved state draws it. */
+.report-table.bulk.rs tbody tr:has(.outcome-reason) td {
+  height: 58px;
+}
+
+.outcome-reason {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+}
+
+/* Current values read secondary; the proposed value reads primary and medium. */
+.current-value {
+  color: var(--cc-text-secondary);
+}
+
+.new-value {
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+/* One prepared row names its attribute under the user, inside the shared columns. */
+.user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row-attribute {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The review and the results take the approved content height, not the full wrap. */
+.export-dialog.is-wide {
+  height: auto;
 }
 
 /* The pager of composition 11: a 32 px outlined square per arrow (approved state 09). */
+.report-pager .pager-buttons {
+  gap: var(--cc-space-sm);
+}
+
 .report-pager .pager-buttons .mat-mdc-icon-button {
   width: 32px;
   height: 32px;
@@ -128,6 +223,7 @@
   height: 24px;
   border-radius: var(--cc-radius-chip);
   color: var(--cc-text-link);
+  text-decoration: none;
 }
 
 .user-link .material-symbols-outlined {
@@ -192,11 +288,27 @@
   color: var(--cc-status-error-text);
 }
 
-/* The counts of the one job in the jobs band (composition 12). */
+/* The counts of the one job in the jobs band (composition 12). The one job takes the
+   full band row, not one track of the device two-job grid. */
+.job-items:has(> .job-item:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.job-item:only-child {
+  grid-template-columns: 52px max-content max-content max-content;
+  justify-content: start;
+  border-inline-start: 0;
+}
+
 .job-counts {
   color: var(--cc-text-secondary);
   font-size: 12px;
   line-height: 16px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* The wait text takes programmatic focus as the stable anchor (R1-G). */
+.export-state:focus {
+  outline: none;
 }

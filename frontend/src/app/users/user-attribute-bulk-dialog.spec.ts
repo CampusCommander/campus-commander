@@ -15,6 +15,7 @@ import type {
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
 import { UserAttributeBulkFlow } from './user-attribute-bulk-flow';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
 
 function field(extra: Partial<UserAttributeField>): UserAttributeField {
   return {
@@ -182,7 +183,19 @@ interface DialogInternals {
   addChip(event: MatChipInputEvent): void;
   review(): Promise<void>;
   confirm(): Promise<void>;
+  back(): void;
+  close(): void;
   step(): string;
+}
+
+/** One answer that the test holds until it releases it. */
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
 }
 
 describe('the Set attributes dialog', () => {
@@ -257,6 +270,38 @@ describe('the Set attributes dialog', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  /** Render and drain microtasks without waiting for a held answer. */
+  async function flush(): Promise<void> {
+    for (let index = 0; index < 6; index += 1) {
+      fixture.detectChanges();
+      await Promise.resolve();
+    }
+    fixture.detectChanges();
+  }
+
+  /** Open the setup of Programs and Add values with the ESL chip. */
+  async function openProgramsReview(): Promise<void> {
+    dialog.chooseField('programs');
+    fixture.detectChanges();
+    dialog.addChip({
+      value: 'ESL',
+      chipInput: { clear: () => undefined },
+    } as unknown as MatChipInputEvent);
+    fixture.detectChanges();
+    (button('Review') as HTMLButtonElement).click();
+    await settle();
+  }
+
+  /** Mount a second dialog against the same root stores, as a reopening does. */
+  function reopen(): ComponentFixture<UserAttributeBulkDialog> {
+    const next = TestBed.createComponent(UserAttributeBulkDialog);
+    next.componentRef.setInput('selection', { gridId: 'users', tabId });
+    next.componentRef.setInput('selected', 25);
+    next.componentRef.setInput('categories', categories);
+    next.detectChanges();
+    return next;
   }
 
   function text(): string {
@@ -542,5 +587,409 @@ describe('the Set attributes dialog', () => {
     (button('Retry') as HTMLButtonElement).click();
     await settle();
     expect(bulk.readRowsPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the chosen review view when an earlier page answers late (R1-A)', async () => {
+    const older = deferred<unknown>();
+    const current = deferred<unknown>();
+    bulk.readTargetsPage
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          targets: Array.from({ length: 10 }, (_, index) => target(index + 1)),
+          nextCursor: 'p2',
+        },
+      })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(current.promise);
+    build();
+    await openProgramsReview();
+
+    (button('Next review page') as HTMLButtonElement).click();
+    await flush();
+    (button('No change needed') as HTMLButtonElement).click();
+    await flush();
+
+    older.resolve({
+      ok: true,
+      value: {
+        targets: Array.from({ length: 8 }, (_, index) =>
+          target(index + 1, { disposition: 'eligible' }),
+        ),
+        nextCursor: 'p3',
+      },
+    });
+    await flush();
+    // The selected view stays No change needed, and its held page still owns the panel.
+    expect(text()).toContain('Preparing the preview…');
+    expect(element.querySelectorAll('tbody tr').length).toBe(1);
+
+    current.resolve({
+      ok: true,
+      value: {
+        targets: Array.from({ length: 7 }, (_, index) =>
+          target(index + 1, { disposition: 'unchanged' }),
+        ),
+        nextCursor: null,
+      },
+    });
+    await settle();
+    expect(element.querySelectorAll('tbody tr').length).toBe(7);
+    expect(text()).toContain('1–7 rows · 7 users need no change');
+  });
+
+  it('keeps a failed earlier review page from naming the current view (R1-A)', async () => {
+    const older = deferred<unknown>();
+    const current = deferred<unknown>();
+    bulk.readTargetsPage
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          targets: Array.from({ length: 10 }, (_, index) => target(index + 1)),
+          nextCursor: 'p2',
+        },
+      })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(current.promise);
+    build();
+    await openProgramsReview();
+
+    (button('Next review page') as HTMLButtonElement).click();
+    await flush();
+    (button('No change needed') as HTMLButtonElement).click();
+    await flush();
+
+    older.resolve({ ok: false, message: 'The earlier page failed.' });
+    await flush();
+    expect(text()).not.toContain('The earlier page failed.');
+    expect(text()).toContain('Preparing the preview…');
+
+    current.resolve({
+      ok: true,
+      value: {
+        targets: Array.from({ length: 2 }, (_, index) =>
+          target(index + 1, { disposition: 'unchanged' }),
+        ),
+        nextCursor: null,
+      },
+    });
+    await settle();
+    expect(text()).toContain('1–2 rows · 7 users need no change');
+  });
+
+  it('keeps the chosen results view when an earlier page answers late (R1-A)', async () => {
+    const older = deferred<unknown>();
+    const current = deferred<unknown>();
+    bulk.readRowsPage
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          rows: Array.from({ length: 10 }, (_, index) => row(index + 1)),
+          totals: { all: 18, failed: 1 },
+          nextCursor: 'r2',
+        },
+      })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(current.promise);
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+
+    (button('Next results page') as HTMLButtonElement).click();
+    await flush();
+    (button('Failed') as HTMLButtonElement).click();
+    await flush();
+
+    older.resolve({
+      ok: true,
+      value: {
+        rows: Array.from({ length: 4 }, (_, index) => row(index + 11)),
+        totals: { all: 18, failed: 1 },
+        nextCursor: 'r3',
+      },
+    });
+    await flush();
+    // The Failed view keeps its own held page and the All continuation never appears.
+    expect(text()).toContain('Loading results…');
+    expect(element.querySelectorAll('tbody tr').length).toBe(1);
+
+    current.resolve({
+      ok: true,
+      value: {
+        rows: [row(3, { outcome: 'failed', failureText: 'No such user.' })],
+        totals: { all: 18, failed: 1 },
+        nextCursor: null,
+      },
+    });
+    await settle();
+    expect(element.querySelectorAll('tbody tr').length).toBe(1);
+    expect(text()).toContain('1–1 of 1 changes');
+    expect((button('Next results page') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it('keeps a failed earlier results page from naming the current view (R1-A)', async () => {
+    const older = deferred<unknown>();
+    const current = deferred<unknown>();
+    bulk.readRowsPage
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          rows: Array.from({ length: 10 }, (_, index) => row(index + 1)),
+          totals: { all: 18, failed: 1 },
+          nextCursor: 'r2',
+        },
+      })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(current.promise);
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+
+    (button('Next results page') as HTMLButtonElement).click();
+    await flush();
+    (button('Failed') as HTMLButtonElement).click();
+    await flush();
+
+    older.resolve({ ok: false, message: 'The earlier results failed.' });
+    await flush();
+    expect(text()).not.toContain('The earlier results failed.');
+    expect(text()).toContain('Loading results…');
+
+    current.resolve({
+      ok: true,
+      value: {
+        rows: [],
+        totals: { all: 18, failed: 0 },
+        nextCursor: null,
+      },
+    });
+    await settle();
+    expect(text()).toContain('0 of 0 changes');
+  });
+
+  it('retains an accepted receipt when the dialog closes during acceptance (R1-B)', async () => {
+    const held = deferred<unknown>();
+    edit.confirm.mockReturnValue(held.promise);
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await flush();
+    expect(text()).toContain('Creating the job…');
+
+    dialog.close();
+    held.resolve(receipt);
+    await flush();
+
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    const entry = store.pending(`bulk-selection:users:${tabId}`);
+    expect(entry).toMatchObject({
+      phase: 'accepted',
+      displayId: 'UAT-014',
+      preview: { previewId },
+    });
+    expect(edit.waitForJob).not.toHaveBeenCalled();
+
+    fixture.destroy();
+    const reopened = reopen();
+    for (let index = 0; index < 8; index += 1) {
+      reopened.detectChanges();
+      await Promise.resolve();
+    }
+    await reopened.whenStable();
+    reopened.detectChanges();
+    expect((reopened.nativeElement as HTMLElement).textContent).toContain(
+      'UAT-014',
+    );
+    expect(edit.waitForJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an uncertain confirmation and replays it instead of a replacement (R1-B)', async () => {
+    edit.confirm.mockResolvedValueOnce({
+      ok: false,
+      message: 'The network failed before the server answered.',
+      uncertain: true,
+    });
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+
+    expect(text()).toContain(
+      'Retry the confirmation to keep the same preview.',
+    );
+    expect((button('Back') as HTMLButtonElement).disabled).toBe(true);
+    const confirm = button('Set attributes on 18 users') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+
+    edit.confirm.mockResolvedValueOnce(receipt);
+    confirm.click();
+    await settle();
+    expect(edit.confirm).toHaveBeenNthCalledWith(2, previewId, 'a'.repeat(64));
+    expect(bulk.prepare).toHaveBeenCalledTimes(1);
+    expect(edit.waitForJob).toHaveBeenCalled();
+  });
+
+  it('distinguishes attribute rows from users on an edit-list preview (R1-C)', async () => {
+    const mixed = preview({
+      source: 'edit-list',
+      changes: null,
+      attributeChanges: 2,
+      selected: 1,
+      eligible: 1,
+      unchanged: 0,
+    });
+    bulk.readTargetsPage.mockResolvedValue({
+      ok: true,
+      value: {
+        targets: [
+          target(1, {
+            userId: '110000000000000000001',
+            userName: 'Aisha Rahman',
+            attribute: 'attr:Student.programs',
+            currentValue: ['Band'],
+            newValue: ['Band', 'ESL'],
+          }),
+          target(1, {
+            userId: '110000000000000000001',
+            userName: 'Aisha Rahman',
+            attribute: 'attr:Student.homeroom',
+            currentValue: '118',
+            newValue: '216',
+          }),
+        ],
+        nextCursor: null,
+      },
+    });
+    build(mixed);
+    await settle();
+
+    expect(text()).toContain('1 selected user');
+    expect(text()).toContain('1–2 of 2 proposed changes');
+    expect(element.querySelectorAll('tbody tr').length).toBe(2);
+    expect(text()).toContain('Student information · Programs');
+    expect(text()).toContain('Student information · Homeroom');
+    const confirm = button('Set attributes on 1 user') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+
+    edit.confirm.mockResolvedValue({
+      ok: true,
+      value: { ...receipt.value, userCount: 1, changeCount: 2 },
+    });
+    edit.waitForJob.mockResolvedValue({
+      ok: true,
+      value: {
+        ...job,
+        progress: { ...job.progress, total: 1, succeeded: 1, failed: 0 },
+      },
+    });
+    bulk.readRowsPage.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          row(1, {
+            userId: '110000000000000000001',
+            userName: 'Aisha Rahman',
+            attribute: 'attr:Student.programs',
+            displayName: 'Programs',
+            outcome: 'succeeded',
+          }),
+          row(1, {
+            userId: '110000000000000000001',
+            userName: 'Aisha Rahman',
+            attribute: 'attr:Student.homeroom',
+            displayName: 'Homeroom',
+            outcome: 'succeeded',
+          }),
+        ],
+        totals: { all: 2, failed: 0 },
+        nextCursor: null,
+      },
+    });
+    confirm.click();
+    await settle();
+
+    expect(element.querySelectorAll('tbody tr').length).toBe(2);
+    const equation = element.querySelector('.count-equation')?.textContent;
+    expect(equation).toContain('Users');
+    expect(equation).not.toContain('changes');
+    expect(text()).toContain('1–2 of 2 changes');
+    expect(text()).toContain('Student information · Homeroom');
+  });
+
+  it('names a Cancelled bucket in the results equation (R1-D)', async () => {
+    edit.waitForJob.mockResolvedValue({
+      ok: true,
+      value: {
+        ...job,
+        progress: {
+          ...job.progress,
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          cancelled: 1,
+        },
+      },
+    });
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+    const equation = element.querySelector('.count-equation')?.textContent;
+    expect(equation).toContain('Cancelled');
+    expect(equation).toContain('0Succeeded');
+  });
+
+  it('names a Skipped bucket in the results equation (R1-D)', async () => {
+    edit.waitForJob.mockResolvedValue({
+      ok: true,
+      value: {
+        ...job,
+        progress: {
+          ...job.progress,
+          total: 1,
+          succeeded: 0,
+          failed: 0,
+          skipped: 1,
+        },
+      },
+    });
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+    const equation = element.querySelector('.count-equation')?.textContent;
+    expect(equation).toContain('Skipped');
+  });
+
+  it('names Unknown, Expired, and Pending when the job reports them (R1-D)', async () => {
+    edit.waitForJob.mockResolvedValue({
+      ok: true,
+      value: {
+        ...job,
+        progress: {
+          ...job.progress,
+          total: 4,
+          succeeded: 1,
+          failed: 0,
+          unknown: 1,
+          skipped: 0,
+          expired: 1,
+          cancelled: 0,
+          pending: 1,
+        },
+      },
+    });
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+    const equation = element.querySelector('.count-equation')?.textContent;
+    expect(equation).toContain('Unknown');
+    expect(equation).toContain('Expired');
+    expect(equation).toContain('Pending');
   });
 });
