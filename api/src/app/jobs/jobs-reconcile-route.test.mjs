@@ -102,6 +102,55 @@ const operationRow = (overrides = {}) => ({
 });
 
 /**
+ * One value operation row of a `user-attribute-update` job (design card K24). A value operation is
+ * one user, so `user_id` names the device column and `primary_email` the serial column.
+ */
+const valueRow = (overrides = {}) => ({
+  user_id: 'user-1',
+  primary_email: 'user-1@example.org',
+  outcome: 'unknown',
+  outcome_reason: null,
+  google_status: null,
+  google_reason: null,
+  verified_by: null,
+  updated_at: new Date('2026-10-21T12:00:00.000Z'),
+  ...overrides,
+});
+
+/**
+ * A database for one value Reconcile: the connected customer, the header, the value operation row,
+ * and the read-back claim.
+ */
+function valueReconcileDatabase({
+  job = {},
+  row = {},
+  claim = 'claimed',
+} = {}) {
+  return database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    [
+      'p.display_name AS requested_by_name',
+      [
+        jobRow({
+          display_id: 'UAT-002',
+          kind: 'user-attribute-update',
+          entity_type: 'user',
+          action: null,
+          ...job,
+        }),
+      ],
+    ],
+    ['row_number() OVER (ORDER BY o.ordinal)', [valueRow(row)]],
+    ['claim_user_attribute_verification_one', [{ result: { outcome: claim } }]],
+  ]);
+}
+
+const valueClaimCount = (db) =>
+  db.calls.filter(([text]) =>
+    text.includes('claim_user_attribute_verification_one'),
+  ).length;
+
+/**
  * A database whose answers match a needle of the statement text. Every call is recorded.
  * The bind-count check mirrors `jobs.test.mjs`: PostgreSQL refuses a statement whose
  * placeholders and values disagree.
@@ -250,6 +299,10 @@ before(async () => {
         provide: OrchestrationService,
         useValue: {
           startDeviceUpdateReconcile: async (input) => {
+            startedFlows.push(input);
+            return 'execution';
+          },
+          startUserAttributeReconcile: async (input) => {
             startedFlows.push(input);
             return 'execution';
           },
@@ -471,4 +524,120 @@ test('the operations route reads at most ten operation numbers', async () => {
   const refused = await fetch(url);
   assert.equal(refused.status, 400);
   assert.equal(db.calls.length, before, 'A refused query reads nothing.');
+});
+
+test('the reconcile route reads one value operation back with users:write', async () => {
+  const db = valueReconcileDatabase();
+  arrange(db, ['jobs:read', 'users:write']);
+
+  const answer = await reconcile('UAT-002');
+
+  assert.equal(answer.status, 202);
+  // A value operation names its user in the device columns of the shared contract and keeps the
+  // requested and observed values null, because one operation covers several attributes.
+  assert.deepEqual(answer.body, {
+    operationId: 'UAT-002-1',
+    deviceId: 'user-1',
+    serialNumber: 'user-1@example.org',
+    orgUnitPath: '',
+    field: null,
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: null,
+    outcome: 'unknown',
+    outcomeReason: null,
+    googleStatus: null,
+    googleReason: null,
+    observedValue: null,
+    verifiedBy: null,
+    commandId: null,
+    commandState: null,
+    commandExpiresAt: null,
+    commandExecutedAt: null,
+    updatedAt: '2026-10-21T12:00:00.000Z',
+  });
+  assert.equal(
+    valueClaimCount(db),
+    1,
+    'The accepted request claims the read-back.',
+  );
+  assert.equal(startedFlows.length, 1, 'The accepted request starts one flow.');
+  const [flow] = startedFlows;
+  assert.equal(flow.customerId, CUSTOMER);
+  assert.equal(flow.jobId, JOB_ID);
+  assert.equal(flow.operationNumber, 1);
+  assert.match(flow.verifyAttempt, /^[0-9a-f-]{36}$/);
+  assert.equal(flow.correlationId, answer.correlationId);
+  // The value read-back never calls the device flow.
+  assert.equal(
+    db.calls.some(([text]) =>
+      text.includes('FROM cc.device_update_operations o'),
+    ),
+    false,
+  );
+});
+
+test('the reconcile route answers 409 operation-settled for a settled value operation', async () => {
+  const db = valueReconcileDatabase({ row: { outcome: 'succeeded' } });
+  arrange(db, ['jobs:read', 'users:write']);
+
+  const answer = await reconcile('UAT-002');
+
+  assert.equal(answer.status, 409);
+  assert.deepEqual(answer.body, { reason: 'operation-settled' });
+  assert.equal(valueClaimCount(db), 0);
+  assert.deepEqual(startedFlows, []);
+});
+
+test('the reconcile route answers 403 without users:write and starts no value flow', async () => {
+  const db = valueReconcileDatabase();
+  arrange(db, ['jobs:read', 'devices:write']);
+
+  const answer = await reconcile('UAT-002');
+
+  assert.equal(answer.status, 403);
+  assert.equal(valueClaimCount(db), 0);
+  assert.deepEqual(startedFlows, []);
+  assert.deepEqual(
+    auditEvents.map((entry) => [entry[0], entry[3]]),
+    [['access-denied', 'users:write']],
+  );
+});
+
+test('the reconcile route answers 202 inside the 30-second window and starts no flow', async () => {
+  const db = valueReconcileDatabase({ claim: 'waiting' });
+  arrange(db, ['jobs:read', 'users:write']);
+
+  const answer = await reconcile('UAT-002');
+
+  assert.equal(answer.status, 202);
+  assert.equal(answer.body.outcome, 'unknown');
+  assert.equal(valueClaimCount(db), 1);
+  assert.deepEqual(startedFlows, [], 'A row inside its window starts nothing.');
+});
+
+test('the reconcile route answers 404 for a value operation number the job does not hold', async () => {
+  const db = database([
+    ['cc.job_reader', [{ customer_id: CUSTOMER }]],
+    [
+      'p.display_name AS requested_by_name',
+      [
+        jobRow({
+          display_id: 'UAT-002',
+          kind: 'user-attribute-update',
+          entity_type: 'user',
+          action: null,
+        }),
+      ],
+    ],
+    ['row_number() OVER (ORDER BY o.ordinal)', []],
+  ]);
+  arrange(db, ['jobs:read', 'users:write']);
+
+  const answer = await reconcile('UAT-002');
+
+  assert.equal(answer.status, 404);
+  assert.deepEqual(answer.body, { reason: 'operation-not-found' });
+  assert.equal(valueClaimCount(db), 0);
+  assert.deepEqual(startedFlows, []);
 });

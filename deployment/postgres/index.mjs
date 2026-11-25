@@ -125,6 +125,7 @@ export async function loadMigrations() {
       '026-user-category-jobs',
       '027-user-attribute-values',
       '028-user-attribute-preview-routes',
+      '029-user-attribute-jobs',
     ].map(async (id) => {
       const sql = await readFile(
         new URL(`./migrations/${id}.sql`, import.meta.url),
@@ -428,6 +429,28 @@ export async function migrate(client, { runtimeRole, migrations } = {}) {
         cc.read_user_attribute_preview_targets(uuid,integer,uuid,text,integer,text,text,integer),
         cc.user_attribute_job_receipt(uuid),
         cc.confirm_user_attribute_preview(uuid,integer,uuid,text,uuid) TO ${role}`);
+    }
+    if (migrations.some(({ id }) => id === '029-user-attribute-jobs')) {
+      await client.query(`GRANT SELECT ON cc.user_attribute_preview_targets TO ${role};
+        GRANT EXECUTE ON FUNCTION
+        cc.begin_user_attribute_write(text,uuid,uuid,uuid),
+        cc.extend_user_attribute_attempt(text,uuid,uuid),
+        cc.user_attribute_terminal_status(uuid),
+        cc.refresh_user_attribute_counters(uuid),
+        cc.user_attribute_stop_reason(text,uuid,integer,integer,boolean),
+        cc.user_attribute_work_fields(uuid),
+        cc.user_attribute_work_row(cc.user_attribute_preview_targets,uuid),
+        cc.claim_user_attribute_updates(text,uuid,uuid,uuid,integer),
+        cc.settle_user_attribute_updates(text,uuid,uuid,uuid,jsonb,timestamptz,text),
+        cc.finish_user_attribute_job(text,uuid,uuid,uuid,text),
+        cc.claim_user_attribute_verification(text,uuid,uuid,jsonb,integer),
+        cc.skip_user_attribute_pending(uuid,text),
+        cc.recover_user_attribute_jobs(text),
+        cc.claim_user_attribute_verification_one(text,uuid,uuid,integer),
+        cc.settle_user_attribute_verification(text,uuid,uuid,integer,text,text,text,integer,text,jsonb,timestamptz),
+        cc.read_user_attribute_verification(text,uuid,uuid,integer),
+        cc.record_user_attribute_start(text,uuid,uuid,text),
+        cc.abandon_user_attribute_start(text,uuid,uuid) TO ${role}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1::bigint)', [LOCK]);

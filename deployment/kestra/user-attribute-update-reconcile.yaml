@@ -1,0 +1,40 @@
+id: user_attribute_update_reconcile
+namespace: campus.application
+# One Unknown operation of one value job (document B section 7.3). The route
+# fences the operation, and the worker reads the user with the masked read.
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  # The whole operation number of the value job.
+  - id: operationNumber
+    type: STRING
+  # The read-back attempt that the route claimed.
+  - id: verifyAttempt
+    type: STRING
+    required: false
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: dispatch
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/user-attribute-reconcile'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "operationNumber": inputs.operationNumber,
+        "verifyAttempt": inputs.verifyAttempt,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H

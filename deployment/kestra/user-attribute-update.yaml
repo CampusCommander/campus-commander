@@ -1,0 +1,49 @@
+id: user_attribute_update
+namespace: campus.application
+# The job service admits one write job and a unique index enforces it, so this
+# flow sets no concurrency limit. The value job writes one confirmed preview:
+# the worker claims up to 250 users, sends one envelope, settles the answer,
+# reads each unknown user back no earlier than 30 seconds after its answer,
+# and finishes the job (document B sections 7.2 and 7.3).
+inputs:
+  - id: customerId
+    type: STRING
+  - id: jobId
+    type: STRING
+  - id: dispatchToken
+    type: STRING
+  - id: correlationId
+    type: STRING
+tasks:
+  - id: write
+    type: io.kestra.plugin.core.http.Request
+    uri: '{{ envs.cc_worker_base_url }}/dispatch/user-attribute-update'
+    method: POST
+    contentType: application/json
+    headers:
+      Authorization: "Bearer {{ secret('CC_WORKER_DISPATCH_TOKEN') }}"
+    body: |
+      {{ {
+        "executionId": execution.id,
+        "customerId": inputs.customerId,
+        "jobId": inputs.jobId,
+        "dispatchToken": inputs.dispatchToken,
+        "correlationId": inputs.correlationId
+      } | json }}
+    timeout: PT1H
+    options:
+      timeout:
+        connectTimeout: PT3S
+        readIdleTimeout: PT1H
+    # Only a failed worker request retries here. Every Google outcome, every
+    # fenced result, and every stopped job returns 200 and never retries. A
+    # retry claims the job again and resumes it: the rows that a lost attempt
+    # dispatched are read back instead of sent again (document B section 7.3).
+    retry:
+      type: constant
+      interval: PT5S
+      maxAttempts: 3
+      warningOnRetry: false
+# The flow holds no errors block. A lost run leaves the job running, and the job
+# service recovery restarts it: a start that never claimed restarts, and a lost
+# runner becomes a new attempt whose dispatched users are read back.

@@ -9,6 +9,7 @@ import { qualifyUserCategoryPlanHttp } from './user-category-plan-http.integrati
 import { qualifyUserCategoryJobs } from './user-category-jobs.integration.mjs';
 import { qualifyUserAttributeValues } from './user-attribute-values.integration.mjs';
 import { qualifyUserAttributePreviewRoutes } from './user-attribute-preview-routes.integration.mjs';
+import { qualifyUserAttributeJobs } from './user-attribute-jobs.integration.mjs';
 import { qualifyDeviceWriteJobs } from './device-write-jobs.integration.mjs';
 import { qualifyDeviceWriteAccess } from './device-write-access.integration.mjs';
 import { qualifyDeviceUpdates } from './device-updates.integration.mjs';
@@ -666,6 +667,13 @@ try {
       migrator: migrators[0],
       issuer,
       connect,
+    })),
+  );
+  results.push(
+    ...(await qualifyUserAttributeJobs({
+      runtime,
+      migrator: migrators[0],
+      issuer,
     })),
   );
   results.push(

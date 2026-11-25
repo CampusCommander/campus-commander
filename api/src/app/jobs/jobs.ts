@@ -393,6 +393,46 @@ function operationOf(
 }
 
 /**
+ * One operation row of a value job (design card K24, B section 7.2). A value operation is one user,
+ * so `deviceId` names the user and `serialNumber` the primary email. The requested and observed
+ * values stay null, because one operation covers several attributes and the contract carries one
+ * string for each.
+ */
+export function valueOperation(
+  row: Record<string, unknown>,
+  displayId: string,
+  operationNumber: number,
+): JobOperation {
+  const status = String(row['outcome']);
+  return {
+    operationId: `${displayId}-${operationNumber}`,
+    deviceId: String(row['user_id']),
+    serialNumber: String(row['primary_email'] ?? ''),
+    orgUnitPath: '',
+    field: null,
+    operation: 'replace',
+    baselineValue: null,
+    requestedValue: null,
+    outcome:
+      status === 'dispatched' || status === 'pending'
+        ? 'pending'
+        : (status as JobOperation['outcome']),
+    outcomeReason: (row['outcome_reason'] as string | null) ?? null,
+    googleStatus:
+      row['google_status'] == null ? null : Number(row['google_status']),
+    googleReason: (row['google_reason'] as string | null) ?? null,
+    observedValue: null,
+    verifiedBy: (row['verified_by'] as JobOperation['verifiedBy']) ?? null,
+    commandId: null,
+    // The stored last observation stays as evidence. A value operation names no command.
+    commandState: null,
+    commandExpiresAt: null,
+    commandExecutedAt: null,
+    updatedAt: measuredAt(row['updated_at']),
+  };
+}
+
+/**
  * One operation row. A dispatched or issued operation reads pending (section 2.2). An update row
  * reads its baseline, request, and observation from its field row, so every row of one device
  * carries the result of that device's one PATCH (design addendum section 1).
@@ -933,6 +973,18 @@ export class Jobs {
     const job = await this.header(session, customerId, displayId);
     if (!job) throw new NotFoundException({ reason: 'job-not-found' });
     const jobId = String(job['job_id']);
+    // A value job reads one Unknown user back with the masked read (design card K24, B section 7.3).
+    if (String(job['kind']) === 'user-attribute-update')
+      return this.reconcileValue(
+        customerId,
+        jobId,
+        displayId,
+        operationNumber,
+        correlationId,
+        orchestration,
+        authorize,
+        session,
+      );
     const row = (
       await this.rows(
         `SELECT o.*, u.action, f.field,
@@ -1016,6 +1068,77 @@ export class Jobs {
       }
     }
     return jobOperation(row, displayId);
+  }
+
+  /**
+   * The read-back of one Unknown operation of a value job (design card K24, B section 7.3). A value
+   * operation number counts the eligible users in ordinal order, and the operation reads exactly like
+   * a device operation, with the user ID in `deviceId` and the primary email in `serialNumber`. The
+   * requested and observed values stay null, because one value operation covers several attributes
+   * and the contract carries one string for each.
+   */
+  private async reconcileValue(
+    customerId: string,
+    jobId: string,
+    displayId: string,
+    operationNumber: number,
+    correlationId: string,
+    orchestration: JobServiceOrchestration,
+    authorize: ReconcileAuthorizer,
+    session: SessionResponse,
+  ): Promise<JobOperation> {
+    const row = (
+      await this.rows(
+        `SELECT t.user_id,t.primary_email,t.outcome,t.outcome_reason,t.google_status,
+          t.google_reason,t.verified_by
+          FROM (SELECT o.*,row_number() OVER (ORDER BY o.ordinal) AS number
+            FROM cc.user_attribute_preview_targets o
+            JOIN cc.user_attribute_update_jobs u ON u.preview_id=o.preview_id
+            WHERE u.job_id=$4 AND o.disposition='eligible') t
+          JOIN cc.jobs j ON j.job_id=$4
+          WHERE j.customer_id=$3 AND j.display_id=$5
+            AND cc.job_visible($1,$2,$3,j.requested_by) AND t.number=$6
+          LIMIT 1`,
+        [...this.actor(session), customerId, jobId, displayId, operationNumber],
+      )
+    )[0];
+    if (!row) throw new NotFoundException({ reason: 'operation-not-found' });
+    const operation = valueOperation(row, displayId, operationNumber);
+    // A value operation writes user attributes, so its read-back needs the user write action.
+    await authorize('value-write');
+    if (String(row['outcome']) !== 'unknown')
+      throw new ConflictException({ reason: 'operation-settled' });
+    const attempt = randomUUID();
+    const claimed = (
+      await this.rows(
+        'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+        [customerId, jobId, attempt, operationNumber],
+      )
+    )[0];
+    const result = claimed?.['result'];
+    const outcome =
+      result && typeof result === 'object' && 'outcome' in result
+        ? String(result.outcome)
+        : '';
+    // `waiting` keeps the 30-second rule of C11: the person reads again after the window. `busy`
+    // keeps a live read-back of another caller.
+    if (outcome === 'claimed') {
+      try {
+        await orchestration.startUserAttributeReconcile({
+          customerId,
+          jobId,
+          operationNumber,
+          verifyAttempt: attempt,
+          correlationId,
+        });
+      } catch {
+        // The claim expires after 120 seconds, so the person can try again.
+        throw new ServiceUnavailableException({
+          reason: 'reconcile-unavailable',
+        });
+      }
+    }
+    return operation;
   }
 
   /**

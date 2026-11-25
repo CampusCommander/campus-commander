@@ -95,14 +95,22 @@ export const RECONCILE_READ_ACTIONS = ['jobs:read', 'jobs:manage'] as const;
 export const RECONCILE_UPDATE_ACTIONS = ['devices:write'] as const;
 export const RECONCILE_STATUS_ACTIONS = ['devices:status'] as const;
 export const RECONCILE_DEPROVISION_ACTIONS = ['devices:deprovision'] as const;
+/** A value operation of a user value job writes with the user write action (B section 11). */
+export const RECONCILE_VALUE_ACTIONS = ['users:write'] as const;
 
 /** One Reconcile check: the read of the job, or the write check of the operation kind. */
-export type ReconcileCheck = 'read' | 'update' | 'status' | 'deprovision';
+export type ReconcileCheck =
+  | 'read'
+  | 'update'
+  | 'status'
+  | 'deprovision'
+  | 'value-write';
 
 /** The action list of one Reconcile check. */
 export function reconcileActions(check: ReconcileCheck): readonly Action[] {
   if (check === 'read') return RECONCILE_READ_ACTIONS;
   if (check === 'deprovision') return RECONCILE_DEPROVISION_ACTIONS;
+  if (check === 'value-write') return RECONCILE_VALUE_ACTIONS;
   return check === 'status'
     ? RECONCILE_STATUS_ACTIONS
     : RECONCILE_UPDATE_ACTIONS;

@@ -125,6 +125,7 @@ test('the release identifies its SQL migration by content checksum', async () =>
       '026-user-category-jobs',
       '027-user-attribute-values',
       '028-user-attribute-preview-routes',
+      '029-user-attribute-jobs',
     ],
   );
   for (const migration of migrations)
