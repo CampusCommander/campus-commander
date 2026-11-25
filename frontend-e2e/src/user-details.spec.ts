@@ -20,9 +20,16 @@ const observedAt = at(2);
 const removedAt = at(3);
 /** One test sends a long attribute value to prove that it stays inside its card. */
 let longProgram: string | null = null;
+/** The value of the one save of the card form test, kept until the next test. */
+let savedGrade: number | null = null;
+/** The edit list that the mocked preview route received. */
+let lastPreviewBody: unknown = null;
 
 test.afterEach(() => {
   longProgram = null;
+  savedGrade = null;
+  lastPreviewBody = null;
+  tooLargeOnce = false;
   extraPeople = [];
 });
 
@@ -39,6 +46,7 @@ function shownTime(iso: string): string {
 
 const grants = [
   { action: 'users:read', scope: { kind: 'district', customerId } },
+  { action: 'users:write', scope: { kind: 'district', customerId } },
   { action: 'devices:read', scope: { kind: 'district', customerId } },
   { action: 'connection:diagnose', scope: { kind: 'district', customerId } },
 ];
@@ -188,8 +196,32 @@ function detailOf(person: FixtureUser) {
     (candidate) => candidate.userId === person.userId,
   );
   return {
-    user: { ...withLongProgram(row), removedAt: person.removedAt ?? null },
+    user: {
+      ...withSavedGrade(withLongProgram(row), person.userId),
+      removedAt: person.removedAt ?? null,
+    },
   };
+}
+
+/** The record of the one card form save, after its job settles (state 12). */
+function withSavedGrade<T extends Record<string, unknown> | undefined>(
+  row: T,
+  userId: string,
+) {
+  if (savedGrade === null || !row || row['userId'] !== userId) return row;
+  const student = {
+    ...(row['customSchemas'] as Record<string, Record<string, unknown>>)[
+      'Student'
+    ],
+    grade_level: String(savedGrade),
+  };
+  return {
+    ...row,
+    customSchemas: {
+      ...(row['customSchemas'] as Record<string, unknown>),
+      Student: student,
+    },
+  } as T;
 }
 
 /** The record of the first user with the long attribute value of one test. */
@@ -442,6 +474,101 @@ function answerFor(body: any) {
   };
 }
 
+/** The preview that the mocked edit-list route freezes for the card form test. */
+const previewDigest = 'a'.repeat(64);
+const cardPreview = (
+  edits: readonly { baselineValue?: unknown; values?: unknown[] }[],
+) => ({
+  previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+  source: 'edit-list',
+  changes: null,
+  attributeChanges: edits.length,
+  selected: edits.length,
+  eligible: edits.length,
+  unchanged: 0,
+  conflicts: 0,
+  oldestObservedAt: observedAt,
+  stale: false,
+  preparedAt: new Date(now).toISOString(),
+  expiresAt: new Date(now + 600_000).toISOString(),
+  manifestDigest: previewDigest,
+});
+
+/** One frozen row of the card form preview, from the edit that asked for it. */
+const cardTarget = (edit: {
+  attribute: string;
+  baselineValue?: unknown;
+  values?: unknown[];
+}) => ({
+  userId: people[0].userId,
+  primaryEmail: `${people[0].local}@example.org`,
+  attribute: edit.attribute,
+  currentValue: edit.baselineValue ?? null,
+  newValue: edit.values?.[0] ?? null,
+  disposition: 'eligible',
+  observedAt,
+});
+
+/** The value job that the mocked confirm answers, and its detail (design K24). */
+const valueJob = {
+  jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+  displayId: 'UAT-015',
+  revision: 1,
+  action: 'update-device-annotations',
+  status: 'completed',
+  entityType: 'device',
+  scope: { kind: 'devices', deviceCount: 1 },
+  requestedBy: {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    displayName: 'Review administrator',
+  },
+  createdAt: new Date(now - 60_000).toISOString(),
+  startedAt: new Date(now - 50_000).toISOString(),
+  finishedAt: new Date(now - 40_000).toISOString(),
+  progress: {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  cancelRequest: null,
+  failure: null,
+  phase: null,
+  exportSummary: null,
+  importSummary: null,
+  confirmedBy: {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    displayName: 'Review administrator',
+  },
+  previewDisplayId: null,
+  changes: null,
+  commandType: null,
+  statusAction: null,
+  deprovisionReason: null,
+  targetOrgUnitPaths: null,
+  correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  latestActivity: {
+    at: new Date(now - 40_000).toISOString(),
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+  exportFile: null,
+  importSource: null,
+  plan: null,
+  importDisplayId: null,
+  waitsForDisplayId: null,
+  waitingDisplayIds: null,
+  planJobs: null,
+  executionCounts: null,
+};
+
+/** The mocked preview answers 413 once, to prove that the form keeps its edits. */
+let tooLargeOnce = false;
+
 async function signIn(page: Page) {
   await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
@@ -520,6 +647,53 @@ async function signIn(page: Page) {
       }
       return route.fulfill({ json: { selection: selectionSpec() } });
     }
+    // The card form: one edit-list preview, its frozen rows, its confirm, and the job (K23, K24).
+    if (
+      path === '/api/users/attribute-previews' &&
+      request.method() === 'POST'
+    ) {
+      const body = request.postDataJSON();
+      lastPreviewBody = body;
+      if (tooLargeOnce) {
+        tooLargeOnce = false;
+        return route.fulfill({
+          status: 413,
+          json: { reason: 'payload-too-large' },
+        });
+      }
+      return route.fulfill({ json: cardPreview(body.edits ?? []) });
+    }
+    if (/^\/api\/users\/attribute-previews\/[^/]+\/targets$/.test(path)) {
+      const edits =
+        (
+          lastPreviewBody as {
+            edits?: Parameters<typeof cardTarget>[0][];
+          } | null
+        )?.edits ?? [];
+      return route.fulfill({
+        json: { targets: edits.map(cardTarget), nextCursor: null },
+      });
+    }
+    if (/^\/api\/users\/attribute-previews\/[^/]+\/confirm$/.test(path)) {
+      const body = request.postDataJSON() ?? {};
+      if (body.manifestDigest !== previewDigest)
+        return route.fulfill({
+          status: 409,
+          json: { reason: 'preview-conflict' },
+        });
+      savedGrade = 11;
+      return route.fulfill({
+        json: {
+          jobId: valueJob.jobId,
+          displayId: valueJob.displayId,
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      });
+    }
+    if (path === `/api/jobs/${valueJob.displayId}`)
+      return route.fulfill({ json: valueJob });
     // One user, read by the details page. Any other path stays a 404.
     const single = /^\/api\/users\/([^/]+)$/.exec(path);
     if (single) {
@@ -1015,4 +1189,137 @@ test('keeps the name link in every grid row (GRID-03)', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Open details for Amara Okafor' }),
   ).toBeVisible();
+});
+
+test('reproduces UM state 05 and state 12: the card form and the saved line', async ({
+  page,
+}) => {
+  // The first preview answers 413, to prove that the form keeps its edits (card K25).
+  tooLargeOnce = true;
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+
+  // One outlined Edit button at the right of the card heading (composition 4).
+  const edit = page.getByRole('button', { name: 'Edit', exact: true });
+  await expect(edit).toBeVisible();
+  const card = page.locator('section.attrs');
+  const headingBox = measured(
+    await card
+      .getByRole('heading', { name: 'Custom attributes' })
+      .boundingBox(),
+  );
+  const editBox = measured(await edit.boundingBox());
+  expect(editBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
+  await edit.click();
+
+  // State 05: the whole card edits at once, and each info type has its editor.
+  await expect(card.locator('.attribute-form')).toBeVisible();
+  await expect(
+    card.locator('[data-attribute="attr:Student.student_id"] input'),
+  ).toBeFocused();
+  const grade = card.locator(
+    '[data-attribute="attr:Student.grade_level"] input',
+  );
+  const homeroom = card.locator(
+    '[data-attribute="attr:Student.homeroom"] input',
+  );
+  await expect(grade).toHaveValue('10');
+  await expect(homeroom).toHaveValue('214');
+  await expect(
+    card.locator('[data-attribute="attr:Staff.hire_date"] input'),
+  ).toHaveAttribute('type', 'date');
+  await expect(
+    card.locator(
+      '[data-attribute="attr:Device.take_home"] mat-button-toggle-group',
+    ),
+  ).toBeVisible();
+  await expect(card.locator('mat-chip-row')).toHaveCount(2);
+  const save = page.getByRole('button', { name: 'Save changes', exact: true });
+  await expect(save).toBeDisabled();
+
+  // The value rules run in the form: a number error and the in-grid count message.
+  await grade.fill('ten');
+  await expect(card.getByText('Enter a whole number.')).toBeVisible();
+  await expect(save).toBeDisabled();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: `${scratch}/um-05-user-details-edit.png`,
+    fullPage: false,
+  });
+  await page.screenshot({
+    path: `${scratch}/um-05-user-details-edit-full.png`,
+    fullPage: true,
+  });
+  await homeroom.fill('216');
+  await expect(save).toBeDisabled();
+  await homeroom.fill('x'.repeat(512));
+  await expect(card.getByText('512 of 500 characters')).toBeVisible();
+  await expect(save).toBeDisabled();
+  await homeroom.fill('216');
+  await grade.fill('11');
+
+  // A 413 keeps the form and its edits, and shows the exact sentence of the card.
+  await save.click();
+  await expect(
+    card.getByText('The request exceeds the size limit.'),
+  ).toBeVisible();
+  await expect(grade).toHaveValue('11');
+  await expect(homeroom).toHaveValue('216');
+
+  // Two changes show the review of the frozen rows (B section 4.2).
+  await save.click();
+  await expect(card.locator('.review-table')).toBeVisible();
+  const rows = card.locator('.review-table tbody tr');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('Grade level');
+  await expect(rows.nth(0)).toContainText('Proposed');
+  await expect(rows.nth(1)).toContainText('Homeroom');
+  const confirm = page.getByRole('button', { name: 'Confirm', exact: true });
+  await expect(confirm).toBeEnabled();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+
+  // One change prepares the preview and confirms it in one step (owner direction).
+  await expect(grade).toHaveValue('11');
+  await expect(homeroom).toHaveValue('216');
+  await homeroom.fill('214');
+  await save.click();
+  await expect(card.getByText('Grade level saved to Google')).toBeVisible();
+  expect(lastPreviewBody).toEqual({
+    edits: [
+      {
+        userId: people[0].userId,
+        attribute: 'attr:Student.grade_level',
+        mode: 'set',
+        values: [11],
+        baselineValue: 10,
+      },
+    ],
+  });
+
+  // State 12: the saved line with the job as a secondary link, and the new value.
+  const job = card.getByRole('link', { name: 'UAT-015', exact: true });
+  await expect(job).toHaveAttribute('href', '/jobs/UAT-015');
+  await expect(
+    card.locator('.annotation', { hasText: 'Grade level' }),
+  ).toContainText('11');
+  await expect(edit).toBeFocused();
+  const savedBox = measured(await card.locator('.saved-line').boundingBox());
+  const firstSection = measured(
+    await card.locator('.attr-section').first().boundingBox(),
+  );
+  expect(savedBox.y + savedBox.height).toBeLessThanOrEqual(firstSection.y + 1);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: `${scratch}/um-12-details-saved.png`,
+    fullPage: false,
+  });
+  await page.screenshot({
+    path: `${scratch}/um-12-details-saved-full.png`,
+    fullPage: true,
+  });
 });

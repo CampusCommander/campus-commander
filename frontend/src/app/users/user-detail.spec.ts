@@ -4,12 +4,14 @@ import { Router, provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   UserAttributeCategories,
+  UserAttributeField,
   UserDetail,
   UserRow,
   UserSyncState,
 } from '@campus/application-contracts';
 import { AuthStore } from '../auth.store';
 import { UserDetailPage, readAge } from './user-detail';
+import { UserAttributeEditFlow } from './user-attribute-edit-flow';
 import { UsersStore } from './users.store';
 import type { UserRead } from './users.store';
 
@@ -179,6 +181,10 @@ async function setup(options: {
   next?: UserRow | null;
   /** Holds the neighbor answer, so a test can end the page first. */
   neighbor?: () => Promise<UserRow | null>;
+  /** The `users:write` answer of the mocked AuthStore. */
+  canWrite?: boolean;
+  /** The mocked preview flow of the card form. */
+  flow?: Record<string, unknown>;
 }) {
   const detail = options.detail === undefined ? user() : options.detail;
   const position =
@@ -231,6 +237,9 @@ async function setup(options: {
     providers: [
       provideRouter([]),
       { provide: UsersStore, useValue: store },
+      ...(options.flow
+        ? [{ provide: UserAttributeEditFlow, useValue: options.flow }]
+        : []),
       {
         provide: AuthStore,
         useValue: {
@@ -240,6 +249,7 @@ async function setup(options: {
             csrfToken: 'a'.repeat(64),
           }),
           metadata: signal({ phase: 3 }),
+          can: vi.fn().mockReturnValue(options.canWrite ?? false),
           request: vi.fn(async () => Response.json({}, { status: 404 })),
         },
       },
@@ -539,6 +549,111 @@ describe('the user details page', () => {
       .find((candidate) => candidate.textContent?.trim() === 'Retry')
       ?.click();
     await vi.waitFor(() => expect(store.loadSync).toHaveBeenCalled());
+  });
+
+  it('shows no Edit button without users:write', async () => {
+    const { button } = await setup({});
+    expect(button('Edit')).toBeUndefined();
+  });
+
+  it('returns focus to the Edit button when the form closes (UI-09)', async () => {
+    const { fixture, button } = await setup({ canWrite: true });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(
+      fixture.nativeElement.querySelector('.attribute-form'),
+    ).not.toBeNull();
+    button('Cancel')?.click();
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(document.activeElement?.textContent?.trim()).toBe('Edit');
+    });
+  });
+
+  it('shows the saved line with the job link after one change (composition 13)', async () => {
+    const gradeLevel: UserAttributeField = {
+      fieldId: 'Student.grade_level',
+      fieldName: 'grade_level',
+      displayName: 'Grade level',
+      fieldType: 'INT64',
+      multiValued: false,
+      indexed: true,
+      readAccessType: 'ALL_DOMAIN_USERS',
+      numericIndexingSpec: null,
+      holders: 1,
+    };
+    const writableCategories: UserAttributeCategories = {
+      ...categories,
+      categories: categories.categories.map((category) =>
+        category.schemaName === 'Student'
+          ? { ...category, fields: [...category.fields, gradeLevel] }
+          : category,
+      ),
+    };
+    const oneChange = {
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          previewId: '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910',
+          source: 'edit-list',
+          changes: null,
+          attributeChanges: 1,
+          selected: 1,
+          eligible: 1,
+          unchanged: 0,
+          conflicts: 0,
+          oldestObservedAt: '2026-11-01T13:12:00.000Z',
+          stale: false,
+          preparedAt: '2026-11-01T13:12:00.000Z',
+          expiresAt: '2026-11-01T13:22:00.000Z',
+          manifestDigest: 'a'.repeat(64),
+        },
+      }),
+      readTargets: vi.fn(),
+      confirm: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+          displayId: 'UAT-015',
+          status: 'accepted',
+          userCount: 1,
+          changeCount: 1,
+        },
+      }),
+      waitForJob: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { displayId: 'UAT-015', status: 'completed' },
+      }),
+    };
+    const { fixture, element, button, store } = await setup({
+      canWrite: true,
+      categories: writableCategories,
+      flow: oneChange,
+    });
+    button('Edit')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const input = element.querySelector<HTMLInputElement>(
+      '[data-attribute="attr:Student.grade_level"] input',
+    );
+    if (!input) throw new Error('No grade level field');
+    input.value = '11';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button('Save changes')?.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(element.textContent).toContain('Grade level saved to Google');
+    });
+    expect(element.textContent).toContain('Job');
+    expect(
+      element.querySelector('a[href="/jobs/UAT-015"]')?.textContent?.trim(),
+    ).toBe('UAT-015');
+    expect(oneChange.confirm).toHaveBeenCalledTimes(1);
+    // The card reads the user again after the job settles.
+    expect(store.user).toHaveBeenCalledTimes(2);
   });
 });
 
