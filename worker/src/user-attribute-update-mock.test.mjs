@@ -351,7 +351,6 @@ test('an exhausted quota settles Failed `quota`', { timeout }, async () => {
   });
   await job(fake).run(request(), signal());
   const [settled] = fake.settlements;
-  if (process.env.K24_PROBE) console.log(JSON.stringify(settled[0], null, 2));
   assert.equal(settled[0].outcome, 'failed');
   assert.equal(settled[0].failure, 'quota');
   assert.equal(settled[0].googleStatus, 429);
