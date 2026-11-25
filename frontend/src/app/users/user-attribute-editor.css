@@ -109,7 +109,7 @@
   justify-content: flex-end;
   gap: var(--cc-space-sm);
   margin-block-start: var(--cc-space-lg);
-  padding-block-start: var(--cc-space-md);
+  padding-block-start: var(--cc-space-lg);
   border-block-start: 1px solid var(--cc-border);
 }
 /* The review of the frozen rows (B section 4.2), in the approved table shape. */
