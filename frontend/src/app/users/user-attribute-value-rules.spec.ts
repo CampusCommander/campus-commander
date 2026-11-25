@@ -181,6 +181,28 @@ describe('the attribute value rules', () => {
     expect(result).toEqual({ changed: false, error: null, edit: null });
   });
 
+  it('blocks an invalid decimal beside a valid change, even from an unset value (R1-C)', () => {
+    const average = field({
+      fieldId: 'Student.average',
+      fieldName: 'average',
+      displayName: 'Average',
+      fieldType: 'DOUBLE',
+    });
+    const withAverage = { ...student, fields: [average, homeroom] };
+    const drafts = attributeDrafts([withAverage], {
+      Student: { homeroom: '214' },
+    });
+    const averageDraft = draftOf(drafts, 'attr:Student.average');
+    expect(averageDraft.baseline).toBeNull();
+    const invalid = attributeDraftResult(
+      { ...averageDraft, value: '1.2.3' },
+      userId,
+    );
+    expect(invalid.changed).toBe(true);
+    expect(invalid.error).toBe('Enter a decimal number.');
+    expect(invalid.edit).toBeNull();
+  });
+
   it('edits the list of every multi-value type as its own values (R1-B)', () => {
     const types = field({
       fieldId: 'Multi.kinds',

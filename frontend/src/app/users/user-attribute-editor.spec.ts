@@ -627,6 +627,68 @@ describe('the Custom attributes card form', () => {
     expect(mocked.prepare).toHaveBeenCalledTimes(1);
   });
 
+  it('replays the same review confirmation after an uncertain answer (R1-D)', async () => {
+    let confirmCalls = 0;
+    const reviewFlow = flow({
+      prepare: vi.fn().mockResolvedValue({
+        ok: true,
+        value: preview({ attributeChanges: 2, selected: 2, eligible: 2 }),
+      }),
+      readTargets: vi.fn().mockResolvedValue({
+        ok: true,
+        value: [
+          target(),
+          target({
+            attribute: 'attr:Student.homeroom',
+            currentValue: '214',
+            newValue: '216',
+          }),
+        ],
+      }),
+      confirm: vi.fn().mockImplementation(() => {
+        confirmCalls++;
+        return Promise.resolve(
+          confirmCalls === 1
+            ? {
+                ok: false,
+                message:
+                  'Cannot reach Campus Commander. Your changes are still here.',
+                uncertain: true,
+              }
+            : {
+                ok: true,
+                value: {
+                  jobId: '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1',
+                  displayId: 'UAT-015',
+                  status: 'accepted',
+                  userCount: 1,
+                  changeCount: 2,
+                },
+              },
+        );
+      }),
+    });
+    const { element, type, button, finished, mocked } = await setup({
+      flow: reviewFlow,
+    });
+    type('attr:Student.grade_level', '11');
+    type('attr:Student.homeroom', '216');
+    button('Save changes')?.click();
+    await vi.waitFor(() => expect(element.textContent).toContain('Review'));
+    button('Confirm')?.click();
+    await vi.waitFor(() =>
+      expect(element.textContent).toContain(
+        'Retry the confirmation to keep the same preview.',
+      ),
+    );
+    expect(mocked.prepare).toHaveBeenCalledTimes(1);
+    button('Confirm')?.click();
+    await vi.waitFor(() => expect(finished()?.displayId).toBe('UAT-015'));
+    expect(mocked.confirm).toHaveBeenCalledTimes(2);
+    expect(mocked.confirm.mock.calls[1]).toEqual(mocked.confirm.mock.calls[0]);
+    expect(mocked.prepare).toHaveBeenCalledTimes(1);
+  });
+
   it('reports a job that needs review as unknown (R1-F)', async () => {
     const needsReview = flow({
       waitForJob: vi.fn().mockResolvedValue({
