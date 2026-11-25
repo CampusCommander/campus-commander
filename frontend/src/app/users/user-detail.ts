@@ -30,7 +30,9 @@ import {
   userAttributeSections,
 } from './user-attribute-sections';
 import {
+  ATTRIBUTE_EDIT_LABEL,
   ATTRIBUTE_FAILED_TEXT,
+  ATTRIBUTE_JOB_SEPARATOR,
   ATTRIBUTE_PARTIAL_TEXT,
   ATTRIBUTE_REVIEW_TEXT,
   ATTRIBUTE_UNSETTLED_TEXT,
@@ -130,6 +132,9 @@ export class UserDetailPage {
       : rawAttributeSections(current.customSchemas);
   });
   protected readonly relative = readAge;
+  /** The one Edit control and the saved-line separator of the card (compositions 4 and 13). */
+  protected readonly editLabel = ATTRIBUTE_EDIT_LABEL;
+  protected readonly jobSeparator = ATTRIBUTE_JOB_SEPARATOR;
   private readonly auth = inject(AuthStore);
   /** The card form edits every attribute of this user at once, and one save makes one job. */
   protected readonly editing = signal(false);

@@ -173,7 +173,7 @@
           class="edit-button"
           (click)="startEdit()"
         >
-          Edit
+          {{ editLabel }}
         </button>
         }
       </div>
@@ -197,7 +197,7 @@
           >{{ line.outcome === 'saved' ? 'check_circle' : line.outcome ===
           'unknown' ? 'info' : 'error' }}</span
         >
-        <span>{{ line.text }} · Job</span>
+        <span>{{ line.text }}{{ jobSeparator }}</span>
         <a [routerLink]="['/jobs', line.displayId]">{{ line.displayId }}</a>
       </p>
       } @if (store.categoriesError()) {

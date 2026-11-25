@@ -47,8 +47,6 @@ export const ATTRIBUTE_REFUSED_TEXT =
   'Campus Commander refused the save. Your changes are still here.';
 export const ATTRIBUTE_READ_FAILED_TEXT =
   'Campus Commander could not read this user from Google. Your changes are still here.';
-export const ATTRIBUTE_ROWS_UNAVAILABLE_TEXT =
-  'Campus Commander could not read the preview rows.';
 export const ATTRIBUTE_PREVIEW_UNAVAILABLE_TEXT =
   'Campus Commander could not read the preview. Retry the save.';
 export const ATTRIBUTE_OFFLINE_TEXT =
@@ -72,8 +70,6 @@ export const ATTRIBUTE_REVIEW_TEXT = 'The job needs review.';
 /** The retry of a confirmation whose answer never arrived (R1-D). */
 export const ATTRIBUTE_CONFIRM_UNCERTAIN_HINT =
   'Retry the confirmation to keep the same preview.';
-export const ATTRIBUTE_JOB_RESULT_SUFFIX = ' for the result.';
-export const ATTRIBUTE_JOB_PROGRESS_SUFFIX = ' for its progress.';
 
 /** "Grade level and Homeroom", "Grade level, Homeroom, and Building". */
 export function attributeListText(labels: readonly string[]): string {
