@@ -30,7 +30,12 @@ import type {
   UserAttributeTarget,
   UserDetail,
 } from '@campus/application-contracts';
-import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import {
+  UserAttributeEditFlow,
+  attributeJobOutcome,
+  type AttributeSaveOutcome,
+} from './user-attribute-edit-flow';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
 import {
   ATTRIBUTE_BACK_TO_FORM_LABEL,
   ATTRIBUTE_BOOL_LABELS,
@@ -64,7 +69,7 @@ import {
 
 /** The outcome of one save, for the saved line of the card (composition 13). */
 export interface UserAttributeSaveResult {
-  outcome: 'saved' | 'partial' | 'failed' | 'unknown' | 'unsettled';
+  outcome: AttributeSaveOutcome;
   /** The user whose card opened this save. A result never moves to another user (R1-A). */
   userId: string;
   displayId: string;
@@ -107,6 +112,7 @@ export class UserAttributeEditor implements OnInit {
   readonly finished = output<UserAttributeSaveResult>();
 
   protected readonly flow = inject(UserAttributeEditFlow);
+  private readonly confirmations = inject(UserAttributeConfirmationStore);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private destroyed = false;
@@ -153,8 +159,9 @@ export class UserAttributeEditor implements OnInit {
     viewChild<ElementRef<HTMLElement>>('firstField');
   private readonly reviewTitle =
     viewChild<ElementRef<HTMLElement>>('reviewTitle');
-  private readonly uncertainAction =
-    viewChild<ElementRef<HTMLElement>>('uncertainAction');
+  private readonly uncertainAction = viewChild('uncertainAction', {
+    read: ElementRef,
+  });
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -178,6 +185,16 @@ export class UserAttributeEditor implements OnInit {
       this.user().customSchemas,
     );
     this.drafts.set(drafts);
+    // An uncertain confirmation outlives the editor. Reopening the same card continues the
+    // one confirmation instead of preparing another preview (R2-B).
+    const pending = this.confirmations.pending(this.subjectUserId);
+    if (pending) {
+      this.preview.set(pending.preview);
+      this.pendingNames.set(pending.attributeNames);
+      this.message.set(pending.message);
+      this.step.set('unconfirmed');
+      this.focusUncertain();
+    }
   }
 
   /** The category sections of the form, in the order of the category read. */
@@ -402,6 +419,8 @@ export class UserAttributeEditor implements OnInit {
   private async submit(attributeNames: string[]): Promise<void> {
     const preview = this.preview();
     if (!preview) return;
+    // A preview that already lost one answer stays unresolved through a later refusal (R2-B).
+    const unresolved = this.confirmations.isPending(preview.previewId);
     this.pendingNames.set(attributeNames);
     this.message.set('');
     this.step.set('confirming');
@@ -409,16 +428,24 @@ export class UserAttributeEditor implements OnInit {
       preview.previewId,
       preview.manifestDigest,
     );
+    if (!receipt.ok && (receipt.uncertain || unresolved)) {
+      // The answer may have created the job. Keep the preview, its digest, and the submitted
+      // names until a receipt answers this same confirmation (R2-B).
+      this.confirmations.remember({
+        userId: this.subjectUserId,
+        preview,
+        attributeNames: [...attributeNames],
+        message: receipt.message,
+      });
+      if (this.destroyed) return;
+      this.message.set(receipt.message);
+      this.step.set('unconfirmed');
+      this.focusUncertain();
+      return;
+    }
+    if (receipt.ok) this.confirmations.resolve(preview.previewId);
     if (this.destroyed) return;
     if (!receipt.ok) {
-      if (receipt.uncertain) {
-        // The answer may have created the job. Keep the preview and replay this same
-        // confirmation, so the save never gains a second job identity (R1-D).
-        this.message.set(receipt.message);
-        this.step.set('unconfirmed');
-        this.focusUncertain();
-        return;
-      }
       // A definite refusal keeps the form and its edits, and clears the preview, because
       // the route has settled the preview identity already (card scope, B section 13).
       this.preview.set(null);
@@ -437,15 +464,9 @@ export class UserAttributeEditor implements OnInit {
     );
     if (this.destroyed) return;
     // A job that never settled, or a job whose answer never arrived, keeps its receipt.
-    const outcome: UserAttributeSaveResult['outcome'] = !job.ok
+    const outcome: AttributeSaveOutcome = !job.ok
       ? 'unsettled'
-      : job.value.status === 'completed'
-        ? 'saved'
-        : job.value.status === 'completed-with-errors'
-          ? 'partial'
-          : job.value.status === 'needs-review'
-            ? 'unknown'
-            : 'failed';
+      : attributeJobOutcome(job.value.status);
     this.finished.emit({
       outcome,
       userId: this.subjectUserId,

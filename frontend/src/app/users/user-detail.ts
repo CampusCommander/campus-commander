@@ -40,6 +40,12 @@ import {
   UserAttributeEditor,
   type UserAttributeSaveResult,
 } from './user-attribute-editor';
+import {
+  UserAttributeEditFlow,
+  attributeJobOutcome,
+  isTerminalJobStatus,
+  type AttributeSaveOutcome,
+} from './user-attribute-edit-flow';
 
 /** What the page shows, from the directory status and the record read (A section 11). */
 type DetailView =
@@ -88,6 +94,10 @@ export class UserDetailPage {
   protected readonly store = inject(UsersStore);
   private readonly router = inject(Router);
   protected readonly user = signal<UserDetail | null>(null);
+  /** The user of the record on screen. A replacement read keeps the previous record visible. */
+  protected readonly displayedUserId = computed(
+    () => this.user()?.userId ?? null,
+  );
   protected readonly busy = signal(false);
   private readonly status = signal<DetailStatus>('loading');
   protected readonly view = computed<DetailView>(() => {
@@ -125,12 +135,22 @@ export class UserDetailPage {
   protected readonly editing = signal(false);
   /** The user whose card opened the form. A route change closes the form (R1-A). */
   protected readonly editingUserId = signal<string | null>(null);
-  /** The form is open on the card of the current route, not on a card that the route left. */
+  /**
+   * The form is open on the card that is on screen and on the current route. A replacement
+   * read keeps the previous record visible, so the route alone cannot name the owner (R2-A).
+   */
   protected readonly editingThisCard = computed(
-    () => this.editing() && this.editingUserId() === this.userId(),
+    () =>
+      this.editing() &&
+      this.editingUserId() !== null &&
+      this.editingUserId() === this.displayedUserId() &&
+      this.editingUserId() === this.userId(),
   );
   protected readonly saved = signal<UserAttributeSaveResult | null>(null);
   private readonly savedUserId = signal<string | null>(null);
+  private readonly editFlow = inject(UserAttributeEditFlow);
+  /** The accepted receipts whose job reads continue after the editor closed (R2-C). */
+  private readonly following = new Map<string, UserAttributeSaveResult>();
   protected readonly categories = computed(
     () => this.store.categories()?.categories ?? [],
   );
@@ -140,6 +160,9 @@ export class UserDetailPage {
     return (
       sync !== null &&
       this.store.categories() !== null &&
+      // The card on screen must be the user of the route, so a held replacement read never
+      // opens a form whose target differs from the heading (R2-A).
+      this.displayedUserId() === this.userId() &&
       this.auth.can('users:write', {
         kind: 'district',
         customerId: sync.customerId,
@@ -149,7 +172,12 @@ export class UserDetailPage {
   /** The saved line of composition 13, with the job ID as a secondary link. */
   protected readonly savedLine = computed(() => {
     const result = this.saved();
-    if (!result || this.savedUserId() !== this.userId()) return null;
+    if (
+      !result ||
+      this.savedUserId() !== this.userId() ||
+      this.savedUserId() !== this.displayedUserId()
+    )
+      return null;
     const text =
       result.outcome === 'saved'
         ? attributeSavedText(result.attributeNames)
@@ -185,6 +213,24 @@ export class UserDetailPage {
         }
         if (this.savedUserId() !== id) this.saved.set(null);
         void this.load(id);
+      });
+    });
+    // A replacement read keeps the previous record visible. A form for that record closes
+    // when another record takes its place, so the editor owner and the heading stay aligned
+    // (R2-A).
+    effect(() => {
+      const displayed = this.displayedUserId();
+      untracked(() => {
+        const owner = this.editingUserId();
+        if (
+          this.editing() &&
+          owner !== null &&
+          displayed !== null &&
+          owner !== displayed
+        ) {
+          this.editing.set(false);
+          this.editingUserId.set(null);
+        }
       });
     });
     // The grid hands over with a link that leaves the page, so focus continues at the
@@ -260,9 +306,14 @@ export class UserDetailPage {
   }
 
   protected startEdit(): void {
+    const displayed = this.user();
+    // Only the card on screen opens a form, and its record must be the user of the route.
+    // A held replacement read can show another record, so the heading and the write target
+    // never separate (R2-A).
+    if (!displayed || displayed.userId !== this.userId()) return;
     this.saved.set(null);
     this.savedUserId.set(null);
-    this.editingUserId.set(this.userId());
+    this.editingUserId.set(displayed.userId);
     this.editing.set(true);
   }
 
@@ -275,14 +326,53 @@ export class UserDetailPage {
 
   protected finishEdit(result: UserAttributeSaveResult): void {
     // The save belongs to the card that started it. A later route never shows its result.
-    if (result.userId !== this.userId()) return;
+    if (
+      result.userId !== this.userId() ||
+      result.userId !== this.displayedUserId()
+    )
+      return;
     this.editing.set(false);
     this.editingUserId.set(null);
     this.savedUserId.set(result.userId);
     this.saved.set(result);
     this.focusEdit();
-    // The job settled, so the card reads the new values from the directory.
-    void this.load(result.userId);
+    // A settled job reads the new values from the directory. A job that did not settle keeps
+    // its accepted receipt under observation until it answers (R2-C).
+    if (result.outcome === 'unsettled') this.followJob(result);
+    else void this.load(result.userId);
+  }
+
+  /** Keep reading the accepted receipt after the editor closed, and refresh on settlement. */
+  private followJob(result: UserAttributeSaveResult): void {
+    if (this.following.has(result.displayId)) return;
+    this.following.set(result.displayId, result);
+    void this.observeJob(result);
+  }
+
+  private async observeJob(result: UserAttributeSaveResult): Promise<void> {
+    while (!this.leaving && this.following.has(result.displayId)) {
+      const job = await this.editFlow.readJob(result.displayId);
+      if (this.leaving || !this.following.has(result.displayId)) return;
+      if (job.ok && isTerminalJobStatus(job.value.status)) {
+        this.following.delete(result.displayId);
+        this.settleJob(result, attributeJobOutcome(job.value.status));
+        return;
+      }
+      // A transient read keeps the same receipt, and the next read tries again.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  private settleJob(
+    result: UserAttributeSaveResult,
+    outcome: AttributeSaveOutcome,
+  ): void {
+    if (
+      this.savedUserId() === result.userId &&
+      this.saved()?.displayId === result.displayId
+    )
+      this.saved.set({ ...result, outcome });
+    if (this.userId() === result.userId) void this.load(result.userId);
   }
 
   private focusEdit(): void {

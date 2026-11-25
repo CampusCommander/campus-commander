@@ -55,6 +55,27 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'cancelled',
 ]);
 
+/** The saved line that one job status answers (composition 13, B section 7.3). */
+export type AttributeSaveOutcome =
+  | 'saved'
+  | 'partial'
+  | 'failed'
+  | 'unknown'
+  | 'unsettled';
+
+/** Whether one job status needs no more reads. */
+export function isTerminalJobStatus(status: string): boolean {
+  return TERMINAL_STATUSES.has(status);
+}
+
+/** The outcome of one terminal job status. */
+export function attributeJobOutcome(status: string): AttributeSaveOutcome {
+  if (status === 'completed') return 'saved';
+  if (status === 'completed-with-errors') return 'partial';
+  if (status === 'needs-review') return 'unknown';
+  return 'failed';
+}
+
 /** The Google failure sentence of a 503 `user-read-failed` answer, or null. */
 function readFailureText(raw: unknown): string | null {
   const failure = googleFailureSchema.safeParse(raw);
@@ -234,8 +255,7 @@ export class UserAttributeEditFlow {
   ): Promise<AttributeFlowAnswer<JobDetail>> {
     let answer = await this.readJob(displayId);
     for (let attempt = 1; attempt < attempts; attempt++) {
-      if (answer.ok && TERMINAL_STATUSES.has(answer.value.status))
-        return answer;
+      if (answer.ok && isTerminalJobStatus(answer.value.status)) return answer;
       if (isCancelled?.())
         return { ok: false, message: ATTRIBUTE_UNSETTLED_TEXT };
       await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -244,7 +264,7 @@ export class UserAttributeEditFlow {
       answer = await this.readJob(displayId);
     }
     // A terminal final answer settles; an open or unreadable one leaves the receipt in place.
-    if (answer.ok && TERMINAL_STATUSES.has(answer.value.status)) return answer;
+    if (answer.ok && isTerminalJobStatus(answer.value.status)) return answer;
     return answer.ok
       ? { ok: false, message: ATTRIBUTE_UNSETTLED_TEXT }
       : answer;
