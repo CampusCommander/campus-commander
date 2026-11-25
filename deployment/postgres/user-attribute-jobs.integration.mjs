@@ -7,7 +7,13 @@ import { randomUUID } from 'node:crypto';
  * read-back fence, the user row and the drafted 404 text, the cancel, the recovery, and the attempt
  * lease through the runtime role.
  */
-export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
+export async function qualifyUserAttributeJobs({
+  runtime,
+  migrator,
+  issuer,
+  connect,
+  close,
+}) {
   const connection = (
     await migrator.query('SELECT * FROM cc.google_connection')
   ).rows[0];
@@ -271,6 +277,140 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
     assert.equal(admission.jobId, job.jobId);
     return { ...job, token: admission.dispatchToken };
   };
+  const sleep = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds));
+  /** The production inventory upsert of one page at a fixed observation time. */
+  const upsertUsers = (rows, syncedAt) =>
+    result('SELECT cc.upsert_users($1,$2,$3) AS result', [
+      customer,
+      JSON.stringify(rows),
+      syncedAt,
+    ]);
+  const userRow = (userId, customSchemas) => ({
+    userId,
+    primaryEmail: `${userId}@example.org`,
+    orgUnitPath: '/Students',
+    suspended: false,
+    archived: false,
+    customSchemas,
+  });
+  /**
+   * Run one call on its own connection while another connection holds its lock, prove the call
+   * waits on that lock through `pg_blocking_pids`, run `expire`, then release. Returns the call
+   * answer or its error.
+   */
+  const waitPast = async ({ hold, call, expire, label }) => {
+    const holder = await connect('cc-migrator', 'cc-app');
+    const caller = await connect('cc-migrator', 'cc-app');
+    let pending;
+    try {
+      await holder.query('BEGIN');
+      await hold(holder);
+      const holderPid = (await holder.query('SELECT pg_backend_pid() AS pid'))
+        .rows[0].pid;
+      const callerPid = (await caller.query('SELECT pg_backend_pid() AS pid'))
+        .rows[0].pid;
+      pending = Promise.resolve(call(caller)).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      let waited = false;
+      for (let round = 0; round < 400; round += 1) {
+        const held = (
+          await migrator.query(
+            'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS held',
+            [callerPid, holderPid],
+          )
+        ).rows[0].held;
+        if (held === true) {
+          waited = true;
+          break;
+        }
+        await sleep(25);
+      }
+      assert.equal(waited, true, label);
+      await expire();
+      await holder.query('COMMIT');
+      return await pending;
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      if (pending) await pending.catch(() => undefined);
+      await close(caller).catch(() => undefined);
+      await close(holder).catch(() => undefined);
+    }
+  };
+  const lockUser = (userId) => ({
+    hold: (holder) =>
+      holder.query(
+        'SELECT 1 FROM cc.users WHERE customer_id=$1 AND user_id=$2 FOR UPDATE',
+        [customer, userId],
+      ),
+  });
+  const lockTarget = (previewId, ordinal = 0) => ({
+    hold: (holder) =>
+      holder.query(
+        'SELECT 1 FROM cc.user_attribute_preview_targets WHERE preview_id=$1 AND ordinal=$2 FOR UPDATE',
+        [previewId, ordinal],
+      ),
+  });
+  /** One manual read-back settlement of an Unknown row, through the production function. */
+  const verification = (
+    jobId,
+    verify,
+    ordinal,
+    outcome,
+    failure,
+    observed,
+    observedAt,
+  ) =>
+    result(
+      'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+      [
+        customer,
+        jobId,
+        verify,
+        ordinal,
+        outcome,
+        failure,
+        null,
+        outcome === 'succeeded' ? 200 : 404,
+        null,
+        observed === null ? null : JSON.stringify(observed),
+        observedAt,
+      ],
+    );
+  /** Claim and settle one user Unknown, then finish the job at Needs review. */
+  const reviewed = async ({
+    userId,
+    current,
+    requested,
+    schemaName,
+    fieldName,
+  }) => {
+    const job = await admitted({
+      users: [{ userId, current, requested }],
+      schemaName,
+      fieldName,
+    });
+    const attempt = randomUUID();
+    await claim(job.jobId, job.token, attempt);
+    await settle(
+      job.jobId,
+      job.token,
+      attempt,
+      [won({ ordinal: 0 }, 'unknown')],
+      new Date().toISOString(),
+    );
+    await finish(job.jobId, job.token, attempt);
+    return job;
+  };
+  const expireVerification = (previewId, ordinal = 0) =>
+    migrator.query(
+      `UPDATE cc.user_attribute_preview_targets
+       SET verify_lease_expires_at=clock_timestamp()-interval '1 second'
+       WHERE preview_id=$1 AND ordinal=$2`,
+      [previewId, ordinal],
+    );
   const won = (result, kind) => {
     const answer = {
       ordinal: result.ordinal,
@@ -1120,6 +1260,610 @@ export async function qualifyUserAttributeJobs({ runtime, migrator, issuer }) {
         );
         assert.equal(claimed.outcome, 'claimed', JSON.stringify(claimed));
         assert.equal(claimed.users.length, 1);
+      },
+    );
+
+    await check(
+      'K24 R6-A an equal newer write observation fences an older inventory answer',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-fresh-1', current: 'new', requested: 'new' }],
+        });
+        await storeUser('k24-fresh-1', {
+          StudentInfo: { Homeroom: 'new' },
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        const observedAt = new Date(Date.now() - 5 * 60_000);
+        const settled = await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [
+            {
+              ordinal: 0,
+              outcome: 'succeeded',
+              failure: null,
+              reason: null,
+              googleStatus: 200,
+              googleReason: null,
+              verifiedBy: 'write-response',
+              observed: { StudentInfo: { Homeroom: 'new' } },
+            },
+          ],
+          observedAt.toISOString(),
+        );
+        // The observation equals the cache, so it publishes nothing, and it still fences.
+        assert.deepEqual(settled.changed, [], JSON.stringify(settled));
+        const stamped = await one(
+          'SELECT custom_schemas_changed_at FROM cc.users WHERE customer_id=$1 AND user_id=$2',
+          [customer, 'k24-fresh-1'],
+        );
+        assert.equal(
+          stamped.custom_schemas_changed_at.getTime(),
+          observedAt.getTime(),
+          'The equal newer observation advances the freshness fence.',
+        );
+        // An older inventory answer now arrives through the production upsert.
+        assert.equal(
+          await upsertUsers(
+            [
+              userRow('k24-fresh-1', {
+                StudentInfo: { Homeroom: 'older-inventory' },
+              }),
+            ],
+            new Date(Date.now() - 10 * 60_000).toISOString(),
+          ),
+          1,
+        );
+        assert.equal(
+          (await customSchemas('k24-fresh-1')).custom_schemas.StudentInfo
+            .Homeroom,
+          'new',
+          'The older inventory answer cannot restore its stale value.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R6-A an equal newer read-back fences an older inventory answer',
+      async () => {
+        const job = await reviewed({
+          userId: 'k24-fresh-2',
+          current: 'new',
+          requested: 'new',
+        });
+        await storeUser('k24-fresh-2', {
+          StudentInfo: { Homeroom: 'new' },
+        });
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        const claimed = await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        assert.equal(claimed.outcome, 'claimed', JSON.stringify(claimed));
+        const observedAt = new Date(Date.now() - 5 * 60_000);
+        const settled = await verification(
+          job.jobId,
+          verify,
+          0,
+          'succeeded',
+          null,
+          { StudentInfo: { Homeroom: 'new' } },
+          observedAt.toISOString(),
+        );
+        assert.deepEqual(settled.changed, [], JSON.stringify(settled));
+        const stamped = await one(
+          'SELECT custom_schemas_changed_at FROM cc.users WHERE customer_id=$1 AND user_id=$2',
+          [customer, 'k24-fresh-2'],
+        );
+        assert.equal(
+          stamped.custom_schemas_changed_at.getTime(),
+          observedAt.getTime(),
+          'The equal newer read-back advances the freshness fence.',
+        );
+        assert.equal(
+          await upsertUsers(
+            [
+              userRow('k24-fresh-2', {
+                StudentInfo: { Homeroom: 'older-inventory' },
+              }),
+            ],
+            new Date(Date.now() - 10 * 60_000).toISOString(),
+          ),
+          1,
+        );
+        assert.equal(
+          (await customSchemas('k24-fresh-2')).custom_schemas.StudentInfo
+            .Homeroom,
+          'new',
+          'The older inventory answer cannot restore its stale value.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R6-B a settlement keeps an unrelated category committed during its wait',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-merge-1', current: 'old', requested: 'new' }],
+        });
+        await storeUser('k24-merge-1', {
+          StudentInfo: { Homeroom: 'old' },
+          StaffInfo: { Title: 'old-staff' },
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        const answer = await waitPast({
+          ...lockUser('k24-merge-1'),
+          hold: (holder) =>
+            holder.query('SELECT cc.upsert_users($1,$2,$3) AS result', [
+              customer,
+              JSON.stringify([
+                userRow('k24-merge-1', {
+                  StudentInfo: { Homeroom: 'old' },
+                  StaffInfo: { Title: 'newer-staff' },
+                }),
+              ]),
+              new Date(Date.now() - 10_000).toISOString(),
+            ]),
+          label: 'The settlement waits on the cached user row.',
+          expire: async () => undefined,
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.settle_user_attribute_updates($1,$2,$3,$4,$5,$6,$7) AS result',
+                [
+                  customer,
+                  job.jobId,
+                  job.token,
+                  attempt,
+                  JSON.stringify([
+                    {
+                      ordinal: 0,
+                      outcome: 'succeeded',
+                      failure: null,
+                      reason: null,
+                      googleStatus: 200,
+                      googleReason: null,
+                      verifiedBy: 'write-response',
+                      observed: { StudentInfo: { Homeroom: 'new' } },
+                    },
+                  ]),
+                  new Date().toISOString(),
+                  null,
+                ],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'settled',
+          JSON.stringify(answer.value),
+        );
+        assert.deepEqual(answer.value.changed, ['k24-merge-1']);
+        const cached = await customSchemas('k24-merge-1');
+        assert.equal(cached.custom_schemas.StudentInfo.Homeroom, 'new');
+        assert.equal(
+          cached.custom_schemas.StaffInfo.Title,
+          'newer-staff',
+          'The covered merge keeps the category committed during the wait.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R6-B a read-back keeps an unrelated category committed during its wait',
+      async () => {
+        const job = await reviewed({
+          userId: 'k24-merge-2',
+          current: 'old',
+          requested: 'new',
+        });
+        await storeUser('k24-merge-2', {
+          StudentInfo: { Homeroom: 'old' },
+          StaffInfo: { Title: 'old-staff' },
+        });
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        const claimed = await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        assert.equal(claimed.outcome, 'claimed', JSON.stringify(claimed));
+        const answer = await waitPast({
+          ...lockUser('k24-merge-2'),
+          hold: (holder) =>
+            holder.query('SELECT cc.upsert_users($1,$2,$3) AS result', [
+              customer,
+              JSON.stringify([
+                userRow('k24-merge-2', {
+                  StudentInfo: { Homeroom: 'old' },
+                  StaffInfo: { Title: 'newer-staff' },
+                }),
+              ]),
+              new Date(Date.now() - 10_000).toISOString(),
+            ]),
+          label: 'The read-back waits on the cached user row.',
+          expire: async () => undefined,
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+                [
+                  customer,
+                  job.jobId,
+                  verify,
+                  0,
+                  'succeeded',
+                  null,
+                  null,
+                  200,
+                  null,
+                  JSON.stringify({ StudentInfo: { Homeroom: 'new' } }),
+                  new Date().toISOString(),
+                ],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'settled',
+          JSON.stringify(answer.value),
+        );
+        assert.deepEqual(answer.value.changed, ['k24-merge-2']);
+        const cached = await customSchemas('k24-merge-2');
+        assert.equal(cached.custom_schemas.StudentInfo.Homeroom, 'new');
+        assert.equal(
+          cached.custom_schemas.StaffInfo.Title,
+          'newer-staff',
+          'The covered merge keeps the category committed during the wait.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R7-A a settlement that waits past its lease writes nothing',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-wait-1', current: 'old', requested: 'new' }],
+        });
+        await storeUser('k24-wait-1', { StudentInfo: { Homeroom: 'old' } });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        // The lease expires while the call waits on the cached user row.
+        await migrator.query(
+          `UPDATE cc.user_attribute_update_jobs
+           SET attempt_expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const answer = await waitPast({
+          ...lockUser('k24-wait-1'),
+          label: 'The settlement waits on the cached user row.',
+          expire: () => sleep(2000),
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.settle_user_attribute_updates($1,$2,$3,$4,$5,$6,$7) AS result',
+                [
+                  customer,
+                  job.jobId,
+                  job.token,
+                  attempt,
+                  JSON.stringify([
+                    {
+                      ordinal: 0,
+                      outcome: 'succeeded',
+                      failure: null,
+                      reason: null,
+                      googleStatus: 200,
+                      googleReason: null,
+                      verifiedBy: 'write-response',
+                      observed: { StudentInfo: { Homeroom: 'new' } },
+                    },
+                  ]),
+                  new Date().toISOString(),
+                  null,
+                ],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'fenced',
+          JSON.stringify(answer.value),
+        );
+        assert.equal((await target(job.previewId)).outcome, 'dispatched');
+        assert.equal(
+          (await customSchemas('k24-wait-1')).custom_schemas.StudentInfo
+            .Homeroom,
+          'old',
+          'The expired settlement changes no cached value.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R7-A a not-found settlement that waits past its lease removes nothing',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-wait-2', current: 'old', requested: 'new' }],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await migrator.query(
+          `UPDATE cc.user_attribute_update_jobs
+           SET attempt_expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const answer = await waitPast({
+          ...lockUser('k24-wait-2'),
+          label: 'The removal waits on the cached user row.',
+          expire: () => sleep(2000),
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.settle_user_attribute_updates($1,$2,$3,$4,$5,$6,$7) AS result',
+                [
+                  customer,
+                  job.jobId,
+                  job.token,
+                  attempt,
+                  JSON.stringify([
+                    {
+                      ordinal: 0,
+                      outcome: 'failed',
+                      failure: 'not-found',
+                      reason: null,
+                      googleStatus: 404,
+                      googleReason: 'notFound',
+                      verifiedBy: 'write-response',
+                      observed: null,
+                    },
+                  ]),
+                  new Date().toISOString(),
+                  null,
+                ],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'fenced',
+          JSON.stringify(answer.value),
+        );
+        assert.equal((await target(job.previewId)).outcome, 'dispatched');
+        assert.equal(
+          (await customSchemas('k24-wait-2')).removed_at,
+          null,
+          'The expired 404 removes nothing.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R7-A a read-back that waits past its verification lease writes nothing',
+      async () => {
+        const job = await reviewed({
+          userId: 'k24-wait-3',
+          current: 'old',
+          requested: 'new',
+        });
+        await storeUser('k24-wait-3', { StudentInfo: { Homeroom: 'old' } });
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        const claimed = await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        assert.equal(claimed.outcome, 'claimed', JSON.stringify(claimed));
+        // Only the operation claim expires while the call waits on the cached user row.
+        await migrator.query(
+          `UPDATE cc.user_attribute_preview_targets
+           SET verify_lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+           WHERE preview_id=$1 AND ordinal=0`,
+          [job.previewId],
+        );
+        const answer = await waitPast({
+          ...lockUser('k24-wait-3'),
+          label: 'The read-back waits on the cached user row.',
+          expire: () => sleep(2000),
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+                [
+                  customer,
+                  job.jobId,
+                  verify,
+                  0,
+                  'succeeded',
+                  null,
+                  null,
+                  200,
+                  null,
+                  JSON.stringify({ StudentInfo: { Homeroom: 'new' } }),
+                  new Date().toISOString(),
+                ],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'fenced',
+          JSON.stringify(answer.value),
+        );
+        assert.equal((await target(job.previewId)).outcome, 'unknown');
+        assert.equal(
+          (await customSchemas('k24-wait-3')).custom_schemas.StudentInfo
+            .Homeroom,
+          'old',
+          'The expired read-back changes no cached value.',
+        );
+        assert.equal((await header(job.jobId)).status, 'needs-review');
+      },
+    );
+
+    await check(
+      'K24 R7-A a not-found read-back that waits past its verification lease removes nothing',
+      async () => {
+        const job = await reviewed({
+          userId: 'k24-wait-4',
+          current: 'old',
+          requested: 'new',
+        });
+        await expireReadBack(job.previewId);
+        const verify = randomUUID();
+        const claimed = await result(
+          'SELECT cc.claim_user_attribute_verification_one($1,$2,$3,$4) AS result',
+          [customer, job.jobId, verify, 1],
+        );
+        assert.equal(claimed.outcome, 'claimed', JSON.stringify(claimed));
+        await migrator.query(
+          `UPDATE cc.user_attribute_preview_targets
+           SET verify_lease_expires_at=clock_timestamp()+interval '1500 milliseconds'
+           WHERE preview_id=$1 AND ordinal=0`,
+          [job.previewId],
+        );
+        const answer = await waitPast({
+          ...lockUser('k24-wait-4'),
+          label: 'The read-back removal waits on the cached user row.',
+          expire: () => sleep(2000),
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.settle_user_attribute_verification($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) AS result',
+                [
+                  customer,
+                  job.jobId,
+                  verify,
+                  0,
+                  'failed',
+                  'not-found',
+                  null,
+                  404,
+                  'notFound',
+                  null,
+                  new Date().toISOString(),
+                ],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'fenced',
+          JSON.stringify(answer.value),
+        );
+        assert.equal((await target(job.previewId)).outcome, 'unknown');
+        assert.equal(
+          (await customSchemas('k24-wait-4')).removed_at,
+          null,
+          'The expired 404 removes nothing.',
+        );
+      },
+    );
+
+    await check(
+      'K24 R7-A the send gate that waits past its lease stamps nothing',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-wait-5', requested: 'A' }],
+        });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await migrator.query(
+          `UPDATE cc.user_attribute_update_jobs
+           SET attempt_expires_at=clock_timestamp()+interval '1500 milliseconds' WHERE job_id=$1`,
+          [job.jobId],
+        );
+        const answer = await waitPast({
+          ...lockTarget(job.previewId),
+          label: 'The send gate waits on the preview target row.',
+          expire: () => sleep(2000),
+          call: (client) =>
+            client
+              .query(
+                'SELECT cc.begin_user_attribute_write($1,$2,$3,$4) AS result',
+                [customer, job.jobId, job.token, attempt],
+              )
+              .then((rows) => rows.rows[0].result),
+        });
+        assert.equal(answer.error, undefined, String(answer.error));
+        assert.equal(
+          answer.value.outcome,
+          'fenced',
+          JSON.stringify(answer.value),
+        );
+        assert.equal((await target(job.previewId)).sent_at, null);
+        assert.equal(
+          (
+            await one(
+              'SELECT write_started_at FROM cc.user_attribute_update_jobs WHERE job_id=$1',
+              [job.jobId],
+            )
+          ).write_started_at,
+          null,
+        );
+      },
+    );
+
+    await check(
+      'K24 R7-B a read-back settles nothing after its verification lease expires',
+      async () => {
+        const job = await admitted({
+          users: [{ userId: 'k24-wait-6', current: 'old', requested: 'new' }],
+        });
+        await storeUser('k24-wait-6', { StudentInfo: { Homeroom: 'old' } });
+        const attempt = randomUUID();
+        await claim(job.jobId, job.token, attempt);
+        await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [won({ ordinal: 0 }, 'unknown')],
+          new Date().toISOString(),
+        );
+        await expireReadBack(job.previewId);
+        const verified = await result(
+          'SELECT cc.claim_user_attribute_verification($1,$2,$3,$4,$5) AS result',
+          [customer, job.jobId, attempt, null, 250],
+        );
+        assert.equal(verified.outcome, 'claimed', JSON.stringify(verified));
+        // The job attempt stays live; only the operation verification claim expires.
+        await expireVerification(job.previewId);
+        const settled = await settle(
+          job.jobId,
+          job.token,
+          attempt,
+          [
+            {
+              ordinal: 0,
+              outcome: 'succeeded',
+              failure: null,
+              reason: null,
+              googleStatus: 200,
+              googleReason: null,
+              verifiedBy: 'read-back',
+              observed: { StudentInfo: { Homeroom: 'new' } },
+            },
+          ],
+          new Date().toISOString(),
+        );
+        assert.equal(settled.ignored, 1, JSON.stringify(settled));
+        assert.deepEqual(settled.changed, [], JSON.stringify(settled));
+        assert.equal((await target(job.previewId)).outcome, 'unknown');
+        assert.equal(
+          (await customSchemas('k24-wait-6')).custom_schemas.StudentInfo
+            .Homeroom,
+          'old',
+        );
       },
     );
 

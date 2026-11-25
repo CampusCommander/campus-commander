@@ -674,6 +674,8 @@ try {
       runtime,
       migrator: migrators[0],
       issuer,
+      connect,
+      close,
     })),
   );
   results.push(
