@@ -22,12 +22,15 @@ const removedAt = at(3);
 let longProgram: string | null = null;
 /** The value of the one save of the card form test, kept until the next test. */
 let savedGrade: number | null = null;
+/** One test keeps the value job running while the card hands observation over (R4-A). */
+let jobStatus: 'completed' | 'running' = 'completed';
 /** The edit list that the mocked preview route received. */
 let lastPreviewBody: unknown = null;
 
 test.afterEach(() => {
   longProgram = null;
   savedGrade = null;
+  jobStatus = 'completed';
   lastPreviewBody = null;
   tooLargeOnce = false;
   extraPeople = [];
@@ -721,7 +724,7 @@ async function signIn(page: Page) {
       });
     }
     if (path === `/api/jobs/${valueJob.displayId}`)
-      return route.fulfill({ json: valueJob });
+      return route.fulfill({ json: { ...valueJob, status: jobStatus } });
     // One user, read by the details page. Any other path stays a 404.
     const single = /^\/api\/users\/([^/]+)$/.exec(path);
     if (single) {
@@ -1608,6 +1611,69 @@ test('recovers the accepted receipt across a details page round trip (R3-B)', as
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const card = page.locator('section.attrs');
   await expect(card).toContainText('Grade level saved to Google');
+  await expect(
+    card.getByRole('link', { name: 'UAT-015', exact: true }),
+  ).toHaveAttribute('href', '/jobs/UAT-015');
+  await expect(
+    card.locator('.annotation', { hasText: 'Grade level' }),
+  ).toContainText('11');
+  expect(previewPosts).toBe(1);
+});
+
+test('keeps the accepted receipt through the polling cap and a details page round trip (R4-A)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  previewPosts = 0;
+  jobStatus = 'running';
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  // The polling schedule is timer driven, so the test owns the clock from the save on.
+  await page.clock.install();
+  const confirmRequest = page.waitForRequest(
+    /\/api\/users\/attribute-previews\/[^/]+\/confirm$/,
+  );
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await confirmRequest;
+  // The job has no provider effect until it runs, so the record keeps Grade level 10.
+  savedGrade = null;
+
+  const card = page.locator('section.attrs');
+  const advanceUntil = async (text: string, seconds: number) => {
+    for (let at = 0; at < seconds; at++) {
+      if ((await card.textContent())?.includes(text)) return;
+      await page.clock.runFor(1000);
+    }
+    await expect(card).toContainText(text);
+  };
+  // The editor spends its 120-read budget while the job stays running.
+  await advanceUntil('The job is still running.', 150);
+  expect(previewPosts).toBe(1);
+
+  // The person leaves before the job has any provider effect.
+  await page.getByRole('link', { name: 'Back to users', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+
+  // Reentry recovers the same receipt instead of preparing a second preview.
+  await detailsControl(page, 'Amara Okafor').click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(card).toContainText('Saving to Google…');
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  expect(previewPosts).toBe(1);
+
+  // The job settles, and the recovered card shows the new value.
+  jobStatus = 'completed';
+  savedGrade = 11;
+  await advanceUntil('Grade level saved to Google', 10);
   await expect(
     card.getByRole('link', { name: 'UAT-015', exact: true }),
   ).toHaveAttribute('href', '/jobs/UAT-015');
