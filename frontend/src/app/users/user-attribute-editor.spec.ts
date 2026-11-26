@@ -11,8 +11,12 @@ import type {
   UserAttributeTarget,
   UserDetail,
 } from '@campus/application-contracts';
+import { AuthStore } from '../auth.store';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
-import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import {
+  USER_ATTRIBUTE_CONFIRMATION_PREFIX,
+  UserAttributeConfirmationStore,
+} from './user-attribute-confirmation';
 import {
   UserAttributeEditor,
   type UserAttributeSaveResult,
@@ -377,6 +381,8 @@ async function setup(
     flow?: ReturnType<typeof flow>;
     user?: UserDetail;
     categories?: UserAttributeCategory[];
+    /** The signed-in person, for a spec that seeds a retained confirmation. */
+    session?: () => { identity: { id: string } } | null;
   } = {},
 ) {
   const mocked = options.flow ?? flow();
@@ -384,6 +390,9 @@ async function setup(
     providers: [
       provideRouter([]),
       { provide: UserAttributeEditFlow, useValue: mocked },
+      ...(options.session
+        ? [{ provide: AuthStore, useValue: { session: options.session } }]
+        : []),
     ],
   });
   const mounted = await mount(
@@ -1089,6 +1098,46 @@ describe('the Custom attributes card form', () => {
     expect(inFlight.confirm.mock.calls[1]).toEqual(
       inFlight.confirm.mock.calls[0],
     );
+  });
+
+  it('replays a confirmation that the tab kept through a reload (K25)', async () => {
+    sessionStorage.clear();
+    const principal = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const session = signal({ identity: { id: principal } });
+    const stored = preview();
+    sessionStorage.setItem(
+      `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${user.userId}`,
+      JSON.stringify({
+        userId: user.userId,
+        preview: stored,
+        attributeNames: ['Grade level'],
+        edits: [
+          {
+            userId: user.userId,
+            attribute: 'attr:Student.grade_level',
+            mode: 'set',
+            values: [11],
+            baselineValue: 10,
+          },
+        ],
+        message: '',
+        phase: 'confirming',
+        displayId: null,
+      }),
+    );
+    const mocked = flow();
+    const { element, finished } = await setup({ session, flow: mocked });
+    // The reopened form replays the frozen preview before it prepares another one.
+    await vi.waitFor(() =>
+      expect(mocked.confirm).toHaveBeenCalledWith(
+        stored.previewId,
+        stored.manifestDigest,
+      ),
+    );
+    expect(mocked.prepare).not.toHaveBeenCalled();
+    expect(element.querySelector('.attribute-form')).toBeNull();
+    await vi.waitFor(() => expect(finished()?.displayId).toBe('UAT-015'));
+    sessionStorage.clear();
   });
 
   it('observes an accepted answer that lands on the reopened form (R3-B)', async () => {

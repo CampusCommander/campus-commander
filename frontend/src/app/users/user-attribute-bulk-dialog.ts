@@ -638,6 +638,13 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     if (entry) {
       this.restored = true;
       this.applyEntry(entry);
+      // A page that reloaded cannot keep the first request. Replay its frozen preview
+      // before any new preview is prepared (K27).
+      if (
+        entry.phase === 'confirming' &&
+        this.confirmations.restored(this.scopeKey)
+      )
+        void this.submitConfirmation(entry.preview, entry.attributeNames);
       return;
     }
     if (prepared) this.showPrepared(prepared);
@@ -988,7 +995,14 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   protected async confirm(): Promise<void> {
     const preview = this.preview();
     if (!preview || !this.canConfirm()) return;
-    const names = this.confirmationNames();
+    await this.submitConfirmation(preview, this.confirmationNames());
+  }
+
+  /** Send one confirmation of the frozen preview, then follow the job to its result. */
+  private async submitConfirmation(
+    preview: UserAttributePreview,
+    names: readonly string[],
+  ): Promise<void> {
     // A preview that already lost one answer stays unresolved through a later refusal.
     const unresolved = this.confirmations.isPending(preview.previewId);
     this.error.set(null);

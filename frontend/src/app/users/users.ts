@@ -513,8 +513,20 @@ export class UsersPage implements OnInit, OnDestroy {
       void this.runSave();
       return;
     }
-    // A confirmation that is still in flight has its own answer owner.
-    if (entry.phase === 'confirming') return;
+    // A confirmation that is still in flight has its own answer owner. After a reload no
+    // request of this page is in flight, so the next Save replays its frozen preview (K26).
+    if (entry.phase === 'confirming') {
+      if (!this.confirmations.restored(entry.userId)) return;
+      this.prepared.set(entry.preview);
+      if (entry.edits.length <= 1)
+        void this.confirmPrepared(
+          entry.preview,
+          entry.edits,
+          entry.attributeNames,
+        );
+      else this.reviewOpen.set(true);
+      return;
+    }
     if (entry.phase === 'uncertain') {
       this.prepared.set(entry.preview);
       // The frozen list decides the one-step path, not a later draft count (R2-E).

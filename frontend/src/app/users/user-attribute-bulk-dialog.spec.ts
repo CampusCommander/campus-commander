@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -12,10 +13,14 @@ import type {
   UserAttributePreview,
   UserAttributeTarget,
 } from '@campus/application-contracts';
+import { AuthStore } from '../auth.store';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
 import { UserAttributeBulkFlow } from './user-attribute-bulk-flow';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
-import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import {
+  USER_ATTRIBUTE_CONFIRMATION_PREFIX,
+  UserAttributeConfirmationStore,
+} from './user-attribute-confirmation';
 
 function field(extra: Partial<UserAttributeField>): UserAttributeField {
   return {
@@ -214,6 +219,8 @@ describe('the Set attributes dialog', () => {
   let dialog: DialogInternals;
 
   beforeEach(() => {
+    // A retained confirmation lives in the tab. One test never reads another test's record.
+    sessionStorage.clear();
     bulk = {
       prepare: vi.fn().mockResolvedValue({ ok: true, value: preview() }),
       readTargetsPage: vi.fn().mockResolvedValue({
@@ -243,12 +250,15 @@ describe('the Set attributes dialog', () => {
     prepared: UserAttributePreview | null = null,
     categoryList: UserAttributeCategory[] = categories,
     categoryError = '',
+    /** The signed-in person, for a spec that seeds a retained confirmation. */
+    session?: () => { identity: { id: string } } | null,
   ): void {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: UserAttributeBulkFlow, useValue: bulk },
         { provide: UserAttributeEditFlow, useValue: edit },
+        ...(session ? [{ provide: AuthStore, useValue: { session } }] : []),
       ],
     });
     fixture = TestBed.createComponent(UserAttributeBulkDialog);
@@ -849,6 +859,34 @@ describe('the Set attributes dialog', () => {
     await settle();
     expect(edit.confirm).toHaveBeenNthCalledWith(2, previewId, 'a'.repeat(64));
     expect(bulk.prepare).toHaveBeenCalledTimes(1);
+    expect(edit.waitForJob).toHaveBeenCalled();
+  });
+
+  it('replays a confirmation that the tab kept through a reload (K27)', async () => {
+    const principal = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const session = signal({ identity: { id: principal } });
+    const stored = preview();
+    const scope = `bulk-selection:users:${tabId}`;
+    sessionStorage.setItem(
+      `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${scope}`,
+      JSON.stringify({
+        userId: scope,
+        preview: stored,
+        attributeNames: ['Programs'],
+        edits: [],
+        message: '',
+        phase: 'confirming',
+        displayId: null,
+      }),
+    );
+    build(null, categories, '', session);
+    await settle();
+    // The reopened dialog replays the frozen preview and prepares no replacement.
+    expect(edit.confirm).toHaveBeenCalledWith(
+      stored.previewId,
+      stored.manifestDigest,
+    );
+    expect(bulk.prepare).not.toHaveBeenCalled();
     expect(edit.waitForJob).toHaveBeenCalled();
   });
 

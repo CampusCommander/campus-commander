@@ -211,6 +211,13 @@ export class UserAttributeEditor implements OnInit {
     if (pending) {
       this.restored = true;
       this.applyEntry(pending);
+      // A page that reloaded cannot keep the first request. Replay its frozen preview
+      // before any new preview is prepared (K25).
+      if (
+        pending.phase === 'confirming' &&
+        this.confirmations.restored(this.subjectUserId)
+      )
+        void this.submit(pending.attributeNames);
     }
   }
 

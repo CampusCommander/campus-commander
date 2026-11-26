@@ -16,7 +16,10 @@ import { UsersPage } from './users';
 import { UsersStore } from './users.store';
 import { UserGrid } from './user-grid';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
-import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import {
+  USER_ATTRIBUTE_CONFIRMATION_PREFIX,
+  UserAttributeConfirmationStore,
+} from './user-attribute-confirmation';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
 import { UserAttributeGridDraft } from './user-attribute-grid-draft';
 import type { UserAttributeColumn } from './user-fields';
@@ -101,6 +104,8 @@ function setup(options: {
   selectedCount?: number;
   categories?: UserAttributeCategory[] | null;
   request?: ReturnType<typeof vi.fn>;
+  /** The signed-in person, for a spec that seeds a retained confirmation. */
+  principal?: string;
 }) {
   const sync = signal(options.sync);
   const predicates = signal<UserPredicate[]>(options.predicates ?? []);
@@ -194,7 +199,9 @@ function setup(options: {
       {
         provide: AuthStore,
         useValue: {
-          session: signal(null),
+          session: signal(
+            options.principal ? { identity: { id: options.principal } } : null,
+          ),
           metadata: signal({ phase: 3 }),
           can: (action: string) => actions.has(action),
           request: options.request ?? vi.fn(),
@@ -903,6 +910,43 @@ describe('the in-grid attribute draft (design K26)', () => {
       ),
     ).toHaveLength(2);
     expect(draft.counts().changes).toBe(1);
+  });
+
+  it('replays a restored confirmation after a page reload (K26)', async () => {
+    const principal = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const request = routes({
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        Response.json(receiptAnswer),
+    });
+    const { draft, store } = page({ sync: ready(), request, principal });
+    jobSettles();
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const scope = `grid:${store.selectionTab}`;
+    // A reload keeps the frozen confirmation in this tab. Save resumes it.
+    sessionStorage.setItem(
+      `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${scope}`,
+      JSON.stringify({
+        userId: scope,
+        preview: previewAnswer(),
+        attributeNames: ['Grade level'],
+        edits: draft.edits(),
+        message: '',
+        phase: 'confirming',
+        displayId: null,
+      }),
+    );
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const paths = request.mock.calls.map(([path]) => path);
+    // The replay prepared no second preview and sent the one confirmation.
+    expect(paths).not.toContain('/api/users/attribute-previews');
+    expect(
+      paths.filter(
+        (path) => path === `/api/users/attribute-previews/${previewId}/confirm`,
+      ),
+    ).toHaveLength(1);
+    expect(draft.counts().changes).toBe(0);
   });
 
   it('keeps the draft when the target read is refused (R1-J)', async () => {
