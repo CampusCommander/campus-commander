@@ -1079,11 +1079,23 @@ test('never reads a No answer as an empty cell (B section 12)', async ({
   });
   await expect(takeHomeColumn).toBeVisible({ timeout: 15_000 });
   await takeHomeColumn.check();
-  await page
-    .locator('.ag-body-horizontal-scroll-viewport')
-    .evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
+  // The column check re-lays out the grid asynchronously and can lose the first
+  // scroll event. Reposition from the start until the virtualized cell renders.
+  await page.waitForFunction(
+    () => {
+      const viewport = document.querySelector<HTMLElement>(
+        '.ag-body-horizontal-scroll-viewport',
+      );
+      if (!viewport) return false;
+      viewport.scrollLeft = 0;
+      viewport.scrollLeft = viewport.scrollWidth;
+      return !!document.querySelector(
+        '.ag-cell[col-id="attr:Device.take_home"]',
+      );
+    },
+    undefined,
+    { timeout: 15_000, polling: 100 },
+  );
   const takeHome = cell(page, 'Aaliyah Brooks', 'attr:Device.take_home');
   await expect(takeHome).toHaveText('Yes');
 

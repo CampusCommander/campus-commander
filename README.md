@@ -23,6 +23,7 @@ The owner signed off each workflow below. The date in parentheses is the sign-of
 - Cancel pending work on any job (2026-10-28).
 - Device export and import through CSV files (2026-10-30).
 - Google users: browse, filter, refresh, and user details, slice S1 (2026-11-18).
+- Google users: custom attribute categories, slice S2 (2026-11-24).
 
 The [current work record](docs/current-work.md) lists the work in build.
 
