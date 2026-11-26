@@ -53,8 +53,9 @@ export class UserAttributeConfirmationStore {
     ReadonlyMap<string, PendingAttributeConfirmation>
   >(new Map());
   /**
-   * The immutable edit lists by preview ID (K26). The page retains one before it sends
-   * the preview, so every later phase carries it through navigation and recovery.
+   * The immutable edit lists by preview ID (K26). The page retains one while it prepares
+   * a preview, and the first confirmation entry takes it over. The map is a handoff
+   * buffer, not a cache: a preview that no confirmation owns is released (R3-B).
    */
   private readonly editLists = new Map<string, UserAttributeEdit[]>();
 
@@ -79,6 +80,14 @@ export class UserAttributeConfirmationStore {
     return this.editLists.get(previewId) ?? [];
   }
 
+  /**
+   * Release the retained list of one preview that no confirmation owns (R3-B). A
+   * confirmation entry carries its own frozen copy, so this never truncates a save.
+   */
+  discardEdits(previewId: string): void {
+    this.editLists.delete(previewId);
+  }
+
   /** Whether one preview still owns an answer that a new save must not replace. */
   isPending(previewId: string): boolean {
     for (const entry of this.entries().values())
@@ -97,11 +106,13 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
-      edits: [...this.editsFor(preview.previewId)],
+      edits: this.frozenEdits(userId, preview.previewId),
       message: '',
       phase: 'confirming',
       displayId: null,
     });
+    // The entry now owns the frozen list, so the handoff copy has no other reader (R3-B).
+    this.editLists.delete(preview.previewId);
   }
 
   /** Keep the same preview, digest, and names after an answer that may have created the job. */
@@ -115,7 +126,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
-      edits: [...this.editsFor(preview.previewId)],
+      edits: this.frozenEdits(userId, preview.previewId),
       message,
       phase: 'uncertain',
       displayId: null,
@@ -133,7 +144,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
-      edits: [...this.editsFor(preview.previewId)],
+      edits: this.frozenEdits(userId, preview.previewId),
       message: '',
       phase: 'accepted',
       displayId,
@@ -151,7 +162,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
-      edits: [...this.editsFor(preview.previewId)],
+      edits: this.frozenEdits(userId, preview.previewId),
       message,
       phase: 'refused',
       displayId: null,
@@ -186,6 +197,20 @@ export class UserAttributeConfirmationStore {
       changed = true;
     }
     if (changed) this.entries.set(entries);
+  }
+
+  /**
+   * The frozen bindings of one write. The first write takes the retained handoff list, and
+   * a later write of the same confirmation keeps the list in its own entry (R3-B). That
+   * keeps the identity through begin, uncertain, accept, and refuse.
+   */
+  private frozenEdits(userId: string, previewId: string): UserAttributeEdit[] {
+    const existing = this.entries().get(userId);
+    const list =
+      existing?.preview.previewId === previewId
+        ? existing.edits
+        : this.editsFor(previewId);
+    return list.map((edit) => ({ ...edit, values: [...edit.values] }));
   }
 
   private write(entry: PendingAttributeConfirmation): void {

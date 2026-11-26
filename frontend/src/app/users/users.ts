@@ -276,6 +276,8 @@ export class UsersPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    // A preview that no confirmation owns dies with the page, so its list is released (R3-B).
+    this.releasePrepared();
     this.store.leave();
   }
 
@@ -370,6 +372,8 @@ export class UsersPage implements OnInit, OnDestroy {
   private async runSave(): Promise<void> {
     const edits = this.draft.edits();
     if (!edits.length) return;
+    // This save replaces any prepared preview that no confirmation owns (R3-B).
+    this.releasePrepared();
     this.saving.set(true);
     this.draft.clearRefusal();
     const answer = await this.editFlow.prepare(edits);
@@ -399,6 +403,8 @@ export class UsersPage implements OnInit, OnDestroy {
     if (this.destroyed) return;
     if (!targets.ok) {
       this.draft.refuse(targets.message);
+      // The preview is abandoned before a confirmation owns it (R3-B).
+      this.releasePrepared(preview);
       return;
     }
     // The frozen rows mark a conflict cell and drop an unchanged row (B section 8.4).
@@ -406,12 +412,19 @@ export class UsersPage implements OnInit, OnDestroy {
     // An unchanged row holds the preview's current value, so read the on-screen row.
     if (unchanged.length) void this.store.refreshHeldRows(unchanged);
     // A single edit that the preview did not read as one eligible row follows that
-    // answer: a conflict blocks Save and an unchanged row leaves the draft.
-    if (edits.length === 1) return;
+    // answer: a conflict blocks Save and an unchanged row leaves the draft. No dialog
+    // will consume the preview, so its frozen list has no owner (R3-B).
+    if (edits.length === 1) {
+      this.releasePrepared(preview);
+      return;
+    }
     // Two or more changes open the Set attributes dialog at Review (design K26). The
     // dialog shows a conflict row, and the grid's Save stays disabled afterwards (R1-C).
     if (preview.eligible > 0 || preview.conflicts > 0) {
       this.reviewOpen.set(true);
+    } else {
+      // An unchanged-only preview opens no dialog, so its list has no owner (R3-B).
+      this.releasePrepared(preview);
     }
   }
 
@@ -538,9 +551,14 @@ export class UsersPage implements OnInit, OnDestroy {
     displayId: string,
     edits: readonly UserAttributeEdit[],
   ): void {
-    if (this.acceptedJob === displayId) return;
-    this.acceptedJob = displayId;
-    this.draft.accept(edits, displayId);
+    // Applying an acceptance is once per receipt, and observation is restartable. A reader
+    // that exhausted its polling window leaves the accepted receipt in place, so the next
+    // Save resumes the same job instead of preparing another one (R3-A). A later draft
+    // stays because acceptance drops only the frozen values (R2-B).
+    if (this.acceptedJob !== displayId) {
+      this.acceptedJob = displayId;
+      this.draft.accept(edits, displayId);
+    }
     void this.observeReceipt(displayId, edits, 'draft');
   }
 
@@ -595,13 +613,29 @@ export class UsersPage implements OnInit, OnDestroy {
     return [...new Set(edits.map((edit) => edit.userId))];
   }
 
+  /**
+   * Release the frozen edit list of a prepared preview that no confirmation owns (R3-B).
+   * A save that is confirming, uncertain, or accepted keeps its list inside its entry, so
+   * this never truncates a recovery.
+   */
+  private releasePrepared(
+    preview: UserAttributePreview | null = this.prepared(),
+  ): void {
+    if (!preview) return;
+    if (this.confirmations.isPending(preview.previewId)) return;
+    this.confirmations.discardEdits(preview.previewId);
+    if (this.prepared()?.previewId === preview.previewId)
+      this.prepared.set(null);
+  }
+
   /** The dialog closed. Focus returns to Save changes (UI-09). */
   protected closeReview(): void {
     this.reviewOpen.set(false);
     // A preview stays while its confirmation needs recovery. Only a refused or settled
-    // answer releases the caller's prepared preview (R1-B).
+    // answer releases the caller's prepared preview (R1-B). A preview that never reached a
+    // confirmation is abandoned here, so its frozen list is released (R3-B).
     const pending = this.gridConfirmation();
-    if (!pending || pending.phase === 'refused') this.prepared.set(null);
+    if (!pending || pending.phase === 'refused') this.releasePrepared();
     afterNextRender(() => this.saveButton()?.nativeElement?.focus(), {
       injector: this.injector,
     });
