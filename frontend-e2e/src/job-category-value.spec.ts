@@ -171,6 +171,62 @@ const allRows = attributeRows.slice(0, 10);
 const secondRows = attributeRows.slice(10);
 const failedRows = attributeRows.filter((row) => row.outcome === 'failed');
 
+/** One user with two attributes. Both rows share the operation number (J4). */
+const twoAttributeRows = [
+  {
+    operation: 7,
+    userId: 'synthetic-user-1',
+    userName: 'Avery Chen',
+    primaryEmail: 'avery@example.org',
+    attribute: 'attr:grade.name',
+    displayName: 'Grade',
+    currentValue: 'Six',
+    newValue: 'Seven',
+    outcome: 'succeeded',
+    failureText: null,
+  },
+  {
+    operation: 7,
+    userId: 'synthetic-user-1',
+    userName: 'Avery Chen',
+    primaryEmail: 'avery@example.org',
+    attribute: 'attr:room.name',
+    displayName: 'Room',
+    currentValue: '101',
+    newValue: '102',
+    outcome: 'succeeded',
+    failureText: null,
+  },
+];
+
+/** The value job of one user and two attributes. */
+const twoAttributeDetail = {
+  ...valueDetail,
+  jobId: '3c4d5e6f-0000-4000-8000-000000000004',
+  displayId: 'UAT-004',
+  revision: 2,
+  status: 'completed',
+  scope: { kind: 'devices', deviceCount: 1 },
+  createdAt: '2026-11-25T14:50:00.000Z',
+  startedAt: '2026-11-25T14:50:01.000Z',
+  finishedAt: '2026-11-25T14:50:03.000Z',
+  progress: {
+    total: 1,
+    succeeded: 1,
+    failed: 0,
+    unknown: 0,
+    skipped: 0,
+    expired: 0,
+    cancelled: 0,
+    pending: 0,
+  },
+  latestActivity: {
+    at: '2026-11-25T14:50:03.000Z',
+    failed: { count: 0, operations: [] },
+    unknown: { count: 0, operations: [] },
+  },
+};
+
 async function signIn(page: Page) {
   await installLiveStreams(page);
   await page.route('**/api/**', async (route) => {
@@ -514,4 +570,72 @@ test('shows a value job with All and Failed, the totals, and a second page', asy
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test('keeps each attribute row of a user through a refresh that exchanges the rows', async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  let rows = twoAttributeRows;
+  await page.route('**/api/jobs/UAT-004**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/jobs/UAT-004')
+      return route.fulfill({ json: twoAttributeDetail });
+    if (url.pathname === '/api/jobs/UAT-004/attribute-rows')
+      return route.fulfill({
+        json: {
+          rows,
+          totals: { all: rows.length, failed: 0 },
+          nextCursor: null,
+        },
+      });
+    return route.fallback();
+  });
+  await page.goto('/jobs/UAT-004');
+
+  await expect(
+    page.getByRole('heading', { name: 'Set attributes', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'UAT-004 · 1 user', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('.value-table tbody tr')).toHaveCount(2);
+
+  const tableRows = page.locator('.value-table tbody tr');
+  const first = tableRows.first();
+  const second = tableRows.nth(1);
+  // The user cell names the attribute of each row under the user name.
+  await expect(first.locator('.row-attribute')).toHaveText('Grade');
+  await expect(first).toContainText('Avery Chen');
+  await expect(first).toContainText('Six');
+  await expect(first).toContainText('Seven');
+  await expect(second.locator('.row-attribute')).toHaveText('Room');
+  await expect(second).toContainText('101');
+  await expect(second).toContainText('102');
+
+  // Stamp each DOM row, so the refresh proves the node follows its row identity.
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.value-table tbody tr');
+    rows[0]?.setAttribute('data-probe', 'grade');
+    rows[1]?.setAttribute('data-probe', 'room');
+  });
+
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: testInfo.outputPath('job-value-two-attributes-1440x900.png'),
+  });
+
+  // A refresh answers the two rows of one user in the opposite order.
+  rows = [twoAttributeRows[1], twoAttributeRows[0]];
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(first.locator('.row-attribute')).toHaveText('Room');
+  await expect(first).toContainText('101');
+  await expect(first).toContainText('102');
+  await expect(second.locator('.row-attribute')).toHaveText('Grade');
+  await expect(second).toContainText('Six');
+  await expect(second).toContainText('Seven');
+  await expect(first).toHaveAttribute('data-probe', 'room');
+  await expect(second).toHaveAttribute('data-probe', 'grade');
+
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

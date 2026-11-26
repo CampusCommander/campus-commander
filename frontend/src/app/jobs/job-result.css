@@ -128,6 +128,19 @@
   font-size: 20px;
 }
 
+/* One row names its attribute under the user, as the Set attributes results table does
+   (users/user-attribute-bulk-dialog.css, `.user-text` and `.row-attribute`). */
+.value-table .user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.value-table .row-attribute {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 /* The approved comparison treatment: a muted current value, an arrow, a weighted new value. */
 .value-table .val-current {
   color: var(--cc-text-secondary);

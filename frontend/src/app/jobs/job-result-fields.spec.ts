@@ -16,7 +16,9 @@ import {
   valueEmptyText,
   valueReconcileKey,
   valueResultRow,
+  valueRowKey,
   valueRowsFooter,
+  valueRowsShowAttribute,
 } from './job-result-fields';
 
 const categoryRow = (
@@ -199,7 +201,8 @@ describe('categoryResultRow', () => {
 describe('valueResultRow', () => {
   it('reads an unset current value as Not set', () => {
     const row = valueResultRow(valueRow(), false);
-    expect(row.key).toBe('value:7');
+    expect(row.key).toBe('7:attr:grade.name');
+    expect(row.attribute).toBe('Grade');
     expect(row.user).toBe('Avery Chen');
     expect(row.current).toBe('Not set');
     expect(row.currentUnset).toBe(true);
@@ -247,6 +250,33 @@ describe('valueResultRow', () => {
     expect(row.label).toBe('Reconciling');
     expect(row.tone).toBe('info');
     expect(row.reconciling).toBe(true);
+  });
+});
+
+describe('value row identity', () => {
+  it('keys the two attribute rows of one user by operation and attribute', () => {
+    const grade = valueResultRow(valueRow(), false);
+    const room = valueResultRow(
+      valueRow({ attribute: 'attr:room.name', displayName: 'Room' }),
+      false,
+    );
+    expect(grade.key).toBe('7:attr:grade.name');
+    expect(room.key).toBe('7:attr:room.name');
+    expect(grade.key).not.toBe(room.key);
+    expect(valueRowKey(valueRow())).toBe(valueRowKey(grade.row));
+    expect(valueRowKey(room.row)).toBe('7:attr:room.name');
+  });
+
+  it('shows the attribute when a result page holds more than one attribute', () => {
+    expect(valueRowsShowAttribute([valueRow()])).toBe(false);
+    expect(
+      valueRowsShowAttribute([
+        valueRow(),
+        valueRow({ attribute: 'attr:room.name', displayName: 'Room' }),
+      ]),
+    ).toBe(true);
+    expect(() => valueRowsShowAttribute([])).not.toThrow();
+    expect(valueRowsShowAttribute([])).toBe(false);
   });
 });
 
