@@ -596,6 +596,10 @@ let heldConfirm: {
 } | null = null;
 /** The count of edit-list preview requests, so one save prepares one preview. */
 let previewPosts = 0;
+/** The preview path of each confirm, so a replay must name the same preview. */
+let confirmPaths: string[] = [];
+/** The next confirm loses its answer, as a dropped connection loses one (K25 reload check). */
+let loseNextConfirm = false;
 
 async function signIn(page: Page) {
   await installLiveStreams(page);
@@ -705,11 +709,17 @@ async function signIn(page: Page) {
     }
     if (/^\/api\/users\/attribute-previews\/[^/]+\/confirm$/.test(path)) {
       const body = request.postDataJSON() ?? {};
+      confirmPaths.push(path);
       if (body.manifestDigest !== previewDigest)
         return route.fulfill({
           status: 409,
           json: { reason: 'preview-conflict' },
         });
+      // The first answer is lost, as a dropped connection loses it (K25 reload check).
+      if (loseNextConfirm) {
+        loseNextConfirm = false;
+        return route.abort('failed');
+      }
       // One test holds this answer while the person leaves the details page (R3-A, R3-B).
       const held = heldConfirm;
       if (held) {
@@ -774,6 +784,9 @@ async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
 async function openUsers(page: Page) {
   selectionState.ids = new Set();
   selectionState.terms = [];
+  previewPosts = 0;
+  confirmPaths = [];
+  loseNextConfirm = false;
   await signIn(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/users');
@@ -1765,4 +1778,60 @@ test('keeps the accepted receipt through the polling cap and a details page roun
     card.locator('.annotation', { hasText: 'Grade level' }),
   ).toContainText('11');
   expect(previewPosts).toBe(1);
+});
+
+test('replays the retained confirmation after a page reload (K25)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await detailsControl(page, 'Amara Okafor').click();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page
+    .locator('[data-attribute="attr:Student.grade_level"] input')
+    .fill('11');
+
+  // The mocked answer is lost, as a dropped connection loses one. The tab keeps the
+  // preview and its digest.
+  loseNextConfirm = true;
+  const card = page.locator('section.attrs');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(card).toContainText(
+    'Retry the confirmation to keep the same preview.',
+  );
+  expect(previewPosts).toBe(1);
+  expect(confirmPaths).toHaveLength(1);
+  await page.screenshot({
+    path: `${scratch}/k25-13-reload-retained.png`,
+  });
+
+  // The same tab reloads. The reopened form honors the one confirmation and offers no
+  // editors.
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Amara Okafor', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(card).toContainText(
+    'Retry the confirmation to keep the same preview.',
+  );
+  await expect(page.locator('.attribute-form')).toHaveCount(0);
+  expect(previewPosts).toBe(1);
+  await page.screenshot({
+    path: `${scratch}/k25-14-reload-uncertain.png`,
+  });
+
+  // The next action replays the same preview and settles the save.
+  await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(card).toContainText('Grade level saved to Google');
+  expect(previewPosts).toBe(1);
+  expect(confirmPaths).toEqual([
+    '/api/users/attribute-previews/2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910/confirm',
+    '/api/users/attribute-previews/2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910/confirm',
+  ]);
+  await page.screenshot({
+    path: `${scratch}/k25-15-reload-replayed.png`,
+  });
 });

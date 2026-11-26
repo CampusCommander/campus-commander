@@ -16,7 +16,10 @@ import { UsersPage } from './users';
 import { UsersStore } from './users.store';
 import { UserGrid } from './user-grid';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
-import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import {
+  USER_ATTRIBUTE_CONFIRMATION_PREFIX,
+  UserAttributeConfirmationStore,
+} from './user-attribute-confirmation';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
 import { UserAttributeGridDraft } from './user-attribute-grid-draft';
 import type { UserAttributeColumn } from './user-fields';
@@ -101,12 +104,19 @@ function setup(options: {
   selectedCount?: number;
   categories?: UserAttributeCategory[] | null;
   request?: ReturnType<typeof vi.fn>;
+  /** The signed-in person, for a spec that seeds a retained confirmation. */
+  principal?: string;
 }) {
   const sync = signal(options.sync);
   const predicates = signal<UserPredicate[]>(options.predicates ?? []);
   const emptyFilter = signal(options.emptyFilter ?? false);
   const actions = new Set(options.actions ?? ['users:read']);
+  /** The signed-in person. A spec may change it to model a sign-in. */
+  const authSession = signal<{ identity: { id: string } } | null>(
+    options.principal ? { identity: { id: options.principal } } : null,
+  );
   const store = {
+    session: authSession,
     sync,
     syncLoaded: signal(options.syncLoaded ?? true),
     statusError: signal(options.statusError ?? ''),
@@ -194,7 +204,7 @@ function setup(options: {
       {
         provide: AuthStore,
         useValue: {
-          session: signal(null),
+          session: authSession,
           metadata: signal({ phase: 3 }),
           can: (action: string) => actions.has(action),
           request: options.request ?? vi.fn(),
@@ -585,7 +595,7 @@ const receiptAnswer = {
 
 /** The routes of one save. The first match answers. */
 function routes(
-  table: Record<string, () => Response>,
+  table: Record<string, () => Response | Promise<Response>>,
 ): ReturnType<typeof vi.fn> {
   return vi.fn((path: string) => {
     const route = Object.keys(table)
@@ -699,7 +709,7 @@ describe('the in-grid attribute draft (design K26)', () => {
   function page(options: Parameters<typeof setup>[0]) {
     const store = setup({ ...options, actions: ['users:read', 'users:write'] });
     const draft = TestBed.inject(UserAttributeGridDraft);
-    return { store, draft };
+    return { store, draft, session: store.session };
   }
 
   it('shows the ruling 14 count line and its three actions', () => {
@@ -903,6 +913,119 @@ describe('the in-grid attribute draft (design K26)', () => {
       ),
     ).toHaveLength(2);
     expect(draft.counts().changes).toBe(1);
+  });
+
+  it('replays a restored confirmation after a page reload (K26)', async () => {
+    const principal = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const request = routes({
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        Response.json(receiptAnswer),
+    });
+    const { draft, store } = page({ sync: ready(), request, principal });
+    jobSettles();
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const scope = `grid:${store.selectionTab}`;
+    // A reload keeps the frozen confirmation in this tab. Save resumes it.
+    sessionStorage.setItem(
+      `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${scope}`,
+      JSON.stringify({
+        userId: scope,
+        submittedBy: principal,
+        preview: previewAnswer(),
+        attributeNames: ['Grade level'],
+        edits: draft.edits(),
+        message: '',
+        phase: 'confirming',
+        displayId: null,
+      }),
+    );
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const paths = request.mock.calls.map(([path]) => path);
+    // The replay prepared no second preview and sent the one confirmation.
+    expect(paths).not.toContain('/api/users/attribute-previews');
+    expect(
+      paths.filter(
+        (path) => path === `/api/users/attribute-previews/${previewId}/confirm`,
+      ),
+    ).toHaveLength(1);
+    expect(draft.counts().changes).toBe(0);
+  });
+
+  /** Save one staged change and hold its confirmation answer for the test. */
+  async function heldSave(first: string, second: string) {
+    let release: (answer: Response) => void = () => undefined;
+    const request = routes({
+      '/api/users/attribute-previews': () => Response.json(previewAnswer()),
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        new Promise<Response>((resolve) => (release = resolve)),
+    });
+    const { draft, store, session } = page({
+      sync: ready(),
+      request,
+      principal: first,
+    });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const scope = `grid:${store.selectionTab}`;
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await vi.waitFor(() =>
+      expect(
+        request.mock.calls.some(([path]) =>
+          String(path).endsWith(`/${previewId}/confirm`),
+        ),
+      ).toBe(true),
+    );
+    // The page navigates away before the answer arrives, and another person signs in.
+    fixture.destroy();
+    session.set({ identity: { id: second } });
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    confirmations.restore();
+    return { release, confirmations, scope };
+  }
+
+  it('never stores a late uncertain answer under the person who signed in next (K26)', async () => {
+    const first = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const { release, confirmations, scope } = await heldSave(first, second);
+    const uncertain = vi.spyOn(confirmations, 'uncertain');
+    release(Response.json({ reason: 'unavailable' }, { status: 503 }));
+    await vi.waitFor(() => expect(uncertain).toHaveBeenCalled());
+
+    expect(confirmations.pending(scope)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${scope}`,
+      ),
+    ).toBeNull();
+    // A fresh store of the second person restores nothing.
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(scope)).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('never stores a late accepted receipt under the person who signed in next (K26)', async () => {
+    const first = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const second = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const { release, confirmations, scope } = await heldSave(first, second);
+    const accept = vi.spyOn(confirmations, 'accept');
+    release(Response.json(receiptAnswer));
+    await vi.waitFor(() => expect(accept).toHaveBeenCalled());
+
+    expect(confirmations.pending(scope)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${scope}`,
+      ),
+    ).toBeNull();
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(scope)).toBeNull();
+    vi.restoreAllMocks();
   });
 
   it('keeps the draft when the target read is refused (R1-J)', async () => {

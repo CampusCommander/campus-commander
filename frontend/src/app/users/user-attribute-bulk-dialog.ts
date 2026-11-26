@@ -638,6 +638,13 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     if (entry) {
       this.restored = true;
       this.applyEntry(entry);
+      // A page that reloaded cannot keep the first request. Replay its frozen preview
+      // before any new preview is prepared (K27).
+      if (
+        entry.phase === 'confirming' &&
+        this.confirmations.restored(this.scopeKey)
+      )
+        void this.submitConfirmation(entry.preview, entry.attributeNames);
       return;
     }
     if (prepared) this.showPrepared(prepared);
@@ -988,7 +995,14 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   protected async confirm(): Promise<void> {
     const preview = this.preview();
     if (!preview || !this.canConfirm()) return;
-    const names = this.confirmationNames();
+    await this.submitConfirmation(preview, this.confirmationNames());
+  }
+
+  /** Send one confirmation of the frozen preview, then follow the job to its result. */
+  private async submitConfirmation(
+    preview: UserAttributePreview,
+    names: readonly string[],
+  ): Promise<void> {
     // A preview that already lost one answer stays unresolved through a later refusal.
     const unresolved = this.confirmations.isPending(preview.previewId);
     this.error.set(null);
@@ -996,7 +1010,8 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     // The Confirm control disables itself. Move focus before the answer, so the wait
     // never leaves focus on the document body (R1-G).
     this.focusConfirmAnchor();
-    this.confirmations.begin(this.scopeKey, preview, names);
+    // The returned owner binds the late answer to the person who submitted it.
+    const submittedBy = this.confirmations.begin(this.scopeKey, preview, names);
     const answer = await this.editFlow.confirm(
       preview.previewId,
       preview.manifestDigest,
@@ -1005,6 +1020,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       // The answer may have created the job. Keep the preview, its digest, and the
       // submitted names until a receipt answers this same confirmation (R1-B).
       this.confirmations.uncertain(
+        submittedBy,
         this.scopeKey,
         preview,
         names,
@@ -1021,7 +1037,13 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       // itself; a dismissed one leaves the entry for the next owner (R2-A). Resolving
       // here would coalesce with the refusal write, so a reopened observer would see
       // only null and keep its busy review forever.
-      this.confirmations.refuse(this.scopeKey, preview, names, answer.message);
+      this.confirmations.refuse(
+        submittedBy,
+        this.scopeKey,
+        preview,
+        names,
+        answer.message,
+      );
       if (this.done) return;
       this.confirmations.resolve(preview.previewId);
       this.confirming.set(false);
@@ -1034,6 +1056,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     // Hand the accepted receipt to the store before any dialog state clears, so a
     // dismissed dialog loses neither the job nor its follow-up (R1-B).
     this.confirmations.accept(
+      submittedBy,
       this.scopeKey,
       preview,
       names,
