@@ -1,8 +1,16 @@
-import { Injectable, signal } from '@angular/core';
-import type {
-  UserAttributeEdit,
-  UserAttributePreview,
+import { Injectable, effect, inject, signal, untracked } from '@angular/core';
+import {
+  userAttributeEditSchema,
+  userAttributePreviewSchema,
+  type UserAttributeEdit,
+  type UserAttributePreview,
 } from '@campus/application-contracts';
+import { z } from 'zod';
+import { AuthStore } from '../auth.store';
+
+/** The storage prefix of one person's retained value confirmations in this tab. */
+export const USER_ATTRIBUTE_CONFIRMATION_PREFIX =
+  'cc.user-attribute-confirmation.';
 
 /**
  * The point that one confirmation reached at the level that outlives the editor.
@@ -42,13 +50,33 @@ export interface PendingAttributeConfirmation {
 }
 
 /**
+ * The shape of one retained confirmation in this tab. A record that does not match
+ * cannot drive a replay, so a read clears it. The contract schemas check the preview
+ * and the frozen edits. `refused` is never stored, because a definite answer releases
+ * the preview identity.
+ */
+const pendingAttributeConfirmationSchema = z.strictObject({
+  /** The scope key of the confirmation: a user ID, or the grid or selection key. */
+  userId: z.string().min(1).max(1024),
+  preview: userAttributePreviewSchema,
+  attributeNames: z.array(z.string().max(4096)).max(2500),
+  edits: z.array(userAttributeEditSchema).max(2500),
+  message: z.string().max(8192),
+  phase: z.enum(['confirming', 'uncertain', 'accepted', 'refused']),
+  displayId: z.string().min(1).max(64).nullable(),
+});
+
+/**
  * The confirmation of the Custom attributes card form. The store records the frozen
  * identity before the first send, keeps it through an unknown answer, and hands the
  * accepted receipt to the next owner when the editor dies (R3-A, R3-B). Reopening the
  * form of the same user continues the one save instead of preparing another preview.
+ * A confirmation with no known answer and an accepted receipt stay in this tab, so a
+ * page reload replays the same preview and digest before any new preview (K25 to K27).
  */
 @Injectable({ providedIn: 'root' })
 export class UserAttributeConfirmationStore {
+  private readonly auth = inject(AuthStore);
   private readonly entries = signal<
     ReadonlyMap<string, PendingAttributeConfirmation>
   >(new Map());
@@ -58,10 +86,32 @@ export class UserAttributeConfirmationStore {
    * buffer, not a cache: a preview that no confirmation owns is released (R3-B).
    */
   private readonly editLists = new Map<string, UserAttributeEdit[]>();
+  /**
+   * The scopes whose entry came back from this tab's storage. Only a restored entry
+   * needs a replay on open, because no request of the current page is in flight.
+   */
+  private readonly restoredScopes = new Set<string>();
+  /** The person whose entries this store holds. */
+  private principal: string | null = this.auth.session()?.identity.id ?? null;
+
+  constructor() {
+    this.restore();
+    // Another person signs in in this tab: the earlier person's entries never survive.
+    effect(() => {
+      const principal = this.auth.session()?.identity.id ?? null;
+      if (principal === this.principal) return;
+      untracked(() => this.restore());
+    });
+  }
 
   /** The retained confirmation of one user, or null. */
   pending(userId: string): PendingAttributeConfirmation | null {
     return this.entries().get(userId) ?? null;
+  }
+
+  /** Whether one scope's confirmation came back from this tab's storage. */
+  restored(userId: string): boolean {
+    return this.restoredScopes.has(userId);
   }
 
   /**
@@ -177,9 +227,11 @@ export class UserAttributeConfirmationStore {
     for (const [userId, entry] of entries) {
       if (entry.preview.previewId !== previewId) continue;
       entries.delete(userId);
+      this.restoredScopes.delete(userId);
       changed = true;
     }
     if (changed) this.entries.set(entries);
+    this.removeStored((entry) => entry.preview.previewId === previewId);
   }
 
   /**
@@ -194,6 +246,32 @@ export class UserAttributeConfirmationStore {
       if (entry.displayId !== displayId || entry.phase !== 'accepted') continue;
       entries.delete(userId);
       this.editLists.delete(entry.preview.previewId);
+      this.restoredScopes.delete(userId);
+      changed = true;
+    }
+    if (changed) this.entries.set(entries);
+    this.removeStored(
+      (entry) => entry.phase === 'accepted' && entry.displayId === displayId,
+    );
+  }
+
+  /** Load the retained confirmations of this person after a page reload. */
+  restore(): void {
+    const principal = this.auth.session()?.identity.id ?? null;
+    if (principal !== this.principal) {
+      // Another person owns this tab now. No entry of the earlier person survives.
+      this.entries.set(new Map());
+      this.editLists.clear();
+      this.restoredScopes.clear();
+      this.principal = principal;
+    }
+    if (!principal) return;
+    const entries = new Map(this.entries());
+    let changed = false;
+    for (const { scope, entry } of this.stored(principal)) {
+      if (entries.has(scope)) continue;
+      entries.set(scope, entry);
+      this.restoredScopes.add(scope);
       changed = true;
     }
     if (changed) this.entries.set(entries);
@@ -217,5 +295,104 @@ export class UserAttributeConfirmationStore {
     const entries = new Map(this.entries());
     entries.set(entry.userId, entry);
     this.entries.set(entries);
+    this.restoredScopes.delete(entry.userId);
+    // A definite refusal removes the record. The entry stays in memory until its next
+    // owner shows the sentence, as it did before the tab kept any record.
+    if (entry.phase === 'refused')
+      this.removeStored((candidate) => candidate.userId === entry.userId);
+    else this.retain(entry);
+  }
+
+  /** Keep one confirmation under this person's prefix in this tab. */
+  private retain(entry: PendingAttributeConfirmation): void {
+    const key = this.key(entry.userId);
+    if (!key) return;
+    try {
+      sessionStorage.setItem(key, JSON.stringify(entry));
+    } catch {
+      // The page still holds the confirmation in memory.
+    }
+  }
+
+  /** Remove the stored record of one scope, when it holds one. */
+  private removeStored(
+    match: (entry: PendingAttributeConfirmation) => boolean,
+  ): void {
+    if (!this.principal) return;
+    for (const { key, entry } of this.stored(this.principal)) {
+      if (!match(entry)) continue;
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        // A blocked storage area holds nothing to remove.
+      }
+    }
+  }
+
+  /** One record for each person and scope. */
+  private key(scope: string): string | null {
+    return this.principal
+      ? `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${this.principal}.${scope}`
+      : null;
+  }
+
+  /** Every readable record under this person's prefix. A malformed one clears. */
+  private stored(
+    principal: string,
+  ): { key: string; scope: string; entry: PendingAttributeConfirmation }[] {
+    const prefix = `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.`;
+    const keys: string[] = [];
+    try {
+      for (let index = 0; index < sessionStorage.length; index++) {
+        const key = sessionStorage.key(index);
+        if (key?.startsWith(prefix)) keys.push(key);
+      }
+    } catch {
+      // A blocked storage area holds no record.
+      return [];
+    }
+    const records: {
+      key: string;
+      scope: string;
+      entry: PendingAttributeConfirmation;
+    }[] = [];
+    for (const key of keys) {
+      const scope = key.slice(prefix.length);
+      const entry = this.read(key, scope);
+      if (entry) records.push({ key, scope, entry });
+    }
+    return records;
+  }
+
+  /**
+   * A malformed record cannot drive a replay, so it clears. A record of another scope
+   * in this person's prefix and a refusal never load either.
+   */
+  private read(
+    key: string,
+    scope: string,
+  ): PendingAttributeConfirmation | null {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = pendingAttributeConfirmationSchema.safeParse(
+        JSON.parse(raw),
+      );
+      if (
+        parsed.success &&
+        parsed.data.userId === scope &&
+        parsed.data.phase !== 'refused'
+      )
+        return parsed.data;
+      sessionStorage.removeItem(key);
+      return null;
+    } catch {
+      try {
+        sessionStorage.removeItem(key);
+      } catch {
+        // A blocked storage area holds nothing to remove.
+      }
+      return null;
+    }
   }
 }

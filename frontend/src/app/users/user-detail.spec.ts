@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import type {
   UserAttributeCategories,
   UserAttributeField,
@@ -335,6 +335,9 @@ async function setup(options: {
 }
 
 describe('the user details page', () => {
+  // A retained confirmation lives in the tab. One test never reads another test's record.
+  beforeEach(() => sessionStorage.clear());
+
   it('shows the Account facts of the approved screen', async () => {
     const { element, fact } = await setup({});
     expect(element.querySelector('h1')?.textContent?.trim()).toBe(
