@@ -411,6 +411,18 @@ describe('the user attribute grid draft', () => {
     expect(draft.baselineFor(user, column)).toBe(9);
   });
 
+  it('keeps the typed text of an invalid number (R1-F)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '1.5');
+    const entry = draft.entryFor(user.userId, column.id)!;
+    expect(entry.state).toBe('invalid');
+    // The cell shows exactly what the person typed, so a correction starts from that text.
+    expect(draft.valueFor(user, column)).toBe('1.5');
+    expect(draft.edits()).toEqual([]);
+  });
+
   it('re-baselines a conflict to the value that Google holds (R1-D)', () => {
     const draft = configure();
     const column: UserAttributeColumn = attributeColumn();
