@@ -225,6 +225,14 @@ export class UsersStore {
   > | null>(null);
   readonly freshness = signal<UserFreshness | null>(null);
   readonly jobFailure = signal<DeviceSyncFailure | null>(null);
+  /**
+   * Bumps when a job settles. The grid draft clears a saved value that no row holds when the
+   * job failed, and a successful job reads the held rows back (design K26).
+   */
+  readonly jobSettlements = signal<{ revision: number; failed: boolean }>({
+    revision: 0,
+    failed: false,
+  });
   readonly orgUnits = signal<readonly UserOrgUnit[]>([]);
   readonly categories = signal<UserAttributeCategories | null>(null);
   readonly attributes = computed<readonly UserAttributeColumn[]>(() =>
@@ -850,6 +858,13 @@ export class UsersStore {
       this.scheduleRecount();
     } else if (event.type === 'job-finished') {
       if (event.failure) this.jobFailure.set(event.failure);
+      // A finished value job wrote rows that the feed carries (document B section 9). A row
+      // that the feed misses is read back by user ID, never by a grid reload (K26).
+      this.jobSettlements.update((value) => ({
+        revision: value.revision + 1,
+        failed: !!event.failure,
+      }));
+      if (!event.failure) void this.refreshRows('all');
       this.scheduleRecount();
     } else if (event.type === 'schema-change') {
       // A category job changed the schema list. The held rows read the new query
@@ -860,6 +875,40 @@ export class UsersStore {
       this.setSync(event.sync);
       if (event.sync.status !== 'running')
         this.revision.update((value) => value + 1);
+    }
+  }
+
+  /**
+   * Read the held rows among `ids` back from the API (design K26). The users feed carries
+   * the written values; this read covers one row that the feed missed. It never reloads the
+   * grid, because a read applies to the held nodes.
+   */
+  async refreshHeldRows(ids: readonly string[]): Promise<void> {
+    await this.refreshRows(ids);
+  }
+
+  /**
+   * Read up to 500 rows by user ID for the pending view (design K26, DRAFT-02). One request
+   * answers the whole view, so the browser holds only the rows on screen and the draft.
+   */
+  async readRowsByIds(ids: readonly string[]): Promise<UserRow[] | null> {
+    const wanted = [...new Set(ids)].slice(0, USER_BY_IDS_LIMIT);
+    if (!wanted.length) return [];
+    const epoch = this.epoch;
+    try {
+      const response = await this.call(
+        '/api/users/by-ids',
+        { userIds: wanted },
+        () => this.owns(epoch),
+      );
+      if (!this.owns(epoch) || !response?.ok) return null;
+      const body: unknown = await response.json();
+      const rows = z
+        .array(userRowSchema)
+        .safeParse((body as { rows?: unknown }).rows);
+      return rows.success ? rows.data : null;
+    } catch {
+      return null;
     }
   }
 

@@ -4,7 +4,9 @@ import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
   UserAttributeCategory,
+  UserAttributeField,
   UserPredicate,
+  UserRow,
   UserSelectionSpec,
   UserSyncState,
 } from '@campus/application-contracts';
@@ -12,12 +14,32 @@ import { AuthStore } from '../auth.store';
 import { UsersPage } from './users';
 import { UsersStore } from './users.store';
 import { UserGrid } from './user-grid';
+import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
+import { UserAttributeGridDraft } from './user-attribute-grid-draft';
+import type { UserAttributeColumn } from './user-fields';
+
+@Component({
+  selector: 'app-user-attribute-bulk-dialog',
+  template: '<p class="dialog-stub">{{ prepared()?.previewId }}</p>',
+})
+class BulkDialogStub {
+  readonly selection = input<unknown>();
+  readonly selected = input(0);
+  readonly categories = input<unknown>();
+  readonly categoriesLoading = input(false);
+  readonly categoriesError = input('');
+  readonly prepared = input<{ previewId: string } | null>(null);
+  readonly closed = output<void>();
+  readonly accepted = output<string>();
+  readonly categoriesRetry = output<void>();
+}
 
 @Component({
   selector: 'app-user-grid',
   template: '<p class="grid-stub">grid</p>',
 })
 class GridStub {
+  readonly endEdit = vi.fn();
   readonly load = input<unknown>();
   readonly revision = input(0);
   readonly selectionRevision = input(0);
@@ -31,6 +53,10 @@ class GridStub {
   readonly rowRefresh = input<unknown>();
   readonly focusIndex = input<number | null>(null);
   readonly focusScroll = input<number | null>(null);
+  readonly editable = input(false);
+  readonly pendingIds = input<readonly string[] | null>(null);
+  readonly loadPending = input<unknown>();
+  readonly pendingRevision = input(0);
   readonly filtersChange = output<unknown>();
   readonly details = output<{ row: unknown; index: number }>();
   readonly opened = output<{ row: unknown; index: number }>();
@@ -70,6 +96,7 @@ function setup(options: {
   actions?: string[];
   selectedCount?: number;
   categories?: UserAttributeCategory[] | null;
+  request?: ReturnType<typeof vi.fn>;
 }) {
   const sync = signal(options.sync);
   const predicates = signal<UserPredicate[]>(options.predicates ?? []);
@@ -109,9 +136,15 @@ function setup(options: {
     revision: signal(0),
     selection: {
       spec: signal(selectionSpec),
-      getSpec: vi.fn(),
-      applyOps: vi.fn(),
-      resolveSelected: vi.fn(),
+      getSpec: vi.fn().mockResolvedValue({
+        terms: [],
+        added: 0,
+        excluded: 0,
+        selectedCount: 0,
+        expiredAt: null,
+      }),
+      applyOps: vi.fn().mockResolvedValue(undefined),
+      resolveSelected: vi.fn().mockResolvedValue({}),
     },
     selectionTab: '6f1c2f0e-4c1e-4b8e-9a51-2b7f0f6d8a10',
     selectionRevision: signal(0),
@@ -121,9 +154,16 @@ function setup(options: {
     selectedCount: computed(() => options.selectedCount ?? 0),
     init: vi.fn().mockResolvedValue(undefined),
     leave: vi.fn(),
-    rowRefresh: {},
+    rowRefresh: {
+      attach: vi.fn(),
+      detach: vi.fn(),
+      onApply: vi.fn(() => () => undefined),
+    },
     freshness: signal(options.freshness ?? null),
     jobFailure: signal(null),
+    jobSettlements: signal({ revision: 0, failed: false }),
+    readRowsByIds: vi.fn().mockResolvedValue([]),
+    refreshHeldRows: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue(undefined),
     refreshSelection: vi.fn().mockResolvedValue(undefined),
     refreshDomain: vi.fn().mockResolvedValue(undefined),
@@ -133,7 +173,13 @@ function setup(options: {
       predicates.set([]);
       emptyFilter.set(false);
     }),
-    rows: vi.fn(),
+    rows: vi.fn().mockResolvedValue({
+      rows: [],
+      matching: 0,
+      total: 0,
+      observedAt: '2026-11-16T12:00:00.000Z',
+      refreshJobId: null,
+    }),
   };
   TestBed.configureTestingModule({
     providers: [
@@ -146,10 +192,15 @@ function setup(options: {
           session: signal(null),
           metadata: signal({ phase: 3 }),
           can: (action: string) => actions.has(action),
-          request: vi.fn(),
+          request: options.request ?? vi.fn(),
+          interrupted: () => false,
         },
       },
     ],
+  });
+  TestBed.overrideComponent(UsersPage, {
+    remove: { imports: [UserAttributeBulkDialog] },
+    add: { imports: [BulkDialogStub] },
   });
   return store;
 }
@@ -493,5 +544,270 @@ describe('the Users page', () => {
     const fixture = render();
     expect(button(fixture, 'Bulk Actions')).toBeUndefined();
     expect(text(fixture)).not.toContain('Set attributes');
+  });
+});
+
+const previewId = '11111111-1111-4111-8111-111111111111';
+const manifestDigest = 'a'.repeat(64);
+
+function previewAnswer(extra: Record<string, unknown> = {}) {
+  return {
+    previewId,
+    source: 'edit-list',
+    changes: null,
+    attributeChanges: 1,
+    selected: 1,
+    eligible: 1,
+    unchanged: 0,
+    conflicts: 0,
+    oldestObservedAt: '2026-11-16T12:00:00.000Z',
+    stale: false,
+    preparedAt: '2026-11-16T12:00:00.000Z',
+    expiresAt: '2026-11-16T12:10:00.000Z',
+    manifestDigest,
+    ...extra,
+  };
+}
+
+const receiptAnswer = {
+  jobId: '22222222-2222-4222-8222-222222222222',
+  displayId: 'UAT-014',
+  status: 'accepted',
+  userCount: 1,
+  changeCount: 1,
+};
+
+/** The routes of one save. The first match answers. */
+function routes(
+  table: Record<string, () => Response>,
+): ReturnType<typeof vi.fn> {
+  return vi.fn((path: string) => {
+    const route = Object.keys(table)
+      .sort((left, right) => right.length - left.length)
+      .find((candidate) => path.startsWith(candidate));
+    return Promise.resolve(
+      route
+        ? table[route]!()
+        : Response.json({ code: 'not-found' }, { status: 404 }),
+    );
+  });
+}
+
+function attributeField(
+  overrides: Partial<UserAttributeField> = {},
+): UserAttributeField {
+  return {
+    fieldId: 'Student.grade_level',
+    fieldName: 'grade_level',
+    displayName: 'Grade level',
+    fieldType: 'INT64',
+    multiValued: false,
+    indexed: true,
+    readAccessType: 'ADMINS_AND_SELF',
+    numericIndexingSpec: { minValue: 0, maxValue: 12 },
+    holders: 0,
+    ...overrides,
+  };
+}
+
+function attributeColumn(
+  overrides: Partial<UserAttributeColumn> = {},
+): UserAttributeColumn {
+  const attribute = attributeField(overrides.field);
+  return {
+    id: `attr:Student.${attribute.fieldName}`,
+    schemaName: 'Student',
+    fieldName: attribute.fieldName,
+    schemaDisplayName: 'Student information',
+    field: attribute,
+    label: attribute.displayName,
+    ...overrides,
+  };
+}
+
+function userRow(extra: Partial<UserRow> = {}): UserRow {
+  return {
+    userId: '1100000000000000001',
+    primaryEmail: 'amara.okafor@example.org',
+    orgUnitPath: '/Students/High School',
+    givenName: 'Amara',
+    familyName: 'Okafor',
+    fullName: 'Amara Okafor',
+    suspended: false,
+    suspensionReason: null,
+    archived: false,
+    lastLoginTime: null,
+    creationTime: '2026-09-01T00:00:00.000Z',
+    twoStepEnrolled: true,
+    department: null,
+    title: null,
+    aliases: [],
+    customSchemas: { Student: { grade_level: 9 } },
+    lastEntitySync: '2026-11-16T12:00:00.000Z',
+    stale: false,
+    recordVersion: 1,
+    ...extra,
+  };
+}
+
+/** Seed two pending cells of the grid draft. */
+function stageTwo(draft: UserAttributeGridDraft) {
+  const column = attributeColumn();
+  draft.stageText(userRow(), column, '11');
+  draft.stageText(
+    userRow({
+      userId: '1100000000000000002',
+      fullName: 'Aaron Whitfield',
+      primaryEmail: 'aaron.whitfield@example.org',
+      customSchemas: { Student: { grade_level: 7 } },
+    }),
+    column,
+    '10',
+  );
+}
+
+async function settle(fixture: ReturnType<typeof render>): Promise<void> {
+  for (let index = 0; index < 30; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+  }
+}
+
+describe('the in-grid attribute draft (design K26)', () => {
+  beforeEach(() => sessionStorage.clear());
+
+  function page(options: Parameters<typeof setup>[0]) {
+    const store = setup({ ...options, actions: ['users:read', 'users:write'] });
+    const draft = TestBed.inject(UserAttributeGridDraft);
+    return { store, draft };
+  }
+
+  it('shows the ruling 14 count line and its three actions', () => {
+    const { draft } = page({ sync: ready() });
+    stageTwo(draft);
+    const fixture = render();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('.draft-count')?.textContent?.trim()).toBe(
+      '2 pending changes · 2 users',
+    );
+    expect(button(fixture, 'Show pending changes')).toBeDefined();
+    expect(button(fixture, 'Revert all changes')).toBeDefined();
+    expect(button(fixture, 'Save changes')).toBeDefined();
+  });
+
+  it('keeps Save changes disabled while a conflict cell waits', () => {
+    const { draft } = page({ sync: ready() });
+    const column = attributeColumn();
+    stageTwo(draft);
+    draft.markConflict('1100000000000000001', column.id, 10);
+    const fixture = render();
+    const save = button(fixture, 'Save changes') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(text(fixture)).toContain('changed in Google');
+  });
+
+  it('shows no bar and no editors without users:write', () => {
+    const store = setup({
+      sync: ready(),
+      actions: ['users:read'],
+    });
+    const draft = TestBed.inject(UserAttributeGridDraft);
+    stageTwo(draft);
+    const fixture = render();
+    // A restored draft stays visible, and only Revert all clears it.
+    expect(text(fixture)).toContain('2 pending changes · 2 users');
+    const save = button(fixture, 'Save changes') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(store).toBeDefined();
+  });
+
+  it('saves one pending change in one step', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () => Response.json(previewAnswer()),
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        Response.json(receiptAnswer),
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const fixture = render();
+    const save = button(fixture, 'Save changes') as HTMLButtonElement;
+    expect({ disabled: save.disabled, text: save.textContent?.trim() }).toEqual(
+      {
+        disabled: false,
+        text: 'Save changes',
+      },
+    );
+    save.click();
+    await settle(fixture);
+    expect(draft.entries()).toEqual([]);
+    expect(store.refreshHeldRows).toHaveBeenCalledWith(['1100000000000000001']);
+    // One change confirms without the Set attributes dialog.
+    expect(fixture.nativeElement.querySelector('.dialog-stub')).toBeNull();
+  });
+
+  it('opens the Set attributes dialog at Review for two changes', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json(
+          previewAnswer({
+            attributeChanges: 2,
+            selected: 2,
+            eligible: 2,
+          }),
+        ),
+      [`/api/users/attribute-previews/${previewId}/targets`]: () =>
+        Response.json({
+          targets: [],
+          nextCursor: null,
+        }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    stageTwo(draft);
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const dialog = fixture.nativeElement.querySelector('.dialog-stub');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.textContent).toContain(previewId);
+    // The draft stays until the dialog confirms the job.
+    expect(draft.counts().changes).toBe(2);
+  });
+
+  it('keeps the draft when the preview answers 413', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json({ code: 'payload-too-large' }, { status: 413 }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    stageTwo(draft);
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(draft.counts().changes).toBe(2);
+    expect(
+      fixture.nativeElement.querySelector('.draft-line')?.textContent,
+    ).toContain('The request exceeds the size limit.');
+  });
+
+  it('keeps the draft when the confirmation answers 503', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () => Response.json(previewAnswer()),
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        Response.json({ reason: 'unavailable' }, { status: 503 }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const fixture = render();
+    const save = button(fixture, 'Save changes') as HTMLButtonElement;
+    expect({ disabled: save.disabled, text: save.textContent?.trim() }).toEqual(
+      {
+        disabled: false,
+        text: 'Save changes',
+      },
+    );
+    save.click();
+    await settle(fixture);
+    expect(draft.counts().changes).toBe(1);
+    expect(fixture.nativeElement.querySelector('.draft-line')).not.toBeNull();
   });
 });

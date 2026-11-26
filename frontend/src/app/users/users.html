@@ -255,10 +255,84 @@
     </div>
     } @if (store.refreshing()) {
     <p class="visually-hidden" role="status">Refreshing user directory.</p>
+    } @if (draft.panelVisible()) {
+    <section class="draft-bar" aria-labelledby="draft-count">
+      <div class="draft-copy" aria-live="polite">
+        @if (draft.visible()) {
+        <p id="draft-count" class="draft-count">{{ draft.countLine() }}</p>
+        @if (draftLine().text; as text) {
+        <p
+          class="draft-line"
+          [class.error]="draftLine().tone === 'error'"
+          [class.warning]="draftLine().tone === 'warning'"
+        >
+          {{ text }}
+        </p>
+        } } @else {
+        <!-- A restore error shows even when no entry restored. -->
+        <p id="draft-count" class="draft-line error">{{ draft.line().text }}</p>
+        }
+      </div>
+      <div class="draft-actions">
+        @if (draft.visible()) {
+        <button
+          mat-stroked-button
+          type="button"
+          [attr.aria-pressed]="pendingView()"
+          (click)="togglePendingView()"
+        >
+          {{ pendingView() ? 'Show all users' : 'Show pending changes' }}
+        </button>
+        <button mat-stroked-button type="button" (click)="revertAll()">
+          Revert all changes
+        </button>
+        }
+        <button
+          mat-flat-button
+          type="button"
+          #saveChangesButton
+          [disabled]="
+            !editable() || !draft.visible() || draft.blocked() || saving()
+          "
+          aria-describedby="draft-save-note"
+          (click)="saveChanges()"
+        >
+          {{ saving() ? 'Preparing…' : 'Save changes' }}
+        </button>
+      </div>
+    </section>
+    <p id="draft-save-note" class="visually-hidden">
+      @if (draft.blocked()) { Save changes stays unavailable while a cell holds
+      an invalid or conflict change. The bar names the change to resolve. }
+      @else { Save changes prepares a preview of the changed cells. One change
+      saves at once. Two or more changes open the review. }
+    </p>
     }
 
     <div class="grid-region">
-      @if (noMatches()) {
+      @if (pendingView()) { @if (pendingState() === 'failed') {
+      <div class="grid-message" role="alert">
+        <h2>The pending users did not load</h2>
+        <p>
+          Campus Commander could not read the changed users. Show all users
+          returns to your filters.
+        </p>
+        <button mat-flat-button type="button" (click)="retryPending()">
+          Try again
+        </button>
+      </div>
+      } @else if (pendingState() === 'empty') {
+      <div class="grid-message" role="status">
+        <h2>No pending users were found</h2>
+        <p>
+          The changed users are no longer in the directory. Show all users
+          returns to your filters.
+        </p>
+        <button mat-flat-button type="button" (click)="togglePendingView()">
+          Show all users
+        </button>
+      </div>
+      } } @if (noMatches()) {
       <div class="grid-message" role="status">
         <h2>No users match these filters</h2>
         <p>Check the name or email, or clear the current filters.</p>
@@ -273,7 +347,12 @@
       </div>
       }
       <app-user-grid
-        [class.hidden]="noMatches() || emptyDirectory()"
+        [class.hidden]="
+          noMatches() ||
+          emptyDirectory() ||
+          (pendingView() &&
+            (pendingState() === 'failed' || pendingState() === 'empty'))
+        "
         [load]="load"
         [revision]="store.revision()"
         [selectionRevision]="store.selectionRevision()"
@@ -290,6 +369,10 @@
         [rowRefresh]="store.rowRefresh"
         [focusIndex]="store.position()?.index ?? null"
         [focusScroll]="store.position()?.scrollTop ?? null"
+        [editable]="editable()"
+        [pendingIds]="pendingIds()"
+        [loadPending]="loadPending"
+        [pendingRevision]="pendingRevision()"
         (details)="openDetails($event)"
         (opened)="recordRow($event)"
       />
@@ -299,15 +382,17 @@
     }
   </mat-tab-nav-panel>
 
-  @if (bulkOpen()) {
+  @if (bulkOpen() || reviewOpen()) {
   <app-user-attribute-bulk-dialog
     [selection]="bulkSelection()"
-    [selected]="selectedCount()"
+    [selected]="reviewOpen() ? draft.counts().users : selectedCount()"
     [categories]="bulkCategories()"
     [categoriesLoading]="store.categoriesLoading()"
     [categoriesError]="store.categoriesError()"
+    [prepared]="reviewOpen() ? prepared() : null"
     (categoriesRetry)="store.loadCategories()"
-    (closed)="closeBulk()"
+    (accepted)="reviewAccepted()"
+    (closed)="reviewOpen() ? closeReview() : closeBulk()"
   />
   }
 </div>

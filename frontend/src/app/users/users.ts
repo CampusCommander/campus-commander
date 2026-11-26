@@ -6,8 +6,10 @@ import {
   OnInit,
   afterNextRender,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
   viewChild,
   viewChildren,
 } from '@angular/core';
@@ -17,6 +19,8 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { Router, RouterLink } from '@angular/router';
 import type {
   Action,
+  UserAttributeEdit,
+  UserAttributePreview,
   UserPredicate,
   UserRow,
   UserSelectionKey,
@@ -29,6 +33,8 @@ import {
   BULK_SET_ATTRIBUTES_LABEL,
 } from './user-attribute-bulk-messages';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
+import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import { UserAttributeGridDraft } from './user-attribute-grid-draft';
 import { USER_GRID_ID } from './user-selection';
 import { CUSTOM_ATTRIBUTES_LABEL } from './user-attribute-messages';
 import { UserAttributeCategories } from './user-attribute-categories';
@@ -68,6 +74,9 @@ export class UsersPage implements OnInit, OnDestroy {
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
+  /** The grid draft holds the pending attribute cells (design K26). */
+  protected readonly draft = inject(UserAttributeGridDraft);
+  private readonly editFlow = inject(UserAttributeEditFlow);
 
   protected readonly editingIndex = signal<number | null>(null);
   /** The selected tab: the Users grid, or the Custom attributes categories (U2). */
@@ -161,6 +170,64 @@ export class UsersPage implements OnInit, OnDestroy {
   protected readonly refreshSelectedSupport = REFRESH_SELECTED_SUPPORT;
   protected readonly refreshDomainSupport = REFRESH_DOMAIN_SUPPORT;
 
+  /**
+   * A cell is editable only with users:write while the page is online (B section 12). The
+   * draft stays visible otherwise, so a restored change is never lost.
+   */
+  protected readonly editable = computed(
+    () => this.authorized('users:write') && !this.store.offline(),
+  );
+
+  /** Show pending changes draws the draft's users instead of the current query (DRAFT-02). */
+  protected readonly pendingView = signal(false);
+  /** The pending view's read failed or found no row (UI-08). */
+  protected readonly pendingState = signal<
+    'ready' | 'loading' | 'failed' | 'empty'
+  >('ready');
+  /** Increments when the person asks for the pending read again. */
+  protected readonly pendingRevision = signal(0);
+  protected readonly pendingIds = computed<readonly string[] | null>(() =>
+    this.pendingView() ? this.draft.pendingUserIds() : null,
+  );
+  /**
+   * One read answers the pending view: at most 500 users (design K26). The grid pages and
+   * sorts the answer in the browser, so a new page sends no request.
+   */
+  protected readonly loadPending = async (): Promise<UserRow[] | null> => {
+    this.pendingState.set('loading');
+    const rows = await this.store.readRowsByIds(this.draft.pendingUserIds());
+    if (rows === null) {
+      this.pendingState.set('failed');
+      return null;
+    }
+    this.pendingState.set(rows.length ? 'ready' : 'empty');
+    return rows;
+  };
+
+  /** Save changes: prepare the preview, then confirm it in one step or in the dialog. */
+  protected readonly saving = signal(false);
+  protected readonly reviewOpen = signal(false);
+  protected readonly prepared = signal<UserAttributePreview | null>(null);
+  private submitted: UserAttributeEdit[] = [];
+  private readonly grid = viewChild(UserGrid);
+  private readonly saveButton =
+    viewChild<ElementRef<HTMLButtonElement>>('saveChangesButton');
+  protected readonly draftLine = computed(() => this.draft.line());
+
+  constructor() {
+    // A failed job wrote no value. A saved cell returns to the value that Google holds.
+    effect(() => {
+      const settled = this.store.jobSettlements();
+      if (!settled.revision || !settled.failed) return;
+      untracked(() => this.draft.dropSettled());
+    });
+    // An empty draft has no pending view to show, so the grid returns to the query.
+    effect(() => {
+      if (!this.pendingView() || this.draft.counts().changes) return;
+      untracked(() => this.pendingView.set(false));
+    });
+  }
+
   ngOnInit(): void {
     void this.store.init();
   }
@@ -237,6 +304,116 @@ export class UsersPage implements OnInit, OnDestroy {
     afterNextRender(() => this.chips()[index]?.nativeElement.focus(), {
       injector: this.injector,
     });
+  }
+
+  /** Save changes. One pending change confirms at once, as the details card does. */
+  protected saveChanges(): void {
+    if (!this.editable() || this.saving()) return;
+    // The open editor's input is part of the draft, so Save changes keeps a typed value.
+    this.grid()?.endEdit();
+    this.draft.commitLive();
+    if (this.draft.blocked() || this.draft.counts().changes === 0) return;
+    void this.runSave();
+  }
+
+  /** Prepare one edit-list preview, then confirm it in one step or open the dialog. */
+  private async runSave(): Promise<void> {
+    const edits = this.draft.edits();
+    if (!edits.length) return;
+    this.submitted = edits;
+    this.saving.set(true);
+    this.draft.clearRefusal();
+    const answer = await this.editFlow.prepare(edits);
+    if (!answer.ok) {
+      this.saving.set(false);
+      this.draft.refuse(answer.message);
+      return;
+    }
+    const preview = answer.value;
+    // One change confirms at once (owner direction, 2026-10-23, design K26).
+    if (edits.length === 1 && preview.eligible === 1) {
+      await this.confirmAtOnce(preview);
+      return;
+    }
+    // The frozen rows mark a conflict cell and drop an unchanged row (B section 8.4).
+    const targets = await this.editFlow.readTargets(preview.previewId);
+    if (targets.ok) this.draft.applyPreview(targets.value, edits);
+    this.saving.set(false);
+    // Two or more changes open the Set attributes dialog at Review (design K26). A dialog
+    // without an eligible row shows nothing to confirm.
+    if (edits.length >= 2 && (preview.eligible > 0 || preview.conflicts > 0)) {
+      this.prepared.set(preview);
+      this.reviewOpen.set(true);
+    }
+  }
+
+  /** Confirm the preview of one change without a review step. */
+  private async confirmAtOnce(preview: UserAttributePreview): Promise<void> {
+    const answer = await this.editFlow.confirm(
+      preview.previewId,
+      preview.manifestDigest,
+    );
+    this.saving.set(false);
+    if (!answer.ok) {
+      this.draft.refuse(answer.message);
+      return;
+    }
+    this.acceptSubmitted();
+  }
+
+  /**
+   * The dialog started the job. The entries leave the draft, and the cells keep the saved
+   * values until their rows hold them (design K26).
+   */
+  protected reviewAccepted(): void {
+    if (!this.reviewOpen()) return;
+    this.acceptSubmitted();
+  }
+
+  private acceptSubmitted(): void {
+    const edits = this.submitted;
+    if (!edits.length) return;
+    this.draft.accept(edits);
+    // The users feed carries the written values (document B section 9). This read covers a
+    // row of the screen that the feed misses. It never reloads the grid.
+    void this.store.refreshHeldRows(this.userIdsOf(edits));
+  }
+
+  private userIdsOf(edits: readonly UserAttributeEdit[]): string[] {
+    return [...new Set(edits.map((edit) => edit.userId))];
+  }
+
+  /** The dialog closed. Focus returns to Save changes (UI-09). */
+  protected closeReview(): void {
+    this.reviewOpen.set(false);
+    this.prepared.set(null);
+    afterNextRender(() => this.saveButton()?.nativeElement?.focus(), {
+      injector: this.injector,
+    });
+  }
+
+  /** Show pending changes draws the draft's users instead of the current query. */
+  protected togglePendingView(): void {
+    if (this.pendingView()) {
+      this.pendingView.set(false);
+      return;
+    }
+    if (!this.draft.counts().changes) return;
+    this.grid()?.endEdit();
+    this.pendingState.set('loading');
+    this.pendingView.set(true);
+  }
+
+  /** Read the pending view again after a failed read (UI-08). */
+  protected retryPending(): void {
+    this.pendingRevision.update((value) => value + 1);
+  }
+
+  /** Revert all changes: every entry leaves the draft and the bar closes. */
+  protected revertAll(): void {
+    this.grid()?.endEdit();
+    this.draft.revertAll();
+    this.pendingView.set(false);
   }
 
   /** Open the Set attributes dialog for the selection of this tab (state 08). */

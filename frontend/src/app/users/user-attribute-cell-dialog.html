@@ -1,0 +1,100 @@
+<div class="picker-scrim" aria-hidden="true" (click)="cancel()"></div>
+<div class="picker-wrap">
+  <section
+    class="picker attribute-cell-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="attribute-cell-title"
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown)="keydown($event)"
+  >
+    <h2 id="attribute-cell-title" #dialogTitle tabindex="-1">{{ label() }}</h2>
+    <div class="picker-content">
+      @if (userName()) {
+      <p class="attribute-cell-user">{{ userName() }}</p>
+      } @if (multiValued()) {
+      <p class="attribute-cell-hint">{{ LIST_HINT }}</p>
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="cell-field"
+      >
+        <mat-label>{{ label() }}</mat-label>
+        <mat-chip-grid
+          #chipGrid
+          [attr.aria-label]="label()"
+          [attr.aria-describedby]="error() ? 'attribute-cell-error' : null"
+        >
+          @for (value of chips(); track $index) {
+          <mat-chip-row (removed)="removeChip($index)">
+            {{ value }}
+            <button
+              matChipRemove
+              type="button"
+              [attr.aria-label]="'Remove ' + value"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >cancel</span
+              >
+            </button>
+          </mat-chip-row>
+          }
+          <input
+            [matChipInputFor]="chipGrid"
+            [matChipInputAddOnBlur]="true"
+            (matChipInputTokenEnd)="addChip($event)"
+            [attr.aria-label]="'Add a ' + label() + ' value'"
+          />
+        </mat-chip-grid>
+      </mat-form-field>
+      } @else {
+      <p class="attribute-cell-hint">{{ DATE_HINT }}</p>
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="cell-field"
+      >
+        <mat-label>{{ label() }}</mat-label>
+        <input
+          #dateInput
+          matInput
+          type="date"
+          autocomplete="off"
+          [value]="dateValue()"
+          (input)="setDate($event)"
+          [attr.aria-invalid]="error() ? 'true' : null"
+          [attr.aria-describedby]="error() ? 'attribute-cell-error' : null"
+        />
+      </mat-form-field>
+      } @if (error(); as message) {
+      <p id="attribute-cell-error" class="attribute-cell-error" role="alert">
+        {{ message }}
+      </p>
+      }
+    </div>
+    <div class="picker-actions">
+      @if (multiValued()) {
+      <button
+        mat-button
+        type="button"
+        class="attribute-cell-clear"
+        (click)="clearValues()"
+      >
+        {{ CLEAR_LABEL }}
+      </button>
+      }
+      <button mat-button type="button" (click)="cancel()">
+        {{ CANCEL_LABEL }}
+      </button>
+      <button
+        mat-flat-button
+        type="button"
+        [disabled]="!!error()"
+        (click)="stage()"
+      >
+        {{ STAGE_LABEL }}
+      </button>
+    </div>
+  </section>
+</div>

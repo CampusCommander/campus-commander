@@ -6,11 +6,13 @@ import {
   EnvironmentInjector,
   Injector,
   OnInit,
+  afterNextRender,
   createComponent,
   effect,
   inject,
   input,
   output,
+  signal,
   untracked,
 } from '@angular/core';
 import { AgGridAngular } from 'ag-grid-angular';
@@ -18,8 +20,13 @@ import {
   AllCommunityModule,
   ModuleRegistry,
   themeQuartz,
+  type CellDoubleClickedEvent,
+  type CellEditRequestEvent,
+  type CellEditingStartedEvent,
+  type CellKeyDownEvent,
   type ColumnMovedEvent,
   type FilterModel,
+  type FullWidthCellKeyDownEvent,
   type GridApi,
   type GridOptions,
   type GridReadyEvent,
@@ -45,12 +52,14 @@ import type {
   UserPredicate,
   UserRow,
 } from '@campus/application-contracts';
-import { userColumnDefs } from './user-columns';
+import { cellOpensDialog, userColumnDefs } from './user-columns';
 import {
   defaultGridState,
+  pendingUserDatasource,
   savedGridState,
   userDatasource,
   type UserLoader,
+  type UserPendingDatasource,
 } from './user-datasource';
 import {
   EmptySetFilterError,
@@ -66,7 +75,13 @@ import {
   showRow,
 } from './user-grid-options';
 import type { UserRowRefresh } from './user-row-refresh';
-import type { UserAttributeColumn } from './user-fields';
+import { attributeFor, type UserAttributeColumn } from './user-fields';
+import {
+  UserAttributeGridDraft,
+  cellFor,
+  type UserAttributeDraftEntry,
+} from './user-attribute-grid-draft';
+import { UserAttributeCellDialog } from './user-attribute-cell-dialog';
 import { UserStatusPanel } from './user-status-panel';
 
 ModuleRegistry.registerModules([
@@ -84,13 +99,24 @@ ModuleRegistry.registerModules([
 /** The users grid: server-side rows, the Columns panel, filters, and selection (A section 9). */
 @Component({
   selector: 'app-user-grid',
-  imports: [AgGridAngular],
+  imports: [AgGridAngular, UserAttributeCellDialog],
   template: `
     <ag-grid-angular
       class="user-grid"
       [gridOptions]="options"
       (gridReady)="ready($event)"
     />
+    @if (cellDialog(); as open) {
+      <app-user-attribute-cell-dialog
+        [field]="open.column.field"
+        [attribute]="open.column.id"
+        [label]="open.column.label"
+        [value]="open.value"
+        [userName]="open.userName"
+        (cancelled)="closeCellDialog()"
+        (staged)="stageCellDialog($event)"
+      />
+    }
   `,
   styles: `
     :host {
@@ -106,6 +132,22 @@ ModuleRegistry.registerModules([
     /* A stale row shows its name muted until the refresh lands (A section 15.4). */
     :host ::ng-deep .user-stale {
       color: var(--cc-text-secondary);
+    }
+    /* DRAFT-02: the pending, invalid, and conflict cells of the grid draft. */
+    :host ::ng-deep .ag-cell.user-attribute-draft-pending {
+      border-radius: 2px;
+      background: var(--cc-surface-selected);
+      box-shadow: inset 0 0 0 2px var(--cc-accent);
+    }
+    :host ::ng-deep .ag-cell.user-attribute-draft-invalid {
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--cc-status-error) 8%, transparent);
+      box-shadow: inset 0 0 0 2px var(--cc-status-error);
+    }
+    :host ::ng-deep .ag-cell.user-attribute-draft-conflict {
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--cc-status-warning) 14%, transparent);
+      box-shadow: inset 0 0 0 2px var(--cc-status-warning);
     }
     :host ::ng-deep .lgr-ssrm-selection-footer {
       display: flex;
@@ -199,6 +241,14 @@ export class UserGrid implements OnInit {
   }>();
   /** Refresh signals update the rows this grid holds. */
   readonly rowRefresh = input<UserRowRefresh | null>(null);
+  /** The cells are editable: users:write at the district, and the page is online (B section 12). */
+  readonly editable = input(false);
+  /** The draft's user IDs while Show pending changes is on (DRAFT-02). */
+  readonly pendingIds = input<readonly string[] | null>(null);
+  /** Reads the pending view's rows by user ID. One request answers at most 500 users. */
+  readonly loadPending = input<(() => Promise<UserRow[] | null>) | null>(null);
+  /** Increments when the person asks for a failed pending read again. */
+  readonly pendingRevision = input(0);
   /** Row to focus after the first block loads, such as the row that opened the details (UI-09). */
   readonly focusIndex = input<number | null>(null);
   /** The grid offset of that row, so Back to users restores the scroll position (A section 4). */
@@ -225,9 +275,35 @@ export class UserGrid implements OnInit {
   private readonly application = inject(ApplicationRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** The grid draft holds the pending attribute cells (design K26). */
+  private readonly draft = inject(UserAttributeGridDraft);
+
+  /** The open date picker or list editor of one cell (B section 12). */
+  protected readonly cellDialog = signal<{
+    row: UserRow;
+    column: UserAttributeColumn;
+    value: string | string[];
+    userName: string;
+  } | null>(null);
 
   private api: GridApi<UserRow> | null = null;
+  /** The grid started. The column effect waits for it, so an early category read lands. */
+  private readonly started = signal(false);
+  /** The attribute set that the grid already holds, so one read sets the columns once. */
+  private appliedColumns = '';
   private selectionService: SsrmSelectionService | null = null;
+  /** The grid shows the pending view: flat rows of the draft's users (DRAFT-02). */
+  private pending = false;
+  /** The rows of the pending view, so refreshed records reach its cache. */
+  private pendingSource: UserPendingDatasource | null = null;
+  /** The user IDs of the pending view on screen. */
+  private pendingViewIds: readonly string[] | null = null;
+  /** The revision of the last retried pending read. */
+  private pendingRetried = 0;
+  /** A filter model change of the view switch is not a person's filter. */
+  private switching = false;
+  /** The open editor's input listener. */
+  private liveListener: ((event: Event) => void) | null = null;
   /** The predicates that no column filter shows. The datasource reads them (R4). */
   private keptPredicates: readonly UserPredicate[] = [];
   /** The predicates that the loaded rows follow, so a model change never reloads twice (R4). */
@@ -259,14 +335,25 @@ export class UserGrid implements OnInit {
     });
     effect(() => {
       const predicates = this.predicates();
-      untracked(() => this.applyPredicates(predicates));
+      // The pending view hides the person's filters. They return with Show all users.
+      untracked(() => {
+        if (!this.pending) this.applyPredicates(predicates);
+      });
     });
     // The category read adds the attribute columns after the grid starts.
     effect(() => {
       const attributes = this.attributes();
+      // The grid start fires the effect again when the category read finished first.
+      const started = this.started();
       untracked(() => {
-        if (!this.api || !attributes.length) return;
+        if (!started || !this.api || !attributes.length) return;
+        // One column set for one read. A second set would reset the filter model of an
+        // open query (R4). A permission change reaches the editors through their callback.
+        const signature = attributes.map((attribute) => attribute.id).join('|');
+        if (signature === this.appliedColumns) return;
+        this.appliedColumns = signature;
         this.api.setGridOption('columnDefs', this.columnDefs());
+        this.scheduleGroupHeader();
       });
     });
     effect(() => {
@@ -280,6 +367,27 @@ export class UserGrid implements OnInit {
         if (!revision) return;
         this.selectionEnded();
       });
+    });
+    // "Show pending changes" swaps the datasource for the draft's users (DRAFT-02).
+    effect(() => {
+      const ids = this.pendingIds();
+      untracked(() => this.applyPendingView(ids));
+    });
+    // A failed pending read retries on request. The first run is not a retry.
+    effect(() => {
+      const revision = this.pendingRevision();
+      untracked(() => {
+        if (revision === this.pendingRetried) return;
+        this.pendingRetried = revision;
+        const ids = this.pendingIds();
+        if (this.pending && ids?.length) this.applyPendingView(ids);
+      });
+    });
+    // The draft repaints its cells without reloading a block (DRAFT-02).
+    effect(() => {
+      this.draft.entries();
+      this.draft.live();
+      untracked(() => this.refreshDraftCells());
     });
     // A frame or block answer that lands after the grid ended must leave focus alone (R4).
     this.destroyRef.onDestroy(() => {
@@ -319,10 +427,20 @@ export class UserGrid implements OnInit {
       groupHeaderHeight: 0,
       initialState: this.state() ?? defaultGridState(),
       onFilterChanged: () => this.filtersChanged(),
-      onColumnMoved: (event) => this.columnMoved(event),
       onToolPanelVisibleChanged: (event) => this.panelToggled(event),
-      onCellKeyDown: (event) =>
-        detailsKeyHandler((row, node) => this.open(row, node))(event),
+      // DRAFT-02: an edit stages in the draft and never writes the row data.
+      readOnlyEdit: true,
+      onCellEditRequest: (event) => this.stageEdit(event),
+      onCellEditingStarted: (event) => this.beginLiveEdit(event),
+      onCellEditingStopped: () => this.endLiveEdit(),
+      onCellDoubleClicked: (event) => this.openCellDialogFromEvent(event),
+      onCellKeyDown: (event) => this.cellKeyDown(event),
+      // A moved or pinned attribute column keeps its group header name for assistive tech.
+      onColumnMoved: (event) => {
+        this.columnMoved(event);
+        this.scheduleGroupHeader();
+      },
+      onDisplayedColumnsChanged: () => this.scheduleGroupHeader(),
       onGridPreDestroyed: ({ state, api }) => {
         this.saveState()(
           savedGridState(state),
@@ -355,7 +473,267 @@ export class UserGrid implements OnInit {
       orgUnits: () => this.orgUnits().map((unit) => unit.path),
       onDetails: (row, node) => this.open(row, node),
       onOpen: (row, node) => this.openedRow(row, node),
+      draft: this.draftOptions(),
     });
+  }
+
+  /**
+   * The approved composition shows one header row, so a category group header has zero
+   * height and draws no text (design state 01). The category name lives in the Columns panel.
+   * Hide that empty row from assistive tech, so the accessibility tree never holds an empty
+   * column header (UI-01), and make it inert, so keyboard focus never lands in it.
+   */
+  private hideGroupHeaderRow(): void {
+    const host = this.host.nativeElement as HTMLElement;
+    for (const row of host.querySelectorAll<HTMLElement>(
+      '.ag-header-row-group',
+    )) {
+      if (row.getAttribute('aria-hidden') !== 'true')
+        row.setAttribute('aria-hidden', 'true');
+      if (!row.hasAttribute('inert')) row.setAttribute('inert', '');
+    }
+  }
+
+  /** The header renders after the column set changes, so hide the group row next frame. */
+  private scheduleGroupHeader(): void {
+    requestAnimationFrame(() => {
+      if (!this.destroyed) this.hideGroupHeaderRow();
+    });
+  }
+
+  /** The draft reads and writes that the editable attribute columns call. */
+  private draftOptions() {
+    return {
+      editable: () => this.editable(),
+      value: (row: UserRow, column: UserAttributeColumn) =>
+        this.draft.valueFor(row, column),
+      entry: (userId: string, attribute: string) =>
+        this.draft.entryFor(userId, attribute),
+      reason: (entry: UserAttributeDraftEntry) => this.draft.reasonFor(entry),
+      onRevert: (userId: string, attribute: string) =>
+        this.draft.revert(userId, attribute),
+    };
+  }
+
+  /**
+   * Stop the active editor before Save changes reads the draft. The live input already
+   * reached the draft, so Commit live keeps it (DRAFT-02).
+   */
+  endEdit(): void {
+    this.api?.stopEditing();
+    this.endLiveEdit();
+  }
+
+  /**
+   * Validate and stage an edit request. With readOnlyEdit the row data keeps its value, and
+   * the cell renderer shows the draft value instead (DRAFT-02).
+   */
+  private stageEdit(event: CellEditRequestEvent<UserRow>): void {
+    if (!this.editable() || !event.data || event.node.group) return;
+    const column = attributeFor(this.attributes(), event.column.getColId());
+    if (!column) return;
+    const raw = event.newValue;
+    if (column.field.fieldType === 'BOOL') {
+      // The boolean editor answers Yes or No. No is a value, never an empty cell (B section 12).
+      this.draft.stageBool(
+        event.data,
+        column,
+        raw === true || raw === 'Yes' || raw === 'true',
+      );
+      return;
+    }
+    this.draft.stageText(
+      event.data,
+      column,
+      raw === null || raw === undefined ? '' : String(raw),
+    );
+  }
+
+  /** Count the changed input of an open editor before it stages (DRAFT-02). */
+  private beginLiveEdit(event: CellEditingStartedEvent<UserRow>): void {
+    if (!this.editable() || !event.data || event.node.group) return;
+    const column = attributeFor(this.attributes(), event.column.getColId());
+    if (!column) return;
+    const cell = cellFor(event.data, column);
+    this.draft.beginLive({
+      userId: cell.userId,
+      userName: cell.userName,
+      attribute: cell.attribute,
+      label: cell.label,
+      fieldType: cell.fieldType,
+      multiValued: cell.multiValued,
+      minValue: cell.minValue,
+      maxValue: cell.maxValue,
+      baseline: cell.baseline,
+      value:
+        event.value === null || event.value === undefined
+          ? ''
+          : String(event.value),
+    });
+    this.attachLiveInput();
+  }
+
+  private endLiveEdit(): void {
+    this.draft.endLive();
+    this.detachLiveInput();
+  }
+
+  /** The open editor's input bubbles from the cell. */
+  private attachLiveInput(): void {
+    this.detachLiveInput();
+    const listener = (event: Event) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement)
+        this.draft.updateLive(target.value);
+    };
+    this.host.nativeElement.addEventListener('input', listener, true);
+    this.liveListener = listener;
+  }
+
+  private detachLiveInput(): void {
+    if (!this.liveListener) return;
+    this.host.nativeElement.removeEventListener(
+      'input',
+      this.liveListener,
+      true,
+    );
+    this.liveListener = null;
+  }
+
+  /** Enter and F2 open a date or list cell. Shift+Enter reverts a pending cell. */
+  private cellKeyDown(
+    event: CellKeyDownEvent<UserRow> | FullWidthCellKeyDownEvent<UserRow>,
+  ): void {
+    const keyboard = event.event as KeyboardEvent | null;
+    if (!keyboard || !('column' in event) || !event.data || event.node.group) {
+      detailsKeyHandler((row, node) => this.open(row, node))(event);
+      return;
+    }
+    const column = attributeFor(this.attributes(), event.column.getColId());
+    if (column) {
+      if (
+        (keyboard.key === 'Enter' || keyboard.key === 'F2') &&
+        cellOpensDialog(column)
+      ) {
+        keyboard.preventDefault();
+        this.openCellDialog(event.data, column);
+        return;
+      }
+      if (
+        keyboard.key === 'Enter' &&
+        keyboard.shiftKey &&
+        !event.event?.defaultPrevented &&
+        this.draft.entryFor(event.data.userId, column.id)
+      ) {
+        keyboard.preventDefault();
+        keyboard.stopPropagation();
+        this.draft.revert(event.data.userId, column.id);
+        return;
+      }
+    }
+    detailsKeyHandler((row, node) => this.open(row, node))(event);
+  }
+
+  private openCellDialogFromEvent(
+    event: CellDoubleClickedEvent<UserRow>,
+  ): void {
+    if (!this.editable() || !event.data || event.node.group) return;
+    const column = attributeFor(this.attributes(), event.column.getColId());
+    if (!column || !cellOpensDialog(column)) return;
+    event.event?.preventDefault();
+    this.openCellDialog(event.data, column);
+  }
+
+  /** Open the date picker or the list editor of one cell (B section 12). */
+  private openCellDialog(row: UserRow, column: UserAttributeColumn): void {
+    if (!this.editable()) return;
+    this.endEdit();
+    this.cellDialog.set({
+      row,
+      column,
+      value: this.cellEditorValue(row, column),
+      userName: row.fullName || row.primaryEmail,
+    });
+  }
+
+  /** The value that a dialog editor opens with: the pending value over the row value. */
+  private cellEditorValue(
+    row: UserRow,
+    column: UserAttributeColumn,
+  ): string | string[] {
+    const entry = this.draft.entryFor(row.userId, column.id);
+    const value = entry ? entry.value : cellFor(row, column).value;
+    if (Array.isArray(value)) return value.map((item) => String(item));
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    return value ?? '';
+  }
+
+  protected closeCellDialog(): void {
+    const open = this.cellDialog();
+    this.cellDialog.set(null);
+    if (open) this.refocusCell(open.row.userId, open.column.id);
+  }
+
+  protected stageCellDialog(value: string | string[]): void {
+    const open = this.cellDialog();
+    if (!open) return;
+    this.cellDialog.set(null);
+    if (Array.isArray(value))
+      this.draft.stageList(open.row, open.column, value);
+    else this.draft.stageText(open.row, open.column, value);
+    this.refocusCell(open.row.userId, open.column.id);
+  }
+
+  /** Return focus to the cell that opened a dialog (UI-09). */
+  private refocusCell(userId: string, attribute: string): void {
+    afterNextRender(
+      () => {
+        const node = this.api?.getRowNode(userId);
+        if (node?.rowIndex === null || node?.rowIndex === undefined) return;
+        this.api?.setFocusedCell(node.rowIndex, attribute);
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private refreshDraftCells(): void {
+    this.api?.refreshCells?.({ force: true, suppressFlash: true });
+  }
+
+  /**
+   * Switch between the person's query and the pending view. The pending view is flat: its
+   * rows ignore the person's filters (DRAFT-02). Neither switch touches the draft.
+   */
+  private applyPendingView(ids: readonly string[] | null): void {
+    const api = this.api;
+    if (!api) return;
+    if (!ids?.length) {
+      if (this.pending) this.leavePendingView();
+      return;
+    }
+    if (!this.pending) {
+      this.switching = true;
+      this.pending = true;
+      api.setFilterModel(null);
+      this.switching = false;
+    }
+    this.pendingViewIds = ids;
+    const load = this.loadPending();
+    if (!load) return;
+    const source = pendingUserDatasource(load);
+    this.pendingSource = source;
+    api.setGridOption('serverSideDatasource', source);
+  }
+
+  /** Put the person's query back: filters, predicates, and the query datasource. */
+  private leavePendingView(): void {
+    this.switching = true;
+    this.pending = false;
+    this.pendingViewIds = null;
+    this.pendingSource = null;
+    this.switching = false;
+    this.applyPredicates(this.predicates());
+    this.reload();
   }
 
   /** GRID-03: the details control opens the page, so the row is recorded first. */
@@ -387,16 +765,33 @@ export class UserGrid implements OnInit {
 
   protected ready(event: GridReadyEvent<UserRow>): void {
     this.api = event.api;
+    this.started.set(true);
+    this.scheduleGroupHeader();
     const refresh = this.rowRefresh();
     refresh?.attach(event.api);
     this.destroyRef.onDestroy(() => refresh?.detach(event.api));
+    // A refresh that a save settles reaches the pending view's cache and the saved cells
+    // (design K26). The rows keep their nodes, so the grid never reloads.
+    const stop = refresh?.onApply((rows) => {
+      this.pendingSource?.update(rows);
+      this.draft.settleWithRows(rows);
+    });
+    if (stop) this.destroyRef.onDestroy(stop);
     this.applyPredicates(this.predicates());
-    this.reload();
+    // A pending view that the page opened before the grid started reads now.
+    const pending = this.pendingIds();
+    if (pending?.length) this.applyPendingView(pending);
+    else this.reload();
   }
 
   /** Setting a new datasource resets the server-side row model to its first block. */
   private reload(): void {
     this.datasourceReady = true;
+    // The pending view reads its own rows. A revision must not swap the query back in.
+    if (this.pending) {
+      this.applyPendingView(this.pendingViewIds);
+      return;
+    }
     this.api?.setGridOption(
       'serverSideDatasource',
       userDatasource(
@@ -452,6 +847,8 @@ export class UserGrid implements OnInit {
   private filtersChanged(): void {
     const api = this.api;
     if (!api) return;
+    // The pending view's model is empty by design, so its change is not the person's filter.
+    if (this.switching) return;
     let modeled: UserPredicate[];
     try {
       modeled = predicatesFromFilterModel(

@@ -11,6 +11,8 @@ export class UserRowRefresh {
   private api: RowApi | null = null;
   /** Bumps when a grid attaches or detaches. An answer of the earlier grid never lands. */
   private attachment = 0;
+  /** Receives every applied batch, so a local cache follows the rows. */
+  private readonly listeners = new Set<UserRowApplied>();
 
   attach(api: RowApi): void {
     this.api = api;
@@ -26,6 +28,13 @@ export class UserRowRefresh {
   /** The attachment that a by-ids request belongs to. */
   current(): number {
     return this.attachment;
+  }
+
+  /** Receives every applied batch, so a local cache follows the rows. */
+
+  onApply(listener: UserRowApplied): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /** IDs of loaded user rows that pass `test`. */
@@ -50,5 +59,6 @@ export class UserRowRefresh {
       if (row.recordVersion < node.data.recordVersion) continue;
       node.updateData(row);
     }
+    for (const listener of this.listeners) listener(rows);
   }
 }

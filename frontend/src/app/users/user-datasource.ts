@@ -60,6 +60,105 @@ export function savedGridState(state: GridState): GridState {
   return rest;
 }
 
+/** The sort value of one static field, or null. A null sorts last in both directions. */
+function sortValue(row: UserRow, field: UserSort['field']): string | null {
+  switch (field) {
+    case 'fullName':
+      return row.fullName;
+    case 'primaryEmail':
+      return row.primaryEmail;
+    case 'orgUnitPath':
+      return row.orgUnitPath;
+    case 'status':
+      return row.archived ? 'archived' : row.suspended ? 'suspended' : 'active';
+    case 'lastLoginTime':
+      return row.lastLoginTime;
+    case 'creationTime':
+      return row.creationTime;
+    case 'department':
+      return row.department;
+    case 'title':
+      return row.title;
+  }
+}
+
+/** The pending view's rows sorted by the grid's active sort model, then by user ID. */
+export function sortPendingUserRows(
+  rows: readonly UserRow[],
+  sort: UserSort,
+): UserRow[] {
+  const direction = sort.direction === 'desc' ? -1 : 1;
+  const byId = (left: UserRow, right: UserRow): number =>
+    left.userId < right.userId
+      ? -direction
+      : left.userId > right.userId
+        ? direction
+        : 0;
+  return [...rows].sort((left, right) => {
+    const leftValue = sortValue(left, sort.field);
+    const rightValue = sortValue(right, sort.field);
+    if (leftValue === null && rightValue === null) return byId(left, right);
+    if (leftValue === null) return 1;
+    if (rightValue === null) return -1;
+    const order = leftValue.localeCompare(rightValue, 'en-US');
+    return order === 0 ? byId(left, right) : order * direction;
+  });
+}
+
+/**
+ * The pending view's datasource (DRAFT-02). One read answers the whole view, because the
+ * draft holds at most 500 users. Paging and a new sort reuse that answer, and the browser
+ * sorts the rows by the grid's active sort model.
+ */
+export interface UserPendingDatasource extends IServerSideDatasource<UserRow> {
+  /**
+   * Replace cached records with newer observations. A live refresh updates the grid nodes;
+   * this keeps the next sort or page from restoring the old row.
+   */
+  update(rows: readonly UserRow[]): void;
+}
+
+export function pendingUserDatasource(
+  load: () => Promise<UserRow[] | null>,
+): UserPendingDatasource {
+  let read: Promise<UserRow[] | null> | null = null;
+  /** The rows of the one read, with every later observation applied. */
+  let cached: UserRow[] | null = null;
+  /** Observations that arrived before the read answered, by user ID. */
+  const observed = new Map<string, UserRow>();
+  const merge = (rows: readonly UserRow[]): UserRow[] =>
+    rows.map((row) => observed.get(row.userId) ?? row);
+  return {
+    getRows(params: IServerSideGetRowsParams<UserRow>) {
+      read ??= load();
+      read.then(
+        (rows) => {
+          if (!rows) return params.fail();
+          cached = merge(rows);
+          const sorted = sortPendingUserRows(
+            cached,
+            sortFromModel(params.request.sortModel),
+          );
+          const start = params.request.startRow ?? 0;
+          const end = Math.min(
+            params.request.endRow ?? start + 100,
+            sorted.length,
+          );
+          params.success({
+            rowData: sorted.slice(start, end),
+            rowCount: sorted.length,
+          });
+        },
+        () => params.fail(),
+      );
+    },
+    update(rows) {
+      for (const row of rows) observed.set(row.userId, row);
+      if (cached) cached = merge(cached);
+    },
+  };
+}
+
 /** Adapt LibreGrid block requests to the users query endpoint (GRID-01). */
 export function userDatasource(
   load: UserLoader,

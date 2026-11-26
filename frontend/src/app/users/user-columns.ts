@@ -5,6 +5,8 @@ import type {
   IRowNode,
 } from 'ag-grid-community';
 import type { UserRow } from '@campus/application-contracts';
+import { UserAttributeDraftCell } from './user-attribute-draft-cell';
+import type { UserAttributeDraftEntry } from './user-attribute-grid-draft';
 import { UserDetailsCell } from './user-details-cell';
 import { UserNameCell } from './user-name-cell';
 import {
@@ -200,6 +202,103 @@ function attributeFilter(
 }
 
 /**
+ * The draft reads and writes that the editable attribute columns call. The store owns the
+ * data (DRAFT-01).
+ */
+export interface UserAttributeDraftOptions {
+  editable: () => boolean;
+  /** The cell text: the pending value over the row value (DRAFT-02). */
+  value: (row: UserRow, column: UserAttributeColumn) => string;
+  entry: (userId: string, attribute: string) => UserAttributeDraftEntry | null;
+  reason: (entry: UserAttributeDraftEntry) => string;
+  onRevert: (userId: string, attribute: string) => void;
+}
+
+/** A date and a multi-value attribute edit in a dialog (B section 12, DRAFT-02). */
+export function cellOpensDialog(attribute: UserAttributeColumn): boolean {
+  return attribute.field.multiValued || attribute.field.fieldType === 'DATE';
+}
+
+/** The in-cell editor of one info type (B section 12). */
+function attributeEditor(
+  attribute: UserAttributeColumn,
+): Pick<
+  ColDef<UserRow>,
+  'cellEditor' | 'cellEditorParams' | 'editable' | 'suppressKeyboardEvent'
+> {
+  if (cellOpensDialog(attribute)) {
+    // Enter, F2, or a double-click opens the date picker or the list editor.
+    return {
+      editable: false,
+      suppressKeyboardEvent: () => false,
+    };
+  }
+  if (attribute.field.fieldType === 'BOOL')
+    return {
+      cellEditor: 'agSelectCellEditor',
+      cellEditorParams: { values: ['Yes', 'No'] },
+    };
+  return { cellEditor: 'agTextCellEditor' };
+}
+
+/** The cell renderer, state rules, and editor of one editable attribute column. */
+function editableAttributeColumn(
+  attribute: UserAttributeColumn,
+  draft: UserAttributeDraftOptions,
+): Pick<
+  ColDef<UserRow>,
+  | 'cellRenderer'
+  | 'cellRendererParams'
+  | 'cellClassRules'
+  | 'editable'
+  | 'cellEditor'
+  | 'cellEditorParams'
+  | 'suppressKeyboardEvent'
+> {
+  const entryOf = (params: {
+    data?: UserRow | null;
+    node?: IRowNode<UserRow>;
+  }): UserAttributeDraftEntry | null =>
+    !params.data || params.node?.group
+      ? null
+      : draft.entry(params.data.userId, attribute.id);
+  return {
+    cellRenderer: UserAttributeDraftCell,
+    cellRendererParams: {
+      attribute: attribute.id,
+      label: attribute.label,
+      entryFor: (userId: string) => draft.entry(userId, attribute.id),
+      reasonFor: (entry: UserAttributeDraftEntry) => draft.reason(entry),
+      editable: () => draft.editable(),
+      onRevert: (userId: string) => draft.onRevert(userId, attribute.id),
+    },
+    cellClassRules: {
+      'user-attribute-draft-pending': (params) =>
+        entryOf(params)?.state === 'pending',
+      'user-attribute-draft-invalid': (params) =>
+        entryOf(params)?.state === 'invalid',
+      'user-attribute-draft-conflict': (params) =>
+        entryOf(params)?.state === 'conflict',
+    },
+    // Shift+Enter reverts a pending cell while the cell rests.
+    suppressKeyboardEvent: (params) =>
+      !cellOpensDialog(attribute) &&
+      !params.editing &&
+      params.event.key === 'Enter' &&
+      params.event.shiftKey &&
+      !!params.data &&
+      !params.node?.group &&
+      draft.entry(params.data.userId, attribute.id) !== null,
+    ...attributeEditor(attribute),
+    editable: (params) =>
+      !cellOpensDialog(attribute) &&
+      !params.node?.group &&
+      !!params.data &&
+      draft.editable(),
+  };
+}
+
+/**
  * The users grid columns. The Name column stays pinned (record default 4), and the
  * attribute columns sit under their category in the Columns panel (A section 9).
  */
@@ -211,6 +310,8 @@ export function userColumnDefs(
     onDetails?: (row: UserRow, node: IRowNode<UserRow>) => void;
     /** The Name link records the row before the router opens the details page. */
     onOpen?: (row: UserRow, node: IRowNode<UserRow>) => void;
+    /** The in-grid draft of the attribute cells (design K26). */
+    draft?: UserAttributeDraftOptions;
   } = {},
 ): (ColDef<UserRow> | ColGroupDef<UserRow>)[] {
   const orgUnits = options.orgUnits ?? (() => []);
@@ -284,6 +385,7 @@ export function userColumnDefs(
     }),
   ];
   // One group for each category. A zero group header height keeps the single header row.
+  const draft = options.draft;
   const groups: ColGroupDef<UserRow>[] = options.attributes?.length
     ? [...new Set(attributes.map((attribute) => attribute.schemaName))].map(
         (schemaName) => {
@@ -301,11 +403,16 @@ export function userColumnDefs(
                 width: attribute.field.multiValued ? 180 : 165,
                 minWidth: 110,
                 valueGetter: ({ data }) =>
-                  data ? attributeText(data, attribute) : '',
+                  data
+                    ? draft
+                      ? draft.value(data, attribute)
+                      : attributeText(data, attribute)
+                    : '',
                 // The users query sorts static fields only.
                 sortable: false,
                 ...attributeFilter(attribute),
                 hide: true,
+                ...(draft ? editableAttributeColumn(attribute, draft) : {}),
               }),
             ),
           };
