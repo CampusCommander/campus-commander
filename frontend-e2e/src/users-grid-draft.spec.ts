@@ -17,6 +17,7 @@ const observedAt = '2026-11-24T12:00:00.000Z';
 const principal = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const storageKey = `cc.user-attribute-draft.${principal}`;
 const previewId = '2f1c6a0e-6d3b-4a1f-9f0e-3c4ce0b6a910';
+const secondPreviewId = '7c9e1a3b-5d2f-4e8a-9b1c-6d3e5f7a8b9c';
 const confirmId = '3a2b1c0d-4e5f-4a6b-8c9d-0e1f2a3b4c5d';
 const jobDisplayId = 'UAT-921';
 const jobId = '8f2b4b19-4c6a-47fd-8d0a-0f3ce4b0f2a1';
@@ -297,6 +298,10 @@ interface MockState {
   previews: unknown[];
   /** The confirms that the page sent. */
   confirms: unknown[];
+  /** The preview path of each confirm, so a replay must name the same preview. */
+  confirmPaths: string[];
+  /** The next confirm loses its answer, as a lost connection does (K26 reload check). */
+  loseNextConfirm: boolean;
   /** The row reads by user ID. */
   byIds: string[][];
   /** The preview that the last request prepared, for the dialog's own read. */
@@ -313,6 +318,8 @@ const state: MockState = {
   pendingFeed: [],
   previews: [],
   confirms: [],
+  confirmPaths: [],
+  loseNextConfirm: false,
   byIds: [],
   lastPreview: null,
   gradeLabel: 'Grade level',
@@ -325,6 +332,8 @@ function resetState(): void {
   state.pendingFeed = [];
   state.previews = [];
   state.confirms = [];
+  state.confirmPaths = [];
+  state.loseNextConfirm = false;
   state.byIds = [];
   state.lastPreview = null;
   state.gradeLabel = 'Grade level';
@@ -349,9 +358,9 @@ function nameOf(userId: string): string {
   return index === -1 ? 'Unknown user' : people[index]!.name;
 }
 
-function previewOf(edits: EditBody[]) {
+function previewOf(edits: EditBody[], id = previewId) {
   return {
-    previewId,
+    previewId: id,
     source: 'edit-list',
     changes: null,
     attributeChanges: edits.length,
@@ -581,13 +590,16 @@ async function mockApi(page: Page): Promise<void> {
       request.method() === 'POST'
     ) {
       const body = request.postDataJSON() as { edits?: EditBody[] };
+      // The first save owns one preview. A second preview gets its own ID, so a replay
+      // that wrongly prepares another preview cannot pass as the first one.
+      const id = state.previews.length === 0 ? previewId : secondPreviewId;
       state.previews.push(body);
       if (state.previewFails)
         return route.fulfill({
           status: 413,
           json: { reason: 'payload-too-large' },
         });
-      state.lastPreview = previewOf(editsOf(body));
+      state.lastPreview = previewOf(editsOf(body), id);
       return route.fulfill({ status: 201, json: state.lastPreview });
     }
     if (pathname.startsWith('/api/users/attribute-previews/')) {
@@ -608,6 +620,12 @@ async function mockApi(page: Page): Promise<void> {
       }
       if (action === 'confirm') {
         state.confirms.push(request.postDataJSON());
+        state.confirmPaths.push(pathname);
+        // The first answer is lost, as a dropped connection loses it (K26 reload check).
+        if (state.loseNextConfirm) {
+          state.loseNextConfirm = false;
+          return route.abort('failed');
+        }
         applyConfirmedEdits();
         return route.fulfill({
           status: 201,
@@ -1082,4 +1100,65 @@ test('never reads a No answer as an empty cell (B section 12)', async ({
   await expect(page.locator('#draft-count')).toHaveText(
     '1 pending change · 1 user',
   );
+});
+
+test('replays the retained confirmation after a page reload (K26)', async ({
+  page,
+}) => {
+  // This check keeps the draft across the reload, so it does not clear the tab first.
+  resetState();
+  seedValues();
+  state.loseNextConfirm = true;
+  await mockApi(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/users');
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: 'Aaliyah Brooks', exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await showAttributes(page);
+  await editText(page, 'Amara Okafor', 'attr:Student.grade_level', '11');
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 user',
+  );
+
+  // The mocked answer is lost, as a dropped connection loses one. The tab keeps the
+  // preview and its digest.
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.locator('.draft-line')).toHaveText(
+    'Cannot reach Campus Commander. Your changes are still here.',
+  );
+  expect(state.previews).toHaveLength(1);
+  expect(state.confirms).toHaveLength(1);
+
+  // The same tab reloads. The restored draft and confirmation answer the next Save.
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Users', exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('#draft-count')).toHaveText(
+    '1 pending change · 1 user',
+  );
+  await screenshot(page, 'um-k26-12-reload-retained.png');
+
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  // The recovered receipt settles the submitted draft entries.
+  await expect(page.locator('#draft-count')).toHaveCount(0, {
+    timeout: 15_000,
+  });
+  // The replay named the same preview, and the page prepared no second preview.
+  expect(state.previews).toHaveLength(1);
+  expect(state.confirms).toHaveLength(2);
+  expect(state.confirmPaths).toEqual([
+    `/api/users/attribute-previews/${previewId}/confirm`,
+    `/api/users/attribute-previews/${previewId}/confirm`,
+  ]);
+  await showAttributes(page);
+  await expect(
+    cell(page, 'Amara Okafor', 'attr:Student.grade_level'),
+  ).toContainText('11');
+  await screenshot(page, 'um-k26-13-reload-replayed.png');
 });
