@@ -1,0 +1,32 @@
+.attribute-cell-dialog {
+  width: min(480px, calc(100vw - 2 * var(--cc-space-lg)));
+}
+
+.attribute-cell-user {
+  margin: 0 0 var(--cc-space-sm);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--cc-text-secondary);
+}
+
+.attribute-cell-hint {
+  margin: 0 0 var(--cc-space-sm);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--cc-text-secondary);
+}
+
+.cell-field {
+  width: 100%;
+}
+
+.attribute-cell-error {
+  margin: var(--cc-space-xs) 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--cc-status-error-text);
+}
+
+.attribute-cell-clear {
+  margin-inline-end: auto;
+}

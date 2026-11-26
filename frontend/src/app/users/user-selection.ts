@@ -89,9 +89,14 @@ const flat = (): SelectionContext => ({ predicates: [], attributes: [] });
 function userOps(
   op: SelectionOp,
   context: SelectionContext,
+  pending: readonly string[] | null,
 ): UserSelectionOp[] {
   switch (op.op) {
     case 'selectAll':
+      // The pending view holds one set of users, not the directory. Select All names those
+      // IDs, so the server never reads the empty pending filter as the whole directory
+      // (R1-A).
+      if (pending?.length) return [{ op: 'select', ids: [...pending] }];
       return [
         {
           op: 'selectAll',
@@ -164,6 +169,8 @@ export class UserSelectionProvider implements ServerSideSelectionProvider {
   private publishedWrites = 0;
   /** Numbers the started reads. An older read never restores a count that a newer one replaced. */
   private readTicket = 0;
+  /** The users of the pending view, or null while the grid shows the query (R1-A). */
+  private pendingIds: readonly string[] | null = null;
 
   constructor(
     private readonly call: SelectionCall,
@@ -175,7 +182,28 @@ export class UserSelectionProvider implements ServerSideSelectionProvider {
     this.epoch++;
     this.writeTicket++;
     this.publishedWrites++;
+    this.pendingIds = null;
     this.spec.set(null);
+  }
+
+  /**
+   * The grid shows the pending view of these users, or the query when the list is null.
+   * Select All then names these IDs instead of the directory (R1-A).
+   */
+  setPending(ids: readonly string[] | null): void {
+    const next = ids?.length ? [...new Set(ids)] : null;
+    if (
+      next === this.pendingIds ||
+      (next !== null &&
+        this.pendingIds !== null &&
+        next.length === this.pendingIds.length &&
+        next.every((id, index) => id === this.pendingIds![index]))
+    )
+      return;
+    this.pendingIds = next;
+    // The visible selection starts empty for the new scope. The server keeps the tab's
+    // selection, and leaving the pending view reads it again (R1-A).
+    this.clear();
   }
 
   /** A change ended the selection. Show it as empty before the provider reads it again (R10). */
@@ -249,7 +277,7 @@ export class UserSelectionProvider implements ServerSideSelectionProvider {
     const context = this.context();
     let ops: UserSelectionOp[];
     try {
-      ops = params.ops.flatMap((op) => userOps(op, context));
+      ops = params.ops.flatMap((op) => userOps(op, context, this.pendingIds));
     } catch {
       // A filter the query cannot express matches no row, so there is nothing to select.
       return;

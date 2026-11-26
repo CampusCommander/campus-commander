@@ -1,0 +1,41 @@
+@if (entry(); as current) {
+<span class="attribute-cell">
+  <span class="attribute-cell-value" [attr.title]="text()">{{ text() }}</span>
+  <span class="visually-hidden">{{ stateText() }}</span>
+  @if (current.state === 'invalid') {
+  <span
+    class="cell-state error material-symbols-outlined"
+    aria-hidden="true"
+    [attr.title]="errorTitle()"
+    >error</span
+  >
+  } @if (current.state === 'conflict') {
+  <span
+    class="cell-state conflict material-symbols-outlined"
+    aria-hidden="true"
+    [attr.title]="conflictTitle()"
+    >sync_problem</span
+  >
+  }
+  <button
+    type="button"
+    class="cell-action"
+    [attr.aria-label]="revertLabel()"
+    [attr.title]="revertLabel() + ' (Shift+Enter)'"
+    (click)="revert($event)"
+  >
+    <span class="material-symbols-outlined" aria-hidden="true">undo</span>
+  </button>
+</span>
+} @else {
+<span class="attribute-cell">
+  <span class="attribute-cell-value" [attr.title]="text()">{{ text() }}</span>
+  @if (editable()) {
+  <span
+    class="edit-hint material-symbols-outlined"
+    aria-hidden="true"
+    title="Edit this cell"
+  ></span>
+  }
+</span>
+}

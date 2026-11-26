@@ -68,6 +68,19 @@ describe('the row refresh', () => {
     expect(second.node.data.fullName).toBe('Current grid');
   });
 
+  it('notifies only the rows that pass the freshness fence (R1-I)', () => {
+    const { api } = grid(row(3));
+    const refresh = new UserRowRefresh();
+    refresh.attach(api);
+    const seen = vi.fn();
+    refresh.onApply(seen);
+    refresh.apply([row(2, 'Older'), row(4, 'Newer')]);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(
+      (seen.mock.calls[0][0] as UserRow[]).map((row) => row.fullName),
+    ).toEqual(['Newer']);
+  });
+
   it('lists the held IDs that pass a test', () => {
     const { api } = grid(row(1));
     const refresh = new UserRowRefresh();

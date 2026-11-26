@@ -4,7 +4,7 @@ import type {
   UserAttributeCategory,
   UserRow,
 } from '@campus/application-contracts';
-import { userDatasource } from './user-datasource';
+import { pendingUserDatasource, userDatasource } from './user-datasource';
 import { attributeColumns } from './user-fields';
 
 const category: UserAttributeCategory = {
@@ -191,5 +191,201 @@ describe('the users datasource', () => {
     expect(load).not.toHaveBeenCalled();
     expect(success).not.toHaveBeenCalled();
     expect(fail).toHaveBeenCalled();
+  });
+});
+
+describe('the pending users datasource (design K26)', () => {
+  function pendingRequest(
+    startRow: number,
+    endRow: number,
+    sortModel: { colId: string; sort: 'asc' | 'desc' }[] = [],
+  ) {
+    const success = vi.fn();
+    const fail = vi.fn();
+    return {
+      params: {
+        request: { startRow, endRow, filterModel: undefined, sortModel },
+        api: { getGridOption: () => false },
+        success,
+        fail,
+      } as unknown as IServerSideGetRowsParams<UserRow>,
+      success,
+      fail,
+    };
+  }
+
+  function pendingRow(userId: string, fullName: string | null): UserRow {
+    return {
+      ...page.rows[0]!,
+      userId,
+      fullName,
+      primaryEmail: `${userId}@example.org`,
+    };
+  }
+
+  it('reads the whole view once and pages the answer in the browser', async () => {
+    const rows = [
+      pendingRow('1100000000000000003', 'Cara Diaz'),
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+    ];
+    const load = vi.fn().mockResolvedValue(rows);
+    const source = pendingUserDatasource(load);
+    const first = pendingRequest(0, 2);
+    source.getRows(first.params);
+    await vi.waitFor(() => expect(first.success).toHaveBeenCalled());
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(first.success.mock.calls[0][0]).toEqual({
+      rowData: [rows[1], rows[2]],
+      rowCount: 3,
+    });
+    const second = pendingRequest(2, 100);
+    source.getRows(second.params);
+    await vi.waitFor(() => expect(second.success).toHaveBeenCalled());
+    // One read answers every page.
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(second.success.mock.calls[0][0]).toEqual({
+      rowData: [rows[0]],
+      rowCount: 3,
+    });
+  });
+
+  it('sorts by the active column and keeps a missing name last', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', null),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+      pendingRow('1100000000000000003', 'Amara Okafor'),
+    ];
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows));
+    const { params, success } = pendingRequest(0, 100, [
+      { colId: 'fullName', sort: 'asc' },
+    ]);
+    source.getRows(params);
+    await vi.waitFor(() => expect(success).toHaveBeenCalled());
+    expect(
+      (success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.userId,
+      ),
+    ).toEqual([
+      '1100000000000000003',
+      '1100000000000000002',
+      '1100000000000000001',
+    ]);
+  });
+
+  it('sorts a descending answer and then by user ID', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Amara Okafor'),
+      pendingRow('1100000000000000003', 'Bo Ellis'),
+    ];
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows));
+    const { params, success } = pendingRequest(0, 100, [
+      { colId: 'fullName', sort: 'desc' },
+    ]);
+    source.getRows(params);
+    await vi.waitFor(() => expect(success).toHaveBeenCalled());
+    expect(
+      (success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.userId,
+      ),
+    ).toEqual([
+      '1100000000000000003',
+      '1100000000000000002',
+      '1100000000000000001',
+    ]);
+  });
+
+  it('fails the view when the read fails', async () => {
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(null));
+    const { params, success, fail } = pendingRequest(0, 100);
+    source.getRows(params);
+    await vi.waitFor(() => expect(fail).toHaveBeenCalled());
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('applies a newer observation to the next page', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+    ];
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows));
+    const first = pendingRequest(0, 100);
+    source.getRows(first.params);
+    await vi.waitFor(() => expect(first.success).toHaveBeenCalled());
+    source.update([{ ...rows[0]!, fullName: 'Zara Okafor' }]);
+    const second = pendingRequest(0, 100, [{ colId: 'fullName', sort: 'asc' }]);
+    source.getRows(second.params);
+    await vi.waitFor(() => expect(second.success).toHaveBeenCalled());
+    expect(
+      (second.success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.fullName,
+      ),
+    ).toEqual(['Bo Ellis', 'Zara Okafor']);
+  });
+
+  it('ignores an older observation of the same user (R1-I)', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+    ];
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows));
+    const first = pendingRequest(0, 100);
+    source.getRows(first.params);
+    await vi.waitFor(() => expect(first.success).toHaveBeenCalled());
+    source.update([{ ...rows[1]!, recordVersion: rows[1]!.recordVersion + 1 }]);
+    source.update([
+      {
+        ...rows[1]!,
+        fullName: 'Old Name',
+        recordVersion: rows[1]!.recordVersion,
+      },
+    ]);
+    const second = pendingRequest(0, 100);
+    source.getRows(second.params);
+    await vi.waitFor(() => expect(second.success).toHaveBeenCalled());
+    expect(
+      (second.success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.fullName,
+      ),
+    ).toEqual(['Amara Okafor', 'Bo Ellis']);
+  });
+
+  it('keeps only the selected pending rows in Show All Selected (R1-A)', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+      pendingRow('1100000000000000003', 'Cara Diaz'),
+    ];
+    const resolve = vi.fn().mockResolvedValue({
+      '1100000000000000001': true,
+      '1100000000000000002': false,
+      '1100000000000000003': true,
+    });
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows), {
+      key: 'tab:1' as never,
+      resolve,
+    });
+    const success = vi.fn();
+    const params = {
+      request: {
+        startRow: 0,
+        endRow: 100,
+        filterModel: undefined,
+        sortModel: [],
+      },
+      // Show All Selected. The pending view keeps the rows that the tab selected.
+      api: { getGridOption: () => true },
+      success,
+      fail: vi.fn(),
+    } as unknown as IServerSideGetRowsParams<UserRow>;
+    source.getRows(params);
+    await vi.waitFor(() => expect(success).toHaveBeenCalled());
+    expect(resolve).toHaveBeenCalledWith(rows.map((row) => row.userId));
+    expect(
+      (success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.userId,
+      ),
+    ).toEqual(['1100000000000000001', '1100000000000000003']);
   });
 });
