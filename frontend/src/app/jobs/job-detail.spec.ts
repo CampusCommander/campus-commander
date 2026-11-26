@@ -2394,3 +2394,57 @@ it('joins the value views to the table region (UM state 10)', () => {
   expect(region?.querySelector('.result-table.value-table')).not.toBeNull();
   expect(region?.querySelector('.grid-footer')).not.toBeNull();
 });
+
+it('keys and labels the two attribute rows of one user', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeRows: [
+      attributeRow({ currentValue: 'Six' }),
+      attributeRow({
+        attribute: 'attr:room.name',
+        displayName: 'Room',
+        currentValue: '101',
+        newValue: '102',
+      }),
+    ],
+    attributeTotals: { all: 2, failed: 0 },
+  });
+  const rows = [
+    ...element.querySelectorAll<HTMLElement>('.value-table tbody tr'),
+  ];
+  expect(rows).toHaveLength(2);
+  expect(
+    rows.map((row) => row.querySelector('.row-attribute')?.textContent?.trim()),
+  ).toEqual(['Grade', 'Room']);
+  expect(text(rows[0])).toContain('Avery Chen');
+  expect(text(rows[0])).toContain('Six');
+  expect(text(rows[0])).toContain('Seven');
+  expect(text(rows[1])).toContain('101');
+  expect(text(rows[1])).toContain('102');
+});
+
+it('keeps the state 10 user cell without an attribute line for a one-attribute job', () => {
+  const { element } = setup({
+    job: valueJob(),
+    attributeRows: [
+      attributeRow(),
+      attributeRow({
+        operation: 8,
+        userId: 'synthetic-user-2',
+        userName: 'Blake Ortiz',
+        primaryEmail: 'blake@example.org',
+      }),
+    ],
+    attributeTotals: { all: 2, failed: 0 },
+  });
+  expect(element.querySelectorAll('.value-table tbody tr')).toHaveLength(2);
+  expect(element.querySelector('.row-attribute')).toBeNull();
+  expect(headerTexts(element)).toEqual([
+    'User',
+    'Primary email',
+    'Current value',
+    'New value',
+    'Outcome',
+    'Actions',
+  ]);
+});

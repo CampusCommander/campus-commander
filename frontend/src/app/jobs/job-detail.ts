@@ -80,6 +80,7 @@ import {
   valueEmptyText,
   valueResultRow,
   valueRowsFooter,
+  valueRowsShowAttribute,
   valueReconcileKey,
   type CategoryResultRow,
   type ValueResultRow,
@@ -317,6 +318,10 @@ export class JobDetailPage implements OnChanges, OnDestroy {
       );
   });
   protected readonly valueTotals = computed(() => this.store.attributeTotals());
+  /** A loaded page of more than one attribute names each row's attribute (K27 rule). */
+  protected readonly valueShowsAttribute = computed(() =>
+    valueRowsShowAttribute(this.store.attributeRows()),
+  );
   protected readonly valueEmpty = computed(() =>
     valueEmptyText(this.store.attributeView()),
   );

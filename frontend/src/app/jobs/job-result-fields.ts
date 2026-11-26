@@ -55,6 +55,28 @@ export function valueReconcileKey(operation: number): string {
   return `value:${operation}`;
 }
 
+/**
+ * The identity of one rendered value row. J4 returns one row per user AND
+ * attribute, so the attribute joins the operation number. The built Set
+ * attributes results table uses the same rule
+ * (`resultRowKey` in users/user-attribute-bulk-dialog.ts). The Reconcile
+ * action keeps its operation number through `valueReconcileKey`.
+ */
+export function valueRowKey(row: JobAttributeRow): string {
+  return `${row.operation}:${row.attribute}`;
+}
+
+/**
+ * A result page that holds more than one attribute shows each row's attribute.
+ * The rule copies `resultShowsAttribute` in
+ * users/user-attribute-bulk-dialog.ts, the built Set attributes results table.
+ */
+export function valueRowsShowAttribute(
+  rows: readonly JobAttributeRow[],
+): boolean {
+  return new Set(rows.map((row) => row.attribute)).size > 1;
+}
+
 /** One rendered row of the state 07 table. */
 export interface CategoryResultRow {
   key: string;
@@ -137,6 +159,8 @@ export interface ValueResultRow {
   /** The stored row, for the Reconcile action and the user link. */
   row: JobAttributeRow;
   user: string;
+  /** The attribute display name, shown under the user name when the page holds several. */
+  attribute: string;
   current: string;
   /** The current value is absent, so the cell reads its muted italic form. */
   currentUnset: boolean;
@@ -155,9 +179,10 @@ export function valueResultRow(
   reconciling: boolean,
 ): ValueResultRow {
   return {
-    key: valueReconcileKey(row.operation),
+    key: valueRowKey(row),
     row,
     user: row.userName ?? row.primaryEmail,
+    attribute: row.displayName,
     current: attributeWireText(row.currentValue),
     currentUnset: row.currentValue === null,
     next: attributeWireText(row.newValue),

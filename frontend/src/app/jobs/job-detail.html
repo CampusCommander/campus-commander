@@ -428,7 +428,12 @@
                       >
                     </a>
                     }
-                    <span>{{ row.user }}</span>
+                    <span class="user-text">
+                      <span class="user-name">{{ row.user }}</span>
+                      @if (valueShowsAttribute()) {
+                      <span class="row-attribute">{{ row.attribute }}</span>
+                      }
+                    </span>
                   </span>
                 </td>
                 <td class="wrap-value">{{ row.row.primaryEmail }}</td>
