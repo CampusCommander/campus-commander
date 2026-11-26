@@ -33,8 +33,19 @@ import {
   BULK_SET_ATTRIBUTES_LABEL,
 } from './user-attribute-bulk-messages';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
-import { UserAttributeEditFlow } from './user-attribute-edit-flow';
+import {
+  UserAttributeConfirmationStore,
+  type PendingAttributeConfirmation,
+} from './user-attribute-confirmation';
+import {
+  UserAttributeEditFlow,
+  attributeJobOutcome,
+} from './user-attribute-edit-flow';
 import { UserAttributeGridDraft } from './user-attribute-grid-draft';
+import {
+  ATTRIBUTE_CREATING_JOB_TEXT,
+  ATTRIBUTE_UNSETTLED_TEXT,
+} from './user-attribute-edit-messages';
 import { USER_GRID_ID } from './user-selection';
 import { CUSTOM_ATTRIBUTES_LABEL } from './user-attribute-messages';
 import { UserAttributeCategories } from './user-attribute-categories';
@@ -77,6 +88,8 @@ export class UsersPage implements OnInit, OnDestroy {
   /** The grid draft holds the pending attribute cells (design K26). */
   protected readonly draft = inject(UserAttributeGridDraft);
   private readonly editFlow = inject(UserAttributeEditFlow);
+  /** The confirmation that outlives the editor or the page (design K25, R1-B). */
+  private readonly confirmations = inject(UserAttributeConfirmationStore);
 
   protected readonly editingIndex = signal<number | null>(null);
   /** The selected tab: the Users grid, or the Custom attributes categories (U2). */
@@ -212,14 +225,44 @@ export class UsersPage implements OnInit, OnDestroy {
   private readonly grid = viewChild(UserGrid);
   private readonly saveButton =
     viewChild<ElementRef<HTMLButtonElement>>('saveChangesButton');
-  protected readonly draftLine = computed(() => this.draft.line());
+  /**
+   * One confirmation key for every save of this tab. The receipt then survives the
+   * dialog, the page, and a new Save (design K25, R1-B).
+   */
+  protected readonly gridScope = `grid:${this.store.selectionTab}`;
+  /** The retained confirmation of the grid's own save, or null. */
+  protected readonly gridConfirmation = computed(() =>
+    this.confirmations.pending(this.gridScope),
+  );
+  /** The page ended. A late job answer must not touch the draft (R1-C). */
+  private destroyed = false;
+  /** The jobs that this page already observes, so one job has one reader. */
+  private readonly observing = new Set<string>();
+  /** The accepted job that this page already settled into the draft. */
+  private acceptedJob: string | null = null;
+  /** The confirmation phase that this page already applied. */
+  private handledConfirmation = '';
+  /** The bar line: a refusal, a rule, or the state of the owned job. */
+  protected readonly draftLine = computed(() => {
+    const line = this.draft.line();
+    if (line.tone) return line;
+    const pending = this.gridConfirmation();
+    if (pending?.phase === 'confirming')
+      return { text: ATTRIBUTE_CREATING_JOB_TEXT, tone: '' as const };
+    if (pending?.phase === 'uncertain')
+      return { text: pending.message, tone: 'warning' as const };
+    if (pending?.phase === 'accepted')
+      return { text: ATTRIBUTE_UNSETTLED_TEXT, tone: '' as const };
+    return line;
+  });
 
   constructor() {
-    // A failed job wrote no value. A saved cell returns to the value that Google holds.
+    // The confirmation store owns the frozen preview and the accepted receipt. A reopened
+    // page continues the same save instead of preparing another one (R1-B, R1-C).
     effect(() => {
-      const settled = this.store.jobSettlements();
-      if (!settled.revision || !settled.failed) return;
-      untracked(() => this.draft.dropSettled());
+      const entry = this.gridConfirmation();
+      if (!entry) return;
+      untracked(() => this.applyConfirmation(entry));
     });
     // An empty draft has no pending view to show, so the grid returns to the query.
     effect(() => {
@@ -233,6 +276,7 @@ export class UsersPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.store.leave();
   }
 
@@ -312,6 +356,13 @@ export class UsersPage implements OnInit, OnDestroy {
     // The open editor's input is part of the draft, so Save changes keeps a typed value.
     this.grid()?.endEdit();
     this.draft.commitLive();
+    // A save of this tab that has not settled yet owns the next answer. Resume it
+    // instead of preparing a second preview (R1-B).
+    const pending = this.gridConfirmation();
+    if (pending) {
+      this.recoverSave(pending);
+      return;
+    }
     if (this.draft.blocked() || this.draft.counts().changes === 0) return;
     void this.runSave();
   }
@@ -324,59 +375,202 @@ export class UsersPage implements OnInit, OnDestroy {
     this.saving.set(true);
     this.draft.clearRefusal();
     const answer = await this.editFlow.prepare(edits);
+    this.saving.set(false);
+    if (this.destroyed) return;
     if (!answer.ok) {
-      this.saving.set(false);
       this.draft.refuse(answer.message);
       return;
     }
     const preview = answer.value;
-    // One change confirms at once (owner direction, 2026-10-23, design K26).
-    if (edits.length === 1 && preview.eligible === 1) {
-      await this.confirmAtOnce(preview);
+    this.prepared.set(preview);
+    // One change confirms at once (owner direction, 2026-10-23, design K26). A single
+    // conflict or unchanged row reads its frozen row first.
+    if (isSinglePreview(preview)) {
+      await this.confirmPrepared(preview);
+      return;
+    }
+    // A failed target read keeps the draft and names the answer (R1-J). The grid never
+    // claims a conflict that it did not read. The busy flag blocks a second Save.
+    this.saving.set(true);
+    const targets = await this.editFlow.readTargets(preview.previewId);
+    this.saving.set(false);
+    if (this.destroyed) return;
+    if (!targets.ok) {
+      this.draft.refuse(targets.message);
       return;
     }
     // The frozen rows mark a conflict cell and drop an unchanged row (B section 8.4).
-    const targets = await this.editFlow.readTargets(preview.previewId);
-    if (targets.ok) this.draft.applyPreview(targets.value, edits);
-    this.saving.set(false);
-    // Two or more changes open the Set attributes dialog at Review (design K26). A dialog
-    // without an eligible row shows nothing to confirm.
+    const unchanged = this.draft.applyPreview(targets.value, edits);
+    // An unchanged row holds the preview's current value, so read the on-screen row.
+    if (unchanged.length) void this.store.refreshHeldRows(unchanged);
+    // Two or more changes open the Set attributes dialog at Review (design K26). The
+    // dialog shows a conflict row, and the grid's Save stays disabled afterwards (R1-C).
     if (edits.length >= 2 && (preview.eligible > 0 || preview.conflicts > 0)) {
-      this.prepared.set(preview);
       this.reviewOpen.set(true);
     }
   }
 
-  /** Confirm the preview of one change without a review step. */
-  private async confirmAtOnce(preview: UserAttributePreview): Promise<void> {
+  /** Confirm one prepared preview and hand its receipt to the page. */
+  private async confirmPrepared(preview: UserAttributePreview): Promise<void> {
+    if (this.saving()) return;
+    this.saving.set(true);
+    this.draft.clearRefusal();
+    const names = this.attributeNamesOf(this.submitted);
+    // Record the frozen identity before the first send (R1-B).
+    this.confirmations.begin(this.gridScope, preview, names);
     const answer = await this.editFlow.confirm(
       preview.previewId,
       preview.manifestDigest,
     );
     this.saving.set(false);
+    if (this.destroyed) return;
     if (!answer.ok) {
+      if (answer.uncertain) {
+        // The answer may have created the job. Keep the preview and its digest, so the
+        // next Save replays this confirmation instead of preparing another (R1-B).
+        this.confirmations.uncertain(
+          this.gridScope,
+          preview,
+          names,
+          answer.message,
+        );
+        this.draft.refuse(answer.message);
+        return;
+      }
+      this.confirmations.refuse(this.gridScope, preview, names, answer.message);
+      this.confirmations.resolve(preview.previewId);
       this.draft.refuse(answer.message);
       return;
     }
-    this.acceptSubmitted();
+    this.confirmations.accept(
+      this.gridScope,
+      preview,
+      names,
+      answer.value.displayId,
+    );
+    this.acceptSubmitted(answer.value.displayId);
+  }
+
+  /** Bring the page in line with a confirmation that outlived its editor (R1-B). */
+  private applyConfirmation(entry: PendingAttributeConfirmation): void {
+    const key = `${entry.preview.previewId}:${entry.phase}:${entry.displayId ?? ''}`;
+    if (key === this.handledConfirmation) return;
+    this.handledConfirmation = key;
+    if (entry.phase === 'refused') {
+      this.draft.refuse(entry.message);
+      this.confirmations.resolve(entry.preview.previewId);
+      return;
+    }
+    if (entry.phase === 'confirming') return;
+    if (entry.phase === 'accepted') {
+      // The draft left its entries at acceptance. Observe the owned job and read the rows.
+      void this.observeReceipt(entry.displayId, this.submitted, 'draft');
+      if (!isSinglePreview(entry.preview)) {
+        this.prepared.set(entry.preview);
+        this.reviewOpen.set(true);
+      }
+      return;
+    }
+    // An uncertain answer may have created the job. Keep the preview and its digest;
+    // the person's next Save replays it, and the bar names the answer (R1-B).
+    this.submitted = this.draft.edits();
+    this.prepared.set(entry.preview);
+    if (!isSinglePreview(entry.preview)) this.reviewOpen.set(true);
+  }
+
+  /** Retry or resume the save that this tab already sent. */
+  private recoverSave(entry: PendingAttributeConfirmation): void {
+    if (entry.phase === 'refused') {
+      this.confirmations.resolve(entry.preview.previewId);
+      void this.runSave();
+      return;
+    }
+    // A confirmation that is still in flight has its own answer owner.
+    if (entry.phase === 'confirming') return;
+    if (entry.phase === 'uncertain') {
+      this.submitted = this.draft.edits();
+      this.prepared.set(entry.preview);
+      if (isSinglePreview(entry.preview))
+        void this.confirmPrepared(entry.preview);
+      else this.reviewOpen.set(true);
+      return;
+    }
+    if (entry.displayId) {
+      const edits = this.acceptedJob === entry.displayId ? this.submitted : [];
+      void this.observeReceipt(entry.displayId, edits, 'draft');
+    }
   }
 
   /**
    * The dialog started the job. The entries leave the draft, and the cells keep the saved
-   * values until their rows hold them (design K26).
+   * values until their owning job and their rows answer (design K26).
    */
-  protected reviewAccepted(): void {
-    if (!this.reviewOpen()) return;
-    this.acceptSubmitted();
+  protected reviewAccepted(displayId: string): void {
+    if (this.reviewOpen()) {
+      const entry = this.gridConfirmation();
+      if (entry?.displayId === displayId) {
+        if (!this.submitted.length) this.submitted = this.draft.edits();
+        this.acceptSubmitted(displayId);
+      }
+      return;
+    }
+    // A save from the toolbar's Set attributes setup. The grid shows the written rows
+    // after the dialog closes, through one read of the held rows (R1-C).
+    void this.observeReceipt(displayId, [], 'selection');
   }
 
-  private acceptSubmitted(): void {
-    const edits = this.submitted;
-    if (!edits.length) return;
-    this.draft.accept(edits);
-    // The users feed carries the written values (document B section 9). This read covers a
-    // row of the screen that the feed misses. It never reloads the grid.
-    void this.store.refreshHeldRows(this.userIdsOf(edits));
+  private acceptSubmitted(displayId: string): void {
+    if (this.acceptedJob === displayId) return;
+    this.acceptedJob = displayId;
+    this.draft.accept(this.submitted, displayId);
+    void this.observeReceipt(displayId, this.submitted, 'draft');
+  }
+
+  /**
+   * Follow one accepted receipt to its terminal answer. A completed job keeps the
+   * submitted value until an authoritative row lands, and a failed or unknown job returns
+   * the cell to its row at once. The final read covers a feed publication that the grid
+   * missed, and it never reloads the grid (R1-C).
+   */
+  private async observeReceipt(
+    displayId: string | null,
+    edits: readonly UserAttributeEdit[],
+    source: 'draft' | 'selection',
+  ): Promise<void> {
+    if (!displayId || this.observing.has(displayId)) return;
+    this.observing.add(displayId);
+    const answer = await this.editFlow.waitForJob(
+      displayId,
+      120,
+      1000,
+      () => this.destroyed,
+    );
+    this.observing.delete(displayId);
+    if (this.destroyed) return;
+    // A job that still runs keeps its receipt. The next Save or the next page resumes it.
+    if (!answer.ok) return;
+    this.confirmations.resolveReceipt(displayId);
+    if (source === 'selection') {
+      await this.store.refreshHeldRowsOnScreen();
+      return;
+    }
+    this.draft.settleJob(displayId, attributeJobOutcome(answer.value.status));
+    if (edits.length) await this.store.refreshHeldRows(this.userIdsOf(edits));
+    else await this.store.refreshHeldRowsOnScreen();
+  }
+
+  /** The rule labels of one save, for the retained confirmation. */
+  private attributeNamesOf(edits: readonly UserAttributeEdit[]): string[] {
+    const labels = new Map(
+      this.draft
+        .entries()
+        .map((entry) => [entry.attribute, entry.label] as const),
+    );
+    return [
+      ...new Set(
+        edits.map((edit) => labels.get(edit.attribute) ?? edit.attribute),
+      ),
+    ];
   }
 
   private userIdsOf(edits: readonly UserAttributeEdit[]): string[] {
@@ -386,7 +580,10 @@ export class UsersPage implements OnInit, OnDestroy {
   /** The dialog closed. Focus returns to Save changes (UI-09). */
   protected closeReview(): void {
     this.reviewOpen.set(false);
-    this.prepared.set(null);
+    // A preview stays while its confirmation needs recovery. Only a refused or settled
+    // answer releases the caller's prepared preview (R1-B).
+    const pending = this.gridConfirmation();
+    if (!pending || pending.phase === 'refused') this.prepared.set(null);
     afterNextRender(() => this.saveButton()?.nativeElement?.focus(), {
       injector: this.injector,
     });
@@ -455,4 +652,13 @@ export class UsersPage implements OnInit, OnDestroy {
     this.store.position.set({ index, userId, scrollTop: event.scrollTop });
     this.store.cursor.set({ index, userId });
   }
+}
+
+/** Whether one preview confirms without the review step (design K26). */
+function isSinglePreview(preview: UserAttributePreview): boolean {
+  return (
+    preview.attributeChanges === 1 &&
+    preview.eligible === 1 &&
+    preview.conflicts === 0
+  );
 }

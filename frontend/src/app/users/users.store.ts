@@ -887,6 +887,11 @@ export class UsersStore {
     await this.refreshRows(ids);
   }
 
+  /** Read every held row, so a save that the feed missed lands in the cells (design K26). */
+  async refreshHeldRowsOnScreen(): Promise<void> {
+    await this.refreshRows('all');
+  }
+
   /**
    * Read up to 500 rows by user ID for the pending view (design K26, DRAFT-02). One request
    * answers the whole view, so the browser holds only the rows on screen and the draft.

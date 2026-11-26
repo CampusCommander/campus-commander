@@ -118,25 +118,54 @@ export interface UserPendingDatasource extends IServerSideDatasource<UserRow> {
   update(rows: readonly UserRow[]): void;
 }
 
+/** The selection of the tab, so Show All Selected narrows the pending rows (R1-A). */
+export interface UserPendingSelection {
+  key: UserSelectionKey;
+  resolve: (ids: readonly string[]) => Promise<Record<string, boolean>>;
+}
+
 export function pendingUserDatasource(
   load: () => Promise<UserRow[] | null>,
+  selection?: UserPendingSelection,
 ): UserPendingDatasource {
   let read: Promise<UserRow[] | null> | null = null;
   /** The rows of the one read, with every later observation applied. */
   let cached: UserRow[] | null = null;
   /** Observations that arrived before the read answered, by user ID. */
   const observed = new Map<string, UserRow>();
+  /** The newer of the read row and an observation, so a late old answer never regresses. */
   const merge = (rows: readonly UserRow[]): UserRow[] =>
-    rows.map((row) => observed.get(row.userId) ?? row);
+    rows.map((row) => {
+      const seen = observed.get(row.userId);
+      // An observation at the same version is newer than the read that it followed.
+      return seen && seen.recordVersion >= row.recordVersion ? seen : row;
+    });
   return {
     getRows(params: IServerSideGetRowsParams<UserRow>) {
       read ??= load();
       read.then(
-        (rows) => {
+        async (rows) => {
           if (!rows) return params.fail();
-          cached = merge(rows);
+          cached = cached ? merge(cached) : merge(rows);
+          let visible = cached;
+          // Show All Selected asks the server for the selected rows of this tab, and the
+          // pending view then keeps the ones that its users answer (R1-A).
+          if (
+            selection &&
+            params.api.getGridOption('ssrmSelectionViewActive') === true
+          ) {
+            try {
+              const selected = await selection.resolve(
+                cached.map((row) => row.userId),
+              );
+              visible = cached.filter((row) => selected[row.userId] === true);
+            } catch {
+              // The selection answer failed, so the view cannot name its rows.
+              return params.fail();
+            }
+          }
           const sorted = sortPendingUserRows(
-            cached,
+            visible,
             sortFromModel(params.request.sortModel),
           );
           const start = params.request.startRow ?? 0;
@@ -153,7 +182,11 @@ export function pendingUserDatasource(
       );
     },
     update(rows) {
-      for (const row of rows) observed.set(row.userId, row);
+      for (const row of rows) {
+        const seen = observed.get(row.userId);
+        if (seen && seen.recordVersion > row.recordVersion) continue;
+        observed.set(row.userId, row);
+      }
       if (cached) cached = merge(cached);
     },
   };

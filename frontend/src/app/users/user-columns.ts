@@ -219,6 +219,33 @@ export function cellOpensDialog(attribute: UserAttributeColumn): boolean {
   return attribute.field.multiValued || attribute.field.fieldType === 'DATE';
 }
 
+/** The Clear option of the anchored Yes or No editor (B section 12, R1-G). */
+export const ATTRIBUTE_BOOL_CLEAR = 'Clear value';
+
+/**
+ * The facts that the installed column closures read. A category job keeps the ID of an
+ * attribute while its label, type, list, or range changes, so the grid must rebuild its
+ * columns when any of these facts changes (R1-E).
+ */
+export function attributeColumnsSignature(
+  attributes: readonly UserAttributeColumn[],
+): string {
+  return attributes
+    .map((attribute) =>
+      [
+        attribute.id,
+        attribute.schemaName,
+        attribute.schemaDisplayName,
+        attribute.label,
+        attribute.field.fieldType,
+        attribute.field.multiValued ? 'many' : 'one',
+        attribute.field.numericIndexingSpec?.minValue ?? '',
+        attribute.field.numericIndexingSpec?.maxValue ?? '',
+      ].join('\u0000'),
+    )
+    .join('\u0001');
+}
+
 /** The in-cell editor of one info type (B section 12). */
 function attributeEditor(
   attribute: UserAttributeColumn,
@@ -236,7 +263,8 @@ function attributeEditor(
   if (attribute.field.fieldType === 'BOOL')
     return {
       cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: ['Yes', 'No'] },
+      // Clear value is its own operation, so a Yes cell never becomes No by accident.
+      cellEditorParams: { values: ['Yes', 'No', ATTRIBUTE_BOOL_CLEAR] },
     };
   return { cellEditor: 'agTextCellEditor' };
 }

@@ -41,10 +41,12 @@ import {
   attributeBaseline,
   attributeDraftResult,
   attributeEditorValue,
+  attributeValueError,
   attributeWireValue,
   sameAttributeValue,
   type AttributeDraft,
 } from './user-attribute-value-rules';
+import type { AttributeSaveOutcome } from './user-attribute-edit-flow';
 import type { UserAttributeColumn } from './user-fields';
 
 /** The state of one cell of the grid draft (DRAFT-02). */
@@ -99,13 +101,18 @@ export interface UserAttributeDraftCounts {
  * A save leaves the draft at acceptance, so the cell would draw the row value again. The
  * row value is old until the users feed carries the written value (document B section 9),
  * so the cell draws the submitted value with no clock and no rollback. The mark clears when
- * a row holds the value, and a failed job clears it at once.
+ * a row holds the value. When the owning job answers, the mark becomes settled: the next
+ * authoritative row replaces it, because the job will write nothing more.
  */
 export interface UserAttributeSettledCell {
   /** The cell metadata: user ID, C1 attribute, label, field type, and baseline. */
   cell: DraftCell;
   /** The text of the submitted value, in the form that the row value reads. */
   text: string;
+  /** The job that owns the submitted value. */
+  displayId: string;
+  /** The owning job answered, so a divergent row is final. */
+  settled: boolean;
 }
 
 export type UserAttributeStageResult =
@@ -207,8 +214,14 @@ export function entryWire(entry: DraftCell): UserAttributeRowValue | null {
   return attributeWireValue(entryDraft(entry));
 }
 
-/** The cell text of one pending value, in the form that the row value reads. */
+/**
+ * The cell text of one pending value, in the form that the row value reads. An invalid
+ * editor value shows exactly what the person typed, so a correction starts from that text
+ * (R1-F). The wire conversion runs for a value that passes its rules only.
+ */
 export function entryText(entry: DraftCell): string {
+  if (typeof entry.value === 'string' && entryReason(entry) !== null)
+    return entry.value;
   return attributeDraftValueText(entryWire(entry), entry.fieldType);
 }
 
@@ -342,8 +355,9 @@ export class UserAttributeGridDraft {
     if (entry) return entryText(entry);
     const settled = this.settledFor(row.userId, column.id);
     if (settled) {
+      // The saved value covers the row until an authoritative row proves it (design K26,
+      // R1-C). A job answer alone does not prove the value: the read may still be old.
       const current = rowCellText(row, settled.cell);
-      // The row holds the written value, so the mark is no longer needed.
       return current === settled.text ? current : settled.text;
     }
     return attributeDraftValueText(cell.baseline, cell.fieldType);
@@ -367,33 +381,55 @@ export class UserAttributeGridDraft {
   ]);
 
   /**
-   * Drop every mark that an authoritative row proves. A row that holds the value answers
-   * the mark, and a row that does not yet carry it keeps the mark (design K26).
+   * Drop every mark that an authoritative row proves. A row that holds the submitted value
+   * answers the mark. A row that still holds the value at edit start has not observed the
+   * write yet, so the saved value stays. Any other value is the actual value, because the
+   * owning job wrote nothing more (R1-C).
    */
   settleWithRows(rows: readonly UserRow[]): void {
     if (!this.settledSignal().length || !rows.length) return;
     const byId = new Map(rows.map((row) => [row.userId, row] as const));
     const remaining = this.settledSignal().filter(({ cell, text }) => {
       const row = byId.get(cell.userId);
-      return !row || rowCellText(row, cell) !== text;
+      if (!row) return true;
+      const current = rowCellText(row, cell);
+      if (current === text) return false;
+      return current === attributeDraftValueText(cell.baseline, cell.fieldType);
     });
     if (remaining.length !== this.settledSignal().length)
       this.settledSignal.set(remaining);
   }
 
   /**
-   * A failed job wrote no value. The mark clears, so the cell draws the row value that
-   * Google holds instead of the submitted value (design K26).
+   * The owning job answered. A completed job keeps its marks until an authoritative row
+   * lands. A failed or unknown job wrote no confirmed value, so its marks leave at once
+   * and the cells draw the row (R1-C).
    */
-  dropSettled(userIds?: readonly string[]): void {
+  settleJob(displayId: string, outcome: AttributeSaveOutcome): void {
     if (!this.settledSignal().length) return;
-    if (!userIds) {
+    if (outcome === 'failed' || outcome === 'unknown') {
+      this.dropSettled(displayId);
+      return;
+    }
+    this.settledSignal.set(
+      this.settledSignal().map((mark) =>
+        mark.displayId === displayId ? { ...mark, settled: true } : mark,
+      ),
+    );
+  }
+
+  /**
+   * The marks of one job, or every mark, leave. The cell draws the row value that Google
+   * holds instead of the submitted value (design K26).
+   */
+  dropSettled(displayId?: string): void {
+    if (!this.settledSignal().length) return;
+    if (!displayId) {
       this.settledSignal.set([]);
       return;
     }
-    const wanted = new Set(userIds);
     this.settledSignal.set(
-      this.settledSignal().filter(({ cell }) => !wanted.has(cell.userId)),
+      this.settledSignal().filter((mark) => mark.displayId !== displayId),
     );
   }
 
@@ -531,7 +567,18 @@ export class UserAttributeGridDraft {
   ): UserAttributeStageResult {
     this.refusalSignal.set('');
     const existing = this.entryFor(cell.userId, cell.attribute);
-    const candidate: DraftCell = { ...cell, value };
+    // An ordinary re-edit keeps the baseline that the edit began with, including null
+    // (R1-D). A valid answer to a conflict compares against the preview's current value,
+    // because that is the value that the person saw (B section 8.4).
+    const reason = attributeValueError(entryDraft({ ...cell, value }));
+    const resolvesConflict =
+      !!existing && existing.currentValue !== undefined && !reason;
+    const baseline = resolvesConflict
+      ? (existing.currentValue ?? null)
+      : existing
+        ? existing.baseline
+        : cell.baseline;
+    const candidate: DraftCell = { ...cell, baseline, value };
     const result = attributeDraftResult(entryDraft(candidate), cell.userId);
     if (!result.changed) {
       if (existing) this.removeEntry(existing);
@@ -549,13 +596,13 @@ export class UserAttributeGridDraft {
       this.refusalSignal.set(attributeDraftChangeLimitText());
       return { ok: false, reason: 'change-limit' };
     }
-    const reason = entryReason(candidate);
-    // A valid value answers a conflict. Invalid input keeps the conflict evidence, so a
-    // correction returns the cell to the conflict state (B section 8.4).
-    const keepConflict = existing?.currentValue !== undefined && !!reason;
+    const error = entryReason(candidate);
+    // Invalid input keeps the conflict evidence, so a later correction returns the cell to
+    // the conflict state (B section 8.4).
+    const keepConflict = existing?.currentValue !== undefined && !!error;
     const entry: UserAttributeDraftEntry = {
       ...candidate,
-      state: reason ? (keepConflict ? 'conflict' : 'invalid') : 'pending',
+      state: error ? (keepConflict ? 'conflict' : 'invalid') : 'pending',
       ...(keepConflict ? { currentValue: existing?.currentValue } : {}),
     };
     this.upsert(entry);
@@ -571,13 +618,24 @@ export class UserAttributeGridDraft {
     return this.stage(cellFor(row, column), value);
   }
 
-  /** Stage a Yes or No answer. No is a value, never an empty cell (B section 12). */
+  /**
+   * Stage a Yes or No answer, or an explicit Clear. No is a value, never an empty cell
+   * (B section 12). A null answer is the Clear operation, so it never becomes No (R1-G).
+   */
   stageBool(
     row: UserRow,
     column: UserAttributeColumn,
-    value: boolean,
+    value: boolean | null,
   ): UserAttributeStageResult {
     return this.stage(cellFor(row, column), value);
+  }
+
+  /** Stage an explicit Clear of one field (B section 12). */
+  stageClear(
+    row: UserRow,
+    column: UserAttributeColumn,
+  ): UserAttributeStageResult {
+    return this.stage(cellFor(row, column), null);
   }
 
   /** Stage the list of the list editor dialog. An empty list stages Clear values. */
@@ -629,30 +687,35 @@ export class UserAttributeGridDraft {
   /**
    * Mark the cells of a frozen preview. A conflict row carries the current value, and an
    * unchanged row leaves the draft because Google already holds the value (B section 8.4).
+   * Returns the users of the unchanged rows, whose authoritative value the caller reads.
    */
   applyPreview(
     targets: readonly UserAttributeTarget[],
     submitted: readonly UserAttributeEdit[],
-  ): void {
+  ): string[] {
     const edits = new Map(
       submitted.map((edit) => [draftKey(edit), edit] as const),
     );
     const settled: string[] = [];
+    const unchanged: string[] = [];
     for (const target of targets) {
       if (target.disposition === 'conflict')
         this.markConflict(target.userId, target.attribute, target.currentValue);
-      else if (target.disposition === 'unchanged')
+      else if (target.disposition === 'unchanged') {
         settled.push(draftKey(target));
+        unchanged.push(target.userId);
+      }
     }
     this.dropSubmitted(edits, settled);
+    return [...new Set(unchanged)];
   }
 
   /**
    * Settle a confirmed save: every submitted entry whose value still equals the submitted
    * value leaves the draft, and a later edit stays (DRAFT-02). The submitted value stays on
-   * screen until its row holds it (design K26).
+   * screen until its row holds it or its owning job answers (design K26).
    */
-  accept(submitted: readonly UserAttributeEdit[]): void {
+  accept(submitted: readonly UserAttributeEdit[], displayId: string): void {
     const edits = new Map(
       submitted.map((edit) => [draftKey(edit), edit] as const),
     );
@@ -664,11 +727,14 @@ export class UserAttributeGridDraft {
       edits,
       submitted.map((edit) => draftKey(edit)),
     );
-    this.markSettled(dropped);
+    this.markSettled(dropped, displayId);
   }
 
-  /** Keep the value of each saved cell on screen until its row holds the value. */
-  private markSettled(entries: readonly UserAttributeDraftEntry[]): void {
+  /** Keep the value of each saved cell on screen until its row answers the owning job. */
+  private markSettled(
+    entries: readonly UserAttributeDraftEntry[],
+    displayId: string,
+  ): void {
     if (!entries.length) return;
     const marks = entries.map((entry) => ({
       cell: {
@@ -684,6 +750,8 @@ export class UserAttributeGridDraft {
         baseline: entry.baseline,
       },
       text: entryText(entry),
+      displayId,
+      settled: false as const,
     }));
     const keys = new Set(marks.map(({ cell }) => draftKey(cell)));
     this.settledSignal.set([

@@ -390,8 +390,9 @@
     [categoriesLoading]="store.categoriesLoading()"
     [categoriesError]="store.categoriesError()"
     [prepared]="reviewOpen() ? prepared() : null"
+    [confirmationScope]="reviewOpen() ? gridScope : null"
     (categoriesRetry)="store.loadCategories()"
-    (accepted)="reviewAccepted()"
+    (accepted)="reviewAccepted($event)"
     (closed)="reviewOpen() ? closeReview() : closeBulk()"
   />
   }

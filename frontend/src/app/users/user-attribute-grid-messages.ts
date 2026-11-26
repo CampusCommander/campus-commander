@@ -33,6 +33,7 @@ export const ATTRIBUTE_DRAFT_RETRY_LABEL = 'Try again';
 export const ATTRIBUTE_CELL_STAGE_LABEL = 'Stage change';
 export const ATTRIBUTE_CELL_CANCEL_LABEL = 'Cancel';
 export const ATTRIBUTE_CELL_CLEAR_LABEL = 'Clear values';
+export const ATTRIBUTE_CELL_CLEAR_VALUE_LABEL = 'Clear value';
 export const ATTRIBUTE_CELL_DATE_HINT = 'Choose a date for this attribute.';
 export const ATTRIBUTE_CELL_LIST_HINT =
   'Enter each value, then press Enter. Stage change keeps them on this user.';

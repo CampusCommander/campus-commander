@@ -18,6 +18,7 @@ import type { UserAttributeField } from '@campus/application-contracts';
 import {
   ATTRIBUTE_CELL_CANCEL_LABEL,
   ATTRIBUTE_CELL_CLEAR_LABEL,
+  ATTRIBUTE_CELL_CLEAR_VALUE_LABEL,
   ATTRIBUTE_CELL_DATE_HINT,
   ATTRIBUTE_CELL_LIST_HINT,
   ATTRIBUTE_CELL_STAGE_LABEL,
@@ -58,6 +59,8 @@ export class UserAttributeCellDialog {
   readonly value = input.required<string | string[]>();
   readonly userName = input('');
   readonly cancelled = output<void>();
+  /** Clear is its own field operation, so it never stages an empty value (R1-G). */
+  readonly cleared = output<void>();
   readonly staged = output<string | string[]>();
 
   private readonly title = viewChild<ElementRef<HTMLElement>>('dialogTitle');
@@ -66,12 +69,16 @@ export class UserAttributeCellDialog {
 
   protected readonly STAGE_LABEL = ATTRIBUTE_CELL_STAGE_LABEL;
   protected readonly CANCEL_LABEL = ATTRIBUTE_CELL_CANCEL_LABEL;
-  protected readonly CLEAR_LABEL = ATTRIBUTE_CELL_CLEAR_LABEL;
   protected readonly DATE_HINT = ATTRIBUTE_CELL_DATE_HINT;
   protected readonly LIST_HINT = ATTRIBUTE_CELL_LIST_HINT;
 
   protected readonly multiValued = computed(() => this.field().multiValued);
   protected readonly isDate = computed(() => this.field().fieldType === 'DATE');
+  protected readonly clearLabel = computed(() =>
+    this.multiValued()
+      ? ATTRIBUTE_CELL_CLEAR_LABEL
+      : ATTRIBUTE_CELL_CLEAR_VALUE_LABEL,
+  );
   protected readonly dateValue = signal('');
   protected readonly chips = signal<string[]>([]);
 
@@ -115,21 +122,21 @@ export class UserAttributeCellDialog {
   }
 
   protected addChip(event: MatChipInputEvent): void {
-    const text = event.value.trim();
+    // The entered text keeps its code points. A leading or trailing space is part of a
+    // distinct value (R1-H). A value of spaces alone is refused.
+    const text = event.value;
     event.chipInput.clear();
-    if (!text) return;
-    this.chips.update((values) =>
-      values.includes(text) ? values : [...values, text],
-    );
+    if (text.trim().length === 0) return;
+    this.chips.update((values) => [...values, text]);
   }
 
   protected removeChip(index: number): void {
     this.chips.update((values) => values.filter((_, at) => at !== index));
   }
 
-  /** Clear values is its own field operation (B section 12). */
+  /** Clear is its own field operation (B section 12). */
   protected clearValues(): void {
-    this.staged.emit([]);
+    this.cleared.emit();
   }
 
   protected stage(): void {

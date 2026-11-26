@@ -204,6 +204,12 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
    * dialog opens at the review step and confirms that preview.
    */
   readonly prepared = input<UserAttributePreview | null>(null);
+  /**
+   * The key of the retained confirmation. A grid save passes one key for every save of the
+   * tab, so the page owns the receipt and a reopened dialog resumes it (card K26). A null
+   * key keeps the K27 scope: the selection key, or the prepared preview.
+   */
+  readonly confirmationScope = input<string | null>(null);
 
   readonly closed = output<void>();
   /** A caller that follows the one save (card K26). */
@@ -596,7 +602,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   private done = false;
   /** The confirmation entry of this dialog, stable across dismissal and reopening. */
-  private confirmationScope = '';
+  private scopeKey = '';
   /** This dialog restored a confirmation that an earlier dialog left behind. */
   private restored = false;
   /** The accepted receipt that this dialog already observes, so one job has one reader. */
@@ -611,7 +617,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     // A retained confirmation changes phase while this dialog is open: it may lose its
     // answer, hand over an accepted receipt, or refuse. Only a restored dialog applies it.
     effect(() => {
-      const entry = this.confirmations.pending(this.confirmationScope);
+      const entry = this.confirmations.pending(this.scopeKey);
       untracked(() => {
         if (this.restored) this.applyEntry(entry);
       });
@@ -620,12 +626,15 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     const prepared = this.prepared();
-    // The scope outlives the dialog, so a reopened dialog continues the one save. A
-    // selection key is stable for the browser tab; a prepared preview names its own id.
-    this.confirmationScope = prepared
-      ? `bulk-preview:${prepared.previewId}`
-      : `bulk-selection:${this.selection().gridId}:${this.selection().tabId}`;
-    const entry = this.confirmations.pending(this.confirmationScope);
+    // The scope outlives the dialog, so a reopened dialog continues the one save. A grid
+    // caller passes one key for every save of its tab (card K26). Otherwise a selection key
+    // is stable for the browser tab, and a prepared preview names its own id.
+    this.scopeKey =
+      this.confirmationScope() ??
+      (prepared
+        ? `bulk-preview:${prepared.previewId}`
+        : `bulk-selection:${this.selection().gridId}:${this.selection().tabId}`);
+    const entry = this.confirmations.pending(this.scopeKey);
     if (entry) {
       this.restored = true;
       this.applyEntry(entry);
@@ -824,7 +833,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     if (this.valueError()) return;
     // An unresolved confirmation keeps its preview. This dialog must not prepare a
     // replacement save while the first acceptance is unknown (R1-B).
-    const pending = this.confirmations.pending(this.confirmationScope);
+    const pending = this.confirmations.pending(this.scopeKey);
     if (pending && pending.phase !== 'refused') {
       this.restored = true;
       this.applyEntry(pending);
@@ -987,7 +996,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     // The Confirm control disables itself. Move focus before the answer, so the wait
     // never leaves focus on the document body (R1-G).
     this.focusConfirmAnchor();
-    this.confirmations.begin(this.confirmationScope, preview, names);
+    this.confirmations.begin(this.scopeKey, preview, names);
     const answer = await this.editFlow.confirm(
       preview.previewId,
       preview.manifestDigest,
@@ -996,7 +1005,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       // The answer may have created the job. Keep the preview, its digest, and the
       // submitted names until a receipt answers this same confirmation (R1-B).
       this.confirmations.uncertain(
-        this.confirmationScope,
+        this.scopeKey,
         preview,
         names,
         answer.message,
@@ -1012,12 +1021,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       // itself; a dismissed one leaves the entry for the next owner (R2-A). Resolving
       // here would coalesce with the refusal write, so a reopened observer would see
       // only null and keep its busy review forever.
-      this.confirmations.refuse(
-        this.confirmationScope,
-        preview,
-        names,
-        answer.message,
-      );
+      this.confirmations.refuse(this.scopeKey, preview, names, answer.message);
       if (this.done) return;
       this.confirmations.resolve(preview.previewId);
       this.confirming.set(false);
@@ -1030,7 +1034,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
     // Hand the accepted receipt to the store before any dialog state clears, so a
     // dismissed dialog loses neither the job nor its follow-up (R1-B).
     this.confirmations.accept(
-      this.confirmationScope,
+      this.scopeKey,
       preview,
       names,
       answer.value.displayId,

@@ -52,7 +52,12 @@ import type {
   UserPredicate,
   UserRow,
 } from '@campus/application-contracts';
-import { cellOpensDialog, userColumnDefs } from './user-columns';
+import {
+  cellOpensDialog,
+  userColumnDefs,
+  attributeColumnsSignature,
+  ATTRIBUTE_BOOL_CLEAR,
+} from './user-columns';
 import {
   defaultGridState,
   pendingUserDatasource,
@@ -74,6 +79,7 @@ import {
   detailsKeyHandler,
   showRow,
 } from './user-grid-options';
+import { USER_GRID_ID, UserSelectionProvider } from './user-selection';
 import type { UserRowRefresh } from './user-row-refresh';
 import { attributeFor, type UserAttributeColumn } from './user-fields';
 import {
@@ -114,6 +120,7 @@ ModuleRegistry.registerModules([
         [value]="open.value"
         [userName]="open.userName"
         (cancelled)="closeCellDialog()"
+        (cleared)="clearCellDialog()"
         (staged)="stageCellDialog($event)"
       />
     }
@@ -302,6 +309,8 @@ export class UserGrid implements OnInit {
   private pendingRetried = 0;
   /** A filter model change of the view switch is not a person's filter. */
   private switching = false;
+  /** The column rebuild restores the open filter model; that is not a person's filter. */
+  private restoringColumns = false;
   /** The open editor's input listener. */
   private liveListener: ((event: Event) => void) | null = null;
   /** The predicates that no column filter shows. The datasource reads them (R4). */
@@ -347,12 +356,23 @@ export class UserGrid implements OnInit {
       const started = this.started();
       untracked(() => {
         if (!started || !this.api || !attributes.length) return;
-        // One column set for one read. A second set would reset the filter model of an
-        // open query (R4). A permission change reaches the editors through their callback.
-        const signature = attributes.map((attribute) => attribute.id).join('|');
+        // One column set for one metadata read. The signature carries the label, type,
+        // list, and range, so a same-ID category change rebuilds the editor closures
+        // without a second set for an unchanged read (R1-E). The filter model survives.
+        const signature = attributeColumnsSignature(attributes);
         if (signature === this.appliedColumns) return;
         this.appliedColumns = signature;
-        this.api.setGridOption('columnDefs', this.columnDefs());
+        // A rebuilt column set must keep the unrelated filters of the open query (R4,
+        // R1-E). The model returns after the new definitions, and its change is not a
+        // person's filter.
+        const model = this.api.getFilterModel();
+        this.restoringColumns = true;
+        try {
+          this.api.setGridOption('columnDefs', this.columnDefs());
+          this.api.setFilterModel(model);
+        } finally {
+          this.restoringColumns = false;
+        }
         this.scheduleGroupHeader();
       });
     });
@@ -534,7 +554,12 @@ export class UserGrid implements OnInit {
     if (!column) return;
     const raw = event.newValue;
     if (column.field.fieldType === 'BOOL') {
-      // The boolean editor answers Yes or No. No is a value, never an empty cell (B section 12).
+      // The boolean editor answers Yes, No, or Clear value. No is a value, never an empty
+      // cell, and a clear request stays a Clear (B section 12, R1-G).
+      if (raw === null || raw === undefined || raw === ATTRIBUTE_BOOL_CLEAR) {
+        this.draft.stageBool(event.data, column, null);
+        return;
+      }
       this.draft.stageBool(
         event.data,
         column,
@@ -564,7 +589,8 @@ export class UserGrid implements OnInit {
       multiValued: cell.multiValued,
       minValue: cell.minValue,
       maxValue: cell.maxValue,
-      baseline: cell.baseline,
+      // A re-edit keeps the baseline that the first edit began with (R1-D).
+      baseline: this.draft.baselineFor(event.data, column),
       value:
         event.value === null || event.value === undefined
           ? ''
@@ -684,6 +710,15 @@ export class UserGrid implements OnInit {
     this.refocusCell(open.row.userId, open.column.id);
   }
 
+  /** Clear value is its own field operation (B section 12). */
+  protected clearCellDialog(): void {
+    const open = this.cellDialog();
+    if (!open) return;
+    this.cellDialog.set(null);
+    this.draft.stageClear(open.row, open.column);
+    this.refocusCell(open.row.userId, open.column.id);
+  }
+
   /** Return focus to the cell that opened a dialog (UI-09). */
   private refocusCell(userId: string, attribute: string): void {
     afterNextRender(
@@ -718,9 +753,21 @@ export class UserGrid implements OnInit {
       this.switching = false;
     }
     this.pendingViewIds = ids;
+    // Select All of the pending view names these users, never the directory (R1-A).
+    const provider = this.selection().provider;
+    if (provider instanceof UserSelectionProvider) provider.setPending(ids);
     const load = this.loadPending();
     if (!load) return;
-    const source = pendingUserDatasource(load);
+    const key = { gridId: USER_GRID_ID, tabId: this.selection().tabId };
+    const source = pendingUserDatasource(load, {
+      key,
+      resolve: (rowIds) =>
+        this.selection().provider.resolveSelected({
+          ...key,
+          rowIds: [...rowIds],
+          groupRoutes: [],
+        }),
+    });
     this.pendingSource = source;
     api.setGridOption('serverSideDatasource', source);
   }
@@ -732,6 +779,9 @@ export class UserGrid implements OnInit {
     this.pendingViewIds = null;
     this.pendingSource = null;
     this.switching = false;
+    // The query keeps the tab's selection, so its counts read again (R1-A).
+    const provider = this.selection().provider;
+    if (provider instanceof UserSelectionProvider) provider.setPending(null);
     this.applyPredicates(this.predicates());
     this.reload();
   }
@@ -848,7 +898,8 @@ export class UserGrid implements OnInit {
     const api = this.api;
     if (!api) return;
     // The pending view's model is empty by design, so its change is not the person's filter.
-    if (this.switching) return;
+    // The column rebuild restores the model that the person already set (R1-E).
+    if (this.switching || this.restoringColumns) return;
     let modeled: UserPredicate[];
     try {
       modeled = predicatesFromFilterModel(

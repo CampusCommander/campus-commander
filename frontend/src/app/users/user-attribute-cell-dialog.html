@@ -74,14 +74,14 @@
       }
     </div>
     <div class="picker-actions">
-      @if (multiValued()) {
+      @if (multiValued() || isDate()) {
       <button
         mat-button
         type="button"
         class="attribute-cell-clear"
         (click)="clearValues()"
       >
-        {{ CLEAR_LABEL }}
+        {{ clearLabel() }}
       </button>
       }
       <button mat-button type="button" (click)="cancel()">
