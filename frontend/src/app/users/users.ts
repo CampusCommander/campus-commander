@@ -440,8 +440,13 @@ export class UsersPage implements OnInit, OnDestroy {
     // An earlier send may still own an unknown acceptance. A later definite refusal must
     // not release that identity, or the person could prepare a second job (R2-D).
     const unresolved = this.confirmations.isPending(preview.previewId);
-    // Record the frozen identity before the first send (R1-B).
-    this.confirmations.begin(this.gridScope, preview, names);
+    // Record the frozen identity before the first send (R1-B). The returned owner binds
+    // the late answer to the person who submitted it.
+    const submittedBy = this.confirmations.begin(
+      this.gridScope,
+      preview,
+      names,
+    );
     const answer = await this.editFlow.confirm(
       preview.previewId,
       preview.manifestDigest,
@@ -454,6 +459,7 @@ export class UsersPage implements OnInit, OnDestroy {
         // The answer may have created the job. Keep the preview and its digest, so the
         // next Save replays this confirmation instead of preparing another (R1-B, R2-D).
         this.confirmations.uncertain(
+          submittedBy,
           this.gridScope,
           preview,
           names,
@@ -463,13 +469,20 @@ export class UsersPage implements OnInit, OnDestroy {
         this.draft.refuse(answer.message);
         return;
       }
-      this.confirmations.refuse(this.gridScope, preview, names, answer.message);
+      this.confirmations.refuse(
+        submittedBy,
+        this.gridScope,
+        preview,
+        names,
+        answer.message,
+      );
       if (this.destroyed) return;
       this.confirmations.resolve(preview.previewId);
       this.draft.refuse(answer.message);
       return;
     }
     this.confirmations.accept(
+      submittedBy,
       this.gridScope,
       preview,
       names,
@@ -513,8 +526,20 @@ export class UsersPage implements OnInit, OnDestroy {
       void this.runSave();
       return;
     }
-    // A confirmation that is still in flight has its own answer owner.
-    if (entry.phase === 'confirming') return;
+    // A confirmation that is still in flight has its own answer owner. After a reload no
+    // request of this page is in flight, so the next Save replays its frozen preview (K26).
+    if (entry.phase === 'confirming') {
+      if (!this.confirmations.restored(entry.userId)) return;
+      this.prepared.set(entry.preview);
+      if (entry.edits.length <= 1)
+        void this.confirmPrepared(
+          entry.preview,
+          entry.edits,
+          entry.attributeNames,
+        );
+      else this.reviewOpen.set(true);
+      return;
+    }
     if (entry.phase === 'uncertain') {
       this.prepared.set(entry.preview);
       // The frozen list decides the one-step path, not a later draft count (R2-E).

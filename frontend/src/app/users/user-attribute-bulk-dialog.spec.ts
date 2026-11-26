@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -12,10 +13,14 @@ import type {
   UserAttributePreview,
   UserAttributeTarget,
 } from '@campus/application-contracts';
+import { AuthStore } from '../auth.store';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
 import { UserAttributeBulkFlow } from './user-attribute-bulk-flow';
 import { UserAttributeEditFlow } from './user-attribute-edit-flow';
-import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import {
+  USER_ATTRIBUTE_CONFIRMATION_PREFIX,
+  UserAttributeConfirmationStore,
+} from './user-attribute-confirmation';
 
 function field(extra: Partial<UserAttributeField>): UserAttributeField {
   return {
@@ -214,6 +219,8 @@ describe('the Set attributes dialog', () => {
   let dialog: DialogInternals;
 
   beforeEach(() => {
+    // A retained confirmation lives in the tab. One test never reads another test's record.
+    sessionStorage.clear();
     bulk = {
       prepare: vi.fn().mockResolvedValue({ ok: true, value: preview() }),
       readTargetsPage: vi.fn().mockResolvedValue({
@@ -243,12 +250,15 @@ describe('the Set attributes dialog', () => {
     prepared: UserAttributePreview | null = null,
     categoryList: UserAttributeCategory[] = categories,
     categoryError = '',
+    /** The signed-in person, for a spec that seeds a retained confirmation. */
+    session?: () => { identity: { id: string } } | null,
   ): void {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: UserAttributeBulkFlow, useValue: bulk },
         { provide: UserAttributeEditFlow, useValue: edit },
+        ...(session ? [{ provide: AuthStore, useValue: { session } }] : []),
       ],
     });
     fixture = TestBed.createComponent(UserAttributeBulkDialog);
@@ -850,6 +860,104 @@ describe('the Set attributes dialog', () => {
     expect(edit.confirm).toHaveBeenNthCalledWith(2, previewId, 'a'.repeat(64));
     expect(bulk.prepare).toHaveBeenCalledTimes(1);
     expect(edit.waitForJob).toHaveBeenCalled();
+  });
+
+  it('replays a confirmation that the tab kept through a reload (K27)', async () => {
+    const principal = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const session = signal({ identity: { id: principal } });
+    const stored = preview();
+    const scope = `bulk-selection:users:${tabId}`;
+    sessionStorage.setItem(
+      `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${scope}`,
+      JSON.stringify({
+        userId: scope,
+        submittedBy: principal,
+        preview: stored,
+        attributeNames: ['Programs'],
+        edits: [],
+        message: '',
+        phase: 'confirming',
+        displayId: null,
+      }),
+    );
+    build(null, categories, '', session);
+    await settle();
+    // The reopened dialog replays the frozen preview and prepares no replacement.
+    expect(edit.confirm).toHaveBeenCalledWith(
+      stored.previewId,
+      stored.manifestDigest,
+    );
+    expect(bulk.prepare).not.toHaveBeenCalled();
+    expect(edit.waitForJob).toHaveBeenCalled();
+  });
+
+  /** Send one held confirmation, then close the dialog and sign in another person. */
+  async function heldConfirmation(first: string, second: string) {
+    let signedIn: { identity: { id: string } } | null = {
+      identity: { id: first },
+    };
+    const session = () => signedIn;
+    const held = deferred<unknown>();
+    edit.confirm.mockReturnValue(held.promise);
+    build(null, categories, '', session);
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await flush();
+    // The dialog closes before the answer arrives, and another person signs in.
+    fixture.destroy();
+    signedIn = { identity: { id: second } };
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    store.restore();
+    return { held, store };
+  }
+
+  it('never retains a late uncertain answer under the person who signed in next (K27)', async () => {
+    const first = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const second = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const { held, store } = await heldConfirmation(first, second);
+    const uncertain = vi.spyOn(store, 'uncertain');
+    held.resolve({
+      ok: false,
+      message: 'The network failed.',
+      uncertain: true,
+    });
+    await vi.waitFor(() => expect(uncertain).toHaveBeenCalled());
+
+    const scope = `bulk-selection:users:${tabId}`;
+    expect(store.pending(scope)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${scope}`,
+      ),
+    ).toBeNull();
+    // A fresh store of the second person restores nothing.
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(scope)).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('never retains a late accepted receipt under the person who signed in next (K27)', async () => {
+    const first = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const second = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const { held, store } = await heldConfirmation(first, second);
+    const accept = vi.spyOn(store, 'accept');
+    held.resolve(receipt);
+    await vi.waitFor(() => expect(accept).toHaveBeenCalled());
+
+    const scope = `bulk-selection:users:${tabId}`;
+    expect(store.pending(scope)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${scope}`,
+      ),
+    ).toBeNull();
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(scope)).toBeNull();
+    vi.restoreAllMocks();
   });
 
   it('clears a reopened busy review after a definite refusal (R2-A)', async () => {
