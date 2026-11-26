@@ -1,0 +1,322 @@
+/*
+ * The Set attributes dialog of the Users Bulk Actions (design card K27, UM states 08
+ * to 11). The surface, header, action bar, form groups, option cards, report panel,
+ * tabs, table, pager, and jobs band come from the built device stylesheets. This file
+ * adds the top gap of the body, the width of the setup fields, the Yes or No control,
+ * the table columns, and the users cells.
+ * Every value is a token of `theme/tokens.css` or of the Material theme.
+ */
+/* The approved setup takes the 8 px top of the design step and 16 px between groups;
+   the body keeps the approved 24 px bottom gap (R2-C). The report step keeps its own
+   gap and no top padding. */
+.step:not(.report) {
+  gap: var(--cc-space-lg);
+  padding-block-start: var(--cc-space-sm);
+}
+
+.bulk-field {
+  width: 100%;
+}
+
+/* State 08: the Category and Attribute fields keep the approved 16 px gap. */
+.bulk-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-lg);
+}
+
+/* The approved option cards are 48 px high, not the 56 px device card. */
+.option-card {
+  min-height: 48px;
+  padding-block: 0;
+  align-items: center;
+}
+
+.option-card ::ng-deep .mdc-form-field {
+  align-items: center;
+}
+
+.option-card ::ng-deep .mdc-label {
+  padding-block: 0;
+}
+
+/* The approved chip field takes one 56 px row, also after a chip is entered. */
+.chip-field ::ng-deep .mat-mdc-form-field-infix {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding-block: 0;
+}
+
+.chip-field ::ng-deep .mat-mdc-chip-grid {
+  min-height: 0;
+}
+
+.chip-field ::ng-deep .mat-mdc-chip-row {
+  min-height: 32px;
+}
+
+/* The value field sits under the mode cards, so the first form field keeps its gap. */
+.group + .group .bulk-field:first-child {
+  margin-block-start: 0;
+}
+
+/* The Yes or No control of composition 5: the label over a two-choice toggle. */
+.bool-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cc-space-sm);
+}
+
+.bool-label {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.bool-toggle {
+  align-self: flex-start;
+}
+
+/* The value message under the field, in the words and tone of the edit form. */
+.field-error {
+  margin: var(--cc-space-xs) 0 0;
+  max-width: none;
+  color: var(--cc-status-error-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The review and the results share the leading columns of composition 11: User 240 px
+   and Primary email 260 px in both tables. The panel is 1,070 px wide. */
+.report-table.bulk col:nth-child(1) {
+  width: 240px;
+}
+
+.report-table.bulk col:nth-child(2) {
+  width: 260px;
+}
+
+.report-table.bulk:not(.rs) col:nth-child(3) {
+  width: 285px;
+}
+
+.report-table.bulk:not(.rs) col:nth-child(4) {
+  width: auto;
+}
+
+.report-table.bulk.rs col:nth-child(3) {
+  width: 175px;
+}
+
+.report-table.bulk.rs col:nth-child(4) {
+  width: 175px;
+}
+
+.report-table.bulk.rs col:nth-child(5) {
+  width: 220px;
+}
+
+/* The approved table header sits on the app surface, not the card surface, and one
+   line takes 36 px in both tables (R2-D). */
+.report-table.bulk th {
+  height: 36px;
+  background: var(--cc-surface-app);
+}
+
+/* The approved body keeps its 7 px content inset; the row heights stay at 35 px for
+   the review and 36 px for the results (R2-D). */
+.report-table.bulk:not(.rs) tbody tr:not(.message-row) td {
+  height: 35px;
+  padding-block: 7px;
+}
+
+/* The approved results row is 36 px, also after the device results density. */
+.report-table.bulk.rs tbody tr:not(.message-row) td {
+  height: 36px;
+  padding-block: 7px;
+}
+
+/* The failed results row grows to hold its reason, as the approved state draws it. */
+.report-table.bulk.rs tbody tr:has(.outcome-reason) td {
+  height: 58px;
+}
+
+.outcome-reason {
+  display: block;
+  margin-block-start: var(--cc-space-xs);
+}
+
+/* The 24 px outcome chip keeps the 36 px row after the 7 px inset (R2-D). */
+.report-table.bulk .status-chip.small {
+  margin-block: -2px;
+}
+
+/* Current values read secondary; the proposed value reads primary and medium. */
+.current-value {
+  color: var(--cc-text-secondary);
+}
+
+.new-value {
+  color: var(--cc-text-primary);
+  font-weight: 500;
+}
+
+/* One prepared row names its attribute under the user, inside the shared columns. */
+.user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row-attribute {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The review and the results take the approved content height, not the full wrap. */
+.export-dialog.is-wide {
+  height: auto;
+}
+
+/* The pager of composition 11: a 32 px outlined square per arrow (approved state 09). */
+.report-pager .pager-buttons {
+  gap: var(--cc-space-sm);
+}
+
+.report-pager .pager-buttons .mat-mdc-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-surface-card);
+  color: var(--cc-text-primary);
+}
+
+.report-pager .pager-buttons .mat-mdc-icon-button:disabled {
+  color: var(--cc-text-disabled);
+}
+
+.report-pager .pager-buttons .material-symbols-outlined {
+  font-size: 20px;
+}
+
+/* The user cell copies the details control of the approved table (state 09). */
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+  /* The 24 px details control keeps the 35 px review row after the 7 px inset (R2-D). */
+  margin-block: -4px;
+}
+
+.user-cell .nw {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--cc-radius-chip);
+  color: var(--cc-text-link);
+  text-decoration: none;
+}
+
+.user-link .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.user-link:hover {
+  background: var(--cc-surface-hover);
+}
+
+.user-link:focus-visible {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 1px;
+}
+
+/* The new value reads after the arrow that the approved table draws. */
+.val-new {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-space-xs);
+  min-width: 0;
+}
+
+.val-new .material-symbols-outlined {
+  flex: none;
+  color: var(--cc-text-secondary);
+  font-size: 16px;
+}
+
+.not-set {
+  color: var(--cc-text-secondary);
+  font-style: italic;
+}
+
+/* A stale preview keeps the device note: a warning glyph before the sentence. */
+.meta-line.stale {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-space-xs);
+}
+
+.meta-line.stale .material-symbols-outlined {
+  flex: none;
+  color: var(--cc-status-warning-text);
+  font-size: 16px;
+}
+
+/* A page read that failed: the sentence and its Retry stay inside the panel. */
+.report-error {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cc-space-md);
+  min-height: 0;
+  padding: var(--cc-space-xl);
+}
+
+.report-error p {
+  margin: 0;
+  max-width: none;
+  color: var(--cc-status-error-text);
+}
+
+/* The counts of the one job in the jobs band (composition 12). The one job takes the
+   full band row, not one track of the device two-job grid. */
+.job-items:has(> .job-item:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.job-item:only-child {
+  /* The approved single-job track: 64 px job, 200 px action, 200 px chip, the rest
+     for the counts (composition 12). */
+  grid-template-columns: 64px 200px 200px minmax(0, 1fr);
+  border-inline-start: 0;
+}
+
+.job-counts {
+  color: var(--cc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The wait text takes programmatic focus as the stable anchor (R1-G). */
+.export-state:focus {
+  outline: none;
+}

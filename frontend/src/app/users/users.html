@@ -216,9 +216,44 @@
             }
           </button>
         </mat-menu>
+        @if (canSetAttributes()) {
+        <button
+          mat-stroked-button
+          type="button"
+          #bulkButton
+          [matMenuTriggerFor]="bulkMenu"
+          [disabled]="selectedCount() === 0"
+          [attr.aria-describedby]="selectedCount() === 0 ? 'bulk-note' : null"
+          (menuOpened)="bulkMenuOpen.set(true)"
+          (menuClosed)="bulkMenuOpen.set(false)"
+        >
+          {{ BULK_ACTIONS_LABEL }}
+          <span
+            class="material-symbols-outlined dropdown-icon"
+            iconPositionEnd
+            aria-hidden="true"
+            [class.dropdown-icon-open]="bulkMenuOpen()"
+            >arrow_drop_down</span
+          >
+        </button>
+        <mat-menu
+          #bulkMenu="matMenu"
+          xPosition="before"
+          class="users-toolbar-menu"
+          aria-label="Bulk Actions"
+        >
+          <button mat-menu-item type="button" (click)="openSetAttributes()">
+            {{ BULK_SET_ATTRIBUTES_LABEL }}
+          </button>
+        </mat-menu>
+        }
       </div>
     </div>
-    @if (store.refreshing()) {
+    @if (canSetAttributes() && selectedCount() === 0) {
+    <div class="action-note">
+      <p id="bulk-note">{{ BULK_SELECT_NOTE }}</p>
+    </div>
+    } @if (store.refreshing()) {
     <p class="visually-hidden" role="status">Refreshing user directory.</p>
     }
 
@@ -263,4 +298,16 @@
     <app-user-attribute-categories />
     }
   </mat-tab-nav-panel>
+
+  @if (bulkOpen()) {
+  <app-user-attribute-bulk-dialog
+    [selection]="bulkSelection()"
+    [selected]="selectedCount()"
+    [categories]="bulkCategories()"
+    [categoriesLoading]="store.categoriesLoading()"
+    [categoriesError]="store.categoriesError()"
+    (categoriesRetry)="store.loadCategories()"
+    (closed)="closeBulk()"
+  />
+  }
 </div>
