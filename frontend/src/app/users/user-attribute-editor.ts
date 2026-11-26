@@ -449,8 +449,13 @@ export class UserAttributeEditor implements OnInit {
     this.pendingNames.set(attributeNames);
     this.message.set('');
     // Record the frozen identity before the first send. A form that opens while this answer
-    // is in flight waits for the one save instead of preparing a second preview (R3-A).
-    this.confirmations.begin(this.subjectUserId, preview, attributeNames);
+    // is in flight waits for the one save instead of preparing a second preview (R3-A). The
+    // returned owner binds the late answer to the person who submitted it.
+    const submittedBy = this.confirmations.begin(
+      this.subjectUserId,
+      preview,
+      attributeNames,
+    );
     this.step.set('confirming');
     const receipt = await this.flow.confirm(
       preview.previewId,
@@ -460,6 +465,7 @@ export class UserAttributeEditor implements OnInit {
       // The answer may have created the job. Keep the preview, its digest, and the submitted
       // names until a receipt answers this same confirmation (R2-B).
       this.confirmations.uncertain(
+        submittedBy,
         this.subjectUserId,
         preview,
         attributeNames,
@@ -475,6 +481,7 @@ export class UserAttributeEditor implements OnInit {
       // A definite refusal releases the preview identity. A form that reopens after this
       // answer shows the sentence and its editors again (R3-A).
       this.confirmations.refuse(
+        submittedBy,
         this.subjectUserId,
         preview,
         attributeNames,
@@ -491,6 +498,7 @@ export class UserAttributeEditor implements OnInit {
     // clears, so a destroyed editor loses neither the job nor the card that owns it (R3-B).
     const displayId = receipt.value.displayId;
     this.confirmations.accept(
+      submittedBy,
       this.subjectUserId,
       preview,
       attributeNames,

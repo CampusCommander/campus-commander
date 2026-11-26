@@ -93,18 +93,26 @@ describe('the attribute confirmation store', () => {
     const store = pageStore();
     const edits = [edit('1100000000000000001', 11)];
     store.retainEdits(previewId, edits);
-    store.begin('grid:tab', preview(), ['Grade level']);
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
     store.uncertain(
+      submittedBy,
       'grid:tab',
       preview(),
       ['Grade level'],
       'The answer is unknown.',
     );
     expect(store.pending('grid:tab')?.edits).toEqual(edits);
-    store.accept('grid:tab', preview(), ['Grade level'], 'UAT-014');
+    store.accept(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'UAT-014',
+    );
     expect(store.pending('grid:tab')?.edits).toEqual(edits);
     // A definite refusal rewrites the same frozen list.
     store.refuse(
+      submittedBy,
       'grid:tab',
       preview(),
       ['Grade level'],
@@ -117,17 +125,29 @@ describe('the attribute confirmation store', () => {
     const store = pageStore();
     const edits = [edit('1100000000000000001', 11)];
     store.retainEdits(previewId, edits);
-    store.begin('grid:tab', preview(), ['Grade level']);
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
     store.discardEdits(previewId);
-    store.accept('grid:tab', preview(), ['Grade level'], 'UAT-014');
+    store.accept(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'UAT-014',
+    );
     expect(store.pending('grid:tab')?.edits).toEqual(edits);
   });
 
   it('drops the entry and the handoff when a receipt resolves (R3-B)', () => {
     const store = pageStore();
     store.retainEdits(previewId, [edit('1100000000000000001', 11)]);
-    store.begin('grid:tab', preview(), ['Grade level']);
-    store.accept('grid:tab', preview(), ['Grade level'], 'UAT-014');
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
+    store.accept(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'UAT-014',
+    );
     store.resolveReceipt('UAT-014');
     expect(store.pending('grid:tab')).toBeNull();
     expect(store.editsFor(previewId)).toEqual([]);
@@ -149,8 +169,9 @@ describe('the attribute confirmation store', () => {
     const store = pageStore();
     const edits = [edit('1100000000000000001', 11)];
     store.retainEdits(previewId, edits);
-    store.begin('grid:tab', preview(), ['Grade level']);
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
     store.uncertain(
+      submittedBy,
       'grid:tab',
       preview(),
       ['Grade level'],
@@ -171,8 +192,11 @@ describe('the attribute confirmation store', () => {
 
   it('stores an accepted receipt until its job answers (K27)', () => {
     const store = pageStore();
-    store.begin('bulk-selection:users:tab', preview(), ['Homeroom']);
+    const submittedBy = store.begin('bulk-selection:users:tab', preview(), [
+      'Homeroom',
+    ]);
     store.accept(
+      submittedBy,
       'bulk-selection:users:tab',
       preview(),
       ['Homeroom'],
@@ -203,6 +227,22 @@ describe('the attribute confirmation store', () => {
     const store = pageStore();
     expect(store.pending('grid:tab')).toBeNull();
     expect(sessionStorage.getItem(keyOf('grid:tab'))).toBeNull();
+  });
+
+  it('clears a record that has valid JSON and an invalid contract field', () => {
+    const store = pageStore();
+    store.begin('grid:tab', preview(), ['Grade level']);
+    const key = keyOf('grid:tab');
+    // Valid JSON that the contract refuses: a preview ID that is not a UUID.
+    const record = JSON.parse(sessionStorage.getItem(key)!) as {
+      preview: { previewId: string };
+    };
+    record.preview.previewId = 'not-a-uuid';
+    sessionStorage.setItem(key, JSON.stringify(record));
+
+    const reloaded = pageStore();
+    expect(reloaded.pending('grid:tab')).toBeNull();
+    expect(sessionStorage.getItem(key)).toBeNull();
   });
 
   it('never loads a record whose scope is another user', () => {
@@ -237,10 +277,117 @@ describe('the attribute confirmation store', () => {
     expect(store.pending('grid:tab')?.preview.previewId).toBe(previewId);
   });
 
-  it('removes the stored record on a definite refusal', () => {
+  it('clears a record that another person submitted under this person prefix', () => {
     const store = pageStore();
     store.begin('grid:tab', preview(), ['Grade level']);
+    // The first person's record sits under the second person's prefix.
+    sessionStorage.setItem(
+      keyOf('grid:tab', otherPrincipal),
+      sessionStorage.getItem(keyOf('grid:tab'))!,
+    );
+    session.set({ identity: { id: otherPrincipal } });
+
+    const other = pageStore();
+    expect(other.pending('grid:tab')).toBeNull();
+    expect(
+      sessionStorage.getItem(keyOf('grid:tab', otherPrincipal)),
+    ).toBeNull();
+  });
+
+  it('keeps a late answer of the same person after ordinary navigation', () => {
+    const store = pageStore();
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
+    store.uncertain(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'Cannot reach Campus Commander.',
+    );
+
+    // The same person reloads or reopens the form: the retained identity answers.
+    const reloaded = pageStore();
+    expect(reloaded.pending('grid:tab')).toMatchObject({
+      submittedBy: principal,
+      phase: 'uncertain',
+      message: 'Cannot reach Campus Commander.',
+    });
+  });
+
+  it('never writes an answer of another person under the person who signed in', () => {
+    const store = pageStore();
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
+    // Another person signs in before the answer arrives.
+    session.set({ identity: { id: otherPrincipal } });
+    store.restore();
+    store.uncertain(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'Cannot reach Campus Commander.',
+    );
+
+    expect(store.pending('grid:tab')).toBeNull();
+    expect(
+      sessionStorage.getItem(keyOf('grid:tab', otherPrincipal)),
+    ).toBeNull();
+    // The first person's own frozen record waits under that person's prefix.
+    expect(sessionStorage.getItem(keyOf('grid:tab'))).not.toBeNull();
+    expect(pageStore().pending('grid:tab')).toBeNull();
+  });
+
+  it('never replaces the signed-in person confirmation with a late answer of another person', () => {
+    const store = pageStore();
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
+    session.set({ identity: { id: otherPrincipal } });
+    store.restore();
+    // The second person starts a confirmation of the same scope.
+    store.begin('grid:tab', preview(secondPreviewId), ['Homeroom']);
+    store.accept(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'UAT-014',
+    );
+
+    expect(store.pending('grid:tab')).toMatchObject({
+      userId: 'grid:tab',
+      preview: { previewId: secondPreviewId },
+      phase: 'confirming',
+    });
+    expect(pageStore().pending('grid:tab')?.preview.previewId).toBe(
+      secondPreviewId,
+    );
+  });
+
+  it('releases its own person record when a definite answer arrives after a sign-in', () => {
+    const store = pageStore();
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
+    session.set({ identity: { id: otherPrincipal } });
+    store.restore();
     store.refuse(
+      submittedBy,
+      'grid:tab',
+      preview(),
+      ['Grade level'],
+      'The preview changed.',
+    );
+
+    // The definite answer removes the first person's record and enters no other one.
+    expect(sessionStorage.getItem(keyOf('grid:tab'))).toBeNull();
+    expect(store.pending('grid:tab')).toBeNull();
+    expect(
+      sessionStorage.getItem(keyOf('grid:tab', otherPrincipal)),
+    ).toBeNull();
+  });
+
+  it('removes the stored record on a definite refusal', () => {
+    const store = pageStore();
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
+    store.refuse(
+      submittedBy,
       'grid:tab',
       preview(),
       ['Grade level'],
@@ -255,8 +402,9 @@ describe('the attribute confirmation store', () => {
 
   it('removes the stored record when a receipt answers the confirmation', () => {
     const store = pageStore();
-    store.begin('grid:tab', preview(), ['Grade level']);
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
     store.uncertain(
+      submittedBy,
       'grid:tab',
       preview(),
       ['Grade level'],
@@ -272,9 +420,10 @@ describe('the attribute confirmation store', () => {
       throw new Error('QuotaExceededError');
     });
     const store = pageStore();
-    store.begin('grid:tab', preview(), ['Grade level']);
+    const submittedBy = store.begin('grid:tab', preview(), ['Grade level']);
     expect(store.pending('grid:tab')?.phase).toBe('confirming');
     store.uncertain(
+      submittedBy,
       'grid:tab',
       preview(),
       ['Grade level'],

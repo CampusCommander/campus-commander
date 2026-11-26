@@ -1109,6 +1109,7 @@ describe('the Custom attributes card form', () => {
       `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${user.userId}`,
       JSON.stringify({
         userId: user.userId,
+        submittedBy: principal,
         preview: stored,
         attributeNames: ['Grade level'],
         edits: [
@@ -1138,6 +1139,73 @@ describe('the Custom attributes card form', () => {
     expect(element.querySelector('.attribute-form')).toBeNull();
     await vi.waitFor(() => expect(finished()?.displayId).toBe('UAT-015'));
     sessionStorage.clear();
+  });
+
+  /** Mount one save whose answer the test releases after another person signs in. */
+  async function heldSave(first: string, second: string) {
+    sessionStorage.clear();
+    let signedIn: { identity: { id: string } } | null = {
+      identity: { id: first },
+    };
+    const session = () => signedIn;
+    const held = deferred<TestConfirmAnswer>();
+    const inFlight = flow({ confirm: vi.fn(() => held.promise) });
+    const mounted = await setup({ session, flow: inFlight });
+    mounted.type('attr:Student.grade_level', '11');
+    mounted.button('Save changes')?.click();
+    await vi.waitFor(() => expect(inFlight.confirm).toHaveBeenCalledTimes(1));
+    // The form leaves the page before the answer arrives.
+    mounted.fixture.destroy();
+    signedIn = { identity: { id: second } };
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    // The store follows the person who signed in.
+    store.restore();
+    return { held, store };
+  }
+
+  it('never retains a late uncertain answer under the person who signed in next (K25)', async () => {
+    const first = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const second = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const { held, store } = await heldSave(first, second);
+    const uncertain = vi.spyOn(store, 'uncertain');
+    held.release({ ok: false, message: UNCERTAIN_TEXT, uncertain: true });
+    await vi.waitFor(() => expect(uncertain).toHaveBeenCalled());
+
+    expect(store.pending(user.userId)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${user.userId}`,
+      ),
+    ).toBeNull();
+    // A fresh store of the second person restores nothing.
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(user.userId)).toBeNull();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('never retains a late accepted receipt under the person who signed in next (K25)', async () => {
+    const first = 'abababab-abab-4bab-8bab-abababababab';
+    const second = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
+    const { held, store } = await heldSave(first, second);
+    const accept = vi.spyOn(store, 'accept');
+    held.release(acceptedReceipt(1));
+    await vi.waitFor(() => expect(accept).toHaveBeenCalled());
+
+    expect(store.pending(user.userId)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${user.userId}`,
+      ),
+    ).toBeNull();
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(user.userId)).toBeNull();
+    sessionStorage.clear();
+    vi.restoreAllMocks();
   });
 
   it('observes an accepted answer that lands on the reopened form (R3-B)', async () => {

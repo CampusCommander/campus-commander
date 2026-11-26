@@ -871,6 +871,7 @@ describe('the Set attributes dialog', () => {
       `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${scope}`,
       JSON.stringify({
         userId: scope,
+        submittedBy: principal,
         preview: stored,
         attributeNames: ['Programs'],
         edits: [],
@@ -888,6 +889,75 @@ describe('the Set attributes dialog', () => {
     );
     expect(bulk.prepare).not.toHaveBeenCalled();
     expect(edit.waitForJob).toHaveBeenCalled();
+  });
+
+  /** Send one held confirmation, then close the dialog and sign in another person. */
+  async function heldConfirmation(first: string, second: string) {
+    let signedIn: { identity: { id: string } } | null = {
+      identity: { id: first },
+    };
+    const session = () => signedIn;
+    const held = deferred<unknown>();
+    edit.confirm.mockReturnValue(held.promise);
+    build(null, categories, '', session);
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await flush();
+    // The dialog closes before the answer arrives, and another person signs in.
+    fixture.destroy();
+    signedIn = { identity: { id: second } };
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    store.restore();
+    return { held, store };
+  }
+
+  it('never retains a late uncertain answer under the person who signed in next (K27)', async () => {
+    const first = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const second = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const { held, store } = await heldConfirmation(first, second);
+    const uncertain = vi.spyOn(store, 'uncertain');
+    held.resolve({
+      ok: false,
+      message: 'The network failed.',
+      uncertain: true,
+    });
+    await vi.waitFor(() => expect(uncertain).toHaveBeenCalled());
+
+    const scope = `bulk-selection:users:${tabId}`;
+    expect(store.pending(scope)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${scope}`,
+      ),
+    ).toBeNull();
+    // A fresh store of the second person restores nothing.
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(scope)).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('never retains a late accepted receipt under the person who signed in next (K27)', async () => {
+    const first = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const second = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const { held, store } = await heldConfirmation(first, second);
+    const accept = vi.spyOn(store, 'accept');
+    held.resolve(receipt);
+    await vi.waitFor(() => expect(accept).toHaveBeenCalled());
+
+    const scope = `bulk-selection:users:${tabId}`;
+    expect(store.pending(scope)).toBeNull();
+    expect(
+      sessionStorage.getItem(
+        `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${second}.${scope}`,
+      ),
+    ).toBeNull();
+    const fresh = TestBed.runInInjectionContext(
+      () => new UserAttributeConfirmationStore(),
+    );
+    expect(fresh.pending(scope)).toBeNull();
+    vi.restoreAllMocks();
   });
 
   it('clears a reopened busy review after a definite refusal (R2-A)', async () => {

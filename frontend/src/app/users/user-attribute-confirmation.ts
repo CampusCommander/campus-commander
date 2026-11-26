@@ -26,6 +26,13 @@ export type AttributeConfirmationPhase =
   | 'refused';
 
 /**
+ * The person who submitted one confirmation. Every later write of that confirmation
+ * carries this owner, so an answer that arrives after another person signs in this tab
+ * never enters the new person's records (K25 to K27).
+ */
+export type AttributeConfirmationOwner = string | null;
+
+/**
  * One confirmation of the card form. The editor dies on Cancel, on Next user, and on
  * Back, so this root store keeps the preview identity, the submitted names, and the
  * phase until a receipt settles the save (R2-B, R3-A, R3-B).
@@ -33,6 +40,8 @@ export type AttributeConfirmationPhase =
 export interface PendingAttributeConfirmation {
   /** The user whose card opened the save. */
   userId: string;
+  /** The person who submitted the confirmation. A record of another person never loads. */
+  submittedBy: string | null;
   /** The preview whose confirmation the card replays. */
   preview: UserAttributePreview;
   /** The attribute names of the confirmation, for the saved line. */
@@ -58,6 +67,11 @@ export interface PendingAttributeConfirmation {
 const pendingAttributeConfirmationSchema = z.strictObject({
   /** The scope key of the confirmation: a user ID, or the grid or selection key. */
   userId: z.string().min(1).max(1024),
+  /**
+   * The person who submitted the confirmation. The storage key already carries the
+   * person's prefix, so this field refuses a record that another person copied there.
+   */
+  submittedBy: z.uuid(),
   preview: userAttributePreviewSchema,
   attributeNames: z.array(z.string().max(4096)).max(2500),
   edits: z.array(userAttributeEditSchema).max(2500),
@@ -92,13 +106,13 @@ export class UserAttributeConfirmationStore {
    */
   private readonly restoredScopes = new Set<string>();
   /** The person whose entries this store holds. */
-  private principal: string | null = this.auth.session()?.identity.id ?? null;
+  private principal: string | null = this.principalNow();
 
   constructor() {
     this.restore();
     // Another person signs in in this tab: the earlier person's entries never survive.
     effect(() => {
-      const principal = this.auth.session()?.identity.id ?? null;
+      const principal = this.principalNow();
       if (principal === this.principal) return;
       untracked(() => this.restore());
     });
@@ -146,14 +160,22 @@ export class UserAttributeConfirmationStore {
     return false;
   }
 
-  /** Record the frozen identity before its first send (R3-A). */
+  /**
+   * Record the frozen identity before its first send (R3-A). The answer returns the person
+   * who submitted it, and every later write carries that owner. A late answer of another
+   * person therefore never enters this tab under the person who signed in after it.
+   */
   begin(
     userId: string,
     preview: UserAttributePreview,
     attributeNames: readonly string[],
-  ): void {
-    this.write({
+  ): AttributeConfirmationOwner {
+    // A sign-in that the effect has not seen yet clears the earlier person's memory first.
+    this.restore();
+    const submittedBy = this.principal;
+    this.write(submittedBy, {
       userId,
+      submittedBy,
       preview,
       attributeNames: [...attributeNames],
       edits: this.frozenEdits(userId, preview.previewId),
@@ -163,17 +185,20 @@ export class UserAttributeConfirmationStore {
     });
     // The entry now owns the frozen list, so the handoff copy has no other reader (R3-B).
     this.editLists.delete(preview.previewId);
+    return submittedBy;
   }
 
   /** Keep the same preview, digest, and names after an answer that may have created the job. */
   uncertain(
+    submittedBy: AttributeConfirmationOwner,
     userId: string,
     preview: UserAttributePreview,
     attributeNames: readonly string[],
     message: string,
   ): void {
-    this.write({
+    this.write(submittedBy, {
       userId,
+      submittedBy,
       preview,
       attributeNames: [...attributeNames],
       edits: this.frozenEdits(userId, preview.previewId),
@@ -185,13 +210,15 @@ export class UserAttributeConfirmationStore {
 
   /** Hand the accepted receipt to the owner that survives this editor (R3-B). */
   accept(
+    submittedBy: AttributeConfirmationOwner,
     userId: string,
     preview: UserAttributePreview,
     attributeNames: readonly string[],
     displayId: string,
   ): void {
-    this.write({
+    this.write(submittedBy, {
       userId,
+      submittedBy,
       preview,
       attributeNames: [...attributeNames],
       edits: this.frozenEdits(userId, preview.previewId),
@@ -203,13 +230,15 @@ export class UserAttributeConfirmationStore {
 
   /** A definite refusal releases the identity, and its sentence waits for the next form. */
   refuse(
+    submittedBy: AttributeConfirmationOwner,
     userId: string,
     preview: UserAttributePreview,
     attributeNames: readonly string[],
     message: string,
   ): void {
-    this.write({
+    this.write(submittedBy, {
       userId,
+      submittedBy,
       preview,
       attributeNames: [...attributeNames],
       edits: this.frozenEdits(userId, preview.previewId),
@@ -221,6 +250,8 @@ export class UserAttributeConfirmationStore {
 
   /** A receipt answered the confirmation, so a later save may prepare a new preview. */
   resolve(previewId: string): void {
+    // A sign-in that the effect has not seen yet leaves the wrong person's entries here.
+    this.restore();
     this.editLists.delete(previewId);
     const entries = new Map(this.entries());
     let changed = false;
@@ -231,7 +262,10 @@ export class UserAttributeConfirmationStore {
       changed = true;
     }
     if (changed) this.entries.set(entries);
-    this.removeStored((entry) => entry.preview.previewId === previewId);
+    this.removeStored(
+      this.principal,
+      (entry) => entry.preview.previewId === previewId,
+    );
   }
 
   /**
@@ -240,6 +274,7 @@ export class UserAttributeConfirmationStore {
    * (R4-A). A different phase keeps its own rule.
    */
   resolveReceipt(displayId: string): void {
+    this.restore();
     const entries = new Map(this.entries());
     let changed = false;
     for (const [userId, entry] of entries) {
@@ -251,13 +286,14 @@ export class UserAttributeConfirmationStore {
     }
     if (changed) this.entries.set(entries);
     this.removeStored(
+      this.principal,
       (entry) => entry.phase === 'accepted' && entry.displayId === displayId,
     );
   }
 
   /** Load the retained confirmations of this person after a page reload. */
   restore(): void {
-    const principal = this.auth.session()?.identity.id ?? null;
+    const principal = this.principalNow();
     if (principal !== this.principal) {
       // Another person owns this tab now. No entry of the earlier person survives.
       this.entries.set(new Map());
@@ -277,6 +313,11 @@ export class UserAttributeConfirmationStore {
     if (changed) this.entries.set(entries);
   }
 
+  /** The person who is signed in now, or null before the session arrives. */
+  private principalNow(): string | null {
+    return this.auth.session()?.identity.id ?? null;
+  }
+
   /**
    * The frozen bindings of one write. The first write takes the retained handoff list, and
    * a later write of the same confirmation keeps the list in its own entry (R3-B). That
@@ -291,7 +332,25 @@ export class UserAttributeConfirmationStore {
     return list.map((edit) => ({ ...edit, values: [...edit.values] }));
   }
 
-  private write(entry: PendingAttributeConfirmation): void {
+  /**
+   * Record one update under the person who submitted it. A sign-in that the effect has not
+   * seen yet clears the earlier person's memory first, so an answer of another person never
+   * enters this tab under the current person or replaces that person's confirmation.
+   */
+  private write(
+    submittedBy: AttributeConfirmationOwner,
+    entry: PendingAttributeConfirmation,
+  ): void {
+    this.restore();
+    if (submittedBy !== this.principal) {
+      // A definite answer still releases the record that the same person stored.
+      if (entry.phase === 'refused')
+        this.removeStored(
+          submittedBy,
+          (candidate) => candidate.userId === entry.userId,
+        );
+      return;
+    }
     const entries = new Map(this.entries());
     entries.set(entry.userId, entry);
     this.entries.set(entries);
@@ -299,13 +358,19 @@ export class UserAttributeConfirmationStore {
     // A definite refusal removes the record. The entry stays in memory until its next
     // owner shows the sentence, as it did before the tab kept any record.
     if (entry.phase === 'refused')
-      this.removeStored((candidate) => candidate.userId === entry.userId);
-    else this.retain(entry);
+      this.removeStored(
+        submittedBy,
+        (candidate) => candidate.userId === entry.userId,
+      );
+    else this.retain(submittedBy, entry);
   }
 
-  /** Keep one confirmation under this person's prefix in this tab. */
-  private retain(entry: PendingAttributeConfirmation): void {
-    const key = this.key(entry.userId);
+  /** Keep one confirmation under its submitting person's prefix in this tab. */
+  private retain(
+    submittedBy: string | null,
+    entry: PendingAttributeConfirmation,
+  ): void {
+    const key = this.key(submittedBy, entry.userId);
     if (!key) return;
     try {
       sessionStorage.setItem(key, JSON.stringify(entry));
@@ -316,10 +381,11 @@ export class UserAttributeConfirmationStore {
 
   /** Remove the stored record of one scope, when it holds one. */
   private removeStored(
+    principal: string | null,
     match: (entry: PendingAttributeConfirmation) => boolean,
   ): void {
-    if (!this.principal) return;
-    for (const { key, entry } of this.stored(this.principal)) {
+    if (!principal) return;
+    for (const { key, entry } of this.stored(principal)) {
       if (!match(entry)) continue;
       try {
         sessionStorage.removeItem(key);
@@ -330,9 +396,9 @@ export class UserAttributeConfirmationStore {
   }
 
   /** One record for each person and scope. */
-  private key(scope: string): string | null {
-    return this.principal
-      ? `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${this.principal}.${scope}`
+  private key(principal: string | null, scope: string): string | null {
+    return principal
+      ? `${USER_ATTRIBUTE_CONFIRMATION_PREFIX}${principal}.${scope}`
       : null;
   }
 
@@ -358,19 +424,20 @@ export class UserAttributeConfirmationStore {
     }[] = [];
     for (const key of keys) {
       const scope = key.slice(prefix.length);
-      const entry = this.read(key, scope);
+      const entry = this.read(key, scope, principal);
       if (entry) records.push({ key, scope, entry });
     }
     return records;
   }
 
   /**
-   * A malformed record cannot drive a replay, so it clears. A record of another scope
-   * in this person's prefix and a refusal never load either.
+   * A malformed record cannot drive a replay, so it clears. A record of another scope or
+   * another person in this prefix, and a refusal never load either.
    */
   private read(
     key: string,
     scope: string,
+    principal: string,
   ): PendingAttributeConfirmation | null {
     try {
       const raw = sessionStorage.getItem(key);
@@ -381,6 +448,7 @@ export class UserAttributeConfirmationStore {
       if (
         parsed.success &&
         parsed.data.userId === scope &&
+        parsed.data.submittedBy === principal &&
         parsed.data.phase !== 'refused'
       )
         return parsed.data;

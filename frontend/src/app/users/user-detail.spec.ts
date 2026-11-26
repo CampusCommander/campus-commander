@@ -1202,7 +1202,12 @@ describe('the user details page', () => {
       flow: card,
     });
     // The editor that accepted this receipt died before its job settled (R3-B).
-    TestBed.inject(UserAttributeConfirmationStore).accept(
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    const submittedBy = confirmations.begin(user().userId, cardPreview, [
+      'Grade level',
+    ]);
+    confirmations.accept(
+      submittedBy,
       user().userId,
       cardPreview,
       ['Grade level'],
