@@ -221,7 +221,6 @@ export class UsersPage implements OnInit, OnDestroy {
   protected readonly saving = signal(false);
   protected readonly reviewOpen = signal(false);
   protected readonly prepared = signal<UserAttributePreview | null>(null);
-  private submitted: UserAttributeEdit[] = [];
   private readonly grid = viewChild(UserGrid);
   private readonly saveButton =
     viewChild<ElementRef<HTMLButtonElement>>('saveChangesButton');
@@ -371,7 +370,6 @@ export class UsersPage implements OnInit, OnDestroy {
   private async runSave(): Promise<void> {
     const edits = this.draft.edits();
     if (!edits.length) return;
-    this.submitted = edits;
     this.saving.set(true);
     this.draft.clearRefusal();
     const answer = await this.editFlow.prepare(edits);
@@ -382,11 +380,15 @@ export class UsersPage implements OnInit, OnDestroy {
       return;
     }
     const preview = answer.value;
+    // The frozen edit list travels with the preview, so recovery compares against this
+    // list and the one-step decision counts what Save actually sent (R2-B, R2-E).
+    this.confirmations.retainEdits(preview.previewId, edits);
     this.prepared.set(preview);
-    // One change confirms at once (owner direction, 2026-10-23, design K26). A single
-    // conflict or unchanged row reads its frozen row first.
-    if (isSinglePreview(preview)) {
-      await this.confirmPrepared(preview);
+    // One pending change confirms at once when the preview reads one eligible row
+    // (owner direction, 2026-10-23, design K26). A conflict or unchanged answer still
+    // reads its frozen row first, so a single conflict blocks Save (acceptance 3).
+    if (edits.length === 1 && isSinglePreview(preview)) {
+      await this.confirmPrepared(preview, edits);
       return;
     }
     // A failed target read keeps the draft and names the answer (R1-J). The grid never
@@ -403,19 +405,28 @@ export class UsersPage implements OnInit, OnDestroy {
     const unchanged = this.draft.applyPreview(targets.value, edits);
     // An unchanged row holds the preview's current value, so read the on-screen row.
     if (unchanged.length) void this.store.refreshHeldRows(unchanged);
+    // A single edit that the preview did not read as one eligible row follows that
+    // answer: a conflict blocks Save and an unchanged row leaves the draft.
+    if (edits.length === 1) return;
     // Two or more changes open the Set attributes dialog at Review (design K26). The
     // dialog shows a conflict row, and the grid's Save stays disabled afterwards (R1-C).
-    if (edits.length >= 2 && (preview.eligible > 0 || preview.conflicts > 0)) {
+    if (preview.eligible > 0 || preview.conflicts > 0) {
       this.reviewOpen.set(true);
     }
   }
 
   /** Confirm one prepared preview and hand its receipt to the page. */
-  private async confirmPrepared(preview: UserAttributePreview): Promise<void> {
+  private async confirmPrepared(
+    preview: UserAttributePreview,
+    edits: readonly UserAttributeEdit[],
+    names: readonly string[] = this.attributeNamesOf(edits),
+  ): Promise<void> {
     if (this.saving()) return;
     this.saving.set(true);
     this.draft.clearRefusal();
-    const names = this.attributeNamesOf(this.submitted);
+    // An earlier send may still own an unknown acceptance. A later definite refusal must
+    // not release that identity, or the person could prepare a second job (R2-D).
+    const unresolved = this.confirmations.isPending(preview.previewId);
     // Record the frozen identity before the first send (R1-B).
     this.confirmations.begin(this.gridScope, preview, names);
     const answer = await this.editFlow.confirm(
@@ -423,21 +434,24 @@ export class UsersPage implements OnInit, OnDestroy {
       preview.manifestDigest,
     );
     this.saving.set(false);
-    if (this.destroyed) return;
     if (!answer.ok) {
-      if (answer.uncertain) {
+      // Record the answer in the retained owner before any component-local guard. A page
+      // that navigated away cannot strand the save at `confirming` (R2-A).
+      if (answer.uncertain || unresolved) {
         // The answer may have created the job. Keep the preview and its digest, so the
-        // next Save replays this confirmation instead of preparing another (R1-B).
+        // next Save replays this confirmation instead of preparing another (R1-B, R2-D).
         this.confirmations.uncertain(
           this.gridScope,
           preview,
           names,
           answer.message,
         );
+        if (this.destroyed) return;
         this.draft.refuse(answer.message);
         return;
       }
       this.confirmations.refuse(this.gridScope, preview, names, answer.message);
+      if (this.destroyed) return;
       this.confirmations.resolve(preview.previewId);
       this.draft.refuse(answer.message);
       return;
@@ -448,7 +462,8 @@ export class UsersPage implements OnInit, OnDestroy {
       names,
       answer.value.displayId,
     );
-    this.acceptSubmitted(answer.value.displayId);
+    if (this.destroyed) return;
+    this.acceptSubmitted(answer.value.displayId, edits);
   }
 
   /** Bring the page in line with a confirmation that outlived its editor (R1-B). */
@@ -463,9 +478,10 @@ export class UsersPage implements OnInit, OnDestroy {
     }
     if (entry.phase === 'confirming') return;
     if (entry.phase === 'accepted') {
-      // The draft left its entries at acceptance. Observe the owned job and read the rows.
-      void this.observeReceipt(entry.displayId, this.submitted, 'draft');
-      if (!isSinglePreview(entry.preview)) {
+      // The draft left its entries at acceptance. A reopened page applies that same
+      // acceptance from the frozen list, then observes the owned job (R2-A, R2-B).
+      if (entry.displayId) this.acceptSubmitted(entry.displayId, entry.edits);
+      if (entry.edits.length > 1) {
         this.prepared.set(entry.preview);
         this.reviewOpen.set(true);
       }
@@ -473,9 +489,8 @@ export class UsersPage implements OnInit, OnDestroy {
     }
     // An uncertain answer may have created the job. Keep the preview and its digest;
     // the person's next Save replays it, and the bar names the answer (R1-B).
-    this.submitted = this.draft.edits();
     this.prepared.set(entry.preview);
-    if (!isSinglePreview(entry.preview)) this.reviewOpen.set(true);
+    if (entry.edits.length > 1) this.reviewOpen.set(true);
   }
 
   /** Retry or resume the save that this tab already sent. */
@@ -488,17 +503,18 @@ export class UsersPage implements OnInit, OnDestroy {
     // A confirmation that is still in flight has its own answer owner.
     if (entry.phase === 'confirming') return;
     if (entry.phase === 'uncertain') {
-      this.submitted = this.draft.edits();
       this.prepared.set(entry.preview);
-      if (isSinglePreview(entry.preview))
-        void this.confirmPrepared(entry.preview);
+      // The frozen list decides the one-step path, not a later draft count (R2-E).
+      if (entry.edits.length <= 1)
+        void this.confirmPrepared(
+          entry.preview,
+          entry.edits,
+          entry.attributeNames,
+        );
       else this.reviewOpen.set(true);
       return;
     }
-    if (entry.displayId) {
-      const edits = this.acceptedJob === entry.displayId ? this.submitted : [];
-      void this.observeReceipt(entry.displayId, edits, 'draft');
-    }
+    if (entry.displayId) this.acceptSubmitted(entry.displayId, entry.edits);
   }
 
   /**
@@ -509,8 +525,7 @@ export class UsersPage implements OnInit, OnDestroy {
     if (this.reviewOpen()) {
       const entry = this.gridConfirmation();
       if (entry?.displayId === displayId) {
-        if (!this.submitted.length) this.submitted = this.draft.edits();
-        this.acceptSubmitted(displayId);
+        this.acceptSubmitted(displayId, entry.edits);
       }
       return;
     }
@@ -519,11 +534,14 @@ export class UsersPage implements OnInit, OnDestroy {
     void this.observeReceipt(displayId, [], 'selection');
   }
 
-  private acceptSubmitted(displayId: string): void {
+  private acceptSubmitted(
+    displayId: string,
+    edits: readonly UserAttributeEdit[],
+  ): void {
     if (this.acceptedJob === displayId) return;
     this.acceptedJob = displayId;
-    this.draft.accept(this.submitted, displayId);
-    void this.observeReceipt(displayId, this.submitted, 'draft');
+    this.draft.accept(edits, displayId);
+    void this.observeReceipt(displayId, edits, 'draft');
   }
 
   /**
@@ -654,11 +672,12 @@ export class UsersPage implements OnInit, OnDestroy {
   }
 }
 
-/** Whether one preview confirms without the review step (design K26). */
+/** Whether one preview reads one eligible row, so one change confirms at once. */
 function isSinglePreview(preview: UserAttributePreview): boolean {
   return (
     preview.attributeChanges === 1 &&
     preview.eligible === 1 &&
-    preview.conflicts === 0
+    preview.conflicts === 0 &&
+    preview.unchanged === 0
   );
 }

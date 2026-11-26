@@ -1,5 +1,8 @@
 import { Injectable, signal } from '@angular/core';
-import type { UserAttributePreview } from '@campus/application-contracts';
+import type {
+  UserAttributeEdit,
+  UserAttributePreview,
+} from '@campus/application-contracts';
 
 /**
  * The point that one confirmation reached at the level that outlives the editor.
@@ -26,6 +29,11 @@ export interface PendingAttributeConfirmation {
   preview: UserAttributePreview;
   /** The attribute names of the confirmation, for the saved line. */
   attributeNames: string[];
+  /**
+   * The frozen edit list that the preview was prepared from (K26). Acceptance and
+   * recovery compare against this list, never against a later draft (R2-B).
+   */
+  edits: UserAttributeEdit[];
   /** The sentence of the latest answer. */
   message: string;
   phase: AttributeConfirmationPhase;
@@ -44,10 +52,31 @@ export class UserAttributeConfirmationStore {
   private readonly entries = signal<
     ReadonlyMap<string, PendingAttributeConfirmation>
   >(new Map());
+  /**
+   * The immutable edit lists by preview ID (K26). The page retains one before it sends
+   * the preview, so every later phase carries it through navigation and recovery.
+   */
+  private readonly editLists = new Map<string, UserAttributeEdit[]>();
 
   /** The retained confirmation of one user, or null. */
   pending(userId: string): PendingAttributeConfirmation | null {
     return this.entries().get(userId) ?? null;
+  }
+
+  /**
+   * Keep the frozen edit list of one prepared preview (K26). A later draft never changes
+   * it, so acceptance removes only the entries that this preview submitted (R2-B).
+   */
+  retainEdits(previewId: string, edits: readonly UserAttributeEdit[]): void {
+    this.editLists.set(
+      previewId,
+      edits.map((edit) => ({ ...edit, values: [...edit.values] })),
+    );
+  }
+
+  /** The retained edit list of one preview, or an empty list. */
+  editsFor(previewId: string): readonly UserAttributeEdit[] {
+    return this.editLists.get(previewId) ?? [];
   }
 
   /** Whether one preview still owns an answer that a new save must not replace. */
@@ -68,6 +97,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
+      edits: [...this.editsFor(preview.previewId)],
       message: '',
       phase: 'confirming',
       displayId: null,
@@ -85,6 +115,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
+      edits: [...this.editsFor(preview.previewId)],
       message,
       phase: 'uncertain',
       displayId: null,
@@ -102,6 +133,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
+      edits: [...this.editsFor(preview.previewId)],
       message: '',
       phase: 'accepted',
       displayId,
@@ -119,6 +151,7 @@ export class UserAttributeConfirmationStore {
       userId,
       preview,
       attributeNames: [...attributeNames],
+      edits: [...this.editsFor(preview.previewId)],
       message,
       phase: 'refused',
       displayId: null,
@@ -127,6 +160,7 @@ export class UserAttributeConfirmationStore {
 
   /** A receipt answered the confirmation, so a later save may prepare a new preview. */
   resolve(previewId: string): void {
+    this.editLists.delete(previewId);
     const entries = new Map(this.entries());
     let changed = false;
     for (const [userId, entry] of entries) {
@@ -148,6 +182,7 @@ export class UserAttributeConfirmationStore {
     for (const [userId, entry] of entries) {
       if (entry.displayId !== displayId || entry.phase !== 'accepted') continue;
       entries.delete(userId);
+      this.editLists.delete(entry.preview.previewId);
       changed = true;
     }
     if (changed) this.entries.set(entries);
