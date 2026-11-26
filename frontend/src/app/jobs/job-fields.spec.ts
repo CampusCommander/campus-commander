@@ -543,6 +543,10 @@ it('lists every job action in the Actions filter', () => {
     'deprovision-devices',
     'export-devices',
     'validate-device-import',
+    'create-category',
+    'edit-category',
+    'delete-category',
+    'set-attributes',
   ]);
   expect(actionLabel('wipe-user-data')).toBe('Wipe user data');
   expect(actionLabel('powerwash-devices')).toBe('Powerwash devices');
@@ -1134,5 +1138,31 @@ describe('progressLines of a validation job', () => {
         ),
       ).toEqual(['48 rows checked', label]);
     }
+  });
+});
+
+describe('scopeLabel of a category and a value job', () => {
+  it('names the category of a category job (S2 sign-off)', () => {
+    const cat = summary({
+      displayId: 'CAT-014',
+      action: 'edit-category',
+      entityType: 'user',
+      scope: { kind: 'devices', deviceCount: 1 },
+      category: { scopeName: 'School Devices' },
+    });
+    expect(scopeLabel(cat)).toBe('School Devices');
+  });
+
+  it('keeps the user count of a value job (UM state 10)', () => {
+    const value = summary({
+      displayId: 'UAT-003',
+      action: 'set-attributes',
+      entityType: 'user',
+      scope: { kind: 'devices', deviceCount: 18 },
+    });
+    expect(scopeLabel(value)).toBe('18 users');
+    expect(
+      scopeLabel({ ...value, scope: { kind: 'devices', deviceCount: 1 } }),
+    ).toBe('1 user');
   });
 });

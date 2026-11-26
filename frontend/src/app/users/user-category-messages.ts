@@ -135,6 +135,29 @@ export const CHANGE_REMOVE_LABEL = 'Remove attribute';
 export const CHANGE_CHANGE_LABEL = 'Change attribute';
 export const CHANGE_RENAME_LABEL = 'Rename category';
 
+/** The tone of one change chip (CA states 05 and 07). */
+export type ChangeChipTone = 'info' | 'success' | 'error';
+
+/**
+ * The chip of one change kind. The dialog and the job page share it, so a chip reads
+ * the same in both. A range change names its own chip (composition choice 8).
+ */
+export function changeChip(kind: 'rename' | 'added' | 'removed' | 'changed'): {
+  label: string;
+  tone: ChangeChipTone;
+} {
+  switch (kind) {
+    case 'added':
+      return { label: CHANGE_ADD_LABEL, tone: 'success' };
+    case 'removed':
+      return { label: CHANGE_REMOVE_LABEL, tone: 'error' };
+    case 'rename':
+      return { label: CHANGE_RENAME_LABEL, tone: 'info' };
+    case 'changed':
+      return { label: CHANGE_CHANGE_LABEL, tone: 'info' };
+  }
+}
+
 /** The phrasing of the effect column for a changed attribute. */
 const PROPERTY_LABELS = {
   displayName: 'display name',

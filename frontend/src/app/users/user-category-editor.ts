@@ -61,11 +61,8 @@ import {
   CATEGORY_CHANGED_TEXT,
   CATEGORY_NAME_HINT,
   CATEGORY_NAME_IN_USE,
-  CHANGE_ADD_LABEL,
-  CHANGE_CHANGE_LABEL,
-  CHANGE_REMOVE_LABEL,
-  CHANGE_RENAME_LABEL,
   CHANGE_SET_RANGE_LABEL,
+  changeChip,
   CHANGES_TABLE_LABEL,
   CLOSING_KEEPS_RUNNING_TEXT,
   COLUMN_ATTRIBUTE,
@@ -1509,8 +1506,7 @@ export class UserCategoryEditor implements OnInit {
       rows.push({
         key: 'rename',
         kind: 'rename',
-        label: CHANGE_RENAME_LABEL,
-        tone: 'info',
+        ...changeChip('rename'),
         attribute: `${this.baseDisplayName()} → ${plan.displayName}`,
         effect: NO_USER_VALUES_CHANGE,
       });
@@ -1531,8 +1527,7 @@ export class UserCategoryEditor implements OnInit {
       return {
         key: `change-${index}`,
         kind: 'added',
-        label: CHANGE_ADD_LABEL,
-        tone: 'success',
+        ...changeChip('added'),
         attribute,
         effect: NO_USER_VALUES_CHANGE,
       };
@@ -1540,8 +1535,7 @@ export class UserCategoryEditor implements OnInit {
       return {
         key: `change-${index}`,
         kind: 'removed',
-        label: CHANGE_REMOVE_LABEL,
-        tone: 'error',
+        ...changeChip('removed'),
         attribute,
         effect: deletesAttributeValuesText(change.holders ?? 0),
       };
@@ -1561,8 +1555,7 @@ export class UserCategoryEditor implements OnInit {
     return {
       key: `change-${index}`,
       kind: 'changed',
-      label: CHANGE_CHANGE_LABEL,
-      tone: 'info',
+      ...changeChip('changed'),
       attribute,
       effect: propertiesText(change.properties),
     };
