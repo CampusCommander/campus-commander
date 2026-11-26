@@ -552,6 +552,7 @@ describe('the Users page', () => {
 });
 
 const previewId = '11111111-1111-4111-8111-111111111111';
+const secondPreviewId = '33333333-3333-4333-8333-333333333333';
 const manifestDigest = 'a'.repeat(64);
 
 function previewAnswer(extra: Record<string, unknown> = {}) {
@@ -926,6 +927,10 @@ describe('the in-grid attribute draft (design K26)', () => {
       fixture.nativeElement.querySelector('.draft-line')?.textContent,
     ).toContain('refused the save');
     expect(fixture.nativeElement.querySelector('.dialog-stub')).toBeNull();
+    // The abandoned preview released its frozen edit list (R3-B).
+    expect(
+      TestBed.inject(UserAttributeConfirmationStore).editsFor(previewId),
+    ).toEqual([]);
   });
 
   it('keeps the accepted receipt while its job does not answer (R1-C)', async () => {
@@ -1014,6 +1019,9 @@ describe('the in-grid attribute draft (design K26)', () => {
     releaseConfirm!(Response.json({ reason: 'unavailable' }, { status: 503 }));
     await flush();
     expect(confirmations.pending(key)?.phase).toBe('uncertain');
+    // The unresolved confirmation still owns its frozen edit list (R3-B).
+    expect(confirmations.pending(key)?.edits).toHaveLength(1);
+    expect(confirmations.editsFor(previewId)).toEqual([]);
 
     const second = render();
     await settle(second);
@@ -1227,5 +1235,146 @@ describe('the in-grid attribute draft (design K26)', () => {
       request.mock.calls.filter(([path]) => String(path).endsWith('/confirm')),
     ).toHaveLength(0);
     expect(draft.counts().changes).toBe(1);
+  });
+
+  it('resumes an exhausted accepted receipt on the next Save (R3-A)', async () => {
+    let previewCalls = 0;
+    let confirms = 0;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-previews') {
+        previewCalls += 1;
+        const id = previewCalls === 1 ? previewId : secondPreviewId;
+        return Promise.resolve(Response.json(previewAnswer({ previewId: id })));
+      }
+      if (path.endsWith('/confirm')) {
+        confirms += 1;
+        return Promise.resolve(
+          Response.json({
+            ...receiptAnswer,
+            displayId: confirms === 1 ? 'UAT-014' : 'UAT-015',
+          }),
+        );
+      }
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    const flow = TestBed.inject(UserAttributeEditFlow);
+    type JobAnswer = Awaited<ReturnType<UserAttributeEditFlow['waitForJob']>>;
+    let releaseWait: ((answer: JobAnswer) => void) | null = null;
+    const wait = vi
+      .spyOn(flow, 'waitForJob')
+      .mockImplementationOnce(
+        () =>
+          new Promise<JobAnswer>((resolve) => {
+            releaseWait = resolve;
+          }),
+      )
+      .mockResolvedValue({
+        ok: true,
+        value: { status: 'completed' } as never,
+      });
+    const column = attributeColumn();
+    draft.stageText(userRow(), column, '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await flush();
+    // The effect applied the acceptance while the one reader was in flight.
+    expect(wait).toHaveBeenCalledTimes(1);
+    // The reader exhausts its polling window without a terminal answer.
+    releaseWait!({ ok: false, message: 'The job is still running.' });
+    await settle(fixture);
+    const key = `grid:${store.selectionTab}`;
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(wait).toHaveBeenCalledTimes(1);
+    expect(confirmations.pending(key)?.phase).toBe('accepted');
+    // A later edit remains in the draft while the receipt waits.
+    draft.stageText(userRow(), column, '8');
+    fixture.detectChanges();
+    expect(draft.counts().changes).toBe(1);
+    // Save resumes the same receipt. It prepares no second preview and sends no confirm.
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(wait).toHaveBeenCalledTimes(2);
+    expect(wait.mock.calls[1]?.[0]).toBe('UAT-014');
+    expect(previewCalls).toBe(1);
+    expect(confirms).toBe(1);
+    expect(confirmations.pending(key)).toBeNull();
+    expect(draft.entryFor(userRow().userId, column.id)?.value).toBe('8');
+    // After settlement the later edit saves through a new preview.
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(previewCalls).toBe(2);
+    expect(confirms).toBe(2);
+  });
+
+  it('releases the frozen edit list when Review closes without a confirmation (R3-B)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json(
+          previewAnswer({
+            attributeChanges: 2,
+            selected: 2,
+            eligible: 2,
+          }),
+        ),
+      [`/api/users/attribute-previews/${previewId}/targets`]: () =>
+        Response.json({ targets: [], nextCursor: null }),
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    stageTwo(draft);
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(confirmations.editsFor(previewId)).toHaveLength(2);
+    // Dismiss Review without confirming.
+    (
+      fixture.componentInstance as unknown as { closeReview(): void }
+    ).closeReview();
+    fixture.detectChanges();
+    expect(confirmations.editsFor(previewId)).toEqual([]);
+    expect(confirmations.pending(`grid:${store.selectionTab}`)).toBeNull();
+    // The draft keeps both changes for a later Save.
+    expect(draft.counts().changes).toBe(2);
+  });
+
+  it('releases an unchanged-only preview and leaves the draft (R3-B)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json(
+          previewAnswer({
+            attributeChanges: 0,
+            selected: 1,
+            eligible: 0,
+            unchanged: 1,
+          }),
+        ),
+      [`/api/users/attribute-previews/${previewId}/targets`]: () =>
+        Response.json({
+          targets: [
+            {
+              userId: '1100000000000000001',
+              userName: 'Amara Okafor',
+              primaryEmail: 'amara.okafor@example.org',
+              attribute: 'attr:Student.grade_level',
+              currentValue: 11,
+              newValue: [11],
+              disposition: 'unchanged',
+              observedAt: '2026-11-16T12:00:00.000Z',
+            },
+          ],
+          nextCursor: null,
+        }),
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(draft.entries()).toEqual([]);
+    expect(store.refreshHeldRows).toHaveBeenCalledWith(['1100000000000000001']);
+    expect(
+      TestBed.inject(UserAttributeConfirmationStore).editsFor(previewId),
+    ).toEqual([]);
   });
 });
