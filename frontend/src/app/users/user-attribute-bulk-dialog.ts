@@ -1213,30 +1213,46 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
 
   /** The step heading takes focus after a step change (UI-09). */
   protected focusStep(): void {
-    afterNextRender(() => this.dialogTitle()?.nativeElement.focus(), {
-      injector: this.injector,
-    });
+    afterNextRender(
+      () => {
+        if (this.done) return;
+        this.dialogTitle()?.nativeElement?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   /** The Preparing wait text takes focus before its answer arrives (R1-G). */
   private focusPreparing(): void {
-    afterNextRender(() => this.preparingStatus()?.nativeElement.focus(), {
-      injector: this.injector,
-    });
+    afterNextRender(
+      () => {
+        if (this.done) return;
+        this.preparingStatus()?.nativeElement?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   /** The Review heading takes focus when the review renders (UI-09). */
   private focusReviewTitle(): void {
-    afterNextRender(() => this.reviewTitle()?.nativeElement.focus(), {
-      injector: this.injector,
-    });
+    afterNextRender(
+      () => {
+        if (this.done) return;
+        this.reviewTitle()?.nativeElement?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   /** The creating-job status holds focus while a confirmation is in flight (R1-G). */
   private focusConfirmAnchor(): void {
-    afterNextRender(() => this.confirmingStatus()?.nativeElement.focus(), {
-      injector: this.injector,
-    });
+    afterNextRender(
+      () => {
+        if (this.done) return;
+        this.confirmingStatus()?.nativeElement?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   protected readonly BULK_SET_ATTRIBUTES_LABEL = BULK_SET_ATTRIBUTES_LABEL;

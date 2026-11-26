@@ -248,7 +248,7 @@ export class UsersPage implements OnInit, OnDestroy {
   /** The dialog closed. Focus returns to the Bulk Actions control (UI-09). */
   protected closeBulk(): void {
     this.bulkOpen.set(false);
-    afterNextRender(() => this.bulkButton()?.nativeElement.focus(), {
+    afterNextRender(() => this.bulkButton()?.nativeElement?.focus(), {
       injector: this.injector,
     });
   }
