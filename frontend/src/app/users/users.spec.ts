@@ -15,6 +15,8 @@ import { UsersPage } from './users';
 import { UsersStore } from './users.store';
 import { UserGrid } from './user-grid';
 import { UserAttributeBulkDialog } from './user-attribute-bulk-dialog';
+import { UserAttributeConfirmationStore } from './user-attribute-confirmation';
+import { UserAttributeEditFlow } from './user-attribute-edit-flow';
 import { UserAttributeGridDraft } from './user-attribute-grid-draft';
 import type { UserAttributeColumn } from './user-fields';
 
@@ -29,6 +31,7 @@ class BulkDialogStub {
   readonly categoriesLoading = input(false);
   readonly categoriesError = input('');
   readonly prepared = input<{ previewId: string } | null>(null);
+  readonly confirmationScope = input<string | null>(null);
   readonly closed = output<void>();
   readonly accepted = output<string>();
   readonly categoriesRetry = output<void>();
@@ -164,6 +167,7 @@ function setup(options: {
     jobSettlements: signal({ revision: 0, failed: false }),
     readRowsByIds: vi.fn().mockResolvedValue([]),
     refreshHeldRows: vi.fn().mockResolvedValue(undefined),
+    refreshHeldRowsOnScreen: vi.fn().mockResolvedValue(undefined),
     refreshAll: vi.fn().mockResolvedValue(undefined),
     refreshSelection: vi.fn().mockResolvedValue(undefined),
     refreshDomain: vi.fn().mockResolvedValue(undefined),
@@ -673,6 +677,14 @@ async function settle(fixture: ReturnType<typeof render>): Promise<void> {
   }
 }
 
+/** Let the job of one hidden receipt answer at once, without its one-second poll. */
+function jobSettles(status = 'completed') {
+  const flow = TestBed.inject(UserAttributeEditFlow);
+  return vi
+    .spyOn(flow, 'waitForJob')
+    .mockResolvedValue({ ok: true, value: { status } as never });
+}
+
 describe('the in-grid attribute draft (design K26)', () => {
   beforeEach(() => sessionStorage.clear());
 
@@ -728,6 +740,7 @@ describe('the in-grid attribute draft (design K26)', () => {
         Response.json(receiptAnswer),
     });
     const { draft, store } = page({ sync: ready(), request });
+    const job = jobSettles();
     draft.stageText(userRow(), attributeColumn(), '11');
     const fixture = render();
     const save = button(fixture, 'Save changes') as HTMLButtonElement;
@@ -739,6 +752,7 @@ describe('the in-grid attribute draft (design K26)', () => {
     );
     save.click();
     await settle(fixture);
+    expect(job).toHaveBeenCalled();
     expect(draft.entries()).toEqual([]);
     expect(store.refreshHeldRows).toHaveBeenCalledWith(['1100000000000000001']);
     // One change confirms without the Set attributes dialog.
@@ -809,5 +823,80 @@ describe('the in-grid attribute draft (design K26)', () => {
     await settle(fixture);
     expect(draft.counts().changes).toBe(1);
     expect(fixture.nativeElement.querySelector('.draft-line')).not.toBeNull();
+  });
+
+  it('replays the same preview when a confirmation answer is uncertain (R1-B)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () => Response.json(previewAnswer()),
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        Response.json({ reason: 'unavailable' }, { status: 503 }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    // The second Save replays the frozen preview instead of preparing another one.
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const paths = request.mock.calls.map(([path]) => path);
+    expect(
+      paths.filter((path) => path === '/api/users/attribute-previews'),
+    ).toHaveLength(1);
+    expect(
+      paths.filter(
+        (path) => path === `/api/users/attribute-previews/${previewId}/confirm`,
+      ),
+    ).toHaveLength(2);
+    expect(draft.counts().changes).toBe(1);
+  });
+
+  it('keeps the draft when the target read is refused (R1-J)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json(
+          previewAnswer({
+            attributeChanges: 2,
+            selected: 2,
+            eligible: 2,
+          }),
+        ),
+      [`/api/users/attribute-previews/${previewId}/targets`]: () =>
+        Response.json({ reason: 'unavailable' }, { status: 503 }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    stageTwo(draft);
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(draft.counts().changes).toBe(2);
+    expect(
+      fixture.nativeElement.querySelector('.draft-line')?.textContent,
+    ).toContain('refused the save');
+    expect(fixture.nativeElement.querySelector('.dialog-stub')).toBeNull();
+  });
+
+  it('keeps the accepted receipt while its job does not answer (R1-C)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () => Response.json(previewAnswer()),
+      [`/api/users/attribute-previews/${previewId}/confirm`]: () =>
+        Response.json(receiptAnswer),
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    const flow = TestBed.inject(UserAttributeEditFlow);
+    vi.spyOn(flow, 'waitForJob').mockResolvedValue({
+      ok: false,
+      message: 'The job is still running.',
+    });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(store.refreshHeldRows).not.toHaveBeenCalled();
+    const receipt = TestBed.inject(UserAttributeConfirmationStore).pending(
+      `grid:${store.selectionTab}`,
+    );
+    expect(receipt?.phase).toBe('accepted');
+    expect(receipt?.displayId).toBe('UAT-014');
   });
 });

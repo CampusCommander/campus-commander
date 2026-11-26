@@ -323,4 +323,69 @@ describe('the pending users datasource (design K26)', () => {
       ),
     ).toEqual(['Bo Ellis', 'Zara Okafor']);
   });
+
+  it('ignores an older observation of the same user (R1-I)', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+    ];
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows));
+    const first = pendingRequest(0, 100);
+    source.getRows(first.params);
+    await vi.waitFor(() => expect(first.success).toHaveBeenCalled());
+    source.update([{ ...rows[1]!, recordVersion: rows[1]!.recordVersion + 1 }]);
+    source.update([
+      {
+        ...rows[1]!,
+        fullName: 'Old Name',
+        recordVersion: rows[1]!.recordVersion,
+      },
+    ]);
+    const second = pendingRequest(0, 100);
+    source.getRows(second.params);
+    await vi.waitFor(() => expect(second.success).toHaveBeenCalled());
+    expect(
+      (second.success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.fullName,
+      ),
+    ).toEqual(['Amara Okafor', 'Bo Ellis']);
+  });
+
+  it('keeps only the selected pending rows in Show All Selected (R1-A)', async () => {
+    const rows = [
+      pendingRow('1100000000000000001', 'Amara Okafor'),
+      pendingRow('1100000000000000002', 'Bo Ellis'),
+      pendingRow('1100000000000000003', 'Cara Diaz'),
+    ];
+    const resolve = vi.fn().mockResolvedValue({
+      '1100000000000000001': true,
+      '1100000000000000002': false,
+      '1100000000000000003': true,
+    });
+    const source = pendingUserDatasource(vi.fn().mockResolvedValue(rows), {
+      key: 'tab:1' as never,
+      resolve,
+    });
+    const success = vi.fn();
+    const params = {
+      request: {
+        startRow: 0,
+        endRow: 100,
+        filterModel: undefined,
+        sortModel: [],
+      },
+      // Show All Selected. The pending view keeps the rows that the tab selected.
+      api: { getGridOption: () => true },
+      success,
+      fail: vi.fn(),
+    } as unknown as IServerSideGetRowsParams<UserRow>;
+    source.getRows(params);
+    await vi.waitFor(() => expect(success).toHaveBeenCalled());
+    expect(resolve).toHaveBeenCalledWith(rows.map((row) => row.userId));
+    expect(
+      (success.mock.calls[0][0] as { rowData: UserRow[] }).rowData.map(
+        (row) => row.userId,
+      ),
+    ).toEqual(['1100000000000000001', '1100000000000000003']);
+  });
 });

@@ -349,7 +349,7 @@ describe('the user attribute grid draft', () => {
     const column: UserAttributeColumn = attributeColumn();
     const user = student({ grade_level: 9 });
     draft.stageText(user, column, '11');
-    draft.accept(draft.edits());
+    draft.accept(draft.edits(), 'UAT-500');
     expect(draft.entries()).toEqual([]);
     expect(draft.counts().changes).toBe(0);
     // The row still holds the old value, so the cell draws the submitted value.
@@ -364,7 +364,7 @@ describe('the user attribute grid draft', () => {
     draft.stageText(user, column, '11');
     const edits = draft.edits();
     draft.stageText(user, column, '12');
-    draft.accept(edits);
+    draft.accept(edits, 'UAT-500');
     expect(draft.entryFor(user.userId, column.id)?.value).toBe('12');
     expect(draft.valueFor(user, column)).toBe('12');
   });
@@ -374,7 +374,7 @@ describe('the user attribute grid draft', () => {
     const column: UserAttributeColumn = attributeColumn();
     const user = student({ grade_level: 9 });
     draft.stageText(user, column, '11');
-    draft.accept(draft.edits());
+    draft.accept(draft.edits(), 'UAT-500');
     draft.settleWithRows([student({ grade_level: 11 })]);
     expect(draft.settledUserIds()).toEqual([]);
     expect(draft.valueFor(student({ grade_level: 11 }), column)).toBe('11');
@@ -385,7 +385,7 @@ describe('the user attribute grid draft', () => {
     const column: UserAttributeColumn = attributeColumn();
     const user = student({ grade_level: 9 });
     draft.stageText(user, column, '11');
-    draft.accept(draft.edits());
+    draft.accept(draft.edits(), 'UAT-500');
     draft.settleWithRows([student({ grade_level: 9 })]);
     expect(draft.settledUserIds()).toEqual([user.userId]);
   });
@@ -395,10 +395,121 @@ describe('the user attribute grid draft', () => {
     const column: UserAttributeColumn = attributeColumn();
     const user = student({ grade_level: 9 });
     draft.stageText(user, column, '11');
-    draft.accept(draft.edits());
+    draft.accept(draft.edits(), 'UAT-500');
     draft.dropSettled();
     expect(draft.settledUserIds()).toEqual([]);
     expect(draft.valueFor(user, column)).toBe('9');
+  });
+
+  it('keeps the first baseline when a person edits the same cell again (R1-D)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '11');
+    draft.stageText(user, column, '12');
+    expect(draft.entryFor(user.userId, column.id)?.baseline).toBe(9);
+    expect(draft.baselineFor(user, column)).toBe(9);
+  });
+
+  it('re-baselines a conflict to the value that Google holds (R1-D)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '11');
+    draft.applyPreview(
+      [
+        {
+          userId: user.userId,
+          attribute: column.id,
+          disposition: 'conflict',
+          currentValue: 10,
+        },
+      ] as never,
+      draft.edits(),
+    );
+    expect(draft.entryFor(user.userId, column.id)?.state).toBe('conflict');
+    draft.stageText(user, column, '12');
+    const entry = draft.entryFor(user.userId, column.id)!;
+    expect(entry.state).toBe('pending');
+    expect(entry.baseline).toBe(10);
+    expect(draft.blocked()).toBe(false);
+  });
+
+  it('clears a value as its own operation, not as No (R1-G)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageClear(user, column);
+    expect(draft.edits()[0]).toMatchObject({
+      userId: user.userId,
+      attribute: column.id,
+      mode: 'clear',
+      values: [],
+    });
+    expect(draft.counts().changes).toBe(1);
+    // A clear of a value that Google does not hold is not a change.
+    const unset = row({
+      userId: '1100000000000000002',
+      fullName: 'Aaron Whitfield',
+      customSchemas: { Student: {} },
+    });
+    draft.stageClear(unset, column);
+    expect(draft.entryFor(unset.userId, column.id)).toBeNull();
+  });
+
+  it('names the users of the unchanged rows that a preview read (B section 8.4)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '11');
+    const unchanged = draft.applyPreview(
+      [
+        {
+          userId: user.userId,
+          attribute: column.id,
+          disposition: 'unchanged',
+          currentValue: 11,
+        },
+      ] as never,
+      draft.edits(),
+    );
+    expect(unchanged).toEqual([user.userId]);
+    expect(draft.entries()).toEqual([]);
+  });
+
+  it('settles only the marks of the job that answered (R1-C)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const first = student({ grade_level: 9 });
+    const second = row({
+      userId: '1100000000000000002',
+      fullName: 'Aaron Whitfield',
+      customSchemas: { Student: { grade_level: 9 } },
+    });
+    draft.stageText(first, column, '11');
+    draft.accept(draft.edits(), 'UAT-500');
+    draft.stageText(second, column, '10');
+    draft.accept(draft.edits(), 'UAT-501');
+    expect(draft.settledUserIds()).toEqual([first.userId, second.userId]);
+    draft.settleJob('UAT-500', 'failed');
+    expect(draft.settledUserIds()).toEqual([second.userId]);
+    expect(draft.valueFor(first, column)).toBe('9');
+  });
+
+  it('drops a settled mark when a differing row answers its job (R1-C)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '11');
+    draft.accept(draft.edits(), 'UAT-500');
+    // Before the job answers, a row that still holds the old value keeps the saved value.
+    draft.settleWithRows([student({ grade_level: 9 })]);
+    expect(draft.settledUserIds()).toEqual([user.userId]);
+    // A finished job writes nothing more, so a differing row is the actual value.
+    draft.settleJob('UAT-500', 'saved');
+    draft.settleWithRows([student({ grade_level: 10 })]);
+    expect(draft.settledUserIds()).toEqual([]);
+    expect(draft.valueFor(student({ grade_level: 10 }), column)).toBe('10');
   });
 
   it('reads the row text of a saved cell without the column', () => {

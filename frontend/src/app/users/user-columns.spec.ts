@@ -3,7 +3,7 @@ import type { ColDef, ColGroupDef } from 'ag-grid-community';
 import type { UserAttributeCategory } from '@campus/application-contracts';
 import { UserDetailsCell } from './user-details-cell';
 import { UserNameCell } from './user-name-cell';
-import { userColumnDefs } from './user-columns';
+import { userColumnDefs, attributeColumnsSignature } from './user-columns';
 import { attributeColumns } from './user-fields';
 
 const field = (
@@ -136,5 +136,55 @@ describe('the users grid columns', () => {
     );
     expect(name?.cellRenderer).toBe(UserNameCell);
     expect(name?.cellRendererParams).toEqual({ onOpen });
+  });
+
+  it('keys the editor rebuild on the editor facts, not only the ID (R1-E)', () => {
+    const base = attributeColumns([category]);
+    const same = attributeColumns([category]);
+    const renamed = attributeColumns([
+      {
+        ...category,
+        fields: [
+          { ...category.fields[0]!, displayName: 'Grade' },
+          category.fields[1]!,
+        ],
+      },
+    ]);
+    expect(attributeColumnsSignature(same)).toBe(
+      attributeColumnsSignature(base),
+    );
+    // A category job keeps the ID and can rename the field. The closures must rebuild.
+    expect(attributeColumnsSignature(renamed)).not.toBe(
+      attributeColumnsSignature(base),
+    );
+  });
+
+  it('offers Clear value beside Yes and No (R1-G)', () => {
+    const boolColumns = attributeColumns([
+      {
+        ...category,
+        fields: [field('take_home', 'Take-home approved', 'BOOL')],
+      },
+    ]);
+    const defs = userColumnDefs({
+      attributes: boolColumns,
+      draft: {
+        editable: () => true,
+        value: () => '',
+        entry: () => null,
+        reason: () => '',
+        onRevert: vi.fn(),
+      },
+    }) as (ColDef<never> | ColGroupDef<never>)[];
+    const group = defs.find(
+      (column): column is ColGroupDef<never> =>
+        'children' in column && column.groupId === 'cat:Student',
+    );
+    const editor = group?.children?.find(
+      (column) => (column as ColDef<never>).colId === 'attr:Student.take_home',
+    ) as ColDef<never> | undefined;
+    expect(editor?.cellEditorParams).toEqual({
+      values: ['Yes', 'No', 'Clear value'],
+    });
   });
 });

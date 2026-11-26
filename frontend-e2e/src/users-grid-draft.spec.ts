@@ -631,7 +631,8 @@ async function openUsers(page: Page): Promise<void> {
 
 /** Show the Grade level and Homeroom attribute columns beside the pinned Name. */
 async function showAttributes(page: Page): Promise<void> {
-  await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+  const columns = page.getByRole('tab', { name: 'Columns', exact: true });
+  await columns.click();
   const panel = page.locator('.lgr-columns-tool-panel');
   await expect(panel).toBeVisible();
   // The category read adds the attribute columns after the grid starts.
@@ -639,14 +640,40 @@ async function showAttributes(page: Page): Promise<void> {
   await expect(grade).toBeVisible({ timeout: 15_000 });
   await grade.check();
   await panel.getByRole('checkbox', { name: 'Show Homeroom' }).check();
-  await page
-    .locator('.ag-body-horizontal-scroll-viewport')
-    .evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
+  // The approved UM06 column run: Name, Status, Last sign-in, 2-step verification, Grade
+  // level, Homeroom. The panel hides the other columns, as the approved composition does.
+  for (const label of [
+    'Primary email',
+    'Organization unit',
+    'Created',
+    'Department',
+    'Title',
+  ]) {
+    const box = panel.getByRole('checkbox', { name: `Show ${label}` });
+    if ((await box.count()) && (await box.isChecked())) await box.uncheck();
+  }
+  // The approved pending state shows the right rail, not the open Columns panel (R1-K).
+  await columns.click();
+  await expect(panel).toBeHidden();
   await expect(
     cell(page, 'Aaliyah Brooks', 'attr:Student.grade_level'),
   ).toHaveText('11');
+}
+
+/** The initial row and column position of the approved composition (R1-K). */
+async function resetGridPosition(page: Page): Promise<void> {
+  const horizontal = page.locator('.ag-body-horizontal-scroll-viewport');
+  if (await horizontal.count()) {
+    await horizontal.evaluate((element) => {
+      element.scrollLeft = 0;
+    });
+  }
+  const firstRow = page.getByRole('gridcell', {
+    name: 'Aaliyah Brooks',
+    exact: true,
+  });
+  await firstRow.scrollIntoViewIfNeeded();
+  await expect(firstRow).toBeVisible();
 }
 
 function cell(page: Page, name: string, colId: string) {
@@ -690,8 +717,10 @@ test('reproduces UM state 06: two draft cells and the pending changes bar', asyn
 }) => {
   await openUsers(page);
   await showAttributes(page);
-  await editText(page, 'Aisha Rahman', 'attr:Student.homeroom', '216');
-  await editText(page, 'Alejandro Ruiz', 'attr:Student.grade_level', '11');
+  // The first two rows of the approved composition, so the pending cells and the first
+  // row share the viewport at 1440 x 900 (R1-K).
+  await editText(page, 'Aaliyah Brooks', 'attr:Student.homeroom', '216');
+  await editText(page, 'Aaron Whitfield', 'attr:Student.grade_level', '11');
 
   // The bar of ruling 14: the count line and the three actions.
   await expect(page.locator('#draft-count')).toHaveText(
@@ -707,17 +736,21 @@ test('reproduces UM state 06: two draft cells and the pending changes bar', asyn
     page.getByRole('button', { name: 'Save changes' }),
   ).toBeEnabled();
 
-  const grade = cell(page, 'Alejandro Ruiz', 'attr:Student.grade_level');
-  const homeroom = cell(page, 'Aisha Rahman', 'attr:Student.homeroom');
+  const grade = cell(page, 'Aaron Whitfield', 'attr:Student.grade_level');
+  const homeroom = cell(page, 'Aaliyah Brooks', 'attr:Student.homeroom');
   await expect(grade).toContainText('11');
   await expect(homeroom).toContainText('216');
   await expect(grade).toHaveClass(/user-attribute-draft-pending/);
   await expect(homeroom).toHaveClass(/user-attribute-draft-pending/);
   // DRAFT-02: the cell shows the pending mark and its rollback icon, not color alone.
   await expect(
-    homeroom.getByRole('button', { name: /Revert homeroom of Aisha Rahman/ }),
+    homeroom.getByRole('button', { name: /Revert homeroom of Aaliyah Brooks/ }),
   ).toBeVisible();
 
+  // The approved composition: the first row and the first column, Columns closed.
+  await resetGridPosition(page);
+  await expect(grade).toBeVisible();
+  await expect(homeroom).toBeVisible();
   await screenshot(page, 'um-k26-06-in-grid-pending.png');
   await axe(page);
 });
@@ -788,6 +821,8 @@ test('opens the Set attributes dialog at Review for two changes', async ({
   await expect(dialog.getByRole('heading', { name: 'Review' })).toBeVisible();
   await expect(dialog).toContainText('Aisha Rahman');
   await expect(dialog).toContainText('Alejandro Ruiz');
+  // The approved composition behind the dialog: first row, approved columns, closed panel.
+  await resetGridPosition(page);
   await screenshot(page, 'um-k26-09-review-from-grid.png');
   expect(state.previews).toHaveLength(1);
   expect(editsOf(state.previews[0] as { edits?: EditBody[] })).toHaveLength(2);

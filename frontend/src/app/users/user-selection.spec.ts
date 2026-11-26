@@ -169,6 +169,23 @@ describe('the user selection provider', () => {
     ]);
   });
 
+  it('names the pending users for Select All in the pending view (R1-A)', async () => {
+    const call = vi.fn().mockResolvedValue(selection(spec()));
+    const provider = new UserSelectionProvider(call);
+    const pending = ['1100000000000000001', '1100000000000000002'];
+    provider.setPending(pending);
+    await provider.applyOps({
+      gridId: 'users',
+      tabId,
+      ops: [{ op: 'selectAll', filter: {} }],
+    });
+    const ops = call.mock.calls
+      .filter(([path]) => path === '/api/users/selection/ops')
+      .map(([, body]) => body as { ops: unknown[] })[0]!;
+    // The empty pending filter never reaches the server as the whole directory.
+    expect(ops.ops).toEqual([{ op: 'select', ids: pending }]);
+  });
+
   it('splits a long ID list into batches the endpoint accepts', async () => {
     const call = vi.fn().mockResolvedValue(selection(spec()));
     const provider = new UserSelectionProvider(call);

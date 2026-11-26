@@ -108,13 +108,40 @@ describe('the list cell dialog', () => {
     expect(staged).toHaveBeenCalledWith(['Gifted', 'Band', 'ESL']);
   });
 
-  it('stages an empty list for Clear values', () => {
+  it('keeps the code points of a chip and a repeated value (R1-H)', () => {
     const fixture = render({ field: programs, value: ['Gifted'] });
     const element = fixture.nativeElement as HTMLElement;
     const staged = vi.fn();
     fixture.componentInstance.staged.subscribe(staged);
+    const add = (value: string) =>
+      (
+        fixture.componentInstance as unknown as {
+          addChip: (event: never) => void;
+        }
+      ).addChip({
+        value,
+        chipInput: { clear: () => undefined },
+      } as never);
+    add(' Gifted');
+    add('Gifted ');
+    // A value of spaces alone is not a value.
+    add('   ');
+    fixture.detectChanges();
+    button(element, 'Stage')!.click();
+    expect(staged).toHaveBeenCalledWith(['Gifted', ' Gifted', 'Gifted ']);
+  });
+
+  it('clears the list as its own operation (R1-G)', () => {
+    const fixture = render({ field: programs, value: ['Gifted'] });
+    const element = fixture.nativeElement as HTMLElement;
+    const staged = vi.fn();
+    const cleared = vi.fn();
+    fixture.componentInstance.staged.subscribe(staged);
+    fixture.componentInstance.cleared.subscribe(cleared);
     button(element, 'Clear values')!.click();
-    expect(staged).toHaveBeenCalledWith([]);
+    // Clear is not an empty list. A Yes or No field never treats No as empty (B section 12).
+    expect(cleared).toHaveBeenCalledTimes(1);
+    expect(staged).not.toHaveBeenCalled();
   });
 
   it('removes one chip and keeps the rest', () => {
