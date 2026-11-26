@@ -356,8 +356,10 @@ export class UserAttributeGridDraft {
     const settled = this.settledFor(row.userId, column.id);
     if (settled) {
       // The saved value covers the row until an authoritative row proves it (design K26,
-      // R1-C). A job answer alone does not prove the value: the read may still be old.
+      // R1-C). A terminal job wrote nothing more, so its row is the actual value even when
+      // it holds the edit-start baseline (R2-C).
       const current = rowCellText(row, settled.cell);
+      if (settled.settled) return current;
       return current === settled.text ? current : settled.text;
     }
     return attributeDraftValueText(cell.baseline, cell.fieldType);
@@ -382,18 +384,20 @@ export class UserAttributeGridDraft {
 
   /**
    * Drop every mark that an authoritative row proves. A row that holds the submitted value
-   * answers the mark. A row that still holds the value at edit start has not observed the
-   * write yet, so the saved value stays. Any other value is the actual value, because the
-   * owning job wrote nothing more (R1-C).
+   * answers the mark. Before the owning job answers, a row that still holds the value at
+   * edit start has not observed the write yet, so the saved value stays. After a terminal
+   * answer the job writes nothing more, so any row is the actual value, including the
+   * baseline that a failed row kept (R1-C, R2-C).
    */
   settleWithRows(rows: readonly UserRow[]): void {
     if (!this.settledSignal().length || !rows.length) return;
     const byId = new Map(rows.map((row) => [row.userId, row] as const));
-    const remaining = this.settledSignal().filter(({ cell, text }) => {
+    const remaining = this.settledSignal().filter(({ cell, text, settled }) => {
       const row = byId.get(cell.userId);
       if (!row) return true;
       const current = rowCellText(row, cell);
       if (current === text) return false;
+      if (settled) return false;
       return current === attributeDraftValueText(cell.baseline, cell.fieldType);
     });
     if (remaining.length !== this.settledSignal().length)
@@ -438,9 +442,10 @@ export class UserAttributeGridDraft {
     row: UserRow,
     column: UserAttributeColumn,
   ): UserAttributeRowValue | null {
-    return (
-      this.entryFor(row.userId, column.id)?.baseline ?? rowBaseline(row, column)
-    );
+    // A stored entry may hold a null baseline, which is a value: the cell was empty when
+    // the edit began. It is not an absent entry (R2-G).
+    const entry = this.entryFor(row.userId, column.id);
+    return entry ? entry.baseline : rowBaseline(row, column);
   }
 
   /** The reason that one entry cannot be saved, or an empty string. */

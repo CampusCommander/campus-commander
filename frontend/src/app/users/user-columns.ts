@@ -246,6 +246,33 @@ export function attributeColumnsSignature(
     .join('\u0001');
 }
 
+/**
+ * The shown and hidden state of each column before a metadata rebuild. A rebuilt column
+ * set must keep the person's composition, so a hidden column stays hidden and a shown
+ * column stays shown (R2-F).
+ */
+export function columnVisibility(
+  state: readonly { colId: string; hide?: boolean | null }[],
+): Map<string, boolean> {
+  return new Map(state.map((column) => [column.colId, column.hide === true]));
+}
+
+/**
+ * The visibility state to reapply after a rebuild. It names only columns that existed
+ * before the rebuild, so a newly added attribute keeps the default of its definition.
+ */
+export function restoredVisibilityState(
+  previous: ReadonlyMap<string, boolean>,
+  current: readonly { colId: string; hide?: boolean | null }[],
+): { colId: string; hide: boolean }[] {
+  return current
+    .filter((column) => previous.has(column.colId))
+    .map((column) => ({
+      colId: column.colId,
+      hide: previous.get(column.colId) === true,
+    }));
+}
+
 /** The in-cell editor of one info type (B section 12). */
 function attributeEditor(
   attribute: UserAttributeColumn,

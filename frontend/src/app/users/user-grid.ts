@@ -54,6 +54,8 @@ import type {
 } from '@campus/application-contracts';
 import {
   cellOpensDialog,
+  columnVisibility,
+  restoredVisibilityState,
   userColumnDefs,
   attributeColumnsSignature,
   ATTRIBUTE_BOOL_CLEAR,
@@ -363,13 +365,22 @@ export class UserGrid implements OnInit {
         if (signature === this.appliedColumns) return;
         this.appliedColumns = signature;
         // A rebuilt column set must keep the unrelated filters of the open query (R4,
-        // R1-E). The model returns after the new definitions, and its change is not a
-        // person's filter.
+        // R1-E) and the person's shown/hidden composition (R2-F). The model returns
+        // after the new definitions, and its change is not a person's filter.
         const model = this.api.getFilterModel();
+        const visibility = columnVisibility(this.api.getColumnState());
         this.restoringColumns = true;
         try {
           this.api.setGridOption('columnDefs', this.columnDefs());
           this.api.setFilterModel(model);
+          // The rebuilt definitions reapply their `hide` defaults. Restore the columns
+          // that existed before the rebuild, so a shown attribute stays shown.
+          const restored = restoredVisibilityState(
+            visibility,
+            this.api.getColumnState(),
+          );
+          if (restored.length)
+            this.api.applyColumnState({ state: restored, applyOrder: false });
         } finally {
           this.restoringColumns = false;
         }
