@@ -1,5 +1,6 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import type {
@@ -1327,13 +1328,13 @@ describe('the in-grid attribute draft (design K26)', () => {
     await settle(fixture);
     const confirmations = TestBed.inject(UserAttributeConfirmationStore);
     expect(confirmations.editsFor(previewId)).toHaveLength(2);
-    // Dismiss Review without confirming.
-    (
-      fixture.componentInstance as unknown as { closeReview(): void }
-    ).closeReview();
+    // Dismiss Review without confirming, through the dialog's closed output.
+    const dialog = fixture.debugElement.query(By.directive(BulkDialogStub));
+    dialog.componentInstance.closed.emit();
     fixture.detectChanges();
     expect(confirmations.editsFor(previewId)).toEqual([]);
     expect(confirmations.pending(`grid:${store.selectionTab}`)).toBeNull();
+    expect(fixture.nativeElement.querySelector('.dialog-stub')).toBeNull();
     // The draft keeps both changes for a later Save.
     expect(draft.counts().changes).toBe(2);
   });
