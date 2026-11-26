@@ -3,7 +3,12 @@ import type { ColDef, ColGroupDef } from 'ag-grid-community';
 import type { UserAttributeCategory } from '@campus/application-contracts';
 import { UserDetailsCell } from './user-details-cell';
 import { UserNameCell } from './user-name-cell';
-import { userColumnDefs, attributeColumnsSignature } from './user-columns';
+import {
+  columnVisibility,
+  restoredVisibilityState,
+  userColumnDefs,
+  attributeColumnsSignature,
+} from './user-columns';
 import { attributeColumns } from './user-fields';
 
 const field = (
@@ -186,5 +191,29 @@ describe('the users grid columns', () => {
     expect(editor?.cellEditorParams).toEqual({
       values: ['Yes', 'No', 'Clear value'],
     });
+  });
+
+  it('keeps the shown and hidden columns across a metadata rebuild (R2-F)', () => {
+    const previous = columnVisibility([
+      { colId: 'primaryEmail', hide: true },
+      { colId: 'fullName', hide: false },
+      { colId: 'attr:Student.grade_level', hide: false },
+      { colId: 'attr:Student.homeroom', hide: false },
+    ]);
+    // The rebuilt definitions reapply their defaults before the state returns.
+    const rebuilt = [
+      { colId: 'primaryEmail', hide: false },
+      { colId: 'fullName', hide: false },
+      { colId: 'attr:Student.grade_level', hide: true },
+      { colId: 'attr:Student.homeroom', hide: true },
+      // A newly added attribute was not present before, so it keeps its default.
+      { colId: 'attr:Student.programs', hide: true },
+    ];
+    expect(restoredVisibilityState(previous, rebuilt)).toEqual([
+      { colId: 'primaryEmail', hide: true },
+      { colId: 'fullName', hide: false },
+      { colId: 'attr:Student.grade_level', hide: false },
+      { colId: 'attr:Student.homeroom', hide: false },
+    ]);
   });
 });

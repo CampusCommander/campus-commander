@@ -301,6 +301,10 @@ interface MockState {
   byIds: string[][];
   /** The preview that the last request prepared, for the dialog's own read. */
   lastPreview: ReturnType<typeof previewOf> | null;
+  /** The label that the category read returns for the same Grade level ID (R2-F). */
+  gradeLabel: string;
+  /** The job answers completed-with-errors: the first edit succeeds and the rest fail. */
+  partial: boolean;
 }
 
 const state: MockState = {
@@ -311,6 +315,8 @@ const state: MockState = {
   confirms: [],
   byIds: [],
   lastPreview: null,
+  gradeLabel: 'Grade level',
+  partial: false,
 };
 
 function resetState(): void {
@@ -321,6 +327,8 @@ function resetState(): void {
   state.confirms = [];
   state.byIds = [];
   state.lastPreview = null;
+  state.gradeLabel = 'Grade level';
+  state.partial = false;
 }
 
 /** One edit of the preview request. */
@@ -363,6 +371,37 @@ function baselineEmpty(edit: EditBody): boolean {
   return edit.baselineValue === null || edit.baselineValue === '';
 }
 
+/**
+ * The job writes the confirmed values to the mocked directory (document B section 9).
+ * A terminal read then shows the written value, not the edit-start baseline.
+ */
+function applyConfirmedEdits(): void {
+  const edits = editsOf(
+    (state.previews.at(-1) ?? {}) as { edits?: EditBody[] },
+  );
+  for (const edit of edits) {
+    const index = people.findIndex((_, at) => userIdOf(at) === edit.userId);
+    if (index === -1) continue;
+    const person = people[index]!;
+    const value = values.get(edit.userId) ?? {
+      grade: person.grade,
+      homeroom: person.homeroom,
+      takeHome: person.takeHome,
+    };
+    if (edit.attribute === 'attr:Student.grade_level')
+      value.grade =
+        edit.mode === 'clear' ? null : Number(edit.values[0] ?? value.grade);
+    else if (edit.attribute === 'attr:Student.homeroom')
+      value.homeroom =
+        edit.mode === 'clear' ? '' : String(edit.values[0] ?? value.homeroom);
+    else if (edit.attribute === 'attr:Device.take_home')
+      value.takeHome = edit.mode === 'clear' ? false : edit.values[0] === true;
+    values.set(edit.userId, value);
+    // A partial job writes only its first operation (R2-C).
+    if (state.partial) break;
+  }
+}
+
 function targetOf(edit: EditBody, index: number) {
   const conflict = state.conflict && index === 0;
   return {
@@ -381,12 +420,14 @@ function targetOf(edit: EditBody, index: number) {
 }
 
 function jobDetail(count: number) {
+  const succeeded = state.partial ? Math.min(1, count) : count;
+  const failed = count - succeeded;
   return {
     jobId,
     displayId: jobDisplayId,
     revision: 1,
     action: 'set-attributes',
-    status: 'completed',
+    status: state.partial ? 'completed-with-errors' : 'completed',
     entityType: 'user',
     scope: { kind: 'rows', deviceCount: count },
     requestedBy: { id: principal, displayName: 'District operator' },
@@ -395,8 +436,8 @@ function jobDetail(count: number) {
     finishedAt: observedAt,
     progress: {
       total: count,
-      succeeded: count,
-      failed: 0,
+      succeeded,
+      failed,
       unknown: 0,
       skipped: 0,
       expired: 0,
@@ -418,7 +459,7 @@ function jobDetail(count: number) {
     correlationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     latestActivity: {
       at: observedAt,
-      failed: { count: 0, operations: [] },
+      failed: { count: failed, operations: [] },
       unknown: { count: 0, operations: [] },
     },
     exportFile: null,
@@ -465,7 +506,23 @@ async function mockApi(page: Page): Promise<void> {
     if (pathname === '/api/users/sync')
       return route.fulfill({ json: { sync } });
     if (pathname === '/api/users/attribute-categories')
-      return route.fulfill({ json: categories });
+      return route.fulfill({
+        json: {
+          ...categories,
+          categories: categories.categories.map((category) =>
+            category.schemaName === 'Student'
+              ? {
+                  ...category,
+                  fields: category.fields.map((field) =>
+                    field.fieldName === 'grade_level'
+                      ? { ...field, displayName: state.gradeLabel }
+                      : field,
+                  ),
+                }
+              : category,
+          ),
+        },
+      });
     if (pathname === '/api/users/org-units')
       return route.fulfill({
         json: {
@@ -551,6 +608,7 @@ async function mockApi(page: Page): Promise<void> {
       }
       if (action === 'confirm') {
         state.confirms.push(request.postDataJSON());
+        applyConfirmedEdits();
         return route.fulfill({
           status: 201,
           json: {
@@ -755,6 +813,50 @@ test('reproduces UM state 06: two draft cells and the pending changes bar', asyn
   await axe(page);
 });
 
+test('keeps the shown columns across a same-ID category refresh (R2-F)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await showAttributes(page);
+  // A category job renames the same attribute ID. The person's composition stays.
+  state.gradeLabel = 'Grade';
+  const streams = liveStreams(page);
+  await streams.waitForOpen('/api/events');
+  await streams.send('/api/events', 'schema-change', {
+    type: 'schema-change',
+    entityType: 'user',
+  });
+
+  // The rebuilt definition holds the new label, and both shown attribute columns remain.
+  await expect(
+    page.locator('.ag-header-cell[col-id="attr:Student.grade_level"]'),
+  ).toContainText('Grade', { timeout: 15_000 });
+  await expect(
+    cell(page, 'Aaliyah Brooks', 'attr:Student.grade_level'),
+  ).toBeVisible();
+  await expect(
+    cell(page, 'Aaliyah Brooks', 'attr:Student.homeroom'),
+  ).toBeVisible();
+  // A column that the person hid stays hidden.
+  await expect(
+    page.locator('.ag-header-cell[col-id="primaryEmail"]'),
+  ).toHaveCount(0);
+
+  // The Columns panel agrees with the grid after the rebuild.
+  await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+  const panel = page.locator('.lgr-columns-tool-panel');
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByRole('checkbox', { name: 'Show Grade', exact: true }),
+  ).toBeChecked();
+  await expect(
+    panel.getByRole('checkbox', { name: 'Show Homeroom', exact: true }),
+  ).toBeChecked();
+  await expect(
+    panel.getByRole('checkbox', { name: 'Show Primary email', exact: true }),
+  ).not.toBeChecked();
+});
+
 test('saves one pending change in one step and shows the written value', async ({
   page,
 }) => {
@@ -861,6 +963,38 @@ test('opens the Set attributes dialog at Review for two changes', async ({
     cell(page, 'Aisha Rahman', 'attr:Student.homeroom'),
   ).toContainText('216');
   await screenshot(page, 'um-k26-11-settled-cells.png');
+});
+
+test('shows the authoritative value of a partial job without a feed (R2-C)', async ({
+  page,
+}) => {
+  await openUsers(page);
+  await showAttributes(page);
+  state.partial = true;
+  await editText(page, 'Aisha Rahman', 'attr:Student.homeroom', '216');
+  await editText(page, 'Alejandro Ruiz', 'attr:Student.grade_level', '11');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Review' })).toBeVisible();
+  await dialog
+    .getByRole('button', { name: 'Set attributes on 2 users' })
+    .click();
+  await expect(dialog).toContainText(jobDisplayId);
+  await dialog
+    .getByRole('button', { name: 'Close', exact: true })
+    .first()
+    .click();
+
+  // The job wrote the first value and failed the second. No feed event arrives: the
+  // terminal read by user ID supplies both authoritative rows.
+  await expect(cell(page, 'Aisha Rahman', 'attr:Student.homeroom')).toHaveText(
+    '216',
+  );
+  await expect(
+    cell(page, 'Alejandro Ruiz', 'attr:Student.grade_level'),
+  ).toHaveText('8');
+  await expect(page.locator('#draft-count')).toHaveCount(0);
 });
 
 test('keeps the draft when the request exceeds the size limit', async ({

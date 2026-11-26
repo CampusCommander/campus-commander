@@ -12,6 +12,7 @@ import {
   draftKey,
   rowCellText,
 } from './user-attribute-grid-draft';
+import { attributeJobOutcome } from './user-attribute-edit-flow';
 import { USER_ATTRIBUTE_DRAFT_STORAGE_PREFIX } from './user-attribute-draft-storage';
 import type { UserAttributeColumn } from './user-fields';
 
@@ -541,5 +542,125 @@ describe('the user attribute grid draft', () => {
     expect(rowCellText(student({ grade_level: 11 }), cell)).toBe('11');
     // The built attribute column draws no text for a value that Google does not hold.
     expect(rowCellText(student({}), cell)).toBe('');
+  });
+
+  it('reconciles a partial job against authoritative rows, including a failed baseline (R2-C)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const first = student({ grade_level: 9 });
+    const second = row({
+      userId: '1100000000000000002',
+      fullName: 'Aaron Whitfield',
+      customSchemas: { Student: { grade_level: 9 } },
+    });
+    draft.stageText(first, column, '11');
+    draft.stageText(second, column, '10');
+    draft.accept(draft.edits(), 'UAT-500');
+    draft.settleJob('UAT-500', 'partial');
+    // The terminal read returns the successful value and the failed row's baseline.
+    draft.settleWithRows([
+      student({ grade_level: 11 }),
+      row({
+        userId: second.userId,
+        fullName: second.fullName,
+        customSchemas: { Student: { grade_level: 9 } },
+      }),
+    ]);
+    // Neither saved value hides the authoritative row, including the failed baseline.
+    expect(draft.settledUserIds()).toEqual([]);
+    expect(draft.valueFor(student({ grade_level: 11 }), column)).toBe('11');
+    expect(
+      draft.valueFor(
+        row({
+          userId: second.userId,
+          fullName: second.fullName,
+          customSchemas: { Student: { grade_level: 9 } },
+        }),
+        column,
+      ),
+    ).toBe('9');
+  });
+
+  it('shows a baseline row once the owning job is terminal (R2-C)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '11');
+    draft.accept(draft.edits(), 'UAT-500');
+    draft.settleJob('UAT-500', 'saved');
+    draft.settleWithRows([student({ grade_level: 9 })]);
+    expect(draft.settledUserIds()).toEqual([]);
+    expect(draft.valueFor(student({ grade_level: 9 }), column)).toBe('9');
+  });
+
+  it('keeps the saved value before the job answers a baseline row (R2-C)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    const user = student({ grade_level: 9 });
+    draft.stageText(user, column, '11');
+    draft.accept(draft.edits(), 'UAT-500');
+    // The stale read still holds the edit-start value, so the saved value stays.
+    draft.settleWithRows([student({ grade_level: 9 })]);
+    expect(draft.settledUserIds()).toEqual([user.userId]);
+    expect(draft.valueFor(student({ grade_level: 9 }), column)).toBe('11');
+  });
+
+  it('drops the marks of an unknown or a cancelled job (R2-C)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn();
+    draft.stageText(student({ grade_level: 9 }), column, '11');
+    draft.accept(draft.edits(), 'UAT-500');
+    draft.settleJob('UAT-500', attributeJobOutcome('needs-review'));
+    expect(draft.settledUserIds()).toEqual([]);
+    const second = row({
+      userId: '1100000000000000002',
+      fullName: 'Aaron Whitfield',
+      customSchemas: { Student: { grade_level: 9 } },
+    });
+    draft.stageText(second, column, '10');
+    draft.accept(draft.edits(), 'UAT-501');
+    draft.settleJob('UAT-501', attributeJobOutcome('cancelled'));
+    expect(draft.settledUserIds()).toEqual([]);
+  });
+
+  it('keeps a stored null baseline when the row has since received a value (R2-G)', () => {
+    const draft = configure();
+    const column: UserAttributeColumn = attributeColumn({
+      id: 'attr:Student.homeroom',
+      field: attributeField({
+        fieldId: 'Student.homeroom',
+        fieldName: 'homeroom',
+        displayName: 'Homeroom',
+        fieldType: 'STRING',
+        numericIndexingSpec: null,
+      }),
+    });
+    const unset = student({});
+    draft.stageText(unset, column, '216');
+    expect(draft.entryFor(unset.userId, column.id)?.baseline).toBeNull();
+    // The feed moved the row to 217 while the draft still holds 216 against empty.
+    const refreshed = student({ homeroom: '217' });
+    expect(draft.baselineFor(refreshed, column)).toBeNull();
+    draft.beginLive({
+      userId: refreshed.userId,
+      userName: 'Amara Okafor',
+      attribute: column.id,
+      label: column.label,
+      fieldType: column.field.fieldType,
+      multiValued: false,
+      minValue: null,
+      maxValue: null,
+      baseline: draft.baselineFor(refreshed, column),
+      value: '216',
+    });
+    // Entering the refreshed value is still a change against the stored null baseline.
+    draft.updateLive('217');
+    expect(draft.counts().changes).toBe(1);
+    draft.commitLive();
+    expect(draft.edits()[0]).toMatchObject({
+      mode: 'set',
+      values: ['217'],
+      baselineValue: null,
+    });
   });
 });

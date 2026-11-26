@@ -685,6 +685,12 @@ function jobSettles(status = 'completed') {
     .mockResolvedValue({ ok: true, value: { status } as never });
 }
 
+/** Flush pending promises without touching a fixture that navigation destroyed. */
+async function flush(): Promise<void> {
+  for (let index = 0; index < 20; index += 1)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('the in-grid attribute draft (design K26)', () => {
   beforeEach(() => sessionStorage.clear());
 
@@ -716,6 +722,52 @@ describe('the in-grid attribute draft (design K26)', () => {
     const save = button(fixture, 'Save changes') as HTMLButtonElement;
     expect(save.disabled).toBe(true);
     expect(text(fixture)).toContain('changed in Google');
+  });
+
+  it('marks a single-change conflict and keeps Save changes disabled (acceptance 3)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json(
+          previewAnswer({
+            attributeChanges: 0,
+            selected: 1,
+            eligible: 0,
+            unchanged: 0,
+            conflicts: 1,
+          }),
+        ),
+      [`/api/users/attribute-previews/${previewId}/targets`]: () =>
+        Response.json({
+          targets: [
+            {
+              userId: '1100000000000000001',
+              userName: 'Amara Okafor',
+              primaryEmail: 'amara.okafor@example.org',
+              attribute: 'attr:Student.grade_level',
+              currentValue: 10,
+              newValue: [11],
+              disposition: 'conflict',
+              observedAt: '2026-11-16T12:00:00.000Z',
+            },
+          ],
+          nextCursor: null,
+        }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    const column = attributeColumn();
+    draft.stageText(userRow(), column, '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    // The frozen row marks the one cell, and no confirmation was sent.
+    expect(draft.entryFor('1100000000000000001', column.id)?.state).toBe(
+      'conflict',
+    );
+    expect(button(fixture, 'Save changes')!.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('.dialog-stub')).toBeNull();
+    expect(
+      request.mock.calls.filter(([path]) => String(path).endsWith('/confirm')),
+    ).toHaveLength(0);
   });
 
   it('shows no bar and no editors without users:write', () => {
@@ -898,5 +950,282 @@ describe('the in-grid attribute draft (design K26)', () => {
     );
     expect(receipt?.phase).toBe('accepted');
     expect(receipt?.displayId).toBe('UAT-014');
+  });
+
+  it('records an accepted answer after navigation and applies it on return (R2-A)', async () => {
+    let releaseConfirm: ((response: Response) => void) | null = null;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-previews')
+        return Promise.resolve(Response.json(previewAnswer()));
+      if (path === `/api/users/attribute-previews/${previewId}/confirm`)
+        return new Promise<Response>((resolve) => {
+          releaseConfirm = resolve;
+        });
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    jobSettles();
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const first = render();
+    button(first, 'Save changes')!.click();
+    await flush();
+    const key = `grid:${store.selectionTab}`;
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(releaseConfirm).not.toBeNull();
+    expect(confirmations.pending(key)?.phase).toBe('confirming');
+    // Navigation destroys the page while its confirmation answer is in flight.
+    first.destroy();
+    releaseConfirm!(Response.json(receiptAnswer));
+    await flush();
+    expect(confirmations.pending(key)?.phase).toBe('accepted');
+    // Back to Users: the accepted receipt removes the submitted entry and reads the row.
+    const second = render();
+    await settle(second);
+    expect(draft.entries()).toEqual([]);
+    expect(store.refreshHeldRows).toHaveBeenCalledWith(['1100000000000000001']);
+    expect(second.nativeElement.querySelector('#draft-count')).toBeNull();
+  });
+
+  it('records an uncertain answer after navigation and replays it on return (R2-A)', async () => {
+    let confirms = 0;
+    let releaseConfirm: ((response: Response) => void) | null = null;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-previews')
+        return Promise.resolve(Response.json(previewAnswer()));
+      if (path === `/api/users/attribute-previews/${previewId}/confirm`) {
+        confirms += 1;
+        if (confirms === 1)
+          return new Promise<Response>((resolve) => {
+            releaseConfirm = resolve;
+          });
+        return Promise.resolve(Response.json(receiptAnswer));
+      }
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    jobSettles();
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const first = render();
+    button(first, 'Save changes')!.click();
+    await flush();
+    const key = `grid:${store.selectionTab}`;
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    first.destroy();
+    releaseConfirm!(Response.json({ reason: 'unavailable' }, { status: 503 }));
+    await flush();
+    expect(confirmations.pending(key)?.phase).toBe('uncertain');
+
+    const second = render();
+    await settle(second);
+    expect(
+      second.nativeElement.querySelector('.draft-line')?.textContent,
+    ).toContain('Campus Commander refused the save.');
+    expect(draft.counts().changes).toBe(1);
+    // The next Save replays the same preview instead of preparing another.
+    button(second, 'Save changes')!.click();
+    await settle(second);
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/users/attribute-previews',
+      ),
+    ).toHaveLength(1);
+    expect(confirms).toBe(2);
+    expect(draft.entries()).toEqual([]);
+  });
+
+  it('records a definite refusal after navigation for the next page (R2-A)', async () => {
+    let releaseConfirm: ((response: Response) => void) | null = null;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-previews')
+        return Promise.resolve(Response.json(previewAnswer()));
+      if (path === `/api/users/attribute-previews/${previewId}/confirm`)
+        return new Promise<Response>((resolve) => {
+          releaseConfirm = resolve;
+        });
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const first = render();
+    button(first, 'Save changes')!.click();
+    await flush();
+    const key = `grid:${store.selectionTab}`;
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    first.destroy();
+    releaseConfirm!(
+      Response.json({ reason: 'preview-changed' }, { status: 409 }),
+    );
+    await flush();
+    expect(confirmations.pending(key)?.phase).toBe('refused');
+
+    const second = render();
+    await settle(second);
+    expect(
+      second.nativeElement.querySelector('.draft-line')?.textContent,
+    ).toContain('The preview changed. Save the changes again.');
+    expect(draft.counts().changes).toBe(1);
+    expect(confirmations.pending(key)).toBeNull();
+  });
+
+  it('keeps an earlier uncertainty through a later definite refusal (R2-D)', async () => {
+    let confirms = 0;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-previews')
+        return Promise.resolve(Response.json(previewAnswer()));
+      if (path === `/api/users/attribute-previews/${previewId}/confirm`) {
+        confirms += 1;
+        if (confirms === 1)
+          return Promise.resolve(
+            Response.json({ reason: 'unavailable' }, { status: 503 }),
+          );
+        if (confirms === 2)
+          return Promise.resolve(
+            Response.json({ reason: 'preview-changed' }, { status: 409 }),
+          );
+        return Promise.resolve(Response.json(receiptAnswer));
+      }
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    jobSettles();
+    draft.stageText(userRow(), attributeColumn(), '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const key = `grid:${store.selectionTab}`;
+    const confirmations = TestBed.inject(UserAttributeConfirmationStore);
+    expect(confirmations.pending(key)?.phase).toBe('uncertain');
+    // The replay answers a definite refusal, but the first send remains unknown.
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(confirms).toBe(2);
+    expect(confirmations.pending(key)?.phase).toBe('uncertain');
+    expect(
+      request.mock.calls.filter(
+        ([path]) => path === '/api/users/attribute-previews',
+      ),
+    ).toHaveLength(1);
+    // A third Save replays the same identity and settles on its receipt.
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    expect(confirms).toBe(3);
+    expect(draft.entries()).toEqual([]);
+  });
+
+  it('keeps a later value and an added entry after uncertain recovery (R2-B)', async () => {
+    let confirms = 0;
+    const request = vi.fn((path: string) => {
+      if (path === '/api/users/attribute-previews')
+        return Promise.resolve(Response.json(previewAnswer()));
+      if (path === `/api/users/attribute-previews/${previewId}/confirm`) {
+        confirms += 1;
+        if (confirms === 1)
+          return Promise.resolve(
+            Response.json({ reason: 'unavailable' }, { status: 503 }),
+          );
+        return Promise.resolve(Response.json(receiptAnswer));
+      }
+      if (
+        path === `/api/users/attribute-previews/${previewId}/targets?limit=1000`
+      )
+        return Promise.resolve(
+          Response.json({ targets: [], nextCursor: null }),
+        );
+      return Promise.resolve(Response.json({}, { status: 404 }));
+    });
+    const { draft, store } = page({ sync: ready(), request });
+    jobSettles();
+    const column = attributeColumn();
+    draft.stageText(userRow(), column, '11');
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    // While the first send is unknown, change the same cell and add another entry.
+    draft.stageText(userRow(), column, '12');
+    draft.stageText(
+      userRow({
+        userId: '1100000000000000002',
+        fullName: 'Aaron Whitfield',
+        primaryEmail: 'aaron.whitfield@example.org',
+        customSchemas: { Student: { grade_level: 7 } },
+      }),
+      column,
+      '10',
+    );
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    // The replayed preview still submitted 11. The later 12 and the added row stay.
+    expect(draft.entryFor('1100000000000000001', column.id)?.value).toBe('12');
+    expect(draft.entryFor('1100000000000000002', column.id)?.value).toBe('10');
+    expect(draft.settledFor('1100000000000000001', column.id)).toBeNull();
+    expect(draft.counts().changes).toBe(2);
+    // A third Save prepares a new preview from the two remaining entries.
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    const previews = request.mock.calls.filter(
+      ([path]) => path === '/api/users/attribute-previews',
+    );
+    expect(previews).toHaveLength(2);
+    const secondCall = previews[1] as unknown as [
+      string,
+      { edits: { values: unknown[] }[] },
+    ];
+    const body = secondCall[1].edits;
+    expect(body).toHaveLength(2);
+    expect(
+      body.some((edit) => edit.values.length === 1 && edit.values[0] === 12),
+    ).toBe(true);
+    expect(store.refreshHeldRows).toHaveBeenCalled();
+  });
+
+  it('opens Review for two pending edits when the preview holds one row (R2-E)', async () => {
+    const request = routes({
+      '/api/users/attribute-previews': () =>
+        Response.json(
+          previewAnswer({
+            attributeChanges: 1,
+            selected: 2,
+            eligible: 1,
+            unchanged: 1,
+          }),
+        ),
+      [`/api/users/attribute-previews/${previewId}/targets`]: () =>
+        Response.json({
+          targets: [
+            {
+              userId: '1100000000000000001',
+              userName: 'Amara Okafor',
+              primaryEmail: 'amara.okafor@example.org',
+              attribute: 'attr:Student.grade_level',
+              currentValue: 11,
+              newValue: [11],
+              disposition: 'unchanged',
+              observedAt: '2026-11-16T12:00:00.000Z',
+            },
+            {
+              userId: '1100000000000000002',
+              userName: 'Aaron Whitfield',
+              primaryEmail: 'aaron.whitfield@example.org',
+              attribute: 'attr:Student.grade_level',
+              currentValue: 7,
+              newValue: [10],
+              disposition: 'eligible',
+              observedAt: '2026-11-16T12:00:00.000Z',
+            },
+          ],
+          nextCursor: null,
+        }),
+    });
+    const { draft } = page({ sync: ready(), request });
+    stageTwo(draft);
+    const fixture = render();
+    button(fixture, 'Save changes')!.click();
+    await settle(fixture);
+    // Two pending edits must open the dialog even when one row is Unchanged.
+    expect(fixture.nativeElement.querySelector('.dialog-stub')).not.toBeNull();
+    expect(
+      request.mock.calls.filter(([path]) => String(path).endsWith('/confirm')),
+    ).toHaveLength(0);
+    expect(draft.counts().changes).toBe(1);
   });
 });
