@@ -6,15 +6,12 @@
  * the table columns, and the users cells.
  * Every value is a token of `theme/tokens.css` or of the Material theme.
  */
-/* The approved setup keeps 8 px above the floating Category label and 8 px below
-   the last field. The review and results keep the report bottom gap of 24 px. */
-.export-body {
-  padding-block: var(--cc-space-sm);
-}
-
-.export-body:has(.step.report) {
-  padding-block-start: 0;
-  padding-block-end: var(--cc-space-xl);
+/* The approved setup takes the 8 px top of the design step and 16 px between groups;
+   the body keeps the approved 24 px bottom gap (R2-C). The report step keeps its own
+   gap and no top padding. */
+.step:not(.report) {
+  gap: var(--cc-space-lg);
+  padding-block-start: var(--cc-space-sm);
 }
 
 .bulk-field {
@@ -102,7 +99,7 @@
 }
 
 .report-table.bulk:not(.rs) col:nth-child(3) {
-  width: 265px;
+  width: 285px;
 }
 
 .report-table.bulk:not(.rs) col:nth-child(4) {
@@ -110,7 +107,7 @@
 }
 
 .report-table.bulk.rs col:nth-child(3) {
-  width: 170px;
+  width: 175px;
 }
 
 .report-table.bulk.rs col:nth-child(4) {
@@ -118,24 +115,27 @@
 }
 
 .report-table.bulk.rs col:nth-child(5) {
-  width: auto;
+  width: 220px;
 }
 
-/* The approved table header sits on the app surface, not the card surface. */
+/* The approved table header sits on the app surface, not the card surface, and one
+   line takes 36 px in both tables (R2-D). */
 .report-table.bulk th {
+  height: 36px;
   background: var(--cc-surface-app);
 }
 
-/* The approved review row is 35 px with the 24 px details control. */
+/* The approved body keeps its 7 px content inset; the row heights stay at 35 px for
+   the review and 36 px for the results (R2-D). */
 .report-table.bulk:not(.rs) tbody tr:not(.message-row) td {
   height: 35px;
-  padding-block: 0;
+  padding-block: 7px;
 }
 
 /* The approved results row is 36 px, also after the device results density. */
 .report-table.bulk.rs tbody tr:not(.message-row) td {
   height: 36px;
-  padding-block: 0;
+  padding-block: 7px;
 }
 
 /* The failed results row grows to hold its reason, as the approved state draws it. */
@@ -146,6 +146,11 @@
 .outcome-reason {
   display: block;
   margin-block-start: var(--cc-space-xs);
+}
+
+/* The 24 px outcome chip keeps the 36 px row after the 7 px inset (R2-D). */
+.report-table.bulk .status-chip.small {
+  margin-block: -2px;
 }
 
 /* Current values read secondary; the proposed value reads primary and medium. */
@@ -205,6 +210,8 @@
   align-items: center;
   gap: var(--cc-space-xs);
   min-width: 0;
+  /* The 24 px details control keeps the 35 px review row after the 7 px inset (R2-D). */
+  margin-block: -4px;
 }
 
 .user-cell .nw {
@@ -295,8 +302,9 @@
 }
 
 .job-item:only-child {
-  grid-template-columns: 52px max-content max-content max-content;
-  justify-content: start;
+  /* The approved single-job track: 64 px job, 200 px action, 200 px chip, the rest
+     for the counts (composition 12). */
+  grid-template-columns: 64px 200px 200px minmax(0, 1fr);
   border-inline-start: 0;
 }
 

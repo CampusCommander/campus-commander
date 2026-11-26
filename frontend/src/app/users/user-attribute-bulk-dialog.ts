@@ -658,7 +658,23 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       this.error() === `${entry.message} ${ATTRIBUTE_CONFIRM_UNCERTAIN_HINT}`
     )
       return;
-    if (entry.phase === 'refused' && this.step() === 'setup') return;
+    if (entry.phase === 'refused') {
+      // A definite refusal released the preview identity, and its one sentence waits here
+      // until a dialog consumes it. A dialog that mounts at Setup after a dismissal must
+      // show it too, so this branch runs at any step (R2-A). The entry stays in the store
+      // until this point, so a reopened busy review never outlives its answer.
+      this.restored = false;
+      this.reviewRequest += 1;
+      this.confirmations.resolve(entry.preview.previewId);
+      this.confirming.set(false);
+      this.reviewLoading.set(false);
+      this.preview.set(null);
+      this.step.set('setup');
+      this.error.set(entry.message);
+      this.resetReviewStack();
+      this.focusStep();
+      return;
+    }
     this.preview.set(entry.preview);
     this.resultRowCount.set(entry.preview.attributeChanges);
     this.resultUserCount.set(entry.preview.eligible);
@@ -681,17 +697,6 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       this.resetReviewStack();
       this.focusStep();
       void this.loadReviewPage('eligible', null);
-      return;
-    }
-    if (entry.phase === 'refused') {
-      // A definite refusal released the identity, so this dialog may edit again.
-      this.restored = false;
-      this.confirmations.resolve(entry.preview.previewId);
-      this.preview.set(null);
-      this.step.set('setup');
-      this.error.set(entry.message);
-      this.resetReviewStack();
-      this.focusStep();
       return;
     }
     // The receipt survived the dialog. Continue its job instead of a blank setup.
@@ -1003,15 +1008,18 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
       return;
     }
     if (!answer.ok) {
-      // A definite refusal releases the identity and keeps the setup.
+      // A definite refusal releases the identity. A live dialog consumes the sentence
+      // itself; a dismissed one leaves the entry for the next owner (R2-A). Resolving
+      // here would coalesce with the refusal write, so a reopened observer would see
+      // only null and keep its busy review forever.
       this.confirmations.refuse(
         this.confirmationScope,
         preview,
         names,
         answer.message,
       );
-      this.confirmations.resolve(preview.previewId);
       if (this.done) return;
+      this.confirmations.resolve(preview.previewId);
       this.confirming.set(false);
       this.preview.set(null);
       this.step.set('setup');
@@ -1196,7 +1204,7 @@ export class UserAttributeBulkDialog implements OnInit, OnDestroy {
   }
 
   protected statusChipClass(): string {
-    return `status-chip job-chip tone-${this.statusTone()}`;
+    return `status-chip job-chip small tone-${this.statusTone()}`;
   }
 
   protected reviewTabClass(tone: string): string {

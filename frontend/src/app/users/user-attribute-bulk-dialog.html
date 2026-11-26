@@ -508,7 +508,7 @@
               </div>
               @if (!$last) {
               <span class="count-sign" aria-hidden="true"
-                >{{ term.label === BULK_CHANGES_TERM ? '=' : '+' }}</span
+                >{{ $index === 0 ? '=' : '+' }}</span
               >
               } }
             </dl>

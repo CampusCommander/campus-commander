@@ -478,6 +478,8 @@ interface SignInOptions {
   holdPreview?: HeldAnswer;
   /** Holds the confirmation answer until the test releases it (R1-G). */
   holdConfirm?: HeldAnswer;
+  /** The confirmation answers a definite 422 refusal (R2-A). */
+  confirmFails?: boolean;
 }
 
 /** The part of a query body that a held answer test reads. */
@@ -688,6 +690,11 @@ async function signIn(page: Page, options: SignInOptions = {}) {
           options.holdConfirm.begin();
           await options.holdConfirm.gate;
         }
+        if (options.confirmFails)
+          return route.fulfill({
+            status: 422,
+            json: { message: 'The category changed.' },
+          });
         return route.fulfill({ status: 201, json: bulkReceipt });
       }
       return route.fulfill({ json: bulkPreview(!!options.manyTargets) });
@@ -1770,13 +1777,25 @@ test('reproduces UM states 07 to 09: the Bulk Actions menu, setup, and review', 
   const modeCard = measured(
     await dialog.locator('.option-card').first().boundingBox(),
   );
-  // The approved state 08 geometry (R1-E).
+  const modeLabel = measured(
+    await dialog.locator('.list-label').first().boundingBox(),
+  );
+  const actionBar = measured(
+    await dialog.locator('.export-actions').boundingBox(),
+  );
+  // The approved state 08 geometry (R1-E, R2-C): 8 px above the step, 16 px between
+  // groups, and 24 px below the last field. The mode label, card, and value field sit
+  // at the approved modal-relative positions.
   expect(setupDialog.width).toBe(480);
   expect(setupDialog.height).toBeGreaterThanOrEqual(556);
   expect(setupDialog.height).toBeLessThanOrEqual(558);
   expect(attributeBox.y - (categoryBox.y + categoryBox.height)).toBe(16);
   expect(modeCard.height).toBe(48);
   expect(valueBox.height).toBe(56);
+  expect(modeLabel.y - setupDialog.y).toBe(260);
+  expect(modeCard.y - setupDialog.y).toBe(284);
+  expect(valueBox.y - setupDialog.y).toBe(404);
+  expect(actionBar.y - (valueBox.y + valueBox.height)).toBe(24);
   await page.screenshot({
     path: `${scratch}/um-08-set-attributes-dialog.png`,
     fullPage: false,
@@ -1815,14 +1834,31 @@ test('reproduces UM states 07 to 09: the Bulk Actions menu, setup, and review', 
   const reviewPagerSecond = measured(
     await reviewPagerButtons.nth(1).boundingBox(),
   );
-  // The approved state 09 composition (R1-F): 1,120 px wide, 240/260 leading
-  // columns, 35 px rows, an app-surface header, and an 8 px pager gap.
+  const currentHeader = measured(
+    await reviewTable.locator('th').nth(2).boundingBox(),
+  );
+  const newHeader = measured(
+    await reviewTable.locator('th').nth(3).boundingBox(),
+  );
+  const emailCell = reviewTable
+    .locator('tbody tr')
+    .first()
+    .locator('td')
+    .nth(1);
+  // The approved state 09 composition (R1-F, R2-D): 1,120 px wide, 240/260/285/285
+  // columns, 35 px rows with the 7 px content inset, an app-surface header, and an
+  // 8 px pager gap.
   expect(reviewBox.width).toBe(1120);
   expect(reviewBox.height).toBeGreaterThanOrEqual(733);
   expect(reviewBox.height).toBeLessThanOrEqual(736);
   expect(userHeader.width).toBe(240);
   expect(emailHeader.width).toBe(260);
+  expect(currentHeader.width).toBe(285);
+  expect(newHeader.width).toBe(285);
   expect(firstRow.height).toBe(35);
+  expect(
+    await emailCell.evaluate((element) => getComputedStyle(element).paddingTop),
+  ).toBe('7px');
   expect(
     await reviewTable
       .locator('th')
@@ -1906,8 +1942,35 @@ test('reproduces UM state 10: the confirmed job and its result rows', async ({
       })
       .boundingBox(),
   );
-  // The approved state 10 composition (R1-F): shared 240/260 leading columns,
-  // 36 px rows, a 58 px failed row, a full-width job band, and an 8 px pager gap.
+  const currentHeader = measured(
+    await resultsTable.locator('th').nth(2).boundingBox(),
+  );
+  const newHeader = measured(
+    await resultsTable.locator('th').nth(3).boundingBox(),
+  );
+  const outcomeHeader = measured(
+    await resultsTable.locator('th').nth(4).boundingBox(),
+  );
+  const outcomeCell = resultsTable
+    .locator('tbody tr')
+    .first()
+    .locator('td')
+    .nth(4);
+  const jobLink = measured(
+    await dialog.locator('.job-item .job-link').boundingBox(),
+  );
+  const jobAction = measured(
+    await dialog.locator('.job-item .job-action').boundingBox(),
+  );
+  const jobChip = measured(
+    await dialog.locator('.job-item .status-chip').boundingBox(),
+  );
+  const jobCounts = measured(
+    await dialog.locator('.job-item .job-counts').boundingBox(),
+  );
+  // The approved state 10 composition (R1-F, R2-D): shared 240/260 leading columns,
+  // 175/175/220 trailing columns, 36 px rows with the 7 px content inset, a 36 px
+  // header, a 58 px failed row, the approved job tracks, and an 8 px pager gap.
   expect(measured(await dialog.boundingBox()).width).toBe(1120);
   expect(measured(await dialog.boundingBox()).height).toBeGreaterThanOrEqual(
     790,
@@ -1915,8 +1978,21 @@ test('reproduces UM state 10: the confirmed job and its result rows', async ({
   expect(measured(await dialog.boundingBox()).height).toBeLessThanOrEqual(810);
   expect(userHeader.width).toBe(240);
   expect(emailHeader.width).toBe(260);
+  expect(currentHeader.width).toBe(175);
+  expect(newHeader.width).toBe(175);
+  expect(outcomeHeader.width).toBe(220);
+  expect(currentHeader.height).toBe(36);
   expect(normalRow.height).toBe(36);
   expect(failedRow.height).toBe(58);
+  expect(
+    await outcomeCell.evaluate(
+      (element) => getComputedStyle(element).paddingTop,
+    ),
+  ).toBe('7px');
+  expect(jobAction.x - jobLink.x).toBe(72);
+  expect(jobChip.x - jobAction.x).toBe(208);
+  expect(jobCounts.x - jobChip.x).toBe(208);
+  expect(jobChip.height).toBe(24);
   expect(secondPager.x - (firstPager.x + firstPager.width)).toBe(8);
   expect(
     measured(await dialog.locator('.job-item').first().boundingBox()).width,
@@ -1977,13 +2053,26 @@ test('reproduces UM state 11: a single-value attribute offers Set value and Clea
   const valueField = measured(
     await dialog.locator('mat-form-field').nth(2).boundingBox(),
   );
-  // The approved state 11 geometry (R1-E).
-  expect(measured(await dialog.boundingBox()).width).toBe(480);
-  expect(measured(await dialog.boundingBox()).height).toBeGreaterThanOrEqual(
-    500,
+  const modeLabel = measured(
+    await dialog.locator('.list-label').first().boundingBox(),
   );
-  expect(measured(await dialog.boundingBox()).height).toBeLessThanOrEqual(502);
+  const modeCard = measured(
+    await dialog.locator('.option-card').first().boundingBox(),
+  );
+  const setupDialog = measured(await dialog.boundingBox());
+  const actionBar = measured(
+    await dialog.locator('.export-actions').boundingBox(),
+  );
+  // The approved state 11 geometry (R1-E, R2-C): the same internal positions, with the
+  // single value field at 348 px and 24 px to the action bar.
+  expect(setupDialog.width).toBe(480);
+  expect(setupDialog.height).toBeGreaterThanOrEqual(500);
+  expect(setupDialog.height).toBeLessThanOrEqual(502);
   expect(valueField.height).toBe(56);
+  expect(modeLabel.y - setupDialog.y).toBe(260);
+  expect(modeCard.y - setupDialog.y).toBe(284);
+  expect(valueField.y - setupDialog.y).toBe(348);
+  expect(actionBar.y - (valueField.y + valueField.height)).toBe(24);
   await page.screenshot({
     path: `${scratch}/um-11-set-attributes-single-value.png`,
     fullPage: false,
@@ -2039,6 +2128,39 @@ test('keeps the receipt when Escape dismisses a held confirmation (R1-B)', async
     reopened.getByText('Job UAT-014 · Completed with errors'),
   ).toBeVisible();
   await expect(reopened.locator('tbody tr')).toHaveCount(10);
+});
+
+test('clears a reopened confirmation after a definite refusal (R2-A)', async ({
+  page,
+}) => {
+  const hold = heldAnswer();
+  await openUsers(page, { holdConfirm: hold, confirmFails: true });
+  const dialog = await openSetAttributes(page);
+  await choosePrograms(page, dialog);
+  await dialog.getByRole('button', { name: 'Review', exact: true }).click();
+  await expect(dialog.locator('tbody tr')).toHaveCount(4);
+  await dialog
+    .getByRole('button', { name: 'Set attributes on 4 users' })
+    .click();
+  await hold.started;
+
+  // Dismiss while the answer is held, then reopen before it arrives. The reopened
+  // dialog restores the busy review.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Bulk Actions' }).click();
+  await page.getByRole('menuitem', { name: 'Set attributes' }).click();
+  const reopened = page.getByRole('dialog');
+  await expect(reopened.getByText('Creating the job…')).toBeVisible();
+
+  // The definite refusal releases the busy review and shows its API message.
+  hold.release();
+  await expect(reopened.getByText('The category changed.')).toBeVisible();
+  await expect(reopened.getByText('Creating the job…')).toHaveCount(0);
+  await expect(
+    reopened.getByRole('button', { name: 'Review', exact: true }),
+  ).toBeEnabled();
+  await expect(reopened.getByText('6 selected users')).toBeVisible();
 });
 
 test('keeps focus in the dialog while the confirmation is held (R1-G)', async ({

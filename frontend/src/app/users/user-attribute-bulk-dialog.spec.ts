@@ -262,23 +262,27 @@ describe('the Set attributes dialog', () => {
     dialog = fixture.componentInstance as unknown as DialogInternals;
   }
 
-  async function settle(): Promise<void> {
+  async function settle(
+    target: ComponentFixture<UserAttributeBulkDialog> = fixture,
+  ): Promise<void> {
     for (let index = 0; index < 8; index += 1) {
-      fixture.detectChanges();
+      target.detectChanges();
       await Promise.resolve();
     }
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    target.detectChanges();
+    await target.whenStable();
+    target.detectChanges();
   }
 
   /** Render and drain microtasks without waiting for a held answer. */
-  async function flush(): Promise<void> {
+  async function flush(
+    target: ComponentFixture<UserAttributeBulkDialog> = fixture,
+  ): Promise<void> {
     for (let index = 0; index < 6; index += 1) {
-      fixture.detectChanges();
+      target.detectChanges();
       await Promise.resolve();
     }
-    fixture.detectChanges();
+    target.detectChanges();
   }
 
   /** Open the setup of Programs and Add values with the ESL chip. */
@@ -295,11 +299,14 @@ describe('the Set attributes dialog', () => {
   }
 
   /** Mount a second dialog against the same root stores, as a reopening does. */
-  function reopen(): ComponentFixture<UserAttributeBulkDialog> {
+  function reopen(
+    prepared: UserAttributePreview | null = null,
+  ): ComponentFixture<UserAttributeBulkDialog> {
     const next = TestBed.createComponent(UserAttributeBulkDialog);
     next.componentRef.setInput('selection', { gridId: 'users', tabId });
     next.componentRef.setInput('selected', 25);
     next.componentRef.setInput('categories', categories);
+    next.componentRef.setInput('prepared', prepared);
     next.detectChanges();
     return next;
   }
@@ -310,6 +317,18 @@ describe('the Set attributes dialog', () => {
 
   function button(label: string): HTMLButtonElement | undefined {
     return [...element.querySelectorAll('button')].find((item) =>
+      `${item.textContent ?? ''} ${item.getAttribute('aria-label') ?? ''}`.includes(
+        label,
+      ),
+    ) as HTMLButtonElement | undefined;
+  }
+
+  /** A button of a second dialog, which the outer fixture does not hold. */
+  function buttonIn(
+    host: HTMLElement,
+    label: string,
+  ): HTMLButtonElement | undefined {
+    return [...host.querySelectorAll('button')].find((item) =>
       `${item.textContent ?? ''} ${item.getAttribute('aria-label') ?? ''}`.includes(
         label,
       ),
@@ -833,6 +852,143 @@ describe('the Set attributes dialog', () => {
     expect(edit.waitForJob).toHaveBeenCalled();
   });
 
+  it('clears a reopened busy review after a definite refusal (R2-A)', async () => {
+    const held = deferred<unknown>();
+    edit.confirm.mockReturnValue(held.promise);
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await flush();
+    expect(text()).toContain('Creating the job…');
+
+    // Dismissal destroys the dialog. A reopening before the answer restores the
+    // retained confirmation as a busy review.
+    dialog.close();
+    fixture.destroy();
+    const reopened = reopen();
+    await flush(reopened);
+    const host = reopened.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('Creating the job…');
+
+    held.resolve({
+      ok: false,
+      message: 'The category changed.',
+      uncertain: false,
+    });
+    await flush(reopened);
+
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    // The refusal reaches the reopened owner instead of a coalesced null observation.
+    expect(host.textContent).toContain('The category changed.');
+    expect(host.textContent).not.toContain('Creating the job…');
+    expect(buttonIn(host, 'Review')?.disabled).toBe(false);
+    expect(store.pending(`bulk-selection:users:${tabId}`)).toBeNull();
+  });
+
+  it('shows a definite refusal that settled while no dialog was open (R2-A)', async () => {
+    const held = deferred<unknown>();
+    edit.confirm.mockReturnValue(held.promise);
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await flush();
+
+    dialog.close();
+    fixture.destroy();
+    held.resolve({
+      ok: false,
+      message: 'The preview expired.',
+      uncertain: false,
+    });
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    expect(store.pending(`bulk-selection:users:${tabId}`)).toMatchObject({
+      phase: 'refused',
+      message: 'The preview expired.',
+    });
+
+    // A dialog that mounts at Setup still consumes the retained sentence.
+    const reopened = reopen();
+    await flush(reopened);
+    const host = reopened.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('The preview expired.');
+    expect(host.textContent).not.toContain('Creating the job…');
+    expect(buttonIn(host, 'Review')?.disabled).toBe(false);
+    expect(store.pending(`bulk-selection:users:${tabId}`)).toBeNull();
+  });
+
+  it('clears a reopened prepared-preview review after a definite refusal (R2-A)', async () => {
+    const held = deferred<unknown>();
+    edit.confirm.mockReturnValue(held.promise);
+    const prepared = preview({
+      source: 'edit-list',
+      changes: null,
+      attributeChanges: 2,
+      selected: 2,
+      eligible: 2,
+      unchanged: 0,
+    });
+    build(prepared);
+    await settle();
+    (button('Set attributes on 2 users') as HTMLButtonElement).click();
+    await flush();
+    expect(text()).toContain('Creating the job…');
+
+    dialog.close();
+    fixture.destroy();
+    const reopened = reopen(prepared);
+    await flush(reopened);
+    const host = reopened.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('Creating the job…');
+
+    held.resolve({
+      ok: false,
+      message: 'Campus Commander no longer accepts this preview.',
+      uncertain: false,
+    });
+    await flush(reopened);
+
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    expect(host.textContent).toContain(
+      'Campus Commander no longer accepts this preview.',
+    );
+    expect(host.textContent).not.toContain('Creating the job…');
+    expect(store.pending(`bulk-preview:${previewId}`)).toBeNull();
+  });
+
+  it('keeps an uncertain save uncertain through a later definite refusal (R2-A)', async () => {
+    edit.confirm.mockResolvedValueOnce({
+      ok: false,
+      message: 'The network failed before the server answered.',
+      uncertain: true,
+    });
+    build();
+    await openProgramsReview();
+    (button('Set attributes on 18 users') as HTMLButtonElement).click();
+    await settle();
+
+    edit.confirm.mockResolvedValueOnce({
+      ok: false,
+      message: 'The category changed.',
+      uncertain: false,
+    });
+    const confirm = button('Set attributes on 18 users') as HTMLButtonElement;
+    confirm.click();
+    await settle();
+
+    const store = TestBed.inject(UserAttributeConfirmationStore);
+    // A previously uncertain save never becomes a definite refusal.
+    expect(store.pending(`bulk-selection:users:${tabId}`)).toMatchObject({
+      phase: 'uncertain',
+      message: 'The category changed.',
+    });
+    expect(text()).toContain('The category changed.');
+    expect((button('Back') as HTMLButtonElement).disabled).toBe(true);
+    expect(edit.confirm).toHaveBeenNthCalledWith(2, previewId, 'a'.repeat(64));
+    expect(bulk.prepare).toHaveBeenCalledTimes(1);
+  });
+
   it('distinguishes attribute rows from users on an edit-list preview (R1-C)', async () => {
     const mixed = preview({
       source: 'edit-list',
@@ -914,8 +1070,11 @@ describe('the Set attributes dialog', () => {
 
     expect(element.querySelectorAll('tbody tr').length).toBe(2);
     const equation = element.querySelector('.count-equation')?.textContent;
-    expect(equation).toContain('Users');
-    expect(equation).not.toContain('changes');
+    // The first worker is the Users term, so the first operator is equality. The
+    // operator follows the term position, not the term label (R2-B).
+    expect((equation ?? '').replace(/\s+/g, '')).toBe(
+      '1Users=1Succeeded+0Failed',
+    );
     expect(text()).toContain('1–2 of 2 changes');
     expect(text()).toContain('Student information · Homeroom');
   });
