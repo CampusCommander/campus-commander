@@ -121,7 +121,8 @@ Operators must maintain those network ranges for the fixed Google endpoints.
 
 A missing or unreadable encryption key returns a bounded connection error.
 It does not prevent local sign-in or readiness checks.
-The installer does not yet provision this key automatically.
+Guided setup creates the key file for all-Docker and hybrid installations.
+Kubernetes setup accepts an existing Secret and the Google API endpoint CIDRs.
 The deployment configuration is an implementation contract until profile qualification completes.
 
 ## Validation boundaries
