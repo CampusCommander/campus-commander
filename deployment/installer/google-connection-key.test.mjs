@@ -139,7 +139,10 @@ test('all-docker Phase 3 setup provisions, preserves, and renders the Google key
     second.find((item) => item.reference === 'google-key-1').status,
     'preserved',
   );
-  assert.deepEqual(await readFile(keyPath), bytes);
+  assert.ok(
+    (await readFile(keyPath)).equals(bytes),
+    'Preparation must keep the existing Google connection key bytes.',
+  );
   assert.ok(
     loadCredentialCipher(parsed.googleConnection, () => Buffer.from(bytes)),
   );
