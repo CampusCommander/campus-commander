@@ -10,7 +10,7 @@ const selector = (service) => ({
   },
 });
 
-/** Measure internal pod policy boundaries with positive controls. */
+/** Prove the allowed worker-to-Redis path and the denied worker-to-Kestra path. */
 export async function qualifyKubernetesNetworkPolicies({
   kube,
   project,
@@ -29,7 +29,7 @@ export async function qualifyKubernetesNetworkPolicies({
   const observations = [];
   const controls = [];
   const limits = [
-    'This report measures worker-to-Redis and worker-to-Kestra TCP pod paths only.',
+    'This report measures the allowed worker-to-Redis path and the denied worker-to-Kestra path only.',
     'Service-address behavior, Google egress, district TLS, and independent physical hosts require separate evidence.',
   ];
   try {
@@ -192,7 +192,7 @@ const timer=setTimeout(()=>finish('timeout'),2000);socket.once('connect',()=>fin
       await assertStablePods(deadline);
       budget(deadline);
     };
-    for (const service of ['redis', 'kestra']) {
+    const targetPort = (service) => {
       const targets = ready(service);
       assert.equal(targets.length, 1);
       const target = targets[0];
@@ -202,6 +202,12 @@ const timer=setTimeout(()=>finish('timeout'),2000);socket.once('connect',()=>fin
       assert.equal(container.ports.length, 1);
       const port = container.ports[0].containerPort;
       assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
+      return { target, port };
+    };
+    const redis = targetPort('redis');
+    await probe(redis.target, redis.port, 'connected', 'redis:allowed');
+    for (const service of ['kestra']) {
+      const { target, port } = targetPort(service);
       await probe(target, port, 'timeout', `${service}:denied-before`);
       const suffix = randomBytes(6).toString('hex');
       const attempts = [];
