@@ -261,6 +261,12 @@ The upload listener closes after import or expiry. Imported files use directory 
 The private installation directory retains `google-client.json` and `google-client-secret` for resume.
 Do not include these files in support attachments. Credential rotation follows the application access guide.
 
+Phase 3 guided setup creates the Google connection encryption key.
+For all-Docker and hybrid installations, setup writes `google-key-1` with 32 random bytes and mode `0600`.
+Kubernetes setup asks for the existing Google connection Secret and the Google API endpoint CIDRs.
+Back up the key file with the installation directory.
+Without the key file, the stored Google credential is unreadable.
+
 Step 5 reports service activity and elapsed time. After readiness, it prints the administrator setup address.
 Open that address, enter the new administrator pairing code, and sign in with the intended account.
 Choose the browser profile for the administrator account before entering this code.
