@@ -114,7 +114,11 @@ export async function httpsPortAvailable(
   if (bindError.code !== 'EACCES') return false;
   const tables = await Promise.all([
     readTable('/proc/net/tcp'),
-    readTable('/proc/net/tcp6'),
+    readTable('/proc/net/tcp6').catch((error) => {
+      // A kernel booted with IPv6 disabled has no IPv6 socket table.
+      if (error?.code === 'ENOENT') return '';
+      throw error;
+    }),
   ]);
   return tables.every((table) => !socketTableListens(table, port));
 }

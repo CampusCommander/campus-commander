@@ -56,12 +56,22 @@ function failingServer(code) {
   return server;
 }
 
-function socketTables({ tcp = [], tcp6 = [] } = {}) {
+function socketTables({ tcp = [], tcp6 = [], errors = {} } = {}) {
   return async (path) => {
-    if (path === '/proc/net/tcp') return socketTable(...tcp);
-    if (path === '/proc/net/tcp6') return socketTable(...tcp6);
+    if (path === '/proc/net/tcp') {
+      if (errors.tcp) throw tableError(path, errors.tcp);
+      return socketTable(...tcp);
+    }
+    if (path === '/proc/net/tcp6') {
+      if (errors.tcp6) throw tableError(path, errors.tcp6);
+      return socketTable(...tcp6);
+    }
     throw new Error(`Unexpected socket table ${path}`);
   };
+}
+
+function tableError(path, code) {
+  return Object.assign(new Error(`${path} unavailable.`), { code });
 }
 
 async function localPreflight(options) {
@@ -382,6 +392,51 @@ test('HTTPS port check fails when EACCES leaves a socket table unreadable', asyn
   );
 });
 
+test('HTTPS port check passes when EACCES and the host has no IPv6 socket table', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: socketTables({ errors: { tcp6: 'ENOENT' } }),
+    }),
+    true,
+  );
+});
+
+test('HTTPS port check fails when EACCES, no IPv6 socket table, and IPv4 holds the port', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: socketTables({
+        tcp: [socketRow('00000000:01BB')],
+        errors: { tcp6: 'ENOENT' },
+      }),
+    }),
+    false,
+  );
+});
+
+test('HTTPS port check fails when EACCES and the IPv4 socket table is missing', async () => {
+  await assert.rejects(
+    httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: socketTables({ errors: { tcp: 'ENOENT' } }),
+    }),
+    (error) => error.code === 'ENOENT',
+  );
+});
+
+for (const code of ['EACCES', 'EIO']) {
+  test(`HTTPS port check fails when EACCES and the IPv6 socket table fails with ${code}`, async () => {
+    await assert.rejects(
+      httpsPortAvailable(443, {
+        createServer: () => failingServer('EACCES'),
+        readTable: socketTables({ errors: { tcp6: code } }),
+      }),
+      (error) => error.code === code,
+    );
+  });
+}
+
 test('HTTPS port check skips the bind probe when the installation owns the port', async () => {
   let probed = false;
   assert.equal(
@@ -439,6 +494,55 @@ test('local preflight fails the check when EACCES leaves a socket table unreadab
       if (path === '/proc/net/tcp') return socketTable();
       throw new Error('Socket table unavailable.');
     },
+  });
+  assert.deepEqual(
+    result.checks.find((item) => item.name === 'https-port'),
+    {
+      name: 'https-port',
+      status: 'failed',
+      instruction:
+        'Release the configured public HTTPS port before installation.',
+    },
+  );
+});
+
+test('local preflight passes the check when the host has no IPv6 socket table', async () => {
+  const result = await localPreflight({
+    createServer: () => failingServer('EACCES'),
+    readTable: socketTables({ errors: { tcp6: 'ENOENT' } }),
+  });
+  assert.deepEqual(
+    result.checks.find((item) => item.name === 'https-port'),
+    {
+      name: 'https-port',
+      status: 'passed',
+    },
+  );
+});
+
+test('local preflight reports the existing message when no IPv6 socket table and EACCES hides a listener', async () => {
+  const result = await localPreflight({
+    createServer: () => failingServer('EACCES'),
+    readTable: socketTables({
+      tcp: [socketRow('00000000:01BB')],
+      errors: { tcp6: 'ENOENT' },
+    }),
+  });
+  assert.deepEqual(
+    result.checks.find((item) => item.name === 'https-port'),
+    {
+      name: 'https-port',
+      status: 'failed',
+      instruction:
+        'Release the configured public HTTPS port before installation.',
+    },
+  );
+});
+
+test('local preflight fails the check when the IPv4 socket table is missing', async () => {
+  const result = await localPreflight({
+    createServer: () => failingServer('EACCES'),
+    readTable: socketTables({ errors: { tcp: 'ENOENT' } }),
   });
   assert.deepEqual(
     result.checks.find((item) => item.name === 'https-port'),
