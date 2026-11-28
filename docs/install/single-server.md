@@ -44,14 +44,11 @@ The installer installs the newest signed review build in candidate mode.
 Candidate mode requires a project name that starts with `cc-`.
 Treat the data in a review build as disposable. Install each new review build on a fresh server.
 
-**Known issues in release `phase-3-lab-20fedf388811`:**
+**Known issues in release `phase-3-lab-87410bf7d21b`:**
 
-1. Setup does not create the Google connection encryption key.
-   The Google connection page then reports "Google credentials are not configured on this installation."
-   A fix is in progress. Connect Google on the first release that contains the fix.
-2. The release has no procedure to replace the HTTPS certificate of an installation.
+1. The release has no procedure to replace the HTTPS certificate of an installation.
    Use a certificate that stays valid for the whole review period.
-3. The installer checks the HTTPS port as the account that runs it.
+2. The installer checks the HTTPS port as the account that runs it.
    A normal account cannot open a port below 1024, so the check fails for port 443.
    Run the installer as root for an address on port 443. [Step 5](#step-5-run-the-installer) gives the commands.
 
@@ -409,9 +406,6 @@ If a code expires, press Ctrl+C and resume the installation with the command in 
 
 ## Step 7. Connect your Google Workspace organization
 
-> **Known issue 1 applies.** Release `phase-3-lab-20fedf388811` cannot store the service account key.
-> Do this step on the first release that contains the fix.
-
 Follow [Step 8 of the trial guide](try-campus-commander.md#step-8-connect-your-google-workspace-organization).
 Then open **Diagnostics** and check each Google capability.
 
@@ -433,6 +427,8 @@ The installer also has an update command. It requires a verified backup of the i
 Install each new review build on a fresh server instead.
 
 Keep `/opt/campus-commander` private. It holds the credentials, the Google client secret, and the certificate key.
+It also holds the Google connection key, `private/google-key-1`. Without that file, the stored service account key is unreadable.
+Copy the directory to a protected location after the installation.
 To end the installation and remove Google access, follow [Check, restart, and remove the installation](try-campus-commander.md#check-restart-and-remove-the-installation) in the trial guide.
 
 ## Troubleshooting

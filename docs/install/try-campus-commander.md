@@ -289,10 +289,6 @@ If a code expires, press Ctrl+C in the terminal and resume the installation.
 
 ## Step 8. Connect your Google Workspace organization
 
-> **Known issue in release `phase-3-lab-20fedf388811`.** Setup does not create the Google connection encryption key.
-> The page then reports "Google credentials are not configured on this installation." at the service account import.
-> A fix is in progress. Do this step on the first release that contains the fix.
-
 1. In Campus Commander, select **Google connection** in the navigation.
 2. Under **Import a service account**, select **Choose service-account file**. Select the key file of Step 5.
    **Service account client ID** shows the numeric client ID of the key.
