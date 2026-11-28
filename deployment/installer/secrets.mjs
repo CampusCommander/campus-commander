@@ -25,7 +25,7 @@ async function privateDirectory(path) {
     );
 }
 
-async function ensureFile(path, generate) {
+async function ensureFile(path, generate, exactSize) {
   await privateDirectory(dirname(path));
   let file;
   try {
@@ -62,9 +62,13 @@ async function ensureFile(path, generate) {
       !stat.isFile() ||
       stat.isSymbolicLink() ||
       stat.mode & 0o077 ||
-      stat.size < 32
+      (exactSize === undefined ? stat.size < 32 : stat.size !== exactSize)
     )
-      throw new Error('Existing credential file is invalid or unprotected.');
+      throw new Error(
+        exactSize === undefined
+          ? 'Existing credential file is invalid or unprotected.'
+          : 'The Google connection encryption key must contain exactly 32 raw bytes.',
+      );
     return 'preserved';
   }
 }
@@ -82,13 +86,13 @@ export async function prepareSecrets(
     throw new Error('Kestra requires an installation email username.');
   await privateDirectory(root);
   const definitions = new Map();
-  const add = (reference, generate) => {
+  const add = (reference, generate, exactSize) => {
     const path = installationSecretPath(root, reference);
     if (definitions.has(path))
       throw new Error(
         'Independent services require distinct credential references.',
       );
-    definitions.set(path, generate);
+    definitions.set(path, { generate, exactSize });
   };
   add(config.services.edge.bootstrapSecretRef, generateBootstrapCredential);
   add(config.services.workers.dispatchSecretRef, () =>
@@ -108,11 +112,17 @@ export async function prepareSecrets(
       }),
     );
   }
+  if (config.googleConnection?.encryptionKeySecretRef.provider === 'file')
+    add(
+      config.googleConnection.encryptionKeySecretRef,
+      () => randomBytes(32),
+      32,
+    );
   const results = [];
-  for (const [path, generate] of definitions)
+  for (const [path, definition] of definitions)
     results.push({
       reference: path.slice(root.length + 1),
-      status: await ensureFile(path, generate),
+      status: await ensureFile(path, definition.generate, definition.exactSize),
     });
   return results;
 }
