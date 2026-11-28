@@ -50,14 +50,11 @@ This layout last passed a hosted installation test on 2026-09-09.
 That test used an early review build, a controller, and two worker hosts.
 The current review builds pass only the one-server tests. Expect to report defects in this layout.
 
-**Known issues in release `phase-3-lab-20fedf388811`:**
+**Known issues in release `phase-3-lab-87410bf7d21b`:**
 
-1. Setup does not create the Google connection encryption key.
-   The Google connection page then reports "Google credentials are not configured on this installation."
-   A fix is in progress. Connect Google on the first release that contains the fix.
-2. The release has no procedure to replace a certificate of an installation.
+1. The release has no procedure to replace a certificate of an installation.
    Use certificates that stay valid for the whole review period.
-3. The installer checks the HTTPS port as the account that runs it.
+2. The installer checks the HTTPS port as the account that runs it.
    A normal account cannot open a port below 1024, so the check fails for port 443.
    Run the installer as root for an address on port 443.
 
@@ -273,7 +270,7 @@ Your database team does this step on PostgreSQL 18.6.
 3. Download the provisioning script of the release:
 
    ```sh
-   curl -fsSLO https://raw.githubusercontent.com/CampusCommander/campus-commander/20fedf388811a5dee54587b89c02b53a8b1e3a91/deployment/postgres/external-provision.sql
+   curl -fsSLO https://raw.githubusercontent.com/CampusCommander/campus-commander/87410bf7d21bd8142c9092b378703795a6b66e8b/deployment/postgres/external-provision.sql
    ```
 
 4. Connect as a PostgreSQL administrator with `psql`, and run the script. The `\prompt` lines ask for the passwords, so no password reaches the shell history:
@@ -527,9 +524,6 @@ Then delete `/root/cc-files` on the controller. Keep `ca.key` offline.
 
 ## Step 11. Connect your Google Workspace organization
 
-> **Known issue 1 applies.** Release `phase-3-lab-20fedf388811` cannot store the service account key.
-> Do this step on the first release that contains the fix.
-
 Follow [Step 8 of the trial guide](try-campus-commander.md#step-8-connect-your-google-workspace-organization).
 Then open **Diagnostics** and check each Google capability.
 
@@ -552,6 +546,9 @@ sudo docker compose -f /opt/campus-commander/docker-compose.worker-1.json -p cc-
 
 `stop` stops the worker. `down` removes its containers. Neither command changes the shared storage.
 The uninstall command keeps PostgreSQL, Redis, and the NFS data. Your teams remove them when the installation ends.
+
+`/opt/campus-commander/private/google-key-1` on the controller holds the Google connection key.
+Without that file, the stored service account key is unreadable. Copy `/opt/campus-commander` to a protected location after the installation.
 
 The installer also has an update command. It requires a verified backup and pauses for the worker hosts. This guide does not cover it.
 Install each new review build on fresh hosts and empty databases instead.

@@ -91,6 +91,51 @@ if(memory!=='134217728'||cpu!=='25000 100000'||pids!=='32')process.exit(1);`,
   return true;
 }
 
+/**
+ * Decide whether the public HTTPS port is free.
+ * An unprivileged account cannot bind a port below 1024, so the kernel socket
+ * tables decide the outcome when the bind probe reports EACCES.
+ */
+export async function httpsPortAvailable(
+  port,
+  {
+    ownedHttpsPort = false,
+    createServer = net.createServer,
+    readTable = readFile,
+  } = {},
+) {
+  if (ownedHttpsPort) return true;
+  const bindError = await new Promise((done) => {
+    const socket = createServer();
+    socket.once('error', (error) => done(error));
+    socket.listen(port, '0.0.0.0', () => socket.close(() => done()));
+  });
+  if (bindError === undefined) return true;
+  if (bindError.code !== 'EACCES') return false;
+  const tables = await Promise.all([
+    readTable('/proc/net/tcp'),
+    readTable('/proc/net/tcp6'),
+  ]);
+  return tables.every((table) => !socketTableListens(table, port));
+}
+
+function socketTableListens(table, port) {
+  return String(table)
+    .split('\n')
+    .slice(1)
+    .some((line) => {
+      const fields = line.trim().split(/\s+/);
+      if (fields.length < 4 || fields[3] !== '0A') return false;
+      const localAddress = fields[1];
+      return (
+        Number.parseInt(
+          localAddress.slice(localAddress.lastIndexOf(':') + 1),
+          16,
+        ) === port
+      );
+    });
+}
+
 /** Inspect prerequisites without starting services or changing active credentials. */
 export async function preflight(
   input,
@@ -100,6 +145,8 @@ export async function preflight(
     ownedHttpsPort = false,
     run = command,
     resolveSecret = (ref) => readFile(secretPath(ref)),
+    createServer = net.createServer,
+    readTable = readFile,
   } = {},
 ) {
   const config = parseDeploymentConfig(input);
@@ -320,16 +367,10 @@ export async function preflight(
       'https-port',
       'Release the configured public HTTPS port before installation.',
       () =>
-        ownedHttpsPort ||
-        new Promise((done) => {
-          const socket = net.createServer();
-          socket.once('error', () => done(false));
-          socket.listen(
-            Number(new URL(config.services.edge.endpoint.url).port || 443),
-            '0.0.0.0',
-            () => socket.close(() => done(true)),
-          );
-        }),
+        httpsPortAvailable(
+          Number(new URL(config.services.edge.endpoint.url).port || 443),
+          { ownedHttpsPort, createServer, readTable },
+        ),
     );
     await check(
       'registry-access',

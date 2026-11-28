@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import {
+  httpsPortAvailable,
   preflight,
   verifyDockerFilesystem,
   verifyDockerResources,
@@ -13,6 +14,75 @@ import {
   evaluatePlatformVersion,
   qualifiedPlatformVersions,
 } from './platforms.mjs';
+
+const socketTableHeader =
+  '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode';
+
+function socketTable(...rows) {
+  return [socketTableHeader, ...rows].join('\n');
+}
+
+function socketRow(localAddress, state = '0A') {
+  return `   0: ${localAddress} 00000000:0000 ${state} 00000000:00000000 00:00000000 00000000     0        0 12345 1`;
+}
+
+function bindingServer(calls) {
+  return {
+    once() {
+      return this;
+    },
+    listen(port, address, listener) {
+      calls.push({ port, address });
+      listener();
+    },
+    close(done) {
+      done();
+    },
+  };
+}
+
+function failingServer(code) {
+  const server = {
+    once(event, handler) {
+      server.onError = handler;
+      return server;
+    },
+    listen() {
+      queueMicrotask(() =>
+        server.onError(Object.assign(new Error(code), { code })),
+      );
+    },
+  };
+  return server;
+}
+
+function socketTables({ tcp = [], tcp6 = [] } = {}) {
+  return async (path) => {
+    if (path === '/proc/net/tcp') return socketTable(...tcp);
+    if (path === '/proc/net/tcp6') return socketTable(...tcp6);
+    throw new Error(`Unexpected socket table ${path}`);
+  };
+}
+
+async function localPreflight(options) {
+  const root = await mkdtemp(join(tmpdir(), 'cc-https-port-'));
+  try {
+    const config = JSON.parse(
+      await readFile('deployment/examples/all-docker.json', 'utf8'),
+    );
+    config.services.edge.endpoint.url = 'https://localhost';
+    return await preflight(config, {
+      installationRoot: root,
+      run: async () => '',
+      resolveSecret: async () => {
+        throw new Error('Secret unavailable.');
+      },
+      ...options,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 test('platform versions accept qualified minimums and recorded versions', () => {
   assert.equal(evaluatePlatformVersion('dockerEngine', '29.7.2').passed, true);
@@ -210,5 +280,173 @@ test('resource probe propagates a nested cgroup startup failure', async () => {
       throw new Error('cannot enter cgroupv2: threaded mode');
     }),
     /threaded mode/,
+  );
+});
+
+test('HTTPS port check passes when the bind probe succeeds', async () => {
+  const calls = [];
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => bindingServer(calls),
+    }),
+    true,
+  );
+  assert.deepEqual(calls, [{ port: 443, address: '0.0.0.0' }]);
+});
+
+test('HTTPS port check fails when the bind probe reports EADDRINUSE', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EADDRINUSE'),
+    }),
+    false,
+  );
+});
+
+test('HTTPS port check fails on another bind error', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EINVAL'),
+    }),
+    false,
+  );
+});
+
+test('HTTPS port check passes when EACCES leaves the port without a listener', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: socketTables(),
+    }),
+    true,
+  );
+});
+
+for (const [label, tables] of [
+  ['IPv4 wildcard address', { tcp: [socketRow('00000000:01BB')] }],
+  ['specific IPv4 address', { tcp: [socketRow('0100007F:01BB')] }],
+  [
+    'IPv6 wildcard address',
+    { tcp6: [socketRow('00000000000000000000000000000000:01BB')] },
+  ],
+]) {
+  test(`HTTPS port check fails when EACCES and a listener uses the ${label}`, async () => {
+    assert.equal(
+      await httpsPortAvailable(443, {
+        createServer: () => failingServer('EACCES'),
+        readTable: socketTables(tables),
+      }),
+      false,
+    );
+  });
+}
+
+test('HTTPS port check passes when EACCES leaves only non-listening sockets', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: socketTables({
+        tcp: [
+          socketRow('00000000:01BB', '06'),
+          socketRow('0100007F:01BB', '01'),
+        ],
+      }),
+    }),
+    true,
+  );
+});
+
+test('HTTPS port check ignores a listener on another port', async () => {
+  assert.equal(
+    await httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: socketTables({
+        tcp: [socketRow('00000000:20FB')],
+        tcp6: [socketRow('00000000000000000000000000000000:20FB')],
+      }),
+    }),
+    true,
+  );
+});
+
+test('HTTPS port check fails when EACCES leaves a socket table unreadable', async () => {
+  await assert.rejects(
+    httpsPortAvailable(443, {
+      createServer: () => failingServer('EACCES'),
+      readTable: async (path) => {
+        if (path === '/proc/net/tcp') return socketTable();
+        throw new Error('Socket table unavailable.');
+      },
+    }),
+    /Socket table unavailable/,
+  );
+});
+
+test('HTTPS port check skips the bind probe when the installation owns the port', async () => {
+  let probed = false;
+  assert.equal(
+    await httpsPortAvailable(443, {
+      ownedHttpsPort: true,
+      createServer: () => {
+        probed = true;
+        throw new Error('The owned port must not be probed.');
+      },
+    }),
+    true,
+  );
+  assert.equal(probed, false);
+});
+
+test('local preflight keeps the owned HTTPS port path', async () => {
+  let probed = false;
+  const result = await localPreflight({
+    ownedHttpsPort: true,
+    createServer: () => {
+      probed = true;
+      throw new Error('The owned port must not be probed.');
+    },
+  });
+  assert.equal(probed, false);
+  assert.deepEqual(
+    result.checks.find((item) => item.name === 'https-port'),
+    {
+      name: 'https-port',
+      status: 'passed',
+    },
+  );
+});
+
+test('local preflight reports the existing message when EACCES hides a listener', async () => {
+  const result = await localPreflight({
+    createServer: () => failingServer('EACCES'),
+    readTable: socketTables({ tcp: [socketRow('00000000:01BB')] }),
+  });
+  assert.deepEqual(
+    result.checks.find((item) => item.name === 'https-port'),
+    {
+      name: 'https-port',
+      status: 'failed',
+      instruction:
+        'Release the configured public HTTPS port before installation.',
+    },
+  );
+});
+
+test('local preflight fails the check when EACCES leaves a socket table unreadable', async () => {
+  const result = await localPreflight({
+    createServer: () => failingServer('EACCES'),
+    readTable: async (path) => {
+      if (path === '/proc/net/tcp') return socketTable();
+      throw new Error('Socket table unavailable.');
+    },
+  });
+  assert.deepEqual(
+    result.checks.find((item) => item.name === 'https-port'),
+    {
+      name: 'https-port',
+      status: 'failed',
+      instruction:
+        'Release the configured public HTTPS port before installation.',
+    },
   );
 });

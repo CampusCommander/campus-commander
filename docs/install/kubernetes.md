@@ -49,16 +49,13 @@ This layout last passed a hosted installation test on 2026-09-09, with an early 
 That test used shared host storage and a port forward, and its network plugin did not enforce network policy.
 The current review builds pass only the one-server tests. Expect to report defects in this layout.
 
-**Known issues in release `phase-3-lab-20fedf388811`:**
+**Known issues in release `phase-3-lab-87410bf7d21b`:**
 
-1. Setup does not create the Google connection encryption key.
-   The Google connection page then reports "Google credentials are not configured on this installation."
-   A fix is in progress. Connect Google on the first release that contains the fix.
-2. The release has no procedure to replace a certificate of an installation.
+1. The release has no procedure to replace a certificate of an installation.
    Use certificates that stay valid for the whole review period.
-3. Guided setup has no question for load balancer annotations.
+2. Guided setup has no question for load balancer annotations.
    A cloud load balancer that needs an annotation to stay internal gets the default type of your cluster.
-4. The release has no procedure to change the Google address ranges of the network policy after the installation.
+3. The release has no procedure to change the Google address ranges of the network policy after the installation.
 
 **Some actions change Google Workspace.**
 Device commands, custom attribute categories, and custom attribute values write to your organization.
@@ -112,7 +109,7 @@ The installer applies the allowed sources twice: in `loadBalancerSourceRanges`, 
 Include the address of your operator workstation. The installer checks readiness through the load balancer.
 
 On premises, MetalLB assigns an address from its default pool. That address is internal when the pool is internal.
-In a cloud, the default `LoadBalancer` type is often public. Known issue 3 applies: restrict it with the allowed sources.
+In a cloud, the default `LoadBalancer` type is often public. Known issue 2 applies: restrict it with the allowed sources.
 
 Google sign-in works for both choices. Google sends the browser back to Campus Commander and never connects to your cluster.
 
@@ -148,8 +145,9 @@ When your DNS pods use another namespace or label, add `kubernetes.dns.namespace
 NodeLocal DNSCache needs its own policy work and is not covered.
 
 The API pods reach Google sign-in through an egress policy to address ranges that you supply.
+The API and worker pods reach the Google APIs through a second egress policy with the same ranges.
 Google publishes its ranges in `goog.json`. Step 4 turns that file into the answer.
-Google changes the list. Known issue 4 applies.
+Google changes the list. Known issue 3 applies.
 
 Outside the cluster, allow these paths:
 
@@ -206,7 +204,7 @@ Run the remaining steps in one shell on the operator workstation. Stop when a co
    ```sh
    cd ~
    curl -fsSL https://raw.githubusercontent.com/CampusCommander/campus-commander/main/install.sh -o campus-commander-install.sh
-   export CC_RELEASE_TAG=phase-3-lab-20fedf388811
+   export CC_RELEASE_TAG=phase-3-lab-87410bf7d21b
    sh campus-commander-install.sh --release "$CC_RELEASE_TAG" --verify-only
    ```
 
@@ -236,7 +234,7 @@ Run the remaining steps in one shell on the operator workstation. Stop when a co
    The worker replicas must not exceed the nodes that accept workloads.
    For a cluster domain other than `cluster.local`, set `CC_CLUSTER_DOMAIN`.
 
-3. Build the Google address ranges for the sign-in egress policy:
+3. Build the Google address ranges for the sign-in and Google API egress policies:
 
    ```sh
    export CC_GOOGLE_CIDRS=$(curl -fsSL https://www.gstatic.com/ipranges/goog.json | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>console.log(JSON.parse(s).prefixes.map((p)=>p.ipv4Prefix).filter(Boolean).join(",")))')
@@ -416,6 +414,10 @@ Run the remaining steps in one shell on the operator workstation. Stop when a co
        { name: 'campus-installation', key: 'edge-ca' },
        await readFile(edgeCa),
      );
+   await put(
+     { name: 'campus-installation', key: 'google-key-1' },
+     randomBytes(32),
+   );
    const serviceReferences = new Map(refs);
    await put(operator.migrationPasswordSecretRef, randomBytes(32).toString('hex'));
    for (const ref of Object.values(operator.databaseAdmins))
@@ -519,6 +521,7 @@ Run the remaining steps in one shell on the operator workstation. Stop when a co
      'applicationAuth.googleImport': 'file',
      'applicationAuth.googleClientFile': googleClient,
      'kubernetes.externalEgress.identityProvider': need('CC_GOOGLE_CIDRS'),
+     'kubernetes.externalEgress.googleProvider': need('CC_GOOGLE_CIDRS'),
    };
    for (const [name, service] of Object.entries(config.services))
      for (const key of ['persistence', 'internalStorage'])
@@ -557,6 +560,7 @@ Run the remaining steps in one shell on the operator workstation. Stop when a co
 Keep `$CC_WORK` private and keep it after the installation.
 The installer compares each Secret with its file in `$CC_WORK/secrets` at every resume.
 The directory also holds the key of the internal CA.
+The `google-key-1` entry of `campus-installation` is the Google connection key. Without it, the stored service account key is unreadable.
 
 ## Step 6. Run the installer
 
@@ -618,9 +622,6 @@ The installer prints an administrator setup address and a pairing code. The code
 
 ## Step 9. Connect your Google Workspace organization
 
-> **Known issue 1 applies.** Release `phase-3-lab-20fedf388811` cannot store the service account key.
-> Do this step on the first release that contains the fix.
-
 Follow [Step 8 of the trial guide](try-campus-commander.md#step-8-connect-your-google-workspace-organization).
 Then open **Diagnostics** and check each Google capability.
 
@@ -669,7 +670,7 @@ Restore the original value, or start again in a new namespace.
 
 ### Google sign-in fails with a network error
 
-The egress policy of the API allows only the ranges in `CC_GOOGLE_CIDRS`. Google added a range since the installation. Known issue 4 applies.
+The egress policy of the API allows only the ranges in `CC_GOOGLE_CIDRS`. Google added a range since the installation. Known issue 3 applies.
 
 ### Other problems
 
