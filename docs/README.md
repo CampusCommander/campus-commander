@@ -49,6 +49,7 @@ Use Figma links with exact node IDs for visual references. Do not duplicate its 
 | `docs/ui/`                                                  | Shared UI rules, patterns, tokens, and field metadata.                                       |
 | `docs/portfolio/prototype-map.md`                           | Current Figma references and their coverage limits.                                          |
 | `docs/testing/` and `deployment/`                           | How to run the implementation and operate existing tools.                                    |
+| `docs/install/`                                             | Installation guides for school IT administrators.                                            |
 | `docs/reviews/`, `docs/validation/`, `deployment/evidence/` | Historical findings and measured results. No automatic work queue.                           |
 | `docs/archive/` and historical phase plans                  | Earlier sources. Preserve provenance without executing old instructions.                     |
 
