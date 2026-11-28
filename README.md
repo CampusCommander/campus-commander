@@ -42,6 +42,15 @@ A first installation needs:
 
 Follow [the fresh installation guide](docs/testing/fresh-install-review.md) for the full steps.
 
+The installation guides for school IT administrators give each step with its commands:
+
+- [Try Campus Commander](docs/install/try-campus-commander.md): a disposable evaluation on one machine.
+- [Install on one server](docs/install/single-server.md): every service in Docker on one server.
+- [Install with your existing services](docs/install/existing-services.md): district PostgreSQL, Redis, and NFS storage, with separate worker hosts.
+- [Install on Kubernetes](docs/install/kubernetes.md): every component in one namespace of an existing cluster.
+
+Each guide covers DNS, the certificate, the firewall, and a reverse proxy for intranet access and for internet access.
+
 Start in a Linux amd64 shell with internet access and root or sudo access.
 Run the installer first:
 
