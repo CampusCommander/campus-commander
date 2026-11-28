@@ -22,6 +22,8 @@ for (const phase of [2, 3])
           if (key === 'applicationAuth.clientId') return 'campus';
           if (key === 'kubernetes.externalEgress.identityProvider')
             return '198.51.100.0/24';
+          if (key === 'kubernetes.externalEgress.googleProvider')
+            return '203.0.113.0/24, 192.0.2.0/24';
           if (key.startsWith('workerBindAddresses.'))
             return `192.0.2.${Number(key.split('.').at(-1)) + 10}`;
           if (key.endsWith('.url'))
@@ -62,6 +64,27 @@ for (const phase of [2, 3])
         });
         parseDeploymentConfig(plan.config);
         assert.equal(plan.config.phase, phase);
+        if (phase === 3)
+          assert.deepEqual(
+            plan.config.googleConnection,
+            profile === 'kubernetes'
+              ? {
+                  keyId: 'google-key-1',
+                  encryptionKeySecretRef: {
+                    provider: 'kubernetes',
+                    name: 'campus-installation',
+                    key: 'google-key-1',
+                  },
+                }
+              : {
+                  keyId: 'google-key-1',
+                  encryptionKeySecretRef: {
+                    provider: 'file',
+                    path: '/run/secrets/google-key-1',
+                  },
+                },
+          );
+        else assert.equal(plan.config.googleConnection, undefined);
         assert.equal(
           plan.config.applicationAuth.publicOrigin,
           'https://campus.district.edu',

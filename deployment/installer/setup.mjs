@@ -39,6 +39,19 @@ const exceptionNames = [
 const execute = promisify(execFile);
 const absolute = (value) =>
   typeof value === 'string' && resolve(value) === value;
+const cidrList = (value) =>
+  typeof value === 'string' &&
+  value.split(',').every((entry) => {
+    const [address, prefix, extra] = entry.trim().split('/');
+    const family = isIP(address);
+    return (
+      !extra &&
+      family &&
+      /^\d+$/.test(prefix ?? '') &&
+      Number(prefix) >= 0 &&
+      Number(prefix) <= (family === 4 ? 32 : 128)
+    );
+  });
 export class SetupError extends Error {}
 const fail = (message) => {
   throw new SetupError(message);
@@ -308,6 +321,7 @@ export async function verifyClusterSecrets(config, operator, run = execute) {
   };
   visit(config.services);
   visit(config.applicationAuth);
+  visit(config.googleConnection);
   const secrets = new Map();
   try {
     for (const ref of references.values()) {
@@ -676,10 +690,40 @@ export async function configure({
   const google = await configureApplication(config, operator, q, {
     importGoogle,
   });
+  if (config.phase === 3) {
+    if (profile === 'kubernetes') {
+      config.googleConnection = {
+        keyId: 'google-key-1',
+        encryptionKeySecretRef: {
+          provider: 'kubernetes',
+          name: 'campus-installation',
+          key: 'google-key-1',
+        },
+      };
+      operator.kubernetes.externalEgress.googleProvider = (
+        await q(
+          'kubernetes.externalEgress.googleProvider',
+          'Google API endpoint CIDRs, comma-separated',
+          undefined,
+          cidrList,
+        )
+      )
+        .split(',')
+        .map((value) => value.trim());
+    } else
+      config.googleConnection = {
+        keyId: 'google-key-1',
+        encryptionKeySecretRef: {
+          provider: 'file',
+          path: '/run/secrets/google-key-1',
+        },
+      };
+  }
   const generated = new Set([
     '/run/secrets/bootstrap',
     '/run/secrets/worker-dispatch',
     '/run/secrets/kestra-auth',
+    '/run/secrets/google-key-1',
   ]);
   if (profile === 'all-docker')
     for (const n of ['applicationDatabase', 'kestraDatabase', 'redis'])
@@ -735,6 +779,7 @@ export async function configure({
   };
   await visit(config.services, 'services');
   await visit(config.applicationAuth, 'applicationAuth');
+  await visit(config.googleConnection, 'googleConnection');
   let migration;
   if (profile === 'hybrid') {
     migration = {
