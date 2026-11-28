@@ -1,6 +1,6 @@
 # Google users and custom attributes
 
-Status: slice S1 signed off on 2026-11-18, and slice S2 signed off on 2026-11-24. Slice S3 is in build. The live read-only check stays open.
+Status: slice S1 signed off on 2026-11-18, slice S2 signed off on 2026-11-24, and slice S3 signed off on 2026-11-28. The live read-only check stays open.
 On 2026-11-16 the owner answered questions U1 to U7 and approved the screens. The [design addendum](../superpowers/specs/2026-11-16-user-management-design.md) holds the card plan.
 
 On 2026-11-01 the owner started this workflow, development order step 6 (gap G19). Owner, in the main chat:
@@ -28,6 +28,8 @@ He then approved states 13 to 15. Owner: "approve".
 On 2026-11-18 the owner signed off slice S1, Browse users. The sign-off package README asked: "Reply `sign off` to accept slice S1 as built." Owner, in the main chat: "sign off".
 
 On 2026-11-24 the owner signed off slice S2, Custom attributes. The sign-off package README asked: "Reply `sign off` to accept slice S2 as built." Owner, in the main chat: "S2 Sign off". In the same message he started slice S3: "S3 go".
+
+On 2026-11-28 the owner signed off slice S3, Attribute values. The sign-off package README asked: "Reply `sign off` to accept slice S3 as built, or name the item numbers to change." Owner, in the main chat: "1) sign off".
 
 Source: owner direction of 2026-11-01 and 2026-11-16, quoted above.
 
@@ -140,7 +142,7 @@ Each slice completes when the owner sees it work on admin-sdk-mock and its live 
 
 1. S1: browse users, filter on an attribute, select users, refresh, and open the details of one user. The owner signed off S1 on 2026-11-18.
 2. S2: create, edit, and delete a category, and see each result in the dialog. The owner signed off S2 on 2026-11-24.
-3. S3: set values on one user, in the grid, and through Bulk Actions, Set attributes, and see each outcome.
+3. S3: set values on one user, in the grid, and through Bulk Actions, Set attributes, and see each outcome. The owner signed off S3 on 2026-11-28.
 4. Live read-only check: `users.list` and `schemas.list` on the owner's domain.
 
 The owner signs off each slice. Passing tests approve no screen.

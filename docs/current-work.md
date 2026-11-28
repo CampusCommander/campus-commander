@@ -1,6 +1,6 @@
 # Current work
 
-Updated: 2026-11-24.
+Updated: 2026-11-28.
 
 ## Authorized now
 
@@ -72,6 +72,10 @@ On 2026-11-18 the owner chose a signed review release from `main` for a real-dom
 
 On 2026-11-24 the owner signed off slice S2, Custom attributes. The sign-off package README asked: "Reply `sign off` to accept slice S2 as built." Owner, in the main chat: "S2 Sign off". In the same message he started slice S3: "S3 go".
 
+On 2026-11-28 the owner signed off slice S3, Attribute values. The sign-off package README asked: "Reply `sign off` to accept slice S3 as built, or name the item numbers to change." Owner, in the main chat: "1) sign off".
+
+On 2026-11-28 the owner approved an installer fix for a normal account on port 443. The question was: "Should I fix the installer so a normal account can install on port 443?" Owner, in the main chat: "2) 2 yes". Card `t_8aef320c` builds the fix.
+
 On 2026-10-21 the owner authorized development order step 5 with device commands first.
 The owner chose the answer "Device commands (Reboot, Disable, Wipe, and others)" to "What should step 5 build first?".
 The owner chose the answer "Reboot, Disable, Re-enable first; Wipe, Powerwash, Deprovision next" to "If device commands come first: which commands go in the first build?".
@@ -82,6 +86,46 @@ On 2026-10-19 the owner queued two items after the bulk-actions stage. PRs #70 a
 2. Then add pre-filled delegation links to Diagnostics and to the denied prompt on the Devices page.
 
 Device write tests use admin-sdk-mock. The existing test authorization does not include device writes.
+
+### Google users slice S3 Attribute values (signed off 2026-11-28)
+
+The [record](workflows/user-management.md) and its documents A and B define the workflow. The [design addendum](superpowers/specs/2026-11-16-user-management-design.md) holds the card plan.
+The approved [user management mockup](ui/designs/2026-11-16-user-management.html) sets states 01 to 13.
+
+PRs #249, #252, #254, #256 to #259, and #261 to #265 hold the slice S3 build.
+PRs #255 and #260 record the owner's answers of 2026-11-25.
+Two fixes merged before the sign-off. PR #267 keeps an uncertain value confirmation through a page reload. PR #268 keys each row of a value job page by its user and its attribute.
+`main` was `87410bf` at the sign-off.
+
+On 2026-11-28 the owner signed off the build. Owner, in the main chat: "1) sign off".
+He named no change. Each item stays as the package recommended:
+
+- Item 1: the details card lists the categories in alphabetical order. It stays as built.
+- Item 2: the filter of a Text attribute matches part of the value, with the chip word `contains`. It stays as built.
+- Item 3: the job page of a category job shows one table of changes. It stays as built.
+- Item 4: the Columns panel of the rehearsal screenshot opened below its top rows. The owner's real-domain test checks it. A fix card follows only when the panel opens below its top rows.
+- Item 5: Bulk Actions shows disabled while no user is selected. It stays as built.
+- Item 6: Set attributes takes one attribute change for each run. It stays as built.
+- Items 7 and 8: one wording card changes three texts. They are the footer of the category job page, five sentences of the grid and of Set attributes, and the number `2,500`. The owner approves its drafted strings before its release.
+- Item 9: the same card removes the unused strings. No screen changes.
+
+The sign-off accepts the drafted wording in the package's `owner-review-wording.md` as built: 138 strings and 31 defaults. The changes of items 7 to 9 apply on top.
+Two examples follow. "Select one or more users to set attributes." shows under the toolbar. "The request exceeds the size limit." shows on a refused preview.
+
+Rehearsal K28 (`t_d3a38306`) ran completion step 3 at `193e5a9` on admin-sdk-mock 0.4.0. All 16 steps passed.
+
+This is the surface that stays unverified:
+
+- Live Google and its real limits. Card K29 runs the live read-only check.
+- A screen reader, keyboard-only use, and an automated accessibility run.
+- Grants for one district, Google failures other than a deleted user, and the quota faults of the mock.
+- A value preview request near the 64 MiB limit outside the tests of card K23b.
+
+Three follow-ups sit in the `swe` board triage. None blocks slice S3:
+
+- `t_a79d4e4a`: the rows of a value job with several attributes.
+- `t_3fa09a19`: the lock and expiry races of the S2 category plan.
+- `t_b0bd58a3`: an intermittent failure of the suite `phase3-auth-integration`.
 
 ### Google users slice S2 Custom attributes (signed off 2026-11-24)
 
