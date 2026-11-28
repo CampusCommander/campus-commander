@@ -127,14 +127,16 @@ function fixture(mode) {
       const { host, port } = JSON.parse(input);
       const target = pods.find((pod) => pod.status.podIP === host);
       assert.equal(target.spec.containers[0].ports[0].containerPort, port);
+      const service = target.metadata.labels['app.kubernetes.io/name'];
       const allowed = policies.size === 3;
       const api = args[2].startsWith('api-');
+      const redisAllowed = service === 'redis' && mode !== 'redis-denied';
       const outcome =
         mode === 'unavailable'
           ? 'socket-error'
           : mode === 'allow-failure' && allowed && !api
             ? 'socket-error'
-            : api || allowed || mode === 'unenforced'
+            : api || redisAllowed || allowed || mode === 'unenforced'
               ? 'connected'
               : 'timeout';
       clock += mode === 'late-success' && allowed ? 40000 : 1000;
@@ -163,27 +165,35 @@ function fixture(mode) {
   };
 }
 
-test('policy proof requires denial, narrow allowance, and denial on both worker nodes', async () => {
+test('policy proof requires an allowed worker-to-Redis path and a denied worker-to-Kestra path', async () => {
   const state = fixture();
   const report = await state.run();
   assert.equal(report.status, 'passed');
-  for (const service of ['redis', 'kestra']) {
-    for (const stage of ['denied-before', 'allowed-control', 'denied-after']) {
-      const observed = report.observations.filter(
-        (item) => item.stage === `${service}:${stage}`,
-      );
-      assert.equal(observed.length, 2);
-      assert.equal(new Set(observed.map((item) => item.source.node)).size, 2);
-      assert.ok(
-        observed.every(
-          (item) =>
-            item.outcome ===
-            (stage === 'allowed-control' ? 'connected' : 'timeout'),
-        ),
-      );
-    }
+  const redis = report.observations.filter(
+    (item) => item.stage === 'redis:allowed',
+  );
+  assert.equal(redis.length, 2);
+  assert.equal(new Set(redis.map((item) => item.source.node)).size, 2);
+  assert.ok(redis.every((item) => item.outcome === 'connected'));
+  for (const stage of ['denied-before', 'allowed-control', 'denied-after']) {
+    const observed = report.observations.filter(
+      (item) => item.stage === `kestra:${stage}`,
+    );
+    assert.equal(observed.length, 2);
+    assert.equal(new Set(observed.map((item) => item.source.node)).size, 2);
+    assert.ok(
+      observed.every(
+        (item) =>
+          item.outcome ===
+          (stage === 'allowed-control' ? 'connected' : 'timeout'),
+      ),
+    );
   }
-  assert.equal(state.created.length, 4);
+  assert.equal(report.controls.length, 2);
+  assert.ok(
+    report.controls.every((control) => control.name.includes('kestra')),
+  );
+  assert.equal(state.created.length, 2);
   assert.deepEqual([...state.policies.keys()], ['default-deny']);
 });
 
@@ -194,11 +204,28 @@ for (const mode of ['unenforced', 'unavailable', 'allow-failure'])
     assert.equal(state.failures.length, 1);
     assert.equal(state.failures[0].status, 'failed');
     assert.equal(state.failures[0].limits.length, 2);
-    assert.match(state.failures[0].limits[0], /TCP pod paths only/);
+    assert.match(
+      state.failures[0].limits[0],
+      /allowed worker-to-Redis path and the denied worker-to-Kestra path/,
+    );
     assert.ok(state.failures[0].observations.length > 0);
     assert.deepEqual([...state.policies.keys()], ['default-deny']);
     assert.equal(state.created.length, mode === 'allow-failure' ? 2 : 0);
   });
+
+test('policy proof rejects a denied worker-to-Redis path', async () => {
+  const state = fixture('redis-denied');
+  await assert.rejects(state.run());
+  assert.equal(state.failures.length, 1);
+  assert.equal(state.failures[0].status, 'failed');
+  const denied = state.failures[0].observations.filter(
+    (item) => item.stage === 'redis:allowed',
+  );
+  assert.equal(new Set(denied.map((item) => item.source.node)).size, 2);
+  assert.ok(denied.every((item) => item.outcome === 'timeout'));
+  assert.equal(state.created.length, 0);
+  assert.deepEqual([...state.policies.keys()], ['default-deny']);
+});
 
 for (const mode of ['ambiguous-create', 'missing-create', 'late-success'])
   test(`policy proof rejects ${mode} without retaining an allowance`, async () => {
