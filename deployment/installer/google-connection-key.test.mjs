@@ -15,6 +15,7 @@ import { join, resolve } from 'node:path';
 import { loadCredentialCipher } from '../../libs/google-connection/src/lib/credential.ts';
 import { parseDeploymentConfig } from '../../dist/deployment/lib/deployment.js';
 import { renderAllDocker } from '../profiles/all-docker/render.mjs';
+import { prepareAllDocker } from '../profiles/all-docker/prepare.mjs';
 import { renderKubernetes } from '../kubernetes/render.mjs';
 import { prepareSecrets } from './secrets.mjs';
 import { configure, createQuestions, runSetup } from './setup.mjs';
@@ -124,7 +125,7 @@ test('all-docker Phase 3 setup provisions, preserves, and renders the Google key
   });
   const parsed = parseDeploymentConfig(config);
   const privateRoot = join(root, 'private');
-  const first = await prepareSecrets(config, privateRoot);
+  const first = await prepareAllDocker(join(root, 'deployment.json'), root);
   assert.equal(
     first.find((item) => item.reference === 'google-key-1').status,
     'created',
@@ -133,7 +134,7 @@ test('all-docker Phase 3 setup provisions, preserves, and renders the Google key
   const bytes = await readFile(keyPath);
   assert.equal(bytes.length, 32);
   assert.equal((await stat(keyPath)).mode & 0o777, 0o600);
-  const second = await prepareSecrets(config, privateRoot);
+  const second = await prepareAllDocker(join(root, 'deployment.json'), root);
   assert.equal(
     second.find((item) => item.reference === 'google-key-1').status,
     'preserved',
